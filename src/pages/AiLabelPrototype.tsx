@@ -976,6 +976,24 @@ const statusText: Record<View, string> = {
   reviewWorkspace: "Review",
 };
 
+const mobileTitleText: Record<View, string> = {
+  connectArtist: "Connect",
+  setup: "Setup",
+  labelHQ: "Label HQ",
+  staffWorkspace: "Team",
+  managerOffice: "Manager",
+  conversationWorkspace: "Conversation",
+  investigation: "Manager run",
+  decisionPackage: "Decision",
+  missionsWorkspace: "Missions",
+  tasksWorkspace: "Tasks",
+  testLabWorkspace: "Checkpoints",
+  briefsWorkspace: "Notes",
+  artistProfileWorkspace: "Profile",
+  lockedAgentWorkspace: "Specialist",
+  reviewWorkspace: "Review",
+};
+
 const BrandMark = ({ size = "md" }: { size?: "sm" | "md" }) => (
   <span
     aria-hidden="true"
@@ -1043,7 +1061,7 @@ const WorkspaceShell = ({
   children: React.ReactNode;
 }) => (
   <div className="animate-in fade-in slide-in-from-bottom-4 duration-1000">
-    <div className="mb-10 flex items-center justify-between">
+    <div className="sticky top-[68px] z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/5 bg-background/88 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:mb-10 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
       <button
         onClick={onBack}
         className="group flex items-center gap-3 text-[13px] font-bold text-muted-foreground/60 transition-all hover:text-foreground"
@@ -1054,13 +1072,78 @@ const WorkspaceShell = ({
         Back
       </button>
     </div>
-    <div className="mb-8">
+    <div className="mb-5 lg:mb-8">
       <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-brand-accent">{eyebrow}</p>
-      <h1 className="font-display mt-4 text-2xl font-bold tracking-tight text-foreground">{title}.</h1>
+      <h1 className="font-display mt-2 text-[1.65rem] font-bold leading-tight tracking-tight text-foreground sm:text-2xl lg:mt-4">{title}.</h1>
     </div>
     {children}
   </div>
 );
+
+const MobileAppTopBar = ({ title }: { title: string }) => (
+  <header
+    data-testid="mobile-app-topbar"
+    className="sticky top-0 z-40 -mx-3 mb-4 flex items-center justify-between border-b border-foreground/8 bg-background/92 px-3 py-3 backdrop-blur-xl lg:hidden"
+  >
+    <div className="flex min-w-0 items-center gap-3">
+      <BrandMark size="sm" />
+      <div className="min-w-0">
+        <p className="font-display truncate text-[14px] font-bold tracking-tight text-foreground">Ordersounds</p>
+        <p className="font-ui truncate text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">{title}</p>
+      </div>
+    </div>
+    <Badge active>{title}</Badge>
+  </header>
+);
+
+const MobileBottomNav = ({
+  active,
+  onLabelHQ,
+  onMissions,
+  onManager,
+  onStaff,
+  onSettings,
+}: {
+  active: "labelHQ" | "staff" | "missions" | "settings";
+  onLabelHQ: () => void;
+  onMissions: () => void;
+  onManager: () => void;
+  onStaff: () => void;
+  onSettings: () => void;
+}) => {
+  const items = [
+    { label: "HQ", icon: Gauge, onClick: onLabelHQ, active: active === "labelHQ" },
+    { label: "Missions", icon: ClipboardCheck, onClick: onMissions, active: active === "missions" },
+    { label: "Manager", icon: MessageSquareText, onClick: onManager, active: false },
+    { label: "Team", icon: UsersRound, onClick: onStaff, active: active === "staff" },
+    { label: "Profile", icon: Settings, onClick: onSettings, active: active === "settings" },
+  ];
+
+  return (
+    <nav
+      aria-label="Mobile label navigation"
+      className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-5 rounded-[22px] border border-foreground/10 bg-background/94 p-1.5 shadow-2xl shadow-black/10 backdrop-blur-xl lg:hidden"
+      style={{ paddingBottom: "calc(0.375rem + env(safe-area-inset-bottom))" }}
+    >
+      {items.map((item) => {
+        const Icon = item.icon;
+        return (
+          <button
+            key={item.label}
+            onClick={item.onClick}
+            className={cn(
+              "flex min-w-0 flex-col items-center justify-center gap-1 rounded-[16px] px-1 py-2 text-[10px] font-bold transition-colors",
+              item.active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
+            )}
+          >
+            <Icon className={cn("h-4 w-4", item.active ? "text-brand-accent" : "opacity-70")} />
+            <span className="truncate">{item.label}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+};
 
 export default function AiLabelPrototype() {
   const [view, setView] = useState<View>("connectArtist");
@@ -1232,7 +1315,8 @@ export default function AiLabelPrototype() {
       )}
 
       {postSetup && (
-        <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-5 px-4 py-4 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-8">
+        <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-4 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[210px_minmax(0,1fr)] lg:gap-5 lg:px-8 lg:py-4 lg:pb-4">
+          <MobileAppTopBar title={mobileTitleText[view]} />
           <LabelHQRail
             active={railActive}
             onLabelHQ={() => goTo("labelHQ")}
@@ -1240,7 +1324,7 @@ export default function AiLabelPrototype() {
             onMissions={() => goTo("missionsWorkspace")}
             onSettings={() => goTo("artistProfileWorkspace")}
           />
-          <main className="min-w-0 py-2 lg:py-8">
+          <main className="min-w-0 py-0 lg:py-8">
             {view === "labelHQ" && (
               <LabelHQScreen
                 profile={profile}
@@ -1324,6 +1408,14 @@ export default function AiLabelPrototype() {
             )}
             {view === "reviewWorkspace" && <ReviewWorkspace onBack={() => goTo("labelHQ")} onMission={openMission} />}
           </main>
+          <MobileBottomNav
+            active={railActive}
+            onLabelHQ={() => goTo("labelHQ")}
+            onMissions={() => goTo("missionsWorkspace")}
+            onManager={() => openManager("labelHQ")}
+            onStaff={() => goTo("staffWorkspace")}
+            onSettings={() => goTo("artistProfileWorkspace")}
+          />
         </div>
       )}
 
@@ -1405,7 +1497,7 @@ const SetupScreen = ({
 }) => {
   const update = (key: keyof ArtistProfile, value: string) => setProfile((current) => ({ ...current, [key]: value }));
   return (
-    <section className="mx-auto max-w-6xl py-10">
+    <section className="mx-auto max-w-6xl py-6 lg:py-10">
       <button 
         onClick={onBack} 
         className="group inline-flex items-center gap-3 rounded-full border border-foreground/10 bg-background/50 px-5 py-2 text-[13px] font-bold text-muted-foreground transition-all hover:bg-foreground/5 hover:text-foreground"
@@ -1414,11 +1506,11 @@ const SetupScreen = ({
         Back to artist
       </button>
 
-      <div className="mt-10 grid gap-8 lg:grid-cols-[320px_1fr] lg:items-start">
+      <div className="mt-7 grid gap-6 lg:mt-10 lg:grid-cols-[320px_1fr] lg:items-start lg:gap-8">
         {/* Left Col: Titles */}
-        <div className="sticky top-12">
+        <div className="lg:sticky lg:top-12">
           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist context</p>
-          <h2 className="font-display mt-5 text-[2.75rem] font-bold leading-tight tracking-tight text-foreground">
+          <h2 className="font-display mt-4 text-[2.1rem] font-bold leading-tight tracking-tight text-foreground lg:mt-5 lg:text-[2.75rem]">
             Give the Manager<br />the basics.
           </h2>
           <p className="mt-5 text-[15px] font-medium leading-relaxed text-foreground/60">
@@ -1434,7 +1526,7 @@ const SetupScreen = ({
         </div>
 
         {/* Right Col: Forms */}
-        <div className="surface-panel rounded-[28px] p-6 shadow-xl lg:p-8">
+        <div className="surface-panel rounded-[22px] p-4 shadow-xl sm:p-6 lg:rounded-[28px] lg:p-8">
           <div className="grid gap-4 sm:grid-cols-2">
             <SetupInput label="Artist name" value={profile.name} onChange={(v) => update("name", v)} />
             <SetupInput label="Spotify identity" value={profile.spotify} onChange={(v) => update("spotify", v)} active />
@@ -1450,12 +1542,12 @@ const SetupScreen = ({
             <SetupInput label="X" value={profile.x} onChange={(v) => update("x", v)} />
           </div>
 
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-5 border-t border-foreground/5 pt-6">
+          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/5 pt-5 lg:mt-8 lg:gap-5 lg:pt-6">
             <p className="max-w-md text-[13px] font-semibold leading-relaxed text-warning">
               Private analytics like saves, clicks, and conversion stay locked until the artist connects them.
             </p>
             
-            <div className="flex shrink-0 gap-4">
+            <div className="flex w-full shrink-0 flex-col gap-3 sm:w-auto sm:flex-row sm:gap-4">
               <button onClick={onContinue} className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-foreground/10 bg-background px-8 text-[14px] font-bold text-foreground transition-all hover:bg-foreground/5">
                 Skip for now
               </button>
@@ -1507,11 +1599,11 @@ const LabelHQScreen = ({
   onWorkspace: (view: View) => void;
   onDrawer: (drawer: DrawerKind) => void;
 }) => (
-  <section className="text-foreground max-w-7xl mx-auto px-4 lg:px-8">
-    <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+  <section className="mx-auto max-w-7xl text-foreground lg:px-8">
+    <div className="mb-4 flex flex-col gap-4 lg:mb-6 lg:flex-row lg:items-end lg:justify-between">
       <div>
         <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-brand-accent">Label Read</p>
-        <h1 className="font-display mt-2 text-[3.2rem] font-bold leading-none tracking-tight text-foreground">Label HQ</h1>
+        <h1 className="font-display mt-2 text-[2.25rem] font-bold leading-none tracking-tight text-foreground sm:text-[2.7rem] lg:text-[3.2rem]">Label HQ</h1>
       </div>
       <div className="flex gap-3">
         <button onClick={() => onWorkspace("artistProfileWorkspace")} className="group flex h-11 items-center gap-2 rounded-full border border-foreground/10 bg-background/50 px-5 text-[13px] font-bold text-foreground transition-all hover:bg-foreground/5 hover:border-foreground/20 active:scale-95 shadow-sm backdrop-blur-sm">
@@ -1521,23 +1613,40 @@ const LabelHQScreen = ({
       </div>
     </div>
 
-    <div className="mb-8 grid overflow-hidden rounded-[24px] border border-foreground/10 bg-background/70 shadow-sm backdrop-blur md:grid-cols-4">
+    <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-[20px] border border-foreground/10 bg-background/70 shadow-sm backdrop-blur md:grid-cols-4 lg:mb-8 lg:rounded-[24px]">
       {[
         { label: "Current Focus", value: profile.goal, meta: profile.stage },
         { label: "Needs Attention", value: "Split approval", meta: "Rights gate holding" },
         { label: "Next Move", value: "Clear rights", meta: "Then update the mission plan" },
         { label: "Active Missions", value: `${missions.filter((mission) => mission.status !== "complete" && !mission.archived).length}`, meta: "Open artist workstreams" },
       ].map((item) => (
-        <div key={item.label} className="border-b border-foreground/5 px-5 py-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+        <div key={item.label} className="min-w-0 border-b border-r border-foreground/5 px-4 py-3 even:border-r-0 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 lg:px-5 lg:py-4">
           <p className="font-ui text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground/45">{item.label}</p>
-          <p className="mt-2 text-[15px] font-bold leading-tight text-foreground">{item.value}</p>
+          <p className="mt-2 line-clamp-3 text-[13px] font-bold leading-tight text-foreground lg:text-[15px]">{item.value}</p>
           <p className="mt-1 text-[12px] font-medium leading-snug text-muted-foreground/65">{item.meta}</p>
         </div>
       ))}
     </div>
+
+    <div data-testid="mobile-priority-stack" className="mb-5 grid gap-3 lg:hidden">
+      <button onClick={() => onWorkspace("tasksWorkspace")} className="flex items-center justify-between rounded-[18px] border border-[#f97316]/15 bg-[#f97316]/[0.06] p-4 text-left">
+        <span>
+          <span className="font-ui block text-[10px] font-bold uppercase tracking-[0.14em] text-[#c2410c]">Needs Attention</span>
+          <span className="mt-1 block text-[14px] font-bold text-foreground">Split approval is holding release clearance.</span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-[#c2410c]" />
+      </button>
+      <button onClick={() => onWorkspace("missionsWorkspace")} className="flex items-center justify-between rounded-[18px] border border-brand-accent/15 bg-brand-accent/[0.045] p-4 text-left">
+        <span>
+          <span className="font-ui block text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Active Missions</span>
+          <span className="mt-1 block text-[14px] font-bold text-foreground">{missions.filter((mission) => mission.status !== "complete" && !mission.archived).length} open artist workstreams</span>
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-brand-accent" />
+      </button>
+    </div>
     
-    <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="grid min-w-0 content-start gap-8">
+    <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-w-0 content-start gap-6 lg:gap-8">
         <LightMorningBriefPanel profile={profile} onManager={onManager} onEvidence={() => onDrawer("evidence")} />
         
         {/* REFINED STAFF GRID */}
@@ -1545,6 +1654,16 @@ const LabelHQScreen = ({
            <div className="flex items-center justify-between border-b border-foreground/5 pb-4">
               <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Label Staff</p>
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/20">5 active AI units</span>
+           </div>
+           <div data-testid="mobile-team-strip" className="grid gap-2 rounded-[18px] border border-foreground/8 bg-background/82 p-3 lg:hidden">
+             <div className="flex items-center justify-between">
+               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Team readiness</p>
+               <span className="text-[11px] font-bold text-muted-foreground">1 ready / 4 need context</span>
+             </div>
+             <button onClick={onManager} className="flex items-center justify-between rounded-[14px] bg-foreground/[0.035] px-3 py-2 text-left text-[13px] font-bold text-foreground">
+               Manager ready for decisions
+               <ChevronRight className="h-4 w-4 text-brand-accent" />
+             </button>
            </div>
            <LightAgentBench onManager={onManager} onLockedAgent={onLockedAgent} />
         </div>
@@ -1559,7 +1678,7 @@ const LabelHQScreen = ({
         </div>
       </div>
 
-      <div className="sticky top-8 grid min-w-0 content-start gap-6 self-start pt-1">
+      <div className="grid min-w-0 content-start gap-6 self-start pt-1 lg:sticky lg:top-8">
         <LightAttentionSummary onDrawer={onDrawer} onWorkspace={onWorkspace} />
       </div>
     </div>
@@ -1581,7 +1700,7 @@ const StaffWorkspace = ({
       <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Team</p>
-          <h1 className="font-display mt-2 text-[3.2rem] font-bold leading-tight tracking-tight text-foreground">Artist Team</h1>
+          <h1 className="font-display mt-2 text-[2.25rem] font-bold leading-tight tracking-tight text-foreground sm:text-[2.7rem] lg:text-[3.2rem]">Artist Team</h1>
           <p className="mt-2 max-w-2xl text-[16px] font-medium leading-relaxed text-muted-foreground/80">
             The people around the artist, what they can help with, and the proof they still need before their advice becomes useful.
           </p>
@@ -1593,7 +1712,7 @@ const StaffWorkspace = ({
         </div>
       </div>
 
-      <div className="grid gap-4">
+      <div data-testid="mobile-staff-roster" className="grid gap-3 lg:gap-4">
         {agents.map((agent) => {
           const Icon = agent.icon;
           const available = agent.status === "available";
@@ -1604,7 +1723,7 @@ const StaffWorkspace = ({
               key={agent.id}
               onClick={() => (available ? onManager() : onLockedAgent(agent))}
               className={cn(
-                "group grid w-full gap-5 rounded-[20px] border bg-background/85 p-5 text-left shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(0,0,0,0.07)] lg:grid-cols-[250px_minmax(0,1fr)_220px]",
+                "group grid w-full gap-3 rounded-[18px] border bg-background/85 p-4 text-left shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(0,0,0,0.07)] lg:grid-cols-[250px_minmax(0,1fr)_220px] lg:gap-5 lg:rounded-[20px] lg:p-5",
                 available ? "border-brand-accent/20" : "border-foreground/10",
               )}
             >
@@ -1631,24 +1750,25 @@ const StaffWorkspace = ({
                     </span>
                   </div>
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{agent.purpose}</p>
+                  <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent md:hidden">Helps with {agent.tools.slice(0, 2).join(" / ")}</p>
                 </div>
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="hidden gap-4 md:grid md:grid-cols-2">
                 <StaffSourceBlock title="What they can help with" items={agent.tools.slice(0, 3)} accent={available} />
                 <StaffSourceBlock title="Missing proof" items={agent.requiredSources} muted={!available} />
                 <StaffSourceBlock title="Connected proof" items={agent.connectedSources} />
                 <StaffSourceBlock title="Manager can prepare" items={[agent.managerCanPrepare]} accent />
               </div>
 
-              <div className="flex flex-col justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.035] p-4 transition-colors group-hover:bg-foreground/[0.06]">
+              <div className="flex flex-row items-center justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.035] p-3 transition-colors group-hover:bg-foreground/[0.06] lg:flex-col lg:items-stretch lg:p-4">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Next action</p>
-                  <p className="mt-3 text-[14px] font-bold leading-snug text-foreground">{actionLabel}</p>
+                  <p className="mt-1 text-[13px] font-bold leading-snug text-foreground lg:mt-3 lg:text-[14px]">{actionLabel}</p>
                 </div>
                 <span
                   className={cn(
-                    "mt-6 inline-flex items-center gap-2 text-[12px] font-bold transition-all duration-300",
+                    "inline-flex items-center gap-2 text-[12px] font-bold transition-all duration-300 lg:mt-6",
                     available ? "text-brand-accent" : "text-muted-foreground group-hover:text-foreground",
                   )}
                 >
@@ -1727,7 +1847,7 @@ const LabelHQRail = ({
   return (
     <nav
       aria-label="Record label navigation"
-      className="flex min-w-0 flex-col justify-between overflow-y-auto rounded-[20px] border border-foreground/10 bg-background p-2 shadow-2xl shadow-black/[0.05] lg:sticky lg:top-4 lg:max-h-[calc(100vh-32px)]"
+      className="hidden min-w-0 flex-col justify-between overflow-y-auto rounded-[20px] border border-foreground/10 bg-background p-2 shadow-2xl shadow-black/[0.05] lg:sticky lg:top-4 lg:flex lg:max-h-[calc(100vh-32px)]"
     >
       {/* TOP: brand + nav */}
       <div className="flex flex-col gap-2">
@@ -1786,9 +1906,9 @@ const LabelHQRail = ({
 
 
 const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: ArtistProfile; onManager: () => void; onEvidence: () => void }) => (
-  <div className="flex flex-col overflow-hidden rounded-[28px] border border-foreground/5 bg-background shadow-2xl shadow-black/[0.02]">
+  <div className="flex flex-col overflow-hidden rounded-[22px] border border-foreground/5 bg-background shadow-xl shadow-black/[0.02] lg:rounded-[28px] lg:shadow-2xl">
     {/* Header */}
-    <div className="flex items-center justify-between border-b border-foreground/5 bg-foreground/[0.01] px-7 py-5">
+    <div className="flex flex-col gap-4 border-b border-foreground/5 bg-foreground/[0.01] px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-7 lg:py-5">
       <div className="flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-accent/10 text-brand-accent">
           <Calendar className="h-4 w-4" />
@@ -1800,22 +1920,22 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
       </div>
       <button
         onClick={onManager}
-        className="rounded-full bg-foreground px-6 py-2 text-[12px] font-bold text-background transition-all hover:opacity-90 active:scale-95 shadow-md"
+        className="w-full rounded-full bg-foreground px-6 py-2.5 text-[12px] font-bold text-background shadow-md transition-all hover:opacity-90 active:scale-95 sm:w-auto"
       >
         Talk to Manager
       </button>
     </div>
 
     {/* Brief Body */}
-      <div className="px-7 py-7">
-      <h2 className="font-display text-2xl font-bold tracking-tight text-foreground max-w-2xl">
+      <div className="px-4 py-5 lg:px-7 lg:py-7">
+      <h2 className="font-display max-w-2xl text-[1.35rem] font-bold leading-tight tracking-tight text-foreground lg:text-2xl">
         Momentum is durably building. Commitment is pending review.
       </h2>
       
       <div className="mt-6 grid gap-4 md:grid-cols-2">
         <div className="space-y-2.5">
            <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-success">Proof</p>
-           <div className="rounded-2xl border border-foreground/5 bg-foreground/[0.01] p-5">
+           <div className="rounded-2xl border border-foreground/5 bg-foreground/[0.01] p-4 lg:p-5">
               <p className="text-[15px] font-medium leading-relaxed text-foreground/80">
                 128.4k tracked streams. TikTok hook uses are 4.8x above baseline. Regional growth in Chicago (+31%) and Lagos confirmed.
               </p>
@@ -1823,7 +1943,7 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
         </div>
         <div className="space-y-2.5">
            <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager Read</p>
-           <div className="rounded-2xl border border-brand-accent/10 bg-brand-accent/[0.02] p-5">
+           <div className="rounded-2xl border border-brand-accent/10 bg-brand-accent/[0.02] p-4 lg:p-5">
               <p className="text-[15px] font-medium leading-relaxed text-foreground/80">
                 Signed split sheet, distributor confirmation, creator commitments, and press/EPK package are currently missing. Rights gate review is active.
               </p>
@@ -1831,7 +1951,7 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
         </div>
       </div>
 
-      <div className="mt-6 space-y-4 border-t border-foreground/5 pt-6 text-[16px] font-medium leading-relaxed text-muted-foreground/80 max-w-3xl">
+      <div className="mt-5 max-w-3xl space-y-3 border-t border-foreground/5 pt-5 text-[15px] font-medium leading-relaxed text-muted-foreground/80 lg:mt-6 lg:space-y-4 lg:pt-6 lg:text-[16px]">
         <p>
           The current release plan is stronger because the Manager refused the rushed next-Friday drop and moved Night Bus to Friday, June 12, 2026.
         </p>
@@ -1849,7 +1969,7 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
         </p>
       </div>
 
-      <div className="mt-6 flex justify-between items-center">
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           onClick={onEvidence}
           className="text-[12px] font-bold text-muted-foreground/60 underline-offset-4 hover:text-brand-accent hover:underline transition-all"
@@ -1917,7 +2037,7 @@ const LightAgentBench = ({
   onManager: () => void;
   onLockedAgent: (agent: Agent) => void;
 }) => (
-  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+  <div className="hidden grid-cols-2 gap-4 md:grid-cols-3 lg:grid lg:grid-cols-5">
     {agents.map((agent) => {
       const Icon = agent.icon;
       const available = agent.status === "available";
@@ -2516,8 +2636,8 @@ const ConversationWorkspace = ({
           </div>
 
           {/* Input Area */}
-          <div className="fixed bottom-12 left-0 right-0 px-4 z-50">
-             <div className="mx-auto max-w-3xl rounded-[32px] border border-foreground/10 bg-background/80 p-3 shadow-2xl backdrop-blur-xl">
+          <div className="fixed bottom-24 left-0 right-0 z-40 px-3 lg:bottom-12 lg:z-50 lg:px-4" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
+             <div className="mx-auto max-w-3xl rounded-[24px] border border-foreground/10 bg-background/88 p-2 shadow-2xl backdrop-blur-xl lg:rounded-[32px] lg:p-3">
                 <div className="relative flex items-center gap-3">
                    <textarea
                      value={draft}
@@ -2582,14 +2702,14 @@ const ArtistDirectionField = ({ value, onChange }: { value: string; onChange: (v
 );
 
 const MissionSurfaceButton = ({ icon: Icon, title, meta, onClick }: { icon: typeof ClipboardCheck; title: string; meta: string; onClick: () => void }) => (
-  <button onClick={onClick} className="group flex items-center justify-between gap-3 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-3 text-left transition-all hover:border-foreground/16 hover:bg-foreground/[0.05]">
-    <span className="flex min-w-0 items-center gap-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-background text-brand-accent shadow-sm">
+  <button onClick={onClick} className="group flex items-center justify-between gap-2 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-2.5 text-left transition-all hover:border-foreground/16 hover:bg-foreground/[0.05] lg:gap-3 lg:rounded-[16px] lg:p-3">
+    <span className="flex min-w-0 items-center gap-2 lg:gap-3">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[11px] bg-background text-brand-accent shadow-sm lg:h-9 lg:w-9 lg:rounded-[12px]">
         <Icon className="h-4 w-4" />
       </span>
       <span className="min-w-0">
-        <span className="block truncate text-[14px] font-bold text-foreground">{title}</span>
-        <span className="mt-0.5 block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55">{meta}</span>
+        <span className="block text-[13px] font-bold leading-tight text-foreground sm:truncate sm:text-[14px]">{title}</span>
+        <span className="mt-0.5 hidden truncate text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55 sm:block">{meta}</span>
       </span>
     </span>
     <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
@@ -2642,13 +2762,13 @@ const TasksWorkspace = ({
 
   return (
     <WorkspaceShell eyebrow="Tasks" title="Release tasks" onBack={onBack}>
-      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-[24px] border border-foreground/8 bg-background/75 p-4 shadow-sm lg:sticky lg:top-6 lg:self-start">
+      <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)] xl:gap-6">
+        <aside className="min-w-0 overflow-hidden rounded-[20px] border border-foreground/8 bg-background/75 p-4 shadow-sm lg:sticky lg:top-6 lg:self-start lg:rounded-[24px]">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Checkpoint path</p>
           <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/70">
             Tasks are grouped by the checkpoint they help clear. Finish or resolve the required work, then the Manager reviews what changed.
           </p>
-          <div className="mt-5 space-y-1">
+          <div data-testid="mobile-task-stepper" className="mt-4 flex min-w-0 max-w-full gap-2 overflow-x-auto pb-1 lg:mt-5 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
             {checkpointsWithTasks.map((checkpoint, index) => {
               const checkpointTasks = taskRows.filter((task) => task.checkpointId === checkpoint.id);
               const resolvedCount = checkpointTasks.filter(isTaskResolved).length;
@@ -2660,9 +2780,9 @@ const TasksWorkspace = ({
                   data-testid={`task-checkpoint-chain-${checkpoint.id}`}
                   aria-current={inView ? "true" : undefined}
                   onClick={() => scrollToCheckpoint(checkpoint.id)}
-                  className={cn("relative flex w-full gap-3 rounded-[14px] px-2 py-2 text-left transition-all", inView ? "bg-foreground text-background shadow-sm" : "hover:bg-foreground/[0.04]")}
+                  className={cn("relative flex min-w-[190px] gap-3 rounded-[14px] px-2 py-2 text-left transition-all lg:w-full lg:min-w-0", inView ? "bg-foreground text-background shadow-sm" : "hover:bg-foreground/[0.04]")}
                 >
-                  {index < checkpointsWithTasks.length - 1 && <span className="absolute left-[13px] top-8 h-[calc(100%-8px)] w-px bg-foreground/10" />}
+                  {index < checkpointsWithTasks.length - 1 && <span className="absolute left-[13px] top-8 hidden h-[calc(100%-8px)] w-px bg-foreground/10 lg:block" />}
                   <span className={cn("relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold", inView ? "border-brand-accent bg-brand-accent text-foreground" : active ? "border-brand-accent bg-brand-accent text-foreground" : "border-foreground/10 bg-background text-muted-foreground")}>
                     {resolvedCount === checkpointTasks.length ? <Check className="h-3.5 w-3.5" /> : index + 1}
                   </span>
@@ -2676,8 +2796,8 @@ const TasksWorkspace = ({
           </div>
         </aside>
 
-        <div className="space-y-5">
-          <div className="rounded-[24px] border border-foreground/8 bg-background/80 p-5 shadow-sm">
+        <div className="space-y-4 lg:space-y-5">
+          <div className="rounded-[20px] border border-foreground/8 bg-background/80 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">How to read this page</p>
             <p className="mt-2 max-w-4xl text-[14px] font-semibold leading-relaxed text-foreground/75">
               Each section is a checkpoint. The rows underneath are the tasks that move it forward. Every completion or blockage creates a Manager review, then the plan either continues, changes, or waits.
@@ -2695,7 +2815,7 @@ const TasksWorkspace = ({
                 data-testid={`task-checkpoint-section-${checkpoint.id}`}
                 data-checkpoint-id={checkpoint.id}
                 data-active={sectionActive ? "true" : "false"}
-                className={cn("scroll-mt-6 rounded-[24px] border p-5 shadow-sm transition-all", sectionActive ? "border-brand-accent/35 bg-brand-accent/[0.045] shadow-lg" : "border-foreground/8 bg-background/85")}
+                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border p-4 shadow-sm transition-all lg:scroll-mt-6 lg:rounded-[24px] lg:p-5", sectionActive ? "border-brand-accent/35 bg-brand-accent/[0.045] shadow-lg" : "border-foreground/8 bg-background/85")}
               >
                 <div className="grid gap-4 border-b border-foreground/8 pb-4 lg:grid-cols-[minmax(0,1fr)_220px]">
                   <div>
@@ -2725,7 +2845,7 @@ const TasksWorkspace = ({
                     const showResult = Boolean(result && (done || result.status === "blocked" || result.status === "revised"));
                     const blocked = result?.status === "blocked" || task.approvalState === "blocked";
                     return (
-                      <div key={task.id} className="grid gap-4 py-5 lg:grid-cols-[minmax(0,1fr)_180px]">
+                      <div key={task.id} className="grid min-w-0 gap-4 py-4 lg:grid-cols-[minmax(0,1fr)_180px] lg:py-5">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={cn("h-2.5 w-2.5 rounded-full", blocked ? "bg-[#f97316]" : done || result?.status === "completed" ? "bg-brand-accent" : "bg-foreground/20")} />
@@ -2736,7 +2856,7 @@ const TasksWorkspace = ({
                           <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-foreground/72">{task.purpose}</p>
                           <div className="mt-3 grid gap-2 sm:grid-cols-2">
                             <p className="text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
-                            <p className="rounded-[12px] border border-brand-accent/15 bg-background/70 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground/75">
+                            <p className="min-w-0 break-words rounded-[12px] border border-brand-accent/15 bg-background/70 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground/75">
                               <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Checkpoint link</span>
                               <span className="mt-0.5 block"><span className="font-bold text-foreground">Unlocks checkpoint:</span> {checkpoint.title}</span>
                             </p>
@@ -2765,7 +2885,7 @@ const TasksWorkspace = ({
                             </div>
                           )}
                         </div>
-                        <div className="flex items-start justify-end gap-2">
+                        <div className="flex min-w-0 flex-wrap items-start justify-start gap-2 lg:justify-end">
                           {task.approvalState === "needs approval" && (
                             <button
                               onClick={() => onApproveTask(task.id)}
@@ -2821,19 +2941,19 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
   return (
     <WorkspaceShell eyebrow="Checkpoints" title="Mission checkpoints" onBack={onBack}>
       <div className="space-y-5">
-        <section data-testid="checkpoint-command-strip" className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
-          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_520px]">
+        <section data-testid="checkpoint-command-strip" className="rounded-[20px] border border-foreground/8 bg-background/85 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
+          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_520px] xl:gap-5">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission progress map</p>
               <div className="mt-2 flex flex-wrap items-end gap-3">
-                <h3 className="font-display text-[30px] font-bold leading-none text-foreground">Night Bus / June 12</h3>
+                <h3 className="font-display text-[24px] font-bold leading-tight text-foreground lg:text-[30px] lg:leading-none">Night Bus / June 12</h3>
                 <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker.title}</span>
               </div>
               <p className="mt-3 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/70">
                 Reusable checkpoint model: every mission uses the same shape of task result, evidence, Manager review, and next action. This release only changes the labels and evidence.
               </p>
             </div>
-            <div className="grid gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
               <ArtifactField label="Readiness" value={`${readinessPercent}%`} />
               <ArtifactField label="Cleared" value={`${clearedCount}/${missionCheckpoints.length}`} />
               <ArtifactField label="Current call" value="Move date" />
@@ -2853,9 +2973,17 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
               </button>
             ))}
           </div>
+          <div className="mt-3 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-3 xl:hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="min-w-0 truncate text-[13px] font-bold text-foreground">{selectedCheckpoint.title}</p>
+              <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", statusClass(selectedCheckpoint))}>{selectedCheckpoint.status}</span>
+            </div>
+            <p className="mt-2 text-[12px] font-semibold leading-relaxed text-foreground/72">{selectedCheckpoint.managerRecommendation}</p>
+            <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{selectedCheckpoint.nextAction}</p>
+          </div>
         </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(430px,0.95fr)_minmax(420px,1fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)]">
           <section className="min-w-0">
             <div className="mb-3 flex items-end justify-between gap-3">
               <div>
@@ -2865,29 +2993,56 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
               <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">Gate ledger</span>
             </div>
             <div data-testid="checkpoint-scroll-region" className="scrollbar-soft space-y-2 pr-1 lg:max-h-[calc(100vh-245px)] lg:overflow-y-auto lg:pr-2">
+              <div data-testid="mobile-checkpoint-list" className="sr-only">Mobile checkpoint list</div>
               {missionCheckpoints.map((checkpoint, index) => {
                 const requiredResults = checkpoint.requiredTaskIds.map((taskId) => taskResultById.get(taskId)?.status ?? "pending");
                 const resolvedCount = requiredResults.filter((status) => status !== "pending").length;
+                const isSelected = selectedCheckpoint.id === checkpoint.id;
                 return (
-                  <button
-                    key={checkpoint.id}
-                    data-testid={`checkpoint-ledger-${checkpoint.id}`}
-                    aria-current={selectedCheckpoint.id === checkpoint.id ? "true" : undefined}
-                    onClick={() => setSelectedCheckpointId(checkpoint.id)}
-                    className={cn("grid w-full grid-cols-[34px_minmax(0,1fr)_76px] items-center gap-3 rounded-[18px] border p-3 text-left transition-all", selectedCheckpoint.id === checkpoint.id ? "border-foreground bg-foreground text-background shadow-lg" : "border-foreground/8 bg-background/82 hover:border-foreground/16 hover:bg-foreground/[0.025]")}
-                  >
-                    <span className={cn("flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-foreground" : selectedCheckpoint.id === checkpoint.id ? "bg-background/15 text-background" : "bg-foreground/8 text-muted-foreground")}>
-                      {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-4 w-4" /> : index + 1}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-[14px] font-bold leading-tight">{checkpoint.title}</span>
-                      <span className={cn("mt-1 block truncate text-[12px] font-semibold", selectedCheckpoint.id === checkpoint.id ? "text-background/70" : "text-muted-foreground/72")}>{checkpoint.nextAction}</span>
-                    </span>
-                    <span className="text-right">
-                      <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", selectedCheckpoint.id === checkpoint.id ? "border-background/20 bg-background/10 text-background" : statusClass(checkpoint))}>{checkpoint.status}</span>
-                      <span className={cn("mt-1 block text-[10px] font-bold uppercase tracking-[0.08em]", selectedCheckpoint.id === checkpoint.id ? "text-background/65" : "text-muted-foreground/55")}>{resolvedCount}/{checkpoint.requiredTaskIds.length} results</span>
-                    </span>
-                  </button>
+                  <div key={checkpoint.id} className="space-y-2">
+                    <button
+                      data-testid={`checkpoint-ledger-${checkpoint.id}`}
+                      aria-current={isSelected ? "true" : undefined}
+                      onClick={() => setSelectedCheckpointId(checkpoint.id)}
+                      className={cn("grid w-full grid-cols-[34px_minmax(0,1fr)_76px] items-center gap-3 rounded-[18px] border p-3 text-left transition-all", isSelected ? "border-foreground bg-foreground text-background shadow-lg" : "border-foreground/8 bg-background/82 hover:border-foreground/16 hover:bg-foreground/[0.025]")}
+                    >
+                      <span className={cn("flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-foreground" : isSelected ? "bg-background/15 text-background" : "bg-foreground/8 text-muted-foreground")}>
+                        {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-4 w-4" /> : index + 1}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[14px] font-bold leading-tight">{checkpoint.title}</span>
+                        <span className={cn("mt-1 block truncate text-[12px] font-semibold", isSelected ? "text-background/70" : "text-muted-foreground/72")}>{checkpoint.nextAction}</span>
+                      </span>
+                      <span className="text-right">
+                        <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", isSelected ? "border-background/20 bg-background/10 text-background" : statusClass(checkpoint))}>{checkpoint.status}</span>
+                        <span className={cn("mt-1 block text-[10px] font-bold uppercase tracking-[0.08em]", isSelected ? "text-background/65" : "text-muted-foreground/55")}>{resolvedCount}/{checkpoint.requiredTaskIds.length} results</span>
+                      </span>
+                    </button>
+                    {isSelected && (
+                      <div data-testid="mobile-selected-checkpoint-detail" className="rounded-[18px] border border-foreground/8 bg-background/92 p-4 shadow-sm xl:hidden">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager recommendation</p>
+                        <p className="mt-2 text-[14px] font-bold leading-snug text-foreground">{checkpoint.managerRecommendation}</p>
+                        <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/72">{checkpoint.managerRead}</p>
+                        <div className="mt-4 grid gap-2">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Required task results</p>
+                            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55">{resolvedCount}/{checkpoint.requiredTaskIds.length}</span>
+                          </div>
+                          {checkpoint.requiredTaskIds.map((taskId) => {
+                            const task = taskRows.find((row) => row.id === taskId);
+                            const result = taskResultById.get(taskId);
+                            return (
+                              <div key={taskId} className="flex min-w-0 items-center justify-between gap-3 rounded-[12px] border border-foreground/7 bg-foreground/[0.025] px-3 py-2">
+                                <span className="min-w-0 truncate text-[12px] font-semibold text-foreground/78">{task?.title ?? taskId}</span>
+                                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", result ? "bg-brand-accent/12 text-brand-accent" : "bg-foreground/[0.06] text-muted-foreground/60")}>{result?.status ?? "pending"}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <p className="mt-4 text-[12px] font-bold leading-relaxed text-brand-accent">{checkpoint.nextAction}</p>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -3019,14 +3174,14 @@ const MissionsWorkspace = ({
 
   return (
   <WorkspaceShell eyebrow="Artist work" title="Missions" onBack={onBack}>
-      <div className="grid gap-10 xl:grid-cols-[260px_1fr] items-start">
-        <aside className="sticky top-12 flex flex-col gap-8 max-h-[calc(100vh-120px)] overflow-y-auto pr-2">
+      <div className="grid items-start gap-5 xl:grid-cols-[260px_1fr] xl:gap-10">
+        <aside className="flex flex-col gap-4 overflow-x-auto pb-1 xl:sticky xl:top-12 xl:max-h-[calc(100vh-120px)] xl:overflow-y-auto xl:pr-2">
           <div className="space-y-4">
              <div className="flex items-center justify-between px-1">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Active</p>
                 <span className="text-[10px] font-bold text-muted-foreground/30">{activeMissions.length}</span>
              </div>
-             <div className="flex flex-col gap-0.5">
+             <div data-testid="mobile-mission-switcher" className="flex gap-2 overflow-x-auto pb-1 xl:flex-col xl:gap-0.5 xl:overflow-visible xl:pb-0">
                 {activeMissions.map((mission) => {
                   const isSelected = selectedMission.id === mission.id;
                   const statusColor = mission.status === "blocked" ? "bg-warning" : mission.status === "review" ? "bg-amber-500" : "bg-brand-accent";
@@ -3035,7 +3190,7 @@ const MissionsWorkspace = ({
                       key={mission.id}
                       onClick={() => setSelectedMissionId(mission.id)}
                       className={cn(
-                        "group flex w-full flex-col gap-1 rounded-xl px-4 py-3 text-left transition-all",
+                        "group flex min-w-[220px] flex-col gap-1 rounded-xl px-4 py-3 text-left transition-all xl:w-full xl:min-w-0",
                         isSelected ? "bg-foreground/5" : "hover:bg-foreground/[0.02] opacity-60 hover:opacity-100",
                       )}
                     >
@@ -3051,7 +3206,7 @@ const MissionsWorkspace = ({
                 })}
              </div>
           </div>
-          <div className="space-y-4">
+          <div className="hidden space-y-4 xl:block">
              <div className="flex items-center justify-between px-1">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Completed</p>
                 <span className="text-[10px] font-bold text-muted-foreground/30">{archivedMissions.length}</span>
@@ -3078,7 +3233,17 @@ const MissionsWorkspace = ({
         </aside>
 
         <div className="min-w-0 space-y-5">
-          <section data-testid="mission-command-bar" className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+          <aside data-testid="mission-surface-rail" className="rounded-[20px] border border-foreground/8 bg-background/85 p-3 shadow-sm xl:hidden">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Mission work</p>
+            <div data-testid="mobile-mission-tabs" className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <MissionSurfaceButton icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} things to do`} onClick={() => onWorkspace("tasksWorkspace")} />
+              <MissionSurfaceButton icon={Gauge} title="Checkpoints" meta="9 review points" onClick={() => onWorkspace("testLabWorkspace")} />
+              <MissionSurfaceButton icon={FileText} title="Notes" meta={`${selectedMission.briefs} agent handoffs`} onClick={() => onWorkspace("briefsWorkspace")} />
+              <MissionSurfaceButton icon={FileCheck2} title="Memory" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
+            </div>
+          </aside>
+
+          <section data-testid="mission-command-bar" className="rounded-[20px] border border-foreground/8 bg-background/85 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission overview</p>
               <span className={cn(
@@ -3091,15 +3256,15 @@ const MissionsWorkspace = ({
               </span>
               <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">{selectedMission.review}</span>
             </div>
-            <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:gap-5">
               <div className="min-w-0">
-                <h3 className="font-display text-[30px] font-bold leading-tight text-foreground tracking-tight">{selectedMission.title}</h3>
+                <h3 className="font-display text-[24px] font-bold leading-tight tracking-tight text-foreground lg:text-[30px]">{selectedMission.title}</h3>
                 <p className="mt-2 max-w-3xl text-[14px] font-semibold leading-relaxed text-foreground/72">{selectedMission.summary}</p>
                 <div className="mt-4 h-1.5 max-w-xl overflow-hidden rounded-full bg-foreground/8">
                   <div className={cn("h-full rounded-full transition-all duration-1000", selectedMission.status === "blocked" ? "bg-warning" : "bg-brand-accent")} style={{ width: `${selectedMission.progress}%` }} />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2 lg:gap-3">
                 <ArtifactField label="Progress" value={`${selectedMission.progress}%`} />
                 <ArtifactField label="Needs attention" value="Rights & Metadata checkpoint" />
                 <ArtifactField label="Manager call" value={missionReview.outcome} />
@@ -3109,6 +3274,20 @@ const MissionsWorkspace = ({
           </section>
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+            <aside className="hidden rounded-[20px] border border-foreground/8 bg-background/85 p-3 shadow-sm xl:order-last xl:sticky xl:top-6 xl:block xl:self-start">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Mission work</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-1">
+                <MissionSurfaceButton icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} things to do`} onClick={() => onWorkspace("tasksWorkspace")} />
+                <MissionSurfaceButton icon={Gauge} title="Checkpoints" meta="9 review points" onClick={() => onWorkspace("testLabWorkspace")} />
+                <MissionSurfaceButton icon={FileText} title="Notes" meta={`${selectedMission.briefs} agent handoffs`} onClick={() => onWorkspace("briefsWorkspace")} />
+                <MissionSurfaceButton icon={FileCheck2} title="Memory" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
+              </div>
+              <div className="mt-4 rounded-[16px] border border-[#f97316]/20 bg-[#f97316]/10 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#c2410c]">Current blocker</p>
+                <p className="mt-2 text-[13px] font-bold leading-snug text-[#9a3412]">Split approval is still missing.</p>
+              </div>
+            </aside>
+
             <section className="rounded-[24px] border border-brand-accent/15 bg-brand-accent/[0.035] p-5 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
@@ -3136,20 +3315,6 @@ const MissionsWorkspace = ({
                 <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/80">{missionReview.nextTaskCreated}</p>
               </div>
             </section>
-
-            <aside data-testid="mission-surface-rail" className="rounded-[24px] border border-foreground/8 bg-background/85 p-4 shadow-sm xl:sticky xl:top-6 xl:self-start">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Mission surfaces</p>
-              <div className="mt-4 grid gap-2">
-                <MissionSurfaceButton icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} things to do`} onClick={() => onWorkspace("tasksWorkspace")} />
-                <MissionSurfaceButton icon={Gauge} title="Checkpoints" meta="9 review points" onClick={() => onWorkspace("testLabWorkspace")} />
-                <MissionSurfaceButton icon={FileText} title="Notes" meta={`${selectedMission.briefs} agent handoffs`} onClick={() => onWorkspace("briefsWorkspace")} />
-                <MissionSurfaceButton icon={FileCheck2} title="Memory" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
-              </div>
-              <div className="mt-4 rounded-[16px] border border-[#f97316]/20 bg-[#f97316]/10 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#c2410c]">Current blocker</p>
-                <p className="mt-2 text-[13px] font-bold leading-snug text-[#9a3412]">Split approval is still missing.</p>
-              </div>
-            </aside>
           </div>
 
           <div className="border-t border-foreground/5 pt-4">

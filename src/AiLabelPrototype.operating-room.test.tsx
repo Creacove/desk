@@ -20,6 +20,66 @@ afterEach(() => {
 });
 
 describe("AiLabelPrototype Label HQ operating room", () => {
+  it("exposes a mobile app shell with bottom navigation while keeping the desktop rail for larger screens", () => {
+    enterLabelHq();
+
+    const desktopRail = screen.getByRole("navigation", { name: /record label navigation/i });
+    expect(desktopRail).toHaveClass("hidden", "lg:flex");
+
+    const mobileTopBar = screen.getByTestId("mobile-app-topbar");
+    expect(mobileTopBar).toHaveClass("lg:hidden");
+    expect(mobileTopBar).toHaveTextContent(/ordersounds/i);
+    expect(mobileTopBar).toHaveTextContent(/label hq/i);
+
+    const mobileNav = screen.getByRole("navigation", { name: /mobile label navigation/i });
+    expect(mobileNav).toHaveClass("lg:hidden");
+    expect(screen.getByRole("button", { name: /^hq$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^missions$/i }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /^manager$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^team$/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^profile$/i })).toBeInTheDocument();
+  });
+
+  it("keeps the core Label HQ workflow reachable in the mobile density layout", () => {
+    enterLabelHq();
+
+    expect(screen.getByTestId("mobile-priority-stack")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-priority-stack")).toHaveTextContent(/needs attention/i);
+    expect(screen.getByTestId("mobile-priority-stack")).toHaveTextContent(/active missions/i);
+    expect(screen.getByTestId("mobile-team-strip")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-team-strip")).toHaveTextContent(/team readiness/i);
+    expect(screen.getByText(/today's brief/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /talk to manager/i })).toBeInTheDocument();
+  });
+
+  it("uses compact mobile drill-down patterns for team, missions, tasks, and checkpoints", () => {
+    enterLabelHq();
+
+    fireEvent.click(screen.getByRole("button", { name: /^team$/i }));
+    expect(screen.getByTestId("mobile-staff-roster")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-staff-roster")).toHaveTextContent(/helps with/i);
+    fireEvent.click(screen.getByRole("button", { name: /marketing lead/i }));
+    expect(screen.getByText(/what this specialist needs/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /^missions$/i }).at(-1)!);
+    expect(screen.getByTestId("mobile-mission-switcher")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-mission-tabs")).toHaveTextContent(/tasks/i);
+    expect(screen.getByTestId("mobile-mission-tabs")).toHaveTextContent(/checkpoints/i);
+    expect(
+      screen.getByTestId("mobile-mission-tabs").compareDocumentPosition(screen.getByText(/manager check-in/i)),
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    fireEvent.click(screen.getAllByText(/^tasks$/i)[0].closest("button")!);
+    expect(screen.getByTestId("mobile-task-stepper")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-task-stepper")).toHaveTextContent(/release strategy/i);
+    expect(screen.getAllByText(/checkpoint link/i).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    fireEvent.click(screen.getAllByText(/^checkpoints$/i)[0].closest("button")!);
+    expect(screen.getByTestId("mobile-checkpoint-list")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-selected-checkpoint-detail")).toHaveTextContent(/manager recommendation/i);
+    expect(screen.getByTestId("checkpoint-inspector")).toHaveTextContent(/manager recommendation/i);
+  }, 15000);
+
   it("captures Artist Direction as long-form setup context and carries it into Label HQ", () => {
     render(<AiLabelPrototype />);
     fireEvent.click(screen.getByRole("button", { name: /continue to artist context/i }));
@@ -42,10 +102,10 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByRole("navigation", { name: /record label navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^label hq$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^missions$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^missions$/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^settings$/i })).toBeInTheDocument();
     expect(screen.queryByText(/notifications/i)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^manager$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^manager$/i })).toBeInTheDocument();
     expect(screen.queryByText(/^evidence$/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^review$/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/artist profile/i)).not.toBeInTheDocument();
@@ -85,12 +145,12 @@ describe("AiLabelPrototype Label HQ operating room", () => {
   it("keeps Label HQ sidebar actions wired to durable prototype surfaces", () => {
     enterLabelHq();
 
-    fireEvent.click(screen.getByRole("button", { name: /^missions$/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /^missions$/i })[0]);
     expect(screen.getByRole("heading", { name: /^missions\.?$/i })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /record label navigation/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^label hq$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^missions$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^missions$/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^settings$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^settings$/i }));
@@ -161,7 +221,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     enterLabelHq();
     fireEvent.click(screen.getByRole("button", { name: /release night bus on june 12/i }));
 
-    fireEvent.click(screen.getByText(/^notes$/i).closest("button")!);
+    fireEvent.click(screen.getAllByText(/^notes$/i)[0].closest("button")!);
     expect(screen.getByText(/Manager -> Marketing Lead/i)).toBeInTheDocument();
     expect(screen.getByText(/Creator seeding request/i)).toBeInTheDocument();
     expect(screen.getByText(/Build the creator target list around night-drive/i)).toBeInTheDocument();
@@ -174,7 +234,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.queryByText(/^Linked mission$/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
-    fireEvent.click(screen.getByText(/^memory$/i).closest("button")!);
+    fireEvent.click(screen.getAllByText(/^memory$/i)[0].closest("button")!);
     expect(screen.getAllByText(/Mission memory/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/living recap of the mission/i)).toBeInTheDocument();
     expect(screen.getByText(/original request/i)).toBeInTheDocument();
@@ -239,14 +299,14 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/preserved the Spotify pitch window/i)).toBeInTheDocument();
     expect(screen.queryByText(/what you need to do next/i)).not.toBeInTheDocument();
     expect(screen.getByText(/next task created/i)).toBeInTheDocument();
-    expect(screen.getByText(/^tasks$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^checkpoints$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^notes$/i)).toBeInTheDocument();
-    expect(screen.getByText(/^memory$/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^tasks$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^checkpoints$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^notes$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^memory$/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Mission Profile/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/full log/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByText(/^tasks$/i).closest("button")!);
+    fireEvent.click(screen.getAllByText(/^tasks$/i)[0].closest("button")!);
     expect(screen.getByText(/Release tasks/i)).toBeInTheDocument();
     expect(screen.getByText(/Checkpoint path/i)).toBeInTheDocument();
     expect(screen.getByTestId("task-checkpoint-chain-release-strategy")).toHaveAttribute("aria-current", "true");
@@ -277,7 +337,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/Create urgent split approval task/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
-    fireEvent.click(screen.getByText(/^checkpoints$/i).closest("button")!);
+    fireEvent.click(screen.getAllByText(/^checkpoints$/i)[0].closest("button")!);
 
     expect(screen.getByText(/mission checkpoints/i)).toBeInTheDocument();
     expect(screen.getByText(/Mission progress map/i)).toBeInTheDocument();
