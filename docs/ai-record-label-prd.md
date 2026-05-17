@@ -27,13 +27,21 @@ The visible prototype contract is:
 - After setup, the user enters `Label HQ`.
 - The durable post-setup sidebar contains `Label HQ`, `Staff`, `Missions`, and bottom-pinned `Settings`. Manager is not a top-level nav item. Evidence is not a top-level nav item. Review is not a top-level nav item.
 - `Settings` currently opens the Artist Profile workspace.
-- Label HQ contains a top title, `Today's Brief`, `The Staff`, `Active missions`, and `Flagged for you`.
+- Label HQ contains a top title, `Today's Operating Read`, `The Staff`, `Active missions`, and `Intelligence Alerts`.
 - `Today's Brief` is a full narrative brief, not an expandable brief and not a metric-card dashboard.
-- The main brief headline is: `Momentum is building. Spend isn't cleared yet.`
-- The directive is: keep the content sprint going, cap spend at `$1,850`, and let the `72-hour review` decide whether to scale.
+- The prototype's primary active mission is a Release War Room mission: `Release Night Bus on June 12`.
+- The Manager creates that mission from the user request `I want to drop a new song next week` and changes the plan by moving the release to `Friday, June 12, 2026` to protect delivery, DSP pitching, creator seeding, press, rights/metadata QA, and launch execution.
 - `The Staff` shows five agents: Manager online, plus Marketing Lead, Sync & Deals, Touring Agent, and Finance/Rights locked.
-- `Flagged for you` shows three items: `$1,850 test budget needs your approval`, `Spotify for Artists CSV would raise confidence`, and `72-hour signal review is scheduled`.
-- Active missions show compact mission rows/cards with progress, review point, task count, and brief count.
+- Intelligence alerts and mission surfaces should point to release-room blockers, including split sheet approval, distributor delivery, creator outreach, press/EPK readiness, and post-release signal reads.
+- Active missions show compact mission rows/cards with progress, review point, task count, checkpoint count, and note count.
+- The Missions workspace must make the operating feedback loop visible through `Tasks`, `Checkpoints`, `Notes`, and `Memory`. These are not separate boards; they are connected inputs into the next Manager review.
+- Mission history should be presented as `Memory`, a living mission recap that explains what happened across tasks, checkpoints, notes, decisions, blockers, evidence gaps, and the next Manager review.
+- User-facing tasks must be plain artist/team actions, such as `Confirm split sheet`, `Submit Spotify for Artists pitch`, `Build TikTok creator target list`, `Prepare press angle and EPK`, `Approve launch-week content pack`, or `Verify release live across platforms`. Do not assign humans vague analytics work unless the UI explains exactly what to open, upload, approve, contact, decide, or verify.
+- Task completion must produce task results, not just a done state. The AI should interpret task results in the background and feed mission checkpoints, mission reviews, and mission memory.
+- Blocked or weak task results must be visible as Manager reviews and may revise tasks, change checkpoints, move mission dates, or change the mission path.
+- Internal validation tests may exist as rules and scoring logic, but `Checkpoints` are the primary user-facing surface for AI-owned progress checks. A checkpoint is not a human task.
+- Agent-to-agent communication is shown as read-only `Notes`, not an approval queue. Users can inspect notes; they do not approve notes unless the note creates a human-facing task, draft, budget action, or external recommendation.
+- Artist profile remains visible user context. Artist operating memory is a deeper AI-readable memory layer that should influence decisions without becoming a generic visible profile page.
 - Recent conversations are passed into Label HQ and Manager Office and remain first-class thread objects.
 
 Backend implementation must mirror this prototype contract. Do not add backend concepts that create different primary navigation, a generic dashboard, a global Evidence page, or a top-level Manager area unless the prototype is intentionally changed first.
@@ -229,7 +237,7 @@ The AI Manager owns day-to-day career management:
 - plan review
 - artist check-ins
 - mission creation
-- task/test follow-up
+- task/checkpoint follow-up
 - department briefs while other agents are locked
 - referral to future specialist agents
 
@@ -527,42 +535,46 @@ Required structure:
 - left mission stack for selecting missions
 - selected mission detail surface on the right
 - mission status, review point, summary, and mission health
-- integrated work lanes for Tasks, Test Lab, Briefs, and Record
+- integrated work lanes for Tasks, Checkpoints, Notes, and Memory
 - current operating read explaining how the lanes connect to the Manager's decision
 
 The selected mission should visually dominate the workspace. The mission list is navigation; the mission detail is the working object.
 
-### Tasks, Test Lab, Briefs, And Record
+### Tasks, Checkpoints, Notes, And Memory
 
 Tasks are owner-ready work items with purpose, dependency, linked evidence, approval state, steps, and completion notes. Tasks that require approval cannot be marked done until approved.
 
-The Test Lab must feel like a real validation test. It must show:
+Checkpoints are AI-owned progress checks tied to the mission and, where relevant, linked to specific tasks. Checkpoints can be powered by internal validation tests, but the visible user language must be `Checkpoints`.
 
-- hypothesis
-- capped budget and budget mode
-- measurable signals watched
-- intermediate checkpoints
-- decision rule
-- approval state
-- Approve cap, Edit amount, and Reject actions
+Checkpoints must show:
 
-Briefs are helpful agent-to-agent communications created by Manager runs, specialist runs, or mission activity. They should read like clear human operational messages, not complaint threads or generic memos.
+- the plain-language question being checked
+- status: Waiting for setup, Watching signal, Needs review, Met, or Needs change
+- linked task when a human action unlocks the checkpoint
+- what the AI is watching
+- decision rule or next review rule
+- explicit language that the user does not need to track analytics manually
 
-Briefs should be prose-led. Do not break every sentence into boxed fields like Message, Source, Next Action, and Linked Mission. The AI should write a concise operational update that a human can skim naturally, with source basis and next action woven into the presentation.
+Budget approval remains a task. A checkpoint can say the budget cap is still waiting, but the human-facing action must live in Tasks.
 
-Briefs must show:
+Notes are helpful agent-to-agent communications created by Manager runs, specialist runs, or mission activity. They should read like clear operational handoffs, not complaint threads, generic memos, or approval cards.
+
+Notes must show:
 
 - sender and recipient, such as Manager -> Marketing Lead or Finance/Rights -> Manager
-- brief type, such as request, run finding, source request, or future specialist request
+- note type, such as request, run finding, source request, or future specialist request
 - what was asked, found, or handed off
-- source basis
-- recommended next action
+- why it matters
+- evidence used
 - linked mission
-- status or approval/export affordance
+- resulting change: Filed to memory, Created task, Updated checkpoint, or No action yet
+- status and export affordance
 
-Mission Record is the living AI-readable memory for the selected mission. It combines goal, current state, task updates, test status, brief updates, review events, decisions, blockers, evidence gaps, and next recommendation. Review / What Changed is not a top-level destination; it becomes part of the mission record when new evidence changes or confirms the recommendation.
+Notes are read-only in the mission UI. Users do not approve agent-to-agent notes. If a note produces a human-facing action, the Manager creates a task, draft, budget request, or external recommendation for approval.
 
-Mission Record should read like a mission intelligence note, not a grid of fields. It should explain what happened, what the test/task/brief activity changed, what is still unresolved, and what the next useful move is. Dense proof can sit at the end, but the main record should be readable in prose.
+Memory is the living AI-readable recap for the selected mission. It combines goal, current state, task updates, checkpoint status, note updates, review events, decisions, blockers, evidence gaps, what would change the recommendation, and next review timing. Review / What Changed is not a top-level destination; it becomes part of Memory when new evidence changes or confirms the recommendation.
+
+Memory should read like a mission intelligence note, not a grid of fields. It should explain what happened, what the task/checkpoint/note activity changed, what is still unresolved, and what the next useful move is. Dense proof can sit at the end, but the main record should be readable in prose.
 
 ### Evidence Drawer And Contextual Sources
 
@@ -598,7 +610,7 @@ Manager response:
 
 > This is mainly a Finance/Rights question. I can give a directional read from available campaign and catalog evidence, but the Finance/Rights agent can inspect royalty statements, splits, payout timing, ownership, and revenue sources. I will prepare the Finance/Rights context: active release, recent campaign, Track A focus, and the revenue concern.
 
-If the specialist is active, the specialist room opens with context already loaded. If locked, the Manager creates an AgentBrief and explains unlock requirements.
+If the specialist is active, the specialist room opens with context already loaded. If locked, the Manager creates an AgentNote and explains unlock requirements.
 
 Referral context must include:
 
@@ -1246,7 +1258,7 @@ Prototype UI requirements:
 - opens into the Missions Workspace
 - can be selected from a mission stack
 - shows status, progress/health, summary, review point, and work counts
-- exposes Tasks, Test Lab, Briefs, and Record as connected work lanes
+- exposes Tasks, Checkpoints, Notes, and Memory as connected work lanes
 - explains how the work lanes connect to the Manager's recommendation
 
 ### ManagerTask
@@ -1279,19 +1291,23 @@ Approval states:
 Prototype UI requirements:
 
 - each task shows owner, deadline, purpose, dependency, linked evidence, steps, and completion note input
+- task titles and steps must use plain artist/team language
+- tasks assigned to humans must be concrete actions the user can actually perform, such as posting a TikTok, approving a budget, uploading a file, choosing an asset, answering a question, or confirming availability
+- tracking, scoring, comparison, and interpretation should be handled by the AI unless the human is explicitly being asked to connect or upload the data source
 - approval-required tasks expose Approve and Mark Done actions
 - Mark Done is disabled until approval is granted when approval is required
 - completion state changes should remain scoped to the task and mission
 
-### ManagerTest
+### MissionCheckpoint
 
-A test validates evidence before the team spends more money or changes strategy.
+A mission checkpoint is an AI-owned progress check that validates whether a mission is working before the team spends more money or changes strategy. Internal test logic can power checkpoints, but the visible user-facing surface is `Checkpoints`.
 
 Fields:
 
-- test_id
-- hypothesis
-- reason_for_test
+- checkpoint_id
+- mission_id
+- plain_language_question
+- reason_for_checkpoint
 - channel
 - asset
 - audience_or_market_target
@@ -1299,53 +1315,54 @@ Fields:
 - budget_mode
 - window_start
 - window_end
-- intermediate_checkpoints
 - metric_threshold
 - stop_rule
 - continue_rule
 - scale_rule
-- owner_role
-- status
+- linked_task_ids
+- ai_signals_watched
+- status: waiting_for_setup, watching_signal, needs_review, met, needs_change
 - evidence_to_measure
 - review_date
 
-A 10-day test should include setup confirmation, early execution check, first signal review, midpoint adjustment, and final decision review.
+A 10-day validation path should include setup confirmation, early execution check, first signal review, midpoint adjustment, and final decision review.
 
 Prototype UI requirements:
 
-- Test Lab is a dedicated mission-linked workspace
-- the test shows hypothesis, capped budget, budget mode, signals watched, and decision rule
-- checkpoints are visibly staged and can show setup/signal/complete progress
-- budget cap has an approval state: pending, approved, editing requested, or rejected
-- approval actions include Approve cap, Edit amount, and Reject
-- approving the cap records prototype approval only; it must not imply external ad spend
+- Checkpoints is a dedicated mission-linked workspace
+- the checkpoint surface shows the plain-language question, capped budget if relevant, what the AI is checking, linked task, and the Manager's decision rule
+- the checkpoint surface must explicitly state when the user does not need to track metrics manually
+- checkpoints are visibly staged and can show Waiting for setup, Watching signal, Needs review, Met, or Needs change
+- budget cap approval is represented as a task; approving the cap must not be hidden inside Checkpoints
+- a checkpoint may say that budget setup is waiting, but it does not own the human approval action
 
-### AgentBrief
+### AgentNote
 
-Agents coordinate by producing helpful briefs for each other. The Manager can request specialist runs/tools, and specialists can proactively brief the Manager when a run finds something useful. These briefs are operational handoffs, not agents complaining to each other.
+Agents coordinate by producing helpful notes for each other. The Manager can request specialist runs/tools, and specialists can proactively note the Manager when a run finds something useful. These notes are operational handoffs, not agents complaining to each other and not a user approval queue.
 
 Fields:
 
-- brief_id
+- note_id
 - sender_agent
 - recipient_agent
-- brief_type
+- note_type
 - subject
 - message
-- source_basis
-- recommended_next_action
+- why_it_matters
+- evidence_used
+- resulting_change: filed_to_memory, created_task, updated_checkpoint, no_action_yet
 - linked_mission_id
 - owner_role
-- approval_state
 - status
 - due_date_or_checkpoint
 - linked_referral_id
 
 Prototype UI requirements:
 
-- Briefs Workspace presents agent-to-agent updates, requests, run findings, and handoffs in a human-readable operational format
-- each brief shows route, brief type, subject, message, source basis, recommended next action, linked mission, and status/approval state
-- briefs can be approved for use or exported in the prototype
+- Notes Workspace presents agent-to-agent updates, requests, run findings, and handoffs in a human-readable operational format
+- each note shows route, note type, subject, message, why it matters, evidence used, linked mission, resulting change, and status
+- notes can be exported in the prototype
+- notes cannot be approved for use; if the user needs to approve something, the Manager must create a task, draft, budget action, or external recommendation
 
 ### ArtistCheckIn
 
@@ -1364,7 +1381,7 @@ Fields:
 
 ### MissionRecord
 
-Stores the living memory of a mission. This is what the AI reads to understand the mission before answering follow-up questions, updating work, or recommending the next move.
+Stores the living memory of a mission. This is what the AI reads to understand the mission before answering follow-up questions, updating work, or recommending the next move. The visible label is `Memory`.
 
 Fields:
 
@@ -1373,18 +1390,20 @@ Fields:
 - mission_goal
 - current_state
 - task_updates
-- test_status
-- test_results
-- brief_updates
+- checkpoint_status
+- checkpoint_results
+- note_updates
 - review_events
+- decisions_already_made
 - blockers
+- missing_evidence
+- what_would_change_recommendation
 - next_recommendation
+- next_review_timing
 - final_call
 - alternatives_rejected
 - confidence
 - evidence_used
-- missing_evidence
-- what_would_change_decision
 - review_date
 - created_by
 - quality_gate_result
@@ -1392,9 +1411,183 @@ Fields:
 
 Prototype UI requirements:
 
-- Record lives primarily in the mission workspace/drawer as supporting memory
-- it must show mission goal/current state, final call, test read, confidence, evidence used, alternatives rejected, missing evidence, what would change the decision, review date, override state, quality gate result, and linked mission
+- Memory lives primarily in the mission workspace/drawer as supporting memory
+- it must show current mission read, task status summary, checkpoint status summary, agent notes that changed the mission, decisions already made, blockers and missing evidence, what would change the Manager's recommendation, next review timing, confidence, evidence used, alternatives rejected, override state, quality gate result, and linked mission
 - it supports the Manager answer and future AI context, but should not replace the Manager answer
+
+### MissionEvent
+
+An immutable event ledger item for everything that changes mission understanding.
+
+Fields:
+
+- event_id
+- artist_id
+- mission_id
+- event_type: manager_run, task_created, task_approved, task_completed, task_result_added, test_checkpoint_reached, test_result_added, evidence_added, brief_created, review_created, recommendation_changed, user_override, mission_paused, mission_cancelled, mission_completed, successor_mission_created
+- source_object_type
+- source_object_id
+- event_summary
+- evidence_ids
+- created_by: user, manager, system, specialist_agent
+- created_at
+- audit_metadata
+
+Behavior:
+
+- Mission events are append-only.
+- Mission events are used for provenance, auditability, and reconstructing how a recommendation changed.
+- The AI should not rely only on the compressed mission record when exact sequence matters; it should retrieve the event ledger as supporting context.
+
+### TaskResult
+
+A task result captures what changed because a task was completed, blocked, missed, rejected, or revised.
+
+Fields:
+
+- task_result_id
+- task_id
+- mission_id
+- result_status: completed, blocked, missed, rejected, revised
+- result_summary
+- user_note
+- manager_interpretation
+- evidence_ids
+- effect_on_mission: strengthened_thesis, weakened_thesis, unblocked_work, created_risk, no_material_change, requires_review
+- recommended_follow_up
+- created_at
+
+Behavior:
+
+- Marking a task done must either collect or generate a task result.
+- Task results feed mission review and may update mission checkpoints.
+- A weak or failed task result should create a revised task or recommendation instead of pretending progress happened.
+
+### CheckpointResult
+
+A checkpoint result captures what a validation checkpoint proved or failed to prove.
+
+Fields:
+
+- checkpoint_result_id
+- checkpoint_id
+- mission_id
+- result_summary
+- measured_signals
+- threshold_read
+- stop_continue_scale_recommendation
+- confidence
+- evidence_ids
+- created_at
+
+Behavior:
+
+- Checkpoint results are decision inputs, not decorative status updates.
+- Each checkpoint must be able to recommend continue, modify, stop, replace checkpoint path, or create a new mission.
+- Scale recommendations require stronger evidence than checkpoint-continuation recommendations.
+
+### MissionReview
+
+A mission review is the Manager's structured reassessment of an active mission after a meaningful event or scheduled run.
+
+Triggers:
+
+- task result added
+- checkpoint reached
+- new evidence arrives
+- daily operating review
+- user override
+- budget/profile/source change
+- conversation adds material context
+- mission review date arrives
+
+Fields:
+
+- mission_review_id
+- mission_id
+- artist_id
+- trigger_type
+- trigger_object_id
+- previous_recommendation
+- new_recommendation
+- recommendation_changed: boolean
+- outcome: continue_mission, modify_task, replace_task, create_task, pause_task, continue_test, replace_test, stop_test, create_new_mission, pause_mission, cancel_mission, archive_mission, ask_user_for_approval, update_artist_memory
+- reasoning
+- evidence_used
+- task_changes
+- test_changes
+- mission_changes
+- artist_memory_updates
+- approval_required
+- next_review_date
+- quality_gate_result
+
+Behavior:
+
+- Every mission review must update mission memory.
+- Mission review may propose changes automatically, but human approval is required for expensive, external, sensitive, legal, financial, or reputation-affecting actions.
+- A mission can be cancelled or replaced only with a recorded reason and successor path where appropriate.
+
+### MissionMemorySummary
+
+The compressed AI-readable summary of the mission's current operating truth.
+
+Fields:
+
+- mission_id
+- current_thesis
+- current_state
+- latest_findings
+- active_blockers
+- active_risks
+- open_tasks
+- active_tests
+- latest_test_read
+- current_recommendation
+- next_best_action
+- decision_change_conditions
+- do_not_do
+- confidence
+- updated_from_event_ids
+- updated_at
+
+Behavior:
+
+- This summary is updated after every mission review.
+- Manager runs should load this summary before answering mission-related questions.
+- The user-facing Mission Record may show a readable version, but the internal summary is optimized for AI context retrieval.
+
+### ArtistOperatingMemory
+
+Artist operating memory is separate from the visible Artist Profile. It is the long-running strategic memory the AI uses to manage the artist over time.
+
+Fields:
+
+- artist_id
+- current_strategy_thesis
+- current_focus_asset
+- active_goal_stack
+- career_stage_read
+- proven_patterns
+- disproven_patterns
+- market_learning
+- audience_learning
+- budget_learning
+- team_capacity_learning
+- do_not_repeat
+- unresolved_questions
+- active_risks
+- completed_mission_lessons
+- user_preferences_and_overrides
+- last_updated_from_mission_ids
+- updated_at
+
+Behavior:
+
+- Artist operating memory is not a primary visible UI surface in V1.
+- It should influence Today’s Brief, Manager answers, mission creation, mission reviews, and quality gates.
+- Important mission reviews may update artist memory when the lesson matters beyond one mission.
+- The AI should distinguish stable profile facts from learned operating memory.
 
 ### WorkDraft
 
@@ -1605,17 +1798,18 @@ Manager V1 can create Sync/Deals briefs and flag missing metadata or rights read
 
 ## 23. Data Model Requirements
 
-Current prototype status: the repository does not implement these tables yet. All artist, mission, evidence, agent, brief, and conversation data is held inside the React prototype as local in-memory mock/demo data. A production backend must persist the same objects and relationships that the prototype exposes.
+Current prototype status: the repository does not implement these tables yet. All artist, mission, evidence, agent note, and conversation data is held inside the React prototype as local in-memory mock/demo data. A production backend must persist the same objects and relationships that the prototype exposes.
 
 Backend implementation must preserve the current prototype object boundaries:
 
 - `ArtistProfile` stores identity, market, genre, release, goal, budget, stage, and social handles.
 - `Agent` stores name, title, status, purpose, tools, evidence needs, connected sources, required sources, optional sources, source actions, and the Manager-prepared output available while locked.
-- `Mission` stores title, status, progress, task/test/brief counts, review point, and summary.
+- `Mission` stores title, status, progress, task/checkpoint/note counts, review point, and summary.
 - `ManagerTask` stores owner, deadline, approval state, purpose, steps, linked evidence ids, dependency, and rationale.
+- `MissionCheckpoint` stores AI-owned mission progress checks, linked tasks, status, watched signals, thresholds, and review rules.
 - `EvidenceItem` stores source, source kind, type, subject, time window, metric/value, lens, freshness, confidence, provenance, limitation, and raw snapshot reference.
-- `DepartmentBrief` stores route, brief type, subject, prose message, source basis, recommended action, status, and linked mission.
-- `MissionRecord` stores current state, final call, AI memory, latest test result, alternatives rejected, confidence, missing evidence, decision-change condition, review date, quality gate, and override state.
+- `AgentNote` stores route, note type, subject, prose message, why it matters, evidence used, resulting change, status, and linked mission.
+- `MissionRecord` stores current mission read, task status, checkpoint status, agent notes that changed the mission, decisions, blockers, missing evidence, recommendation-change condition, next review timing, confidence, quality gate, and override state.
 - `WorkDraft` stores type, title, and body.
 - `ConversationThread` stores topic, last update, status, prompt, summary, messages, and linked work context.
 
@@ -1643,9 +1837,15 @@ Suggested core tables:
 - manager_evidence_used
 - manager_missions
 - manager_tasks
-- manager_tests
-- department_briefs
+- manager_task_results
+- mission_checkpoints
+- mission_checkpoint_results
+- mission_events
+- mission_reviews
+- mission_memory_summaries
+- agent_notes
 - artist_checkins
+- artist_operating_memory
 - decision_records
 - work_drafts
 - agent_referrals
@@ -1672,7 +1872,7 @@ Memory storage must include:
 
 - prior decisions
 - open tasks
-- open tests
+- open checkpoints
 - evidence used
 - prior assumptions
 - review dates
@@ -1693,9 +1893,14 @@ Implementation alignment requirements:
 
 - Artist Profile Service must power Step 1 / Identity, Step 2 / Context, and the Settings/Artist Profile workspace.
 - Manager Run Service must preserve the current gated Manager Office flow: required context questions first, then Ask Manager, then investigation, then decision package.
-- Work Product Service must create and update the same mission, task, test, brief, record, draft, and conversation objects currently shown in the prototype.
+- Work Product Service must create and update the same mission, task, checkpoint, note, memory, draft, and conversation objects currently shown in the prototype.
+- Task Result Service must turn task completion, blockage, rejection, and revision into structured results that can change checkpoints, reviews, and mission memory.
+- Checkpoint Result Service must interpret checkpoint progress against stop/continue/scale rules instead of treating checkpoints as passive progress indicators.
+- Mission Review Service must run after meaningful events and decide whether to continue, revise, pause, cancel, replace, or create mission work.
+- Mission Memory Service must maintain both immutable mission events and compressed AI-readable mission summaries.
+- Artist Operating Memory Service must maintain long-running learned context across missions without exposing it as a normal profile page.
 - Evidence Service must support contextual evidence drawers and agent source readiness. It must not require a global Evidence page.
-- Locked Agent Metadata Service must support The Staff, locked agent workspaces, connected/required/optional source readiness, and Manager-prepared briefs.
+- Locked Agent Metadata Service must support The Staff, locked agent workspaces, connected/required/optional source readiness, and Manager-prepared notes.
 - Review/Notification behavior currently appears through `Flagged for you` and the Review workspace, not through durable top-level Notifications navigation.
 
 Core services:
@@ -1709,6 +1914,7 @@ Core services:
 - Manager Run Service
 - Quality Gate Service
 - Work Product Service
+- Checkpoint Result Service
 - Memory Service
 - Referral Service
 - Locked Agent Metadata Service
@@ -1749,8 +1955,8 @@ Example response:
   "work_products": {
     "missions": ["mission_001"],
     "tasks": ["task_001", "task_002"],
-    "tests": ["test_001"],
-    "department_briefs": ["brief_001", "brief_002"],
+    "checkpoints": ["checkpoint_001"],
+    "agent_notes": ["note_001", "note_002"],
     "decision_records": ["decision_001"]
   },
   "quality_gate": {
@@ -1773,7 +1979,13 @@ Users must be able to:
 - link evidence
 - add notes
 
-Conversation updates should also be able to update work products. Example: if the user says "yes, I posted the three clips," the Manager can mark the linked task done and update the test checkpoint.
+Conversation updates should also be able to update work products. Example: if the user says "yes, I posted the three clips," the Manager can mark the linked task done and update the mission checkpoint.
+
+Any work-product update that changes operating meaning must create a mission event and usually trigger a mission review. For example:
+
+- "I posted the three clips" marks the task done, creates a task result, updates the mission checkpoint, creates a mission event, runs a mission review, and updates mission memory.
+- "The clips did not perform" marks the task result as weakening the thesis, may create a revised creative task, may stop or replace the checkpoint path, and updates artist operating memory if it teaches a reusable lesson.
+- "We decided not to spend this week" records a user override, updates budget learning in artist operating memory, blocks or revises budget tasks, and changes the next note.
 
 ## 25. AI Requirements
 
@@ -1886,22 +2098,27 @@ Current prototype expression:
 
 User:
 
-> How should we plan this release?
+> I want to drop a new song next week. What do we need to do?
 
 Manager should:
 
-- create release mission
-- build backwards calendar
-- surface DSP pitch timing
-- require content hook validation where relevant
-- create Marketing, DSP, PR, Sync & Deals, and Artist briefs
+- make a manager-grade timing call instead of accepting the requested date blindly
+- move the target date when the requested timing creates delivery, rights, DSP, creator, press, or launch-execution risk
+- create a release mission with a backwards calendar from the revised date
+- create task groups for release strategy, rights and metadata, distribution, DSP/playlist pitching, creator seeding, press/tastemakers, content/owned audience, release day, and post-release signal
+- require every task completion, blockage, rejection, or revision to create a TaskResult that the Manager reviews
+- derive checkpoint readiness from task results and watched evidence, not from manual toggles
+- create Marketing, DSP/playlist, PR/tastemaker, Sync & Deals, Finance/Rights, and Artist notes while locked specialists are not yet active
 - include post-release checkpoints at 48 hours, 7 days, 14 days, and 28 days
 
 Current prototype expression:
 
-- release planning exists as an Ask Manager prompt
-- full release war-room automation is not yet expanded in the prototype
-- if triggered, it should create a mission and agent briefs using the same mission-lane pattern
+- the primary active mission is `Release Night Bus on June 12`
+- the Manager starts from `I want to drop a new song next week` and changes the plan to `Friday, June 12, 2026`
+- the mission exposes release-room `Tasks`, `Checkpoints`, `Notes`, and `Memory`
+- tasks include split sheet confirmation, distributor package submission, Spotify pitch submission, TikTok creator target list, press/EPK package, launch content approval, release-day link verification, and 48-hour signal read
+- task reviews feed checkpoint status; for example, a blocked split sheet changes the Rights & Metadata Gate to `Needs revision`
+- Mission Memory includes the original request, the date move, task results, checkpoint reviews, mission changes, current recommendation, next best action, and append-only mission log events
 
 ### Weekly Priority
 
@@ -1938,8 +2155,14 @@ Scheduled agent runs should:
 2. Compare latest evidence against baselines.
 3. Compare evidence against prior recommendations and open tasks.
 4. Detect decision triggers from the playbook.
-5. Decide whether the change matters.
-6. Generate a brief, task update, or notification event only when warranted.
+5. Review task results, checkpoint results, notes, and mission events created since the last run.
+6. Run mission reviews for any mission whose thesis, blockers, risk, or next action may have changed.
+7. Update mission memory summaries.
+8. Update artist operating memory when a lesson matters beyond one mission.
+9. Decide whether the change matters.
+10. Generate a note, task update, checkpoint change, mission review, new mission, or notification event only when warranted.
+
+The daily operating review must not merely create a report. Its job is to keep the artist's operating system current: stale tasks should be revised, weak checkpoint paths should be stopped or replaced, stronger signals should create new follow-up work, and mission memory should stay sharp enough for the next Manager answer.
 
 Decision triggers:
 
@@ -2013,8 +2236,8 @@ Verify:
 
 Verify:
 
-- budget answers create a mission, test, tasks, briefs, and decision record
-- release answers create release mission and department briefs
+- budget answers create a mission, checkpoints, tasks, notes, and decision record
+- release answers create release mission and agent notes
 - weekly priority answers update mission/task/check-in state
 - user can approve/edit/reject/mark done
 
@@ -2042,10 +2265,10 @@ User can:
 - select missions from the mission stack and see a dominant selected mission surface
 - inspect evidence
 - approve/edit tasks and observe approval-required task blocking
-- view active tests with hypothesis, measurable signals, checkpoints, decision rule, and cap approval state
-- approve, edit, or reject the test cap
-- view agent-to-agent briefs with source basis and recommended next actions
-- view the mission record for the 72-hour signal review, test results, decisions, blockers, and next recommendation
+- view active checkpoints with AI-watched signals, linked tasks, status, decision rule, and no-manual-tracking language
+- approve, edit, or reject budget caps from Tasks, not Checkpoints
+- view read-only agent-to-agent notes with evidence used and resulting changes
+- view mission memory for the 72-hour signal review, checkpoint results, decisions, blockers, and next recommendation
 - inspect the mission record drawer
 - open Settings to inspect the Artist Profile workspace
 - return later and see memory
@@ -2204,11 +2427,11 @@ Interaction direction:
 - no morning brief made from small metric cards
 - every panel connects to action or decision
 - evidence is inspectable but not overwhelming
-- tasks/tests/briefs feel like real management artifacts
+- tasks/checkpoints/notes/memory feel like real management artifacts
 - locked agents are honest and useful
 - recent conversation rows open threads, not input-prefill shortcuts
 - mission detail screens should make the selected mission feel like the active object
-- test screens should show hypothesis, checkpoints, decision rule, and approval state
+- checkpoint screens should show the question being checked, linked tasks, AI-watched signals, status, and decision rule
 
 Primary surfaces:
 
@@ -2218,9 +2441,9 @@ Primary surfaces:
 - Manager Answer / Decision Package
 - Missions Workspace
 - Tasks Workspace
-- Test Lab
-- Briefs Workspace
-- Mission Record Drawer
+- Checkpoints Workspace
+- Notes Workspace
+- Mission Memory Drawer
 - Evidence Drawer
 - locked agent detail cards
 

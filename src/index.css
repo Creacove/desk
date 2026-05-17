@@ -566,6 +566,35 @@
     border: 2px solid hsl(var(--surface-panel));
   }
 
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+
+  .scrollbar-soft {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--foreground) / 0.18) transparent;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-track {
+    background: transparent;
+    border: 0;
+  }
+
+  .scrollbar-soft::-webkit-scrollbar-thumb {
+    background: hsl(var(--foreground) / 0.18);
+    border: 0;
+    border-radius: 999px;
+  }
+
   @keyframes shimmer {
     0% { transform: translateY(-100%); }
     100% { transform: translateY(100%); }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -121,7 +121,68 @@ type ConversationMessage = {
   reviewPoint?: string;
   whyThisCall?: string[];
   rejectedMoves?: string[];
-  workCreated?: { type: "mission" | "task" | "test"; title: string; body: string; id?: string };
+  workCreated?: { type: "mission" | "task" | "checkpoint" | "test"; title: string; body: string; id?: string };
+};
+
+type TaskResult = {
+  taskId: string;
+  status: "completed" | "blocked" | "missed" | "rejected" | "revised";
+  summary: string;
+  userNote: string;
+  interpretation: string;
+  missionEffect: string;
+  followUp: string;
+};
+
+type MissionReview = {
+  title: string;
+  outcome: string;
+  recommendation: string;
+  why: string;
+  changes: string[];
+  nextTaskCreated: string;
+  nextReview: string;
+};
+
+type ArtistOperatingMemory = {
+  strategyThesis: string;
+  knownPatterns: string[];
+  doNotRepeat: string[];
+  openQuestions: string[];
+};
+
+type ReleaseTask = {
+  id: string;
+  checkpointId: string;
+  title: string;
+  owner: string;
+  deadline: string;
+  approvalState: "not_required" | "needs approval" | "approved" | "blocked" | "active";
+  purpose: string;
+  steps: string[];
+  evidenceIds: string[];
+  dependency: string;
+  why: string;
+  riskIfLate: string;
+};
+
+type MissionCheckpoint = {
+  id: string;
+  title: string;
+  status: "Waiting on tasks" | "Ready for AI review" | "Needs revision" | "Watching signal" | "Met";
+  question: string;
+  requiredTaskIds: string[];
+  watchedSignals: string[];
+  decisionRule: string;
+  recommendation: string;
+  resultSummary: string;
+  nextAction: string;
+};
+
+type MissionEvent = {
+  type: string;
+  summary: string;
+  actor: string;
 };
 
 const artist = {
@@ -130,7 +191,7 @@ const artist = {
   genre: "Alternative R&B",
   market: "Atlanta",
   release: "Night Bus",
-  goal: "Validate the single before scale spend",
+  goal: "Release Night Bus on June 12",
   budget: "$5,000",
   stage: "Developing artist with breakout signals",
   tiktok: "@sableday",
@@ -146,8 +207,8 @@ const agents: Agent[] = [
     title: "Available now",
     status: "available",
     icon: BriefcaseBusiness,
-    purpose: "Runs the artist operating rhythm: priorities, decisions, missions, tests, check-ins, and department briefs.",
-    tools: ["Decision gates", "Mission planner", "Artist check-ins", "Quality gate"],
+    purpose: "Keeps the artist moving: priorities, decisions, missions, check-ins, and team briefs.",
+    tools: ["Decision reviews", "Mission planner", "Artist check-ins", "Quality review"],
     evidence: ["Artist profile", "catalog signals", "social evidence", "budget context", "prior decisions"],
     connectedSources: ["Spotify public identity", "Artist profile", "TikTok public signal", "YouTube public signal"],
     requiredSources: ["Spotify artist identity"],
@@ -224,19 +285,19 @@ const agents: Agent[] = [
 
 const managerQuestions = [
   {
-    id: "budget",
-    question: "Is the full $5,000 deployable, or does some need to stay reserved for creative?",
-    suggested: "Full budget is available, but keep at least $2,000 uncommitted until the test reports back.",
+    id: "date",
+    question: "Is next Friday fixed, or can the Manager move the date if the release needs more runway?",
+    suggested: "Move the date if needed. Protect pitching, creators, press, rights, and delivery quality.",
   },
   {
-    id: "capacity",
-    question: "Can the artist commit to a 10-day content sprint around Night Bus?",
-    suggested: "Yes. Sable can post daily for 10 days if the formats are low-lift and repeatable.",
+    id: "assets",
+    question: "Are the final master, artwork, distributor access, and release metadata already close?",
+    suggested: "Master and artwork are close. Metadata and split sheet still need final confirmation.",
   },
   {
-    id: "focus",
-    question: "Is Night Bus still the focus, or are we protecting the next single?",
-    suggested: "Night Bus is the focus for now. Do not split attention with the next single this week.",
+    id: "outreach",
+    question: "Do we want a real rollout with playlist, creator, press, and owned-audience outreach?",
+    suggested: "Yes. Treat this as a proper release, not a rushed upload.",
   },
 ];
 
@@ -248,20 +309,20 @@ const investigationSteps = [
   "Comparing attention, participation, conversion, and leverage",
   "Checking budget, timing, rights, and team-capacity red flags",
   "Creating execution package",
-  "Running quality gate",
+  "Checking the work",
 ];
 
 const baseMissions: Mission[] = [
   {
     id: "night-bus-validation",
-    title: "Achieve Nigerian Market Breakout",
+    title: "Release Night Bus on June 12",
     status: "active",
-    progress: 18,
-    tasks: 4,
-    tests: 1,
-    briefs: 4,
-    review: "72-hour signal review",
-    summary: "Initialize the Night Bus campaign for the Lagos metropolitan area and verify demand conversion before scaling global spend.",
+    progress: 36,
+    tasks: 10,
+    tests: 9,
+    briefs: 5,
+    review: "Rights gate holding",
+    summary: "Manager moved the rushed next-Friday drop to Friday, June 12, 2026 so delivery, rights, DSP pitching, creator seeding, press, and launch execution can be handled properly.",
   },
   {
     id: "profile-completeness",
@@ -299,54 +360,146 @@ const baseMissions: Mission[] = [
   },
 ];
 
-const taskRows = [
+const taskRows: ReleaseTask[] = [
   {
-    id: "approve-budget",
-    title: "Approve capped campaign test budget",
-    owner: "Manager / artist team",
-    deadline: "Today",
-    approvalState: "needs approval",
-    purpose: "Sets the spend ceiling before any paid activation can be treated as runnable.",
-    steps: ["Confirm the maximum test cap", "Confirm the holdback amount", "Record approval before activation"],
+    id: "confirm-release-positioning",
+    checkpointId: "release-strategy",
+    title: "Confirm release date, positioning, and budget",
+    owner: "Artist / manager",
+    deadline: "D-21 / Fri May 22",
+    approvalState: "not_required",
+    purpose: "Lock the professional release path after the Manager moved the drop from next Friday to June 12.",
+    steps: ["Confirm Friday, June 12, 2026 as the new date", "Approve the song story: late-night transit confession", "Confirm the $5,000 budget guardrail and no rushed next-Friday drop"],
     evidenceIds: ["EV-ART-0007"],
-    dependency: "Artist confirms deployable budget and campaign focus.",
-    why: "The Manager cannot activate paid spend without human approval.",
+    dependency: "Artist accepts the date move and single positioning.",
+    why: "A real manager protects platform windows and team execution instead of forcing a rushed release.",
+    riskIfLate: "The team keeps planning against two different dates and every later gate becomes unreliable.",
   },
   {
-    id: "post-hooks",
-    title: "Post three Night Bus hook variations",
-    owner: "Artist",
-    deadline: "48 hours",
-    approvalState: "active",
-    purpose: "Creates comparable creative signals before the team spends more money.",
-    steps: ["Pick three repeatable hook formats", "Post one version per day", "Tag each post for tracking"],
-    evidenceIds: ["EV-TTK-0426", "EV-YT-1190"],
-    dependency: "Artist capacity for a 10-day sprint.",
-    why: "Creates enough signal to compare attention against demand.",
-  },
-  {
-    id: "track-conversion",
-    title: "Track saves, clicks, follows, and demand comments",
-    owner: "Marketing",
-    deadline: "10 days",
-    approvalState: "active",
-    purpose: "Separates empty attention from early listener demand.",
-    steps: ["Track daily post performance", "Pull smart-link clicks if available", "Flag save/comment/follow movement at review"],
-    evidenceIds: ["EV-TTK-0426", "EV-YT-1190", "EV-SP-3302"],
-    dependency: "Content posts and measurable links are live.",
-    why: "These are the signals that determine whether the budget can scale.",
-  },
-  {
-    id: "upload-spotify",
-    title: "Upload Spotify for Artists CSV",
-    owner: "Manager",
-    deadline: "Optional",
+    id: "confirm-split-sheet",
+    checkpointId: "rights-metadata",
+    title: "Confirm split sheet",
+    owner: "Manager / producer rep",
+    deadline: "D-20 / Sat May 23",
     approvalState: "blocked",
-    purpose: "Raises confidence by adding private conversion and source-of-stream context.",
-    steps: ["Export track-level Spotify data", "Upload the CSV", "Normalize saves, skips, source-of-stream, and listener movement"],
-    evidenceIds: ["EV-SP-3302"],
-    dependency: "Artist or team has Spotify for Artists access.",
-    why: "Private saves and source-of-stream data would raise confidence.",
+    purpose: "Get written split approval before distributor submission is treated as safe.",
+    steps: ["Send the final split sheet to writers and producer", "Confirm master ownership and publishing/admin notes", "Upload written approval or mark the rights gate blocked"],
+    evidenceIds: ["EV-RGT-0612"],
+    dependency: "Producer has to sign before the Manager clears the release.",
+    why: "Rights ambiguity can create takedowns, royalty disputes, or a release-date change.",
+    riskIfLate: "The Manager keeps the release conditional and may move the date again.",
+  },
+  {
+    id: "submit-distributor-package",
+    checkpointId: "distribution",
+    title: "Submit distributor package",
+    owner: "Label ops",
+    deadline: "D-19 / Sun May 24",
+    approvalState: "active",
+    purpose: "Deliver the master, artwork, metadata, profile mapping, territories, and release date to the distributor.",
+    steps: ["Upload final master and approved artwork", "Verify title, explicit flag, version, ISRC/UPC, territories, and artist profile mapping", "Save distributor confirmation or issue log"],
+    evidenceIds: ["EV-DSP-0612"],
+    dependency: "Final master, artwork, and metadata are ready.",
+    why: "Distribution has to be correct before the team can credibly pitch, seed, or announce.",
+    riskIfLate: "DSP availability and profile mapping may break on release day.",
+  },
+  {
+    id: "submit-spotify-pitch",
+    checkpointId: "dsp-playlist",
+    title: "Submit Spotify for Artists pitch",
+    owner: "Manager",
+    deadline: "D-18 / Mon May 25",
+    approvalState: "active",
+    purpose: "Preserve the editorial and Release Radar opportunity that would have been damaged by a next-Friday rush.",
+    steps: ["Open the upcoming release in Spotify for Artists", "Pitch one unreleased song with genre, mood, instruments, culture/story context, and marketing plan", "Log the pitch copy and submit confirmation"],
+    evidenceIds: ["EV-SP-3302", "EV-DSP-0612"],
+    dependency: "Distributor delivery appears in Spotify for Artists.",
+    why: "This is one of the few platform windows a manager can protect by moving the date.",
+    riskIfLate: "The team loses practical DSP preparation time and weakens playlist/editor context.",
+  },
+  {
+    id: "build-creator-list",
+    checkpointId: "creator-seeding",
+    title: "Build TikTok creator target list",
+    owner: "Marketing Lead",
+    deadline: "D-17 / Tue May 26",
+    approvalState: "active",
+    purpose: "Choose specific creators who can use the song naturally instead of asking for generic promo.",
+    steps: ["Find 20 micro creators across night-drive, lyric-caption, fan-edit, transition, and Atlanta culture niches", "Pick the hook timestamp and caption angle for each niche", "Mark target status: not contacted, sent, replied, committed, posted"],
+    evidenceIds: ["EV-TTK-0426", "EV-YT-1190"],
+    dependency: "Song hook timestamp and creator budget are known.",
+    why: "Creator seeding needs fit, timing, and follow-up, not a blast list.",
+    riskIfLate: "Creators post too late or use the wrong moment of the song.",
+  },
+  {
+    id: "prepare-press-epk",
+    checkpointId: "press-tastemaker",
+    title: "Prepare press angle and EPK",
+    owner: "Manager / publicist",
+    deadline: "D-16 / Wed May 27",
+    approvalState: "active",
+    purpose: "Give blogs, DJs, newsletters, college radio, and local culture pages a real reason to care.",
+    steps: ["Write the short release story", "Package artwork, private stream, credits, contact, bio, and photos", "Build the press and tastemaker target list by fit"],
+    evidenceIds: ["EV-ART-0007", "EV-YT-1190"],
+    dependency: "Release story and assets are approved.",
+    why: "Press and tastemakers need a clear angle, not a generic song announcement.",
+    riskIfLate: "Outreach becomes a cold release-day blast with low response quality.",
+  },
+  {
+    id: "approve-launch-content",
+    checkpointId: "content-owned",
+    title: "Approve launch-week content pack",
+    owner: "Artist / marketing",
+    deadline: "D-14 / Fri May 29",
+    approvalState: "needs approval",
+    purpose: "Prepare enough owned content to convert attention into streams during release week.",
+    steps: ["Approve announcement copy", "Approve three short-form concepts", "Prepare caption bank, bio-link copy, email/SMS copy, and pinned post plan"],
+    evidenceIds: ["EV-TTK-0426"],
+    dependency: "Artist can approve the final public voice.",
+    why: "The release needs a repeatable content system, not one announcement post.",
+    riskIfLate: "Release week starts without enough controlled demand creation.",
+  },
+  {
+    id: "send-outreach-wave",
+    checkpointId: "creator-seeding",
+    title: "Send creator, curator, and tastemaker outreach",
+    owner: "Manager / marketing",
+    deadline: "D-10 / Tue Jun 2",
+    approvalState: "active",
+    purpose: "Move the target lists from strategy into actual commitments and replies.",
+    steps: ["Send creator briefs with hook timestamp and posting window", "Send independent curator notes with fit rationale", "Send press/tastemaker pitch with private stream link"],
+    evidenceIds: ["EV-TTK-0426", "EV-YT-1190"],
+    dependency: "Creator list, EPK, and pitch language are ready.",
+    why: "A real rollout needs tracked outreach and follow-up, not passive hope.",
+    riskIfLate: "The launch loses third-party touchpoints before the song is live.",
+  },
+  {
+    id: "verify-release-live",
+    checkpointId: "release-day",
+    title: "Verify release live across platforms",
+    owner: "Label ops",
+    deadline: "Release day / Fri Jun 12",
+    approvalState: "active",
+    purpose: "Confirm the song is live, linked correctly, and mapped to the right profiles.",
+    steps: ["Check Spotify, Apple Music, YouTube Music, TikTok/Instagram sound, and smart-link", "Update bio links and pinned posts", "Log wrong artwork, wrong profile, missing sound, or broken link issues"],
+    evidenceIds: ["EV-DSP-0612"],
+    dependency: "Distributor delivery completed.",
+    why: "Launch-day mistakes waste momentum and confuse fans, creators, and press.",
+    riskIfLate: "The team sends traffic to broken or incorrect release destinations.",
+  },
+  {
+    id: "pull-48-hour-read",
+    checkpointId: "post-release-signal",
+    title: "Pull 48-hour signal read",
+    owner: "Manager",
+    deadline: "D+2 / Sun Jun 14",
+    approvalState: "active",
+    purpose: "Decide whether the first push should continue, change angle, add spend, or pause.",
+    steps: ["Review smart-link clicks, Spotify saves, comments, shares, playlist adds, creator posts, and source-of-stream if available", "Compare response by creator niche and content angle", "Create the next Manager recommendation"],
+    evidenceIds: ["EV-SP-3302", "EV-TTK-0426"],
+    dependency: "Release is live and early signals are available.",
+    why: "The Manager uses early evidence to change the plan instead of blindly continuing.",
+    riskIfLate: "The team keeps pushing the wrong angle or spends before signal quality is clear.",
   },
 ];
 
@@ -401,7 +554,7 @@ const evidence = [
     source: "Artist reply",
     sourceKind: "user-supplied",
     type: "Capacity context",
-    subject: "10-day content sprint",
+    subject: "launch-week content sprint",
     window: "This campaign",
     metric: "Daily posting commitment confirmed",
     lens: "Context",
@@ -411,139 +564,349 @@ const evidence = [
     limitation: "Applies to this campaign window only.",
     rawRef: "memory/artist-replies/may-budget",
   },
+  {
+    id: "EV-RGT-0612",
+    source: "Rights intake",
+    sourceKind: "user-supplied",
+    type: "Release rights",
+    subject: "Night Bus split and ownership package",
+    window: "Pre-release",
+    metric: "Producer signature still missing",
+    lens: "Risk",
+    freshness: "Today",
+    confidence: "Medium",
+    provenance: "Manager release intake",
+    limitation: "Not legal advice; requires team confirmation.",
+    rawRef: "release/night-bus-rights",
+  },
+  {
+    id: "EV-DSP-0612",
+    source: "Distributor tracker",
+    sourceKind: "mock/demo",
+    type: "Platform delivery",
+    subject: "Night Bus June 12 release",
+    window: "Pre-release",
+    metric: "Delivery package pending",
+    lens: "Readiness",
+    freshness: "Today",
+    confidence: "Medium",
+    provenance: "Distributor release checklist",
+    limitation: "DSP ingestion timing must be confirmed by the distributor.",
+    rawRef: "release/night-bus-distribution",
+  },
 ];
 
-const testCheckpoints = [
-  { id: "setup", title: "Setup confirmation", detail: "Budget cap, focus asset, content capacity, and tracking sources confirmed." },
-  { id: "early", title: "Early execution check", detail: "First hook posts live; Manager verifies the test is actually running." },
-  { id: "signal", title: "First signal review", detail: "72-hour read on attention, participation, and conversion proxies." },
-  { id: "midpoint", title: "Midpoint adjustment", detail: "Manager shifts hooks or audience only if the evidence supports it." },
-  { id: "final", title: "Final decision review", detail: "Scale, continue, or stop based on threshold evidence." },
+const missionCheckpoints: MissionCheckpoint[] = [
+  {
+    id: "release-strategy",
+    title: "Release Strategy Gate",
+    status: "Met",
+    question: "Can this release date survive with a real manager-grade rollout?",
+    requiredTaskIds: ["confirm-release-positioning"],
+    watchedSignals: ["artist approval", "team capacity", "budget guardrail", "platform timing"],
+    decisionRule: "If the team accepts the date move and positioning, continue. If not, create a soft-drop plan with risk labels.",
+    recommendation: "Continue",
+    resultSummary: "Manager moved the target from next Friday to Friday, June 12, 2026 and preserved the Spotify pitch window.",
+    nextAction: "Run rights and delivery gates before public announcement.",
+  },
+  {
+    id: "rights-metadata",
+    title: "Rights & Metadata Gate",
+    status: "Needs revision",
+    question: "Is the release clean enough to ship without avoidable ownership or metadata risk?",
+    requiredTaskIds: ["confirm-split-sheet"],
+    watchedSignals: ["split sheet", "writer credits", "producer credits", "master ownership", "explicit/version flags"],
+    decisionRule: "Do not clear release readiness if written split approval or ownership notes are missing.",
+    recommendation: "Proceed only after split approval",
+    resultSummary: "Release is not safe to ship until split approval is written.",
+    nextAction: "Create urgent split approval task and keep June 12 conditional.",
+  },
+  {
+    id: "distribution",
+    title: "Distribution Gate",
+    status: "Waiting on tasks",
+    question: "Has the release package been delivered correctly to the distributor?",
+    requiredTaskIds: ["submit-distributor-package"],
+    watchedSignals: ["master", "artwork", "ISRC/UPC", "territories", "artist profile mapping"],
+    decisionRule: "Continue only when distributor confirmation and issue log are clean.",
+    recommendation: "Needs task result",
+    resultSummary: "Distribution package is still pending.",
+    nextAction: "Submit the package after rights risk is cleared or explicitly accepted.",
+  },
+  {
+    id: "dsp-playlist",
+    title: "DSP & Playlist Gate",
+    status: "Ready for AI review",
+    question: "Did we preserve every platform and playlist opportunity still available?",
+    requiredTaskIds: ["submit-spotify-pitch"],
+    watchedSignals: ["Spotify pitch status", "upcoming release visibility", "smart-link setup", "independent curator list"],
+    decisionRule: "If the Spotify pitch is submitted and independent curator targets are ready, continue to outreach.",
+    recommendation: "Continue to independent curator outreach",
+    resultSummary: "Spotify pitch task strengthens the mission because the June 12 date keeps platform prep viable.",
+    nextAction: "Prepare independent curator outreach using the same positioning.",
+  },
+  {
+    id: "creator-seeding",
+    title: "Creator Seeding Gate",
+    status: "Waiting on tasks",
+    question: "Do we have the right creators, asks, hook moments, and follow-up system?",
+    requiredTaskIds: ["build-creator-list", "send-outreach-wave"],
+    watchedSignals: ["creator fit", "hook timestamp", "reply status", "commitments", "posted links"],
+    decisionRule: "Continue only when target list and outreach status are specific enough to manage.",
+    recommendation: "Needs creator commitments",
+    resultSummary: "Creator seeding has target categories but needs commitments and posted-link tracking.",
+    nextAction: "Move from target list to confirmed creators.",
+  },
+  {
+    id: "press-tastemaker",
+    title: "Press & Tastemaker Gate",
+    status: "Waiting on tasks",
+    question: "Does the song have a real story and target list for press, DJs, newsletters, and culture pages?",
+    requiredTaskIds: ["prepare-press-epk"],
+    watchedSignals: ["EPK", "private stream", "press angle", "target list", "reply quality"],
+    decisionRule: "Do not send press outreach until the angle and assets are complete.",
+    recommendation: "Needs EPK",
+    resultSummary: "Press path is not ready until the EPK and target list are packaged.",
+    nextAction: "Package the EPK before the first outreach wave.",
+  },
+  {
+    id: "content-owned",
+    title: "Content & Owned Audience Gate",
+    status: "Waiting on tasks",
+    question: "Is there enough owned content to create signal across release week?",
+    requiredTaskIds: ["approve-launch-content"],
+    watchedSignals: ["announcement copy", "short-form concepts", "caption bank", "email/SMS", "pinned posts"],
+    decisionRule: "Launch content cannot be considered ready until artist-facing copy is approved.",
+    recommendation: "Ask approval",
+    resultSummary: "The content pack needs artist approval before release-week scheduling.",
+    nextAction: "Approve or revise the public voice.",
+  },
+  {
+    id: "release-day",
+    title: "Release-Day Gate",
+    status: "Waiting on tasks",
+    question: "Did the song go live correctly everywhere fans, creators, and press will click?",
+    requiredTaskIds: ["verify-release-live"],
+    watchedSignals: ["Spotify", "Apple Music", "YouTube Music", "TikTok/Instagram sound", "smart-link", "profile mapping"],
+    decisionRule: "If links, profiles, or sounds are wrong, stop outbound pushes until the issue is logged and routed.",
+    recommendation: "Pending release day",
+    resultSummary: "Release-day verification starts when the song is live.",
+    nextAction: "Verify links before pushing traffic.",
+  },
+  {
+    id: "post-release-signal",
+    title: "Post-Release Signal Gate",
+    status: "Watching signal",
+    question: "Is early demand strong enough to keep pushing, change angle, spend lightly, or pause?",
+    requiredTaskIds: ["pull-48-hour-read"],
+    watchedSignals: ["saves", "smart-link clicks", "comments", "shares", "playlist adds", "creator performance", "source-of-stream"],
+    decisionRule: "Continue or spend only if listener behavior moves with creator/content response.",
+    recommendation: "Wait for 48-hour read",
+    resultSummary: "Post-release signal review happens after launch.",
+    nextAction: "Run the 48-hour and 7-day reads before scaling spend.",
+  },
 ];
 
 const departmentBriefs = [
   {
     id: "manager-marketing-request",
     route: "Manager -> Marketing Lead",
-    briefType: "Request",
-    subject: "Prepare the Night Bus hook test",
-    message: "I need a tight 10-day content sprint that lets us learn without burning the budget. Please turn the current Night Bus signals into three repeatable hook formats and a posting cadence Sable can actually keep.",
-    sourceBasis: "TikTok hook use is 4.8x above baseline, YouTube comments show lyric participation, and the artist confirmed daily posting capacity.",
-    recommendedAction: "Prepare the creative prompt set, tag the first 72-hour checkpoint, and do not recommend paid scale until saves/clicks move together.",
+    briefType: "Creator seeding request",
+    subject: "Build a creator lane before the June 12 release",
+    message: "Build the creator target list around night-drive, lyric-caption, fan-edit, transition, and Atlanta culture niches. Do not send generic promo asks; each creator needs the hook timestamp, visual idea, posting window, and status tracking.",
+    sourceBasis: "Night Bus has repeat comment language and a late-night transit story, but creator demand needs to be manufactured before release week.",
+    recommendedAction: "Create creator briefs and track outreach status from not contacted to posted.",
+    resultingChange: "Created task",
     status: "Prepared handoff",
-    linkedMission: "Validate Night Bus before scale spend",
+    linkedMission: "Release Night Bus on June 12",
   },
   {
     id: "marketing-manager-finding",
     route: "Marketing Lead -> Manager",
-    briefType: "Run finding",
-    subject: "Creative demand exists, conversion is not proven",
-    message: "My run says the song has repeatable social language, but the conversion path is still thin. The strongest angle is the late-night transit hook; the weakest angle is generic heartbreak copy.",
-    sourceBasis: "Public TikTok usage, YouTube comment themes, creator-caption repeats, and the current mission budget cap.",
-    recommendedAction: "Let the Manager keep the $1,850 cap and ask for Spotify for Artists export before day-10 scale advice.",
+    briefType: "Press angle and EPK request",
+    subject: "Package the story before outreach starts",
+    message: "The strongest story is not 'new single out now.' It is Sable turning late-night transit anxiety into a clean alt-R&B release. Package the EPK with private stream, artwork, credits, photos, short bio, and contact before blogs, DJs, newsletters, or culture pages are touched.",
+    sourceBasis: "The Manager moved the date to protect pitch time; press and tastemaker outreach needs a story and assets, not a release-day blast.",
+    recommendedAction: "Prepare EPK, press angle, and target list before the first outreach wave.",
+    resultingChange: "Filed to memory",
     status: "Shared with Manager",
-    linkedMission: "Validate Night Bus before scale spend",
+    linkedMission: "Release Night Bus on June 12",
   },
   {
     id: "finance-manager-update",
     route: "Finance/Rights -> Manager",
-    briefType: "Source request",
-    subject: "Spend advice is directional until rights and royalty sources arrive",
-    message: "I can support the cap logic, but I cannot validate revenue recovery, ownership exposure, or payout timing yet. I need royalty statements and split sheets before the mission record should treat scale spend as financially clean.",
-    sourceBasis: "Budget answer is confirmed; royalty statements, payout history, split sheets, and distributor ownership records are not connected.",
-    recommendedAction: "Keep the recommendation as a capped test, request uploads, and avoid legal/accounting conclusions.",
+    briefType: "Rights risk",
+    subject: "Split sheet blocks release clearance",
+    message: "The release should remain conditional until the producer split is written and uploaded. The Manager can keep building the plan, but should not mark Rights & Metadata Gate as clean.",
+    sourceBasis: "Writer/producer credits, master ownership, and publishing notes are partially known; producer signature is still missing.",
+    recommendedAction: "Create urgent split approval follow-up and keep June 12 conditional until resolved.",
+    resultingChange: "Updated checkpoint",
     status: "Waiting on sources",
-    linkedMission: "Validate Night Bus before scale spend",
+    linkedMission: "Release Night Bus on June 12",
   },
   {
     id: "manager-sync-request",
     route: "Manager -> Sync & Deals",
     briefType: "Future specialist request",
-    subject: "Hold deal exploration until pitch and rights inputs are ready",
-    message: "Night Bus may become pitchable if the test proves demand, but I need this treated as readiness work for now. Do not imply deal availability until rights clarity and pitch assets are uploaded.",
-    sourceBasis: "Mission heat is emerging; rights clarity, pitch assets, clean instrumental, and ownership documents are missing.",
-    recommendedAction: "Create a readiness checklist and prepare questions for the artist team before any brand/sync outreach.",
+    subject: "Hold brand and sync outreach until rights gate clears",
+    message: "Night Bus can become pitchable after release if rights are clean and early signal is real. Do not imply availability to brands, sync buyers, or partners until split approval and pitch assets are complete.",
+    sourceBasis: "The release has a strong story, but rights clarity and post-release proof are not complete.",
+    recommendedAction: "Prepare a future pitch-readiness checklist, not external deal outreach.",
+    resultingChange: "No action yet",
     status: "Prepared for locked agent",
-    linkedMission: "Prepare rights hygiene for future deals",
+    linkedMission: "Release Night Bus on June 12",
+  },
+  {
+    id: "manager-dsp-request",
+    route: "Manager -> DSP / Playlist",
+    briefType: "Playlist pitch prep",
+    subject: "Use the date move to preserve the pitch window",
+    message: "The Spotify pitch needs one unreleased song, clear genre/mood/instrumentation, story context, and a marketing plan. Independent playlist outreach should be based on fit and listener context, not follower count.",
+    sourceBasis: "The Manager moved the release to June 12 to avoid wasting platform and curator windows.",
+    recommendedAction: "Submit Spotify pitch, then prepare independent curator outreach using the same positioning.",
+    resultingChange: "Updated checkpoint",
+    status: "Ready for review",
+    linkedMission: "Release Night Bus on June 12",
   },
 ];
 
 const decisionRecord = {
-  missionTitle: "Validate Night Bus before scale spend",
-  currentState: "The mission is active and still constrained by evidence gaps. Tasks are moving, the test is prepared, briefs have been exchanged, and the next decisive checkpoint is scheduled.",
-  finalCall: "Run a capped 10-day validation test before scaling campaign spend.",
-  aiMemory: "Before answering future Night Bus questions, the AI should remember that the goal is to prove whether social heat converts into durable demand, not to maximize spend this week.",
-  latestTestResult: "Pending. Early creative signals are useful, but conversion proof needs Spotify saves/source-of-stream or smart-link clicks.",
-  alternativesRejected: ["Spend the full $5,000 on paid media", "Fund a full video now", "Split attention across multiple songs"],
-  confidence: "Medium",
-  missingEvidence: ["Spotify for Artists saves/skips/source-of-stream", "Smart-link click-through", "Royalty statements for revenue questions"],
-  changeDecision: "Cross-platform conversion improves, private Spotify saves confirm demand, or 72-hour signals fail the stop rule.",
-  reviewDate: "72-hour signal review",
-  qualityGate: "Passed with constraint: recommendation is a test, not a scale decision.",
+  missionTitle: "Release Night Bus on June 12",
+  currentState: "The mission is active after the Manager moved the requested next-Friday release to Friday, June 12, 2026. Strategy is clear, but Rights & Metadata is still holding because the split sheet is not signed.",
+  finalCall: "Move the date and run the release properly instead of rushing a soft drop.",
+  aiMemory: "Before answering future Night Bus release questions, the AI should remember that the Manager protected delivery, DSP pitching, creator seeding, press, and launch content by moving the date.",
+  latestTestResult: "Rights gate needs revision. DSP pitch path is viable because the June 12 date preserves platform prep time.",
+  alternativesRejected: ["Drop next Friday with no pitch window", "Blast generic creator outreach", "Announce before distributor and rights gates clear"],
+  confidence: "Medium-high",
+  missingEvidence: ["Signed split sheet", "Distributor confirmation", "Creator commitments", "Press/EPK target list", "48-hour post-release signal"],
+  changeDecision: "Signed splits, clean distributor delivery, creator commitments, or a serious platform issue would change the next recommendation.",
+  reviewDate: "Rights gate review",
+  qualityGate: "Passed with constraint: release remains conditional until rights and distributor package are clean.",
   override: "None recorded",
 };
+
+const taskResults: TaskResult[] = [
+  {
+    taskId: "confirm-release-positioning",
+    status: "completed",
+    summary: "Release date moved and positioning accepted.",
+    userNote: "Artist accepted Friday, June 12, 2026 and the late-night transit story.",
+    interpretation: "The release strategy gate is clean. The Manager can build a real rollout instead of a rushed next-Friday drop.",
+    missionEffect: "Strengthened thesis: the mission now has enough runway for DSP, creator, press, and owned-audience work.",
+    followUp: "Run rights and distributor gates before public announcement.",
+  },
+  {
+    taskId: "confirm-split-sheet",
+    status: "blocked",
+    summary: "Split sheet is not signed.",
+    userNote: "Producer has not signed.",
+    interpretation: "Rights gate failed. Release should not proceed until split approval is written.",
+    missionEffect: "Created risk: the release remains conditional and may need another date change.",
+    followUp: "Create urgent split approval task and keep release date conditional.",
+  },
+  {
+    taskId: "submit-spotify-pitch",
+    status: "completed",
+    summary: "Spotify pitch is submitted.",
+    userNote: "Pitch submitted Monday with story, genre, mood, marketing plan.",
+    interpretation: "DSP gate improved. Pitch window preserved because release moved to June 12.",
+    missionEffect: "Strengthened thesis: the Manager protected a platform window that next Friday would have weakened.",
+    followUp: "Prepare independent curator outreach using the same positioning.",
+  },
+];
+
+const missionReview: MissionReview = {
+  title: "Release date moved to protect the rollout",
+  outcome: "Move date",
+  recommendation: "Move the release to Friday, June 12, 2026. Do not rush next Friday; use the extra runway to clear splits, deliver correctly, pitch DSPs, seed creators, prepare press, and build launch-week content.",
+  why: "A next-Friday drop would weaken platform preparation, creator lead time, press outreach, and metadata QA. A serious manager protects the song before chasing speed.",
+  changes: ["The Manager preserved the Spotify pitch window.", "Rights & Metadata is now the active blocker because the split sheet is unsigned.", "Creator, playlist, press, and owned-audience work are now tracked as release tasks."],
+  nextTaskCreated: "Create urgent split approval task and keep June 12 conditional until the Rights & Metadata Gate clears.",
+  nextReview: "Rights gate review",
+};
+
+const testReviewImpact = {
+  setup: "The Manager moved the release to June 12 so the team can protect delivery, pitching, creator seeding, press, and launch execution.",
+  signal: "Task reviews are now feeding checkpoint reviews. The rights gate needs revision, while the DSP gate improved after the Spotify pitch was submitted.",
+  complete: "The Manager has enough task results to keep building the rollout, but not enough to clear the release until rights and delivery are clean.",
+};
+
+const artistOperatingMemory: ArtistOperatingMemory = {
+  strategyThesis: "Sable Day should release Night Bus with professional runway instead of rushing a weak next-Friday drop.",
+  knownPatterns: ["Late-night transit language is stronger than generic heartbreak copy", "Creator and press asks perform better when they include a specific story and hook moment"],
+  doNotRepeat: ["Do not announce before rights and distributor gates clear", "Do not send generic playlist or creator blasts"],
+  openQuestions: ["Will the producer sign the split sheet on time?", "Which creator niche creates the strongest early saves and shares?"],
+};
+
+const missionEvents: MissionEvent[] = [
+  { type: "manager_run", actor: "Manager", summary: "User asked: I want to drop a new song next week." },
+  { type: "recommendation_changed", actor: "Manager", summary: "Manager moved the target from next Friday to Friday, June 12, 2026 to protect the release window." },
+  { type: "task_created", actor: "Manager", summary: "Created release tasks across strategy, rights, distribution, DSP, creators, press, content, launch day, and post-release read." },
+  { type: "task_result_added", actor: "Manager", summary: "Split sheet task was reviewed as blocked because producer signature is missing." },
+  { type: "checkpoint_reached", actor: "Manager", summary: "Rights & Metadata Gate changed to Needs revision and DSP & Playlist Gate improved after pitch submission." },
+];
 
 const workDrafts = [
   {
     type: "Creator brief",
-    title: "Night Bus 10-day hook sprint",
-    body: "Three repeatable hook formats, daily posting cadence, direct stream path, and a 72-hour evidence read before paid scale.",
+    title: "Night Bus creator seeding brief",
+    body: "Night-drive, lyric-caption, fan-edit, transition, and Atlanta culture creator lanes with hook timestamps, posting windows, and status tracking.",
   },
   {
     type: "Team task recap",
-    title: "May budget operating note",
-    body: "One focus asset, capped validation spend, held reserve, evidence upload request, and day-10 decision review.",
+    title: "June 12 release recap",
+    body: "Date moved from next Friday, rights gate conditional, DSP pitch preserved, creator/press/content lanes opened, release-day and post-release reads scheduled.",
   },
   {
     type: "DSP pitch note",
-    title: "Night Bus focus note",
-    body: "Night Bus remains the active focus. Pitch language waits for test results; no external send without approval.",
+    title: "Night Bus Spotify pitch note",
+    body: "One unreleased song, late-night transit story, alt-R&B mood, launch plan, creator seeding, and owned-audience support.",
   },
 ];
 
 const baseConversations: RecentConversation[] = [
   {
     id: "night-bus-budget",
-    topic: "Night Bus budget allocation",
-    lastUpdate: "Last week",
-    status: "Capped test recommended; waiting for new signal",
-    prompt: "Continue the Night Bus budget allocation conversation. What changed since the last recommendation?",
-    summary: "Budget thread for deciding how much of the $5,000 can move before demand is proven.",
+    topic: "Night Bus release planning",
+    lastUpdate: "Today",
+    status: "Release moved to June 12; rights gate holding",
+    prompt: "Continue the Night Bus release planning conversation. What changed since the Manager moved the date?",
+    summary: "Release thread for turning a rushed next-Friday idea into a manager-grade rollout.",
     messages: [
       {
         id: "night-bus-budget-q1",
         speaker: "artist",
         label: "You asked",
-        body: "We have $5,000. What should we do this month?",
+        body: "I want to drop a new song next week. What do we need to do?",
       },
       {
         id: "night-bus-budget-a1",
         speaker: "manager",
         label: "Manager answered",
-        body: "Use $1,850 for a 10-day Night Bus validation test. Hold back $2,250 until the 72-hour signal review, and do not fund a full video or a full paid-media push yet.",
-        budgetAction: "$1,850 capped test",
-        heldBack: "$2,250 uncommitted",
-        reviewPoint: "72-hour signal read",
+        body: "Do not rush next Friday. Move Night Bus to Friday, June 12, 2026 so we can clear splits, deliver correctly, pitch DSPs, seed creators, prepare press, approve launch content, and run release-day plus post-release checks.",
+        budgetAction: "Release rollout",
+        heldBack: "No rushed next-Friday drop",
+        reviewPoint: "Rights gate review",
         whyThisCall: [
-          "Attention is real enough to test, but not enough to scale.",
-          "Artist capacity supports a 10-day sprint if formats stay repeatable.",
-          "Private conversion evidence is missing, so spend should stay reversible."
+          "Next Friday weakens the DSP pitch and creator lead-time.",
+          "Rights and metadata need written confirmation before public rollout.",
+          "Press, creators, playlist targets, and owned audience need real assets and follow-up."
         ],
         rejectedMoves: [
-          "Fund full Night Bus music video",
-          "Commit $3,000 to Meta/TikTok paid scale",
-          "Lock release date before test proof"
+          "Drop next Friday with no pitch window",
+          "Blast generic creator outreach",
+          "Announce before rights and delivery clear"
         ]
       },
       {
         id: "night-bus-budget-work",
         speaker: "manager",
         label: "Work created",
-        body: "Created the Night Bus validation mission, a capped test, department briefs, and a decision record.",
+        body: "Created the June 12 release mission, release tasks, checkpoints, agent notes, and mission memory.",
         workCreated: {
           type: "mission",
-          title: "Validate Night Bus before scale spend",
-          body: "Capped $1,850 test watching acoustic hook saves and smart-link conversion.",
+          title: "Release Night Bus on June 12",
+          body: "Backwards release plan with rights, distribution, DSP, creator, press, content, launch-day, and post-release checkpoints.",
           id: "night-bus-validation"
         }
       },
@@ -606,8 +969,8 @@ const statusText: Record<View, string> = {
   decisionPackage: "Decision",
   missionsWorkspace: "Missions",
   tasksWorkspace: "Tasks",
-  testLabWorkspace: "Test Lab",
-  briefsWorkspace: "Briefs",
+  testLabWorkspace: "Checkpoints",
+  briefsWorkspace: "Notes",
   artistProfileWorkspace: "Artist Profile",
   lockedAgentWorkspace: "Locked department",
   reviewWorkspace: "Review",
@@ -780,6 +1143,24 @@ export default function AiLabelPrototype() {
     goTo("conversationWorkspace");
   };
 
+  const openCreatedWork = (work: NonNullable<ConversationMessage["workCreated"]>) => {
+    if (work.type === "mission") {
+      openMission(work.id);
+      return;
+    }
+
+    if (work.type === "task") {
+      if (work.id) setSelectedMissionId("night-bus-validation");
+      goTo("tasksWorkspace");
+      return;
+    }
+
+    if (work.type === "checkpoint" || work.type === "test") {
+      if (work.id) setSelectedMissionId("night-bus-validation");
+      goTo("testLabWorkspace");
+    }
+  };
+
   const sendThreadFollowUp = () => {
     const trimmed = conversationDraft.trim();
     if (!trimmed) return;
@@ -795,7 +1176,7 @@ export default function AiLabelPrototype() {
         id: `${selectedConversation.id}-answer-${Date.now()}`,
         speaker: "manager",
         label: "Manager continued",
-        body: "Keep the same cap until the 72-hour read. If Chicago keeps rising, shift the next creative prompt toward that market, but do not increase spend until saves, clicks, and repeat demand comments move together.",
+        body: "Keep June 12 conditional until the split approval is written. If rights clear this week, move into distributor delivery, DSP pitch reuse, creator commitments, and the press/owned-audience calendar.",
       },
     ];
 
@@ -904,6 +1285,7 @@ export default function AiLabelPrototype() {
                 setDraft={setConversationDraft}
                 onSend={sendThreadFollowUp}
                 onBack={() => goTo("managerOffice")}
+                onOpenCreatedWork={openCreatedWork}
               />
             )}
             {view === "investigation" && <InvestigationScreen onBack={() => goTo("managerOffice")} />}
@@ -931,9 +1313,9 @@ export default function AiLabelPrototype() {
                 }}
               />
             )}
-            {view === "testLabWorkspace" && <TestLabWorkspace onBack={() => openMission(selectedMissionId)} testCheckpoint={testCheckpoint} />}
-            {view === "briefsWorkspace" && <BriefsWorkspace onBack={() => openMission(selectedMissionId)} />}
-            {view === "artistProfileWorkspace" && <ArtistProfileWorkspace profile={profile} onBack={() => goTo("labelHQ")} />}
+            {view === "testLabWorkspace" && <CheckpointsWorkspace onBack={() => openMission(selectedMissionId)} testCheckpoint={testCheckpoint} />}
+            {view === "briefsWorkspace" && <NotesWorkspace onBack={() => openMission(selectedMissionId)} />}
+            {view === "artistProfileWorkspace" && <ArtistProfileWorkspace profile={profile} setProfile={setProfile} onBack={() => goTo("labelHQ")} />}
             {view === "lockedAgentWorkspace" && (
               <LockedAgentWorkspace
                 agent={selectedAgent ?? agents[1]}
@@ -971,18 +1353,18 @@ export default function AiLabelPrototype() {
 }
 
 const ConnectArtistScreen = ({ profile, onContinue }: { profile: ArtistProfile; onContinue: () => void }) => (
-  <section className="mx-auto flex max-w-4xl flex-col items-center pt-[8vh] text-center">
-    <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Onboarding / Phase 01</p>
+  <section className="mx-auto flex max-w-4xl flex-col items-center pt-[7vh] text-center">
+    <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist setup</p>
     <h2 className="font-display mt-6 text-[clamp(2.8rem,6vw,4.2rem)] font-bold leading-[1.1] tracking-tight text-foreground">
-      Establish your<br />artist identity.
+      Start with the<br />artist profile.
     </h2>
     <p className="mt-6 max-w-2xl text-[18px] leading-relaxed text-foreground/60 font-medium">
-      Connect your primary Spotify profile to initialize the AI Record Label, configure your dedicated Manager, and begin evidence gathering.
+      Connect the artist, confirm the basics, and give the Manager enough context to make useful calls.
     </p>
 
     <div className="mt-16 w-full max-w-2xl text-left">
-      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/60">Verified Identity</p>
-      <div className="surface-panel mt-4 flex items-center justify-between rounded-[28px] p-6 shadow-xl transition-all hover:scale-[1.01]">
+      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/60">Artist found</p>
+      <div className="surface-panel mt-4 flex items-center justify-between rounded-[24px] p-5 shadow-lg transition-all hover:border-brand-accent/20">
         <div className="flex items-center gap-6">
           <div className="surface-intelligence h-20 w-20 shrink-0 rounded-[22px] bg-foreground/5 flex items-center justify-center">
              <BrandMark size="sm" />
@@ -1002,7 +1384,7 @@ const ConnectArtistScreen = ({ profile, onContinue }: { profile: ArtistProfile; 
           onClick={onContinue} 
           className="group inline-flex h-14 items-center justify-center gap-3 rounded-full bg-foreground px-10 text-[15px] font-bold text-background transition-all hover:scale-105 hover:shadow-2xl active:scale-95 shadow-xl"
         >
-          Continue to Context
+          Continue to artist context
           <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
         </button>
       </div>
@@ -1023,43 +1405,43 @@ const SetupScreen = ({
 }) => {
   const update = (key: keyof ArtistProfile, value: string) => setProfile((current) => ({ ...current, [key]: value }));
   return (
-    <section className="mx-auto max-w-6xl py-12">
+    <section className="mx-auto max-w-6xl py-10">
       <button 
         onClick={onBack} 
         className="group inline-flex items-center gap-3 rounded-full border border-foreground/10 bg-background/50 px-5 py-2 text-[13px] font-bold text-muted-foreground transition-all hover:bg-foreground/5 hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" /> 
-        Back to Identity
+        Back to artist
       </button>
 
-      <div className="mt-12 grid gap-16 lg:grid-cols-[340px_1fr] lg:items-start">
+      <div className="mt-10 grid gap-8 lg:grid-cols-[320px_1fr] lg:items-start">
         {/* Left Col: Titles */}
         <div className="sticky top-12">
-          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Onboarding / Phase 02</p>
-          <h2 className="font-display mt-6 text-[3rem] font-bold leading-tight tracking-tight text-foreground">
-            Enrich the<br />artist context.
+          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist context</p>
+          <h2 className="font-display mt-5 text-[2.75rem] font-bold leading-tight tracking-tight text-foreground">
+            Give the Manager<br />the basics.
           </h2>
-          <p className="mt-6 text-[16px] font-medium leading-relaxed text-foreground/60">
-            These parameters define how the Manager prioritizes missions, identifies evidence gaps, and drafts specialist briefs.
+          <p className="mt-5 text-[15px] font-medium leading-relaxed text-foreground/60">
+            This is the artist-level picture. The Manager uses it to shape missions, spot missing proof, and keep the team honest.
           </p>
           
-          <div className="surface-intelligence mt-10 rounded-[20px] p-6">
-             <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">Why this matters</p>
+          <div className="surface-intelligence mt-8 rounded-[20px] p-5">
+             <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager note</p>
              <p className="mt-3 text-[13px] font-medium leading-relaxed text-foreground/80">
-               Accuracy here results in high-integrity decisions. The Manager uses this as the "ground truth" for all subsequent runs.
+               Better context means better calls. These details can change later as the artist, goals, and evidence change.
              </p>
           </div>
         </div>
 
         {/* Right Col: Forms */}
-        <div className="surface-panel rounded-[32px] p-8 lg:p-12 shadow-xl">
-          <div className="grid gap-6 sm:grid-cols-2">
+        <div className="surface-panel rounded-[28px] p-6 shadow-xl lg:p-8">
+          <div className="grid gap-4 sm:grid-cols-2">
             <SetupInput label="Artist name" value={profile.name} onChange={(v) => update("name", v)} />
             <SetupInput label="Spotify identity" value={profile.spotify} onChange={(v) => update("spotify", v)} active />
             <SetupInput label="Artist stage" value={profile.stage} onChange={(v) => update("stage", v)} />
             <SetupInput label="Home market" value={profile.market} onChange={(v) => update("market", v)} />
             <SetupInput label="Genre" value={profile.genre} onChange={(v) => update("genre", v)} />
-            <SetupInput label="Current goal" value={profile.goal} onChange={(v) => update("goal", v)} />
+            <ArtistDirectionField value={profile.goal} onChange={(v) => update("goal", v)} />
             <SetupInput label="Active release" value={profile.release} onChange={(v) => update("release", v)} />
             <SetupInput label="Monthly budget" value={profile.budget} onChange={(v) => update("budget", v)} />
             <SetupInput label="TikTok" value={profile.tiktok} onChange={(v) => update("tiktok", v)} />
@@ -1068,9 +1450,9 @@ const SetupScreen = ({
             <SetupInput label="X" value={profile.x} onChange={(v) => update("x", v)} />
           </div>
 
-          <div className="mt-12 flex flex-wrap items-center justify-between gap-8 border-t border-foreground/5 pt-10">
-            <p className="max-w-md text-[13px] font-bold leading-relaxed text-warning">
-              <span className="uppercase tracking-wider">Note:</span> Private analytics (save rate, conversion) will stay locked until secure connection is verified.
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-5 border-t border-foreground/5 pt-6">
+            <p className="max-w-md text-[13px] font-semibold leading-relaxed text-warning">
+              Private analytics like saves, clicks, and conversion stay locked until the artist connects them.
             </p>
             
             <div className="flex shrink-0 gap-4">
@@ -1081,7 +1463,7 @@ const SetupScreen = ({
                 onClick={onContinue} 
                 className="group inline-flex h-12 items-center justify-center gap-3 rounded-full bg-foreground px-8 text-[14px] font-bold text-background transition-all hover:scale-105 shadow-xl active:scale-95"
               >
-                Enter Workspace
+                Enter Label HQ
                 <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
               </button>
             </div>
@@ -1094,14 +1476,14 @@ const SetupScreen = ({
 
 const SetupInput = ({ label, value, onChange, active = false }: { label: string; value: string; onChange: (value: string) => void; active?: boolean }) => (
   <div className={cn(
-    "group rounded-[16px] border bg-background p-4 transition-all duration-300", 
+    "group rounded-[14px] border bg-background p-3.5 transition-all duration-300", 
     active ? "border-brand-accent ring-4 ring-brand-accent/5 shadow-lg" : "border-foreground/10 focus-within:border-brand-accent/50 focus-within:ring-4 focus-within:ring-brand-accent/5"
   )}>
     <label className="font-ui block text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60 transition-colors group-focus-within:text-brand-accent">{label}</label>
     <input 
       value={value} 
       onChange={(e) => onChange(e.target.value)} 
-      className="mt-2 w-full bg-transparent text-[15px] font-bold text-foreground outline-none placeholder:text-muted-foreground/30" 
+      className="mt-1.5 w-full bg-transparent text-[14px] font-bold text-foreground outline-none placeholder:text-muted-foreground/30" 
     />
   </div>
 );
@@ -1126,10 +1508,10 @@ const LabelHQScreen = ({
   onDrawer: (drawer: DrawerKind) => void;
 }) => (
   <section className="text-foreground max-w-7xl mx-auto px-4 lg:px-8">
-    <div className="mb-12 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between border-b border-foreground/5 pb-10">
+    <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-brand-accent">Operating Dashboard</p>
-        <h1 className="font-display mt-3 text-[3.2rem] font-bold leading-none tracking-tight text-foreground">Label HQ.</h1>
+        <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-brand-accent">Label Read</p>
+        <h1 className="font-display mt-2 text-[3.2rem] font-bold leading-none tracking-tight text-foreground">Label HQ</h1>
       </div>
       <div className="flex gap-3">
         <button onClick={() => onWorkspace("artistProfileWorkspace")} className="group flex h-11 items-center gap-2 rounded-full border border-foreground/10 bg-background/50 px-5 text-[13px] font-bold text-foreground transition-all hover:bg-foreground/5 hover:border-foreground/20 active:scale-95 shadow-sm backdrop-blur-sm">
@@ -1138,31 +1520,46 @@ const LabelHQScreen = ({
         </button>
       </div>
     </div>
+
+    <div className="mb-8 grid overflow-hidden rounded-[24px] border border-foreground/10 bg-background/70 shadow-sm backdrop-blur md:grid-cols-4">
+      {[
+        { label: "Current Focus", value: profile.goal, meta: profile.stage },
+        { label: "Needs Attention", value: "Split approval", meta: "Rights gate holding" },
+        { label: "Next Move", value: "Clear rights", meta: "Then update the mission plan" },
+        { label: "Active Missions", value: `${missions.filter((mission) => mission.status !== "complete" && !mission.archived).length}`, meta: "Open artist workstreams" },
+      ].map((item) => (
+        <div key={item.label} className="border-b border-foreground/5 px-5 py-4 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground/45">{item.label}</p>
+          <p className="mt-2 text-[15px] font-bold leading-tight text-foreground">{item.value}</p>
+          <p className="mt-1 text-[12px] font-medium leading-snug text-muted-foreground/65">{item.meta}</p>
+        </div>
+      ))}
+    </div>
     
-    <div className="grid min-w-0 gap-10 xl:grid-cols-[1fr_320px]">
-      <div className="grid min-w-0 content-start gap-12">
+    <div className="grid min-w-0 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid min-w-0 content-start gap-8">
         <LightMorningBriefPanel profile={profile} onManager={onManager} onEvidence={() => onDrawer("evidence")} />
         
         {/* REFINED STAFF GRID */}
-        <div className="space-y-8">
+        <div className="space-y-5">
            <div className="flex items-center justify-between border-b border-foreground/5 pb-4">
-              <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Department Heads</p>
+              <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Label Staff</p>
               <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/20">5 active AI units</span>
            </div>
            <LightAgentBench onManager={onManager} onLockedAgent={onLockedAgent} />
         </div>
         
         {/* COMPACT MISSIONS */}
-        <div className="space-y-8">
+        <div className="space-y-5">
            <div className="flex items-center justify-between border-b border-foreground/5 pb-4">
               <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Active Missions</p>
-              <button onClick={() => onWorkspace("missionsWorkspace")} className="text-[11px] font-bold text-brand-accent hover:underline">See all missions →</button>
+              <button onClick={() => onWorkspace("missionsWorkspace")} className="text-[11px] font-bold text-brand-accent hover:underline">See all missions â†’</button>
            </div>
            <LightMissionCards missions={missions.filter(m => m.status !== "complete")} onMission={onMission} onWorkspace={onWorkspace} />
         </div>
       </div>
 
-      <div className="sticky top-8 grid min-w-0 content-start gap-12 self-start pt-2">
+      <div className="sticky top-8 grid min-w-0 content-start gap-6 self-start pt-1">
         <LightAttentionSummary onDrawer={onDrawer} onWorkspace={onWorkspace} />
       </div>
     </div>
@@ -1181,33 +1578,33 @@ const StaffWorkspace = ({
 
   return (
     <section className="text-foreground">
-      <div className="mb-10 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+      <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Department Heads</p>
-          <h1 className="font-display mt-2 text-[3.2rem] font-bold leading-tight tracking-tight text-foreground">The Staff.</h1>
+          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Team</p>
+          <h1 className="font-display mt-2 text-[3.2rem] font-bold leading-tight tracking-tight text-foreground">Artist Team</h1>
           <p className="mt-2 max-w-2xl text-[16px] font-medium leading-relaxed text-muted-foreground/80">
-            A specialized roster of AI specialists trained on your artist's identity, market activity, and creative DNA.
+            The people around the artist, what they can help with, and the proof they still need before their advice becomes useful.
           </p>
         </div>
-        <div className="grid w-full max-w-md grid-cols-3 overflow-hidden rounded-[24px] border border-foreground/10 surface-panel shadow-sm">
-          <StaffStat label="Roster" value={`${agents.length}`} />
+        <div className="grid w-full max-w-md grid-cols-3 overflow-hidden rounded-[18px] border border-foreground/10 bg-background/80 shadow-sm">
+          <StaffStat label="Team" value={`${agents.length}`} />
           <StaffStat label="Ready" value={`${onlineCount}`} />
-          <StaffStat label="Needs Context" value={`${lockedCount}`} />
+          <StaffStat label="Needs context" value={`${lockedCount}`} />
         </div>
       </div>
 
-      <div className="grid gap-5">
+      <div className="grid gap-4">
         {agents.map((agent) => {
           const Icon = agent.icon;
           const available = agent.status === "available";
-          const actionLabel = available ? "Open Manager Office" : `Open ${agent.name} office`;
+          const actionLabel = available ? "Open Manager Office" : "See what is missing";
 
           return (
             <button
               key={agent.id}
               onClick={() => (available ? onManager() : onLockedAgent(agent))}
               className={cn(
-                "group grid w-full gap-6 rounded-[24px] border bg-background p-6 text-left shadow-[0_2px_12px_rgba(0,0,0,0.05)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_44px_rgba(0,0,0,0.08)] lg:grid-cols-[260px_minmax(0,1fr)_240px]",
+                "group grid w-full gap-5 rounded-[20px] border bg-background/85 p-5 text-left shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(0,0,0,0.07)] lg:grid-cols-[250px_minmax(0,1fr)_220px]",
                 available ? "border-brand-accent/20" : "border-foreground/10",
               )}
             >
@@ -1230,7 +1627,7 @@ const StaffWorkspace = ({
                         available ? "bg-success/10 text-success" : "bg-foreground/5 text-muted-foreground",
                       )}
                     >
-                      {available ? "Online" : "Locked"}
+                      {available ? "Ready" : "Needs context"}
                     </span>
                   </div>
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{agent.purpose}</p>
@@ -1238,13 +1635,13 @@ const StaffWorkspace = ({
               </div>
 
               <div className="grid gap-4 md:grid-cols-2">
-                <StaffSourceBlock title="Required sources" items={agent.requiredSources} muted={!available} />
-                <StaffSourceBlock title="Connected sources" items={agent.connectedSources} />
-                <StaffSourceBlock title="Can prepare now" items={[agent.managerCanPrepare]} accent />
-                <StaffSourceBlock title="Optional context" items={agent.optionalSources.slice(0, 3)} muted />
+                <StaffSourceBlock title="What they can help with" items={agent.tools.slice(0, 3)} accent={available} />
+                <StaffSourceBlock title="Missing proof" items={agent.requiredSources} muted={!available} />
+                <StaffSourceBlock title="Connected proof" items={agent.connectedSources} />
+                <StaffSourceBlock title="Manager can prepare" items={[agent.managerCanPrepare]} accent />
               </div>
 
-              <div className="flex flex-col justify-between rounded-[18px] border border-foreground/5 bg-foreground/5 p-5 transition-colors group-hover:bg-foreground/10">
+              <div className="flex flex-col justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.035] p-4 transition-colors group-hover:bg-foreground/[0.06]">
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Next action</p>
                   <p className="mt-3 text-[14px] font-bold leading-snug text-foreground">{actionLabel}</p>
@@ -1389,16 +1786,16 @@ const LabelHQRail = ({
 
 
 const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: ArtistProfile; onManager: () => void; onEvidence: () => void }) => (
-  <div className="flex flex-col overflow-hidden rounded-[32px] border border-foreground/5 bg-background shadow-2xl shadow-black/[0.02]">
+  <div className="flex flex-col overflow-hidden rounded-[28px] border border-foreground/5 bg-background shadow-2xl shadow-black/[0.02]">
     {/* Header */}
-    <div className="flex items-center justify-between border-b border-foreground/5 bg-foreground/[0.01] px-8 py-6">
+    <div className="flex items-center justify-between border-b border-foreground/5 bg-foreground/[0.01] px-7 py-5">
       <div className="flex items-center gap-3">
         <div className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-accent/10 text-brand-accent">
           <Calendar className="h-4 w-4" />
         </div>
         <div>
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Today's Operating Read</p>
-          <p className="text-[13px] font-bold text-foreground opacity-90">{profile.name} · {profile.release}</p>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Today's Brief</p>
+          <p className="text-[13px] font-bold text-foreground opacity-90">{profile.name} Â· {profile.release}</p>
         </div>
       </div>
       <button
@@ -1410,53 +1807,54 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
     </div>
 
     {/* Brief Body */}
-    <div className="px-8 py-10">
+      <div className="px-7 py-7">
       <h2 className="font-display text-2xl font-bold tracking-tight text-foreground max-w-2xl">
         Momentum is durably building. Commitment is pending review.
       </h2>
       
-      <div className="mt-10 grid gap-8 md:grid-cols-2">
-        <div className="space-y-4">
-           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-success">Confirmed Momentum</p>
-           <div className="rounded-2xl border border-foreground/5 bg-foreground/[0.01] p-6">
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="space-y-2.5">
+           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-success">Proof</p>
+           <div className="rounded-2xl border border-foreground/5 bg-foreground/[0.01] p-5">
               <p className="text-[15px] font-medium leading-relaxed text-foreground/80">
                 128.4k tracked streams. TikTok hook uses are 4.8x above baseline. Regional growth in Chicago (+31%) and Lagos confirmed.
               </p>
            </div>
         </div>
-        <div className="space-y-4">
-           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">Required Context</p>
-           <div className="rounded-2xl border border-brand-accent/10 bg-brand-accent/[0.02] p-6">
+        <div className="space-y-2.5">
+           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager Read</p>
+           <div className="rounded-2xl border border-brand-accent/10 bg-brand-accent/[0.02] p-5">
               <p className="text-[15px] font-medium leading-relaxed text-foreground/80">
-                Spotify save rate, payout-per-stream, and smart-link conversion are currently missing. Signal review scheduled in 72h.
+                Signed split sheet, distributor confirmation, creator commitments, and press/EPK package are currently missing. Rights gate review is active.
               </p>
            </div>
         </div>
       </div>
 
-      <div className="mt-12 space-y-6 border-t border-foreground/5 pt-10 text-[16px] font-medium leading-relaxed text-muted-foreground/80 max-w-3xl">
+      <div className="mt-6 space-y-4 border-t border-foreground/5 pt-6 text-[16px] font-medium leading-relaxed text-muted-foreground/80 max-w-3xl">
         <p>
-          The current signal is strong but reversible. Night Bus has successfully transitioned from "noise" to "demand" in three key markets, with YouTube comments shifting from passive views to release requests.
+          The current release plan is stronger because the Manager refused the rushed next-Friday drop and moved Night Bus to Friday, June 12, 2026.
         </p>
         <p>
-          The Manager's Read: Attention is real enough to test, but not enough to scale the full $5,000 budget. We are holding $2,250 in reserve until conversion integrity is verified.
+          The Manager's Read: the release can become credible if rights, distribution, playlist pitching, creator seeding, press, owned content, and release-day checks stay connected in one mission loop.
         </p>
       </div>
 
       {/* Today's directive */}
-      <div className="mt-10 rounded-[24px] border border-foreground/5 bg-foreground/[0.01] p-8">
+      <div className="mt-6 rounded-[22px] border border-foreground/5 bg-foreground/[0.01] p-5">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-brand-accent">Today's Directive</p>
+        <p className="mt-1 font-ui text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground/35">Next Move</p>
         <p className="mt-3 text-[15px] font-bold leading-relaxed text-foreground opacity-90">
-          Continue the content sprint. Maintain the $1,850 spend cap. Let the 72-hour review decide whether to scale — do not commit early.
+          Clear split approval first. Keep June 12 conditional until rights are written, then move distributor delivery, DSP pitching, creator seeding, press, and launch content in sequence.
         </p>
       </div>
 
-      <div className="mt-8 flex justify-between items-center">
+      <div className="mt-6 flex justify-between items-center">
         <button
           onClick={onEvidence}
           className="text-[12px] font-bold text-muted-foreground/60 underline-offset-4 hover:text-brand-accent hover:underline transition-all"
         >
-          View supporting evidence →
+          View supporting evidence â†’
         </button>
         <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/20 italic">Generated by AI Manager 08:30 AM</span>
       </div>
@@ -1465,19 +1863,19 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
 );
 
 const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: DrawerKind) => void; onWorkspace: (view: View) => void }) => (
-  <div className="flex flex-col gap-12">
+  <div className="flex flex-col gap-6">
     <section className="space-y-6">
-      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Intelligence Alerts</p>
+      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Needs Attention</p>
       <div className="flex flex-col gap-4">
-        <button onClick={() => onWorkspace("testLabWorkspace")} className="group flex flex-col gap-3 rounded-[24px] border border-foreground/5 bg-background p-6 text-left transition-all hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.02]">
+        <button onClick={() => onWorkspace("tasksWorkspace")} className="group flex flex-col gap-3 rounded-[24px] border border-foreground/5 bg-background p-6 text-left transition-all hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.02]">
           <div className="flex items-center gap-2.5">
              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-warning/10 text-warning">
                 <BadgeDollarSign className="h-4 w-4" />
              </div>
-             <p className="text-[13px] font-bold text-foreground tracking-tight">Approve Test Budget</p>
+             <p className="text-[13px] font-bold text-foreground tracking-tight">Split approval</p>
           </div>
           <p className="text-[12px] font-medium text-muted-foreground/80 leading-relaxed">
-             The Manager is waiting on your approval for the <span className="text-foreground font-bold italic">$1,850</span> Nigeria content sprint.
+             The Manager is waiting on the signed split sheet before the June 12 release can be treated as clean.
           </p>
         </button>
         <button onClick={() => onDrawer("evidence")} className="group flex flex-col gap-3 rounded-[24px] border border-foreground/5 bg-background p-6 text-left transition-all hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.02]">
@@ -1485,7 +1883,7 @@ const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: D
              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 text-brand-accent">
                 <Upload className="h-4 w-4" />
              </div>
-             <p className="text-[13px] font-bold text-foreground tracking-tight">Upload Evidence</p>
+             <p className="text-[13px] font-bold text-foreground tracking-tight">Distributor package</p>
           </div>
           <p className="text-[12px] font-medium text-muted-foreground/80 leading-relaxed">
              Adding a Spotify for Artists export would increase signal confidence for the Nigeria sprint.
@@ -1495,7 +1893,7 @@ const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: D
     </section>
 
     <section className="space-y-6">
-      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Recent Activity</p>
+      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Recent Movement</p>
       <div className="space-y-8 pl-1">
         {[
           { label: "Milestone", title: "Started content testing", time: "2h ago" },
@@ -1504,7 +1902,7 @@ const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: D
         ].map((item, i) => (
           <div key={i} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
             <p className="text-[12px] font-bold text-foreground leading-tight tracking-tight">{item.title}</p>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{item.label} · {item.time}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{item.label} Â· {item.time}</p>
           </div>
         ))}
       </div>
@@ -1567,36 +1965,43 @@ const LightMissionCards = ({
   onMission: (id?: string) => void;
   onWorkspace: (view: View) => void;
 }) => (
-  <div className="grid gap-6 md:grid-cols-2">
+  <div className="grid gap-3">
     {missions.filter(m => !m.archived).map((mission) => {
       const statusColor = mission.status === "blocked" ? "bg-warning" : mission.status === "review" ? "bg-amber-500" : "bg-brand-accent";
       return (
         <button
           key={mission.id}
           onClick={() => onMission(mission.id)}
-          className="group surface-panel relative flex flex-col overflow-hidden rounded-[32px] border border-foreground/5 p-8 text-left transition-all duration-500 hover:border-brand-accent/20 hover:shadow-2xl hover:shadow-brand-accent/[0.03]"
+          className="group grid gap-4 rounded-[22px] border border-foreground/8 bg-background/80 p-5 text-left shadow-sm transition-all duration-300 hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.03] md:grid-cols-[minmax(0,1fr)_170px]"
         >
-          <div className="flex items-center justify-between mb-8">
-             <div className="flex items-center gap-3">
-                <span className={cn("h-1.5 w-1.5 rounded-full", statusColor)} />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{mission.status}</span>
-             </div>
-             <div className="flex items-center gap-2">
-                <p className="text-[11px] font-bold text-foreground">{mission.progress}%</p>
-                <div className="h-1 w-10 overflow-hidden rounded-full bg-foreground/5">
-                   <div className={cn("h-full rounded-full transition-all duration-1000", statusColor)} style={{ width: `${mission.progress}%` }} />
-                </div>
-             </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={cn("h-1.5 w-1.5 rounded-full", statusColor)} />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active Mission</span>
+              <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-warning">Blocker</span>
+            </div>
+            <p className="mt-3 font-display text-[17px] font-bold text-foreground tracking-tight group-hover:text-brand-accent transition-colors">
+              {mission.title}
+            </p>
+            <p className="mt-2 text-[13px] font-medium leading-relaxed text-muted-foreground/75 line-clamp-2">
+              {mission.summary}
+            </p>
           </div>
-          <p className="font-display text-lg font-bold text-foreground tracking-tight group-hover:text-brand-accent transition-colors">
-            {mission.title}.
-          </p>
-          <p className="mt-4 text-[14px] font-medium leading-relaxed text-muted-foreground/80 line-clamp-2">
-            {mission.summary}
-          </p>
-          <div className="mt-8 flex items-center justify-between border-t border-foreground/5 pt-6">
-             <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{mission.review}</p>
-             <ChevronRight className="h-4 w-4 text-muted-foreground/20 transition-all group-hover:translate-x-1 group-hover:text-brand-accent" />
+          <div className="flex flex-col justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.025] p-4">
+             <div>
+               <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Progress</p>
+                  <p className="text-[12px] font-bold text-foreground">{mission.progress}%</p>
+               </div>
+               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/5">
+                  <div className={cn("h-full rounded-full transition-all duration-1000", statusColor)} style={{ width: `${mission.progress}%` }} />
+               </div>
+               <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{mission.review}</p>
+             </div>
+             <span className="mt-4 inline-flex items-center justify-between text-[11px] font-bold text-brand-accent">
+               Open mission
+               <ChevronRight className="h-4 w-4 transition-all group-hover:translate-x-1" />
+             </span>
           </div>
         </button>
       );
@@ -1649,7 +2054,7 @@ const ManagerOfficeFocused = ({
   onConversation: (conversation: RecentConversation) => void;
   conversations: RecentConversation[];
 }) => (
-  <WorkspaceShell eyebrow="Manager Office" title="Direct Briefing" onBack={onBack}>
+  <WorkspaceShell eyebrow="Manager Office" title="Manager Briefing" onBack={onBack}>
     <div className="max-w-5xl">
       <ManagerDeskPanel
         answers={answers}
@@ -1671,8 +2076,8 @@ const ManagerOfficeFocused = ({
         <div className="mt-12 surface-panel rounded-[28px] p-8">
            <div className="flex flex-col gap-8 md:flex-row md:items-center md:justify-between">
               <div className="max-w-xl">
-                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Decision Intelligence</p>
-                 <h4 className="font-display mt-2 text-lg font-bold text-foreground">How the Manager thinks.</h4>
+                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager Read</p>
+                 <h4 className="font-display mt-2 text-lg font-bold text-foreground">How the Manager makes a call.</h4>
                  <p className="mt-2 text-[14px] leading-relaxed text-foreground/50 font-medium">
                     Uses multi-agent validation to cross-reference context with market signals before outputting decision packages.
                  </p>
@@ -1714,7 +2119,7 @@ const MorningBriefNarrative = ({ profile }: { profile: ArtistProfile }) => {
       </div>
       <div className="mt-6 rounded-[22px] border border-brand-accent/25 bg-brand-accent/10 px-5 py-4">
         <p className="text-sm leading-6 text-foreground/76">
-          <span className="font-semibold text-brand-accent">What matters today:</span> keep the artist focused on one repeatable content sprint, cap the first campaign move, and use the 72-hour review to decide whether this is demand or just noise.
+          <span className="font-semibold text-brand-accent">What matters today:</span> clear the split sheet, confirm distributor delivery, and keep creator, press, playlist, content, and release-day work moving from task reviews.
         </p>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
@@ -1764,11 +2169,32 @@ const ManagerDeskPanel = ({
   <div className="flex flex-col gap-10">
     {!allAnswered ? (
       /* BLOCKING GATE: Questions must be answered before anything else */
-      <div className="grid gap-10 lg:grid-cols-[260px_1fr]">
+      <div className="grid gap-6">
+        <div className="rounded-[26px] border border-brand-accent/15 bg-brand-accent/[0.04] p-6">
+          <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+            <div className="max-w-2xl">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">Context needed</p>
+              <h2 className="font-display mt-2 text-[22px] font-bold tracking-tight text-foreground">Manager needs these answers before making decisions.</h2>
+              <p className="mt-2 text-[13px] font-medium leading-relaxed text-muted-foreground/70">
+                The directive composer and prior threads unlock after the release context is complete.
+              </p>
+            </div>
+            <div className="min-w-[180px] rounded-[18px] border border-foreground/5 bg-background/70 p-4">
+              <div className="flex items-center justify-between">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/45">Context progress</p>
+                <p className="text-[12px] font-bold text-foreground">{answeredCount}/{managerQuestions.length}</p>
+              </div>
+              <div className="mt-3 h-1.5 rounded-full bg-foreground/5">
+                <div className="h-full rounded-full bg-brand-accent transition-all duration-1000" style={{ width: `${(answeredCount / managerQuestions.length) * 100}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
         {/* Left: Question navigator */}
         <aside className="space-y-6">
           <div className="surface-panel rounded-2xl p-5">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Readiness</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Question list</p>
             <div className="mt-3 flex items-center gap-3">
               <div className="flex-1 h-1 rounded-full bg-foreground/5">
                 <div className="h-full rounded-full bg-brand-accent transition-all duration-1000" style={{ width: `${(answeredCount / managerQuestions.length) * 100}%` }} />
@@ -1802,10 +2228,10 @@ const ManagerDeskPanel = ({
           </div>
         </aside>
 
-        {/* Right: Active question — fills the screen */}
+        {/* Right: Active question â€” fills the screen */}
         <div className="rounded-[28px] border border-foreground/5 bg-background p-8 shadow-2xl shadow-black/[0.02]">
           <div className="max-w-2xl">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-brand-accent">Context Intake {managerQuestions.findIndex(q => q.id === activeQuestion) + 1} / {managerQuestions.length}</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-brand-accent">Active Question {managerQuestions.findIndex(q => q.id === activeQuestion) + 1} / {managerQuestions.length}</p>
             <h2 className="font-display mt-3 text-2xl font-bold tracking-tight text-foreground">
               {activeQuestionObject.question}
             </h2>
@@ -1833,8 +2259,9 @@ const ManagerDeskPanel = ({
           </div>
         </div>
       </div>
+      </div>
     ) : (
-      /* UNLOCKED STATE: All questions answered — show full interface */
+      /* UNLOCKED STATE: All questions answered â€” show full interface */
       <>
         {/* Ask the Manager */}
         <div className="surface-panel rounded-[28px] p-8 shadow-2xl shadow-black/[0.02]">
@@ -1854,14 +2281,14 @@ const ManagerDeskPanel = ({
             </p>
             
             <div className="mt-8 flex flex-wrap gap-2">
-              {["Budget Review", "Momentum Signal", "Marketing Plan", "Strategy Check"].map((p) => (
+              {["Release Plan", "Rights Blocker", "Creator Push", "Press Angle"].map((p) => (
                 <button
                   key={p}
                   onClick={() => setAskText(
-                    p === "Budget Review" ? "What should we do with the $5,000 budget this month?"
-                    : p === "Momentum Signal" ? "Is the current TikTok heat sustainable?"
-                    : p === "Marketing Plan" ? "Draft a 10-day content sprint for Night Bus."
-                    : "How should we pivot if the Chicago signals cool off?"
+                    p === "Release Plan" ? "Review the June 12 release plan and tell me the next strongest move."
+                    : p === "Rights Blocker" ? "The split sheet is still blocked. What should we do before continuing?"
+                    : p === "Creator Push" ? "Build the creator seeding directive for the Night Bus hook."
+                    : "Shape the press angle for Night Bus using the night-drive story."
                   )}
                   className="rounded-full border border-foreground/5 bg-foreground/[0.03] px-4 py-2 text-[11px] font-bold text-foreground/60 transition-all hover:border-brand-accent/20 hover:bg-brand-accent/5 hover:text-brand-accent"
                 >
@@ -1889,7 +2316,7 @@ const ManagerDeskPanel = ({
           </div>
         </div>
 
-        {/* Recent Conversations — only visible after unlock */}
+        {/* Recent Conversations â€” only visible after unlock */}
         <RecentConversationsPanel conversations={conversations} onContinueConversation={onContinueConversation} />
       </>
     )}
@@ -1986,9 +2413,9 @@ const AttentionPanel = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: DrawerKi
   <div className="rounded-[28px] border border-white/12 bg-white/[0.055] p-5 lg:p-6">
     <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Needs attention</p>
     <div className="mt-4 space-y-3">
-      <AttentionButton icon={BadgeDollarSign} text="$1,850 test budget needs approval." onClick={() => onWorkspace("testLabWorkspace")} />
-      <AttentionButton icon={Upload} text="Spotify for Artists CSV would raise confidence." onClick={() => onDrawer("evidence")} />
-      <AttentionButton icon={CalendarClock} text="72-hour signal review scheduled." onClick={() => onWorkspace("reviewWorkspace")} />
+      <AttentionButton icon={BadgeDollarSign} text="Split sheet approval is blocking release clearance." onClick={() => onWorkspace("tasksWorkspace")} />
+      <AttentionButton icon={Upload} text="Distributor package confirmation is still missing." onClick={() => onDrawer("evidence")} />
+      <AttentionButton icon={CalendarClock} text="Rights gate review is the next Manager check." onClick={() => onWorkspace("reviewWorkspace")} />
     </div>
   </div>
 );
@@ -2008,6 +2435,7 @@ const ConversationWorkspace = ({
   setDraft,
   onSend,
   onBack,
+  onOpenCreatedWork,
 }: {
   conversation: RecentConversation;
   messages: ConversationMessage[];
@@ -2015,6 +2443,7 @@ const ConversationWorkspace = ({
   setDraft: (val: string) => void;
   onSend: () => void;
   onBack: () => void;
+  onOpenCreatedWork: (work: NonNullable<ConversationMessage["workCreated"]>) => void;
 }) => {
   return (
     <WorkspaceShell eyebrow="Direct Message" title={conversation.topic} onBack={onBack}>
@@ -2059,8 +2488,13 @@ const ConversationWorkspace = ({
                                </div>
                                <h4 className="text-[14px] font-bold text-foreground">{msg.workCreated.title}</h4>
                                <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground/70">{msg.workCreated.body}</p>
-                               <button className="mt-4 w-full rounded-lg bg-foreground/[0.03] py-2 text-[11px] font-bold uppercase tracking-wider text-foreground/40 hover:bg-foreground/[0.06] transition-all">
-                                  View in Workspace
+                               <button
+                                 onClick={() => onOpenCreatedWork(msg.workCreated!)}
+                                 aria-label={`Open created ${msg.workCreated.type}: ${msg.workCreated.title}`}
+                                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground/[0.03] py-2 text-[11px] font-bold uppercase tracking-wider text-foreground/55 transition-all hover:bg-foreground/[0.06] hover:text-foreground"
+                               >
+                                  Open created {msg.workCreated.type}
+                                  <ChevronRight className="h-3.5 w-3.5" />
                                </button>
                             </div>
                          )}
@@ -2131,6 +2565,37 @@ const MissionLane = ({ icon: Icon, title, meta, text, onClick }: { icon: typeof 
   </button>
 );
 
+const ArtistDirectionField = ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
+  <div className="group rounded-[16px] border border-brand-accent/15 bg-brand-accent/[0.035] p-4 transition-all duration-300 focus-within:border-brand-accent/45 focus-within:ring-4 focus-within:ring-brand-accent/5 sm:col-span-2">
+    <label htmlFor="artist-direction" className="font-ui block text-[10px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist Direction</label>
+    <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/70">
+      Tell the Manager where the artist is trying to go. This can include the next release, audience, team priorities, budget posture, and what should not be rushed.
+    </p>
+    <textarea
+      id="artist-direction"
+      aria-label="Artist Direction"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-3 min-h-[118px] w-full resize-none rounded-[14px] border border-foreground/8 bg-background/75 p-4 text-[14px] font-semibold leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/35"
+    />
+  </div>
+);
+
+const MissionSurfaceButton = ({ icon: Icon, title, meta, onClick }: { icon: typeof ClipboardCheck; title: string; meta: string; onClick: () => void }) => (
+  <button onClick={onClick} className="group flex items-center justify-between gap-3 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-3 text-left transition-all hover:border-foreground/16 hover:bg-foreground/[0.05]">
+    <span className="flex min-w-0 items-center gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-background text-brand-accent shadow-sm">
+        <Icon className="h-4 w-4" />
+      </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[14px] font-bold text-foreground">{title}</span>
+        <span className="mt-0.5 block truncate text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55">{meta}</span>
+      </span>
+    </span>
+    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+  </button>
+);
+
 const TasksWorkspace = ({
   onBack,
   approvedTasks,
@@ -2143,147 +2608,366 @@ const TasksWorkspace = ({
   completedTasks: string[];
   onApproveTask: (id: string) => void;
   onCompleteTask: (id: string) => void;
-}) => (
-  <WorkspaceShell eyebrow="Tasks" title="Owner-ready work" onBack={onBack}>
-    <div className="space-y-4">
-      {taskRows.map((task) => {
-        const approved = approvedTasks.includes(task.id);
-        const done = completedTasks.includes(task.id);
-        const completionBlocked = task.approvalState === "needs approval" && !approved;
-        return (
-          <div key={task.id} className="surface-panel rounded-[28px] p-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">
-                  {done ? "done" : approved ? "approved" : task.approvalState}
-                </p>
-                <p className="mt-2 text-[18px] font-bold leading-snug text-foreground">{task.title}</p>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground/80">Owner: <span className="font-semibold text-foreground">{task.owner}</span>. Deadline: {task.deadline}.</p>
-              </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <button
-                  onClick={() => onApproveTask(task.id)}
-                  disabled={approved || done}
-                  className="rounded-[10px] border border-foreground/10 px-4 py-2 text-[12px] font-semibold text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-black disabled:opacity-40"
-                >
-                  Approve
-                </button>
-                <button
-                  onClick={() => onCompleteTask(task.id)}
-                  disabled={done || completionBlocked}
-                  className="group rounded-full px-6 py-2.5 font-ui text-[12px] font-bold uppercase tracking-[0.1em] shadow-lg transition-all hover:scale-105 active:scale-95 transition-all disabled:opacity-40"
-                  style={{backgroundColor: '#111', color: '#fff'}}
-                >
-                  Mark done
-                </button>
-              </div>
-            </div>
-            <div className="mt-6 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-              <div className="rounded-[16px] border border-foreground/5 bg-foreground/5 p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Purpose</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-foreground/80">{task.purpose}</p>
-                <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Dependency</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-foreground/80">{task.dependency}</p>
-                {completionBlocked && (
-                  <p className="mt-4 rounded-[12px] border border-[#f97316]/20 bg-[#f97316]/10 p-4 text-[13px] leading-snug text-[#c2410c]">
-                    Approval is required before this task can be marked done.
-                  </p>
-                )}
-                <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Linked evidence</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-foreground/80">{task.evidenceIds.join(", ")}</p>
-              </div>
-              <div className="rounded-[16px] border border-foreground/5 bg-foreground/5 p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Steps</p>
-                <div className="mt-3 space-y-3">
-                  {task.steps.map((step, index) => (
-                    <div key={step} className="flex gap-3 text-[13px] leading-relaxed text-foreground/80">
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-black/[0.06] text-[11px] font-bold text-muted-foreground/80">{index + 1}</span>
-                      {step}
-                    </div>
-                  ))}
-                </div>
-                <label className="mt-6 block">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Completion note</span>
-                  <input className="mt-3 h-11 w-full rounded-[10px] border border-foreground/10 bg-white px-4 text-[13px] text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brand-accent/40 focus:ring-2 focus:ring-[#9A3BDC]/10" placeholder="Add what changed when this task is done..." />
-                </label>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  </WorkspaceShell>
-);
+}) => {
+  const checkpointsWithTasks = missionCheckpoints.filter((checkpoint) => taskRows.some((task) => task.checkpointId === checkpoint.id));
+  const [activeCheckpointId, setActiveCheckpointId] = useState(checkpointsWithTasks[0]?.id ?? "");
+  const taskResultById = new Map(taskResults.map((result) => [result.taskId, result]));
+  const isTaskResolved = (task: ReleaseTask) => completedTasks.includes(task.id) || ["completed", "blocked", "revised"].includes(taskResultById.get(task.id)?.status ?? "");
+  const scrollToCheckpoint = (checkpointId: string) => {
+    setActiveCheckpointId(checkpointId);
+    document.getElementById(`task-checkpoint-${checkpointId}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
 
-const TestLabWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; testCheckpoint: "setup" | "signal" | "complete" }) => {
-  const [capDecision, setCapDecision] = useState<"pending" | "approved" | "editing" | "rejected">("pending");
+  useEffect(() => {
+    if (typeof IntersectionObserver === "undefined") return;
+    const sections = checkpointsWithTasks
+      .map((checkpoint) => document.getElementById(`task-checkpoint-${checkpoint.id}`))
+      .filter((section): section is HTMLElement => Boolean(section));
+    if (!sections.length) return;
 
-  const capCopy = {
-    pending: "Pending approval. The Manager can prepare the test, but it is not runnable until the cap is approved.",
-    approved: "Approved for prototype flow. The cap is recorded; this does not spend money automatically.",
-    editing: "Editing requested. Keep the test paused until the new cap is confirmed.",
-    rejected: "Rejected. The validation test stays blocked until a new budget decision is made.",
-  }[capDecision];
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => Math.abs(a.boundingClientRect.top) - Math.abs(b.boundingClientRect.top))[0];
+        const checkpointId = visible?.target.getAttribute("data-checkpoint-id");
+        if (checkpointId) setActiveCheckpointId(checkpointId);
+      },
+      { rootMargin: "-18% 0px -62% 0px", threshold: [0.08, 0.22, 0.4] },
+    );
+
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [checkpointsWithTasks]);
 
   return (
-  <WorkspaceShell eyebrow="Test Lab" title="10-day validation test" onBack={onBack}>
-    <div className="grid gap-5 lg:grid-cols-[1fr_0.65fr]">
-      <div className="surface-panel rounded-[28px] p-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <ArtifactField label="Hypothesis" value="Night Bus can convert social attention into streams, saves, follows, and repeated demand comments." />
-          <ArtifactField label="Budget" value="$1,850 capped test / fixed budget mode" />
-          <ArtifactField label="Decision rule" value="Scale only if saves/clicks rise and demand comments repeat by day 10." />
-          <ArtifactField label="Signals watched" value="Views, comments, saves, smart-link clicks, follows, and source-of-stream if uploaded." />
-        </div>
-        <div className="mt-6 rounded-[16px] border border-foreground/5 bg-foreground/5 p-5">
-          <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Intermediate checkpoints</p>
-          <div className="mt-4 space-y-3">
-            {testCheckpoints.map((checkpoint, index) => {
-              const reached = testCheckpoint === "complete" || checkpoint.id === "setup" || (testCheckpoint === "signal" && ["early", "signal"].includes(checkpoint.id));
+    <WorkspaceShell eyebrow="Tasks" title="Release tasks" onBack={onBack}>
+      <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
+        <aside className="rounded-[24px] border border-foreground/8 bg-background/75 p-4 shadow-sm lg:sticky lg:top-6 lg:self-start">
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Checkpoint path</p>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/70">
+            Tasks are grouped by the checkpoint they help clear. Finish or resolve the required work, then the Manager reviews what changed.
+          </p>
+          <div className="mt-5 space-y-1">
+            {checkpointsWithTasks.map((checkpoint, index) => {
+              const checkpointTasks = taskRows.filter((task) => task.checkpointId === checkpoint.id);
+              const resolvedCount = checkpointTasks.filter(isTaskResolved).length;
+              const active = checkpoint.status === "Needs revision" || checkpoint.status === "Ready for AI review";
+              const inView = activeCheckpointId === checkpoint.id;
               return (
-                <div key={checkpoint.id} className={cn("flex gap-4 rounded-[14px] border p-4", reached ? "border-brand-accent/20 bg-brand-accent/[0.05]" : "border-foreground/5 bg-white")}>
-                  <span className={cn("flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold", reached ? "bg-brand-accent text-foreground" : "bg-black/[0.06] text-muted-foreground/60")}>
-                    {reached ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                <button
+                  key={checkpoint.id}
+                  data-testid={`task-checkpoint-chain-${checkpoint.id}`}
+                  aria-current={inView ? "true" : undefined}
+                  onClick={() => scrollToCheckpoint(checkpoint.id)}
+                  className={cn("relative flex w-full gap-3 rounded-[14px] px-2 py-2 text-left transition-all", inView ? "bg-foreground text-background shadow-sm" : "hover:bg-foreground/[0.04]")}
+                >
+                  {index < checkpointsWithTasks.length - 1 && <span className="absolute left-[13px] top-8 h-[calc(100%-8px)] w-px bg-foreground/10" />}
+                  <span className={cn("relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold", inView ? "border-brand-accent bg-brand-accent text-foreground" : active ? "border-brand-accent bg-brand-accent text-foreground" : "border-foreground/10 bg-background text-muted-foreground")}>
+                    {resolvedCount === checkpointTasks.length ? <Check className="h-3.5 w-3.5" /> : index + 1}
                   </span>
-                  <div>
-                    <span className="block text-[14px] font-semibold text-foreground">{checkpoint.title}</span>
-                    <span className="mt-1 block text-[13px] leading-relaxed text-foreground/70">{checkpoint.detail}</span>
+                  <div className="min-w-0">
+                    <p className={cn("truncate text-[12px] font-bold", inView ? "text-background" : "text-foreground")}>{checkpoint.title}</p>
+                    <p className={cn("mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em]", inView ? "text-background/65" : "text-muted-foreground/55")}>{resolvedCount}/{checkpointTasks.length} needed to clear</p>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
+        </aside>
+
+        <div className="space-y-5">
+          <div className="rounded-[24px] border border-foreground/8 bg-background/80 p-5 shadow-sm">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">How to read this page</p>
+            <p className="mt-2 max-w-4xl text-[14px] font-semibold leading-relaxed text-foreground/75">
+              Each section is a checkpoint. The rows underneath are the tasks that move it forward. Every completion or blockage creates a Manager review, then the plan either continues, changes, or waits.
+            </p>
+          </div>
+
+          {checkpointsWithTasks.map((checkpoint) => {
+            const checkpointTasks = taskRows.filter((task) => task.checkpointId === checkpoint.id);
+            const resolvedCount = checkpointTasks.filter(isTaskResolved).length;
+            const sectionActive = activeCheckpointId === checkpoint.id;
+            return (
+              <section
+                key={checkpoint.id}
+                id={`task-checkpoint-${checkpoint.id}`}
+                data-testid={`task-checkpoint-section-${checkpoint.id}`}
+                data-checkpoint-id={checkpoint.id}
+                data-active={sectionActive ? "true" : "false"}
+                className={cn("scroll-mt-6 rounded-[24px] border p-5 shadow-sm transition-all", sectionActive ? "border-brand-accent/35 bg-brand-accent/[0.045] shadow-lg" : "border-foreground/8 bg-background/85")}
+              >
+                <div className="grid gap-4 border-b border-foreground/8 pb-4 lg:grid-cols-[minmax(0,1fr)_220px]">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent">{checkpoint.title}</p>
+                      <span className="rounded-full border border-foreground/10 bg-foreground/[0.035] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/70">{checkpoint.status}</span>
+                    </div>
+                    <p className="mt-2 text-[15px] font-semibold leading-relaxed text-foreground">{checkpoint.question}</p>
+                    <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/70">Clears when: {checkpoint.decisionRule}</p>
+                  </div>
+                  <div className="rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Progress</p>
+                    <p className="mt-2 text-[28px] font-display font-bold leading-none text-foreground">{resolvedCount}/{checkpointTasks.length}</p>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-foreground/10">
+                      <div className="h-full rounded-full bg-brand-accent" style={{ width: `${(resolvedCount / checkpointTasks.length) * 100}%` }} />
+                    </div>
+                    <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">needed to clear</p>
+                  </div>
+                </div>
+
+                <div className="divide-y divide-foreground/7">
+                  {checkpointTasks.map((task) => {
+                    const approved = approvedTasks.includes(task.id);
+                    const done = completedTasks.includes(task.id);
+                    const completionBlocked = task.approvalState === "needs approval" && !approved;
+                    const result = taskResultById.get(task.id);
+                    const showResult = Boolean(result && (done || result.status === "blocked" || result.status === "revised"));
+                    const blocked = result?.status === "blocked" || task.approvalState === "blocked";
+                    return (
+                      <div key={task.id} className="grid gap-4 py-5 lg:grid-cols-[minmax(0,1fr)_180px]">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={cn("h-2.5 w-2.5 rounded-full", blocked ? "bg-[#f97316]" : done || result?.status === "completed" ? "bg-brand-accent" : "bg-foreground/20")} />
+                            <p className="text-[15px] font-bold leading-snug text-foreground">{task.title}</p>
+                            <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">{done ? "done" : approved ? "approved" : task.approvalState}</span>
+                          </div>
+                          <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/75">{task.owner} / {task.deadline}</p>
+                          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-foreground/72">{task.purpose}</p>
+                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                            <p className="text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
+                            <p className="rounded-[12px] border border-brand-accent/15 bg-background/70 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground/75">
+                              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Checkpoint link</span>
+                              <span className="mt-0.5 block"><span className="font-bold text-foreground">Unlocks checkpoint:</span> {checkpoint.title}</span>
+                            </p>
+                          </div>
+                          <details className="mt-3 group">
+                            <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent">Show required steps</summary>
+                            <div className="mt-3 grid gap-2">
+                              {task.steps.map((step, index) => (
+                                <p key={step} className="text-[12px] leading-relaxed text-foreground/72">{index + 1}. {step}</p>
+                              ))}
+                            </div>
+                          </details>
+                          {completionBlocked && (
+                            <p className="mt-3 rounded-[12px] border border-[#f97316]/20 bg-[#f97316]/10 p-3 text-[12px] font-semibold leading-snug text-[#c2410c]">
+                              Approval is required before this task can be marked done.
+                            </p>
+                          )}
+                          {showResult && result && (
+                            <div className="mt-4 border-l-2 border-brand-accent/50 pl-4">
+                              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager review</p>
+                              <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground">{result.summary}</p>
+                              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Task result:</span> {result.userNote}</p>
+                              <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">{result.interpretation}</p>
+                              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Effect on mission:</span> {result.missionEffect}</p>
+                              <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{result.followUp}</p>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-start justify-end gap-2">
+                          {task.approvalState === "needs approval" && (
+                            <button
+                              onClick={() => onApproveTask(task.id)}
+                              disabled={approved || done}
+                              className="rounded-[10px] border border-foreground/10 px-3 py-2 text-[11px] font-bold text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-black disabled:opacity-40"
+                            >
+                              Approve
+                            </button>
+                          )}
+                          <button
+                            onClick={() => onCompleteTask(task.id)}
+                            disabled={done || completionBlocked || task.approvalState === "blocked"}
+                            className="rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
+                          >
+                            Mark done
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
         </div>
       </div>
-      <div className="rounded-[20px] border border-brand-accent/20 bg-brand-accent/[0.04] p-6 shadow-[0_2px_12px_rgba(0,0,0,0.02)]">
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">Approval state</p>
-        <p className="mt-4 text-[15px] leading-relaxed text-foreground/90">{capCopy}</p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            onClick={() => setCapDecision("approved")}
-            disabled={capDecision === "approved"}
-            className="rounded-[10px] bg-brand-accent px-5 py-2.5 text-[13px] font-bold text-primary-foreground transition-all disabled:opacity-40"
-          >
-            Approve cap
-          </button>
-          <button onClick={() => setCapDecision("editing")} className="rounded-[10px] border border-foreground/10 px-5 py-2.5 text-[13px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-black">
-            Edit amount
-          </button>
-          <button onClick={() => setCapDecision("rejected")} className="rounded-[10px] px-5 py-2.5 text-[13px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-[#f97316]">
-            Reject
-          </button>
-        </div>
-      </div>
-    </div>
-  </WorkspaceShell>
+    </WorkspaceShell>
   );
 };
 
-const BriefsWorkspace = ({ onBack }: { onBack: () => void }) => (
-  <WorkspaceShell eyebrow="Briefs" title="Agent-to-agent updates" onBack={onBack}>
+const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; testCheckpoint: "setup" | "signal" | "complete" }) => {
+  const [selectedCheckpointId, setSelectedCheckpointId] = useState(() => missionCheckpoints.find((checkpoint) => checkpoint.status === "Needs revision")?.id ?? missionCheckpoints[0].id);
+  const taskResultById = new Map(taskResults.map((result) => [result.taskId, result]));
+  const clearedCount = missionCheckpoints.filter((checkpoint) => checkpoint.status === "Met" || checkpoint.status === "Ready for AI review").length;
+  const activeBlocker = missionCheckpoints.find((checkpoint) => checkpoint.status === "Needs revision") ?? missionCheckpoints[0];
+  const selectedCheckpoint = missionCheckpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId) ?? activeBlocker;
+  const selectedRequiredResults = selectedCheckpoint.requiredTaskIds.map((taskId) => taskResultById.get(taskId)?.status ?? "pending");
+  const selectedResolvedCount = selectedRequiredResults.filter((status) => status !== "pending").length;
+  const readinessPercent = Math.round((clearedCount / missionCheckpoints.length) * 100);
+  const statusClass = (checkpoint: MissionCheckpoint) =>
+    checkpoint.status === "Needs revision"
+      ? "border-[#f97316]/30 bg-[#fff8f3] text-[#9a3412]"
+      : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review"
+        ? "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent"
+        : "border-foreground/8 bg-background text-muted-foreground";
+  const statusDotClass = (checkpoint: MissionCheckpoint) =>
+    checkpoint.status === "Needs revision"
+      ? "bg-[#f97316]"
+      : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review"
+        ? "bg-brand-accent"
+        : "bg-foreground/20";
+
+  return (
+    <WorkspaceShell eyebrow="Checkpoints" title="Mission checkpoints" onBack={onBack}>
+      <div className="space-y-5">
+        <section data-testid="checkpoint-command-strip" className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_520px]">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission progress map</p>
+              <div className="mt-2 flex flex-wrap items-end gap-3">
+                <h3 className="font-display text-[30px] font-bold leading-none text-foreground">Night Bus / June 12</h3>
+                <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker.title}</span>
+              </div>
+              <p className="mt-3 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/70">
+                Reusable checkpoint model: every mission uses the same shape of task result, evidence, Manager review, and next action. This release only changes the labels and evidence.
+              </p>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-4">
+              <ArtifactField label="Readiness" value={`${readinessPercent}%`} />
+              <ArtifactField label="Cleared" value={`${clearedCount}/${missionCheckpoints.length}`} />
+              <ArtifactField label="Current call" value="Move date" />
+              <ArtifactField label="Target" value="Fri Jun 12" />
+            </div>
+          </div>
+          <div className="scrollbar-none mt-5 flex gap-1.5 overflow-x-auto pb-1" aria-label="Checkpoint path">
+            {missionCheckpoints.map((checkpoint, index) => (
+              <button
+                key={checkpoint.id}
+                onClick={() => setSelectedCheckpointId(checkpoint.id)}
+                aria-current={selectedCheckpoint.id === checkpoint.id ? "true" : undefined}
+                className={cn("flex min-w-[118px] items-center gap-2 rounded-full border px-3 py-2 text-left transition-colors", selectedCheckpoint.id === checkpoint.id ? "border-foreground bg-foreground text-background" : "border-foreground/8 bg-foreground/[0.025] text-muted-foreground hover:bg-foreground/[0.05]")}
+              >
+                <span className={cn("h-2.5 w-2.5 rounded-full", selectedCheckpoint.id === checkpoint.id ? "bg-brand-accent" : statusDotClass(checkpoint))} />
+                <span className="truncate text-[10px] font-bold uppercase tracking-[0.08em]">{index + 1}. {checkpoint.title.replace(" Gate", "")}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(430px,0.95fr)_minmax(420px,1fr)]">
+          <section className="min-w-0">
+            <div className="mb-3 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Checkpoint path</p>
+                <p className="mt-1 text-[13px] font-semibold text-foreground/70">Compact list. Select a checkpoint to inspect task results and Manager calls.</p>
+              </div>
+              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">Gate ledger</span>
+            </div>
+            <div data-testid="checkpoint-scroll-region" className="scrollbar-soft space-y-2 pr-1 lg:max-h-[calc(100vh-245px)] lg:overflow-y-auto lg:pr-2">
+              {missionCheckpoints.map((checkpoint, index) => {
+                const requiredResults = checkpoint.requiredTaskIds.map((taskId) => taskResultById.get(taskId)?.status ?? "pending");
+                const resolvedCount = requiredResults.filter((status) => status !== "pending").length;
+                return (
+                  <button
+                    key={checkpoint.id}
+                    data-testid={`checkpoint-ledger-${checkpoint.id}`}
+                    aria-current={selectedCheckpoint.id === checkpoint.id ? "true" : undefined}
+                    onClick={() => setSelectedCheckpointId(checkpoint.id)}
+                    className={cn("grid w-full grid-cols-[34px_minmax(0,1fr)_76px] items-center gap-3 rounded-[18px] border p-3 text-left transition-all", selectedCheckpoint.id === checkpoint.id ? "border-foreground bg-foreground text-background shadow-lg" : "border-foreground/8 bg-background/82 hover:border-foreground/16 hover:bg-foreground/[0.025]")}
+                  >
+                    <span className={cn("flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-foreground" : selectedCheckpoint.id === checkpoint.id ? "bg-background/15 text-background" : "bg-foreground/8 text-muted-foreground")}>
+                      {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-4 w-4" /> : index + 1}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-[14px] font-bold leading-tight">{checkpoint.title}</span>
+                      <span className={cn("mt-1 block truncate text-[12px] font-semibold", selectedCheckpoint.id === checkpoint.id ? "text-background/70" : "text-muted-foreground/72")}>{checkpoint.nextAction}</span>
+                    </span>
+                    <span className="text-right">
+                      <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", selectedCheckpoint.id === checkpoint.id ? "border-background/20 bg-background/10 text-background" : statusClass(checkpoint))}>{checkpoint.status}</span>
+                      <span className={cn("mt-1 block text-[10px] font-bold uppercase tracking-[0.08em]", selectedCheckpoint.id === checkpoint.id ? "text-background/65" : "text-muted-foreground/55")}>{resolvedCount}/{checkpoint.requiredTaskIds.length} results</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <aside data-testid="checkpoint-inspector" className="min-w-0 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:sticky lg:top-6 lg:self-start">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Now viewing</p>
+                <h3 className="mt-2 text-[24px] font-display font-bold leading-tight text-foreground">{selectedCheckpoint.title}</h3>
+              </div>
+              <span className={cn("rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em]", statusClass(selectedCheckpoint))}>{selectedCheckpoint.status}</span>
+            </div>
+
+            <p className="mt-4 text-[15px] font-semibold leading-relaxed text-foreground">{selectedCheckpoint.question}</p>
+            <div className="mt-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">What needs to be true</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-foreground/75">{selectedCheckpoint.decisionRule}</p>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
+              <div>
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Required task results</p>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55">{selectedResolvedCount}/{selectedCheckpoint.requiredTaskIds.length}</span>
+                </div>
+                <div className="mt-3 divide-y divide-foreground/7 rounded-[16px] border border-foreground/8 bg-background">
+                  {selectedCheckpoint.requiredTaskIds.map((taskId) => {
+                    const task = taskRows.find((row) => row.id === taskId);
+                    const result = taskResultById.get(taskId);
+                    return (
+                      <div key={taskId} className="p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-[13px] font-bold leading-snug text-foreground">{task?.title}</p>
+                          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", result?.status === "blocked" ? "bg-[#f97316]/12 text-[#c2410c]" : result ? "bg-brand-accent/10 text-brand-accent" : "bg-foreground/5 text-muted-foreground/70")}>{result?.status ?? "pending"}</span>
+                        </div>
+                        {result && <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground/72">{result.userNote}</p>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Manager recommendation</p>
+                  <p className="mt-2 text-[14px] font-bold leading-relaxed text-foreground">{selectedCheckpoint.recommendation}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Manager read</p>
+                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/78">{selectedCheckpoint.resultSummary}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Next action</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-foreground/72">{selectedCheckpoint.nextAction}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Signals watched</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {selectedCheckpoint.watchedSignals.slice(0, 6).map((signal) => (
+                      <span key={signal} className="rounded-full bg-foreground/[0.045] px-2 py-1 text-[10px] font-semibold text-muted-foreground/75">{signal}</span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <p className="mt-5 border-t border-foreground/8 pt-4 text-[12px] leading-relaxed text-muted-foreground/70">{testReviewImpact[testCheckpoint]}</p>
+          </aside>
+        </div>
+      </div>
+    </WorkspaceShell>
+  );
+};
+
+const NotesWorkspace = ({ onBack }: { onBack: () => void }) => (
+  <WorkspaceShell eyebrow="Notes" title="Agent-to-agent notes" onBack={onBack}>
     <div className="surface-panel rounded-[28px] p-8 shadow-2xl shadow-black/[0.02] lg:p-8">
       <p className="max-w-3xl text-[15px] leading-relaxed text-foreground/70">
-        These are the useful messages moving through the Night Bus mission. They are written for people to understand quickly: who asked who, what was found, what evidence supports it, and what should happen next.
+        These are read-only handoffs moving through the Night Bus mission. The user can inspect them, but agents do not need approval to file a note into memory, update a checkpoint, or prepare a recommendation.
       </p>
       <div className="mt-8 divide-y divide-foreground/5">
       {departmentBriefs.map((brief) => (
@@ -2298,17 +2982,16 @@ const BriefsWorkspace = ({ onBack }: { onBack: () => void }) => (
           <p className="mt-5 max-w-4xl text-[16px] leading-relaxed text-foreground/80">{brief.message}</p>
           <div className="mt-6 space-y-2 rounded-[14px] border border-foreground/5 bg-foreground/5 p-5">
             <p className="text-[13px] leading-relaxed text-black/70">
-              <span className="font-bold text-foreground">{brief.id === "manager-marketing-request" ? "Source basis:" : "Source context:"}</span> {brief.sourceBasis}
+              <span className="font-bold text-foreground">Why it matters:</span> {brief.recommendedAction}
             </p>
             <p className="text-[13px] leading-relaxed text-black/70">
-              <span className="font-bold text-foreground">{brief.id === "manager-marketing-request" ? "Recommended next action:" : "Next action:"}</span> {brief.recommendedAction}
+              <span className="font-bold text-foreground">Evidence used:</span> {brief.sourceBasis}
+            </p>
+            <p className="text-[13px] leading-relaxed text-black/70">
+              <span className="font-bold text-foreground">Resulting change:</span> {brief.resultingChange}
             </p>
           </div>
           <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{brief.briefType} / {brief.linkedMission}</p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button className="rounded-[10px] border border-foreground/10 px-5 py-2.5 text-[13px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-black">Approve for use</button>
-            <button className="rounded-[10px] px-5 py-2.5 text-[13px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-black">Export</button>
-          </div>
         </article>
       ))}
       </div>
@@ -2335,7 +3018,7 @@ const MissionsWorkspace = ({
   const archivedMissions = missions.filter((m) => m.archived);
 
   return (
-    <WorkspaceShell eyebrow="Operating Rhythm" title="Missions" onBack={onBack}>
+  <WorkspaceShell eyebrow="Artist work" title="Missions" onBack={onBack}>
       <div className="grid gap-10 xl:grid-cols-[260px_1fr] items-start">
         <aside className="sticky top-12 flex flex-col gap-8 max-h-[calc(100vh-120px)] overflow-y-auto pr-2">
           <div className="space-y-4">
@@ -2361,7 +3044,7 @@ const MissionsWorkspace = ({
                       </p>
                       <div className="flex items-center gap-2">
                          <span className={cn("h-1 w-1 rounded-full", statusColor)} />
-                         <p className="text-[10px] font-bold uppercase tracking-wider opacity-40">{mission.progress}% · {mission.review}</p>
+                         <p className="text-[10px] font-bold uppercase tracking-wider opacity-40">{mission.progress}% Â· {mission.review}</p>
                       </div>
                     </button>
                   );
@@ -2394,48 +3077,82 @@ const MissionsWorkspace = ({
           </div>
         </aside>
 
-        <div className="max-w-4xl">
-          <div className="pb-10 border-b border-foreground/5">
-             <div className="flex items-center gap-3">
-                <span className={cn(
-                  "rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest border",
-                  selectedMission.status === "blocked" ? "bg-warning/10 text-warning border-warning/10" :
-                  selectedMission.status === "complete" ? "bg-success/10 text-success border-success/10" :
-                  "bg-brand-accent/10 text-brand-accent border-brand-accent/10"
-                )}>
-                  {selectedMission.status}
-                </span>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Mission Profile</span>
-             </div>
-             <h3 className="font-display mt-6 text-2xl font-bold leading-tight text-foreground tracking-tight">{selectedMission.title}.</h3>
-             <p className="mt-4 text-[15px] font-medium leading-relaxed text-muted-foreground/80">{selectedMission.summary}</p>
-             <div className="mt-8 flex items-center justify-between border-t border-foreground/5 pt-8">
-                <div className="flex items-center gap-6">
-                   <div>
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Operational Status</p>
-                      <p className="mt-1 text-[13px] font-bold text-foreground">{selectedMission.review}</p>
-                   </div>
-                   <div className="h-8 w-px bg-foreground/10" />
-                   <div className="flex items-center gap-3">
-                      <p className="text-[13px] font-bold text-foreground">{selectedMission.progress}%</p>
-                      <div className="h-1.5 w-32 overflow-hidden rounded-full bg-foreground/5">
-                         <div className={cn("h-full rounded-full transition-all duration-1000", selectedMission.status === "blocked" ? "bg-warning" : "bg-brand-accent")} style={{ width: `${selectedMission.progress}%` }} />
-                      </div>
-                   </div>
+        <div className="min-w-0 space-y-5">
+          <section data-testid="mission-command-bar" className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission overview</p>
+              <span className={cn(
+                "rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]",
+                selectedMission.status === "blocked" ? "border-warning/10 bg-warning/10 text-warning" :
+                selectedMission.status === "complete" ? "border-success/10 bg-success/10 text-success" :
+                "border-brand-accent/10 bg-brand-accent/10 text-brand-accent"
+              )}>
+                {selectedMission.status}
+              </span>
+              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">{selectedMission.review}</span>
+            </div>
+            <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
+              <div className="min-w-0">
+                <h3 className="font-display text-[30px] font-bold leading-tight text-foreground tracking-tight">{selectedMission.title}</h3>
+                <p className="mt-2 max-w-3xl text-[14px] font-semibold leading-relaxed text-foreground/72">{selectedMission.summary}</p>
+                <div className="mt-4 h-1.5 max-w-xl overflow-hidden rounded-full bg-foreground/8">
+                  <div className={cn("h-full rounded-full transition-all duration-1000", selectedMission.status === "blocked" ? "bg-warning" : "bg-brand-accent")} style={{ width: `${selectedMission.progress}%` }} />
                 </div>
-             </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <ArtifactField label="Progress" value={`${selectedMission.progress}%`} />
+                <ArtifactField label="Needs attention" value="Rights & Metadata checkpoint" />
+                <ArtifactField label="Manager call" value={missionReview.outcome} />
+                <ArtifactField label="Next review" value={missionReview.nextReview} />
+              </div>
+            </div>
+          </section>
+
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
+            <section className="rounded-[24px] border border-brand-accent/15 bg-brand-accent/[0.035] p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager check-in</p>
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/50">Latest read</p>
+                  <h4 className="mt-2 text-[18px] font-bold text-foreground">{missionReview.title}</h4>
+                </div>
+                <span className="rounded-full border border-brand-accent/15 bg-background px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-brand-accent">
+                  {missionReview.outcome}
+                </span>
+              </div>
+              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/50">Manager recommendation</p>
+              <p className="mt-2 text-[14px] font-semibold leading-relaxed text-foreground">{missionReview.recommendation}</p>
+              <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground/80">{missionReview.why}</p>
+              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/50">What changed</p>
+              <div className="mt-4 grid gap-3 md:grid-cols-3">
+                {missionReview.changes.map((change) => (
+                  <div key={change} className="rounded-[14px] border border-foreground/5 bg-background/80 p-3 text-[12px] font-medium leading-relaxed text-foreground/75">
+                    {change}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 rounded-[14px] border border-brand-accent/10 bg-background/80 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Next task created</p>
+                <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/80">{missionReview.nextTaskCreated}</p>
+              </div>
+            </section>
+
+            <aside data-testid="mission-surface-rail" className="rounded-[24px] border border-foreground/8 bg-background/85 p-4 shadow-sm xl:sticky xl:top-6 xl:self-start">
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Mission surfaces</p>
+              <div className="mt-4 grid gap-2">
+                <MissionSurfaceButton icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} things to do`} onClick={() => onWorkspace("tasksWorkspace")} />
+                <MissionSurfaceButton icon={Gauge} title="Checkpoints" meta="9 review points" onClick={() => onWorkspace("testLabWorkspace")} />
+                <MissionSurfaceButton icon={FileText} title="Notes" meta={`${selectedMission.briefs} agent handoffs`} onClick={() => onWorkspace("briefsWorkspace")} />
+                <MissionSurfaceButton icon={FileCheck2} title="Memory" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
+              </div>
+              <div className="mt-4 rounded-[16px] border border-[#f97316]/20 bg-[#f97316]/10 p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#c2410c]">Current blocker</p>
+                <p className="mt-2 text-[13px] font-bold leading-snug text-[#9a3412]">Split approval is still missing.</p>
+              </div>
+            </aside>
           </div>
-          <div className="grid gap-6 mt-10 sm:grid-cols-2">
-            <MissionLane icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} items`} text="Pending approvals and execution logs." onClick={() => onWorkspace("tasksWorkspace")} />
-            <MissionLane icon={Gauge} title="Tests" meta={`${selectedMission.tests} active`} text="Validation metrics and market signals." onClick={() => onWorkspace("testLabWorkspace")} />
-            <MissionLane icon={FileText} title="Briefs" meta={`${selectedMission.briefs} reports`} text="Department handoffs and requirements." onClick={() => onWorkspace("briefsWorkspace")} />
-            <MissionLane icon={FileCheck2} title="History" meta="Full Log" text="Archive of decisions and evidence." onClick={() => onDrawer("decisionRecord")} />
-          </div>
-          <div className="mt-12 flex items-center justify-between border-t border-foreground/5 pt-8">
-             <div className="flex gap-4">
-                <button className="rounded-full bg-foreground px-6 py-2 text-[12px] font-bold text-background transition-all hover:opacity-90 active:scale-95 shadow-lg">Resume Mission</button>
-                <button className="rounded-full border border-foreground/10 px-6 py-2 text-[12px] font-bold text-foreground transition-all hover:bg-foreground/5">Archive</button>
-             </div>
+
+          <div className="border-t border-foreground/5 pt-4">
              <p className="text-[12px] font-medium text-muted-foreground/40 italic">Last updated by AI Manager 4 hours ago</p>
           </div>
         </div>
@@ -2444,204 +3161,221 @@ const MissionsWorkspace = ({
   );
 };
 
-const ArtistProfileWorkspace = ({ profile, onBack }: { profile: ArtistProfile; onBack: () => void }) => (
-  <WorkspaceShell eyebrow="Artist Dossier" title={profile.name} onBack={onBack}>
-    <div className="flex flex-col gap-10">
-      
-      {/* Top Banner / Hero Card */}
-      <div className="relative flex flex-col justify-end overflow-hidden rounded-[32px] border border-foreground/10 bg-foreground/5 p-10 md:min-h-[360px]">
-        {/* Premium Background Elements */}
-        <div className="absolute right-0 top-0 h-full w-[60%] bg-gradient-to-l from-brand-accent/15 to-transparent pointer-events-none" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_30%,hsla(var(--brand-accent),0.05),transparent_50%)] pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
-          <div className="flex items-center gap-8">
-            <div className="surface-intelligence h-32 w-32 shrink-0 rounded-[28px] bg-background border border-foreground/10 shadow-2xl flex items-center justify-center">
-               <BrandMark size="md" />
+const ArtistProfileWorkspace = ({
+  profile,
+  setProfile,
+  onBack,
+}: {
+  profile: ArtistProfile;
+  setProfile: React.Dispatch<React.SetStateAction<ArtistProfile>>;
+  onBack: () => void;
+}) => {
+  const update = (key: keyof ArtistProfile, value: string) => setProfile((current) => ({ ...current, [key]: value }));
+
+  return (
+    <WorkspaceShell eyebrow="Settings" title="Artist profile" onBack={onBack}>
+      <div className="grid gap-5">
+        <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[16px] border border-foreground/10 bg-foreground/[0.035]">
+                <BrandMark size="sm" />
+              </div>
+              <div>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Identity</p>
+                <h3 className="mt-1 font-display text-[28px] font-bold leading-tight tracking-tight text-foreground">{profile.name}</h3>
+              </div>
             </div>
-            <div>
-              <p className="font-ui text-[12px] font-bold uppercase tracking-[0.2em] text-brand-accent mb-2">Primary Identity</p>
-              <h3 className="font-display text-[4rem] font-bold leading-none tracking-tight text-foreground">{profile.name}.</h3>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
-                {[profile.genre, profile.market, profile.stage].map(val => (
-                   <span key={val} className="rounded-full border border-foreground/10 bg-background/50 backdrop-blur-sm px-4 py-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-foreground/70">
-                      {val}
-                   </span>
-                ))}
+            <div className="grid grid-cols-3 overflow-hidden rounded-[18px] border border-foreground/8 bg-foreground/[0.025]">
+              <StaffStat label="Stage" value={profile.stage.includes(" ") ? "Build" : profile.stage} />
+              <StaffStat label="Market" value={profile.market} />
+              <StaffStat label="Budget" value={profile.budget} />
+            </div>
+          </div>
+        </section>
+
+        <section className="rounded-[24px] border border-brand-accent/15 bg-brand-accent/[0.035] p-5 shadow-sm">
+          <label htmlFor="settings-artist-direction" className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Direction</label>
+          <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/70">
+            The Manager uses this as the artist-level truth when shaping missions, deciding what to protect, and spotting missing proof.
+          </p>
+          <textarea
+            id="settings-artist-direction"
+            aria-label="Artist Direction"
+            value={profile.goal}
+            onChange={(event) => update("goal", event.target.value)}
+            className="mt-4 min-h-[140px] w-full resize-none rounded-[16px] border border-foreground/8 bg-background/80 p-4 text-[15px] font-semibold leading-relaxed text-foreground outline-none focus:border-brand-accent/40 focus:ring-4 focus:ring-brand-accent/5"
+          />
+        </section>
+
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/55">Current Focus</p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <SettingsField label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
+              <SettingsField label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} />
+              <SettingsField label="Artist stage" value={profile.stage} onChange={(value) => update("stage", value)} />
+              <SettingsField label="Home market" value={profile.market} onChange={(value) => update("market", value)} />
+              <SettingsField label="Genre" value={profile.genre} onChange={(value) => update("genre", value)} />
+              <SettingsField label="Active release" value={profile.release} onChange={(value) => update("release", value)} />
+              <SettingsField label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
+            </div>
+          </section>
+
+          <div className="grid gap-5">
+            <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/55">Connected Channels</p>
+              <div className="mt-4 grid gap-3">
+                <SettingsField label="TikTok" value={profile.tiktok} onChange={(value) => update("tiktok", value)} />
+                <SettingsField label="Instagram" value={profile.instagram} onChange={(value) => update("instagram", value)} />
+                <SettingsField label="YouTube" value={profile.youtube} onChange={(value) => update("youtube", value)} />
+                <SettingsField label="X" value={profile.x} onChange={(value) => update("x", value)} />
+              </div>
+            </section>
+
+            <section className="rounded-[24px] border border-[#f97316]/15 bg-[#f97316]/[0.055] p-5 shadow-sm">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-[#c2410c]">Private Data Needed</p>
+              <p className="mt-3 text-[13px] font-semibold leading-relaxed text-[#9a3412]">
+                Spotify for Artists exports, smart-link clicks, royalty statements, split sheets, and distributor metadata are still needed for stronger Manager calls.
+              </p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </WorkspaceShell>
+  );
+};
+
+const SettingsField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
+  <label className="block rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
+    <span className="font-ui block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/55">{label}</span>
+    <input
+      aria-label={label}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      className="mt-1.5 w-full bg-transparent text-[14px] font-bold text-foreground outline-none"
+    />
+  </label>
+);
+
+const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => void }) => {
+  const Icon = agent.icon;
+
+  return (
+    <WorkspaceShell eyebrow="Specialist" title={agent.name} onBack={onBack}>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-6 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-5 border-b border-foreground/6 pb-5">
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border" style={{ backgroundColor: agent.color + "18", borderColor: agent.color + "35", color: agent.color }}>
+                <Icon className="h-6 w-6" />
+              </span>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-display text-[24px] font-bold tracking-tight text-foreground">{agent.name}</h2>
+                  <span className="rounded-full bg-foreground/5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Needs context</span>
+                </div>
+                <p className="mt-2 max-w-2xl text-[14px] font-semibold leading-relaxed text-muted-foreground/80">{agent.purpose}</p>
               </div>
             </div>
           </div>
-          <button className="group shrink-0 rounded-full bg-foreground px-10 py-3.5 text-[14px] font-bold text-background transition-all hover:scale-105 active:scale-95 shadow-xl shadow-black/20">
-            Edit Global Profile
-          </button>
-        </div>
-      </div>
 
-      {/* Main Details Grid */}
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Current Focus Block */}
-        <div className="flex flex-col gap-4 surface-panel rounded-[28px] p-6 md:col-span-2">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Current Focus</p>
-          <div className="grid gap-6 sm:grid-cols-2">
-            <div>
-              <p className="text-[12px] font-semibold text-muted-foreground/80">Active Release</p>
-              <p className="mt-1 text-[16px] font-bold text-foreground">{profile.release}</p>
+          <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-4">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Why access waits</p>
+              <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground/75">
+                This specialist should not make calls from guesswork. Add the required evidence first, then the Manager can use this role with more confidence.
+              </p>
             </div>
-            <div>
-              <p className="text-[12px] font-semibold text-muted-foreground/80">Core Goal</p>
-              <p className="mt-1 text-[16px] font-bold text-foreground">{profile.goal}</p>
-            </div>
-            <div>
-              <p className="text-[12px] font-semibold text-muted-foreground/80">Available Budget</p>
-              <p className="mt-1 text-[16px] font-bold text-foreground">{profile.budget}</p>
-            </div>
-            <div>
-              <p className="text-[12px] font-semibold text-muted-foreground/80">Spotify Identity</p>
-              <p className="mt-1 text-[16px] font-bold text-foreground">{profile.spotify}</p>
+            <div className="rounded-[18px] border border-brand-accent/15 bg-brand-accent/[0.04] p-4">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">What the Manager can prepare</p>
+              <p className="mt-3 text-[14px] font-bold leading-relaxed text-foreground">{agent.managerCanPrepare}</p>
             </div>
           </div>
-        </div>
 
-        {/* Connected Sources & Health */}
-        <div className="flex flex-col gap-4 surface-panel rounded-[28px] p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Connection Health</p>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between border-b border-foreground/5 pb-3">
-              <p className="text-[13px] font-medium text-foreground">TikTok</p>
-              <span className="text-[12px] text-muted-foreground/80">{profile.tiktok}</span>
-            </div>
-            <div className="flex items-center justify-between border-b border-foreground/5 pb-3">
-              <p className="text-[13px] font-medium text-foreground">YouTube</p>
-              <span className="text-[12px] text-muted-foreground/80">{profile.youtube}</span>
-            </div>
-            <div className="flex items-center justify-between pb-1">
-              <p className="text-[13px] font-medium text-foreground">Instagram</p>
-              <span className="text-[12px] text-muted-foreground/80">{profile.instagram}</span>
+          <div className="mt-5 rounded-[18px] border border-foreground/8 bg-background p-4">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">What they can help with</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {agent.tools.map((tool) => (
+                <span key={tool} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2 text-[12px] font-bold text-foreground/75">
+                  {tool}
+                </span>
+              ))}
             </div>
           </div>
-          <div className="mt-2 rounded-[12px] bg-[#f97316]/[0.06] p-3">
-             <p className="text-[11px] leading-relaxed text-[#c2410c]"><span className="font-bold">Warning:</span> Private analytics, statements, and smart-link conversion are missing.</p>
-          </div>
-        </div>
-      </div>
-    </div>
-  </WorkspaceShell>
-);
+        </section>
 
-const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => void }) => (
-  <WorkspaceShell eyebrow="Department" title={agent.name} onBack={onBack}>
-    <div className="grid gap-5 lg:grid-cols-[1fr_360px]">
-      {/* Left side: Locked Chat Interface */}
-      <div className="flex min-h-[500px] flex-col rounded-[24px] border border-foreground/5 bg-background shadow-xl shadow-black/[0.03] surface-panel overflow-hidden">
-        <div className="flex items-center gap-4 border-b border-foreground/5 p-6">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px]" style={{ backgroundColor: agent.color }}>
-            <agent.icon className="h-6 w-6 text-foreground" />
-          </div>
-          <div>
-            <h3 className="text-[16px] font-bold text-foreground">{agent.name}</h3>
-            <p className="mt-0.5 text-[13px] text-muted-foreground/80">{agent.purpose}</p>
-          </div>
-        </div>
-        
-        <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-foreground/5 text-muted-foreground/60">
-            <Lock className="h-6 w-6" />
-          </div>
-          <p className="mt-5 text-[16px] font-bold text-foreground">This agent is locked</p>
-          <p className="mt-2 max-w-sm text-[14px] leading-relaxed text-muted-foreground/80">
-            You cannot start a conversation with the {agent.name} until the required documents are uploaded.
-          </p>
-        </div>
+        <aside className="grid content-start gap-5">
+          <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">What this specialist needs</p>
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/70">
+              Add the documents or source exports that prove the specialist has enough context to work.
+            </p>
 
-        <div className="border-t border-foreground/5 p-6">
-          <div className="relative">
-            <input 
-              disabled
-              placeholder={`Upload documents to talk to ${agent.name}...`}
-              className="h-12 w-full rounded-[12px] border border-foreground/10 bg-foreground/5 pl-4 pr-12 text-[13px] text-muted-foreground/60 outline-none cursor-not-allowed"
-            />
-            <button disabled className="absolute right-1.5 top-1.5 flex h-9 w-9 items-center justify-center rounded-[8px] bg-foreground/5 text-muted-foreground/60 cursor-not-allowed">
-              <MessageSquareText className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Right side: Upload & Requirements */}
-      <div className="flex flex-col gap-5">
-        <div className="surface-panel rounded-[28px] p-6">
-          <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Unlock requirements</p>
-          <p className="mt-2 text-[13px] leading-relaxed text-foreground/70">Upload the required context to activate this specialist.</p>
-          
-          <div className="mt-6 space-y-5">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-[#f97316]">Required</p>
-              <div className="mt-3 space-y-2">
-                {agent.requiredSources.map(req => (
-                  <div key={req} className="flex items-center gap-3 rounded-[12px] border border-foreground/5 p-3 text-[13px] font-medium text-foreground">
-                    <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-foreground/5 text-muted-foreground/60">
+            <div className="mt-5">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-[#c2410c]">Missing proof</p>
+              <div className="mt-3 grid gap-2">
+                {agent.requiredSources.map((source) => (
+                  <div key={source} className="flex items-center gap-3 rounded-[12px] border border-[#f97316]/15 bg-[#f97316]/[0.05] p-3 text-[13px] font-bold text-foreground">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background text-[#c2410c]">
                       <Upload className="h-3 w-3" />
-                    </div>
-                    {req}
+                    </span>
+                    {source}
                   </div>
                 ))}
               </div>
             </div>
-            
-            {agent.connectedSources.length > 0 && (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-emerald-600">Connected</p>
-                <div className="mt-3 space-y-2">
-                  {agent.connectedSources.map(conn => (
-                    <div key={conn} className="flex items-center gap-3 rounded-[12px] border border-foreground/5 bg-foreground/5 p-3 text-[13px] font-medium text-foreground/70">
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600">
-                        <Check className="h-3 w-3" />
-                      </div>
-                      {conn}
-                    </div>
-                  ))}
-                </div>
+
+            <div className="mt-5">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">Connected proof</p>
+              <div className="mt-3 grid gap-2">
+                {agent.connectedSources.map((source) => (
+                  <div key={source} className="flex items-center gap-3 rounded-[12px] border border-emerald-600/10 bg-emerald-600/[0.055] p-3 text-[13px] font-bold text-foreground/75">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background text-emerald-700">
+                      <Check className="h-3 w-3" />
+                    </span>
+                    {source}
+                  </div>
+                ))}
               </div>
-            )}
-          </div>
+            </div>
 
-          <button className="mt-6 flex w-full flex-col items-center justify-center rounded-[16px] border-2 border-dashed border-foreground/10 bg-black/[0.01] p-6 text-center transition-colors hover:bg-foreground/5">
-            <Upload className="mx-auto h-6 w-6 text-muted-foreground/60" />
-            <p className="mt-3 text-[13px] font-bold text-foreground">Upload files</p>
-            <p className="mt-1 text-[12px] text-muted-foreground/80">PDF, CSV, or images</p>
-          </button>
-        </div>
+            <button className="mt-5 flex w-full flex-col items-center justify-center rounded-[16px] border border-dashed border-foreground/18 bg-foreground/[0.025] p-5 text-center transition-colors hover:bg-foreground/[0.05]">
+              <Upload className="h-5 w-5 text-muted-foreground/65" />
+              <p className="mt-2 text-[13px] font-bold text-foreground">Upload files</p>
+              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/70">PDF, CSV, screenshots, or exports</p>
+            </button>
+          </section>
 
-        {agent.optionalSources.length > 0 && (
-          <div className="surface-panel rounded-[28px] p-6">
-             <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Optional context</p>
-             <div className="mt-4 flex flex-wrap gap-2">
-               {agent.optionalSources.map(opt => (
-                 <span key={opt} className="rounded-full border border-foreground/10 bg-foreground/5 px-3 py-1.5 text-[11px] font-semibold text-foreground/70">
-                   {opt}
-                 </span>
-               ))}
-             </div>
-          </div>
-        )}
+          <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/55">Optional context</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {agent.optionalSources.map((source) => (
+                <span key={source} className="rounded-full border border-foreground/8 bg-foreground/[0.025] px-3 py-1.5 text-[11px] font-bold text-foreground/65">
+                  {source}
+                </span>
+              ))}
+            </div>
+          </section>
+        </aside>
       </div>
-    </div>
-  </WorkspaceShell>
-);
+    </WorkspaceShell>
+  );
+};
 
 const ReviewWorkspace = ({ onBack, onMission }: { onBack: () => void; onMission: (id?: string) => void }) => (
-  <WorkspaceShell eyebrow="Review / What Changed" title="72-hour signal review" onBack={onBack}>
+  <WorkspaceShell eyebrow="Review / What Changed" title="Rights gate review" onBack={onBack}>
     <div className="grid gap-5 lg:grid-cols-[1fr_0.75fr]">
       <div className="rounded-[20px] border border-brand-accent/20 bg-brand-accent/[0.04] p-6 shadow-[0_2px_12px_rgba(0,0,0,0.02)]">
         <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">Review triggered</p>
         <p className="mt-4 text-[16px] leading-relaxed text-foreground">
-          New evidence arrived from the first hook posts. The recommendation remains constrained: keep the cap, shift effort toward the acoustic hook, and wait for conversion proof before scale spend.
+          A task review changed the mission: the split sheet is still unsigned, so the release remains conditional even though the June 12 date preserved DSP and outreach runway.
         </p>
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
-          <ArtifactField label="Previous recommendation" value="Run capped validation before scale spend." />
-          <ArtifactField label="What changed" value="Acoustic hook produced stronger repeat comments and save proxy." />
-          <ArtifactField label="What did not change" value="Paid-audience conversion is still weak." />
-          <ArtifactField label="Manager comparison" value="Mission updated; scale decision remains blocked by missing private analytics." />
+          <ArtifactField label="Previous recommendation" value="Move release to June 12 and build the rollout properly." />
+          <ArtifactField label="What changed" value="Split sheet task reviewed as blocked." />
+          <ArtifactField label="What did not change" value="DSP pitch and outreach work should continue while rights are chased." />
+          <ArtifactField label="Manager comparison" value="Mission updated; release clearance remains blocked by rights evidence." />
         </div>
       </div>
       <div className="surface-panel rounded-[28px] p-6">
@@ -2677,7 +3411,7 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
               <div key={item.id} className="surface-panel overflow-hidden rounded-[28px] p-8 shadow-2xl shadow-black/[0.03] transition-all hover:scale-[1.01]">
                 <div className="flex flex-wrap items-start justify-between gap-6">
                   <div>
-                    <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">{item.id} · {item.source}</p>
+                    <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">{item.id} Â· {item.source}</p>
                     <h4 className="font-display mt-2 text-[22px] font-bold text-foreground tracking-tight">{item.subject}.</h4>
                   </div>
                   <span className={cn(
@@ -2704,7 +3438,7 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
         </DrawerBody>
       )}
       {drawer === "decisionRecord" && (
-        <DrawerBody kicker="Mission Record" title="Mission memory" description="This is what the AI reads to understand the mission before answering future questions, updating work, or recommending the next move.">
+        <DrawerBody kicker="Mission Record" title="Mission memory" description="A living recap of the mission across tasks, checkpoints, notes, decisions, blockers, and reviews.">
           <div className="surface-panel rounded-[28px] p-8 shadow-2xl shadow-black/[0.02] text-foreground">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
@@ -2716,26 +3450,77 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
 
             <div className="mt-6 space-y-4 text-[15px] leading-relaxed text-foreground/80">
               <p>
-                We approved the structure of a capped validation test, not a full campaign scale. The mission is active, the creative sprint has a working shape, and the team is still waiting on private Spotify and smart-link proof before the recommendation can graduate from test mode.
+                Original request: "I want to drop a new song next week." The Manager treated that as a real release decision, not a generic launch checklist.
               </p>
               <p>
-                The first task sequence is doing what it should: Sable stays focused on Night Bus, the first hooks are live, and the Marketing Lead has a clear read on which creative language is repeating. Spotify saves are up 72% in the early read, but that number still needs source-of-stream and click-through context before it becomes a spend decision.
+                Manager moved the target from next Friday to Friday, June 12, 2026 because the rushed date would weaken DSP pitching, creator seeding, press outreach, metadata QA, and distributor delivery.
               </p>
               <p>
-                Finance/Rights has not cleared the mission for aggressive spend. Royalty statements, payout history, split sheets, and distributor metadata are still missing, so the record should continue to treat revenue recovery and ownership certainty as unresolved.
+                The release strategy gate is clean, but the Rights & Metadata Gate is not. The split sheet task created a blocked result, so the release remains conditional until written approval is uploaded.
               </p>
               <p>
-                The next useful move is not another card or task. It is the 72-hour read: compare saves, comments, clicks, and repeat demand language, then decide whether the capped test continues, changes hook direction, or stops before more money moves.
+                The useful move now is operational: clear the split approval, submit the distributor package, then keep playlist, creator, press, content, release-day, and post-release checkpoints moving from task reviews.
               </p>
+            </div>
+
+            <div className="mt-8 grid gap-4 md:grid-cols-2">
+              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Task status summary</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                  Strategy is accepted, split sheet is blocked, Spotify pitch is submitted, and creator, press, content, distribution, release-day, and post-release tasks are staged by checkpoint.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Checkpoint status summary</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                  Release Strategy is met, Rights & Metadata needs revision, DSP & Playlist is ready for review, and the remaining gates wait on task results.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Agent notes that changed the mission</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                  Marketing opened creator seeding, DSP/playlist notes preserved the pitch window, and Finance/Rights changed the rights checkpoint to needs revision.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Decisions already made</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                  Move the release to June 12, reject the next-Friday rush, do not announce before rights and delivery clear, and avoid generic creator or playlist blasts.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Blockers and missing evidence</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                  Signed split sheet, distributor confirmation, creator commitments, EPK target list, launch content approval, live-link verification, and 48-hour signal read are still missing.
+                </p>
+              </div>
+              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">What would change the recommendation</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                  The Manager changes the date or mission path if splits stay blocked, distributor delivery fails, creator commitments are weak, or early post-release signal does not justify more push.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Mission log</p>
+              <div className="mt-4 space-y-3">
+                {missionEvents.map((event) => (
+                  <div key={`${event.type}-${event.summary}`} className="flex gap-3 text-[13px] leading-relaxed text-foreground/75">
+                    <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">{event.type}</span>
+                    <span>{event.summary}</span>
+                  </div>
+                ))}
+              </div>
             </div>
 
             <div className="mt-8 border-t border-foreground/5 pt-6">
               <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Evidence and decision limits</p>
               <p className="mt-3 text-[13px] leading-relaxed text-foreground/70">
-                Evidence used: EV-TTK-0426, EV-YT-1190, EV-SP-3302, EV-ART-0007. Rejected moves: {decisionRecord.alternativesRejected.join(", ")}. Missing evidence: {decisionRecord.missingEvidence.join(", ")}. The decision changes if cross-platform conversion improves, private Spotify saves confirm demand, or the 72-hour signals fail the stop rule.
+                Evidence used: EV-TTK-0426, EV-YT-1190, EV-SP-3302, EV-ART-0007, EV-RGT-0612, EV-DSP-0612. Rejected moves: {decisionRecord.alternativesRejected.join(", ")}. Missing evidence: {decisionRecord.missingEvidence.join(", ")}. The decision changes if {decisionRecord.changeDecision}
               </p>
               <p className="mt-3 text-[13px] leading-relaxed text-foreground/70">
-                Review date: {decisionRecord.reviewDate}. Override state: {decisionRecord.override}. Quality gate: {decisionRecord.qualityGate}.
+                Review date: {decisionRecord.reviewDate}. Override state: {decisionRecord.override}. Quality review: {decisionRecord.qualityGate}.
               </p>
             </div>
           </div>
@@ -2761,7 +3546,7 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
 const InvestigationScreen = ({ onBack }: { onBack: () => void }) => (
   <WorkspaceShell eyebrow="Intelligence" title="Investigation" onBack={onBack}>
     <div className="surface-panel rounded-[24px] p-8">
-      <p className="text-[15px] font-medium text-muted-foreground/80 leading-relaxed">Investigation workspace — cross-referencing signals and market data.</p>
+      <p className="text-[15px] font-medium text-muted-foreground/80 leading-relaxed">Investigation workspace â€” cross-referencing signals and market data.</p>
     </div>
   </WorkspaceShell>
 );
