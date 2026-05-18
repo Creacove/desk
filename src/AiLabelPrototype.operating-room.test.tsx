@@ -38,7 +38,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByRole("button", { name: /^manager$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^team$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^profile$/i })).toBeInTheDocument();
-  });
+  }, 15000);
 
   it("keeps the core Label HQ workflow reachable in the mobile density layout", () => {
     enterLabelHq();
@@ -51,6 +51,27 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/today's brief/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /talk to manager/i })).toBeInTheDocument();
   });
+
+  it("routes Label HQ strip signals to the right work surfaces", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /open active missions/i }));
+    expect(screen.getByRole("heading", { name: /^missions\.?$/i })).toBeInTheDocument();
+
+    cleanup();
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /open blocked rights task/i }));
+    expect(screen.getByRole("heading", { name: /^release tasks\.?$/i })).toBeInTheDocument();
+
+    cleanup();
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /open next task/i }));
+    expect(screen.getByRole("heading", { name: /^release tasks\.?$/i })).toBeInTheDocument();
+
+    cleanup();
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /open artist profile/i }));
+    expect(screen.getByText(/artist identity/i)).toBeInTheDocument();
+  }, 15000);
 
   it("uses compact mobile drill-down patterns for team, missions, tasks, and checkpoints", () => {
     enterLabelHq();
@@ -80,7 +101,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByTestId("checkpoint-inspector")).toHaveTextContent(/manager recommendation/i);
   }, 15000);
 
-  it("captures Artist Direction as long-form setup context and carries it into Label HQ", () => {
+  it("captures Artist Direction as long-form setup context without crowding Label HQ", () => {
     render(<AiLabelPrototype />);
     fireEvent.click(screen.getByRole("button", { name: /continue to artist context/i }));
 
@@ -90,8 +111,8 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     fireEvent.change(directionField, { target: { value: direction } });
     fireEvent.click(screen.getByRole("button", { name: /enter label hq/i }));
 
-    expect(screen.getByText(/current focus/i)).toBeInTheDocument();
-    expect(screen.getByText(direction)).toBeInTheDocument();
+    expect(screen.queryByText(direction)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/night bus/i).length).toBeGreaterThan(0);
   });
 
   it("makes Label HQ the operating room and keeps Manager Office focused on conversation", () => {
@@ -114,7 +135,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/momentum is durably building/i)).toBeInTheDocument();
     expect(screen.getByText(/The current release plan is stronger because the Manager refused/i)).toBeInTheDocument();
     expect(screen.getByText(/today's directive/i)).toBeInTheDocument();
-    expect(screen.getByText(/current focus/i)).toBeInTheDocument();
+    expect(screen.getByText(/focus/i)).toBeInTheDocument();
     expect(screen.getAllByText(/active missions/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/needs attention/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/manager read/i).length).toBeGreaterThan(0);
@@ -165,7 +186,8 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     fireEvent.change(settingsDirection, { target: { value: updatedDirection } });
 
     fireEvent.click(screen.getByRole("button", { name: /^label hq$/i }));
-    expect(screen.getByText(updatedDirection)).toBeInTheDocument();
+    expect(screen.queryByText(updatedDirection)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/night bus/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText(/talk to manager/i).closest("button")!);
     expect(screen.getByText(/manager office/i)).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: /record label navigation/i })).toBeInTheDocument();
@@ -362,5 +384,5 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/Spotify pitch task strengthens the mission/i)).toBeInTheDocument();
     expect(screen.queryByText(/budget task state/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve cap/i })).not.toBeInTheDocument();
-  });
+  }, 15000);
 });

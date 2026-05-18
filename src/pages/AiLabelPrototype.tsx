@@ -1613,19 +1613,38 @@ const LabelHQScreen = ({
       </div>
     </div>
 
-    <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-[20px] border border-foreground/10 bg-background/70 shadow-sm backdrop-blur md:grid-cols-4 lg:mb-8 lg:rounded-[24px]">
+    <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-[20px] border border-foreground/10 bg-background/76 shadow-sm backdrop-blur md:grid-cols-4 lg:mb-8 lg:rounded-[24px]">
       {[
-        { label: "Current Focus", value: profile.goal, meta: profile.stage },
-        { label: "Needs Attention", value: "Split approval", meta: "Rights gate holding" },
-        { label: "Next Move", value: "Clear rights", meta: "Then update the mission plan" },
-        { label: "Active Missions", value: `${missions.filter((mission) => mission.status !== "complete" && !mission.archived).length}`, meta: "Open artist workstreams" },
-      ].map((item) => (
-        <div key={item.label} className="min-w-0 border-b border-r border-foreground/5 px-4 py-3 even:border-r-0 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 lg:px-5 lg:py-4">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground/45">{item.label}</p>
-          <p className="mt-2 line-clamp-3 text-[13px] font-bold leading-tight text-foreground lg:text-[15px]">{item.value}</p>
-          <p className="mt-1 text-[12px] font-medium leading-snug text-muted-foreground/65">{item.meta}</p>
-        </div>
-      ))}
+        { label: "Focus", value: profile.release, meta: profile.stage, icon: Mic2, tone: "text-brand-accent bg-brand-accent/[0.09]", actionLabel: "Open artist profile", onClick: () => onWorkspace("artistProfileWorkspace") },
+        { label: "Attention", value: "Split approval", meta: "Rights", icon: BadgeDollarSign, tone: "text-[#c2410c] bg-[#f97316]/10", actionLabel: "Open blocked rights task", onClick: () => onWorkspace("tasksWorkspace") },
+        { label: "Next Move", value: "Clear rights", meta: "Today", icon: Route, tone: "text-foreground bg-foreground/[0.06]", actionLabel: "Open next task", onClick: () => onWorkspace("tasksWorkspace") },
+        { label: "Missions", value: `${missions.filter((mission) => mission.status !== "complete" && !mission.archived).length}`, meta: "Active", icon: ClipboardCheck, tone: "text-brand-accent bg-brand-accent/[0.09]", actionLabel: "Open active missions", onClick: () => onWorkspace("missionsWorkspace") },
+      ].map((item) => {
+        const Icon = item.icon;
+        const isMissionCount = item.label === "Missions";
+        return (
+          <button
+            key={item.label}
+            type="button"
+            onClick={item.onClick}
+            aria-label={item.actionLabel}
+            className={cn(
+              "group flex min-w-0 items-center gap-3 border-b border-r border-foreground/5 px-3 py-3 text-left transition-colors hover:bg-foreground/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/40 even:border-r-0 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 lg:px-4 lg:py-4",
+              isMissionCount && "justify-center text-center",
+            )}
+          >
+            <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-[13px]", item.tone)}>
+              <Icon className="h-4 w-4" />
+            </span>
+            <div className={cn("min-w-0", isMissionCount && "flex min-w-[54px] flex-col items-center")}>
+              <p className="font-ui text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/45">{item.label}</p>
+              <p className={cn("mt-1 truncate font-bold leading-tight text-foreground", isMissionCount ? "text-center font-display text-[24px] leading-none lg:text-[26px]" : "text-[14px] lg:text-[15px]")}>{item.value}</p>
+              <p className="mt-0.5 truncate text-[11px] font-semibold leading-snug text-muted-foreground/58">{item.meta}</p>
+            </div>
+            <ChevronRight className="ml-auto hidden h-4 w-4 shrink-0 text-muted-foreground/25 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-accent sm:block" />
+          </button>
+        );
+      })}
     </div>
 
     <div data-testid="mobile-priority-stack" className="mb-5 grid gap-3 lg:hidden">
