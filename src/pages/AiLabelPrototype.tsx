@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
+  AlertCircle,
   ArrowLeft,
   ArrowRight,
   BadgeDollarSign,
@@ -168,10 +169,16 @@ type ReleaseTask = {
 
 type MissionCheckpoint = {
   id: string;
+  phase: number;
   title: string;
   status: "Waiting on tasks" | "Ready for AI review" | "Needs revision" | "Watching signal" | "Met";
   question: string;
   requiredTaskIds: string[];
+  dependsOnCheckpointIds: string[];
+  unlocks: string[];
+  unlockRule: string;
+  blockedReason: string;
+  dependencyImpact: string;
   watchedSignals: string[];
   decisionRule: string;
   recommendation: string;
@@ -191,7 +198,7 @@ const artist = {
   genre: "Alternative R&B",
   market: "Atlanta",
   release: "Night Bus",
-  goal: "Release Night Bus on June 12",
+  goal: "Transition Sable Day from Atlanta's underground R&B scene to a national breakout act. Establish a dominant foothold on key DSPs by targeting Alternative R&B charts and editorial playlist support, aiming to scale monthly active listeners from 180k to 500k over the next 6 months while securing creative autonomy and solidifying her data sovereignty.",
   budget: "$5,000",
   stage: "Developing artist with breakout signals",
   tiktok: "@sableday",
@@ -363,7 +370,7 @@ const baseMissions: Mission[] = [
 const taskRows: ReleaseTask[] = [
   {
     id: "confirm-release-positioning",
-    checkpointId: "release-strategy",
+    checkpointId: "cp-1-foundation",
     title: "Confirm release date, positioning, and budget",
     owner: "Artist / manager",
     deadline: "D-21 / Fri May 22",
@@ -377,7 +384,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "confirm-split-sheet",
-    checkpointId: "rights-metadata",
+    checkpointId: "cp-1-foundation",
     title: "Confirm split sheet",
     owner: "Manager / producer rep",
     deadline: "D-20 / Sat May 23",
@@ -391,7 +398,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "submit-distributor-package",
-    checkpointId: "distribution",
+    checkpointId: "cp-1-foundation",
     title: "Submit distributor package",
     owner: "Label ops",
     deadline: "D-19 / Sun May 24",
@@ -405,7 +412,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "submit-spotify-pitch",
-    checkpointId: "dsp-playlist",
+    checkpointId: "cp-2-campaign",
     title: "Submit Spotify for Artists pitch",
     owner: "Manager",
     deadline: "D-18 / Mon May 25",
@@ -419,7 +426,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "build-creator-list",
-    checkpointId: "creator-seeding",
+    checkpointId: "cp-2-campaign",
     title: "Build TikTok creator target list",
     owner: "Marketing Lead",
     deadline: "D-17 / Tue May 26",
@@ -433,7 +440,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "prepare-press-epk",
-    checkpointId: "press-tastemaker",
+    checkpointId: "cp-2-campaign",
     title: "Prepare press angle and EPK",
     owner: "Manager / publicist",
     deadline: "D-16 / Wed May 27",
@@ -447,7 +454,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "approve-launch-content",
-    checkpointId: "content-owned",
+    checkpointId: "cp-2-campaign",
     title: "Approve launch-week content pack",
     owner: "Artist / marketing",
     deadline: "D-14 / Fri May 29",
@@ -461,7 +468,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "send-outreach-wave",
-    checkpointId: "creator-seeding",
+    checkpointId: "cp-3-outreach",
     title: "Send creator, curator, and tastemaker outreach",
     owner: "Manager / marketing",
     deadline: "D-10 / Tue Jun 2",
@@ -475,7 +482,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "verify-release-live",
-    checkpointId: "release-day",
+    checkpointId: "cp-4-release-day",
     title: "Verify release live across platforms",
     owner: "Label ops",
     deadline: "Release day / Fri Jun 12",
@@ -489,7 +496,7 @@ const taskRows: ReleaseTask[] = [
   },
   {
     id: "pull-48-hour-read",
-    checkpointId: "post-release-signal",
+    checkpointId: "cp-5-signal",
     title: "Pull 48-hour signal read",
     owner: "Manager",
     deadline: "D+2 / Sun Jun 14",
@@ -598,114 +605,270 @@ const evidence = [
 
 const missionCheckpoints: MissionCheckpoint[] = [
   {
-    id: "release-strategy",
-    title: "Release Strategy Gate",
-    status: "Met",
-    question: "Can this release date survive with a real manager-grade rollout?",
-    requiredTaskIds: ["confirm-release-positioning"],
-    watchedSignals: ["artist approval", "team capacity", "budget guardrail", "platform timing"],
-    decisionRule: "If the team accepts the date move and positioning, continue. If not, create a soft-drop plan with risk labels.",
-    recommendation: "Continue",
-    resultSummary: "Manager moved the target from next Friday to Friday, June 12, 2026 and preserved the Spotify pitch window.",
-    nextAction: "Run rights and delivery gates before public announcement.",
-  },
-  {
-    id: "rights-metadata",
-    title: "Rights & Metadata Gate",
+    id: "cp-1-foundation",
+    phase: 1,
+    title: "Release Foundation",
     status: "Needs revision",
-    question: "Is the release clean enough to ship without avoidable ownership or metadata risk?",
-    requiredTaskIds: ["confirm-split-sheet"],
-    watchedSignals: ["split sheet", "writer credits", "producer credits", "master ownership", "explicit/version flags"],
-    decisionRule: "Do not clear release readiness if written split approval or ownership notes are missing.",
-    recommendation: "Proceed only after split approval",
-    resultSummary: "Release is not safe to ship until split approval is written.",
-    nextAction: "Create urgent split approval task and keep June 12 conditional.",
+    question: "Is the release safe to build a real rollout on?",
+    requiredTaskIds: ["confirm-release-positioning", "confirm-split-sheet", "submit-distributor-package"],
+    dependsOnCheckpointIds: [],
+    unlocks: ["Campaign Build"],
+    unlockRule: "All three tasks clear before campaign work becomes public-facing.",
+    blockedReason: "Split sheet approval is missing.",
+    dependencyImpact: "Distributor package stays conditional until rights clear.",
+    watchedSignals: ["release date", "split sheet", "distributor delivery", "budget guardrail"],
+    decisionRule: "Do not clear this phase until distributor delivery is confirmed and split approval is written.",
+    recommendation: "Fix split sheet before clearing this phase.",
+    resultSummary: "Release date is locked. Split sheet is blocking rights clearance. Distributor package cannot be marked done until rights clear.",
+    nextAction: "Get the producer split sheet signed and uploaded.",
   },
   {
-    id: "distribution",
-    title: "Distribution Gate",
+    id: "cp-2-campaign",
+    phase: 2,
+    title: "Campaign Build",
     status: "Waiting on tasks",
-    question: "Has the release package been delivered correctly to the distributor?",
-    requiredTaskIds: ["submit-distributor-package"],
-    watchedSignals: ["master", "artwork", "ISRC/UPC", "territories", "artist profile mapping"],
-    decisionRule: "Continue only when distributor confirmation and issue log are clean.",
-    recommendation: "Needs task result",
-    resultSummary: "Distribution package is still pending.",
-    nextAction: "Submit the package after rights risk is cleared or explicitly accepted.",
+    question: "Are the platform pitch, creator targets, press package, and owned content ready?",
+    requiredTaskIds: ["submit-spotify-pitch", "build-creator-list", "prepare-press-epk", "approve-launch-content"],
+    dependsOnCheckpointIds: ["cp-1-foundation"],
+    unlocks: ["Outreach & Activation"],
+    unlockRule: "All four build tasks done before the outreach wave is sent.",
+    blockedReason: "Waiting on Release Foundation to clear.",
+    dependencyImpact: "Campaign assets can be prepared but outreach stays conditional.",
+    watchedSignals: ["Spotify pitch", "creator list", "EPK", "content approval"],
+    decisionRule: "Do not start the outreach wave until all four build tasks are complete.",
+    recommendation: "Prepare campaign assets now. Keep outreach conditional.",
+    resultSummary: "Spotify pitch is submitted. Creator list, EPK, and content approval are still pending.",
+    nextAction: "Complete the creator list, EPK, and content approval.",
   },
   {
-    id: "dsp-playlist",
-    title: "DSP & Playlist Gate",
-    status: "Ready for AI review",
-    question: "Did we preserve every platform and playlist opportunity still available?",
-    requiredTaskIds: ["submit-spotify-pitch"],
-    watchedSignals: ["Spotify pitch status", "upcoming release visibility", "smart-link setup", "independent curator list"],
-    decisionRule: "If the Spotify pitch is submitted and independent curator targets are ready, continue to outreach.",
-    recommendation: "Continue to independent curator outreach",
-    resultSummary: "Spotify pitch task strengthens the mission because the June 12 date keeps platform prep viable.",
-    nextAction: "Prepare independent curator outreach using the same positioning.",
-  },
-  {
-    id: "creator-seeding",
-    title: "Creator Seeding Gate",
+    id: "cp-3-outreach",
+    phase: 3,
+    title: "Outreach & Activation",
     status: "Waiting on tasks",
-    question: "Do we have the right creators, asks, hook moments, and follow-up system?",
-    requiredTaskIds: ["build-creator-list", "send-outreach-wave"],
-    watchedSignals: ["creator fit", "hook timestamp", "reply status", "commitments", "posted links"],
-    decisionRule: "Continue only when target list and outreach status are specific enough to manage.",
-    recommendation: "Needs creator commitments",
-    resultSummary: "Creator seeding has target categories but needs commitments and posted-link tracking.",
-    nextAction: "Move from target list to confirmed creators.",
+    question: "Have creators, curators, and press received targeted outreach?",
+    requiredTaskIds: ["send-outreach-wave"],
+    dependsOnCheckpointIds: ["cp-2-campaign"],
+    unlocks: ["Release Day"],
+    unlockRule: "Outreach wave sent and tracked before release day.",
+    blockedReason: "Waiting on Campaign Build to complete.",
+    dependencyImpact: "Release day work cannot start until outreach commitments are tracked.",
+    watchedSignals: ["creator replies", "curator replies", "press replies", "commitments"],
+    decisionRule: "Do not send the outreach wave without the EPK, creator briefs, and posting windows ready.",
+    recommendation: "Wait for all campaign assets before sending outreach.",
+    resultSummary: "Outreach wave is not yet sent.",
+    nextAction: "Send once creator list, EPK, and content approval are done.",
   },
   {
-    id: "press-tastemaker",
-    title: "Press & Tastemaker Gate",
-    status: "Waiting on tasks",
-    question: "Does the song have a real story and target list for press, DJs, newsletters, and culture pages?",
-    requiredTaskIds: ["prepare-press-epk"],
-    watchedSignals: ["EPK", "private stream", "press angle", "target list", "reply quality"],
-    decisionRule: "Do not send press outreach until the angle and assets are complete.",
-    recommendation: "Needs EPK",
-    resultSummary: "Press path is not ready until the EPK and target list are packaged.",
-    nextAction: "Package the EPK before the first outreach wave.",
-  },
-  {
-    id: "content-owned",
-    title: "Content & Owned Audience Gate",
-    status: "Waiting on tasks",
-    question: "Is there enough owned content to create signal across release week?",
-    requiredTaskIds: ["approve-launch-content"],
-    watchedSignals: ["announcement copy", "short-form concepts", "caption bank", "email/SMS", "pinned posts"],
-    decisionRule: "Launch content cannot be considered ready until artist-facing copy is approved.",
-    recommendation: "Ask approval",
-    resultSummary: "The content pack needs artist approval before release-week scheduling.",
-    nextAction: "Approve or revise the public voice.",
-  },
-  {
-    id: "release-day",
-    title: "Release-Day Gate",
-    status: "Waiting on tasks",
-    question: "Did the song go live correctly everywhere fans, creators, and press will click?",
-    requiredTaskIds: ["verify-release-live"],
-    watchedSignals: ["Spotify", "Apple Music", "YouTube Music", "TikTok/Instagram sound", "smart-link", "profile mapping"],
-    decisionRule: "If links, profiles, or sounds are wrong, stop outbound pushes until the issue is logged and routed.",
-    recommendation: "Pending release day",
-    resultSummary: "Release-day verification starts when the song is live.",
-    nextAction: "Verify links before pushing traffic.",
-  },
-  {
-    id: "post-release-signal",
-    title: "Post-Release Signal Gate",
+    id: "cp-4-release-day",
+    phase: 4,
+    title: "Release Day",
     status: "Watching signal",
-    question: "Is early demand strong enough to keep pushing, change angle, spend lightly, or pause?",
+    question: "Is the song live, linked correctly, and mapped to the right profiles?",
+    requiredTaskIds: ["verify-release-live"],
+    dependsOnCheckpointIds: ["cp-3-outreach"],
+    unlocks: ["Post-Release Signal"],
+    unlockRule: "Live verification done before post-release reads begin.",
+    blockedReason: "Waiting on Outreach & Activation and distributor delivery.",
+    dependencyImpact: "Post-release signal reads cannot start until release is verified live.",
+    watchedSignals: ["Spotify", "Apple Music", "YouTube Music", "TikTok sound", "smart-link", "profile mapping"],
+    decisionRule: "If links, profiles, or sounds are wrong, stop outbound pushes until logged and routed.",
+    recommendation: "Hold until the release is confirmed live on June 12.",
+    resultSummary: "Release-day verification starts when the song is live.",
+    nextAction: "Verify links, profiles, and sounds before pushing traffic.",
+  },
+  {
+    id: "cp-5-signal",
+    phase: 5,
+    title: "Post-Release Signal",
+    status: "Watching signal",
+    question: "Is early demand strong enough to keep pushing, change angle, spend, or pause?",
     requiredTaskIds: ["pull-48-hour-read"],
-    watchedSignals: ["saves", "smart-link clicks", "comments", "shares", "playlist adds", "creator performance", "source-of-stream"],
-    decisionRule: "Continue or spend only if listener behavior moves with creator/content response.",
-    recommendation: "Wait for 48-hour read",
-    resultSummary: "Post-release signal review happens after launch.",
+    dependsOnCheckpointIds: ["cp-4-release-day"],
+    unlocks: [],
+    unlockRule: "Signal read informs the next Manager recommendation.",
+    blockedReason: "Waiting on Release Day verification.",
+    dependencyImpact: "Next push decision waits for the 48-hour signal read.",
+    watchedSignals: ["saves", "smart-link clicks", "comments", "shares", "playlist adds", "creator performance"],
+    decisionRule: "Continue or spend only if listener behavior moves with creator and content response.",
+    recommendation: "Wait for the 48-hour signal read before scaling spend.",
+    resultSummary: "Post-release signal review happens after launch on June 14.",
     nextAction: "Run the 48-hour and 7-day reads before scaling spend.",
   },
 ];
+
+type CheckpointDependencyState = "Cleared" | "Blocking" | "Conditional" | "Locked" | "Ready for review" | "Waiting";
+
+type TaskAvailability = {
+  label: "Open" | "Waiting on Rights Gate" | "Can prepare" | "Locked" | "Manager hold";
+  tone: "open" | "blocking" | "conditional" | "locked" | "ready";
+  disabled: boolean;
+  dependencyCheckpointId?: string;
+  reason?: string;
+};
+
+type TaskWorkGroupId = "first-fix-this" | "can-prepare-now" | "coming-later" | "already-handled";
+
+type TaskWorkGroup = {
+  id: TaskWorkGroupId;
+  title: string;
+  helper: string;
+  testId: string;
+  tasks: ReleaseTask[];
+};
+
+const dependencyMapStages = [
+  { label: "Strategy", checkpointIds: ["release-strategy"] },
+  { label: "Rights", checkpointIds: ["rights-metadata"] },
+  { label: "Distribution", checkpointIds: ["distribution"] },
+  { label: "DSP / Creator / Press / Content", checkpointIds: ["dsp-playlist", "creator-seeding", "press-tastemaker", "content-owned"] },
+  { label: "Release Day", checkpointIds: ["release-day"] },
+  { label: "Signal", checkpointIds: ["post-release-signal"] },
+];
+
+const getCheckpointById = (checkpointId: string) => missionCheckpoints.find((checkpoint) => checkpoint.id === checkpointId);
+
+const isCheckpointCleared = (checkpoint?: MissionCheckpoint) => checkpoint?.status === "Met";
+
+const getBlockingDependency = (checkpoint: MissionCheckpoint) => checkpoint.dependsOnCheckpointIds.map(getCheckpointById).find((dependency) => !isCheckpointCleared(dependency));
+
+const getCheckpointDependencyState = (checkpoint: MissionCheckpoint): CheckpointDependencyState => {
+  if (checkpoint.status === "Met") return "Cleared";
+  if (checkpoint.status === "Needs revision") return "Blocking";
+  if (checkpoint.status === "Ready for AI review") return "Ready for review";
+
+  const blockedBy = getBlockingDependency(checkpoint);
+  if (blockedBy) {
+    return checkpoint.id === "cp-4-release-day" || checkpoint.id === "cp-5-signal" ? "Locked" : "Conditional";
+  }
+
+  return checkpoint.status === "Watching signal" ? "Locked" : "Waiting";
+};
+
+const getDependencyToneClass = (tone: TaskAvailability["tone"] | CheckpointDependencyState, selected = false) => {
+  if (selected) return "border-foreground bg-foreground text-background";
+  if (tone === "Blocking" || tone === "blocking") return "border-[#f97316]/25 bg-[#fff8f3] text-[#9a3412]";
+  if (tone === "Conditional" || tone === "conditional") return "border-[#f59e0b]/25 bg-[#fffbeb] text-[#92400e]";
+  if (tone === "Locked" || tone === "locked") return "border-foreground/8 bg-foreground/[0.035] text-muted-foreground";
+  if (tone === "Ready for review" || tone === "ready") return "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent";
+  return "border-brand-accent/20 bg-brand-accent/[0.05] text-brand-accent";
+};
+
+const getUnlockedByText = (checkpoint: MissionCheckpoint) => checkpoint.dependsOnCheckpointIds.map((checkpointId) => getCheckpointById(checkpointId)?.title).filter(Boolean).join(" + ") || "No prerequisite";
+
+const plainStatusLabels: Record<string, string> = {
+  "Needs revision": "Needs a fix",
+  "Waiting on tasks": "Waiting",
+  "Ready for AI review": "Ready for Manager check",
+  blocked: "Blocked",
+  not_required: "No approval needed",
+  active: "Open",
+  approved: "Approved",
+  completed: "Done",
+  revised: "Revised",
+};
+
+const getPlainStatus = (status: string) => plainStatusLabels[status] ?? status;
+
+const getTaskStatusLabel = (task: ReleaseTask, approved: boolean, done: boolean, result?: TaskResult) => {
+  if (done || result?.status === "completed") return "Done";
+  if (task.approvalState === "blocked" || result?.status === "blocked") return "Blocked";
+  if (approved) return "Approved";
+  return getPlainStatus(task.approvalState);
+};
+
+const getTaskGroupId = (task: ReleaseTask, checkpoint: MissionCheckpoint, result?: TaskResult): TaskWorkGroupId => {
+  if (task.approvalState === "blocked" || result?.status === "blocked" || checkpoint.status === "Needs revision") return "first-fix-this";
+  if (task.id === "confirm-release-positioning" || result?.status === "revised") return "already-handled";
+  if (checkpoint.id === "cp-4-release-day" || checkpoint.id === "cp-5-signal") return "coming-later";
+  return "can-prepare-now";
+};
+
+const getTaskAvailability = (task: ReleaseTask, checkpoint: MissionCheckpoint): TaskAvailability => {
+  if (task.approvalState === "blocked") {
+    return {
+      label: "Manager hold",
+      tone: "blocking",
+      disabled: true,
+      dependencyCheckpointId: checkpoint.id,
+      reason: "Cannot clear yet. Upload written split approval before this gate can move.",
+    };
+  }
+
+  const blockedBy = getBlockingDependency(checkpoint);
+  if (!blockedBy) {
+    return { label: "Open", tone: "open", disabled: false };
+  }
+
+  if (checkpoint.id === "cp-1-foundation" && task.id === "submit-distributor-package") {
+    return {
+      label: "Waiting on Rights Gate",
+      tone: "conditional",
+      disabled: true,
+      dependencyCheckpointId: "cp-1-foundation",
+      reason: "Distribution can be assembled, but it cannot be marked done until split approval clears.",
+    };
+  }
+
+  if (checkpoint.id === "cp-2-campaign") {
+    return {
+      label: "Can prepare",
+      tone: "conditional",
+      disabled: true,
+      dependencyCheckpointId: blockedBy.id,
+      reason: "Campaign assets can be prepared, but outreach stays conditional until Foundation is clear.",
+    };
+  }
+
+  if (checkpoint.id === "cp-3-outreach") {
+    return {
+      label: "Can prepare",
+      tone: "conditional",
+      disabled: true,
+      dependencyCheckpointId: blockedBy.id,
+      reason: "Prep can continue, but public-facing work stays conditional until campaign build is safe.",
+    };
+  }
+
+  return {
+    label: "Locked",
+    tone: "locked",
+    disabled: true,
+    dependencyCheckpointId: blockedBy.id,
+    reason: `Waiting on ${blockedBy.title} before this can be completed.`,
+  };
+};
+
+const getCheckpointDecision = (checkpoint: MissionCheckpoint) => {
+  if (checkpoint.status === "Needs revision") return "Needs fix";
+  if (checkpoint.status === "Met" || checkpoint.status === "Ready for AI review") return "Continue";
+  if (checkpoint.status === "Watching signal") return "Wait";
+  return getBlockingDependency(checkpoint) ? "Wait" : "Create new work";
+};
+
+const getCheckpointReviewCopy = (checkpoint: MissionCheckpoint) => {
+  if (checkpoint.id === "cp-1-foundation") return "The foundation review found a real hold: the split approval is not written yet.";
+  if (checkpoint.phase >= 2 && getBlockingDependency(checkpoint)) return `${checkpoint.title} remains conditional because the previous gate is not cleared.`;
+  if (checkpoint.status === "Met") return `${checkpoint.title} is clear. The Manager can move the mission into the next phase.`;
+  if (checkpoint.status === "Ready for AI review") return checkpoint.resultSummary;
+  if (checkpoint.status === "Watching signal") return "This review waits until the release is live and early listener behavior is available.";
+  return checkpoint.resultSummary;
+};
+
+const getCheckpointBlockerCopy = (checkpoint: MissionCheckpoint) => {
+  if (checkpoint.id === "cp-1-foundation") return "split approval is blocking this checkpoint.";
+  if (checkpoint.status === "Needs revision") return `${checkpoint.blockedReason} is blocking this checkpoint.`;
+  const blockedBy = getBlockingDependency(checkpoint);
+  return blockedBy ? `${blockedBy.title} has to clear before this checkpoint can finish.` : "";
+};
+
+const getCheckpointHoldBackCopy = (checkpoint: MissionCheckpoint) => {
+  if (checkpoint.id === "cp-1-foundation") return "Campaign Build remains conditional. Campaign assets can be prepared, but outreach stays conditional.";
+  if (checkpoint.id === "cp-3-outreach") return "Release-day verification cannot fully clear yet.";
+  if (checkpoint.id === "cp-4-release-day") return "Post-release signal reads wait until the release is live and verified.";
+  return checkpoint.unlocks.length ? checkpoint.unlocks.join(", ") : "No downstream work is held by this phase.";
+};
+
+const getNextOpenedCopy = (checkpoint: MissionCheckpoint) => checkpoint.unlocks[0] ?? checkpoint.nextAction;
 
 const departmentBriefs = [
   {
@@ -1064,7 +1227,7 @@ const WorkspaceShell = ({
     <div className="sticky top-[68px] z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/5 bg-background/88 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:mb-10 lg:border-0 lg:bg-transparent lg:p-0 lg:backdrop-blur-none">
       <button
         onClick={onBack}
-        className="group flex items-center gap-3 text-[13px] font-bold text-muted-foreground/60 transition-all hover:text-foreground"
+        className="group flex items-center gap-3 text-[13px] font-bold text-muted-foreground/85 transition-all hover:text-foreground"
       >
         <div className="flex h-8 w-8 items-center justify-center rounded-full border border-foreground/5 bg-foreground/[0.02] transition-all group-hover:border-foreground/10 group-hover:bg-foreground/[0.04]">
           <ArrowLeft className="h-4 w-4" />
@@ -1089,7 +1252,7 @@ const MobileAppTopBar = ({ title }: { title: string }) => (
       <BrandMark size="sm" />
       <div className="min-w-0">
         <p className="font-display truncate text-[14px] font-bold tracking-tight text-foreground">Ordersounds</p>
-        <p className="font-ui truncate text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">{title}</p>
+        <p className="font-ui truncate text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">{title}</p>
       </div>
     </div>
     <Badge active>{title}</Badge>
@@ -1390,8 +1553,19 @@ export default function AiLabelPrototype() {
                 approvedTasks={approvedTasks}
                 completedTasks={completedTasks}
                 onApproveTask={(id) => setApprovedTasks((current) => Array.from(new Set([...current, id])))}
-                onCompleteTask={(id) => {
+                onCompleteTask={(id, note) => {
                   setCompletedTasks((current) => Array.from(new Set([...current, id])));
+                  if (note) {
+                    taskResults.push({
+                      taskId: id,
+                      status: "completed",
+                      summary: "Task marked done by Manager",
+                      userNote: note,
+                      interpretation: "Manager completed this task with context.",
+                      missionEffect: "Advanced the mission.",
+                      followUp: "Proceed with next steps."
+                    });
+                  }
                   if (id === "post-hooks") setTestCheckpoint("signal");
                   if (id === "track-conversion") setTestCheckpoint("complete");
                 }}
@@ -1426,7 +1600,7 @@ export default function AiLabelPrototype() {
             <button onClick={() => goTo("labelHQ")} className="flex items-center gap-3 text-left">
               <BrandMark size="sm" />
               <div>
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/42">Ordersounds</p>
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/74">Ordersounds</p>
                 <h1 className="font-display text-2xl font-display font-bold leading-none tracking-tight">AI Record Label</h1>
               </div>
             </button>
@@ -1445,41 +1619,41 @@ export default function AiLabelPrototype() {
 }
 
 const ConnectArtistScreen = ({ profile, onContinue }: { profile: ArtistProfile; onContinue: () => void }) => (
-  <section className="mx-auto flex max-w-4xl flex-col items-center pt-[7vh] text-center">
-    <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist setup</p>
-    <h2 className="font-display mt-6 text-[clamp(2.8rem,6vw,4.2rem)] font-bold leading-[1.1] tracking-tight text-foreground">
-      Start with the<br />artist profile.
-    </h2>
-    <p className="mt-6 max-w-2xl text-[18px] leading-relaxed text-foreground/60 font-medium">
-      Connect the artist, confirm the basics, and give the Manager enough context to make useful calls.
-    </p>
+  <section className="mx-auto flex min-h-[80vh] max-w-md flex-col items-center justify-center px-4 py-8 text-center">
+    <div className="w-full rounded-[24px] border border-foreground/8 bg-background/80 p-6 shadow-2xl backdrop-blur-xl">
+      <p className="font-ui text-[9px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Setup</p>
+      <h2 className="font-display mt-3 text-[24px] font-bold tracking-tight text-foreground leading-tight">
+        Connect artist profile
+      </h2>
+      <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground">
+        Confirm the baseline profile to populate the Manager and specialist context.
+      </p>
 
-    <div className="mt-16 w-full max-w-2xl text-left">
-      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/60">Artist found</p>
-      <div className="surface-panel mt-4 flex items-center justify-between rounded-[24px] p-5 shadow-lg transition-all hover:border-brand-accent/20">
-        <div className="flex items-center gap-6">
-          <div className="surface-intelligence h-20 w-20 shrink-0 rounded-[22px] bg-foreground/5 flex items-center justify-center">
-             <BrandMark size="sm" />
+      <div className="mt-6 flex flex-col items-stretch text-left">
+        <p className="font-ui text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/78">Verified Artist Identity</p>
+        <div className="mt-2 flex items-center justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.025] p-3.5 shadow-inner">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#1db954]/10 text-[#1db954]">
+              <BrandMark size="sm" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="truncate text-[14px] font-bold text-foreground">{profile.name}</h3>
+              <p className="mt-0.5 text-[11px] font-semibold text-[#1db954]">Spotify Verified Catalog</p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-display text-[22px] font-bold text-foreground tracking-tight">{profile.name}</h3>
-            <p className="font-ui mt-1 text-[14px] font-bold text-brand-accent opacity-80">{profile.spotify}</p>
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#1db954]/10 text-[#1db954]">
+            <Check className="h-3.5 w-3.5" />
           </div>
         </div>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-success/10 text-success border border-success/10">
-          <Check className="h-5 w-5" />
-        </div>
       </div>
-      
-      <div className="mt-12 flex justify-center">
-        <button 
-          onClick={onContinue} 
-          className="group inline-flex h-14 items-center justify-center gap-3 rounded-full bg-foreground px-10 text-[15px] font-bold text-background transition-all hover:scale-105 hover:shadow-2xl active:scale-95 shadow-xl"
-        >
-          Continue to artist context
-          <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
-        </button>
-      </div>
+
+      <button 
+        onClick={onContinue} 
+        className="group mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-[12px] bg-foreground text-[13px] font-bold text-background transition-all hover:bg-foreground/90 active:scale-[0.98] shadow-md"
+      >
+        Continue to artist context
+        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+      </button>
     </div>
   </section>
 );
@@ -1497,37 +1671,37 @@ const SetupScreen = ({
 }) => {
   const update = (key: keyof ArtistProfile, value: string) => setProfile((current) => ({ ...current, [key]: value }));
   return (
-    <section className="mx-auto max-w-6xl py-6 lg:py-10">
+    <section className="mx-auto max-w-5xl px-4 py-6">
       <button 
         onClick={onBack} 
-        className="group inline-flex items-center gap-3 rounded-full border border-foreground/10 bg-background/50 px-5 py-2 text-[13px] font-bold text-muted-foreground transition-all hover:bg-foreground/5 hover:text-foreground"
+        className="group inline-flex items-center gap-2 rounded-full border border-foreground/10 bg-background/50 px-3.5 py-1.5 text-[12px] font-bold text-muted-foreground transition-all hover:bg-foreground/5 hover:text-foreground"
       >
-        <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-1" /> 
-        Back to artist
+        <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" /> 
+        Back to profile
       </button>
 
-      <div className="mt-7 grid gap-6 lg:mt-10 lg:grid-cols-[320px_1fr] lg:items-start lg:gap-8">
+      <div className="mt-5 grid gap-6 lg:grid-cols-[280px_1fr] lg:items-start lg:gap-8">
         {/* Left Col: Titles */}
         <div className="lg:sticky lg:top-12">
-          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist context</p>
-          <h2 className="font-display mt-4 text-[2.1rem] font-bold leading-tight tracking-tight text-foreground lg:mt-5 lg:text-[2.75rem]">
-            Give the Manager<br />the basics.
+          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.18em] text-brand-accent">Artist Context</p>
+          <h2 className="font-display mt-4 text-[30px] font-bold leading-tight tracking-tight text-foreground lg:text-[34px]">
+            Manager Basics
           </h2>
-          <p className="mt-5 text-[15px] font-medium leading-relaxed text-foreground/60">
-            This is the artist-level picture. The Manager uses it to shape missions, spot missing proof, and keep the team honest.
+          <p className="mt-4 text-[15px] font-semibold leading-relaxed text-foreground/80">
+            Provide baseline context to target release strategy and department constraints.
           </p>
           
-          <div className="surface-intelligence mt-8 rounded-[20px] p-5">
-             <p className="font-ui text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager note</p>
-             <p className="mt-3 text-[13px] font-medium leading-relaxed text-foreground/80">
-               Better context means better calls. These details can change later as the artist, goals, and evidence change.
+          <div className="mt-6 rounded-[18px] border border-foreground/8 bg-foreground/[0.02] p-5">
+             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Onboarding tips</p>
+             <p className="mt-2.5 text-[13px] font-semibold leading-relaxed text-foreground/90">
+               Accurate stages, goals, and social handles prevent specialists from guessing.
              </p>
           </div>
         </div>
 
         {/* Right Col: Forms */}
-        <div className="surface-panel rounded-[22px] p-4 shadow-xl sm:p-6 lg:rounded-[28px] lg:p-8">
-          <div className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-[20px] border border-foreground/8 bg-background/50 p-5 shadow-xl backdrop-blur-xl">
+          <div className="grid gap-3 sm:grid-cols-2">
             <SetupInput label="Artist name" value={profile.name} onChange={(v) => update("name", v)} />
             <SetupInput label="Spotify identity" value={profile.spotify} onChange={(v) => update("spotify", v)} active />
             <SetupInput label="Artist stage" value={profile.stage} onChange={(v) => update("stage", v)} />
@@ -1542,21 +1716,21 @@ const SetupScreen = ({
             <SetupInput label="X" value={profile.x} onChange={(v) => update("x", v)} />
           </div>
 
-          <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/5 pt-5 lg:mt-8 lg:gap-5 lg:pt-6">
-            <p className="max-w-md text-[13px] font-semibold leading-relaxed text-warning">
-              Private analytics like saves, clicks, and conversion stay locked until the artist connects them.
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/5 pt-4">
+            <p className="max-w-md text-[12px] font-bold text-[#c2410c] opacity-80">
+              Private stats remain locked until handles are connected.
             </p>
             
-            <div className="flex w-full shrink-0 flex-col gap-3 sm:w-auto sm:flex-row sm:gap-4">
-              <button onClick={onContinue} className="inline-flex h-12 items-center justify-center gap-2 rounded-full border border-foreground/10 bg-background px-8 text-[14px] font-bold text-foreground transition-all hover:bg-foreground/5">
-                Skip for now
+            <div className="flex w-full shrink-0 flex-col gap-2.5 sm:w-auto sm:flex-row">
+              <button onClick={onContinue} className="inline-flex h-10 items-center justify-center rounded-[10px] border border-foreground/10 bg-background px-6 text-[12px] font-bold text-foreground transition-all hover:bg-foreground/5">
+                Skip
               </button>
               <button 
                 onClick={onContinue} 
-                className="group inline-flex h-12 items-center justify-center gap-3 rounded-full bg-foreground px-8 text-[14px] font-bold text-background transition-all hover:scale-105 shadow-xl active:scale-95"
+                className="group inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-foreground px-6 text-[12px] font-bold text-background transition-all hover:opacity-90 shadow-sm"
               >
                 Enter Label HQ
-                <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
           </div>
@@ -1568,14 +1742,14 @@ const SetupScreen = ({
 
 const SetupInput = ({ label, value, onChange, active = false }: { label: string; value: string; onChange: (value: string) => void; active?: boolean }) => (
   <div className={cn(
-    "group rounded-[14px] border bg-background p-3.5 transition-all duration-300", 
-    active ? "border-brand-accent ring-4 ring-brand-accent/5 shadow-lg" : "border-foreground/10 focus-within:border-brand-accent/50 focus-within:ring-4 focus-within:ring-brand-accent/5"
+    "group rounded-[12px] border bg-background p-2.5 transition-all duration-300", 
+    active ? "border-brand-accent ring-2 ring-brand-accent/5" : "border-foreground/8 focus-within:border-brand-accent/50 focus-within:ring-2 focus-within:ring-brand-accent/5"
   )}>
-    <label className="font-ui block text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60 transition-colors group-focus-within:text-brand-accent">{label}</label>
+    <label className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85 transition-colors group-focus-within:text-brand-accent">{label}</label>
     <input 
       value={value} 
       onChange={(e) => onChange(e.target.value)} 
-      className="mt-1.5 w-full bg-transparent text-[14px] font-bold text-foreground outline-none placeholder:text-muted-foreground/30" 
+      className="mt-1 w-full bg-transparent text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60" 
     />
   </div>
 );
@@ -1616,7 +1790,7 @@ const LabelHQScreen = ({
     <div className="mb-5 grid grid-cols-2 overflow-hidden rounded-[20px] border border-foreground/10 bg-background/76 shadow-sm backdrop-blur md:grid-cols-4 lg:mb-8 lg:rounded-[24px]">
       {[
         { label: "Focus", value: profile.release, meta: profile.stage, icon: Mic2, tone: "text-brand-accent bg-brand-accent/[0.09]", actionLabel: "Open artist profile", onClick: () => onWorkspace("artistProfileWorkspace") },
-        { label: "Attention", value: "Split approval", meta: "Rights", icon: BadgeDollarSign, tone: "text-[#c2410c] bg-[#f97316]/10", actionLabel: "Open blocked rights task", onClick: () => onWorkspace("tasksWorkspace") },
+        { label: "Attention", value: "Split approval", meta: "Rights", icon: AlertCircle, tone: "text-[#c2410c] bg-[#f97316]/10", actionLabel: "Open blocked rights task", onClick: () => onWorkspace("tasksWorkspace") },
         { label: "Next Move", value: "Clear rights", meta: "Today", icon: Route, tone: "text-foreground bg-foreground/[0.06]", actionLabel: "Open next task", onClick: () => onWorkspace("tasksWorkspace") },
         { label: "Missions", value: `${missions.filter((mission) => mission.status !== "complete" && !mission.archived).length}`, meta: "Active", icon: ClipboardCheck, tone: "text-brand-accent bg-brand-accent/[0.09]", actionLabel: "Open active missions", onClick: () => onWorkspace("missionsWorkspace") },
       ].map((item) => {
@@ -1637,11 +1811,11 @@ const LabelHQScreen = ({
               <Icon className="h-4 w-4" />
             </span>
             <div className={cn("min-w-0", isMissionCount && "flex min-w-[54px] flex-col items-center")}>
-              <p className="font-ui text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/45">{item.label}</p>
+              <p className="font-ui text-[9px] font-bold uppercase tracking-[0.13em] text-muted-foreground/90">{item.label}</p>
               <p className={cn("mt-1 truncate font-bold leading-tight text-foreground", isMissionCount ? "text-center font-display text-[24px] leading-none lg:text-[26px]" : "text-[14px] lg:text-[15px]")}>{item.value}</p>
               <p className="mt-0.5 truncate text-[11px] font-semibold leading-snug text-muted-foreground/58">{item.meta}</p>
             </div>
-            <ChevronRight className="ml-auto hidden h-4 w-4 shrink-0 text-muted-foreground/25 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-accent sm:block" />
+            <ChevronRight className="ml-auto hidden h-4 w-4 shrink-0 text-muted-foreground/55 transition-transform group-hover:translate-x-0.5 group-hover:text-brand-accent sm:block" />
           </button>
         );
       })}
@@ -1671,8 +1845,8 @@ const LabelHQScreen = ({
         {/* REFINED STAFF GRID */}
         <div className="space-y-5">
            <div className="flex items-center justify-between border-b border-foreground/5 pb-4">
-              <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Label Staff</p>
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/20">5 active AI units</span>
+              <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">Label Staff</p>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">5 active AI units</span>
            </div>
            <div data-testid="mobile-team-strip" className="grid gap-2 rounded-[18px] border border-foreground/8 bg-background/82 p-3 lg:hidden">
              <div className="flex items-center justify-between">
@@ -1690,7 +1864,7 @@ const LabelHQScreen = ({
         {/* COMPACT MISSIONS */}
         <div className="space-y-5">
            <div className="flex items-center justify-between border-b border-foreground/5 pb-4">
-              <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Active Missions</p>
+              <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">Active Missions</p>
               <button onClick={() => onWorkspace("missionsWorkspace")} className="text-[11px] font-bold text-brand-accent hover:underline">See all missions â†’</button>
            </div>
            <LightMissionCards missions={missions.filter(m => m.status !== "complete")} onMission={onMission} onWorkspace={onWorkspace} />
@@ -1750,7 +1924,7 @@ const StaffWorkspace = ({
                 <span
                   className={cn(
                     "flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-foreground/5 transition-colors duration-300",
-                    available ? "bg-brand-accent text-primary-foreground" : "bg-muted text-foreground/40"
+                    available ? "bg-brand-accent text-primary-foreground" : "bg-muted text-foreground/89"
                   )}
                   style={!available ? { backgroundColor: agent.color + '20', color: agent.color, borderColor: agent.color + '30' } : {}}
                 >
@@ -1806,7 +1980,7 @@ const StaffWorkspace = ({
 
 const StaffStat = ({ label, value }: { label: string; value: string }) => (
   <div className="border-r border-foreground/5 px-5 py-4 last:border-r-0">
-    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{label}</p>
+    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{label}</p>
     <p className="mt-1 text-[22px] font-display font-bold tracking-tight text-foreground">{value}</p>
   </div>
 );
@@ -1823,7 +1997,7 @@ const StaffSourceBlock = ({
   accent?: boolean;
 }) => (
   <div className={cn("rounded-[16px] border p-4", accent ? "border-brand-accent/15 bg-brand-accent/[0.04]" : "border-foreground/5 bg-black/[0.015]")}>
-    <p className={cn("text-[10px] font-bold uppercase tracking-[0.08em]", accent ? "text-brand-accent" : "text-muted-foreground/60")}>{title}</p>
+    <p className={cn("text-[10px] font-bold uppercase tracking-[0.08em]", accent ? "text-brand-accent" : "text-muted-foreground/85")}>{title}</p>
     <div className="mt-3 flex flex-wrap gap-2">
       {items.map((item) => (
         <span
@@ -1833,7 +2007,7 @@ const StaffSourceBlock = ({
             accent
               ? "border-brand-accent/15 bg-white text-[#5f2489]"
               : muted
-                ? "border-foreground/5 bg-white/60 text-muted-foreground/60"
+                ? "border-foreground/5 bg-white/60 text-muted-foreground/85"
                 : "border-foreground/5 bg-white text-muted-foreground/80",
           )}
         >
@@ -1933,7 +2107,7 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
           <Calendar className="h-4 w-4" />
         </div>
         <div>
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Today's Brief</p>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">Today's Brief</p>
           <p className="text-[13px] font-bold text-foreground opacity-90">{profile.name} Â· {profile.release}</p>
         </div>
       </div>
@@ -1982,7 +2156,7 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
       {/* Today's directive */}
       <div className="mt-6 rounded-[22px] border border-foreground/5 bg-foreground/[0.01] p-5">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-brand-accent">Today's Directive</p>
-        <p className="mt-1 font-ui text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground/35">Next Move</p>
+        <p className="mt-1 font-ui text-[10px] font-bold uppercase tracking-[0.13em] text-muted-foreground/85">Next Move</p>
         <p className="mt-3 text-[15px] font-bold leading-relaxed text-foreground opacity-90">
           Clear split approval first. Keep June 12 conditional until rights are written, then move distributor delivery, DSP pitching, creator seeding, press, and launch content in sequence.
         </p>
@@ -1991,11 +2165,11 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
       <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <button
           onClick={onEvidence}
-          className="text-[12px] font-bold text-muted-foreground/60 underline-offset-4 hover:text-brand-accent hover:underline transition-all"
+          className="text-[12px] font-bold text-muted-foreground/85 underline-offset-4 hover:text-brand-accent hover:underline transition-all"
         >
           View supporting evidence â†’
         </button>
-        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/20 italic">Generated by AI Manager 08:30 AM</span>
+        <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 italic">Generated by AI Manager 08:30 AM</span>
       </div>
     </div>
   </div>
@@ -2004,7 +2178,7 @@ const LightMorningBriefPanel = ({ profile, onManager, onEvidence }: { profile: A
 const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: DrawerKind) => void; onWorkspace: (view: View) => void }) => (
   <div className="flex flex-col gap-6">
     <section className="space-y-6">
-      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Needs Attention</p>
+      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">Needs Attention</p>
       <div className="flex flex-col gap-4">
         <button onClick={() => onWorkspace("tasksWorkspace")} className="group flex flex-col gap-3 rounded-[24px] border border-foreground/5 bg-background p-6 text-left transition-all hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.02]">
           <div className="flex items-center gap-2.5">
@@ -2032,7 +2206,7 @@ const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: D
     </section>
 
     <section className="space-y-6">
-      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">Recent Movement</p>
+      <p className="font-ui text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">Recent Movement</p>
       <div className="space-y-8 pl-1">
         {[
           { label: "Milestone", title: "Started content testing", time: "2h ago" },
@@ -2041,7 +2215,7 @@ const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: D
         ].map((item, i) => (
           <div key={i} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
             <p className="text-[12px] font-bold text-foreground leading-tight tracking-tight">{item.title}</p>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{item.label} Â· {item.time}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88">{item.label} Â· {item.time}</p>
           </div>
         ))}
       </div>
@@ -2082,7 +2256,7 @@ const LightAgentBench = ({
           </div>
           <div className="min-w-0 flex-1">
             <p className={cn("text-[14px] font-bold leading-tight tracking-tight", available ? "text-foreground" : "text-muted-foreground")}>{agent.name.replace("AI ", "")}</p>
-            <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40 leading-tight">
+            <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88 leading-tight">
                {available ? "Active Now" : "Locked"}
             </p>
           </div>
@@ -2116,26 +2290,26 @@ const LightMissionCards = ({
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <span className={cn("h-1.5 w-1.5 rounded-full", statusColor)} />
-              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">Active Mission</span>
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/85">Active Mission</span>
               <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-warning">Blocker</span>
             </div>
             <p className="mt-3 font-display text-[17px] font-bold text-foreground tracking-tight group-hover:text-brand-accent transition-colors">
               {mission.title}
             </p>
-            <p className="mt-2 text-[13px] font-medium leading-relaxed text-muted-foreground/75 line-clamp-2">
+            <p className="mt-2 text-[13px] font-medium leading-relaxed text-muted-foreground/90 line-clamp-2">
               {mission.summary}
             </p>
           </div>
           <div className="flex flex-col justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.025] p-4">
              <div>
                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">Progress</p>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88">Progress</p>
                   <p className="text-[12px] font-bold text-foreground">{mission.progress}%</p>
                </div>
                <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/5">
                   <div className={cn("h-full rounded-full transition-all duration-1000", statusColor)} style={{ width: `${mission.progress}%` }} />
                </div>
-               <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{mission.review}</p>
+               <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88">{mission.review}</p>
              </div>
              <span className="mt-4 inline-flex items-center justify-between text-[11px] font-bold text-brand-accent">
                Open mission
@@ -2151,14 +2325,14 @@ const LightMissionCards = ({
 const LightMissionCount = ({ label, value }: { label: string; value: number }) => (
   <div className="flex flex-col items-center">
     <span className="block text-sm font-bold text-black">{value}</span>
-    <span className="block text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60">{label}</span>
+    <span className="block text-[9px] font-bold uppercase tracking-widest text-muted-foreground/85">{label}</span>
   </div>
 );
 
 const OperatingState = ({ label, value }: { label: string; value: string }) => (
   <div className="rounded-[18px] border border-foreground/5 bg-white/[0.045] p-3">
-    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/40">{label}</p>
-    <p className="mt-1 text-sm leading-5 text-foreground/70">{value}</p>
+    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/88">{label}</p>
+    <p className="mt-1 text-sm leading-5 text-foreground/88">{value}</p>
   </div>
 );
 
@@ -2217,7 +2391,7 @@ const ManagerOfficeFocused = ({
               <div className="max-w-xl">
                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager Read</p>
                  <h4 className="font-display mt-2 text-lg font-bold text-foreground">How the Manager makes a call.</h4>
-                 <p className="mt-2 text-[14px] leading-relaxed text-foreground/50 font-medium">
+                 <p className="mt-2 text-[14px] leading-relaxed text-foreground/78 font-medium">
                     Uses multi-agent validation to cross-reference context with market signals before outputting decision packages.
                  </p>
               </div>
@@ -2227,7 +2401,7 @@ const ManagerOfficeFocused = ({
                        <div className="h-9 w-9 rounded-full bg-brand-accent flex items-center justify-center text-[11px] font-bold text-primary-foreground shadow-lg shadow-brand-accent/20">
                           {i + 1}
                        </div>
-                       <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/40">{step}</span>
+                       <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/88">{step}</span>
                     </div>
                  ))}
               </div>
@@ -2246,7 +2420,7 @@ const MorningBriefNarrative = ({ profile }: { profile: ArtistProfile }) => {
       <p className="max-w-3xl text-2xl font-semibold tracking-tight leading-9 text-foreground">
         Momentum is real, but spend is not cleared yet.
       </p>
-      <div className="mt-5 max-w-4xl space-y-5 text-base leading-8 text-foreground/68">
+      <div className="mt-5 max-w-4xl space-y-5 text-base leading-8 text-foreground/87">
         <p>
           Across the connected hub, {profile.name} is sitting on <span className="text-brand-accent">128,400 tracked streams</span> for the current read, and the story is not flat: Atlanta is still the center, but Chicago is up <span className="text-brand-accent">31%</span> week over week and Lagos comments are starting to repeat the same Night Bus lyric. TikTok is the loudest movement right now, with video uses around the hook up <span className="text-brand-accent">4.8x above baseline</span>, while YouTube is adding release-request comments instead of just passive views.
         </p>
@@ -2262,12 +2436,12 @@ const MorningBriefNarrative = ({ profile }: { profile: ArtistProfile }) => {
         </p>
       </div>
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs leading-5 text-muted-foreground/40">
+        <p className="text-xs leading-5 text-muted-foreground/88">
           Read from connected public catalog, social activity, YouTube comments, and artist replies. Evidence details stay in the source drawer.
         </p>
         <button
           onClick={() => setExpanded((current) => !current)}
-          className="rounded-full border border-foreground/5 px-3 py-1.5 font-ui text-[10px] font-semibold uppercase tracking-[0.13em] text-foreground/58 hover:border-brand-accent/30 hover:text-foreground"
+          className="rounded-full border border-foreground/5 px-3 py-1.5 font-ui text-[10px] font-semibold uppercase tracking-[0.13em] text-foreground/82 hover:border-brand-accent/30 hover:text-foreground"
         >
           {expanded ? "Collapse brief" : "Read full brief"}
         </button>
@@ -2314,13 +2488,13 @@ const ManagerDeskPanel = ({
             <div className="max-w-2xl">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">Context needed</p>
               <h2 className="font-display mt-2 text-[22px] font-bold tracking-tight text-foreground">Manager needs these answers before making decisions.</h2>
-              <p className="mt-2 text-[13px] font-medium leading-relaxed text-muted-foreground/70">
+              <p className="mt-2 text-[13px] font-medium leading-relaxed text-muted-foreground/88">
                 The directive composer and prior threads unlock after the release context is complete.
               </p>
             </div>
             <div className="min-w-[180px] rounded-[18px] border border-foreground/5 bg-background/70 p-4">
               <div className="flex items-center justify-between">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/45">Context progress</p>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/90">Context progress</p>
                 <p className="text-[12px] font-bold text-foreground">{answeredCount}/{managerQuestions.length}</p>
               </div>
               <div className="mt-3 h-1.5 rounded-full bg-foreground/5">
@@ -2333,7 +2507,7 @@ const ManagerDeskPanel = ({
         {/* Left: Question navigator */}
         <aside className="space-y-6">
           <div className="surface-panel rounded-2xl p-5">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Question list</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/88">Question list</p>
             <div className="mt-3 flex items-center gap-3">
               <div className="flex-1 h-1 rounded-full bg-foreground/5">
                 <div className="h-full rounded-full bg-brand-accent transition-all duration-1000" style={{ width: `${(answeredCount / managerQuestions.length) * 100}%` }} />
@@ -2383,7 +2557,7 @@ const ManagerDeskPanel = ({
             <div className="mt-6 flex items-center justify-between">
               <button
                 onClick={() => setAnswers((current) => ({ ...current, [activeQuestionObject.id]: activeQuestionObject.suggested }))}
-                className="text-[11px] font-bold text-muted-foreground/40 underline-offset-4 hover:text-brand-accent hover:underline"
+                className="text-[11px] font-bold text-muted-foreground/88 underline-offset-4 hover:text-brand-accent hover:underline"
               >
                 Use suggested context
               </button>
@@ -2415,7 +2589,7 @@ const ManagerDeskPanel = ({
             <h2 className="font-display text-lg font-bold tracking-tight text-foreground">
               Manager Directive
             </h2>
-            <p className="mt-1 text-[13px] font-medium text-muted-foreground/50 leading-relaxed">
+            <p className="mt-1 text-[13px] font-medium text-muted-foreground/78 leading-relaxed">
               The Manager is ready to process directives or review artist signals.
             </p>
             
@@ -2429,7 +2603,7 @@ const ManagerDeskPanel = ({
                     : p === "Creator Push" ? "Build the creator seeding directive for the Night Bus hook."
                     : "Shape the press angle for Night Bus using the night-drive story."
                   )}
-                  className="rounded-full border border-foreground/5 bg-foreground/[0.03] px-4 py-2 text-[11px] font-bold text-foreground/60 transition-all hover:border-brand-accent/20 hover:bg-brand-accent/5 hover:text-brand-accent"
+                  className="rounded-full border border-foreground/5 bg-foreground/[0.03] px-4 py-2 text-[11px] font-bold text-foreground/84 transition-all hover:border-brand-accent/20 hover:bg-brand-accent/5 hover:text-brand-accent"
                 >
                   {p}
                 </button>
@@ -2472,8 +2646,8 @@ const RecentConversationsPanel = ({
   <div className="mt-10">
     <div className="flex items-center justify-between px-2 mb-4 border-b border-foreground/5 pb-4">
       <div>
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/40">Conversation History</p>
-        <p className="mt-1 text-[12px] text-muted-foreground/50">Pick up a prior thread or start a new run.</p>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/88">Conversation History</p>
+        <p className="mt-1 text-[12px] text-muted-foreground/78">Pick up a prior thread or start a new run.</p>
       </div>
       <button className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent hover:underline">See full history</button>
     </div>
@@ -2485,16 +2659,16 @@ const RecentConversationsPanel = ({
           className="group flex items-center justify-between p-4 text-left transition-all hover:bg-foreground/[0.02] rounded-xl border border-transparent hover:border-foreground/5"
         >
           <div className="flex items-center gap-4 min-w-0">
-            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-foreground/40 group-hover:bg-brand-accent/10 group-hover:text-brand-accent transition-colors">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-foreground/89 group-hover:bg-brand-accent/10 group-hover:text-brand-accent transition-colors">
               <MessageSquareText className="h-4 w-4" />
             </span>
             <div className="min-w-0">
               <p className="text-[14px] font-bold text-foreground transition-colors group-hover:text-brand-accent truncate leading-tight">{conversation.topic}</p>
-              <p className="mt-1 text-[12px] text-muted-foreground/50 truncate max-w-md">{conversation.status}</p>
+              <p className="mt-1 text-[12px] text-muted-foreground/78 truncate max-w-md">{conversation.status}</p>
             </div>
           </div>
           <div className="flex items-center gap-6 shrink-0">
-            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/30">{conversation.lastUpdate}</span>
+            <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{conversation.lastUpdate}</span>
             <ChevronRight className="h-4 w-4 text-foreground/10 group-hover:text-brand-accent transition-colors" />
           </div>
         </button>
@@ -2515,8 +2689,8 @@ const MissionListPanel = ({
   <div className="rounded-[28px] border border-white/12 bg-white/[0.055] p-5 lg:p-6">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-foreground/5 pb-4">
       <div>
-        <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Active missions</p>
-        <p className="mt-1 text-sm text-foreground/58">Compact operating list. Open a mission to see tasks, tests, briefs, and records.</p>
+        <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/89">Active missions</p>
+        <p className="mt-1 text-sm text-foreground/82">Compact operating list. Open a mission to see tasks, tests, briefs, and records.</p>
       </div>
       <ProductButton variant="secondary" onClick={() => onWorkspace("missionsWorkspace")}>View all missions</ProductButton>
     </div>
@@ -2532,7 +2706,7 @@ const MissionListPanel = ({
               <p className="text-base text-foreground">{mission.title}</p>
               <p className="mt-1 text-xs uppercase tracking-[0.12em] text-foreground/38">{mission.status} / {mission.review}</p>
             </div>
-            <span className="text-sm text-foreground/62">{mission.progress}%</span>
+            <span className="text-sm text-foreground/85">{mission.progress}%</span>
           </div>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-white/10">
             <div className="h-full rounded-full bg-brand-accent" style={{ width: `${mission.progress}%` }} />
@@ -2550,7 +2724,7 @@ const MissionListPanel = ({
 
 const AttentionPanel = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: DrawerKind) => void; onWorkspace: (view: View) => void }) => (
   <div className="rounded-[28px] border border-white/12 bg-white/[0.055] p-5 lg:p-6">
-    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">Needs attention</p>
+    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/89">Needs attention</p>
     <div className="mt-4 space-y-3">
       <AttentionButton icon={BadgeDollarSign} text="Split sheet approval is blocking release clearance." onClick={() => onWorkspace("tasksWorkspace")} />
       <AttentionButton icon={Upload} text="Distributor package confirmation is still missing." onClick={() => onDrawer("evidence")} />
@@ -2560,7 +2734,7 @@ const AttentionPanel = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: DrawerKi
 );
 
 const AttentionButton = ({ icon: Icon, text, onClick }: { icon: typeof BadgeDollarSign; text: string; onClick: () => void }) => (
-  <button onClick={onClick} className="flex w-full gap-3 rounded-2xl border border-foreground/5 bg-foreground/5 p-4 text-left text-sm text-foreground/62 hover:border-brand-accent/35">
+  <button onClick={onClick} className="flex w-full gap-3 rounded-2xl border border-foreground/5 bg-foreground/5 p-4 text-left text-sm text-foreground/85 hover:border-brand-accent/35">
     <Icon className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent" />
     <span>{text}</span>
   </button>
@@ -2601,7 +2775,7 @@ const ConversationWorkspace = ({
                          )}>
                             {isAI ? <Sparkles className="h-4 w-4" /> : <UsersRound className="h-4 w-4" />}
                          </div>
-                         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/40">{msg.label}</p>
+                         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">{msg.label}</p>
                       </div>
                       <div className={cn(
                          "rounded-2xl border transition-all max-w-2xl",
@@ -2621,16 +2795,16 @@ const ConversationWorkspace = ({
                                       msg.workCreated.type === "task" ? <ClipboardCheck className="h-3.5 w-3.5" /> : 
                                       <Gauge className="h-3.5 w-3.5" />}
                                   </div>
-                                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/60">
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/85">
                                      {msg.workCreated.type} created
                                   </p>
                                </div>
                                <h4 className="text-[14px] font-bold text-foreground">{msg.workCreated.title}</h4>
-                               <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground/70">{msg.workCreated.body}</p>
+                               <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground/88">{msg.workCreated.body}</p>
                                <button
                                  onClick={() => onOpenCreatedWork(msg.workCreated!)}
                                  aria-label={`Open created ${msg.workCreated.type}: ${msg.workCreated.title}`}
-                                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground/[0.03] py-2 text-[11px] font-bold uppercase tracking-wider text-foreground/55 transition-all hover:bg-foreground/[0.06] hover:text-foreground"
+                                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground/[0.03] py-2 text-[11px] font-bold uppercase tracking-wider text-foreground/80 transition-all hover:bg-foreground/[0.06] hover:text-foreground"
                                >
                                   Open created {msg.workCreated.type}
                                   <ChevronRight className="h-3.5 w-3.5" />
@@ -2642,10 +2816,10 @@ const ConversationWorkspace = ({
                             <div className="mt-6 flex items-center gap-4 border-t border-foreground/5 pt-5">
                                <div className="flex items-center gap-2">
                                   <span className="h-1 w-1 rounded-full bg-success" />
-                                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/50">Verified Insight</span>
+                                  <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/78">Verified Insight</span>
                                </div>
                                <div className="h-px w-6 bg-foreground/10" />
-                               <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/30 italic">Signal referenced</span>
+                               <span className="text-[9px] font-bold uppercase tracking-widest text-muted-foreground/60 italic">Signal referenced</span>
                             </div>
                          )}
                       </div>
@@ -2662,7 +2836,7 @@ const ConversationWorkspace = ({
                      value={draft}
                      onChange={(e) => setDraft(e.target.value)}
                      placeholder="Type a message to the Manager..."
-                     className="min-h-[56px] w-full resize-none bg-transparent px-5 py-4 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/30"
+                     className="min-h-[56px] w-full resize-none bg-transparent px-5 py-4 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60"
                      onKeyDown={(e) => {
                        if (e.key === 'Enter' && !e.shiftKey) {
                          e.preventDefault();
@@ -2695,27 +2869,27 @@ const MissionLane = ({ icon: Icon, title, meta, text, onClick }: { icon: typeof 
          </span>
          <div>
             <p className="text-[14px] font-bold tracking-tight text-foreground">{title}</p>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/40">{meta}</p>
+            <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88">{meta}</p>
          </div>
       </div>
-      <ChevronRight className="h-4 w-4 text-muted-foreground/20 transition-all group-hover:translate-x-1" />
+      <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-all group-hover:translate-x-1" />
     </div>
-    <p className="mt-4 text-[13px] leading-relaxed text-muted-foreground/60 group-hover:text-muted-foreground/80 font-medium">{text}</p>
+    <p className="mt-4 text-[13px] leading-relaxed text-muted-foreground/85 group-hover:text-muted-foreground/80 font-medium">{text}</p>
   </button>
 );
 
 const ArtistDirectionField = ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
-  <div className="group rounded-[16px] border border-brand-accent/15 bg-brand-accent/[0.035] p-4 transition-all duration-300 focus-within:border-brand-accent/45 focus-within:ring-4 focus-within:ring-brand-accent/5 sm:col-span-2">
-    <label htmlFor="artist-direction" className="font-ui block text-[10px] font-bold uppercase tracking-[0.15em] text-brand-accent">Artist Direction</label>
-    <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/70">
-      Tell the Manager where the artist is trying to go. This can include the next release, audience, team priorities, budget posture, and what should not be rushed.
+  <div className="group rounded-[12px] border border-brand-accent/15 bg-brand-accent/[0.025] p-3 transition-all duration-300 focus-within:border-brand-accent/45 focus-within:ring-2 focus-within:ring-brand-accent/5 sm:col-span-2">
+    <label htmlFor="artist-direction" className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-brand-accent">Artist Direction</label>
+    <p className="mt-1 text-[11px] font-semibold leading-relaxed text-muted-foreground/90">
+      Specify target positioning, goals, team boundaries, or budget constraints for this release.
     </p>
     <textarea
       id="artist-direction"
       aria-label="Artist Direction"
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="mt-3 min-h-[118px] w-full resize-none rounded-[14px] border border-foreground/8 bg-background/75 p-4 text-[14px] font-semibold leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/35"
+      className="mt-2 min-h-[70px] w-full resize-none rounded-[10px] border border-foreground/8 bg-background/75 p-3 text-[13px] font-semibold leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/85"
     />
   </div>
 );
@@ -2728,10 +2902,10 @@ const MissionSurfaceButton = ({ icon: Icon, title, meta, onClick }: { icon: type
       </span>
       <span className="min-w-0">
         <span className="block text-[13px] font-bold leading-tight text-foreground sm:truncate sm:text-[14px]">{title}</span>
-        <span className="mt-0.5 hidden truncate text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55 sm:block">{meta}</span>
+        <span className="mt-0.5 hidden truncate text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 sm:block">{meta}</span>
       </span>
     </span>
-    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+    <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
   </button>
 );
 
@@ -2746,21 +2920,28 @@ const TasksWorkspace = ({
   approvedTasks: string[];
   completedTasks: string[];
   onApproveTask: (id: string) => void;
-  onCompleteTask: (id: string) => void;
+  onCompleteTask: (id: string, note?: string) => void;
 }) => {
-  const checkpointsWithTasks = missionCheckpoints.filter((checkpoint) => taskRows.some((task) => task.checkpointId === checkpoint.id));
-  const [activeCheckpointId, setActiveCheckpointId] = useState(checkpointsWithTasks[0]?.id ?? "");
   const taskResultById = new Map(taskResults.map((result) => [result.taskId, result]));
-  const isTaskResolved = (task: ReleaseTask) => completedTasks.includes(task.id) || ["completed", "blocked", "revised"].includes(taskResultById.get(task.id)?.status ?? "");
-  const scrollToCheckpoint = (checkpointId: string) => {
+  const activeBlocker = missionCheckpoints.find((checkpoint) => checkpoint.status === "Needs revision");
+  const [activeCheckpointId, setActiveCheckpointId] = useState<string>(activeBlocker?.id ?? missionCheckpoints[0].id);
+  const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
+  const [taskNotes, setTaskNotes] = useState<Record<string, string>>({});
+  const [completingTaskId, setCompletingTaskId] = useState<string | null>(null);
+  
+  const scrollToGroup = (checkpointId: string) => {
     setActiveCheckpointId(checkpointId);
-    document.getElementById(`task-checkpoint-${checkpointId}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+    document.getElementById(`task-group-${checkpointId}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  };
+  
+  const toggleTaskDetails = (taskId: string) => {
+    setExpandedTaskIds((current) => (current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]));
   };
 
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
-    const sections = checkpointsWithTasks
-      .map((checkpoint) => document.getElementById(`task-checkpoint-${checkpoint.id}`))
+    const sections = missionCheckpoints
+      .map((checkpoint) => document.getElementById(`task-group-${checkpoint.id}`))
       .filter((section): section is HTMLElement => Boolean(section));
     if (!sections.length) return;
 
@@ -2777,37 +2958,36 @@ const TasksWorkspace = ({
 
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
-  }, [checkpointsWithTasks]);
+  }, []);
 
   return (
     <WorkspaceShell eyebrow="Tasks" title="Release tasks" onBack={onBack}>
-      <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)] xl:gap-6">
+      <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)] xl:gap-6">
         <aside className="min-w-0 overflow-hidden rounded-[20px] border border-foreground/8 bg-background/75 p-4 shadow-sm lg:sticky lg:top-6 lg:self-start lg:rounded-[24px]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Checkpoint path</p>
-          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/70">
-            Tasks are grouped by the checkpoint they help clear. Finish or resolve the required work, then the Manager reviews what changed.
+          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Phases</p>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/88">
+            Work through the release step-by-step. Completing all tasks in a phase unlocks the next one.
           </p>
           <div data-testid="mobile-task-stepper" className="mt-4 flex min-w-0 max-w-full gap-2 overflow-x-auto pb-1 lg:mt-5 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
-            {checkpointsWithTasks.map((checkpoint, index) => {
-              const checkpointTasks = taskRows.filter((task) => task.checkpointId === checkpoint.id);
-              const resolvedCount = checkpointTasks.filter(isTaskResolved).length;
-              const active = checkpoint.status === "Needs revision" || checkpoint.status === "Ready for AI review";
+            {missionCheckpoints.map((checkpoint, index) => {
               const inView = activeCheckpointId === checkpoint.id;
+              const phaseTasks = taskRows.filter(t => t.checkpointId === checkpoint.id);
+              const doneCount = phaseTasks.filter(t => completedTasks.includes(t.id)).length;
               return (
                 <button
                   key={checkpoint.id}
-                  data-testid={`task-checkpoint-chain-${checkpoint.id}`}
+                  data-testid={`task-group-tab-${checkpoint.id}`}
                   aria-current={inView ? "true" : undefined}
-                  onClick={() => scrollToCheckpoint(checkpoint.id)}
-                  className={cn("relative flex min-w-[190px] gap-3 rounded-[14px] px-2 py-2 text-left transition-all lg:w-full lg:min-w-0", inView ? "bg-foreground text-background shadow-sm" : "hover:bg-foreground/[0.04]")}
+                  onClick={() => scrollToGroup(checkpoint.id)}
+                  className={cn("relative flex min-w-[170px] gap-3 rounded-[14px] border px-2 py-2 text-left transition-all lg:w-full lg:min-w-0", inView ? "border-foreground bg-foreground text-background" : "border-foreground/8 bg-background text-foreground hover:bg-foreground/[0.04]")}
                 >
-                  {index < checkpointsWithTasks.length - 1 && <span className="absolute left-[13px] top-8 hidden h-[calc(100%-8px)] w-px bg-foreground/10 lg:block" />}
-                  <span className={cn("relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold", inView ? "border-brand-accent bg-brand-accent text-foreground" : active ? "border-brand-accent bg-brand-accent text-foreground" : "border-foreground/10 bg-background text-muted-foreground")}>
-                    {resolvedCount === checkpointTasks.length ? <Check className="h-3.5 w-3.5" /> : index + 1}
+                  {index < missionCheckpoints.length - 1 && <span className="absolute left-[13px] top-8 hidden h-[calc(100%-8px)] w-px bg-foreground/10 lg:block" />}
+                  <span className={cn("relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold", inView ? "border-brand-accent bg-brand-accent text-foreground" : "border-foreground/10 bg-background text-muted-foreground")}>
+                    {checkpoint.status === "Met" ? <Check className="h-3.5 w-3.5" /> : checkpoint.phase}
                   </span>
                   <div className="min-w-0">
                     <p className={cn("truncate text-[12px] font-bold", inView ? "text-background" : "text-foreground")}>{checkpoint.title}</p>
-                    <p className={cn("mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em]", inView ? "text-background/65" : "text-muted-foreground/55")}>{resolvedCount}/{checkpointTasks.length} needed to clear</p>
+                    <p className={cn("mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em]", inView ? "text-background/65" : "text-muted-foreground/80")}>{doneCount}/{phaseTasks.length} tasks</p>
                   </div>
                 </button>
               );
@@ -2816,112 +2996,159 @@ const TasksWorkspace = ({
         </aside>
 
         <div className="space-y-4 lg:space-y-5">
-          <div className="rounded-[20px] border border-foreground/8 bg-background/80 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">How to read this page</p>
-            <p className="mt-2 max-w-4xl text-[14px] font-semibold leading-relaxed text-foreground/75">
-              Each section is a checkpoint. The rows underneath are the tasks that move it forward. Every completion or blockage creates a Manager review, then the plan either continues, changes, or waits.
-            </p>
-          </div>
-
-          {checkpointsWithTasks.map((checkpoint) => {
-            const checkpointTasks = taskRows.filter((task) => task.checkpointId === checkpoint.id);
-            const resolvedCount = checkpointTasks.filter(isTaskResolved).length;
+          {missionCheckpoints.map((checkpoint) => {
             const sectionActive = activeCheckpointId === checkpoint.id;
+            const phaseTasks = taskRows.filter(t => t.checkpointId === checkpoint.id);
+            const blockedBy = getBlockingDependency(checkpoint);
+            const isLocked = blockedBy !== undefined;
+
             return (
               <section
                 key={checkpoint.id}
-                id={`task-checkpoint-${checkpoint.id}`}
-                data-testid={`task-checkpoint-section-${checkpoint.id}`}
+                id={`task-group-${checkpoint.id}`}
+                data-testid={`task-group-${checkpoint.id}`}
                 data-checkpoint-id={checkpoint.id}
                 data-active={sectionActive ? "true" : "false"}
-                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border p-4 shadow-sm transition-all lg:scroll-mt-6 lg:rounded-[24px] lg:p-5", sectionActive ? "border-brand-accent/35 bg-brand-accent/[0.045] shadow-lg" : "border-foreground/8 bg-background/85")}
+                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border p-4 shadow-sm transition-all lg:scroll-mt-6 lg:rounded-[24px] lg:p-5", sectionActive ? "border-brand-accent/35 bg-brand-accent/[0.045] shadow-lg" : "border-foreground/8 bg-background/85", isLocked && !sectionActive && "opacity-70")}
               >
-                <div className="grid gap-4 border-b border-foreground/8 pb-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent">{checkpoint.title}</p>
-                      <span className="rounded-full border border-foreground/10 bg-foreground/[0.035] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/70">{checkpoint.status}</span>
-                    </div>
-                    <p className="mt-2 text-[15px] font-semibold leading-relaxed text-foreground">{checkpoint.question}</p>
-                    <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/70">Clears when: {checkpoint.decisionRule}</p>
+                <div className="border-b border-foreground/8 pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent">Phase {checkpoint.phase}</p>
+                    <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", checkpoint.status === "Needs revision" ? "border-[#f97316]/30 bg-[#fff8f3] text-[#9a3412]" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent" : "border-foreground/8 bg-background text-muted-foreground")}>{checkpoint.status}</span>
                   </div>
-                  <div className="rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
-                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Progress</p>
-                    <p className="mt-2 text-[28px] font-display font-bold leading-none text-foreground">{resolvedCount}/{checkpointTasks.length}</p>
-                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-foreground/10">
-                      <div className="h-full rounded-full bg-brand-accent" style={{ width: `${(resolvedCount / checkpointTasks.length) * 100}%` }} />
+                  <h3 className="mt-2 text-[18px] font-bold text-foreground">{checkpoint.title}</h3>
+                  <p className="mt-1 text-[13px] font-semibold leading-relaxed text-muted-foreground/80">{checkpoint.question}</p>
+                  {isLocked && blockedBy && (
+                    <div className="mt-3 grid gap-2 rounded-[14px] border border-[#f59e0b]/20 bg-[#fffbeb] p-3 text-[12px] font-semibold leading-relaxed text-[#92400e]">
+                      <p className="font-bold">Waiting on: {blockedBy.title}</p>
+                      <p>{checkpoint.dependencyImpact}</p>
                     </div>
-                    <p className="mt-3 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">needed to clear</p>
-                  </div>
+                  )}
                 </div>
 
                 <div className="divide-y divide-foreground/7">
-                  {checkpointTasks.map((task) => {
+                  {phaseTasks.map((task) => {
                     const approved = approvedTasks.includes(task.id);
                     const done = completedTasks.includes(task.id);
                     const completionBlocked = task.approvalState === "needs approval" && !approved;
                     const result = taskResultById.get(task.id);
-                    const showResult = Boolean(result && (done || result.status === "blocked" || result.status === "revised"));
+                    const showResult = Boolean(result && (done || result.status === "completed" || result.status === "blocked" || result.status === "revised"));
                     const blocked = result?.status === "blocked" || task.approvalState === "blocked";
+                    const availability = getTaskAvailability(task, checkpoint);
+                    const detailsOpen = expandedTaskIds.includes(task.id);
+                    const isCompleting = completingTaskId === task.id;
+
                     return (
-                      <div key={task.id} className="grid min-w-0 gap-4 py-4 lg:grid-cols-[minmax(0,1fr)_180px] lg:py-5">
+                      <div key={task.id} className={cn("grid min-w-0 gap-4 py-4 lg:grid-cols-[minmax(0,1fr)_180px] lg:py-5", availability.disabled && !blocked && "opacity-75")}>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={cn("h-2.5 w-2.5 rounded-full", blocked ? "bg-[#f97316]" : done || result?.status === "completed" ? "bg-brand-accent" : "bg-foreground/20")} />
                             <p className="text-[15px] font-bold leading-snug text-foreground">{task.title}</p>
-                            <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">{done ? "done" : approved ? "approved" : task.approvalState}</span>
+                            <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{getTaskStatusLabel(task, approved, done, result)}</span>
+                            {availability.label !== "Open" && (
+                              <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", getDependencyToneClass(availability.tone))}>
+                                {availability.label}
+                              </span>
+                            )}
                           </div>
-                          <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/75">{task.owner} / {task.deadline}</p>
-                          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-foreground/72">{task.purpose}</p>
-                          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                            <p className="text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
-                            <p className="min-w-0 break-words rounded-[12px] border border-brand-accent/15 bg-background/70 px-3 py-2 text-[12px] leading-relaxed text-muted-foreground/75">
-                              <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Checkpoint link</span>
-                              <span className="mt-0.5 block"><span className="font-bold text-foreground">Unlocks checkpoint:</span> {checkpoint.title}</span>
-                            </p>
-                          </div>
-                          <details className="mt-3 group">
-                            <summary className="cursor-pointer text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent">Show required steps</summary>
-                            <div className="mt-3 grid gap-2">
+                          <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/90">{task.owner} / {task.deadline}</p>
+                          <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-foreground/89"><span className="font-bold text-foreground">Why it matters:</span> {task.purpose}</p>
+                          <button
+                            type="button"
+                            aria-label={`${detailsOpen ? "Hide" : "Show"} details ${task.title}`}
+                            onClick={() => toggleTaskDetails(task.id)}
+                            className="mt-3 text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent hover:underline"
+                          >
+                            {detailsOpen ? "Hide task details" : "Show task details"}
+                          </button>
+                          {detailsOpen && (
+                            <div className="mt-3 grid gap-3 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
+                              <div className="grid gap-2">
+                                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Steps</p>
                               {task.steps.map((step, index) => (
-                                <p key={step} className="text-[12px] leading-relaxed text-foreground/72">{index + 1}. {step}</p>
+                                <p key={step} className="text-[12px] leading-relaxed text-foreground/89">{index + 1}. {step}</p>
                               ))}
+                              </div>
+                              <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
+                              {showResult && result && (
+                                <div className="border-l-2 border-brand-accent/50 pl-4">
+                                  <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager note</p>
+                                  <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground">{result.summary}</p>
+                                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Task result:</span> {result.userNote}</p>
+                                  <p className="mt-1 text-[12px] leading-relaxed text-foreground/88">{result.interpretation}</p>
+                                  <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Effect on mission:</span> {result.missionEffect}</p>
+                                  <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{result.followUp}</p>
+                                </div>
+                              )}
                             </div>
-                          </details>
+                          )}
                           {completionBlocked && (
                             <p className="mt-3 rounded-[12px] border border-[#f97316]/20 bg-[#f97316]/10 p-3 text-[12px] font-semibold leading-snug text-[#c2410c]">
                               Approval is required before this task can be marked done.
                             </p>
                           )}
-                          {showResult && result && (
-                            <div className="mt-4 border-l-2 border-brand-accent/50 pl-4">
-                              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager review</p>
-                              <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground">{result.summary}</p>
-                              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Task result:</span> {result.userNote}</p>
-                              <p className="mt-1 text-[12px] leading-relaxed text-foreground/70">{result.interpretation}</p>
-                              <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground/75"><span className="font-bold text-foreground">Effect on mission:</span> {result.missionEffect}</p>
-                              <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{result.followUp}</p>
+                          {availability.reason && (
+                            <div className="mt-3 flex flex-wrap items-center gap-2 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-3 text-[12px] font-semibold leading-snug text-foreground/89">
+                              <span>{availability.reason}</span>
                             </div>
                           )}
                         </div>
-                        <div className="flex min-w-0 flex-wrap items-start justify-start gap-2 lg:justify-end">
+                        <div className="flex min-w-0 flex-col items-start justify-start gap-2 lg:items-end">
                           {task.approvalState === "needs approval" && (
                             <button
                               onClick={() => onApproveTask(task.id)}
                               disabled={approved || done}
-                              className="rounded-[10px] border border-foreground/10 px-3 py-2 text-[11px] font-bold text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-black disabled:opacity-40"
+                              className="rounded-[10px] border border-foreground/10 w-full px-3 py-2 text-[11px] font-bold text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-black disabled:opacity-40"
                             >
                               Approve
                             </button>
                           )}
-                          <button
-                            onClick={() => onCompleteTask(task.id)}
-                            disabled={done || completionBlocked || task.approvalState === "blocked"}
-                            className="rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
-                          >
-                            Mark done
-                          </button>
+                          {(!done && !completionBlocked && task.approvalState !== "blocked" && !availability.disabled) && !isCompleting && (
+                            <button
+                              aria-label={`Mark done ${task.title}`}
+                              onClick={() => setCompletingTaskId(task.id)}
+                              className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90"
+                            >
+                              Mark done
+                            </button>
+                          )}
+                          {(done || completionBlocked || task.approvalState === "blocked" || availability.disabled) && (
+                            <button
+                              disabled
+                              className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background opacity-35"
+                            >
+                              Mark done
+                            </button>
+                          )}
                         </div>
+                        
+                        {isCompleting && (
+                          <div className="mt-1 lg:col-span-2 rounded-[16px] border border-brand-accent/20 bg-brand-accent/[0.04] p-5 shadow-sm">
+                            <p className="text-[12px] font-bold uppercase tracking-[0.1em] text-brand-accent">Complete Task: {task.title}</p>
+                            <p className="mt-1 text-[13px] font-semibold text-foreground/88">Add context, results, or notes about what happened in this task.</p>
+                            <textarea
+                              autoFocus
+                              placeholder="Write your context here (optional)..."
+                              value={taskNotes[task.id] || ""}
+                              onChange={(e) => setTaskNotes(prev => ({ ...prev, [task.id]: e.target.value }))}
+                              className="mt-4 w-full min-h-[100px] rounded-[12px] border border-foreground/10 bg-background p-4 text-[14px] text-foreground placeholder:text-muted-foreground/78 focus:border-brand-accent focus:outline-none focus:ring-1 focus:ring-brand-accent resize-y"
+                            />
+                            <div className="mt-5 flex flex-wrap gap-3">
+                              <button
+                                onClick={() => { onCompleteTask(task.id, taskNotes[task.id]); setCompletingTaskId(null); }}
+                                className="rounded-[10px] bg-brand-accent px-6 py-2.5 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-colors hover:opacity-90 shadow-sm"
+                              >
+                                Submit & Mark Done
+                              </button>
+                              <button
+                                onClick={() => setCompletingTaskId(null)}
+                                className="rounded-[10px] border border-foreground/10 px-6 py-2.5 text-[12px] font-bold text-foreground transition-colors hover:bg-foreground/5"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2944,18 +3171,14 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
   const selectedRequiredResults = selectedCheckpoint.requiredTaskIds.map((taskId) => taskResultById.get(taskId)?.status ?? "pending");
   const selectedResolvedCount = selectedRequiredResults.filter((status) => status !== "pending").length;
   const readinessPercent = Math.round((clearedCount / missionCheckpoints.length) * 100);
+  const selectedBlockerCopy = getCheckpointBlockerCopy(selectedCheckpoint);
+  const selectedDecision = getCheckpointDecision(selectedCheckpoint);
   const statusClass = (checkpoint: MissionCheckpoint) =>
     checkpoint.status === "Needs revision"
       ? "border-[#f97316]/30 bg-[#fff8f3] text-[#9a3412]"
       : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review"
         ? "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent"
         : "border-foreground/8 bg-background text-muted-foreground";
-  const statusDotClass = (checkpoint: MissionCheckpoint) =>
-    checkpoint.status === "Needs revision"
-      ? "bg-[#f97316]"
-      : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review"
-        ? "bg-brand-accent"
-        : "bg-foreground/20";
 
   return (
     <WorkspaceShell eyebrow="Checkpoints" title="Mission checkpoints" onBack={onBack}>
@@ -2968,98 +3191,99 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
                 <h3 className="font-display text-[24px] font-bold leading-tight text-foreground lg:text-[30px] lg:leading-none">Night Bus / June 12</h3>
                 <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker.title}</span>
               </div>
-              <p className="mt-3 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/70">
-                Reusable checkpoint model: every mission uses the same shape of task result, evidence, Manager review, and next action. This release only changes the labels and evidence.
+              <p className="mt-3 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/88">
+                Check each phase, review the Manager call, then continue or fix what is blocking the release.
               </p>
             </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-3">
               <ArtifactField label="Readiness" value={`${readinessPercent}%`} />
               <ArtifactField label="Cleared" value={`${clearedCount}/${missionCheckpoints.length}`} />
-              <ArtifactField label="Current call" value="Move date" />
               <ArtifactField label="Target" value="Fri Jun 12" />
             </div>
-          </div>
-          <div className="scrollbar-none mt-5 flex gap-1.5 overflow-x-auto pb-1" aria-label="Checkpoint path">
-            {missionCheckpoints.map((checkpoint, index) => (
-              <button
-                key={checkpoint.id}
-                onClick={() => setSelectedCheckpointId(checkpoint.id)}
-                aria-current={selectedCheckpoint.id === checkpoint.id ? "true" : undefined}
-                className={cn("flex min-w-[118px] items-center gap-2 rounded-full border px-3 py-2 text-left transition-colors", selectedCheckpoint.id === checkpoint.id ? "border-foreground bg-foreground text-background" : "border-foreground/8 bg-foreground/[0.025] text-muted-foreground hover:bg-foreground/[0.05]")}
-              >
-                <span className={cn("h-2.5 w-2.5 rounded-full", selectedCheckpoint.id === checkpoint.id ? "bg-brand-accent" : statusDotClass(checkpoint))} />
-                <span className="truncate text-[10px] font-bold uppercase tracking-[0.08em]">{index + 1}. {checkpoint.title.replace(" Gate", "")}</span>
-              </button>
-            ))}
           </div>
           <div className="mt-3 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-3 xl:hidden">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="min-w-0 truncate text-[13px] font-bold text-foreground">{selectedCheckpoint.title}</p>
               <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", statusClass(selectedCheckpoint))}>{selectedCheckpoint.status}</span>
             </div>
-            <p className="mt-2 text-[12px] font-semibold leading-relaxed text-foreground/72">{selectedCheckpoint.managerRecommendation}</p>
+            <p className="mt-2 text-[12px] font-semibold leading-relaxed text-foreground/89">{selectedCheckpoint.managerRecommendation}</p>
             <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{selectedCheckpoint.nextAction}</p>
           </div>
         </section>
 
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1fr)]">
-          <section className="min-w-0">
-            <div className="mb-3 flex items-end justify-between gap-3">
+        <div data-testid="checkpoint-workspace-grid" className="grid gap-5 xl:h-[calc(100vh-300px)] xl:min-h-[600px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] xl:overflow-hidden">
+          <section data-testid="checkpoint-ledger-panel" className="min-w-0 overflow-hidden rounded-[24px] border border-foreground/8 bg-background/76 p-3 shadow-sm xl:flex xl:h-full xl:flex-col">
+            <div className="mb-3 flex items-end justify-between gap-3 px-1">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Checkpoint path</p>
-                <p className="mt-1 text-[13px] font-semibold text-foreground/70">Compact list. Select a checkpoint to inspect task results and Manager calls.</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission Phases</p>
+                <p className="mt-1 text-[13px] font-semibold text-foreground/88">Complete tasks to unlock downstream phases.</p>
               </div>
-              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">Gate ledger</span>
+              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Release Path</span>
             </div>
-            <div data-testid="checkpoint-scroll-region" className="scrollbar-soft space-y-2 pr-1 lg:max-h-[calc(100vh-245px)] lg:overflow-y-auto lg:pr-2">
+            <div data-testid="checkpoint-scroll-region" className="scrollbar-soft min-h-0 space-y-4 pr-1 lg:overflow-y-auto lg:pr-2 xl:flex-1 pb-4">
               <div data-testid="mobile-checkpoint-list" className="sr-only">Mobile checkpoint list</div>
               {missionCheckpoints.map((checkpoint, index) => {
                 const requiredResults = checkpoint.requiredTaskIds.map((taskId) => taskResultById.get(taskId)?.status ?? "pending");
                 const resolvedCount = requiredResults.filter((status) => status !== "pending").length;
                 const isSelected = selectedCheckpoint.id === checkpoint.id;
+                const dependencyState = getCheckpointDependencyState(checkpoint);
+                const isLocked = dependencyState === "Conditional" || dependencyState === "Locked";
+                const phaseTasks = taskRows.filter(t => t.checkpointId === checkpoint.id);
+
                 return (
-                  <div key={checkpoint.id} className="space-y-2">
+                  <div 
+                    key={checkpoint.id} 
+                    className={cn(
+                      "relative rounded-[20px] border transition-all overflow-hidden", 
+                      isSelected ? "border-brand-accent/40 bg-brand-accent/[0.02] shadow-lg shadow-brand-accent/5" : "border-foreground/8 bg-background/82 hover:border-foreground/16",
+                      isLocked ? "opacity-60" : "opacity-100"
+                    )}
+                  >
                     <button
-                      data-testid={`checkpoint-ledger-${checkpoint.id}`}
                       aria-current={isSelected ? "true" : undefined}
                       onClick={() => setSelectedCheckpointId(checkpoint.id)}
-                      className={cn("grid w-full grid-cols-[34px_minmax(0,1fr)_76px] items-center gap-3 rounded-[18px] border p-3 text-left transition-all", isSelected ? "border-foreground bg-foreground text-background shadow-lg" : "border-foreground/8 bg-background/82 hover:border-foreground/16 hover:bg-foreground/[0.025]")}
+                      className="w-full text-left p-4"
                     >
-                      <span className={cn("flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-foreground" : isSelected ? "bg-background/15 text-background" : "bg-foreground/8 text-muted-foreground")}>
-                        {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-4 w-4" /> : index + 1}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block truncate text-[14px] font-bold leading-tight">{checkpoint.title}</span>
-                        <span className={cn("mt-1 block truncate text-[12px] font-semibold", isSelected ? "text-background/70" : "text-muted-foreground/72")}>{checkpoint.nextAction}</span>
-                      </span>
-                      <span className="text-right">
-                        <span className={cn("inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", isSelected ? "border-background/20 bg-background/10 text-background" : statusClass(checkpoint))}>{checkpoint.status}</span>
-                        <span className={cn("mt-1 block text-[10px] font-bold uppercase tracking-[0.08em]", isSelected ? "text-background/65" : "text-muted-foreground/55")}>{resolvedCount}/{checkpoint.requiredTaskIds.length} results</span>
-                      </span>
-                    </button>
-                    {isSelected && (
-                      <div data-testid="mobile-selected-checkpoint-detail" className="rounded-[18px] border border-foreground/8 bg-background/92 p-4 shadow-sm xl:hidden">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager recommendation</p>
-                        <p className="mt-2 text-[14px] font-bold leading-snug text-foreground">{checkpoint.managerRecommendation}</p>
-                        <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/72">{checkpoint.managerRead}</p>
-                        <div className="mt-4 grid gap-2">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Required task results</p>
-                            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55">{resolvedCount}/{checkpoint.requiredTaskIds.length}</span>
-                          </div>
-                          {checkpoint.requiredTaskIds.map((taskId) => {
-                            const task = taskRows.find((row) => row.id === taskId);
-                            const result = taskResultById.get(taskId);
-                            return (
-                              <div key={taskId} className="flex min-w-0 items-center justify-between gap-3 rounded-[12px] border border-foreground/7 bg-foreground/[0.025] px-3 py-2">
-                                <span className="min-w-0 truncate text-[12px] font-semibold text-foreground/78">{task?.title ?? taskId}</span>
-                                <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", result ? "bg-brand-accent/12 text-brand-accent" : "bg-foreground/[0.06] text-muted-foreground/60")}>{result?.status ?? "pending"}</span>
-                              </div>
-                            );
-                          })}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                           <span className={cn(
+                             "flex mt-0.5 h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", 
+                             checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : 
+                             checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-background" : 
+                             "bg-foreground/10 text-muted-foreground"
+                           )}>
+                             {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-3 w-3" /> : checkpoint.phase}
+                           </span>
+                           <div>
+                             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Phase {checkpoint.phase}</p>
+                             <h4 className={cn("mt-0.5 text-[15px] font-bold leading-tight", isSelected ? "text-foreground" : "text-foreground/80")}>{checkpoint.title}</h4>
+                             <p className="mt-1 text-[12px] font-semibold text-muted-foreground/90 leading-relaxed">{checkpoint.question}</p>
+                           </div>
                         </div>
-                        <p className="mt-4 text-[12px] font-bold leading-relaxed text-brand-accent">{checkpoint.nextAction}</p>
+                        <span className={cn("shrink-0 inline-flex rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", statusClass(checkpoint))}>{checkpoint.status}</span>
                       </div>
+                      
+                      <div className="mt-4 pl-9 space-y-2">
+                         {phaseTasks.map(task => {
+                           const result = taskResultById.get(task.id);
+                           const isDone = result?.status === "completed" || result?.status === "approved" || result?.status === "revised";
+                           const isBlocked = result?.status === "blocked" || task.approvalState === "blocked";
+                           return (
+                             <div key={task.id} className="flex items-center gap-2">
+                               <span className={cn("h-1.5 w-1.5 rounded-full", isBlocked ? "bg-[#f97316]" : isDone ? "bg-brand-accent" : "bg-foreground/20")} />
+                               <span className={cn("text-[12px] font-semibold truncate", isDone ? "text-muted-foreground line-through" : "text-foreground/88")}>{task.title}</span>
+                             </div>
+                           )
+                         })}
+                      </div>
+                    </button>
+                    {isLocked && (
+                       <div className="absolute inset-0 bg-background/40 backdrop-blur-[1px] flex items-center justify-center pointer-events-none">
+                          <div className="bg-background border border-foreground/10 px-3 py-1.5 rounded-full shadow-sm flex items-center gap-2">
+                             <Lock className="w-3 h-3 text-muted-foreground" />
+                             <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88">Locked by earlier phase</span>
+                          </div>
+                       </div>
                     )}
                   </div>
                 );
@@ -3067,69 +3291,82 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
             </div>
           </section>
 
-          <aside data-testid="checkpoint-inspector" className="min-w-0 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:sticky lg:top-6 lg:self-start">
+          <aside data-testid="checkpoint-inspector" className="scrollbar-soft min-w-0 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:sticky lg:top-6 lg:self-start xl:h-full xl:overflow-y-auto">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Now viewing</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager review</p>
                 <h3 className="mt-2 text-[24px] font-display font-bold leading-tight text-foreground">{selectedCheckpoint.title}</h3>
               </div>
               <span className={cn("rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em]", statusClass(selectedCheckpoint))}>{selectedCheckpoint.status}</span>
             </div>
 
-            <p className="mt-4 text-[15px] font-semibold leading-relaxed text-foreground">{selectedCheckpoint.question}</p>
-            <div className="mt-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">What needs to be true</p>
-              <p className="mt-2 text-[13px] leading-relaxed text-foreground/75">{selectedCheckpoint.decisionRule}</p>
+            <div className="mt-4 rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Manager recommendation / Current decision</p>
+                <span className={cn("rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em]", selectedDecision === "Needs fix" ? "border-[#f97316]/25 bg-[#fff8f3] text-[#9a3412]" : "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent")}>{selectedDecision}</span>
+              </div>
+              <p className="mt-3 text-[15px] font-semibold leading-relaxed text-foreground">{getCheckpointReviewCopy(selectedCheckpoint)}</p>
+              {getCheckpointReviewCopy(selectedCheckpoint) !== selectedCheckpoint.resultSummary && selectedCheckpoint.status !== "Needs revision" && (
+                <p className="mt-2 text-[13px] leading-relaxed text-foreground/88">{selectedCheckpoint.resultSummary}</p>
+              )}
             </div>
 
-            <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
-              <div>
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Required task results</p>
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/55">{selectedResolvedCount}/{selectedCheckpoint.requiredTaskIds.length}</span>
-                </div>
-                <div className="mt-3 divide-y divide-foreground/7 rounded-[16px] border border-foreground/8 bg-background">
-                  {selectedCheckpoint.requiredTaskIds.map((taskId) => {
-                    const task = taskRows.find((row) => row.id === taskId);
-                    const result = taskResultById.get(taskId);
-                    return (
-                      <div key={taskId} className="p-3">
+            <div className="mt-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Required task results</p>
+                <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80">{selectedResolvedCount}/{selectedCheckpoint.requiredTaskIds.length}</span>
+              </div>
+              <div className="mt-3 divide-y divide-foreground/7 overflow-hidden rounded-[16px] border border-foreground/8 bg-background">
+                {selectedCheckpoint.requiredTaskIds.map((taskId) => {
+                  const task = taskRows.find((row) => row.id === taskId);
+                  const result = taskResultById.get(taskId);
+                  return (
+                    <div key={taskId} className="grid gap-2 p-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
+                      <div className="min-w-0">
                         <div className="flex items-start justify-between gap-3">
                           <p className="text-[13px] font-bold leading-snug text-foreground">{task?.title}</p>
-                          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", result?.status === "blocked" ? "bg-[#f97316]/12 text-[#c2410c]" : result ? "bg-brand-accent/10 text-brand-accent" : "bg-foreground/5 text-muted-foreground/70")}>{result?.status ?? "pending"}</span>
+                          <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", result?.status === "blocked" ? "bg-[#f97316]/12 text-[#c2410c]" : result ? "bg-brand-accent/10 text-brand-accent" : "bg-foreground/5 text-muted-foreground/88")}>{result?.status ?? "pending"}</span>
                         </div>
-                        {result && <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground/72">{result.userNote}</p>}
+                        <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground/89">{result?.userNote ?? "No review note yet."}</p>
                       </div>
-                    );
-                  })}
-                </div>
+                      <p className="text-[12px] font-semibold leading-relaxed text-foreground/89">{result?.interpretation ?? "Manager is waiting for this task result before judging the checkpoint."}</p>
+                    </div>
+                  );
+                })}
               </div>
+            </div>
 
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Manager recommendation</p>
-                  <p className="mt-2 text-[14px] font-bold leading-relaxed text-foreground">{selectedCheckpoint.recommendation}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Manager read</p>
-                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/78">{selectedCheckpoint.resultSummary}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Next action</p>
-                  <p className="mt-2 text-[13px] leading-relaxed text-foreground/72">{selectedCheckpoint.nextAction}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Signals watched</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {selectedCheckpoint.watchedSignals.slice(0, 6).map((signal) => (
-                      <span key={signal} className="rounded-full bg-foreground/[0.045] px-2 py-1 text-[10px] font-semibold text-muted-foreground/75">{signal}</span>
-                    ))}
+            {selectedBlockerCopy ? (
+              <div className="mt-5 rounded-[18px] border border-[#f97316]/18 bg-[#fff8f3] p-4 text-[#9a3412]">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em]">What is blocking this</p>
+                <p className="mt-2 text-[14px] font-bold leading-relaxed">{selectedBlockerCopy}</p>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">What to do next</p>
+                    <p className="mt-1 text-[13px] font-semibold leading-relaxed">{selectedCheckpoint.nextAction}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">What this holds back</p>
+                    <p className="mt-1 text-[13px] font-semibold leading-relaxed">{getCheckpointHoldBackCopy(selectedCheckpoint)}</p>
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="mt-5 rounded-[18px] border border-brand-accent/16 bg-brand-accent/[0.055] p-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Phase cleared</p>
+                <p className="mt-2 text-[14px] font-bold leading-relaxed text-foreground">Next phase opened: {getNextOpenedCopy(selectedCheckpoint)}</p>
+                <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground/88">{selectedCheckpoint.nextAction}</p>
+              </div>
+            )}
 
-            <p className="mt-5 border-t border-foreground/8 pt-4 text-[12px] leading-relaxed text-muted-foreground/70">{testReviewImpact[testCheckpoint]}</p>
+            {selectedCheckpoint.status === "Needs revision" && (
+              <div className="mt-3 rounded-[16px] border border-foreground/8 bg-background p-3">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">New work created</p>
+                <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/90">{missionReview.nextTaskCreated}</p>
+              </div>
+            )}
+
+            <p className="mt-5 border-t border-foreground/8 pt-4 text-[12px] leading-relaxed text-muted-foreground/88">{testReviewImpact[testCheckpoint]}</p>
           </aside>
         </div>
       </div>
@@ -3140,7 +3377,7 @@ const CheckpointsWorkspace = ({ onBack, testCheckpoint }: { onBack: () => void; 
 const NotesWorkspace = ({ onBack }: { onBack: () => void }) => (
   <WorkspaceShell eyebrow="Notes" title="Agent-to-agent notes" onBack={onBack}>
     <div className="surface-panel rounded-[28px] p-8 shadow-2xl shadow-black/[0.02] lg:p-8">
-      <p className="max-w-3xl text-[15px] leading-relaxed text-foreground/70">
+      <p className="max-w-3xl text-[15px] leading-relaxed text-foreground/88">
         These are read-only handoffs moving through the Night Bus mission. The user can inspect them, but agents do not need approval to file a note into memory, update a checkpoint, or prepare a recommendation.
       </p>
       <div className="mt-8 divide-y divide-foreground/5">
@@ -3151,7 +3388,7 @@ const NotesWorkspace = ({ onBack }: { onBack: () => void }) => (
               <p className="text-[12px] font-bold text-brand-accent">{brief.route}</p>
               <h3 className="mt-1.5 text-[22px] font-display font-bold tracking-tight text-foreground">{brief.subject}</h3>
             </div>
-            <span className="rounded-full bg-foreground/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/70">{brief.status}</span>
+            <span className="rounded-full bg-foreground/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/88">{brief.status}</span>
           </div>
           <p className="mt-5 max-w-4xl text-[16px] leading-relaxed text-foreground/80">{brief.message}</p>
           <div className="mt-6 space-y-2 rounded-[14px] border border-foreground/5 bg-foreground/5 p-5">
@@ -3165,7 +3402,7 @@ const NotesWorkspace = ({ onBack }: { onBack: () => void }) => (
               <span className="font-bold text-foreground">Resulting change:</span> {brief.resultingChange}
             </p>
           </div>
-          <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{brief.briefType} / {brief.linkedMission}</p>
+          <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{brief.briefType} / {brief.linkedMission}</p>
         </article>
       ))}
       </div>
@@ -3197,8 +3434,8 @@ const MissionsWorkspace = ({
         <aside className="flex flex-col gap-4 overflow-x-auto pb-1 xl:sticky xl:top-12 xl:max-h-[calc(100vh-120px)] xl:overflow-y-auto xl:pr-2">
           <div className="space-y-4">
              <div className="flex items-center justify-between px-1">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Active</p>
-                <span className="text-[10px] font-bold text-muted-foreground/30">{activeMissions.length}</span>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/88">Active</p>
+                <span className="text-[10px] font-bold text-muted-foreground/60">{activeMissions.length}</span>
              </div>
              <div data-testid="mobile-mission-switcher" className="flex gap-2 overflow-x-auto pb-1 xl:flex-col xl:gap-0.5 xl:overflow-visible xl:pb-0">
                 {activeMissions.map((mission) => {
@@ -3227,8 +3464,8 @@ const MissionsWorkspace = ({
           </div>
           <div className="hidden space-y-4 xl:block">
              <div className="flex items-center justify-between px-1">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/40">Completed</p>
-                <span className="text-[10px] font-bold text-muted-foreground/30">{archivedMissions.length}</span>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/88">Completed</p>
+                <span className="text-[10px] font-bold text-muted-foreground/60">{archivedMissions.length}</span>
              </div>
              <div className="flex flex-col gap-0.5">
                 {archivedMissions.map((mission) => {
@@ -3253,18 +3490,18 @@ const MissionsWorkspace = ({
 
         <div className="min-w-0 space-y-5">
           <aside data-testid="mission-surface-rail" className="rounded-[20px] border border-foreground/8 bg-background/85 p-3 shadow-sm xl:hidden">
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Mission work</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission work</p>
             <div data-testid="mobile-mission-tabs" className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
               <MissionSurfaceButton icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} things to do`} onClick={() => onWorkspace("tasksWorkspace")} />
               <MissionSurfaceButton icon={Gauge} title="Checkpoints" meta="9 review points" onClick={() => onWorkspace("testLabWorkspace")} />
               <MissionSurfaceButton icon={FileText} title="Notes" meta={`${selectedMission.briefs} agent handoffs`} onClick={() => onWorkspace("briefsWorkspace")} />
-              <MissionSurfaceButton icon={FileCheck2} title="Memory" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
+              <MissionSurfaceButton icon={FileCheck2} title="Mission recap" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
             </div>
           </aside>
 
           <section data-testid="mission-command-bar" className="rounded-[20px] border border-foreground/8 bg-background/85 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission overview</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">What is happening</p>
               <span className={cn(
                 "rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]",
                 selectedMission.status === "blocked" ? "border-warning/10 bg-warning/10 text-warning" :
@@ -3273,20 +3510,20 @@ const MissionsWorkspace = ({
               )}>
                 {selectedMission.status}
               </span>
-              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/65">{selectedMission.review}</span>
+              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{selectedMission.review}</span>
             </div>
             <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px] xl:gap-5">
               <div className="min-w-0">
                 <h3 className="font-display text-[24px] font-bold leading-tight tracking-tight text-foreground lg:text-[30px]">{selectedMission.title}</h3>
-                <p className="mt-2 max-w-3xl text-[14px] font-semibold leading-relaxed text-foreground/72">{selectedMission.summary}</p>
+                <p className="mt-2 max-w-3xl text-[14px] font-semibold leading-relaxed text-foreground/89">{selectedMission.summary}</p>
                 <div className="mt-4 h-1.5 max-w-xl overflow-hidden rounded-full bg-foreground/8">
                   <div className={cn("h-full rounded-full transition-all duration-1000", selectedMission.status === "blocked" ? "bg-warning" : "bg-brand-accent")} style={{ width: `${selectedMission.progress}%` }} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 lg:gap-3">
                 <ArtifactField label="Progress" value={`${selectedMission.progress}%`} />
-                <ArtifactField label="Needs attention" value="Rights & Metadata checkpoint" />
-                <ArtifactField label="Manager call" value={missionReview.outcome} />
+                <ArtifactField label="Needs attention" value="Split approval" />
+                <ArtifactField label="Next move" value="Clear rights" />
                 <ArtifactField label="Next review" value={missionReview.nextReview} />
               </div>
             </div>
@@ -3294,16 +3531,12 @@ const MissionsWorkspace = ({
 
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_330px]">
             <aside className="hidden rounded-[20px] border border-foreground/8 bg-background/85 p-3 shadow-sm xl:order-last xl:sticky xl:top-6 xl:block xl:self-start">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Mission work</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission work</p>
               <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-1">
                 <MissionSurfaceButton icon={ClipboardCheck} title="Tasks" meta={`${selectedMission.tasks} things to do`} onClick={() => onWorkspace("tasksWorkspace")} />
                 <MissionSurfaceButton icon={Gauge} title="Checkpoints" meta="9 review points" onClick={() => onWorkspace("testLabWorkspace")} />
                 <MissionSurfaceButton icon={FileText} title="Notes" meta={`${selectedMission.briefs} agent handoffs`} onClick={() => onWorkspace("briefsWorkspace")} />
-                <MissionSurfaceButton icon={FileCheck2} title="Memory" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
-              </div>
-              <div className="mt-4 rounded-[16px] border border-[#f97316]/20 bg-[#f97316]/10 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#c2410c]">Current blocker</p>
-                <p className="mt-2 text-[13px] font-bold leading-snug text-[#9a3412]">Split approval is still missing.</p>
+                <MissionSurfaceButton icon={FileCheck2} title="Mission recap" meta="Living recap + log" onClick={() => onDrawer("decisionRecord")} />
               </div>
             </aside>
 
@@ -3311,33 +3544,34 @@ const MissionsWorkspace = ({
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager check-in</p>
-                  <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/50">Latest read</p>
+                  <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">Latest read</p>
                   <h4 className="mt-2 text-[18px] font-bold text-foreground">{missionReview.title}</h4>
                 </div>
                 <span className="rounded-full border border-brand-accent/15 bg-background px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-brand-accent">
                   {missionReview.outcome}
                 </span>
               </div>
-              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/50">Manager recommendation</p>
+              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">Recommendation</p>
               <p className="mt-2 text-[14px] font-semibold leading-relaxed text-foreground">{missionReview.recommendation}</p>
-              <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground/80">{missionReview.why}</p>
-              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/50">What changed</p>
+              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">Reason</p>
+              <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground/80">{missionReview.why}</p>
+              <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">What changed</p>
               <div className="mt-4 grid gap-3 md:grid-cols-3">
                 {missionReview.changes.map((change) => (
-                  <div key={change} className="rounded-[14px] border border-foreground/5 bg-background/80 p-3 text-[12px] font-medium leading-relaxed text-foreground/75">
+                  <div key={change} className="rounded-[14px] border border-foreground/5 bg-background/80 p-3 text-[12px] font-medium leading-relaxed text-foreground/90">
                     {change}
                   </div>
                 ))}
               </div>
               <div className="mt-4 rounded-[14px] border border-brand-accent/10 bg-background/80 p-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Next task created</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Next task</p>
                 <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/80">{missionReview.nextTaskCreated}</p>
               </div>
             </section>
           </div>
 
           <div className="border-t border-foreground/5 pt-4">
-             <p className="text-[12px] font-medium text-muted-foreground/40 italic">Last updated by AI Manager 4 hours ago</p>
+             <p className="text-[12px] font-medium text-muted-foreground/88 italic">Last updated by AI Manager 4 hours ago</p>
           </div>
         </div>
       </div>
@@ -3380,7 +3614,7 @@ const ArtistProfileWorkspace = ({
 
         <section className="rounded-[24px] border border-brand-accent/15 bg-brand-accent/[0.035] p-5 shadow-sm">
           <label htmlFor="settings-artist-direction" className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Direction</label>
-          <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/70">
+          <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/88">
             The Manager uses this as the artist-level truth when shaping missions, deciding what to protect, and spotting missing proof.
           </p>
           <textarea
@@ -3394,7 +3628,7 @@ const ArtistProfileWorkspace = ({
 
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/55">Current Focus</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/80">Current Focus</p>
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <SettingsField label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
               <SettingsField label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} />
@@ -3408,7 +3642,7 @@ const ArtistProfileWorkspace = ({
 
           <div className="grid gap-5">
             <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/55">Connected Channels</p>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/80">Connected Channels</p>
               <div className="mt-4 grid gap-3">
                 <SettingsField label="TikTok" value={profile.tiktok} onChange={(value) => update("tiktok", value)} />
                 <SettingsField label="Instagram" value={profile.instagram} onChange={(value) => update("instagram", value)} />
@@ -3432,7 +3666,7 @@ const ArtistProfileWorkspace = ({
 
 const SettingsField = ({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) => (
   <label className="block rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
-    <span className="font-ui block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/55">{label}</span>
+    <span className="font-ui block text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/80">{label}</span>
     <input
       aria-label={label}
       value={value}
@@ -3466,8 +3700,8 @@ const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => v
 
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div className="rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-4">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">Why access waits</p>
-              <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground/75">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Why access waits</p>
+              <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground/90">
                 This specialist should not make calls from guesswork. Add the required evidence first, then the Manager can use this role with more confidence.
               </p>
             </div>
@@ -3478,10 +3712,10 @@ const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => v
           </div>
 
           <div className="mt-5 rounded-[18px] border border-foreground/8 bg-background p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/55">What they can help with</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">What they can help with</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-3">
               {agent.tools.map((tool) => (
-                <span key={tool} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2 text-[12px] font-bold text-foreground/75">
+                <span key={tool} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2 text-[12px] font-bold text-foreground/90">
                   {tool}
                 </span>
               ))}
@@ -3492,7 +3726,7 @@ const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => v
         <aside className="grid content-start gap-5">
           <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">What this specialist needs</p>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/70">
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/88">
               Add the documents or source exports that prove the specialist has enough context to work.
             </p>
 
@@ -3514,7 +3748,7 @@ const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => v
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">Connected proof</p>
               <div className="mt-3 grid gap-2">
                 {agent.connectedSources.map((source) => (
-                  <div key={source} className="flex items-center gap-3 rounded-[12px] border border-emerald-600/10 bg-emerald-600/[0.055] p-3 text-[13px] font-bold text-foreground/75">
+                  <div key={source} className="flex items-center gap-3 rounded-[12px] border border-emerald-600/10 bg-emerald-600/[0.055] p-3 text-[13px] font-bold text-foreground/90">
                     <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background text-emerald-700">
                       <Check className="h-3 w-3" />
                     </span>
@@ -3525,17 +3759,17 @@ const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => v
             </div>
 
             <button className="mt-5 flex w-full flex-col items-center justify-center rounded-[16px] border border-dashed border-foreground/18 bg-foreground/[0.025] p-5 text-center transition-colors hover:bg-foreground/[0.05]">
-              <Upload className="h-5 w-5 text-muted-foreground/65" />
+              <Upload className="h-5 w-5 text-muted-foreground/85" />
               <p className="mt-2 text-[13px] font-bold text-foreground">Upload files</p>
-              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/70">PDF, CSV, screenshots, or exports</p>
+              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/88">PDF, CSV, screenshots, or exports</p>
             </button>
           </section>
 
           <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/55">Optional context</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/80">Optional context</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {agent.optionalSources.map((source) => (
-                <span key={source} className="rounded-full border border-foreground/8 bg-foreground/[0.025] px-3 py-1.5 text-[11px] font-bold text-foreground/65">
+                <span key={source} className="rounded-full border border-foreground/8 bg-foreground/[0.025] px-3 py-1.5 text-[11px] font-bold text-foreground/86">
                   {source}
                 </span>
               ))}
@@ -3563,11 +3797,11 @@ const ReviewWorkspace = ({ onBack, onMission }: { onBack: () => void; onMission:
         </div>
       </div>
       <div className="surface-panel rounded-[28px] p-6">
-        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Review actions</p>
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Review actions</p>
         <div className="mt-5 flex flex-col gap-3">
           <button onClick={() => onMission("night-bus-validation")} className="rounded-[10px] border border-foreground/10 px-5 py-2.5 text-[13px] font-bold text-foreground transition-colors hover:bg-foreground/5">Open updated mission</button>
-          <button className="rounded-[10px] border border-foreground/10 px-5 py-2.5 text-[13px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/5 hover:text-black">Run review</button>
-          <button className="rounded-[10px] px-5 py-2.5 text-[13px] font-semibold text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-black">Snooze review</button>
+          <button className="rounded-[10px] border border-foreground/10 px-5 py-2.5 text-[13px] font-semibold text-foreground/88 transition-colors hover:bg-foreground/5 hover:text-black">Run review</button>
+          <button className="rounded-[10px] px-5 py-2.5 text-[13px] font-semibold text-muted-foreground/85 transition-colors hover:bg-foreground/5 hover:text-black">Snooze review</button>
         </div>
       </div>
     </div>
@@ -3576,7 +3810,7 @@ const ReviewWorkspace = ({ onBack, onMission }: { onBack: () => void; onMission:
 
 const PreviewBlock = ({ title, rows }: { title: string; rows: string[] }) => (
   <div className="surface-panel rounded-[28px] p-6">
-    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{title}</p>
+    <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{title}</p>
     <div className="mt-4 space-y-3">
       {rows.map((row) => (
         <p key={row} className="text-[13px] leading-relaxed text-foreground/80">{row}</p>
@@ -3622,14 +3856,14 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
         </DrawerBody>
       )}
       {drawer === "decisionRecord" && (
-        <DrawerBody kicker="Mission Record" title="Mission memory" description="A living recap of the mission across tasks, checkpoints, notes, decisions, blockers, and reviews.">
+        <DrawerBody kicker="Mission Record" title="Mission recap" description="A living recap of the mission across tasks, checkpoints, notes, decisions, blockers, and reviews.">
           <div className="surface-panel rounded-[28px] p-8 shadow-2xl shadow-black/[0.02] text-foreground">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{decisionRecord.missionTitle}</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{decisionRecord.missionTitle}</p>
                 <h3 className="mt-2 text-[22px] font-display font-bold tracking-tight text-foreground">{decisionRecord.finalCall}</h3>
               </div>
-              <span className="rounded-full bg-foreground/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/70">{decisionRecord.confidence}</span>
+              <span className="rounded-full bg-foreground/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/88">{decisionRecord.confidence}</span>
             </div>
 
             <div className="mt-6 space-y-4 text-[15px] leading-relaxed text-foreground/80">
@@ -3649,48 +3883,48 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
 
             <div className="mt-8 grid gap-4 md:grid-cols-2">
               <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Task status summary</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Task status summary</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
                   Strategy is accepted, split sheet is blocked, Spotify pitch is submitted, and creator, press, content, distribution, release-day, and post-release tasks are staged by checkpoint.
                 </p>
               </div>
               <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Checkpoint status summary</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Checkpoint status summary</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
                   Release Strategy is met, Rights & Metadata needs revision, DSP & Playlist is ready for review, and the remaining gates wait on task results.
                 </p>
               </div>
               <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Agent notes that changed the mission</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Agent notes that changed the mission</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
                   Marketing opened creator seeding, DSP/playlist notes preserved the pitch window, and Finance/Rights changed the rights checkpoint to needs revision.
                 </p>
               </div>
               <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Decisions already made</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Decisions already made</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
                   Move the release to June 12, reject the next-Friday rush, do not announce before rights and delivery clear, and avoid generic creator or playlist blasts.
                 </p>
               </div>
               <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Blockers and missing evidence</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Blockers and missing evidence</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
                   Signed split sheet, distributor confirmation, creator commitments, EPK target list, launch content approval, live-link verification, and 48-hour signal read are still missing.
                 </p>
               </div>
               <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">What would change the recommendation</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/75">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">What would change the recommendation</p>
+                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
                   The Manager changes the date or mission path if splits stay blocked, distributor delivery fails, creator commitments are weak, or early post-release signal does not justify more push.
                 </p>
               </div>
             </div>
 
             <div className="mt-8 rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/60">Mission log</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Mission log</p>
               <div className="mt-4 space-y-3">
                 {missionEvents.map((event) => (
-                  <div key={`${event.type}-${event.summary}`} className="flex gap-3 text-[13px] leading-relaxed text-foreground/75">
+                  <div key={`${event.type}-${event.summary}`} className="flex gap-3 text-[13px] leading-relaxed text-foreground/90">
                     <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">{event.type}</span>
                     <span>{event.summary}</span>
                   </div>
@@ -3699,11 +3933,11 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
             </div>
 
             <div className="mt-8 border-t border-foreground/5 pt-6">
-              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">Evidence and decision limits</p>
-              <p className="mt-3 text-[13px] leading-relaxed text-foreground/70">
+              <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Evidence and decision limits</p>
+              <p className="mt-3 text-[13px] leading-relaxed text-foreground/88">
                 Evidence used: EV-TTK-0426, EV-YT-1190, EV-SP-3302, EV-ART-0007, EV-RGT-0612, EV-DSP-0612. Rejected moves: {decisionRecord.alternativesRejected.join(", ")}. Missing evidence: {decisionRecord.missingEvidence.join(", ")}. The decision changes if {decisionRecord.changeDecision}
               </p>
-              <p className="mt-3 text-[13px] leading-relaxed text-foreground/70">
+              <p className="mt-3 text-[13px] leading-relaxed text-foreground/88">
                 Review date: {decisionRecord.reviewDate}. Override state: {decisionRecord.override}. Quality review: {decisionRecord.qualityGate}.
               </p>
             </div>
@@ -3715,7 +3949,7 @@ const EvidenceDrawer = ({ drawer, onClose }: { drawer: DrawerKind; onClose: () =
           <div className="space-y-4">
             {workDrafts.map((draft) => (
               <div key={draft.type} className="surface-panel rounded-[28px] p-6">
-                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{draft.type}</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{draft.type}</p>
                 <p className="mt-2 text-[18px] font-bold text-foreground">{draft.title}</p>
                 <p className="mt-4 text-[14px] leading-relaxed text-black/70">{draft.body}</p>
               </div>
@@ -3756,11 +3990,11 @@ const DrawerBody = ({
 }) => (
   <div className="p-8">
     <SheetHeader>
-      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/60">{kicker}</p>
+      <p className="text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{kicker}</p>
       <SheetTitle className="font-display mt-2 text-[2.8rem] font-display font-bold tracking-tight text-foreground">
         {title}
       </SheetTitle>
-      <SheetDescription className="mt-3 text-[15px] leading-relaxed text-foreground/70">{description}</SheetDescription>
+      <SheetDescription className="mt-3 text-[15px] leading-relaxed text-foreground/88">{description}</SheetDescription>
     </SheetHeader>
     <div className="mt-10">{children}</div>
   </div>
