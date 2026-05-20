@@ -112,8 +112,9 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/source limit/i);
     expect(screen.getByRole("button", { name: /open linked mission/i })).toBeInTheDocument();
     const linkedWork = within(nightBusRoom).getByTestId("music-linked-work");
-    expect(linkedWork).toHaveTextContent(/confirm split sheet/i);
-    expect(linkedWork).toHaveTextContent(/submit distributor package/i);
+    expect(linkedWork).toHaveTextContent(/mission path/i);
+    expect(linkedWork).toHaveTextContent(/3 tasks attached/i);
+    expect(linkedWork).not.toHaveTextContent(/submit distributor package/i);
     expect(within(nightBusRoom).queryByText(/^linked tasks$/i)).not.toBeInTheDocument();
 
     fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^files$/i }));
@@ -185,6 +186,72 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(songRoom).toHaveTextContent(/approval log/i);
     expect(songRoom).toHaveTextContent(/document source/i);
     expect(songRoom).not.toHaveTextContent(/release confidence is blocked/i);
+  }, 15000);
+
+  it("keeps the song rights tab focused on split confirmation instead of distribution launch work", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /^music$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open song night bus/i }));
+
+    const songRoom = screen.getByTestId("music-song-detail");
+    fireEvent.click(within(songRoom).getByRole("button", { name: /^rights$/i }));
+
+    expect(songRoom).toHaveTextContent(/no splits started/i);
+    expect(songRoom).toHaveTextContent(/add collaborator/i);
+    expect(songRoom).toHaveTextContent(/publishing\s*\/\s*composition/i);
+    expect(songRoom).toHaveTextContent(/master recording/i);
+    expect(songRoom).not.toHaveTextContent(/global distribution hub/i);
+    expect(songRoom).not.toHaveTextContent(/initialize global distribution/i);
+  }, 15000);
+
+  it("moves split confirmations from draft to pending to cleared as collaborators approve", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /^music$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open song night bus/i }));
+
+    const songRoom = screen.getByTestId("music-song-detail");
+    fireEvent.click(within(songRoom).getByRole("button", { name: /^rights$/i }));
+
+    fireEvent.change(within(songRoom).getByLabelText(/^name$/i), { target: { value: "Sable Day" } });
+    fireEvent.change(within(songRoom).getByLabelText(/^role$/i), { target: { value: "Artist / writer" } });
+    fireEvent.change(within(songRoom).getByLabelText(/email/i), { target: { value: "sable@example.com" } });
+    fireEvent.change(within(songRoom).getByLabelText(/publishing/i), { target: { value: "50" } });
+    fireEvent.change(within(songRoom).getByLabelText(/master/i), { target: { value: "70" } });
+    fireEvent.click(within(songRoom).getByRole("button", { name: /add collaborator/i }));
+
+    fireEvent.change(within(songRoom).getByLabelText(/^name$/i), { target: { value: "Mara Vale" } });
+    fireEvent.change(within(songRoom).getByLabelText(/^role$/i), { target: { value: "Producer / writer" } });
+    fireEvent.change(within(songRoom).getByLabelText(/email/i), { target: { value: "mara@example.com" } });
+    fireEvent.change(within(songRoom).getByLabelText(/publishing/i), { target: { value: "50" } });
+    fireEvent.change(within(songRoom).getByLabelText(/master/i), { target: { value: "30" } });
+    fireEvent.click(within(songRoom).getByRole("button", { name: /add collaborator/i }));
+
+    expect(songRoom).toHaveTextContent(/draft/i);
+    expect(within(songRoom).getByRole("button", { name: /send split confirmation links/i })).toBeEnabled();
+
+    fireEvent.click(within(songRoom).getByRole("button", { name: /send split confirmation links/i }));
+    expect(songRoom).toHaveTextContent(/pending/i);
+
+    fireEvent.click(within(songRoom).getByRole("button", { name: /open sable day confirmation page/i }));
+    expect(screen.getByRole("heading", { name: /confirm split for night bus/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/sable day/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/50% publishing/i)).toBeInTheDocument();
+    expect(screen.getByText(/70% master/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/i confirm these split details are correct/i));
+    fireEvent.click(screen.getByRole("button", { name: /^confirm split$/i }));
+    expect(screen.getByText(/split confirmed/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /return to song room/i }));
+
+    expect(songRoom).toHaveTextContent(/pending/i);
+    expect(songRoom).not.toHaveTextContent(/split sheet cleared and confirmed by all collaborators/i);
+
+    fireEvent.click(within(songRoom).getByRole("button", { name: /open mara vale confirmation page/i }));
+    fireEvent.click(screen.getByLabelText(/i confirm these split details are correct/i));
+    fireEvent.click(screen.getByRole("button", { name: /^confirm split$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /return to song room/i }));
+
+    expect(songRoom).toHaveTextContent(/cleared/i);
+    expect(songRoom).toHaveTextContent(/split sheet cleared and confirmed by all collaborators/i);
   }, 15000);
 
   it("uses compact mobile drill-down patterns for team, missions, tasks, and checkpoints", () => {

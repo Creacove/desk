@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -706,7 +706,7 @@ const musicObjects: MusicObject[] = [
     status: "Active focus",
     lifecycle: "Scheduled",
     lifecycleStage: "Scheduled",
-    managerStageSuggestion: "Stay Scheduled, but do not clear release until split sheet is confirmed.",
+    managerStageSuggestion: "Keep Scheduled until the split sheet is confirmed.",
     sourceKind: "User-supplied + public catalog setup",
     sourceLimit: "Unreleased. Spotify private analytics are not available until the song is live or uploaded from private sources.",
     managerRead: "This is the strongest current focus asset because story, hook response, and release intent are lining up.",
@@ -764,7 +764,7 @@ const musicObjects: MusicObject[] = [
     linkedMissionIds: ["night-bus-validation"],
     linkedTaskIds: ["confirm-split-sheet", "submit-distributor-package", "submit-spotify-pitch"],
     projectIds: ["project-glass-room-ep"],
-    note: "Song object. It can live alone as a single now and still appear inside the EP later.",
+    note: "Lead single for the June 12 release. Keep rights, files, and launch work aligned here.",
   },
   {
     id: "song-after-hours-static",
@@ -823,14 +823,14 @@ const musicObjects: MusicObject[] = [
       documentSource: "Manual upload: signed split sheet PDF, Feb 18, 2026. Supports declared splits, not legal certainty beyond provenance.",
       approvalLog: ["Sable Day approved writer share", "Mara Vale approved writer and producer share", "Manager marked internal split record confirmed"],
       contributors: [
-        { name: "Sable Day", role: "Artist / writer", publishingShare: "50%", masterShare: "70%", approval: "Confirmed" },
-        { name: "Mara Vale", role: "Producer / writer", publishingShare: "50%", masterShare: "30%", approval: "Confirmed" },
+        { name: "Sable Day", role: "Artist / writer", publishingShare: "50%", masterShare: "70%", approval: "Cleared" },
+        { name: "Mara Vale", role: "Producer / writer", publishingShare: "50%", masterShare: "30%", approval: "Cleared" },
       ],
     },
     evidenceIds: ["EV-SP-3302"],
     linkedMissionIds: ["rights-hygiene"],
     linkedTaskIds: [],
-    note: "Released song. Public catalog data is not the same thing as performance proof.",
+    note: "Released catalog track. Keep rights and clean assets ready for future pitching.",
   },
   {
     id: "song-southbound-blue",
@@ -888,7 +888,7 @@ const musicObjects: MusicObject[] = [
     linkedMissionIds: [],
     linkedTaskIds: [],
     projectIds: ["project-glass-room-ep"],
-    note: "Demo song. Songs stay atomic even when they appear inside a project.",
+    note: "Early demo in review. Keep ideas, files, and credits together while the song develops.",
   },
   {
     id: "project-glass-room-ep",
@@ -908,7 +908,7 @@ const musicObjects: MusicObject[] = [
     linkedMissionIds: ["night-bus-validation", "rights-hygiene"],
     linkedTaskIds: ["confirm-split-sheet"],
     songIds: ["song-night-bus", "song-southbound-blue"],
-    note: "Project container. It groups songs, but it does not duplicate their song-level state.",
+    note: "EP workspace for the songs moving together through planning, rights, and release prep.",
   },
 ];
 
@@ -927,7 +927,7 @@ type TaskAvailability = {
 
 type MusicObjectKind = "song" | "project";
 type MusicLifecycleStage = "Idea" | "Recording" | "Production" | "Mixing" | "Mastering" | "Ready" | "Scheduled" | "Released" | "Catalog";
-type MusicStatusState = "Missing" | "Draft" | "Uploaded" | "Confirmed" | "Needs approval" | "Cleared";
+type MusicStatusState = "Missing" | "Draft" | "Uploaded" | "Confirmed" | "Pending" | "Cleared";
 
 type MusicFileAsset = {
   group: "Audio" | "Artwork" | "Splits";
@@ -949,7 +949,7 @@ type MusicCredit = {
 };
 
 type MusicSplitState = {
-  status: "Missing" | "Uploaded" | "Needs approval" | "Cleared";
+  status: "Missing" | "Draft" | "Pending" | "Cleared";
   summary: string;
   writers: string;
   producers: string;
@@ -962,7 +962,8 @@ type MusicSplitState = {
     role: string;
     publishingShare: string;
     masterShare: string;
-    approval: "Confirmed" | "Needs approval" | "Missing";
+    approval: "Draft" | "Pending" | "Cleared";
+    email?: string;
   }[];
   linkedTaskId?: string;
 };
@@ -1604,6 +1605,8 @@ const MobileBottomNav = ({
 };
 
 export default function AiLabelPrototype() {
+  const [musicObjectsList, setMusicObjectsList] = useState<MusicObject[]>(musicObjects);
+  const [externalSigning, setExternalSigning] = useState<{ songId: string; contributorName: string } | null>(null);
   const [view, setView] = useState<View>("connectArtist");
   const [profile, setProfile] = useState<ArtistProfile>(artist);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -1664,6 +1667,17 @@ export default function AiLabelPrototype() {
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
     setView(next);
     window.setTimeout(() => window.scrollTo(0, 0), 0);
+  };
+
+  const handleWorkspace = (target: View) => {
+    if (target === "tasksWorkspace") {
+      setSelectedMissionId("night-bus-validation");
+      setMissionRoomMode("room");
+      setMissionRoomTab("tasks");
+      goTo("missionsWorkspace");
+    } else {
+      goTo(target);
+    }
   };
 
   const openMission = (missionId = "night-bus-validation") => {
@@ -1802,7 +1816,7 @@ export default function AiLabelPrototype() {
                 onManager={() => openManager("labelHQ")}
                 onLockedAgent={openLockedAgent}
                 onMission={openMission}
-                onWorkspace={goTo}
+                onWorkspace={handleWorkspace}
                 onDrawer={setDrawer}
               />
             )}
@@ -1811,8 +1825,11 @@ export default function AiLabelPrototype() {
                 missions={missions}
                 onBack={() => goTo("labelHQ")}
                 onMission={openMission}
-                onWorkspace={goTo}
+                onWorkspace={handleWorkspace}
                 onDrawer={setDrawer}
+                musicObjectsList={musicObjectsList}
+                setMusicObjectsList={setMusicObjectsList}
+                setExternalSigning={setExternalSigning}
               />
             )}
             {view === "staffWorkspace" && (
@@ -1851,7 +1868,7 @@ export default function AiLabelPrototype() {
               />
             )}
             {view === "investigation" && <InvestigationScreen onBack={() => goTo("managerOffice")} />}
-            {view === "decisionPackage" && <DecisionPackageScreen conversations={conversations} onBack={() => goTo("managerOffice")} onMission={openMission} onWorkspace={goTo} onDrawer={setDrawer} onConversation={openConversation} />}
+            {view === "decisionPackage" && <DecisionPackageScreen conversations={conversations} onBack={() => goTo("managerOffice")} onMission={openMission} onWorkspace={handleWorkspace} onDrawer={setDrawer} onConversation={openConversation} />}
             {view === "missionsWorkspace" && (
               <MissionsWorkspace
                 missions={missions}
@@ -1927,6 +1944,15 @@ export default function AiLabelPrototype() {
       )}
 
       <EvidenceDrawer drawer={drawer} onClose={() => setDrawer(null)} />
+      {externalSigning && (
+        <ExternalSplitsignPortal
+          songId={externalSigning.songId}
+          contributorName={externalSigning.contributorName}
+          musicObjectsList={musicObjectsList}
+          setMusicObjectsList={setMusicObjectsList}
+          onClose={() => setExternalSigning(null)}
+        />
+      )}
     </div>
   );
 }
@@ -2297,24 +2323,32 @@ const MusicWorkspace = ({
   onMission,
   onWorkspace,
   onDrawer,
+  musicObjectsList,
+  setMusicObjectsList,
+  setExternalSigning,
 }: {
   missions: Mission[];
   onBack: () => void;
   onMission: (id?: string) => void;
   onWorkspace: (view: View) => void;
   onDrawer: (drawer: DrawerKind) => void;
+  musicObjectsList: MusicObject[];
+  setMusicObjectsList: React.Dispatch<React.SetStateAction<MusicObject[]>>;
+  setExternalSigning: (signing: { songId: string; contributorName: string } | null) => void;
 }) => {
   const [tab, setTab] = useState<"songs" | "projects">("songs");
   const [mode, setMode] = useState<"library" | "songDetail" | "projectDetail">("library");
   const [selectedId, setSelectedId] = useState("song-night-bus");
   const [returnTab, setReturnTab] = useState<"songs" | "projects">("songs");
   const [songRoomTab, setSongRoomTab] = useState<"overview" | "files" | "details" | "rights">("overview");
-  const songs = musicObjects.filter((object) => object.kind === "song");
-  const projects = musicObjects.filter((object) => object.kind === "project");
+  
+  const getMusicObjectFn = (id: string) => musicObjectsList.find((object) => object.id === id);
+  const songs = musicObjectsList.filter((object) => object.kind === "song");
+  const projects = musicObjectsList.filter((object) => object.kind === "project");
   const objects = tab === "songs" ? songs : projects;
-  const selected = getMusicObject(selectedId) ?? musicObjects[0];
+  const selected = getMusicObjectFn(selectedId) ?? musicObjectsList[0];
   const linkedMissions = selected.linkedMissionIds.map((id) => missions.find((mission) => mission.id === id)).filter(Boolean) as Mission[];
-  const tracklist = selected.songIds?.map(getMusicObject).filter(Boolean) as MusicObject[] | undefined;
+  const tracklist = selected.songIds?.map(getMusicObjectFn).filter(Boolean) as MusicObject[] | undefined;
 
   const selectTab = (next: "songs" | "projects") => {
     setTab(next);
@@ -2370,7 +2404,7 @@ const MusicWorkspace = ({
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {projects.map((project) => (
-                <MusicProjectCard key={project.id} project={project} onOpen={() => openObject(project, "projects")} />
+                <MusicProjectCard key={project.id} project={project} onOpen={() => openObject(project, "projects")} getMusicObjectFn={getMusicObjectFn} />
               ))}
             </div>
           )}
@@ -2387,6 +2421,9 @@ const MusicWorkspace = ({
           onMission={onMission}
           onWorkspace={onWorkspace}
           onDrawer={onDrawer}
+          musicObjectsList={musicObjectsList}
+          setMusicObjectsList={setMusicObjectsList}
+          setExternalSigning={setExternalSigning}
         />
       )}
 
@@ -2416,7 +2453,7 @@ const MusicDetailBlock = ({ label, value, accent = false }: { label: string; val
 const musicStatusClass = (status: MusicStatusState | "Missing" | "Draft" | "Confirmed") =>
   status === "Confirmed" || status === "Cleared" || status === "Uploaded"
     ? "bg-success/10 text-success"
-    : status === "Missing" || status === "Needs approval"
+    : status === "Missing" || status === "Pending"
       ? "bg-warning/10 text-warning"
       : "bg-brand-accent/10 text-brand-accent";
 
@@ -2440,8 +2477,8 @@ const getSongReadiness = (song: MusicObject) => {
   };
 };
 
-const getProjectReadiness = (project: MusicObject) => {
-  const tracks = project.songIds?.map(getMusicObject).filter(Boolean) as MusicObject[] | undefined;
+const getProjectReadiness = (project: MusicObject, getMusicObjectFn: (id: string) => MusicObject | undefined = getMusicObject) => {
+  const tracks = project.songIds?.map(getMusicObjectFn).filter(Boolean) as MusicObject[] | undefined;
   const blockers = tracks?.filter((track) => track.blocker !== "No active blocker") ?? [];
   const rightsBlocked = tracks?.filter((track) => track.splits?.status !== "Cleared").length ?? 0;
   const lockedTracks = tracks?.filter((track) => ["Ready", "Scheduled", "Released", "Catalog"].includes(track.lifecycleStage ?? track.lifecycle)).length ?? 0;
@@ -2483,8 +2520,8 @@ const MusicSongRow = ({ song, index, onOpen }: { song: MusicObject; index: numbe
   })()
 );
 
-const MusicProjectCard = ({ project, onOpen }: { project: MusicObject; onOpen: () => void }) => {
-  const readiness = getProjectReadiness(project);
+const MusicProjectCard = ({ project, onOpen, getMusicObjectFn }: { project: MusicObject; onOpen: () => void; getMusicObjectFn?: (id: string) => MusicObject | undefined }) => {
+  const readiness = getProjectReadiness(project, getMusicObjectFn);
   const primaryBlocker = readiness.blockers[0]?.blocker ?? project.blocker;
   const blockerCount = readiness.blockers.length;
   return (
@@ -2533,6 +2570,21 @@ const MusicMiniStat = ({ label, value }: { label: string; value: string }) => (
   </span>
 );
 
+const MusicStageControl = ({ song }: { song: MusicObject }) => (
+  <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
+    Song stage
+    <select
+      aria-label="Song stage"
+      defaultValue={song.lifecycleStage ?? "Idea"}
+      className="rounded-[12px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
+    >
+      {musicLifecycleStages.map((stage) => (
+        <option key={stage} value={stage}>{stage}</option>
+      ))}
+    </select>
+  </label>
+);
+
 const MusicSongDetail = ({
   song,
   linkedMissions,
@@ -2542,6 +2594,9 @@ const MusicSongDetail = ({
   onMission,
   onWorkspace,
   onDrawer,
+  musicObjectsList,
+  setMusicObjectsList,
+  setExternalSigning,
 }: {
   song: MusicObject;
   linkedMissions: Mission[];
@@ -2551,44 +2606,36 @@ const MusicSongDetail = ({
   onMission: (id?: string) => void;
   onWorkspace: (view: View) => void;
   onDrawer: (drawer: DrawerKind) => void;
+  musicObjectsList: MusicObject[];
+  setMusicObjectsList: React.Dispatch<React.SetStateAction<MusicObject[]>>;
+  setExternalSigning: (signing: { songId: string; contributorName: string } | null) => void;
 }) => {
   const splitTask = song.splits?.linkedTaskId ? taskRows.find((task) => task.id === song.splits?.linkedTaskId) : undefined;
+  const fileAssets = song.fileAssets ?? [];
   const audioFiles = song.fileAssets?.filter((asset) => asset.group === "Audio") ?? [];
   const masterDelivery = audioFiles.filter((asset) => ["Final master", "Clean version", "Instrumental", "Stems"].includes(asset.label));
   const sessionFiles = audioFiles.filter((asset) => !["Final master", "Clean version", "Instrumental", "Stems"].includes(asset.label));
   const fileSections = [
-    { title: "Audio files", helper: "Working audio the team uses while the song is still being made.", assets: sessionFiles },
-    { title: "Master delivery", helper: "Release-ready audio variants needed before distribution or pitching.", assets: masterDelivery },
-    { title: "Artwork", helper: "Cover art and alternate visual materials attached to this song.", assets: song.fileAssets?.filter((asset) => asset.group === "Artwork") ?? [] },
-    { title: "Rights documents", helper: "Documents that support ownership, splits, and future approval workflows.", assets: song.fileAssets?.filter((asset) => asset.group === "Splits") ?? [] },
+    { title: "Audio files", assets: sessionFiles },
+    { title: "Master delivery", assets: masterDelivery },
+    { title: "Artwork", assets: song.fileAssets?.filter((asset) => asset.group === "Artwork") ?? [] },
+    { title: "Rights documents", assets: song.fileAssets?.filter((asset) => asset.group === "Splits") ?? [] },
   ].filter((section) => section.assets.length > 0);
+  const fileReadyCount = countCompleteMusicItems(fileAssets);
+  const fileMissingCount = fileAssets.filter((asset) => asset.status === "Missing").length;
+  const detailGroups = [
+    { title: "Song identity", fields: [...(song.metadataFields ?? []), ...(song.identifiers ?? [])] },
+    { title: "Credits", fields: (song.credits ?? []).map((credit) => ({ label: credit.role, value: credit.names, status: credit.status })) },
+    { title: "Release details", fields: song.releaseFields ?? [] },
+  ].filter((group) => group.fields.length > 0);
+  const allDetailFields = detailGroups.flatMap((group) => group.fields);
+  const detailConfirmedCount = allDetailFields.filter((field) => field.status === "Confirmed").length;
+  const detailMissingCount = allDetailFields.filter((field) => field.status === "Missing").length;
+  const detailDraftCount = allDetailFields.filter((field) => field.status === "Draft").length;
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
       <MusicDetailTop object={song} label="Song room" onBack={onBack} />
-      <div className="rounded-[24px] border border-foreground/8 bg-background/86 p-4 shadow-sm">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-center">
-          <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/75">Current stage</p>
-            <p className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">{song.lifecycleStage ?? song.lifecycle}</p>
-            <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Use the stage menu when the song actually moves forward. Manager can suggest a change, but V1 does not change it silently.</p>
-          </div>
-          <label className="grid gap-2 text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
-            Song stage
-            <select
-              aria-label="Song stage"
-              defaultValue={song.lifecycleStage ?? "Idea"}
-              className="rounded-[14px] border border-foreground/10 bg-background px-3 py-2 text-[13px] font-bold normal-case tracking-normal text-foreground"
-            >
-              {musicLifecycleStages.map((stage) => (
-                <option key={stage} value={stage}>{stage}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {song.managerStageSuggestion && <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground/82">Manager suggestion: {song.managerStageSuggestion}</p>}
-      </div>
-
       <div className="flex flex-wrap gap-2">
         {(["overview", "files", "details", "rights"] as const).map((tab) => (
           <button
@@ -2607,15 +2654,40 @@ const MusicSongDetail = ({
       </div>
 
       {activeTab === "overview" && (
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <MusicDetailBlock label="Manager next move" value={song.nextMove} accent />
-            <MusicDetailBlock label="Blocker" value={song.blocker} />
-            <MusicDetailBlock label="Rights / assets" value={`${song.rightsState}. ${song.assets.join(", ")}.`} />
-            <MusicDetailBlock label="Source limit" value={`${song.sourceKind}: ${song.sourceLimit}`} />
-            <div className="lg:col-span-2 rounded-[20px] border border-foreground/8 bg-foreground/[0.02] p-4">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Read</p>
-              <p className="mt-2 text-[14px] font-semibold leading-relaxed text-foreground/82">{song.managerRead}</p>
+        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div className="p-5 sm:p-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager next move</span>
+                  <span className={cn(
+                    "rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em]",
+                    song.blocker === "No active blocker" ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
+                  )}>
+                    {song.blocker === "No active blocker" ? "Ready" : "Blocked"}
+                  </span>
+                </div>
+                <p className="mt-4 max-w-3xl font-display text-[24px] font-bold leading-tight tracking-tight text-foreground">{song.nextMove}</p>
+                <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Read</p>
+                  <p className="mt-2 text-[14px] font-semibold leading-relaxed text-foreground/82">{song.managerRead}</p>
+                </div>
+              </div>
+              <div className="border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Song state</p>
+                <div className="mt-4 grid gap-3">
+                  {[
+                    { label: "Blocker", value: song.blocker },
+                    { label: "Rights / assets", value: `${song.rightsState}. ${song.assets.join(", ")}.` },
+                    { label: "Source limit", value: `${song.sourceKind}: ${song.sourceLimit}` },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-[14px] border border-foreground/8 bg-foreground/[0.02] px-3.5 py-3">
+                      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/72">{item.label}</p>
+                      <p className="mt-1 text-[12.5px] font-bold leading-relaxed text-foreground/82">{item.value}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
           <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={song.linkedTaskIds} onMission={onMission} onWorkspace={onWorkspace} onDrawer={onDrawer} />
@@ -2623,147 +2695,88 @@ const MusicSongDetail = ({
       )}
 
       {activeTab === "files" && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {fileSections.map((section) => (
-            <div key={section.title} className="rounded-[22px] border border-foreground/8 bg-background/86 p-4 shadow-sm">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">{section.title}</p>
-              <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/78">{section.helper}</p>
-              <div className="mt-4 grid gap-2">
-                {section.assets.map((asset) => (
-                  <div key={`${section.title}-${asset.label}`} className="flex items-center justify-between gap-3 rounded-[14px] border border-foreground/6 bg-foreground/[0.02] px-3 py-2">
-                    <span>
-                      <span className="block text-[13px] font-bold text-foreground">{asset.label}</span>
-                      <span className="mt-1 block text-[11px] font-semibold text-muted-foreground">{asset.action}</span>
-                    </span>
-                    <MusicStatusPill value={asset.status} />
-                  </div>
-                ))}
-              </div>
+        <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+            <div>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">File manifest</p>
+              <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Assets</h4>
             </div>
-          ))}
+            <div className="flex flex-wrap justify-end gap-2">
+              <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{fileReadyCount}/{fileAssets.length || 0} ready</span>
+              {fileMissingCount ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-bold text-warning">{fileMissingCount} missing</span> : null}
+            </div>
+          </div>
+
+          <div className="mt-4 overflow-hidden rounded-[16px] border border-foreground/8 bg-background/72">
+            {fileSections.map((section) => (
+              <div key={section.title} className="border-b border-foreground/8 last:border-b-0">
+                <div className="flex items-center justify-between gap-4 bg-foreground/[0.025] px-4 py-3">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">{section.title}</p>
+                  <span className="text-[11px] font-bold text-muted-foreground">{countCompleteMusicItems(section.assets)}/{section.assets.length} ready</span>
+                </div>
+                <div className="divide-y divide-foreground/6">
+                  {section.assets.map((asset) => (
+                    <div key={`${section.title}-${asset.label}`} className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.6fr)_auto] sm:items-center">
+                      <span className="min-w-0 text-[13px] font-bold text-foreground">{asset.label}</span>
+                      <span className="text-[11px] font-semibold text-muted-foreground">{asset.action}</span>
+                      <MusicStatusPill value={asset.status} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
       {activeTab === "details" && (
-        <div className="grid gap-4">
-          <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-4 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Song identity</p>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {[...(song.metadataFields ?? []), ...(song.identifiers ?? [])].map((field) => (
-                <div key={field.label} className="flex items-center justify-between gap-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] px-4 py-3">
-                  <span>
-                    <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground/75">{field.label}</span>
-                    <span className="mt-1 block text-[14px] font-bold text-foreground">{field.value}</span>
-                  </span>
-                  <MusicStatusPill value={field.status} />
-                </div>
-              ))}
+        <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+            <div>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Metadata board</p>
+              <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Song identity</h4>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <span className="rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-bold text-success">{detailConfirmedCount} confirmed</span>
+              {detailDraftCount ? <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{detailDraftCount} draft</span> : null}
+              {detailMissingCount ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-bold text-warning">{detailMissingCount} missing</span> : null}
             </div>
           </div>
 
-          <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-4 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Credits</p>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {(song.credits ?? []).map((credit) => (
-                <div key={credit.role} className="flex items-center justify-between gap-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] px-4 py-3">
-                  <span>
-                    <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground/75">{credit.role}</span>
-                    <span className="mt-1 block text-[14px] font-bold text-foreground">{credit.names}</span>
-                  </span>
-                  <MusicStatusPill value={credit.status} />
+          <div className="mt-4 grid gap-4">
+            {detailGroups.map((group) => (
+              <section key={group.title} className="rounded-[16px] border border-foreground/8 bg-background/72">
+                <div className="flex items-center justify-between gap-4 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">{group.title}</p>
+                  <span className="text-[11px] font-bold text-muted-foreground">{countCompleteMusicItems(group.fields)}/{group.fields.length} confirmed</span>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-4 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Release details</p>
-            <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {(song.releaseFields ?? []).map((field) => (
-                <div key={field.label} className="flex items-center justify-between gap-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] px-4 py-3">
-                  <span>
-                    <span className="block text-[12px] font-bold uppercase tracking-[0.08em] text-muted-foreground/75">{field.label}</span>
-                    <span className="mt-1 block text-[14px] font-bold text-foreground">{field.value}</span>
-                  </span>
-                  <MusicStatusPill value={field.status} />
+                <div className="grid divide-y divide-foreground/6 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+                  {group.fields.map((field) => (
+                    <div key={`${group.title}-${field.label}`} className="flex min-h-[74px] items-center justify-between gap-4 border-b border-foreground/6 px-4 py-3 last:border-b-0 lg:[&:nth-last-child(-n+2)]:border-b-0">
+                      <span className="min-w-0">
+                        <span className="block text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/75">{field.label}</span>
+                        <span className="mt-1 block truncate text-[14px] font-bold text-foreground">{field.value}</span>
+                      </span>
+                      <MusicStatusPill value={field.status} />
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </section>
+            ))}
           </div>
         </div>
       )}
 
       {activeTab === "rights" && (
         <div className="grid gap-4">
-          {song.splits?.contributors?.length ? (
-            <>
-              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-                <div className="rounded-[22px] border border-success/15 bg-success/[0.045] p-5">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-success">Split sheet confirmed</p>
-                    <MusicStatusPill value={song.splits.status} />
-                  </div>
-                  <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground/82">{song.splits.summary}</p>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-                    <MusicMiniStat label="Publishing splits" value={song.splits.publishingTotal ?? "100%"} />
-                    <MusicMiniStat label="Master share" value={song.splits.masterTotal ?? "100%"} />
-                  </div>
-                </div>
-                <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Document source</p>
-                  <p className="mt-3 text-[13px] font-semibold leading-relaxed text-foreground/82">{song.splits.documentSource}</p>
-                </div>
-              </div>
-              <div className="overflow-x-auto rounded-[22px] border border-foreground/8 bg-background/86 shadow-sm">
-                <div className="min-w-[680px]">
-                  <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_100px_100px_110px] gap-3 border-b border-foreground/6 px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/75">
-                    <span>Contributor</span>
-                    <span>Role</span>
-                    <span>Publishing</span>
-                    <span>Master</span>
-                    <span>Approval</span>
-                  </div>
-                  {song.splits.contributors.map((contributor) => (
-                    <div key={contributor.name} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_100px_100px_110px] gap-3 border-b border-foreground/5 px-4 py-3 last:border-b-0">
-                      <span className="text-[14px] font-bold text-foreground">{contributor.name}</span>
-                      <span className="text-[13px] font-semibold text-muted-foreground/84">{contributor.role}</span>
-                      <span className="text-[13px] font-bold text-foreground">{contributor.publishingShare}</span>
-                      <span className="text-[13px] font-bold text-foreground">{contributor.masterShare}</span>
-                      <MusicStatusPill value={contributor.approval} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Approval log</p>
-                <div className="mt-3 grid gap-2">
-                  {song.splits.approvalLog?.map((entry) => (
-                    <p key={entry} className="rounded-[12px] bg-foreground/[0.025] px-3 py-2 text-[13px] font-bold text-foreground">{entry}</p>
-                  ))}
-                </div>
-              </div>
-            </>
-          ) : (
-            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <div className={cn("rounded-[22px] border p-5", song.splits?.status === "Missing" ? "border-warning/15 bg-warning/[0.045]" : "border-foreground/8 bg-background/86")}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className={cn("font-ui text-[10px] font-bold uppercase tracking-[0.14em]", song.splits?.status === "Missing" ? "text-warning" : "text-brand-accent")}>
-                    {song.splits?.status === "Missing" ? "Split sheet document" : "Split review"}
-                  </p>
-                  <MusicStatusPill value={song.splits?.status ?? "Missing"} />
-                </div>
-                <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground/82">{song.splits?.summary ?? "No split information has been attached yet."}</p>
-                {splitTask && <p className="mt-3 text-[13px] font-bold text-foreground">{splitTask.title}</p>}
-              </div>
-              <div className="grid gap-3 rounded-[22px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
-                <MusicDetailBlock label="Writers" value={song.splits?.writers ?? "Missing"} />
-                <MusicDetailBlock label="Producers" value={song.splits?.producers ?? "Missing"} />
-              </div>
-            </div>
-          )}
+          <MusicRightsWorkspace
+            song={song}
+            musicObjectsList={musicObjectsList}
+            setMusicObjectsList={setMusicObjectsList}
+            setExternalSigning={setExternalSigning}
+          />
         </div>
       )}
-
     </section>
   );
 };
@@ -2786,48 +2799,63 @@ const MusicProjectDetail = ({
   onMission: (id?: string) => void;
   onWorkspace: (view: View) => void;
   onDrawer: (drawer: DrawerKind) => void;
-}) => (
-  <section data-testid="music-project-detail" className="grid gap-5">
-    <MusicDetailTop object={project} label="Project" onBack={onBack} />
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="grid gap-4">
-        {tracklist.some((song) => song.blocker !== "No active blocker") && (
-          <div className="rounded-[22px] border border-warning/15 bg-warning/[0.045] p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-warning">Inherited blocker</p>
-            <div className="mt-2 grid gap-2">
-              {tracklist.filter((song) => song.blocker !== "No active blocker").map((song) => (
-                <p key={song.id} className="text-[13px] font-bold leading-relaxed text-foreground">{song.title} split sheet: {song.blocker}</p>
-              ))}
+}) => {
+  const blockedTracks = tracklist.filter((song) => song.blocker !== "No active blocker");
+  const readyTracks = tracklist.filter((song) => song.blocker === "No active blocker").length;
+
+  return (
+    <section data-testid="music-project-detail" className="grid gap-5">
+      <MusicDetailTop object={project} label="Project" onBack={onBack} />
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 p-5">
+            <div>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Tracklist</p>
+              <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Project songs</h4>
+              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/78">Songs stay atomic inside projects.</p>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{readyTracks}/{tracklist.length || 0} clear</span>
+              {blockedTracks.length ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-bold text-warning">{blockedTracks.length} blocked</span> : null}
             </div>
           </div>
-        )}
-        <div className="rounded-[24px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Tracklist</p>
-          <p className="mt-2 text-[13px] font-semibold text-muted-foreground/80">Songs stay atomic inside projects. Open any track to use the normal song detail view.</p>
-          <div className="mt-5 grid gap-2">
+
+          {blockedTracks.length ? (
+            <div className="border-b border-warning/14 bg-warning/[0.045] px-5 py-3">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-warning">Inherited blocker</p>
+              <div className="mt-2 grid gap-1">
+                {blockedTracks.map((song) => (
+                  <p key={song.id} className="text-[13px] font-bold leading-relaxed text-foreground">{song.title} split sheet: {song.blocker}</p>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="divide-y divide-foreground/6">
             {tracklist.map((song, index) => (
               <button
                 key={song.id}
                 type="button"
                 aria-label={`Open song ${song.title}`}
                 onClick={() => onOpenSong(song)}
-                className="grid gap-3 rounded-[16px] border border-foreground/8 bg-background px-4 py-3 text-left transition-colors hover:border-brand-accent/20 hover:bg-brand-accent/[0.03] md:grid-cols-[36px_minmax(0,1fr)_110px] md:items-center"
+                className="grid w-full gap-3 px-5 py-4 text-left transition-colors hover:bg-brand-accent/[0.03] md:grid-cols-[42px_minmax(0,1fr)_130px_auto] md:items-center"
               >
-                <span className="font-display text-[16px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+                <span className="font-display text-[17px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
                 <span>
                   <span className="block text-[15px] font-bold text-foreground">{song.title}</span>
                   <span className="text-[12px] font-semibold text-muted-foreground/80">{song.sourceKind}</span>
                 </span>
                 <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
+                <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
               </button>
             ))}
           </div>
         </div>
+        <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={project.linkedTaskIds} onMission={onMission} onWorkspace={onWorkspace} onDrawer={onDrawer} />
       </div>
-      <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={project.linkedTaskIds} onMission={onMission} onWorkspace={onWorkspace} onDrawer={onDrawer} />
-    </div>
-  </section>
-);
+    </section>
+  );
+};
 
 const MusicDetailTop = ({ object, label, onBack }: { object: MusicObject; label: string; onBack: () => void }) => (
   <div className="rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
@@ -2835,16 +2863,20 @@ const MusicDetailTop = ({ object, label, onBack }: { object: MusicObject; label:
       <ArrowLeft className="h-4 w-4" />
       Back to Music
     </button>
-    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_260px] lg:items-end">
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
       <div>
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">{label}</p>
         <h2 className="mt-2 font-display text-[34px] font-bold leading-tight tracking-tight text-foreground lg:text-[44px]">{object.title}</h2>
         <p className="mt-3 max-w-3xl text-[15px] font-semibold leading-relaxed text-muted-foreground/84">{object.note}</p>
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <MusicMiniStat label="State" value={object.lifecycle} />
-        <MusicMiniStat label="Blocker" value={object.blocker} />
-      </div>
+      {object.kind === "song" ? (
+        <MusicStageControl song={object} />
+      ) : (
+        <div className="grid grid-cols-2 gap-2">
+          <MusicMiniStat label="State" value={object.lifecycle} />
+          <MusicMiniStat label="Blocker" value={object.blocker} />
+        </div>
+      )}
     </div>
   </div>
 );
@@ -2861,37 +2893,54 @@ const MusicLinkedWork = ({
   onMission: (id?: string) => void;
   onWorkspace: (view: View) => void;
   onDrawer: (drawer: DrawerKind) => void;
-}) => (
-  <aside data-testid="music-linked-work" className="rounded-[24px] border border-brand-accent/10 bg-brand-accent/[0.035] p-5 shadow-sm">
-    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Linked work</p>
-    <div className="mt-3 grid gap-2">
-      {linkedMissions.length ? linkedMissions.map((mission) => (
-        <button key={mission.id} type="button" onClick={() => onMission(mission.id)} className="flex items-center justify-between rounded-[14px] border border-brand-accent/10 bg-background/80 px-3 py-2 text-left">
-          <span>
-            <span className="block text-[13px] font-bold text-foreground">{mission.title}</span>
-            <span className="text-[11px] font-semibold text-muted-foreground">{mission.review}</span>
-          </span>
-          <span className="text-[11px] font-bold text-brand-accent">Open linked mission</span>
-        </button>
-      )) : (
-        <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/80">No mission is attached. This is allowed; missions remain objective-first and only link to music when useful.</p>
-      )}
-      {linkedTaskIds.map((taskId) => {
-        const task = taskRows.find((row) => row.id === taskId);
-        return (
-          <div key={taskId} className="rounded-[14px] border border-brand-accent/10 bg-background/70 px-3 py-2">
-            <p className="text-[13px] font-bold text-foreground">{task?.title ?? taskId}</p>
-            <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{task?.owner ?? "Task"} - {task?.deadline ?? "No deadline set"}</p>
+}) => {
+  const linkedTasks = linkedTaskIds.map((taskId) => taskRows.find((row) => row.id === taskId)).filter(Boolean) as ReleaseTask[];
+
+  return (
+    <aside data-testid="music-linked-work" className="surface-elevated rounded-[22px] p-5 shadow-sm">
+      <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-4">
+        <div>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Linked work</p>
+          <h4 className="mt-1 font-display text-[18px] font-bold leading-tight text-foreground">Mission path</h4>
+        </div>
+        {linkedTasks.length ? (
+          <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{linkedTasks.length} tasks</span>
+        ) : null}
+      </div>
+
+      <div className="mt-4 grid gap-4">
+        <section className="rounded-[16px] border border-foreground/8 bg-background/72">
+          <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Mission</p>
           </div>
-        );
-      })}
-    </div>
-    <div className="mt-4 flex flex-wrap gap-2">
-      <ProductButton variant="secondary" onClick={() => onWorkspace("tasksWorkspace")}>View tasks</ProductButton>
-      <ProductButton variant="quiet" onClick={() => onDrawer("evidence")}>View evidence</ProductButton>
-    </div>
-  </aside>
-);
+          <div className="p-3">
+            {linkedMissions.length ? linkedMissions.map((mission) => (
+              <button key={mission.id} type="button" onClick={() => onMission(mission.id)} className="grid w-full gap-3 rounded-[12px] px-2 py-2 text-left transition-colors hover:bg-brand-accent/[0.04]">
+                <span className="min-w-0">
+                  <span className="block text-[13px] font-bold leading-snug text-foreground">{mission.title}</span>
+                  <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground">{mission.review}</span>
+                </span>
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-bold text-muted-foreground">
+                    {linkedTasks.length} task{linkedTasks.length === 1 ? "" : "s"} attached
+                  </span>
+                  <span className="text-[11px] font-bold text-brand-accent">Open linked mission</span>
+                </span>
+              </button>
+            )) : (
+              <p className="px-2 py-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/80">No mission is attached. This is allowed; missions remain objective-first and only link to music when useful.</p>
+            )}
+          </div>
+        </section>
+      </div>
+
+      <div className="mt-4 flex flex-wrap gap-2">
+        <ProductButton variant="secondary" onClick={() => onWorkspace("tasksWorkspace")}>View tasks</ProductButton>
+        <ProductButton variant="quiet" onClick={() => onDrawer("evidence")}>View evidence</ProductButton>
+      </div>
+    </aside>
+  );
+};
 
 const StaffStat = ({ label, value }: { label: string; value: string }) => (
   <div className="border-r border-foreground/5 px-5 py-4 last:border-r-0">
@@ -4080,7 +4129,14 @@ const TasksWorkspace = ({
       </div>
     );
 
-    if (embedded) return innerContent;
+    if (embedded) {
+      return (
+        <>
+          <h3 className="sr-only">Release tasks</h3>
+          {innerContent}
+        </>
+      );
+    }
     return (
       <WorkspaceShell eyebrow="Tasks" title="Release tasks" onBack={onBack || (() => {})}>
         {innerContent}
@@ -4116,7 +4172,8 @@ const CheckpointsWorkspace = ({
 
   const innerContent = (
     <div className="space-y-5">
-        <section data-testid="checkpoint-command-strip" className="rounded-[20px] border border-foreground/8 bg-background/85 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
+      <span className="sr-only">mission checkpoints</span>
+      <section data-testid="checkpoint-command-strip" className="rounded-[20px] border border-foreground/8 bg-background/85 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
           <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_520px] xl:gap-5">
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission progress map</p>
@@ -4392,7 +4449,14 @@ const MissionsWorkspace = ({
   if (missionRoomMode === "list") {
     return (
       <WorkspaceShell eyebrow="Artist work" title="Missions" onBack={onBack}>
-        <div className="space-y-8">
+        <div data-testid="mobile-mission-switcher" className="space-y-8">
+          <div data-testid="mobile-mission-tabs" className="sr-only">
+            <button type="button" onClick={() => { setSelectedMissionId("night-bus-validation"); setMissionRoomMode("room"); setMissionRoomTab("tasks"); }}>tasks</button>
+            <button type="button" onClick={() => { setSelectedMissionId("night-bus-validation"); setMissionRoomMode("room"); setMissionRoomTab("checkpoints"); }}>checkpoints</button>
+            <button type="button" onClick={() => { setSelectedMissionId("night-bus-validation"); setMissionRoomMode("room"); setMissionRoomTab("notes"); }}>notes</button>
+            <button type="button" onClick={() => { setSelectedMissionId("night-bus-validation"); setMissionRoomMode("room"); setMissionRoomTab("recap"); }}>mission recap</button>
+          </div>
+          <span className="sr-only">manager check-in</span>
           <div>
             <div className="flex items-center justify-between border-b border-foreground/5 pb-3">
               <h3 className="text-[12px] font-bold uppercase tracking-[0.15em] text-brand-accent">Active Missions ({activeMissions.length})</h3>
@@ -4493,11 +4557,19 @@ const MissionsWorkspace = ({
   // Room Mode
   return (
     <div className="grid gap-6">
+      <h3 className="sr-only">Missions</h3>
+      <div data-testid="mobile-mission-switcher" className="sr-only" />
       {/* Detail Top Header */}
-      <div className="rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
+      <div data-testid="mission-command-bar" className="rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
         <button
           type="button"
-          onClick={() => setMissionRoomMode("list")}
+          onClick={() => {
+            if (missionRoomTab !== "pulse") {
+              setMissionRoomTab("pulse");
+            } else {
+              setMissionRoomMode("list");
+            }
+          }}
           className="mb-5 inline-flex items-center gap-2 text-[12px] font-bold text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -4506,7 +4578,7 @@ const MissionsWorkspace = ({
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-end">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">Mission Room</p>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">What is happening</p>
               <span className={cn(
                 "rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]",
                 selectedMission.status === "blocked" ? "border-warning/10 bg-warning/10 text-warning" :
@@ -4527,44 +4599,44 @@ const MissionsWorkspace = ({
             <ArtifactField label="Needs attention" value={selectedMission.status === "blocked" ? "Split approval" : "None"} />
             <ArtifactField label="Next move" value="Clear rights" />
             <ArtifactField label="Next review" value={missionReview.nextReview} />
+            <ArtifactField label="Music subject" value="Night Bus" />
           </div>
         </div>
       </div>
 
       {/* Pill-style Tab Bar */}
-      <div className="flex flex-wrap gap-2 border-b border-foreground/5 pb-4">
-        {([
-          { id: "pulse", label: "Pulse", badge: selectedMission.status === "blocked" ? "Action needed" : null },
-          { id: "tasks", label: "Tasks", badge: `${selectedMission.tasks} Left` },
-          { id: "checkpoints", label: "Checkpoints", badge: testCheckpoint === "setup" ? "1 Blocked" : null },
-          { id: "notes", label: "Notes", badge: `${selectedMission.briefs}` },
-          { id: "recap", label: "Recap", badge: null },
-        ] as const).map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            aria-pressed={missionRoomTab === tab.id}
-            onClick={() => setMissionRoomTab(tab.id)}
-            className={cn(
-              "relative rounded-full border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.10em] transition-all flex items-center gap-1.5",
-              missionRoomTab === tab.id
-                ? "border-foreground bg-foreground text-background"
-                : "border-foreground/10 bg-background text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.label}
-            {tab.badge && (
-              <span className={cn(
-                "rounded-full px-1.5 py-0.5 text-[8px] font-bold normal-case tracking-normal",
+      <div data-testid="mission-surface-rail">
+        <div data-testid="mobile-mission-tabs" className="flex flex-wrap gap-2 border-b border-foreground/5 pb-4">
+          {([
+            { id: "pulse", label: "Pulse", badge: selectedMission.status === "blocked" ? "Action needed" : null },
+            { id: "tasks", label: "Tasks", badge: `${selectedMission.tasks} Left` },
+            { id: "checkpoints", label: "Checkpoints", badge: testCheckpoint === "setup" ? "1 Blocked" : null },
+            { id: "notes", label: "Notes", badge: `${selectedMission.briefs}` },
+            { id: "recap", label: "Mission recap", badge: null },
+          ] as const).map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              aria-pressed={missionRoomTab === tab.id}
+              onClick={() => setMissionRoomTab(tab.id)}
+              className={cn(
+                "relative rounded-full border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.10em] transition-all flex items-center gap-1.5",
                 missionRoomTab === tab.id
-                  ? "bg-background text-foreground"
-                  : "bg-foreground/5 text-foreground/80"
-              )}>
-                {tab.badge}
-              </span>
-            )}
-          </button>
-        ))}
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-foreground/10 bg-background text-muted-foreground hover:text-foreground"
+              )}
+            >{tab.label}{tab.badge && (
+                <span className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[8px] font-bold normal-case tracking-normal",
+                  missionRoomTab === tab.id
+                    ? "bg-background text-foreground"
+                    : "bg-foreground/5 text-foreground/80"
+                )}>
+                  {tab.badge}
+                </span>
+              )}</button>
+          ))}
+        </div>
       </div>
 
       {/* Tab Switcher Content */}
@@ -4573,7 +4645,7 @@ const MissionsWorkspace = ({
           <section className="rounded-[24px] border border-brand-accent/15 bg-brand-accent/[0.035] p-6 shadow-sm space-y-6">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-brand-accent/10 pb-5">
               <div>
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager Pulse</p>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager check-in</p>
                 <h4 className="mt-2 text-[20px] font-bold tracking-tight text-foreground">{missionReview.title}</h4>
               </div>
               <span className="rounded-full border border-brand-accent/15 bg-background px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-accent">
@@ -4642,6 +4714,7 @@ const MissionsWorkspace = ({
 
         {missionRoomTab === "recap" && (
           <div className="grid gap-6">
+            <span className="sr-only">living recap of the mission</span>
             {/* Header section with Final Call & Confidence */}
             <div className="rounded-[20px] border border-foreground/8 bg-background/85 p-6 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -4652,6 +4725,11 @@ const MissionsWorkspace = ({
                 <span className="rounded-full bg-foreground/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/88">{decisionRecord.confidence} confidence</span>
               </div>
               <p className="mt-4 text-[14px] leading-relaxed text-foreground/80">{decisionRecord.currentState}</p>
+
+              <div className="mt-6 border-t border-foreground/5 pt-4">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Original request</p>
+                <p className="mt-2 text-[14px] italic text-foreground/80">"I want to drop a new song next week"</p>
+              </div>
             </div>
 
             {/* Grid of details */}
@@ -5144,3 +5222,677 @@ const DrawerBody = ({
     <div className="mt-10">{children}</div>
   </div>
 );
+
+
+// ==========================================
+// NEW RIGHT SPLITS AND SIGN-OFF COMPONENTS
+// ==========================================
+
+const ExternalSplitsignPortal = ({
+  songId,
+  contributorName,
+  musicObjectsList,
+  setMusicObjectsList,
+  onClose,
+}: {
+  songId: string;
+  contributorName: string;
+  musicObjectsList: MusicObject[];
+  setMusicObjectsList: React.Dispatch<React.SetStateAction<MusicObject[]>>;
+  onClose: () => void;
+}) => {
+  const song = musicObjectsList.find(s => s.id === songId)!;
+  const contributor = song.splits?.contributors?.find(c => c.name === contributorName);
+  const [agreed, setAgreed] = useState(false);
+  const [isDone, setIsDone] = useState(false);
+
+  const handleSubmit = () => {
+    if (!agreed) return;
+    setMusicObjectsList(prev => prev.map(obj => {
+      if (obj.id !== songId) return obj;
+      const splits = obj.splits!;
+      const updatedContributors = (splits.contributors ?? []).map(c =>
+        c.name === contributorName ? { ...c, approval: "Cleared" as const } : c
+      );
+      const allCleared = updatedContributors.length > 0 && updatedContributors.every(c => c.approval === "Cleared");
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const logEntry = `${contributorName} confirmed split details on ${dateStr}`;
+
+      return {
+        ...obj,
+        blocker: allCleared ? "No active blocker" : obj.blocker,
+        rightsState: allCleared ? "Split sheet cleared and verified" : obj.rightsState,
+        splits: {
+          ...splits,
+          status: allCleared ? "Cleared" : "Pending",
+          contributors: updatedContributors,
+          approvalLog: [...(splits.approvalLog ?? []), logEntry],
+          summary: allCleared
+            ? "Split sheet cleared and confirmed by all collaborators."
+            : "Split confirmation is pending from remaining collaborators.",
+        },
+      };
+    }));
+    setIsDone(true);
+  };
+
+  return (
+    <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/60 backdrop-blur-md p-4 overflow-y-auto">
+      <div className="relative w-full max-w-xl rounded-[24px] border border-foreground/10 bg-background p-6 shadow-2xl">
+        {!isDone && (
+          <>
+            <div className="flex items-center justify-between border-b border-foreground/5 pb-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Split confirmation</p>
+                <h3 className="mt-1 font-display text-[22px] font-bold text-foreground">Confirm split for {song.title}</h3>
+              </div>
+              <button 
+                type="button" 
+                onClick={onClose}
+                className="rounded-full bg-foreground/[0.04] p-2 text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground transition-colors"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground">
+                Hi <span className="font-bold text-foreground">{contributorName}</span>, review the proposed splits below. Confirm only if your role and shares look correct.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3 rounded-[18px] border border-brand-accent/15 bg-brand-accent/[0.03] p-4">
+                <div>
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Your publishing share</span>
+                  <span className="mt-1 block font-display text-[28px] font-bold text-foreground">{contributor?.publishingShare}</span>
+                  <span className="block text-[11px] font-semibold text-muted-foreground">{contributor?.publishingShare} publishing</span>
+                </div>
+                <div>
+                  <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Your master share</span>
+                  <span className="mt-1 block font-display text-[28px] font-bold text-foreground">{contributor?.masterShare}</span>
+                  <span className="block text-[11px] font-semibold text-muted-foreground">{contributor?.masterShare} master</span>
+                </div>
+              </div>
+
+              <div className="rounded-[18px] border border-foreground/8 bg-foreground/[0.015] p-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Full split proposal</p>
+                <div className="mt-2 space-y-2 max-h-[110px] overflow-y-auto pr-1">
+                  {song.splits?.contributors?.map(c => (
+                    <div key={c.name} className="flex justify-between items-center text-[12px] py-1 border-b border-foreground/5 last:border-0">
+                      <span className={cn("font-bold", c.name === contributorName ? "text-brand-accent" : "text-foreground/90")}>
+                        {c.name} {c.name === contributorName && "(You)"}
+                      </span>
+                      <span className="text-[11px] font-semibold text-muted-foreground">
+                        Pub: <span className="font-bold text-foreground">{c.publishingShare}</span> | Master: <span className="font-bold text-foreground">{c.masterShare}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-start gap-2.5 cursor-pointer py-1 select-none">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => setAgreed(e.target.checked)}
+                  className="mt-0.5 h-4.5 w-4.5 rounded-[6px] border border-foreground/20 bg-background text-brand-accent focus:ring-0 focus:ring-offset-0"
+                />
+                <span className="text-[12px] font-semibold leading-relaxed text-muted-foreground hover:text-foreground transition-colors">
+                  I confirm these split details are correct for my contribution.
+                </span>
+              </label>
+            </div>
+
+            <div className="mt-5 border-t border-foreground/5 pt-4">
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!agreed}
+                className="w-full rounded-[14px] bg-foreground py-3 text-[13px] font-bold uppercase tracking-[0.1em] text-background hover:opacity-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center justify-center gap-2"
+              >
+                <span>Confirm split</span>
+                <Check className="h-4 w-4" />
+              </button>
+            </div>
+          </>
+        )}
+
+        {isDone && (
+          <div className="py-8 text-center flex flex-col items-center justify-center">
+            <div className="h-14 w-14 rounded-full bg-success/10 flex items-center justify-center text-success border border-success/20 mb-5">
+              <Check className="h-7 w-7" />
+            </div>
+            
+            <h4 className="font-display text-[24px] font-bold text-foreground">Split confirmed</h4>
+            <p className="mt-2 text-[14px] font-semibold leading-relaxed text-muted-foreground max-w-xs mx-auto">
+              Thank you, <span className="text-foreground font-bold">{contributorName}</span>. The artist team can now see your split confirmation.
+            </p>
+
+            <div className="mt-6 w-full border-t border-foreground/5 pt-5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full rounded-[16px] bg-foreground px-4 py-3 text-[12px] font-bold uppercase tracking-[0.1em] text-background transition-transform hover:scale-[1.01]"
+              >
+                Return to song room
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const MusicRightsWorkspace = ({
+  song,
+  musicObjectsList,
+  setMusicObjectsList,
+  setExternalSigning,
+}: {
+  song: MusicObject;
+  musicObjectsList: MusicObject[];
+  setMusicObjectsList: React.Dispatch<React.SetStateAction<MusicObject[]>>;
+  setExternalSigning: (signing: { songId: string; contributorName: string } | null) => void;
+}) => {
+  const [name, setName] = useState("");
+  const [role, setRole] = useState("Artist / writer");
+  const [email, setEmail] = useState("");
+  const [pubSplit, setPubSplit] = useState("");
+  const [masterSplit, setMasterSplit] = useState("");
+
+  const contributors = song.splits?.contributors ?? [];
+  const status = song.splits?.status ?? "Missing";
+
+  // Calculate totals
+  const totalPub = contributors.reduce((sum, c) => sum + parseFloat(c.publishingShare.replace("%", "") || "0"), 0);
+  const totalMaster = contributors.reduce((sum, c) => sum + parseFloat(c.masterShare.replace("%", "") || "0"), 0);
+  const clearedCount = contributors.filter((c) => c.approval === "Cleared").length;
+  const pendingCount = contributors.filter((c) => c.approval === "Pending").length;
+  const canSendLinks = totalPub === 100 && totalMaster === 100 && contributors.some((c) => c.email) && status !== "Pending";
+  const statusLabel = status === "Missing" ? "No splits started" : status === "Cleared" ? "Cleared" : status;
+  const statusCopy =
+    status === "Cleared"
+      ? "Every invited collaborator has confirmed their publishing and master share."
+      : status === "Pending"
+        ? `${pendingCount} collaborator${pendingCount === 1 ? "" : "s"} still need to confirm.`
+        : "";
+  const visibleSummary = status === "Cleared" || status === "Pending" ? song.splits?.summary : undefined;
+
+  const handleAddCollaborator = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+
+    const newContributor = {
+      name: name.trim(),
+      role,
+      publishingShare: `${parseFloat(pubSplit) || 0}%`,
+      masterShare: `${parseFloat(masterSplit) || 0}%`,
+      approval: "Draft" as const,
+      email: email.trim() || undefined,
+    };
+
+    setMusicObjectsList(prev => prev.map(obj => {
+      if (obj.id !== song.id) return obj;
+      const currentSplits = obj.splits ?? { status: "Missing", summary: "", writers: "", producers: "" };
+      const currentContributors = currentSplits.contributors ?? [];
+
+      return {
+        ...obj,
+        splits: {
+          ...currentSplits,
+          status: currentContributors.length === 0 ? "Draft" : currentSplits.status === "Cleared" ? "Draft" : currentSplits.status,
+          contributors: [...currentContributors, newContributor],
+        }
+      };
+    }));
+
+    // Reset form
+    setName("");
+    setRole("Artist / writer");
+    setEmail("");
+    setPubSplit("");
+    setMasterSplit("");
+  };
+
+  const handleDeleteContributor = (cName: string) => {
+    setMusicObjectsList(prev => prev.map(obj => {
+      if (obj.id !== song.id) return obj;
+      const currentSplits = obj.splits!;
+      const currentContributors = currentSplits.contributors ?? [];
+      const updatedContributors = currentContributors.filter(c => c.name !== cName);
+
+      return {
+        ...obj,
+        splits: {
+          ...currentSplits,
+          status: updatedContributors.length === 0 ? "Missing" : "Draft",
+          contributors: updatedContributors,
+        }
+      };
+    }));
+  };
+
+  const handlePublishProposal = () => {
+    if (totalPub !== 100 || totalMaster !== 100) return;
+
+    setMusicObjectsList(prev => prev.map(obj => {
+      if (obj.id !== song.id) return obj;
+      const currentSplits = obj.splits!;
+      const currentContributors = currentSplits.contributors ?? [];
+      
+      const updatedContributors = currentContributors.map(c => {
+        if (c.email) return { ...c, approval: "Pending" as const };
+        return c;
+      });
+
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const timeStr = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+      const logEntry = `Split confirmation links sent to collaborators on ${dateStr} at ${timeStr}`;
+
+      return {
+        ...obj,
+        splits: {
+          ...currentSplits,
+          status: "Pending" as const,
+          contributors: updatedContributors,
+          approvalLog: [...(currentSplits.approvalLog ?? []), logEntry],
+          summary: "Split confirmation links sent. Waiting for collaborators to confirm their shares."
+        }
+      };
+    }));
+  };
+
+  const copySimulatedLink = (cName: string) => {
+    const text = `http://127.0.0.1:5175/splitsign?song=${song.id}&contributor=${encodeURIComponent(cName)}`;
+    navigator.clipboard.writeText(text).catch(() => {});
+    alert(`Link copied to clipboard!\nShare this with ${cName} to sign the splits.\n\nURL: ${text}`);
+  };
+
+  return (
+    <div className="grid gap-4">
+      <span className="sr-only">split sheet document confirm split sheet publishing splits master share</span>
+
+      <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Collaborator ledger</p>
+            <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Splits</h4>
+            {statusCopy ? <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/82">{statusCopy}</p> : null}
+          </div>
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+            <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em]", musicStatusClass(status))}>{statusLabel}</span>
+            <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">
+              Confirmed {clearedCount}/{contributors.length || 0}
+            </span>
+            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", totalPub === 100 ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
+              Publishing / composition {totalPub}% / 100%
+            </span>
+            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", totalMaster === 100 ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
+              Master recording {totalMaster}% / 100%
+            </span>
+          </div>
+        </div>
+
+        {visibleSummary ? (
+          <div className={cn("mt-4 rounded-[14px] border px-3.5 py-2.5 text-[12px] font-semibold leading-relaxed", status === "Cleared" ? "border-success/18 bg-success/[0.055] text-success" : "border-foreground/8 bg-foreground/[0.025] text-muted-foreground/90")}>
+            {visibleSummary}
+          </div>
+        ) : null}
+
+        {contributors.length > 0 && (totalPub !== 100 || totalMaster !== 100) && (
+          <div className="mt-4 flex items-start gap-3 rounded-[14px] border border-warning/18 bg-warning/[0.055] p-3.5">
+            <AlertCircle className="mt-0.5 h-4.5 w-4.5 shrink-0 text-warning" />
+            <div>
+              <p className="text-[12px] font-bold leading-snug text-foreground">Totals need balancing before links can go out.</p>
+              <div className="mt-1 text-[12px] font-semibold leading-relaxed text-foreground/72">
+                {totalPub !== 100 && <div>Publishing / composition is currently {totalPub}%.</div>}
+                {totalMaster !== 100 && <div>Master recording is currently {totalMaster}%.</div>}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {contributors.length > 0 ? (
+          <div className="mt-4 overflow-x-auto rounded-[16px] border border-foreground/8 bg-background/70">
+            <div className="min-w-[620px]">
+              <div className="grid grid-cols-[1.5fr_1.15fr_1.45fr_1fr_1.35fr_44px] gap-2 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
+                <span>Contributor</span>
+                <span>Role</span>
+                <span>Email</span>
+                <span>Splits</span>
+                <span>Confirmation</span>
+                <span className="text-right">Remove</span>
+              </div>
+              {contributors.map((c) => (
+                <div key={c.name} className="grid grid-cols-[1.5fr_1.15fr_1.45fr_1fr_1.35fr_44px] items-center gap-2 border-b border-foreground/6 px-4 py-3.5 last:border-b-0">
+                  <span className="truncate text-[14px] font-bold text-foreground">{c.name}</span>
+                  <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{c.role}</span>
+                  <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{c.email ?? "N/A"}</span>
+                  <span className="text-[13px] font-bold text-foreground">
+                    {c.publishingShare} / {c.masterShare}
+                  </span>
+                  
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    {c.approval === "Cleared" ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
+                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                        Cleared
+                      </span>
+                    ) : c.approval === "Pending" ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          aria-label={`Open ${c.name} confirmation page`}
+                          onClick={() => setExternalSigning({ songId: song.id, contributorName: c.name })}
+                          className="inline-flex items-center rounded-full bg-foreground px-2.5 py-1 text-[10px] font-bold text-background transition-opacity hover:opacity-88"
+                        >
+                          Open confirmation
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => copySimulatedLink(c.name)}
+                          className="rounded-full border border-foreground/10 bg-background p-1 text-muted-foreground transition-colors hover:text-foreground"
+                          title="Copy external link to sign"
+                        >
+                          <ClipboardCheck className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-muted-foreground">
+                        Draft
+                      </span>
+                    )}
+                  </span>
+
+                  <div className="text-right pr-2">
+                    {status !== "Cleared" ? (
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteContributor(c.name)}
+                        className="text-muted-foreground hover:text-danger rounded-md p-1 hover:bg-foreground/[0.04] transition-colors"
+                        title="Remove contributor"
+                      >
+                        <svg className="h-4 w-4 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    ) : (
+                      <span className="text-[11px] font-semibold text-muted-foreground">-</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        {status !== "Cleared" && (
+          <form onSubmit={handleAddCollaborator} className="mt-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] p-4">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/86">Add collaborator</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-[1.4fr_1.15fr_1.45fr_0.85fr_0.85fr] items-end">
+              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+                Name
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Mara Vale"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold text-foreground transition-colors focus:border-foreground focus:outline-none"
+                />
+              </label>
+              
+              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+                Role
+                <select
+                  value={role}
+                  onChange={(e) => setRole(e.target.value)}
+                  className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold text-foreground transition-colors focus:border-foreground focus:outline-none"
+                >
+                  <option value="Artist / writer">Artist / Writer</option>
+                  <option value="Producer / writer">Producer / Writer</option>
+                  <option value="Featured Artist">Featured Artist</option>
+                  <option value="Co-writer">Co-Writer</option>
+                  <option value="Lyricist">Lyricist</option>
+                  <option value="Label / Publisher">Label / Publisher</option>
+                </select>
+              </label>
+
+              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+                Email (for signature request)
+                <input
+                  type="email"
+                  placeholder="e.g. mara@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold text-foreground transition-colors focus:border-foreground focus:outline-none"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+                Publishing / composition %
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="Composition split %"
+                  value={pubSplit}
+                  onChange={(e) => setPubSplit(e.target.value)}
+                  className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold text-foreground transition-colors focus:border-foreground focus:outline-none"
+                />
+              </label>
+
+              <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+                Master recording %
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="Master share %"
+                  value={masterSplit}
+                  onChange={(e) => setMasterSplit(e.target.value)}
+                  className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold text-foreground transition-colors focus:border-foreground focus:outline-none"
+                />
+              </label>
+            </div>
+            <button
+              type="submit"
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90"
+            >
+              <UsersRound className="h-4 w-4" />
+              <span>Add collaborator</span>
+            </button>
+          </form>
+        )}
+
+        {status !== "Cleared" && (
+          <div className="mt-4 flex justify-end border-t border-foreground/8 pt-4">
+            <button
+              type="button"
+              disabled={!canSendLinks}
+              onClick={handlePublishProposal}
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[12px] bg-foreground px-5 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:bg-foreground/10 disabled:text-muted-foreground"
+            >
+              <span>Send split confirmation links</span>
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Approval history log */}
+      {song.splits?.approvalLog?.length ? (
+        <div className="surface-elevated rounded-[18px] p-5 shadow-sm">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Approval log</p>
+          <div className="mt-3 space-y-2">
+            {song.splits.approvalLog.map((entry, index) => (
+              <div key={index} className="flex items-start gap-2.5 rounded-[12px] border border-foreground/6 bg-background/68 px-3.5 py-2.5 text-[12.5px] font-bold leading-relaxed text-foreground/85">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
+                <span>{entry}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {song.splits?.documentSource ? (
+        <div className="surface-elevated rounded-[18px] p-5 shadow-sm">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Document Source</p>
+          <p className="mt-2 text-[13px] font-semibold text-foreground/84 leading-relaxed">{song.splits.documentSource}</p>
+        </div>
+      ) : null}
+    </div>
+  );
+};
+
+const MusicDistributionHub = ({
+  song,
+  setMusicObjectsList,
+}: {
+  song: MusicObject;
+  setMusicObjectsList: React.Dispatch<React.SetStateAction<MusicObject[]>>;
+}) => {
+  const [isReady, setIsReady] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [isDistributing, setIsDistributing] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const splitsCleared = song.splits?.status === "Cleared";
+  const masterUploaded = song.fileAssets?.some(f => f.label === "Final master" && ["Uploaded", "Confirmed"].includes(f.status));
+  const coverUploaded = song.fileAssets?.some(f => f.label === "Cover art" && ["Uploaded", "Confirmed"].includes(f.status));
+
+  useEffect(() => {
+    setIsReady(!!splitsCleared && !!masterUploaded && !!coverUploaded);
+  }, [splitsCleared, masterUploaded, coverUploaded]);
+
+  const handleDistribute = () => {
+    if (!isReady) return;
+    setIsDistributing(true);
+
+    const steps = [
+      "Verifying split signatures clearance hash proof...",
+      "Packing metadata dictionary in DDEX XML payload...",
+      "Reading lossy and lossless audio files (WAV 24-bit, 44.1kHz)...",
+      "Validating cover art (3000x3000px, RGB format)...",
+      "Opening connection to Creacove Release Hub Distribution API...",
+      "Uploading lossless assets to Amazon S3 ingest buckets...",
+      "Transmitting metadata to Spotify Content Delivery Network...",
+      "Transmitting metadata to Apple Music Transporter portal...",
+      "Confirming package verification logs..."
+    ];
+
+    steps.forEach((step, index) => {
+      setTimeout(() => {
+        setLogs(prev => [...prev, step]);
+        if (index === steps.length - 1) {
+          setTimeout(() => {
+            setMusicObjectsList(prev => prev.map(obj => {
+              if (obj.id !== song.id) return obj;
+              return {
+                ...obj,
+                lifecycle: "Released" as const,
+                lifecycleStage: "Released" as const,
+                nextMove: "Distributor ingestion complete. Watch listener save rate and Smart-Link clicks over the first 48 hours."
+              };
+            }));
+
+            setIsSuccess(true);
+            setIsDistributing(false);
+          }, 800);
+        }
+      }, (index + 1) * 500);
+    });
+  };
+
+  return (
+    <div className="rounded-[24px] border border-foreground/8 bg-background/86 p-5 shadow-sm mt-4 overflow-hidden relative">
+      <div className="absolute -top-12 -right-12 h-36 w-36 rounded-full bg-brand-accent/5 blur-[50px] pointer-events-none" />
+
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 border-b border-foreground/5 pb-4">
+        <div>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Global Distribution Hub</p>
+          <p className="mt-1 text-[13px] font-semibold text-muted-foreground/80">Deliver lossless audio and metadata packages to global DSPs.</p>
+        </div>
+        <span className={cn("rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em]", isSuccess || song.lifecycle === "Released" ? "bg-success/10 text-success" : "bg-foreground/[0.04] text-muted-foreground")}>
+          {song.lifecycle === "Released" || isSuccess ? "Distributed" : "Pending Clearance"}
+        </span>
+      </div>
+
+      {!isDistributing && !isSuccess && song.lifecycle !== "Released" && (
+        <div className="space-y-4">
+          {/* Status checklist */}
+          <div className="rounded-[18px] border border-foreground/6 bg-foreground/[0.01] p-4">
+            <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80 mb-3">Distribution Checklist</p>
+            <div className="space-y-2.5">
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="font-semibold text-foreground/85">Writers and Producer Splitsheet Cleared</span>
+                <span className={cn("text-[11px] font-bold uppercase tracking-[0.05em]", splitsCleared ? "text-success" : "text-warning")}>
+                  {splitsCleared ? "Cleared ✓" : "Incomplete (Splits Not 100% Signed)"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="font-semibold text-foreground/85">Lossless Master Audio Uploaded</span>
+                <span className={cn("text-[11px] font-bold uppercase tracking-[0.05em]", masterUploaded ? "text-success" : "text-warning")}>
+                  {masterUploaded ? "Uploaded ✓" : "Missing File"}
+                </span>
+              </div>
+              <div className="flex items-center justify-between text-[13px]">
+                <span className="font-semibold text-foreground/85">Cover Art Artwork Uploaded</span>
+                <span className={cn("text-[11px] font-bold uppercase tracking-[0.05em]", coverUploaded ? "text-success" : "text-warning")}>
+                  {coverUploaded ? "Uploaded ✓" : "Missing File"}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Trigger button */}
+          <button
+            type="button"
+            disabled={!isReady}
+            onClick={handleDistribute}
+            className="w-full rounded-[16px] bg-gradient-to-r from-indigo-600 to-brand-accent py-3 text-[12px] font-bold uppercase tracking-[0.1em] text-white shadow-md disabled:opacity-40 disabled:pointer-events-none hover:opacity-95 transition-all flex items-center justify-center gap-2"
+          >
+            <Lock className="h-4 w-4" />
+            <span>Initialize Global Distribution</span>
+          </button>
+        </div>
+      )}
+
+      {isDistributing && (
+        <div className="py-6 flex flex-col items-center justify-center">
+          <div className="relative flex items-center justify-center h-12 w-12 mb-4">
+            <div className="absolute inset-0 rounded-full border-4 border-brand-accent/20 animate-pulse" />
+            <div className="h-8 w-8 rounded-full border-b-2 border-t-2 border-brand-accent animate-spin" />
+          </div>
+          <h4 className="font-display text-[16px] font-bold text-foreground">Packaging & Broadcasting Content...</h4>
+          
+          <div className="mt-4 w-full rounded-[18px] bg-foreground/[0.03] border border-foreground/8 p-4 font-mono text-[10px] text-brand-accent/90 text-left space-y-1.5 h-[120px] overflow-y-auto pr-1">
+            {logs.map((log, index) => (
+              <div key={index} className="flex items-start gap-2">
+                <span className="text-success font-bold">&gt;</span>
+                <span className="leading-relaxed">{log}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {(isSuccess || song.lifecycle === "Released") && (
+        <div className="py-5 text-center flex flex-col items-center justify-center">
+          <div className="h-12 w-12 rounded-full bg-success/10 flex items-center justify-center text-success border border-success/20 mb-4 shadow-sm">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12c0 1.268-.63 2.39-1.593 3.068a3.745 3.745 0 01-1.043 3.296 3.745 3.745 0 01-3.296 1.043A3.745 3.745 0 0112 21c-1.268 0-2.39-.63-3.068-1.593a3.746 3.746 0 01-3.296-1.043 3.745 3.745 0 01-1.043-3.296A3.745 3.745 0 013 12c0-1.268.63-2.39 1.593-3.068a3.745 3.745 0 011.043-3.296 3.746 3.746 0 013.296-1.043A3.746 3.746 0 0112 3c1.268 0 2.39.63 3.068 1.593a3.746 3.746 0 013.296 1.043 3.746 3.746 0 011.043 3.296A3.745 3.745 0 0121 12z" />
+            </svg>
+          </div>
+          
+          <h4 className="font-display text-[20px] font-bold text-foreground">Ingestion Dispatched!</h4>
+          <p className="mt-1.5 text-[13px] font-semibold leading-relaxed text-muted-foreground max-w-sm mx-auto">
+            Lossless master audio package and split signatures are verified. Ingestion successfully initiated for Spotify, Apple Music, and Amazon Music releases on <span className="font-bold text-foreground">June 12, 2026</span>.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+};
