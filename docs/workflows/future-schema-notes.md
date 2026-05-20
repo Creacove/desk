@@ -274,13 +274,13 @@ Profile facts are user/team owned. The Manager may suggest edits but must not si
 
 ## Artist Objects And Context
 
-This layer stores durable things the artist team works around: tracks, releases, campaigns, rights packages, pitch packages, markets, budget pools, partnerships, tours, files, and other focus objects.
+This layer stores durable things the artist team works around: songs, music projects, music packages, campaigns, rights packages, pitch packages, markets, budget pools, partnerships, tours, files, and other focus objects.
 
 Important distinction: these objects are not missions. A mission is an operating objective or question. An artist object is the subject, asset, package, market, budget, opportunity, or body of work the mission may be about.
 
 Example:
 
-- Artist object: `Night Bus`, type `track_or_release`
+- Artist object: `Night Bus`, type `song`
 - Mission: `Release Night Bus on June 12`
 - Pattern: `release_planning`
 - Tasks/checkpoints: generated dynamically from the mission objective and pattern
@@ -297,7 +297,7 @@ Fields:
 - `account_id`
 - `artist_workspace_id`
 - `artist_id`
-- `object_type`: `track_or_release`, `catalog_item`, `campaign`, `market`, `budget_pool`, `rights_package`, `pitch_package`, `live_opportunity`, `deal_opportunity`, `audience_segment`, `team_process`, `source_gap`, `creative_asset`, `other`
+- `object_type`: `song`, `music_project`, `music_package`, `campaign`, `market`, `budget_pool`, `rights_package`, `pitch_package`, `live_opportunity`, `deal_opportunity`, `audience_segment`, `team_process`, `source_gap`, `creative_asset`, `other`
 - `title`
 - `description`
 - `status`
@@ -307,7 +307,15 @@ Fields:
 - `created_at`
 - `updated_at`
 
-`metadata` can hold type-specific fields such as planned release date, distributor, territory, market, budget amount, asset format, opportunity owner, or provider-native IDs. Stable external identifiers belong in `artist_object_identifiers`. If a type-specific field becomes heavily queried across V1 usage, promote it later through a migration. Do not prematurely create release-specific tables.
+`metadata` can hold type-specific fields such as lifecycle stage, planned release date, distributor, territory, market, budget amount, asset format, opportunity owner, or provider-native IDs. Stable external identifiers belong in `artist_object_identifiers`. If a type-specific field becomes heavily queried across V1 usage, promote it later through a migration. Do not prematurely create release-specific tables.
+
+Music object conventions:
+
+- `song` is the atomic recorded-work object. Use it for demos, unreleased songs, released tracks, catalog songs, sync candidates, and song-level rights or performance reads.
+- `music_project` is a container for a single, EP, album, mixtape, deluxe edition, compilation, or unreleased body of work.
+- `music_package` is optional and later-facing for sync bundles, pitch packages, or campaign bundles that intentionally group multiple songs/projects for an operating purpose.
+- A released Spotify album and an unreleased EP draft are both `music_project` records, but their `source_snapshot_id`, identifiers, lifecycle metadata, and evidence limits must make their source status clear.
+- Song lifecycle in V1 should stay metadata-backed until usage proves otherwise. Stages such as `idea`, `recording`, `production`, `mixing`, `mastering`, `ready`, `scheduled`, `released`, and `catalog` can be user-set or Manager-suggested, but Manager suggestions should not silently overwrite the user-visible stage.
 
 ### `artist_object_identifiers`
 
@@ -328,6 +336,26 @@ Fields:
 - `created_at`
 
 Keep identifiers separate from `artist_objects` so a market, rights package, budget pool, creator campaign, or team process is not forced into track/release-shaped columns.
+
+### `artist_object_relationships`
+
+Explicit relationships between artist objects.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `from_artist_object_id`
+- `to_artist_object_id`
+- `relationship`: `contains_song`, `appears_on_project`, `alternate_version_of`, `belongs_to_rights_package`, `belongs_to_pitch_package`, `supports_campaign`, `related_to`
+- `order_index`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+
+Use this for music project tracklists and durable object-to-object relationships. Do not duplicate song state inside a project payload. A project contains song references; each song keeps its own identifiers, assets, evidence, rights state, and linked missions.
 
 ### `artist_object_assets`
 
@@ -350,7 +378,9 @@ Fields:
 
 Do not add separate V1 tables for artist goals or constraints. Current goal belongs in `artist_profiles`, active operating goals belong in `missions`, and durable constraints/do-not-repeat rules belong in `memory_entries` with `kind = constraint`, `preference`, `risk`, or `rejected_move`. This avoids three sources of truth for the same management context.
 
-Do not add separate V1 object-version or object-link tables. Important object changes should create `operating_events` and, when they affect future decisions, `memory_entries`. Object-to-object relationships can use `artifact_links` if they become operationally important.
+Music lifecycle files should remain asset records, not a separate file subsystem in V1. Audio uploads can be classified through `asset_type`, `title`, and metadata as demo, rough mix, final master, clean, instrumental, or stems. Artwork, split sheets, metadata exports, and pitch assets follow the same `artist_object_assets` path with status and provenance notes.
+
+Do not add separate V1 object-version tables. Important object changes should create `operating_events` and, when they affect future decisions, `memory_entries`. Use `artist_object_relationships` for durable artist-object relationships such as project tracklists; use `artifact_links` for broader cross-artifact links such as conversations, decisions, drafts, or briefs pointing at objects.
 
 ## Sources, Files, And Evidence
 
@@ -1583,6 +1613,7 @@ The current prototype constants map to schema records as follows:
 | Prototype source | Database home |
 | --- | --- |
 | `artist` | `artists`, `artist_profiles`, `artist_profile_versions`, `artist_objects` for active focus objects such as Night Bus |
+| `musicObjects` | `artist_objects`, `artist_object_identifiers`, `artist_object_assets`, `artist_object_relationships`, `mission_subject_links` |
 | `agents` | `agent_profiles`, `source_capabilities`, `source_connections`; staff readiness is a projection |
 | `managerQuestions` | `manager_context_questions`, `manager_context_answers` |
 | `baseConversations` | `conversations`, `conversation_messages`, `artifact_links` |

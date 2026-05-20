@@ -19,6 +19,10 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 | --- | --- | --- | --- |
 | `artists` | none | root | profile, conversations, missions, sources |
 | `artist_profiles` | artist | one current profile per artist | artist, updated_by |
+| `artist_objects` | artist | many per artist | object type, status, optional source snapshot |
+| `artist_object_identifiers` | artist object | many per object | provider identifier, confidence, optional source snapshot |
+| `artist_object_assets` | artist object | many per object | uploaded file or asset record, asset type, status |
+| `artist_object_relationships` | artist objects | many per object | from object, to object, relationship, optional order |
 | `source_connections` | artist | many per artist | source, status, capability limits |
 | `source_snapshots` | artist/source | many per source | connection/source, captured_at, raw_ref |
 | `evidence_items` | artist | many per artist | source or user input, provenance, confidence, limitation |
@@ -32,7 +36,8 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 | `conversation_messages` | conversation | many per conversation | speaker, body, optional run |
 | `decision_packages` | synthesis_run | zero or more per run | recommendation, evidence, linked work |
 | `mission_patterns` | system | reusable | version, evidence needs, checkpoint types |
-| `missions` | artist | many per artist | pattern, origin trigger, current recommendation |
+| `missions` | artist | many per artist | pattern, origin trigger, current recommendation; optional subject links |
+| `mission_subject_links` | mission | zero or more per mission | optional artist object subjects such as song, project, market, rights package, or source gap |
 | `mission_plans` | mission | versioned; one active | pattern, generated_from_run |
 | `mission_plan_checkpoints` | mission_plan | many per plan | checkpoint, order, dependencies |
 | `checkpoints` | mission_plan/mission | many per mission | question, decision rule, required tasks |
@@ -63,6 +68,7 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 ## Ownership Rules
 
 - User/team owns profile facts, approvals, uploads, task completion notes, and permission decisions.
+- User/team owns manually entered music objects, project tracklists, uploaded assets, and corrections to object identity.
 - Manager owns synthesis, mission orchestration, operating directives, reviews, and mission memory.
 - Specialist agents own their runs, reports, notes, and source-readiness claims.
 - Evidence service owns source snapshots and normalized evidence.
@@ -75,5 +81,10 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 - Any record written by AI must include `created_from_run_id` or equivalent provenance.
 - Any user-facing recommendation must be reconstructable from profile, memory, evidence, reports, or limitations.
 - No task may exist without a mission and primary checkpoint unless it is explicitly a setup/source task outside mission scope.
+- No mission may be forced to have a music subject. Music links are optional context; missions remain objective-first.
+- No music project may duplicate song state. Projects link to songs through object relationships.
+- Song lifecycle fields may live in artist-object metadata in V1. Stage changes can be user-set or Manager-suggested, but AI suggestions must not silently mutate the user-visible song stage.
+- Audio, artwork, metadata files, split sheets, stems, clean versions, instrumentals, and pitch assets belong in `artist_object_assets`; provider catalog IDs belong in `artist_object_identifiers`.
+- Project readiness should be a rollup from contained songs and project-level assets, not an independent duplicate of every song blocker.
 - Any learning claim must distinguish artist-specific evidence from aggregate pattern guidance.
 - Any claim that a move worked must link to outcome observations and state causal limitations.

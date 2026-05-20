@@ -113,6 +113,26 @@ Background action: event ranking and deduplication.
 User-visible result: recent changes that explain why Label HQ looks different today.  
 Failure state: event missing linked artifact, stale movement, duplicate event.
 
+## Music
+
+What the user sees: the artist's recorded work under management, with simple `Songs` and `Projects` tabs, song lifecycle stage, blockers, split status, asset status, Manager next move, source limits, linked missions/tasks/evidence, assets, rights state, and project tracklists.  
+Dynamic data: artist objects, object relationships, identifiers, assets, source snapshots, evidence links, mission subject links, tasks, checkpoints, reviews, and memory summaries.  
+Current behavior: local mock music objects show `Night Bus`, `Glass Room EP`, released catalog, and demo material. Songs open into a four-tab song room: `Overview`, `Files`, `Details`, and `Rights`. `Night Bus` links to the existing release mission and visibly carries the split-sheet blocker.  
+Production behavior: load music objects from Spotify public catalog, distributor data, user-entered unreleased material, uploaded assets, and normalized evidence while preserving source limitations.  
+Data read: `artist_objects`, `artist_object_relationships`, `artist_object_identifiers`, `artist_object_assets`, `mission_subject_links`, `missions`, `tasks`, `evidence_items`, `source_snapshots`, `memory_entries`, `reviews`.  
+Data written: usually none from browsing. User-created or corrected songs/projects write artist objects, identifiers, assets, relationships, operating events, and possible memory entries. Upload affordances in the prototype represent future `artist_object_assets` writes; V1 does not submit to distributors, change public releases, or conclude legal rights without approval.  
+Background action: source matching, object deduplication, readiness calculation, linked work aggregation, and source-limit labeling.  
+User-visible result: a music operating surface that explains what exists, what stage each song is in, what is missing, what is blocked, and which operating work is attached. Projects roll up blockers from their songs without duplicating song state.  
+Failure state: duplicate song/project records, ambiguous provider matches, unreleased material confused with public catalog, unsupported private analytics claims, missing tracklist relationships, stale source data.
+
+Buttons:
+
+- Songs / Projects: switches between atomic song objects and project containers.
+- Song stage: allows a user to manually choose stage; Manager suggestions are visible but do not silently change the stage.
+- Overview / Files / Details / Rights: reveals Manager read, source limits, linked operating work, upload affordances, song identity, credits, release details, identifiers, and split-sheet state without creating standalone song-task systems.
+- Open linked mission: opens the generic mission attached through `mission_subject_links`; missions are still allowed to have no music subject.
+- View tasks / View evidence: opens existing task or evidence surfaces in the context of the selected music object when available.
+
 ## Staff
 
 What the user sees: Manager online and locked specialist agents with source readiness.  

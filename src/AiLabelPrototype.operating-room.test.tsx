@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import AiLabelPrototype from "./pages/AiLabelPrototype";
@@ -69,8 +69,122 @@ describe("AiLabelPrototype Label HQ operating room", () => {
 
     cleanup();
     enterLabelHq();
-    fireEvent.click(screen.getByRole("button", { name: /open artist profile/i }));
-    expect(screen.getByText(/artist identity/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /open active music focus/i }));
+    expect(screen.getByRole("heading", { name: /^music\.?$/i })).toBeInTheDocument();
+    expect(screen.getByText(/recorded work under management/i)).toBeInTheDocument();
+  }, 15000);
+
+  it("opens Music as a durable operating area for songs and projects", () => {
+    enterLabelHq();
+
+    fireEvent.click(screen.getByRole("button", { name: /^music$/i }));
+    expect(screen.getByRole("heading", { name: /^music\.?$/i })).toBeInTheDocument();
+    expect(screen.getByText(/recorded work under management/i)).toBeInTheDocument();
+    expect(screen.queryByText(/current music focus/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("music-detail-panel")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^songs$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^projects$/i })).toBeInTheDocument();
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/night bus/i);
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/after hours static/i);
+    expect(screen.getByTestId("music-library")).not.toHaveTextContent(/manager next move/i);
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/files/i);
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/details/i);
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/rights/i);
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/confirm split sheet/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /open song night bus/i }));
+    const nightBusRoom = screen.getByTestId("music-song-detail");
+    expect(nightBusRoom).toHaveTextContent(/song room/i);
+    expect(screen.getByRole("combobox", { name: /song stage/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /recording/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /released/i })).toBeInTheDocument();
+    expect(within(nightBusRoom).getByRole("button", { name: /^overview$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(within(nightBusRoom).getByRole("button", { name: /^files$/i })).toBeInTheDocument();
+    expect(within(nightBusRoom).getByRole("button", { name: /^details$/i })).toBeInTheDocument();
+    expect(within(nightBusRoom).getByRole("button", { name: /^rights$/i })).toBeInTheDocument();
+    expect(within(nightBusRoom).queryByRole("button", { name: /^metadata$/i })).not.toBeInTheDocument();
+    expect(within(nightBusRoom).queryByRole("button", { name: /^splits$/i })).not.toBeInTheDocument();
+    expect(within(nightBusRoom).queryByRole("button", { name: /^manager$/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/^idea recording production mixing mastering ready scheduled released catalog$/i)).not.toBeInTheDocument();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/confirm split sheet/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/linked work/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/release night bus on june 12/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/source limit/i);
+    expect(screen.getByRole("button", { name: /open linked mission/i })).toBeInTheDocument();
+    const linkedWork = within(nightBusRoom).getByTestId("music-linked-work");
+    expect(linkedWork).toHaveTextContent(/confirm split sheet/i);
+    expect(linkedWork).toHaveTextContent(/submit distributor package/i);
+    expect(within(nightBusRoom).queryByText(/^linked tasks$/i)).not.toBeInTheDocument();
+
+    fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^files$/i }));
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/audio files/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/master delivery/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/artwork/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/rights documents/i);
+
+    fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^details$/i }));
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/song identity/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/credits/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/producer/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/mix engineer/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/release details/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/isrc/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/missing/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/draft/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/confirmed/i);
+
+    fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^rights$/i }));
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/split sheet document/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/confirm split sheet/i);
+
+    fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^overview$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open linked mission/i }));
+    expect(screen.getByRole("heading", { name: /^missions\.?$/i })).toBeInTheDocument();
+    expect(screen.getByText(/music subject/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Night Bus/i).length).toBeGreaterThan(0);
+  }, 15000);
+
+  it("keeps projects as containers while songs remain atomic music objects", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /^music$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^projects$/i }));
+
+    expect(screen.getByRole("button", { name: /^projects$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("music-library")).toHaveTextContent(/glass room ep/i);
+    expect(screen.queryByTestId("music-detail-panel")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /open project glass room ep/i }));
+    expect(screen.getByTestId("music-project-detail")).toHaveTextContent(/tracklist/i);
+    expect(screen.getByTestId("music-project-detail")).toHaveTextContent(/night bus/i);
+    expect(screen.getByTestId("music-project-detail")).toHaveTextContent(/inherited blocker/i);
+    expect(screen.getByTestId("music-project-detail")).toHaveTextContent(/night bus split sheet/i);
+    expect(screen.getByTestId("music-project-detail")).toHaveTextContent(/songs stay atomic/i);
+
+    fireEvent.click(screen.getByRole("button", { name: /open song southbound blue/i }));
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/southbound blue/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/song room/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/user-supplied/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/no spotify private analytics/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/no mission is attached/i);
+  }, 15000);
+
+  it("shows available splits as a usable rights breakdown instead of a missing-state placeholder", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /^music$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open song after hours static/i }));
+
+    const songRoom = screen.getByTestId("music-song-detail");
+    fireEvent.click(within(songRoom).getByRole("button", { name: /^rights$/i }));
+
+    expect(songRoom).toHaveTextContent(/split sheet confirmed/i);
+    expect(songRoom).toHaveTextContent(/publishing splits/i);
+    expect(songRoom).toHaveTextContent(/master share/i);
+    expect(songRoom).toHaveTextContent(/sable day/i);
+    expect(songRoom).toHaveTextContent(/mara vale/i);
+    expect(songRoom).toHaveTextContent(/50%/i);
+    expect(songRoom).toHaveTextContent(/approval log/i);
+    expect(songRoom).toHaveTextContent(/document source/i);
+    expect(songRoom).not.toHaveTextContent(/release confidence is blocked/i);
   }, 15000);
 
   it("uses compact mobile drill-down patterns for team, missions, tasks, and checkpoints", () => {
