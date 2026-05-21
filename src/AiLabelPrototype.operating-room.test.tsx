@@ -261,7 +261,8 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByTestId("mobile-staff-roster")).toBeInTheDocument();
     expect(screen.getByTestId("mobile-staff-roster")).toHaveTextContent(/helps with/i);
     fireEvent.click(screen.getByRole("button", { name: /marketing lead/i }));
-    expect(screen.getByText(/what this specialist needs/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/campaign command board/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/source rail/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /^missions$/i }).at(-1)!);
     expect(screen.getByTestId("mobile-mission-switcher")).toBeInTheDocument();
@@ -273,7 +274,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     fireEvent.click(screen.getAllByText(/^tasks$/i)[0].closest("button")!);
     expect(screen.getByTestId("mobile-task-stepper")).toBeInTheDocument();
     expect(screen.getByTestId("mobile-task-stepper")).toHaveTextContent(/release foundation/i);
-    expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveTextContent(/phase 1/i);
+    expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveTextContent(/checkpoint 1/i);
     expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveTextContent(/is the release safe/i);
 
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
@@ -384,9 +385,12 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/^5$/i)).toBeInTheDocument();
     expect(screen.getByText(/^1$/i)).toBeInTheDocument();
     expect(screen.getByText(/^4$/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/what they can help with/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/missing proof/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/needs context/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/system coverage on/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/can prepare today/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/needed to work/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/needs source/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/missing proof/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/connected proof/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /ai manager/i }));
@@ -396,30 +400,60 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     fireEvent.click(screen.getByRole("button", { name: /^staff$/i }));
     fireEvent.click(screen.getByRole("button", { name: /marketing lead/i }));
     expect(screen.getAllByRole("heading", { name: /marketing lead/i }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/what this specialist needs/i)).toBeInTheDocument();
-    expect(screen.getByText(/missing proof/i)).toBeInTheDocument();
-    expect(screen.getByText(/connected proof/i)).toBeInTheDocument();
-    expect(screen.getByText(/what the manager can prepare/i)).toBeInTheDocument();
-    expect(screen.getByText(/content analytics/i)).toBeInTheDocument();
-    expect(screen.getByText(/campaign history/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/campaign command board/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/AI ad lab/i)).toBeInTheDocument();
+    expect(screen.getByText(/source rail/i)).toBeInTheDocument();
+    expect(screen.queryByText(/still cannot conclude/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/Spotify for Artists export/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/smart-link report/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/campaign report\/spend report/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/content analytics/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/campaign history/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Chartmetric/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Soundcharts/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/this agent is locked/i)).not.toBeInTheDocument();
-  }, 10000);
+  }, 20000);
 
-  it("shows compact agent source readiness inside agent rooms", () => {
+  it("shows role-specific workspaces with compact source rails inside agent rooms", () => {
     enterLabelHq();
 
     fireEvent.click(screen.getByRole("button", { name: /finance\/rights/i }));
-    expect(screen.getByText(/what this specialist needs/i)).toBeInTheDocument();
-    expect(screen.getByText(/royalty statements/i)).toBeInTheDocument();
-    expect(screen.getByText(/split sheets/i)).toBeInTheDocument();
-    expect(screen.getByText(/optional context/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /upload files/i })).toBeInTheDocument();
+    expect(screen.getByText(/finance investigation desk/i)).toBeInTheDocument();
+    expect(screen.getByText(/Royalty statement comparison/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/royalty statements/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/signed split sheets/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/distributor payout\/export report/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/song-level rights state/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/compare statement to splits/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /upload royalty statement/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /upload split sheet/i })).toBeInTheDocument();
+    expect(screen.queryByText(/still cannot conclude/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
     fireEvent.click(screen.getByRole("button", { name: /sync & deals/i }));
-    expect(screen.getByText(/rights clarity/i)).toBeInTheDocument();
-    expect(screen.getByText(/pitch assets/i)).toBeInTheDocument();
-  });
+    expect(screen.getAllByText(/sync deal pipeline/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Track new deal/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/submitted songs/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/licensing opportunity/i)).toBeInTheDocument();
+    expect(screen.getByText(/music supervisor brief/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/signed split sheet or rights document/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/clean master\/instrumental/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/pitch assets/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/song metadata/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/still cannot conclude/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    fireEvent.click(screen.getByRole("button", { name: /touring agent/i }));
+    expect(screen.getByText(/booking and tour desk/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Show holds/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/The Masquerade/i)).toBeInTheDocument();
+    expect(screen.getByText(/\$3,500 guarantee/i)).toBeInTheDocument();
+    expect(screen.getByText(/Google Calendar availability/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/live history/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/venue\/promoter notes/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/city signal coverage/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/still cannot conclude/i)).not.toBeInTheDocument();
+  }, 15000);
 
   it("makes notes helpful release-room communication and records mission memory", () => {
     enterLabelHq();
@@ -480,7 +514,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /open created mission/i }));
     expect(screen.getByText(/What is happening/i)).toBeInTheDocument();
-    expect(screen.getByText(/Manager check-in/i)).toBeInTheDocument();
+    expect(screen.getByText(/Mission pulse/i)).toBeInTheDocument();
   }, 10000);
 
   it("shows the release mission feedback loop from task reviews into checkpoints and mission memory", () => {
@@ -491,15 +525,22 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/What is happening/i)).toBeInTheDocument();
     expect(screen.getByTestId("mission-command-bar")).toBeInTheDocument();
     expect(screen.getByTestId("mission-surface-rail")).toBeInTheDocument();
-    expect(screen.getAllByText(/Needs attention/i).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("mission-command-bar")).toHaveTextContent(/coordinate every release-critical step for night bus/i);
+    expect(screen.getByTestId("mission-command-bar")).not.toHaveTextContent(/Manager moved the rushed next-Friday drop/i);
+    expect(screen.getByTestId("mission-command-bar")).not.toHaveTextContent(/Needs attention/i);
+    expect(screen.getByTestId("mission-command-bar")).not.toHaveTextContent(/Next move/i);
+    expect(screen.getByTestId("mission-command-bar")).not.toHaveTextContent(/Music subject/i);
     expect(screen.getAllByText(/Rights & Metadata Gate/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/manager check-in/i)).toBeInTheDocument();
+    expect(screen.getByText(/mission pulse/i)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /resume mission/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^archive$/i })).not.toBeInTheDocument();
     expect(screen.getByText(/^recommendation$/i)).toBeInTheDocument();
     expect(screen.getByText(/Move the release to Friday, June 12, 2026/i)).toBeInTheDocument();
     expect(screen.getByText(/what changed/i)).toBeInTheDocument();
     expect(screen.getByText(/preserved the Spotify pitch window/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/active blocker/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/next review/i)).toBeInTheDocument();
+    expect(screen.getByText(/music subject/i)).toBeInTheDocument();
     expect(screen.queryByText(/what you need to do next/i)).not.toBeInTheDocument();
     expect(screen.getByText(/^next task$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/^tasks$/i).length).toBeGreaterThan(0);
@@ -513,6 +554,9 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/Release tasks/i)).toBeInTheDocument();
     expect(screen.getByTestId("task-group-tab-cp-1-foundation")).toHaveAttribute("aria-current", "true");
     expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveTextContent(/tasks under this checkpoint/i);
+    expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveTextContent(/task 1/i);
+    expect(screen.getByTestId("task-group-cp-1-foundation")).toHaveTextContent(/task 2/i);
     expect(screen.getAllByText(/Release Foundation/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Campaign Build/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Outreach & Activation/i).length).toBeGreaterThan(0);
@@ -539,9 +583,11 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     fireEvent.click(screen.getByRole("button", { name: /back/i }));
     fireEvent.click(screen.getAllByText(/^checkpoints$/i)[0].closest("button")!);
 
-    expect(screen.getByText(/mission checkpoints/i)).toBeInTheDocument();
-    expect(screen.getByText(/Mission progress map/i)).toBeInTheDocument();
-    expect(screen.getByTestId("checkpoint-command-strip")).toBeInTheDocument();
+    expect(screen.getAllByText(/mission checkpoints/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/Mission progress map/i)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("checkpoint-command-strip")).not.toBeInTheDocument();
+    expect(screen.getByTestId("checkpoint-workspace-grid")).toHaveTextContent(/active blocker/i);
+    expect(screen.getByTestId("checkpoint-workspace-grid")).toHaveTextContent(/Fri Jun 12/i);
     expect(screen.getByTestId("checkpoint-inspector")).toHaveClass("lg:sticky");
     expect(screen.getAllByText(/Required task results/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/The foundation review found a real hold/i)).toBeInTheDocument();

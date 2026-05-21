@@ -58,6 +58,39 @@ type View =
 
 type DrawerKind = "evidence" | "decisionRecord" | "workDraft" | "intelligence" | null;
 
+type SourceReadinessItem = {
+  label: string;
+  detail: string;
+  category: "System coverage" | "Artist/team connection" | "Artist/team upload" | "User context";
+};
+
+type ConnectorMark = {
+  label: string;
+  status: "active" | "needs_connection" | "needs_upload" | "system";
+  action: string;
+  detail: string;
+};
+
+type AgentWorkspaceItem = {
+  title: string;
+  meta: string;
+  status: string;
+  detail: string;
+  value?: string;
+};
+
+type AgentWorkspaceSection = {
+  title: string;
+  eyebrow: string;
+  actionLabel?: string;
+  items: AgentWorkspaceItem[];
+};
+
+type AgentOfficeMessage = {
+  speaker: "Agent" | "Artist" | "Manager";
+  text: string;
+};
+
 type Agent = {
   id: string;
   name: string;
@@ -65,13 +98,25 @@ type Agent = {
   status: "available" | "locked";
   icon: typeof BriefcaseBusiness;
   purpose: string;
+  role: string;
   tools: string[];
-  evidence: string[];
-  connectedSources: string[];
-  requiredSources: string[];
-  optionalSources: string[];
+  alreadyAvailable: SourceReadinessItem[];
+  neededToWork: SourceReadinessItem[];
+  helpfulLater: SourceReadinessItem[];
+  systemCoverage: string;
+  canDoNow: string[];
+  cannotConcludeYet: string;
   sourceActions: string[];
-  managerCanPrepare: string;
+  readinessLabel: string;
+  primaryAction: string;
+  workPreviewTitle: string;
+  workPreviewItems: string[];
+  workspaceTitle: string;
+  workspaceSubtitle: string;
+  workspaceSections: AgentWorkspaceSection[];
+  connectorMarks: ConnectorMark[];
+  officeChat: AgentOfficeMessage[];
+  managerHandoff: string;
   color: string;
 };
 
@@ -217,13 +262,60 @@ const agents: Agent[] = [
     status: "available",
     icon: BriefcaseBusiness,
     purpose: "Keeps the artist moving: priorities, decisions, missions, check-ins, and team briefs.",
+    role: "Day-to-day manager and operating coordinator",
     tools: ["Decision reviews", "Mission planner", "Artist check-ins", "Quality review"],
-    evidence: ["Artist profile", "catalog signals", "social evidence", "budget context", "prior decisions"],
-    connectedSources: ["Spotify public identity", "Artist profile", "TikTok public signal", "YouTube public signal"],
-    requiredSources: ["Spotify artist identity"],
-    optionalSources: ["Spotify for Artists export", "Smart-link clicks", "Royalty statements"],
-    sourceActions: ["Connect Spotify for Artists", "Upload smart-link CSV"],
-    managerCanPrepare: "Already active.",
+    alreadyAvailable: [
+      { label: "Artist profile and setup context", detail: "User-supplied goals, budget, release focus, handles, and constraints.", category: "User context" },
+      { label: "Public/system coverage", detail: "Spotify public catalog, YouTube public data, and background music-intelligence coverage where available.", category: "System coverage" },
+      { label: "Operating artifacts", detail: "Missions, tasks, conversations, memory, and source limitations already in the workspace.", category: "User context" },
+    ],
+    neededToWork: [
+      { label: "Private exports only when a decision needs them", detail: "Spotify for Artists export, smart-link report, royalty statement, or distributor report when the Manager is making a claim those sources support.", category: "Artist/team upload" },
+    ],
+    helpfulLater: [
+      { label: "Spotify for Artists export", detail: "Raises confidence for saves, source-of-stream, listener behavior, and release signal reviews.", category: "Artist/team upload" },
+      { label: "Smart-link report", detail: "Adds click paths and campaign-source evidence for post-release reads.", category: "Artist/team upload" },
+    ],
+    systemCoverage: "Spotify Web API, YouTube Data API, and background music intelligence are available as system coverage, not user setup tasks.",
+    canDoNow: ["Create missions", "Write decision packages", "Request sources", "Prepare specialist referrals"],
+    cannotConcludeYet: "Private analytics, revenue, rights certainty, ROI, or causation without supported sources.",
+    sourceActions: ["Upload Spotify for Artists CSV", "Upload smart-link report"],
+    readinessLabel: "Available now",
+    primaryAction: "Open Manager Office",
+    workPreviewTitle: "Manager operating desk",
+    workPreviewItems: ["Current directive and mission path", "Source requests only when a decision depends on them", "Specialist referrals with limitation language"],
+    workspaceTitle: "Manager command desk",
+    workspaceSubtitle: "Turns specialist notes, artist replies, and source limits into missions, tasks, and decision packages.",
+    workspaceSections: [
+      {
+        eyebrow: "Operating queue",
+        title: "Manager decisions",
+        actionLabel: "Open decision package",
+        items: [
+          { title: "Night Bus release call", meta: "Active mission", status: "Needs rights gate", detail: "Keep campaign work moving while split approval remains the next management blocker.", value: "June 12" },
+          { title: "Source request queue", meta: "Team intake", status: "2 asks", detail: "Spotify for Artists export and smart-link report only matter if the next decision needs private conversion evidence." },
+        ],
+      },
+      {
+        eyebrow: "Specialist notes",
+        title: "Incoming handoffs",
+        items: [
+          { title: "Marketing brief requested", meta: "Campaign", status: "Draftable", detail: "Public attention can shape a test plan, but spend scale waits for private reports." },
+          { title: "Rights cleanup remains priority", meta: "Finance/Rights", status: "Blocking", detail: "Mission cannot claim release clearance until split approval is resolved." },
+        ],
+      },
+    ],
+    connectorMarks: [
+      { label: "Artist profile", status: "active", action: "Open Artist Direction", detail: "Goals, budget, release focus, and constraints are already in the workspace." },
+      { label: "Public system coverage", status: "system", action: "View source limits", detail: "Public catalog and platform coverage are background system sources, not user setup tasks." },
+      { label: "Spotify for Artists export", status: "needs_upload", action: "Upload Spotify for Artists CSV", detail: "Only needed when a decision depends on private streaming behavior." },
+      { label: "Smart-link report", status: "needs_upload", action: "Upload smart-link report", detail: "Adds click paths and campaign-source evidence." },
+    ],
+    officeChat: [
+      { speaker: "Artist", text: "What should I focus on today?" },
+      { speaker: "Agent", text: "I would protect the rights gate and keep campaign preparation moving without approving spend yet." },
+    ],
+    managerHandoff: "Create mission, task, or specialist referral",
     color: "#9A3BDC",
   },
   {
@@ -233,13 +325,64 @@ const agents: Agent[] = [
     status: "locked",
     icon: Megaphone,
     purpose: "Campaign planning, content tests, creators, paid/organic growth, and platform strategy.",
+    role: "Campaign strategist for content, creators, and spend readiness",
     tools: ["Content test planner", "creator map", "campaign calendar", "paid spend gate"],
-    evidence: ["TikTok/Instagram/YouTube analytics", "campaign history", "smart-link data", "comment themes"],
-    connectedSources: ["TikTok public signal", "YouTube public signal", "Artist replies"],
-    requiredSources: ["content analytics", "campaign history"],
-    optionalSources: ["creator list", "smart-link clicks", "paid spend history"],
-    sourceActions: ["Connect social analytics", "Upload campaign history"],
-    managerCanPrepare: "Campaign brief, content test, budget recommendation.",
+    alreadyAvailable: [
+      { label: "Public TikTok/Instagram/YouTube signals", detail: "Background music-intelligence coverage and public social data can support attention and angle reads.", category: "System coverage" },
+      { label: "YouTube channel/video response", detail: "YouTube Data API can support public engagement and comment themes.", category: "System coverage" },
+      { label: "Artist replies and current release context", detail: "Goals, budget posture, release timing, and Night Bus mission context are usable today.", category: "User context" },
+    ],
+    neededToWork: [
+      { label: "Spotify for Artists export", detail: "Needed for saves, source-of-stream, listener behavior, and stronger release signal reads.", category: "Artist/team upload" },
+      { label: "smart-link report", detail: "Needed for click paths, destination interest, geography, and campaign-source evidence.", category: "Artist/team upload" },
+      { label: "campaign report/spend report", detail: "Needed before spend quality, budget scale, or campaign ROI can be assessed.", category: "Artist/team upload" },
+    ],
+    helpfulLater: [
+      { label: "Creator list or creator outreach sheet", detail: "Improves creator targeting and follow-up tracking.", category: "Artist/team upload" },
+      { label: "Paid spend history", detail: "Helps separate organic momentum from bought reach.", category: "Artist/team upload" },
+    ],
+    systemCoverage: "Public track, social, playlist, and chart intelligence can be read in the background when provider coverage exists.",
+    canDoNow: ["Content angle read", "Creator target hypothesis", "Campaign test plan", "Budget guardrail recommendation"],
+    cannotConcludeYet: "ROI, conversion, save quality, or paid-spend scale from public social activity alone.",
+    sourceActions: ["Upload Spotify for Artists CSV", "Upload smart-link report", "Upload campaign report/spend report"],
+    readinessLabel: "Needs source",
+    primaryAction: "Ask Manager to prepare brief",
+    workPreviewTitle: "Campaign test board",
+    workPreviewItems: ["Late-night transit hook test", "Creator target hypothesis", "Spend cap stays conditional until private signals arrive"],
+    workspaceTitle: "Campaign command board",
+    workspaceSubtitle: "Plans tests, creator targets, budget guardrails, and future ad generation without pretending public attention proves conversion.",
+    workspaceSections: [
+      {
+        eyebrow: "Campaign tests",
+        title: "Campaign command board",
+        actionLabel: "Draft test plan",
+        items: [
+          { title: "Late-night transit hook", meta: "Organic test", status: "Ready to brief", detail: "Use Night Bus story, hook timestamp, and short-form captions for creator outreach.", value: "$500 cap" },
+          { title: "Creator target hypothesis", meta: "Audience fit", status: "Needs list", detail: "Start with night-drive, city-pop, and alt-R&B creators before expanding spend." },
+        ],
+      },
+      {
+        eyebrow: "Future tools",
+        title: "AI ad lab",
+        actionLabel: "Prepare Meta concept",
+        items: [
+          { title: "Meta ads placeholder", meta: "Connection service", status: "Future", detail: "Create audio-led ad concepts from approved music, then push campaigns once Meta account access exists." },
+          { title: "Budget guardrail", meta: "Spend safety", status: "Conditional", detail: "Recommend test budgets only; ROI and scale wait for smart-link, spend, and save/source-of-stream reports." },
+        ],
+      },
+    ],
+    connectorMarks: [
+      { label: "Public social signals", status: "system", action: "View source limits", detail: "Public TikTok, Instagram, and YouTube signals support angle reads, not ROI." },
+      { label: "Spotify for Artists export", status: "needs_upload", action: "Upload Spotify for Artists CSV", detail: "Needed for saves, source-of-stream, and listener behavior." },
+      { label: "smart-link report", status: "needs_upload", action: "Upload smart-link report", detail: "Needed for click paths, destination interest, and campaign-source evidence." },
+      { label: "campaign report/spend report", status: "needs_upload", action: "Upload campaign report/spend report", detail: "Needed before judging paid spend quality or campaign ROI." },
+      { label: "Creator list", status: "needs_upload", action: "Upload creator list", detail: "Improves creator targeting and follow-up tracking." },
+    ],
+    officeChat: [
+      { speaker: "Artist", text: "Can we make ads from Night Bus?" },
+      { speaker: "Agent", text: "I can shape the concept and budget guardrail now. Actual scale waits for private campaign and conversion reports." },
+    ],
+    managerHandoff: "Send campaign note to Manager",
     color: "#ffc7a3",
   },
   {
@@ -249,13 +392,65 @@ const agents: Agent[] = [
     status: "locked",
     icon: Headphones,
     purpose: "Finds sync, brand, partnership, and deal opportunities only when rights and pitch materials are credible.",
+    role: "Pitch desk for music, brand, and sync opportunities",
     tools: ["Opportunity fit map", "rights readiness gate", "pitch package builder", "deal-risk checklist"],
-    evidence: ["rights clarity", "pitch assets", "catalog metadata", "audience proof", "brand-fit notes"],
-    connectedSources: ["Catalog metadata", "Night Bus operating read"],
-    requiredSources: ["rights clarity", "pitch assets"],
-    optionalSources: ["one-sheet", "clean instrumental", "prior deal notes", "brand target list"],
-    sourceActions: ["Upload pitch materials", "Add rights documents"],
-    managerCanPrepare: "Sync/deals readiness brief, missing-material checklist, and pitch questions.",
+    alreadyAvailable: [
+      { label: "Spotify public catalog", detail: "Public metadata and Music objects identify which songs can be discussed.", category: "System coverage" },
+      { label: "Music workspace objects", detail: "Night Bus and catalog songs provide song-specific pitch context without duplicating music state.", category: "User context" },
+      { label: "Current rights blocker state", detail: "The release mission already knows split approval is blocking confidence.", category: "User context" },
+    ],
+    neededToWork: [
+      { label: "signed split sheet or rights document", detail: "Needed before outreach or availability can be treated as credible.", category: "Artist/team upload" },
+      { label: "clean master/instrumental", detail: "Needed when a pitch requires usable audio assets.", category: "Artist/team upload" },
+      { label: "pitch assets", detail: "One-sheet, lyrics, approved bio/press angle, artwork, and any target/contact list the team already has.", category: "Artist/team upload" },
+    ],
+    helpfulLater: [
+      { label: "Prior deal notes", detail: "Prevents repeating bad-fit relationships or terms.", category: "Artist/team upload" },
+      { label: "Brand target list", detail: "Speeds up fit review once rights and assets are clean.", category: "Artist/team upload" },
+    ],
+    systemCoverage: "Public catalog, audience, playlist, and track intelligence can support fit hypotheses but not clearance.",
+    canDoNow: ["Pitch-readiness checklist for specific songs", "Missing-material list", "Brand/sync fit hypothesis"],
+    cannotConcludeYet: "Deal readiness, clearance, or outreach permission without rights clarity and pitch assets.",
+    sourceActions: ["Upload pitch assets", "Upload rights document", "Upload clean instrumental"],
+    readinessLabel: "Needs source",
+    primaryAction: "Ask Manager to prepare brief",
+    workPreviewTitle: "Pitch-ready music",
+    workPreviewItems: ["Night Bus: strong story, rights not clean yet", "After Hours Static: catalog context, split confirmed", "Do not pitch until materials and permissions clear"],
+    workspaceTitle: "Sync deal pipeline",
+    workspaceSubtitle: "Tracks licensing opportunities, submitted songs, metadata, rights gates, and manual deal leads until the agent can search and submit on its own.",
+    workspaceSections: [
+      {
+        eyebrow: "Deal tracking",
+        title: "Sync deal pipeline",
+        actionLabel: "Track new deal",
+        items: [
+          { title: "Indie film night-drive cue", meta: "music supervisor brief", status: "Rights check", detail: "Licensing opportunity for a moody late-night scene. Night Bus matches tone, but split approval blocks submission.", value: "Deadline Jun 4" },
+          { title: "Athletic brand short", meta: "brand brief", status: "Fit review", detail: "Submitted songs should be clean versions with one-sheet, metadata, and approved bio angle.", value: "$8k-$15k" },
+        ],
+      },
+      {
+        eyebrow: "Submission desk",
+        title: "Submitted songs",
+        actionLabel: "Prepare pitch package",
+        items: [
+          { title: "Night Bus", meta: "song metadata", status: "Do not send yet", detail: "Strong story and public catalog context; needs signed split sheet or rights document plus clean master/instrumental." },
+          { title: "After Hours Static", meta: "catalog song", status: "Pitchable draft", detail: "Use as a safer fit hypothesis once pitch assets and contact permissions are confirmed." },
+        ],
+      },
+    ],
+    connectorMarks: [
+      { label: "Public catalog", status: "system", action: "View catalog basis", detail: "Public metadata and Music objects identify songs and basic fit context." },
+      { label: "signed split sheet or rights document", status: "needs_upload", action: "Upload rights document", detail: "Needed before outreach or availability can be treated as credible." },
+      { label: "clean master/instrumental", status: "needs_upload", action: "Upload clean instrumental", detail: "Needed when a pitch requires usable audio assets." },
+      { label: "pitch assets", status: "needs_upload", action: "Upload pitch assets", detail: "One-sheet, lyrics, artwork, approved bio/press angle, and song story." },
+      { label: "song metadata", status: "needs_upload", action: "Upload song metadata", detail: "ISRC, writers, contact, version, explicit flag, and ownership notes for submissions." },
+      { label: "Target/contact list", status: "needs_upload", action: "Upload contact list", detail: "Optional team-provided licensing leads or supervisor contacts." },
+    ],
+    officeChat: [
+      { speaker: "Artist", text: "Can this agent find sync deals for me later?" },
+      { speaker: "Agent", text: "Yes. This room is built around finding opportunities, matching songs, preparing metadata, and submitting only when rights and permission are clear." },
+    ],
+    managerHandoff: "Send deal note to Manager",
     color: "#dfccff",
   },
   {
@@ -265,13 +460,64 @@ const agents: Agent[] = [
     status: "locked",
     icon: Route,
     purpose: "City validation, show readiness, routing, and live-market opportunity.",
+    role: "Booking desk for availability, city demand, routing, and live-market readiness",
     tools: ["City signal map", "route planner", "show readiness gate", "partner path"],
-    evidence: ["Streaming geography", "YouTube geography", "social demand", "ticketing proxies", "comment locations"],
-    connectedSources: ["Streaming geography", "YouTube geography", "comment locations"],
-    requiredSources: ["city demand signals", "live history"],
-    optionalSources: ["ticketing proxies", "venue notes", "promoter list"],
-    sourceActions: ["Connect live history", "Upload venue notes"],
-    managerCanPrepare: "Market validation brief without claiming show readiness.",
+    alreadyAvailable: [
+      { label: "System geography signals where supported", detail: "Background music intelligence may expose listener or track geography by platform/time window.", category: "System coverage" },
+      { label: "YouTube/comment geography as weak context", detail: "City mentions can support questions, not confirmed demand.", category: "System coverage" },
+      { label: "Artist market and public city mentions", detail: "Atlanta, Chicago, and Lagos context can seed a city validation read.", category: "User context" },
+    ],
+    neededToWork: [
+      { label: "Google Calendar availability", detail: "Needed before booking holds, routing, or date options become useful.", category: "Artist/team connection" },
+      { label: "live history", detail: "Past shows, attendance, settlement notes, or support slots help calibrate booking readiness.", category: "Artist/team upload" },
+      { label: "venue/promoter notes", detail: "Needed to turn city signal into realistic booking paths.", category: "Artist/team upload" },
+    ],
+    helpfulLater: [
+      { label: "Ticketing report or past show settlement", detail: "Stronger evidence for paid demand and room size.", category: "Artist/team upload" },
+      { label: "Promoter list", detail: "Useful after the city demand read identifies likely targets.", category: "Artist/team upload" },
+    ],
+    systemCoverage: "City and platform geography can be directional; comments are weak city signals unless paired with stronger live or ticketing evidence.",
+    canDoNow: ["City validation read", "Routing hypothesis", "Booking-readiness checklist"],
+    cannotConcludeYet: "Confirmed live demand, tour viability, or booking commitments from comments/public attention alone.",
+    sourceActions: ["Connect Google Calendar", "Upload live history", "Upload venue/promoter notes"],
+    readinessLabel: "Needs source",
+    primaryAction: "Ask Manager to prepare brief",
+    workPreviewTitle: "Booking/calendar readiness board",
+    workPreviewItems: ["Calendar not connected", "Atlanta is home market; Chicago/Lagos need stronger geography proof", "Comments are weak city signals until paired with live or ticketing data"],
+    workspaceTitle: "Booking and tour desk",
+    workspaceSubtitle: "Tracks show holds, fees, routing, availability, venue notes, and city confidence before anything becomes a booking commitment.",
+    workspaceSections: [
+      {
+        eyebrow: "Bookings",
+        title: "Show holds",
+        actionLabel: "Add booking",
+        items: [
+          { title: "The Masquerade", meta: "Atlanta - Wed Jun 17", status: "Calendar needed", detail: "Local support slot under discussion. Confirm availability before accepting the hold.", value: "$3,500 guarantee" },
+          { title: "Subterranean", meta: "Chicago - routing idea", status: "Needs live history", detail: "City attention is directional. Pair with past live results or ticketing proxy before outreach." },
+        ],
+      },
+      {
+        eyebrow: "Markets",
+        title: "Routing board",
+        actionLabel: "Build route",
+        items: [
+          { title: "Atlanta home-market test", meta: "Venue path", status: "Most realistic", detail: "Use existing market context and venue/promoter notes to shape the first booking read." },
+          { title: "Lagos signal", meta: "City validation", status: "Weak context", detail: "City mentions are not confirmed live demand until paired with ticketing, show history, or promoter evidence." },
+        ],
+      },
+    ],
+    connectorMarks: [
+      { label: "Google Calendar availability", status: "needs_connection", action: "Connect Google Calendar", detail: "Needed before booking holds, routing, or date options become useful." },
+      { label: "live history", status: "needs_upload", action: "Upload live history", detail: "Past shows, attendance, settlement notes, or support slots calibrate booking readiness." },
+      { label: "venue/promoter notes", status: "needs_upload", action: "Upload venue/promoter notes", detail: "Needed to turn city signal into realistic booking paths." },
+      { label: "Ticketing/settlement report", status: "needs_upload", action: "Upload ticketing report", detail: "Stronger evidence for paid demand and room size." },
+      { label: "city signal coverage", status: "system", action: "View city signal limits", detail: "City and platform geography are directional; comments are weak city signals without live or ticketing evidence." },
+    ],
+    officeChat: [
+      { speaker: "Artist", text: "Can I take a show next Wednesday?" },
+      { speaker: "Agent", text: "Connect Google Calendar first. I can compare the hold against routing, fee, and city confidence before sending Manager a booking note." },
+    ],
+    managerHandoff: "Send booking note to Manager",
     color: "#bdeecb",
   },
   {
@@ -281,13 +527,65 @@ const agents: Agent[] = [
     status: "locked",
     icon: CircleDollarSign,
     purpose: "Budget guardrails, royalty questions, payout timing, ownership, splits, metadata, and rights hygiene.",
+    role: "Finance and rights desk for statements, splits, metadata, and ownership risk",
     tools: ["Budget gate", "royalty statement intake", "split risk map", "rights checklist", "metadata review"],
-    evidence: ["Royalty statements", "payout history", "split sheets", "distributor metadata", "publishing/master ownership"],
-    connectedSources: ["Budget context", "Distributor metadata placeholder"],
-    requiredSources: ["royalty statements", "split sheets"],
-    optionalSources: ["payout history", "publishing ownership", "master ownership", "ISRC metadata"],
+    alreadyAvailable: [
+      { label: "Budget context", detail: "The Manager knows the current $5,000 budget posture and spend caution.", category: "User context" },
+      { label: "Music rights state", detail: "Song-level split state from the Music area is available for hygiene review.", category: "User context" },
+      { label: "Distributor metadata placeholder", detail: "Delivery status can support readiness, not revenue or payout claims.", category: "Artist/team upload" },
+    ],
+    neededToWork: [
+      { label: "royalty statements", detail: "Needed for payout line items, statement period, platforms, territories, and revenue categories.", category: "Artist/team upload" },
+      { label: "signed split sheets", detail: "Needed for declared collaborator shares and release-risk review.", category: "Artist/team upload" },
+      { label: "distributor payout/export report", detail: "Needed before payout timing or distributor revenue reads become credible.", category: "Artist/team upload" },
+    ],
+    helpfulLater: [
+      { label: "Publishing/master ownership documents", detail: "Helpful for ownership risk and metadata hygiene; still not legal certainty without human review.", category: "Artist/team upload" },
+      { label: "ISRC metadata", detail: "Helps reconcile statements, catalog metadata, and song records.", category: "Artist/team upload" },
+    ],
+    systemCoverage: "Public catalog and distributor readiness can support metadata context, but finance conclusions need uploaded statements.",
+    canDoNow: ["Rights-risk memo", "Finance intake checklist", "Missing-statement request", "Song-level split hygiene review"],
+    cannotConcludeYet: "Royalty health, payout timing, ownership certainty, or legal/financial conclusions without statements/documents and human review.",
     sourceActions: ["Upload royalty statement", "Upload split sheet"],
-    managerCanPrepare: "Finance and rights intake brief with missing-evidence checklist.",
+    readinessLabel: "Needs source",
+    primaryAction: "Ask Manager to prepare brief",
+    workPreviewTitle: "Statements/splits intake board",
+    workPreviewItems: ["Night Bus split sheet is still blocking confidence", "Royalty statements can cover multiple tracks", "Playlist/source data belongs to song and campaign context, not finance upload"],
+    workspaceTitle: "Finance investigation desk",
+    workspaceSubtitle: "Answers finance and rights questions by comparing royalty statements, distributor exports, and song-level split state.",
+    workspaceSections: [
+      {
+        eyebrow: "Investigation",
+        title: "Royalty statement comparison",
+        actionLabel: "Compare statement to splits",
+        items: [
+          { title: "Night Bus statement review", meta: "song-level rights state", status: "Waiting on statement", detail: "Upload royalty statements, then compare payout lines against signed split sheets and song metadata." },
+          { title: "Distributor payout/export report", meta: "Revenue source", status: "Missing", detail: "Needed before payout timing or distributor revenue movement can be explained." },
+        ],
+      },
+      {
+        eyebrow: "Rights hygiene",
+        title: "Splits and ownership",
+        actionLabel: "Review split health",
+        items: [
+          { title: "Night Bus split sheet", meta: "signed split sheets", status: "Blocking", detail: "Song-level rights state is not clean enough for financial confidence until collaborator approval is resolved." },
+          { title: "Publishing/master ownership documents", meta: "Ownership support", status: "Useful later", detail: "Helps investigate ownership gaps, but legal or financial conclusions still need human review." },
+        ],
+      },
+    ],
+    connectorMarks: [
+      { label: "royalty statements", status: "needs_upload", action: "Upload royalty statement", detail: "Statement periods, platforms, territories, and revenue categories for one or many tracks." },
+      { label: "signed split sheets", status: "needs_upload", action: "Upload split sheet", detail: "Declared collaborator shares and release-risk review." },
+      { label: "distributor payout/export report", status: "needs_upload", action: "Upload distributor payout/export report", detail: "Needed before payout timing or distributor revenue reads become credible." },
+      { label: "song-level rights state", status: "active", action: "Open song rights state", detail: "Music workspace split state is available for hygiene review." },
+      { label: "Publishing/master ownership documents", status: "needs_upload", action: "Upload ownership documents", detail: "Supports ownership risk and metadata hygiene." },
+      { label: "Budget/spend reports", status: "needs_upload", action: "Upload budget/spend report", detail: "Useful when finance questions overlap with campaign spend." },
+    ],
+    officeChat: [
+      { speaker: "Artist", text: "Why does this payout look wrong for this song?" },
+      { speaker: "Agent", text: "Upload the royalty statement and distributor export. I will compare the lines against the song splits and send Manager a finance note with limits." },
+    ],
+    managerHandoff: "Send finance note to Manager",
     color: "#aee7ff",
   },
 ];
@@ -331,7 +629,7 @@ const baseMissions: Mission[] = [
     tests: 9,
     briefs: 5,
     review: "Rights gate holding",
-    summary: "Manager moved the rushed next-Friday drop to Friday, June 12, 2026 so delivery, rights, DSP pitching, creator seeding, press, and launch execution can be handled properly.",
+    summary: "Coordinate every release-critical step for Night Bus: rights clearance, delivery, DSP pitching, creator seeding, press, owned content, launch-day checks, and the first signal read.",
   },
   {
     id: "profile-completeness",
@@ -2234,13 +2532,17 @@ const StaffWorkspace = ({
           <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Team</p>
           <h1 className="font-display mt-2 text-[2.25rem] font-bold leading-tight tracking-tight text-foreground sm:text-[2.7rem] lg:text-[3.2rem]">Artist Team</h1>
           <p className="mt-2 max-w-2xl text-[16px] font-medium leading-relaxed text-muted-foreground/80">
-            The people around the artist, what they can help with, and the proof they still need before their advice becomes useful.
+            The people around the artist, what they can safely prepare today, and the exact sources or files that would make each specialist stronger.
           </p>
         </div>
-        <div className="grid w-full max-w-md grid-cols-3 overflow-hidden rounded-[18px] border border-foreground/10 bg-background/80 shadow-sm">
+        <div className="grid w-full max-w-xl grid-cols-4 overflow-hidden rounded-[18px] border border-foreground/10 bg-background/80 shadow-sm">
           <StaffStat label="Team" value={`${agents.length}`} />
-          <StaffStat label="Ready" value={`${onlineCount}`} />
-          <StaffStat label="Needs context" value={`${lockedCount}`} />
+          <StaffStat label="Active" value={`${onlineCount}`} />
+          <StaffStat label="Waiting" value={`${lockedCount}`} />
+          <div className="border-l border-foreground/8 p-3 text-center">
+            <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">System</p>
+            <p className="mt-1 text-[13px] font-bold leading-tight text-foreground">System coverage on</p>
+          </div>
         </div>
       </div>
 
@@ -2248,14 +2550,15 @@ const StaffWorkspace = ({
         {agents.map((agent) => {
           const Icon = agent.icon;
           const available = agent.status === "available";
-          const actionLabel = available ? "Open Manager Office" : "See what is missing";
+          const actionLabel = agent.primaryAction;
+          const topNeeds = agent.neededToWork.slice(0, 2);
 
           return (
             <button
               key={agent.id}
               onClick={() => (available ? onManager() : onLockedAgent(agent))}
               className={cn(
-                "group grid w-full gap-3 rounded-[18px] border bg-background/85 p-4 text-left shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(0,0,0,0.07)] lg:grid-cols-[250px_minmax(0,1fr)_220px] lg:gap-5 lg:rounded-[20px] lg:p-5",
+                "group grid w-full gap-4 rounded-[18px] border bg-background/85 p-4 text-left shadow-[0_2px_12px_rgba(0,0,0,0.04)] transition-all hover:-translate-y-0.5 hover:shadow-[0_14px_40px_rgba(0,0,0,0.07)] lg:grid-cols-[280px_minmax(0,1fr)_230px] lg:gap-5 lg:rounded-[20px] lg:p-5",
                 available ? "border-brand-accent/20" : "border-foreground/10",
               )}
             >
@@ -2275,22 +2578,35 @@ const StaffWorkspace = ({
                     <span
                       className={cn(
                         "rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em]",
-                        available ? "bg-success/10 text-success" : "bg-foreground/5 text-muted-foreground",
+                        available ? "bg-success/10 text-success" : "bg-warning/10 text-warning",
                       )}
                     >
-                      {available ? "Ready" : "Needs context"}
+                      {agent.readinessLabel}
                     </span>
                   </div>
+                  <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.11em] text-muted-foreground/86">{agent.role}</p>
                   <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{agent.purpose}</p>
                   <p className="mt-2 text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent md:hidden">Helps with {agent.tools.slice(0, 2).join(" / ")}</p>
                 </div>
               </div>
 
               <div className="hidden gap-4 md:grid md:grid-cols-2">
-                <StaffSourceBlock title="What they can help with" items={agent.tools.slice(0, 3)} accent={available} />
-                <StaffSourceBlock title="Missing proof" items={agent.requiredSources} muted={!available} />
-                <StaffSourceBlock title="Connected proof" items={agent.connectedSources} />
-                <StaffSourceBlock title="Manager can prepare" items={[agent.managerCanPrepare]} accent />
+                <div className="rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Can prepare today</p>
+                  <p className="mt-2 text-[13px] font-bold leading-relaxed text-foreground/86">{agent.canDoNow.slice(0, 2).join(" / ")}</p>
+                </div>
+                <div className="rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Needed to work</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {topNeeds.map((item) => (
+                      <span key={item.label} className="rounded-full border border-foreground/8 bg-background px-2.5 py-1 text-[11px] font-bold text-foreground/82">{item.label}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3 md:col-span-2">
+                  <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Available now</p>
+                  <p className="mt-2 text-[12px] font-semibold leading-relaxed text-foreground/84">{agent.alreadyAvailable[0]?.label}: {agent.alreadyAvailable[0]?.detail}</p>
+                </div>
               </div>
 
               <div className="flex flex-row items-center justify-between rounded-[16px] border border-foreground/5 bg-foreground/[0.035] p-3 transition-colors group-hover:bg-foreground/[0.06] lg:flex-col lg:items-stretch lg:p-4">
@@ -2305,7 +2621,7 @@ const StaffWorkspace = ({
                   )}
                 >
                   {available ? <MessageSquareText className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
-                  {available ? "Start decision thread" : "Review unlock needs"}
+                  {available ? "Start decision thread" : "Review source needs"}
                   <ChevronRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
                 </span>
               </div>
@@ -3225,7 +3541,7 @@ const LightAgentBench = ({
           <div className="min-w-0 flex-1">
             <p className={cn("text-[14px] font-bold leading-tight tracking-tight", available ? "text-foreground" : "text-muted-foreground")}>{agent.name.replace("AI ", "")}</p>
             <p className="mt-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/88 leading-tight">
-               {available ? "Active Now" : "Locked"}
+               {available ? "Available now" : "Can prepare limited brief"}
             </p>
           </div>
           {available && (
@@ -3931,12 +4247,11 @@ const TasksWorkspace = ({
   }, []);
 
   const innerContent = (
-    <div className="grid gap-5 xl:grid-cols-[260px_minmax(0,1fr)] xl:gap-6">
-        <aside className="min-w-0 overflow-hidden rounded-[20px] border border-foreground/8 bg-background/75 p-4 shadow-sm lg:sticky lg:top-6 lg:self-start lg:rounded-[24px]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Phases</p>
-          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/88">
-            Work through the release step-by-step. Completing all tasks in a phase unlocks the next one.
-          </p>
+    <div className="grid items-start gap-5 xl:grid-cols-[260px_minmax(0,1fr)] xl:gap-6">
+        <aside className="surface-elevated min-w-0 overflow-hidden rounded-[22px] p-4 shadow-sm lg:sticky lg:top-6 lg:self-start">
+          <div className="border-b border-foreground/8 pb-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission checkpoints</p>
+          </div>
           <div data-testid="mobile-task-stepper" className="mt-4 flex min-w-0 max-w-full gap-2 overflow-x-auto pb-1 lg:mt-5 lg:block lg:space-y-1 lg:overflow-visible lg:pb-0">
             {missionCheckpoints.map((checkpoint, index) => {
               const inView = activeCheckpointId === checkpoint.id;
@@ -3948,9 +4263,8 @@ const TasksWorkspace = ({
                   data-testid={`task-group-tab-${checkpoint.id}`}
                   aria-current={inView ? "true" : undefined}
                   onClick={() => scrollToGroup(checkpoint.id)}
-                  className={cn("relative flex min-w-[170px] gap-3 rounded-[14px] border px-2 py-2 text-left transition-all lg:w-full lg:min-w-0", inView ? "border-foreground bg-foreground text-background" : "border-foreground/8 bg-background text-foreground hover:bg-foreground/[0.04]")}
+                  className={cn("relative flex min-w-[170px] gap-3 rounded-[12px] border px-2 py-2 text-left transition-all lg:w-full lg:min-w-0", inView ? "border-foreground bg-foreground text-background" : "border-foreground/8 bg-background text-foreground hover:bg-foreground/[0.04]")}
                 >
-                  {index < missionCheckpoints.length - 1 && <span className="absolute left-[13px] top-8 hidden h-[calc(100%-8px)] w-px bg-foreground/10 lg:block" />}
                   <span className={cn("relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-bold", inView ? "border-brand-accent bg-brand-accent text-foreground" : "border-foreground/10 bg-background text-muted-foreground")}>
                     {checkpoint.status === "Met" ? <Check className="h-3.5 w-3.5" /> : checkpoint.phase}
                   </span>
@@ -3964,7 +4278,7 @@ const TasksWorkspace = ({
           </div>
         </aside>
 
-        <div className="space-y-4 lg:space-y-5">
+        <div className="space-y-4">
           {missionCheckpoints.map((checkpoint) => {
             const sectionActive = activeCheckpointId === checkpoint.id;
             const phaseTasks = taskRows.filter(t => t.checkpointId === checkpoint.id);
@@ -3978,11 +4292,11 @@ const TasksWorkspace = ({
                 data-testid={`task-group-${checkpoint.id}`}
                 data-checkpoint-id={checkpoint.id}
                 data-active={sectionActive ? "true" : "false"}
-                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border p-4 shadow-sm transition-all lg:scroll-mt-6 lg:rounded-[24px] lg:p-5", sectionActive ? "border-brand-accent/35 bg-brand-accent/[0.045] shadow-lg" : "border-foreground/8 bg-background/85", isLocked && !sectionActive && "opacity-70")}
+                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border bg-background/85 shadow-sm transition-all lg:scroll-mt-6", sectionActive ? "border-brand-accent/35 shadow-lg shadow-brand-accent/5" : "border-foreground/8", isLocked && !sectionActive && "opacity-70")}
               >
-                <div className="border-b border-foreground/8 pb-4">
+                <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent">Phase {checkpoint.phase}</p>
+                    <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-brand-accent">Checkpoint {checkpoint.phase}</p>
                     <span className={cn("rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", checkpoint.status === "Needs revision" ? "border-[#f97316]/30 bg-[#fff8f3] text-[#9a3412]" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent" : "border-foreground/8 bg-background text-muted-foreground")}>{checkpoint.status}</span>
                   </div>
                   <h3 className="mt-2 text-[18px] font-bold text-foreground">{checkpoint.title}</h3>
@@ -3995,8 +4309,13 @@ const TasksWorkspace = ({
                   )}
                 </div>
 
-                <div className="divide-y divide-foreground/7">
-                  {phaseTasks.map((task) => {
+                <div className="px-4 py-4">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/78">Tasks under this checkpoint</p>
+                    <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{phaseTasks.length} tasks</span>
+                  </div>
+                  <div className="grid gap-3">
+                  {phaseTasks.map((task, taskIndex) => {
                     const approved = approvedTasks.includes(task.id);
                     const done = completedTasks.includes(task.id);
                     const completionBlocked = task.approvalState === "needs approval" && !approved;
@@ -4008,10 +4327,11 @@ const TasksWorkspace = ({
                     const isCompleting = completingTaskId === task.id;
 
                     return (
-                      <div key={task.id} className={cn("grid min-w-0 gap-4 py-4 lg:grid-cols-[minmax(0,1fr)_180px] lg:py-5", availability.disabled && !blocked && "opacity-75")}>
+                      <div key={task.id} className={cn("grid min-w-0 gap-4 rounded-[16px] border border-foreground/8 bg-background/78 p-3.5 lg:grid-cols-[minmax(0,1fr)_180px]", availability.disabled && !blocked && "opacity-75")}>
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className={cn("h-2.5 w-2.5 rounded-full", blocked ? "bg-[#f97316]" : done || result?.status === "completed" ? "bg-brand-accent" : "bg-foreground/20")} />
+                            <span className={cn("inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold", blocked ? "bg-[#f97316] text-white" : done || result?.status === "completed" ? "bg-brand-accent text-background" : "bg-foreground/[0.07] text-foreground")}>{taskIndex + 1}</span>
+                            <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Task {taskIndex + 1}</span>
                             <p className="text-[15px] font-bold leading-snug text-foreground">{task.title}</p>
                             <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{getTaskStatusLabel(task, approved, done, result)}</span>
                             {availability.label !== "Open" && (
@@ -4121,6 +4441,7 @@ const TasksWorkspace = ({
                       </div>
                     );
                   })}
+                  </div>
                 </div>
               </section>
             );
@@ -4160,7 +4481,6 @@ const CheckpointsWorkspace = ({
   const selectedCheckpoint = missionCheckpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId) ?? activeBlocker;
   const selectedRequiredResults = selectedCheckpoint.requiredTaskIds.map((taskId) => taskResultById.get(taskId)?.status ?? "pending");
   const selectedResolvedCount = selectedRequiredResults.filter((status) => status !== "pending").length;
-  const readinessPercent = Math.round((clearedCount / missionCheckpoints.length) * 100);
   const selectedBlockerCopy = getCheckpointBlockerCopy(selectedCheckpoint);
   const selectedDecision = getCheckpointDecision(selectedCheckpoint);
   const statusClass = (checkpoint: MissionCheckpoint) =>
@@ -4173,42 +4493,18 @@ const CheckpointsWorkspace = ({
   const innerContent = (
     <div className="space-y-5">
       <span className="sr-only">mission checkpoints</span>
-      <section data-testid="checkpoint-command-strip" className="rounded-[20px] border border-foreground/8 bg-background/85 p-4 shadow-sm lg:rounded-[24px] lg:p-5">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_520px] xl:gap-5">
-            <div className="min-w-0">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission progress map</p>
-              <div className="mt-2 flex flex-wrap items-end gap-3">
-                <h3 className="font-display text-[24px] font-bold leading-tight text-foreground lg:text-[30px] lg:leading-none">Night Bus / June 12</h3>
-                <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker.title}</span>
-              </div>
-              <p className="mt-3 max-w-3xl text-[13px] font-semibold leading-relaxed text-foreground/88">
-                Check each phase, review the Manager call, then continue or fix what is blocking the release.
-              </p>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <ArtifactField label="Readiness" value={`${readinessPercent}%`} />
-              <ArtifactField label="Cleared" value={`${clearedCount}/${missionCheckpoints.length}`} />
-              <ArtifactField label="Target" value="Fri Jun 12" />
-            </div>
-          </div>
-          <div className="mt-3 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-3 xl:hidden">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="min-w-0 truncate text-[13px] font-bold text-foreground">{selectedCheckpoint.title}</p>
-              <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", statusClass(selectedCheckpoint))}>{selectedCheckpoint.status}</span>
-            </div>
-            <p className="mt-2 text-[12px] font-semibold leading-relaxed text-foreground/89">{selectedCheckpoint.recommendation}</p>
-            <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{selectedCheckpoint.nextAction}</p>
-          </div>
-        </section>
-
         <div data-testid="checkpoint-workspace-grid" className="grid gap-5 xl:h-[calc(100vh-300px)] xl:min-h-[600px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] xl:overflow-hidden">
           <section data-testid="checkpoint-ledger-panel" className="min-w-0 overflow-hidden rounded-[24px] border border-foreground/8 bg-background/76 p-3 shadow-sm xl:flex xl:h-full xl:flex-col">
-            <div className="mb-3 flex items-end justify-between gap-3 px-1">
+            <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission Phases</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission checkpoints</p>
                 <p className="mt-1 text-[13px] font-semibold text-foreground/88">Complete tasks to unlock downstream phases.</p>
               </div>
-              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Release Path</span>
+              <div className="flex flex-wrap justify-end gap-2">
+                <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Cleared {clearedCount}/{missionCheckpoints.length}</span>
+                <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker.title}</span>
+                <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Fri Jun 12</span>
+              </div>
             </div>
             <div data-testid="checkpoint-scroll-region" className="scrollbar-soft min-h-0 space-y-4 pr-1 lg:overflow-y-auto lg:pr-2 xl:flex-1 pb-4">
               <div data-testid="mobile-checkpoint-list" className="sr-only">Mobile checkpoint list</div>
@@ -4245,7 +4541,7 @@ const CheckpointsWorkspace = ({
                              {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-3 w-3" /> : checkpoint.phase}
                            </span>
                            <div>
-                             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Phase {checkpoint.phase}</p>
+                             <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Checkpoint {checkpoint.phase}</p>
                              <h4 className={cn("mt-0.5 text-[15px] font-bold leading-tight", isSelected ? "text-foreground" : "text-foreground/80")}>{checkpoint.title}</h4>
                              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/90 leading-relaxed">{checkpoint.question}</p>
                            </div>
@@ -4343,7 +4639,7 @@ const CheckpointsWorkspace = ({
               </div>
             ) : (
               <div className="mt-5 rounded-[18px] border border-brand-accent/16 bg-brand-accent/[0.055] p-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Phase cleared</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Checkpoint cleared</p>
                 <p className="mt-2 text-[14px] font-bold leading-relaxed text-foreground">Next phase opened: {getNextOpenedCopy(selectedCheckpoint)}</p>
                 <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground/88">{selectedCheckpoint.nextAction}</p>
               </div>
@@ -4445,6 +4741,7 @@ const MissionsWorkspace = ({
 }) => {
   const activeMissions = missions.filter((m) => !m.archived);
   const archivedMissions = missions.filter((m) => m.archived);
+  const missionActiveBlocker = missionCheckpoints.find((checkpoint) => checkpoint.status === "Needs revision");
 
   if (missionRoomMode === "list") {
     return (
@@ -4575,7 +4872,7 @@ const MissionsWorkspace = ({
           <ArrowLeft className="h-4 w-4" />
           Back to Missions
         </button>
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-end">
+        <div className="grid gap-5">
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">What is happening</p>
@@ -4593,13 +4890,6 @@ const MissionsWorkspace = ({
             <div className="mt-4 h-1.5 max-w-xl overflow-hidden rounded-full bg-foreground/8">
               <div className={cn("h-full rounded-full transition-all duration-1000", selectedMission.status === "blocked" ? "bg-warning" : "bg-brand-accent")} style={{ width: `${selectedMission.progress}%` }} />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <ArtifactField label="Progress" value={`${selectedMission.progress}%`} />
-            <ArtifactField label="Needs attention" value={selectedMission.status === "blocked" ? "Split approval" : "None"} />
-            <ArtifactField label="Next move" value="Clear rights" />
-            <ArtifactField label="Next review" value={missionReview.nextReview} />
-            <ArtifactField label="Music subject" value="Night Bus" />
           </div>
         </div>
       </div>
@@ -4642,49 +4932,46 @@ const MissionsWorkspace = ({
       {/* Tab Switcher Content */}
       <div className="min-h-[400px]">
         {missionRoomTab === "pulse" && (
-          <section className="rounded-[24px] border border-brand-accent/15 bg-brand-accent/[0.035] p-6 shadow-sm space-y-6">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-brand-accent/10 pb-5">
-              <div>
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager check-in</p>
-                <h4 className="mt-2 text-[20px] font-bold tracking-tight text-foreground">{missionReview.title}</h4>
-              </div>
-              <span className="rounded-full border border-brand-accent/15 bg-background px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-brand-accent">
-                {missionReview.outcome}
-              </span>
-            </div>
-
-            <div className="grid gap-6 md:grid-cols-2">
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">Recommendation</p>
+          <section className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <div className="p-5 sm:p-6">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission pulse</span>
+                  <span className="rounded-full border border-brand-accent/15 bg-brand-accent/[0.07] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">{missionReview.outcome}</span>
+                </div>
+                <h4 className="mt-3 font-display text-[24px] font-bold leading-tight tracking-tight text-foreground">{missionReview.title}</h4>
+                <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Recommendation</p>
                   <p className="mt-2 text-[15px] font-semibold leading-relaxed text-foreground">{missionReview.recommendation}</p>
+                  <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/86">{missionReview.why}</p>
                 </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">Reason</p>
-                  <p className="mt-2 text-[14px] leading-relaxed text-muted-foreground/80">{missionReview.why}</p>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/78">What changed</p>
+                <div className="mt-4">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">What changed</p>
                   <div className="mt-2 grid gap-2">
                     {missionReview.changes.map((change) => (
-                      <div key={change} className="rounded-[12px] border border-foreground/5 bg-background/80 p-3 text-[12px] font-medium leading-relaxed text-foreground/90">
+                      <div key={change} className="rounded-[12px] border border-foreground/6 bg-background/76 px-3.5 py-2.5 text-[12px] font-semibold leading-relaxed text-foreground/86">
                         {change}
                       </div>
                     ))}
                   </div>
                 </div>
-                <div className="rounded-[14px] border border-brand-accent/10 bg-background/80 p-4">
-                  <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Next task</p>
-                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/80">{missionReview.nextTaskCreated}</p>
+              </div>
+              <div className="border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Mission state</p>
+                <div className="mt-4 grid gap-3">
+                  {[
+                    { label: "Active blocker", value: missionActiveBlocker ? missionActiveBlocker.title : "None" },
+                    { label: "Next review", value: missionReview.nextReview },
+                    { label: "Next task", value: missionReview.nextTaskCreated },
+                    { label: "Music subject", value: "Night Bus" },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-[14px] border border-foreground/8 bg-foreground/[0.02] px-3.5 py-3">
+                      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/72">{item.label}</p>
+                      <p className="mt-1 text-[12.5px] font-bold leading-relaxed text-foreground/82">{item.value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
-
-            <div className="border-t border-foreground/5 pt-4">
-              <p className="text-[12px] font-medium text-muted-foreground/88 italic">Last updated by AI Manager 4 hours ago</p>
             </div>
           </section>
         )}
@@ -4713,85 +5000,94 @@ const MissionsWorkspace = ({
         )}
 
         {missionRoomTab === "recap" && (
-          <div className="grid gap-6">
+          <div className="grid gap-5">
             <span className="sr-only">living recap of the mission</span>
-            {/* Header section with Final Call & Confidence */}
-            <div className="rounded-[20px] border border-foreground/8 bg-background/85 p-6 shadow-sm">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{decisionRecord.missionTitle}</p>
-                  <h3 className="mt-2 text-[22px] font-display font-bold tracking-tight text-foreground">{decisionRecord.finalCall}</h3>
+            <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+              <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
+                <div className="p-5 sm:p-6">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission recap</p>
+                    <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-foreground/78">{decisionRecord.confidence} confidence</span>
+                  </div>
+                  <h3 className="mt-3 font-display text-[24px] font-bold leading-tight tracking-tight text-foreground">{decisionRecord.finalCall}</h3>
+                  <p className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/82">{decisionRecord.currentState}</p>
                 </div>
-                <span className="rounded-full bg-foreground/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-foreground/88">{decisionRecord.confidence} confidence</span>
-              </div>
-              <p className="mt-4 text-[14px] leading-relaxed text-foreground/80">{decisionRecord.currentState}</p>
-
-              <div className="mt-6 border-t border-foreground/5 pt-4">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Original request</p>
-                <p className="mt-2 text-[14px] italic text-foreground/80">"I want to drop a new song next week"</p>
-              </div>
-            </div>
-
-            {/* Grid of details */}
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Task status summary</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-                  Strategy is accepted, split sheet is blocked, Spotify pitch is submitted, and creator, press, content, distribution, release-day, and post-release tasks are staged by checkpoint.
-                </p>
-              </div>
-              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Checkpoint status summary</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-                  Release Strategy is met, Rights & Metadata needs revision, DSP & Playlist is ready for review, and the remaining gates wait on task results.
-                </p>
-              </div>
-              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Agent notes that changed the mission</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-                  Marketing opened creator seeding, DSP/playlist notes preserved the pitch window, and Finance/Rights changed the rights checkpoint to needs revision.
-                </p>
-              </div>
-              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Decisions already made</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-                  Move the release to June 12, reject the next-Friday rush, do not announce before rights and delivery clear, and avoid generic creator or playlist blasts.
-                </p>
-              </div>
-              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Blockers and missing evidence</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-                  Signed split sheet, distributor confirmation, creator commitments, EPK target list, launch content approval, live-link verification, and 48-hour signal read are still missing.
-                </p>
-              </div>
-              <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">What would change the recommendation</p>
-                <p className="mt-3 text-[13px] leading-relaxed text-foreground/90">
-                  The Manager changes the date or mission path if splits stay blocked, distributor delivery fails, creator commitments are weak, or early post-release signal does not justify more push.
-                </p>
+                <div className="border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Original request</p>
+                  <p className="mt-3 text-[15px] font-bold leading-relaxed text-foreground">"I want to drop a new song next week"</p>
+                  <div className="mt-4 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3">
+                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/72">Review date</p>
+                    <p className="mt-1 text-[12.5px] font-bold leading-relaxed text-foreground/82">{decisionRecord.reviewDate}</p>
+                  </div>
+                </div>
               </div>
             </div>
 
-            {/* Mission Log / Events list */}
-            <div className="rounded-[18px] border border-foreground/5 bg-foreground/[0.035] p-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85">Mission log</p>
-              <div className="mt-4 space-y-3">
-                {missionEvents.map((event) => (
-                  <div key={`${event.type}-${event.summary}`} className="flex gap-3 text-[13px] leading-relaxed text-foreground/90">
-                    <span className="shrink-0 rounded-full bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">{event.type}</span>
-                    <span>{event.summary}</span>
+            <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+                <div>
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission record</p>
+                  <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Operating summary</h4>
+                </div>
+                <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{decisionRecord.missionTitle}</span>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {[
+                  {
+                    label: "Task status summary",
+                    value: "Strategy is accepted, split sheet is blocked, Spotify pitch is submitted, and creator, press, content, distribution, release-day, and post-release tasks are staged by checkpoint.",
+                  },
+                  {
+                    label: "Checkpoint status summary",
+                    value: "Release Strategy is met, Rights & Metadata needs revision, DSP & Playlist is ready for review, and the remaining gates wait on task results.",
+                  },
+                  {
+                    label: "Agent notes that changed the mission",
+                    value: "Marketing opened creator seeding, DSP/playlist notes preserved the pitch window, and Finance/Rights changed the rights checkpoint to needs revision.",
+                  },
+                  {
+                    label: "Decisions already made",
+                    value: "Move the release to June 12, reject the next-Friday rush, do not announce before rights and delivery clear, and avoid generic creator or playlist blasts.",
+                  },
+                  {
+                    label: "Blockers and missing evidence",
+                    value: "Signed split sheet, distributor confirmation, creator commitments, EPK target list, launch content approval, live-link verification, and 48-hour signal read are still missing.",
+                  },
+                  {
+                    label: "What would change the recommendation",
+                    value: "The Manager changes the date or mission path if splits stay blocked, distributor delivery fails, creator commitments are weak, or early post-release signal does not justify more push.",
+                  },
+                ].map((item) => (
+                  <div key={item.label} className="rounded-[16px] border border-foreground/8 bg-background/72 p-4">
+                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/72">{item.label}</p>
+                    <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/86">{item.value}</p>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* Bottom details block */}
-            <div className="border-t border-foreground/5 pt-6 text-[13px] leading-relaxed text-foreground/88 space-y-3">
+            <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-foreground/8 pb-4">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission log</p>
+                <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[11px] font-bold text-muted-foreground">{missionEvents.length} updates</span>
+              </div>
+              <div className="mt-4 divide-y divide-foreground/7 overflow-hidden rounded-[16px] border border-foreground/8 bg-background/72">
+                {missionEvents.map((event) => (
+                  <div key={`${event.type}-${event.summary}`} className="grid gap-2 px-4 py-3 sm:grid-cols-[150px_minmax(0,1fr)] sm:items-start">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">{event.type}</span>
+                    <span className="text-[13px] font-semibold leading-relaxed text-foreground/86">{event.summary}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-[18px] border border-foreground/8 bg-background/72 p-4 text-[13px] font-semibold leading-relaxed text-foreground/84">
               <p>
                 <span className="font-bold text-foreground">Evidence and decision limits:</span> Rejected moves: {decisionRecord.alternativesRejected.join(", ")}. Missing evidence: {decisionRecord.missingEvidence.join(", ")}. The decision changes if {decisionRecord.changeDecision}
               </p>
-              <p>
-                Review date: {decisionRecord.reviewDate}. Override state: {decisionRecord.override}. Quality review: {decisionRecord.qualityGate}.
+              <p className="mt-2">
+                Override state: {decisionRecord.override}. Quality review: {decisionRecord.qualityGate}.
               </p>
             </div>
           </div>
@@ -4899,102 +5195,137 @@ const SettingsField = ({ label, value, onChange }: { label: string; value: strin
   </label>
 );
 
+const ReadinessItemList = ({
+  title,
+  items,
+  icon,
+}: {
+  title: string;
+  items: SourceReadinessItem[];
+  icon: "check" | "upload" | "alert";
+}) => (
+  <section className="rounded-[20px] border border-foreground/8 bg-background/78 p-4 shadow-sm">
+    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/78">{title}</p>
+    <div className="mt-3 grid gap-2.5">
+      {items.map((item) => (
+        <div key={`${title}-${item.label}`} className="rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
+          <div className="flex items-start gap-3">
+            <span
+              className={cn(
+                "mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background",
+                icon === "check" && "text-success",
+                icon === "upload" && "text-warning",
+                icon === "alert" && "text-brand-accent",
+              )}
+            >
+              {icon === "check" ? <Check className="h-3.5 w-3.5" /> : icon === "upload" ? <Upload className="h-3.5 w-3.5" /> : <AlertCircle className="h-3.5 w-3.5" />}
+            </span>
+            <div className="min-w-0">
+              <p className="text-[13px] font-bold leading-snug text-foreground">{item.label}</p>
+              <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/88">{item.detail}</p>
+              <p className="mt-2 text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">{item.category}</p>
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  </section>
+);
+
 const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => void }) => {
   const Icon = agent.icon;
 
   return (
     <WorkspaceShell eyebrow="Specialist" title={agent.name} onBack={onBack}>
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-6 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-5 border-b border-foreground/6 pb-5">
-            <div className="flex items-start gap-4">
-              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border" style={{ backgroundColor: agent.color + "18", borderColor: agent.color + "35", color: agent.color }}>
-                <Icon className="h-6 w-6" />
-              </span>
-              <div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="font-display text-[24px] font-bold tracking-tight text-foreground">{agent.name}</h2>
-                  <span className="rounded-full bg-foreground/5 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Needs context</span>
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-5">
+          <section className="surface-elevated overflow-hidden rounded-[24px] shadow-sm">
+            <div className="p-5 sm:p-6">
+              <div className="flex flex-wrap items-start justify-between gap-5">
+                <div className="flex items-start gap-4">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border" style={{ backgroundColor: agent.color + "18", borderColor: agent.color + "35", color: agent.color }}>
+                    <Icon className="h-6 w-6" />
+                  </span>
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="font-display text-[24px] font-bold tracking-tight text-foreground">{agent.workspaceTitle}</h2>
+                      <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{agent.readinessLabel}</span>
+                    </div>
+                    <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/80">{agent.role}</p>
+                    <p className="mt-3 max-w-3xl text-[14px] font-semibold leading-relaxed text-muted-foreground/84">{agent.workspaceSubtitle}</p>
+                  </div>
                 </div>
-                <p className="mt-2 max-w-2xl text-[14px] font-semibold leading-relaxed text-muted-foreground/80">{agent.purpose}</p>
+                <button className="inline-flex items-center gap-2 rounded-[14px] border border-brand-accent/18 bg-brand-accent/[0.07] px-4 py-3 text-[13px] font-bold text-brand-accent transition-colors hover:bg-brand-accent/[0.1]">
+                  <MessageSquareText className="h-4 w-4" />
+                  {agent.managerHandoff}
+                </button>
               </div>
             </div>
-          </div>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <div className="rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-4">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Why access waits</p>
-              <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground/90">
-                This specialist should not make calls from guesswork. Add the required evidence first, then the Manager can use this role with more confidence.
-              </p>
-            </div>
-            <div className="rounded-[18px] border border-brand-accent/15 bg-brand-accent/[0.04] p-4">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">What the Manager can prepare</p>
-              <p className="mt-3 text-[14px] font-bold leading-relaxed text-foreground">{agent.managerCanPrepare}</p>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-[18px] border border-foreground/8 bg-background p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">What they can help with</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-3">
-              {agent.tools.map((tool) => (
-                <span key={tool} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2 text-[12px] font-bold text-foreground/90">
-                  {tool}
-                </span>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <aside className="grid content-start gap-5">
-          <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">What this specialist needs</p>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/88">
-              Add the documents or source exports that prove the specialist has enough context to work.
-            </p>
-
-            <div className="mt-5">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-[#c2410c]">Missing proof</p>
-              <div className="mt-3 grid gap-2">
-                {agent.requiredSources.map((source) => (
-                  <div key={source} className="flex items-center gap-3 rounded-[12px] border border-[#f97316]/15 bg-[#f97316]/[0.05] p-3 text-[13px] font-bold text-foreground">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background text-[#c2410c]">
-                      <Upload className="h-3 w-3" />
-                    </span>
-                    {source}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-emerald-700">Connected proof</p>
-              <div className="mt-3 grid gap-2">
-                {agent.connectedSources.map((source) => (
-                  <div key={source} className="flex items-center gap-3 rounded-[12px] border border-emerald-600/10 bg-emerald-600/[0.055] p-3 text-[13px] font-bold text-foreground/90">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-background text-emerald-700">
-                      <Check className="h-3 w-3" />
-                    </span>
-                    {source}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <button className="mt-5 flex w-full flex-col items-center justify-center rounded-[16px] border border-dashed border-foreground/18 bg-foreground/[0.025] p-5 text-center transition-colors hover:bg-foreground/[0.05]">
-              <Upload className="h-5 w-5 text-muted-foreground/85" />
-              <p className="mt-2 text-[13px] font-bold text-foreground">Upload files</p>
-              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/88">PDF, CSV, screenshots, or exports</p>
-            </button>
           </section>
 
-          <section className="rounded-[24px] border border-foreground/8 bg-background/85 p-5 shadow-sm">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/80">Optional context</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {agent.optionalSources.map((source) => (
-                <span key={source} className="rounded-full border border-foreground/8 bg-foreground/[0.025] px-3 py-1.5 text-[11px] font-bold text-foreground/86">
-                  {source}
-                </span>
+          <section className="grid gap-4 lg:grid-cols-2">
+            {agent.workspaceSections.map((section) => (
+              <AgentWorkspaceBoard key={section.title} section={section} color={agent.color} />
+            ))}
+          </section>
+
+          <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Agent chat</p>
+                  <h3 className="mt-1 font-display text-[20px] font-bold tracking-tight text-foreground">Talk to {agent.name}</h3>
+                </div>
+                <MessageSquareText className="h-5 w-5 text-muted-foreground/70" />
+              </div>
+              <div className="mt-4 grid gap-3">
+                {agent.officeChat.map((message, index) => (
+                  <div
+                    key={`${message.speaker}-${index}`}
+                    className={cn(
+                      "max-w-[88%] rounded-[16px] border px-4 py-3 text-[13px] font-semibold leading-relaxed",
+                      message.speaker === "Artist"
+                        ? "justify-self-end border-brand-accent/15 bg-brand-accent/[0.065] text-foreground"
+                        : "justify-self-start border-foreground/8 bg-foreground/[0.025] text-foreground/88",
+                    )}
+                  >
+                    <p className="mb-1 text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/72">{message.speaker}</p>
+                    {message.text}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center gap-2 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2">
+                <span className="min-w-0 flex-1 text-[12px] font-semibold text-muted-foreground/80">Ask about {agent.title === "Available now" ? "today's operating decision" : agent.role.toLowerCase()}...</span>
+                <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-[22px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground/80">Manager handoff</p>
+              <p className="mt-2 text-[14px] font-bold leading-relaxed text-foreground">{agent.managerHandoff}</p>
+              <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/84">Specialist notes become Manager context for missions, decisions, source requests, and permission checks.</p>
+              <button className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-[14px] border border-foreground/10 bg-foreground/[0.035] px-4 py-3 text-[13px] font-bold text-foreground transition-colors hover:bg-foreground/[0.06]">
+                <FileText className="h-4 w-4" />
+                Send note to Manager
+              </button>
+            </div>
+          </section>
+        </div>
+
+        <aside className="grid content-start gap-4">
+          <section className="rounded-[22px] border border-foreground/8 bg-background/90 p-4 shadow-sm xl:sticky xl:top-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Source rail</p>
+                <p className="mt-1 text-[13px] font-bold text-foreground">Connectors and files</p>
+              </div>
+              <span className="rounded-full border border-foreground/8 bg-foreground/[0.025] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{agent.connectorMarks.length}</span>
+            </div>
+            <div className="mt-4 grid gap-2">
+              {agent.connectorMarks.map((mark) => (
+                <ConnectorRailButton key={mark.label} mark={mark} />
               ))}
             </div>
           </section>
@@ -5003,6 +5334,73 @@ const LockedAgentWorkspace = ({ agent, onBack }: { agent: Agent; onBack: () => v
     </WorkspaceShell>
   );
 };
+
+const workspaceStatusClass = (status: string) => {
+  const normalized = status.toLowerCase();
+  if (normalized.includes("missing") || normalized.includes("blocking") || normalized.includes("needed") || normalized.includes("do not")) return "border-warning/20 bg-warning/[0.06] text-warning";
+  if (normalized.includes("ready") || normalized.includes("pitchable") || normalized.includes("realistic") || normalized.includes("draftable")) return "border-success/20 bg-success/[0.08] text-success";
+  return "border-foreground/10 bg-foreground/[0.035] text-muted-foreground";
+};
+
+const AgentWorkspaceBoard = ({ section, color }: { section: AgentWorkspaceSection; color: string }) => (
+  <div className="rounded-[24px] border border-foreground/8 bg-background/86 p-5 shadow-sm">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em]" style={{ color }}>
+          {section.eyebrow}
+        </p>
+        <h3 className="mt-1 font-display text-[22px] font-bold tracking-tight text-foreground">{section.title}</h3>
+      </div>
+      {section.actionLabel && (
+        <button className="shrink-0 rounded-[12px] border border-foreground/10 bg-foreground/[0.025] px-3 py-2 text-[12px] font-bold text-foreground transition-colors hover:bg-foreground/[0.055]">
+          {section.actionLabel}
+        </button>
+      )}
+    </div>
+    <div className="mt-4 grid gap-3">
+      {section.items.map((item) => (
+        <article key={item.title} className="rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[15px] font-bold leading-snug text-foreground">{item.title}</p>
+              <p className="mt-1 text-[11px] font-bold uppercase tracking-[0.1em] text-muted-foreground/72">{item.meta}</p>
+            </div>
+            <span className={cn("rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em]", workspaceStatusClass(item.status))}>{item.status}</span>
+          </div>
+          <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/88">{item.detail}</p>
+          {item.value && <p className="mt-3 text-[18px] font-display font-bold tracking-tight text-foreground">{item.value}</p>}
+        </article>
+      ))}
+    </div>
+  </div>
+);
+
+const connectorMarkClass = (status: ConnectorMark["status"]) =>
+  status === "active"
+    ? "border-success/22 bg-success/[0.085] text-success"
+    : status === "system"
+      ? "border-brand-accent/18 bg-brand-accent/[0.065] text-brand-accent"
+      : status === "needs_connection"
+        ? "border-warning/22 bg-warning/[0.065] text-warning"
+        : "border-foreground/10 bg-foreground/[0.025] text-muted-foreground";
+
+const ConnectorRailButton = ({ mark }: { mark: ConnectorMark }) => (
+  <button className="group w-full rounded-[16px] border border-foreground/8 bg-foreground/[0.018] p-3 text-left transition-colors hover:bg-foreground/[0.045]">
+    <div className="flex items-start gap-3">
+      <span className={cn("mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border", connectorMarkClass(mark.status))}>
+        {mark.status === "active" ? <Check className="h-4 w-4" /> : mark.status === "system" ? <Sparkles className="h-4 w-4" /> : mark.status === "needs_connection" ? <CalendarClock className="h-4 w-4" /> : <Upload className="h-4 w-4" />}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[13px] font-bold leading-snug text-foreground">{mark.label}</span>
+        <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground/82">{mark.detail}</span>
+        <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">
+          {mark.action}
+          <ChevronRight className="h-3 w-3 transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </span>
+    </div>
+  </button>
+);
 
 const ReviewWorkspace = ({ onBack, onMission }: { onBack: () => void; onMission: (id?: string) => void }) => (
   <WorkspaceShell eyebrow="Review / What Changed" title="Rights gate review" onBack={onBack}>
