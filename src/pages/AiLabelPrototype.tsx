@@ -19,6 +19,7 @@ import {
   Megaphone,
   MessageSquareText,
   Mic2,
+  Music2,
   PenLine,
   Route,
   Sparkles,
@@ -159,6 +160,13 @@ type RecentConversation = {
   messages: ConversationMessage[];
 };
 
+type CreatedWorkArtifact = {
+  type: "music_item" | "mission" | "task" | "checkpoint" | "test";
+  title: string;
+  body: string;
+  id?: string;
+};
+
 type ConversationMessage = {
   id: string;
   speaker: "artist" | "manager";
@@ -169,7 +177,8 @@ type ConversationMessage = {
   reviewPoint?: string;
   whyThisCall?: string[];
   rejectedMoves?: string[];
-  workCreated?: { type: "mission" | "task" | "checkpoint" | "test"; title: string; body: string; id?: string };
+  workCreated?: CreatedWorkArtifact;
+  workCreatedItems?: CreatedWorkArtifact[];
 };
 
 type TaskResult = {
@@ -1616,6 +1625,17 @@ const workDrafts = [
   },
 ];
 
+const normalizeCreatedWork = (message: ConversationMessage): CreatedWorkArtifact[] => {
+  if (message.workCreatedItems?.length) return message.workCreatedItems;
+  return message.workCreated ? [message.workCreated] : [];
+};
+
+const isReleaseSongPrompt = (text: string) =>
+  (/\b(release|drop|put out|launch|schedule|distribute)\b/i.test(text) &&
+    /\b(song|track|single|record)\b/i.test(text)) ||
+  /\bnew song\b/i.test(text) ||
+  /\brelease a song\b/i.test(text);
+
 const baseConversations: RecentConversation[] = [
   {
     id: "night-bus-budget",
@@ -1654,13 +1674,21 @@ const baseConversations: RecentConversation[] = [
         id: "night-bus-budget-work",
         speaker: "manager",
         label: "Work created",
-        body: "Created the June 12 release mission, release tasks, checkpoints, agent notes, and mission memory.",
-        workCreated: {
-          type: "mission",
-          title: "Release Night Bus on June 12",
-          body: "Backwards release plan with rights, distribution, DSP, creator, press, content, launch-day, and post-release checkpoints.",
-          id: "night-bus-validation"
-        }
+        body: "Created the Night Bus music record as the source of song state, then linked a June 12 release mission to that song. Tasks, checkpoints, agent notes, and mission memory now live under the mission.",
+        workCreatedItems: [
+          {
+            type: "music_item",
+            title: "Night Bus",
+            body: "Song record created/updated with lifecycle, files, rights, source limits, Manager read, and linked release work.",
+            id: "song-night-bus"
+          },
+          {
+            type: "mission",
+            title: "Release Night Bus on June 12",
+            body: "Backwards release plan linked to Night Bus with rights, distribution, DSP, creator, press, content, launch-day, and post-release checkpoints.",
+            id: "night-bus-validation"
+          }
+        ]
       },
     ],
   },
@@ -1713,9 +1741,9 @@ const baseConversations: RecentConversation[] = [
 const statusText: Record<View, string> = {
   connectArtist: "Connect artist",
   setup: "Setup",
-  labelHQ: "Label HQ",
+  labelHQ: "Desk HQ",
   musicWorkspace: "Music",
-  staffWorkspace: "Staff",
+  staffWorkspace: "Team Agents",
   managerOffice: "Manager office",
   conversationWorkspace: "Conversation",
   investigation: "Manager run",
@@ -1732,9 +1760,9 @@ const statusText: Record<View, string> = {
 const mobileTitleText: Record<View, string> = {
   connectArtist: "Connect",
   setup: "Setup",
-  labelHQ: "Label HQ",
+  labelHQ: "Desk HQ",
   musicWorkspace: "Music",
-  staffWorkspace: "Team",
+  staffWorkspace: "Team Agents",
   managerOffice: "Manager",
   conversationWorkspace: "Conversation",
   investigation: "Manager run",
@@ -1807,29 +1835,37 @@ const WorkspaceShell = ({
   eyebrow,
   title,
   onBack,
+  showBack = true,
+  showHeader = true,
   children,
 }: {
   eyebrow: string;
   title: string;
   onBack: () => void;
+  showBack?: boolean;
+  showHeader?: boolean;
   children: React.ReactNode;
 }) => (
   <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
-    <div className="sticky top-[61px] z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background px-3 py-2 lg:static lg:mx-0 lg:mb-6 lg:border-0 lg:bg-transparent lg:p-0">
-      <button
-        onClick={onBack}
-        className="group flex items-center gap-2 text-[13px] font-semibold text-muted-foreground/85 transition-colors hover:text-foreground"
-      >
-        <div className="flex h-7 w-7 items-center justify-center rounded-md border border-foreground/10 bg-background transition-colors group-hover:border-foreground/20 group-hover:bg-foreground/[0.03]">
-          <ArrowLeft className="h-4 w-4" />
-        </div>
-        Back
-      </button>
-    </div>
-    <div className="mb-5 lg:mb-8">
-      <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
-      <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.7rem]">{title}.</h1>
-    </div>
+    {showBack ? (
+      <div className="sticky top-[61px] z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background px-3 py-2 lg:static lg:mx-0 lg:mb-6 lg:border-0 lg:bg-transparent lg:p-0">
+        <button
+          onClick={onBack}
+          className="group flex items-center gap-2 text-[13px] font-semibold text-muted-foreground/85 transition-colors hover:text-foreground"
+        >
+          <div className="flex h-7 w-7 items-center justify-center rounded-md border border-foreground/10 bg-background transition-colors group-hover:border-foreground/20 group-hover:bg-foreground/[0.03]">
+            <ArrowLeft className="h-4 w-4" />
+          </div>
+          Back
+        </button>
+      </div>
+    ) : null}
+    {showHeader ? (
+      <div className="mb-5 lg:mb-8">
+        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
+        <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.7rem]">{title}.</h1>
+      </div>
+    ) : null}
     {children}
   </div>
 );
@@ -1872,13 +1908,13 @@ const MobileBottomNav = ({
     { label: "Music", icon: Library, onClick: onMusic, active: active === "music" },
     { label: "Missions", icon: ClipboardCheck, onClick: onMissions, active: active === "missions" },
     { label: "Manager", icon: MessageSquareText, onClick: onManager, active: false },
-    { label: "Team", icon: UsersRound, onClick: onStaff, active: active === "staff" },
+    { label: "Team Agents", icon: UsersRound, onClick: onStaff, active: active === "staff" },
     { label: "Profile", icon: Settings, onClick: onSettings, active: active === "settings" },
   ];
 
   return (
     <nav
-      aria-label="Mobile label navigation"
+      aria-label="Mobile desk navigation"
       className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-6 rounded-xl border border-foreground/10 bg-background p-1.5 shadow-[0_8px_24px_rgba(17,19,24,0.08)] lg:hidden"
       style={{ paddingBottom: "calc(0.375rem + env(safe-area-inset-bottom))" }}
     >
@@ -1905,6 +1941,7 @@ const MobileBottomNav = ({
 export default function AiLabelPrototype() {
   const [musicObjectsList, setMusicObjectsList] = useState<MusicObject[]>(musicObjects);
   const [externalSigning, setExternalSigning] = useState<{ songId: string; contributorName: string } | null>(null);
+  const [pendingMusicOpenId, setPendingMusicOpenId] = useState<string | null>(null);
   const [view, setView] = useState<View>("connectArtist");
   const [profile, setProfile] = useState<ArtistProfile>(artist);
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null);
@@ -2004,7 +2041,13 @@ export default function AiLabelPrototype() {
     goTo("conversationWorkspace");
   };
 
-  const openCreatedWork = (work: NonNullable<ConversationMessage["workCreated"]>) => {
+  const openCreatedWork = (work: CreatedWorkArtifact) => {
+    if (work.type === "music_item") {
+      setPendingMusicOpenId(work.id ?? "song-night-bus");
+      goTo("musicWorkspace");
+      return;
+    }
+
     if (work.type === "mission") {
       openMission(work.id);
       return;
@@ -2057,20 +2100,49 @@ export default function AiLabelPrototype() {
     
     // Create a new conversation object
     const newId = `conv-${Date.now()}`;
+    const releaseSongIntent = isReleaseSongPrompt(askText);
     const newConv: RecentConversation = {
       id: newId,
-      topic: askText.length > 30 ? askText.substring(0, 30) + "..." : askText,
-      lastUpdate: "",
-      status: "Analyzing...",
-      prompt: "Continue this new conversation.",
-      summary: "Fresh management thread initialized from the Manager Office.",
+      topic: releaseSongIntent ? "New song release planning" : askText.length > 30 ? askText.substring(0, 30) + "..." : askText,
+      lastUpdate: "Now",
+      status: releaseSongIntent ? "Music record and release mission prepared" : "Analyzing...",
+      prompt: releaseSongIntent ? "Continue the new song release planning conversation." : "Continue this new conversation.",
+      summary: releaseSongIntent ? "Release-song thread that creates a Music record first, then links mission work to it." : "Fresh management thread initialized from the Manager Office.",
       messages: [
         {
           id: `${newId}-q1`,
           speaker: "artist",
           label: "You asked",
           body: askText,
-        }
+        },
+        ...(releaseSongIntent ? [
+          {
+            id: `${newId}-a1`,
+            speaker: "manager" as const,
+            label: "Manager answered",
+            body: "Treat the song as the durable recorded-work object first. I would create the song record, keep its files, rights, source limits, and lifecycle in Music, then create a release mission linked to that song so the rollout work has tasks, checkpoints, notes, reviews, and permission gates.",
+          },
+          {
+            id: `${newId}-work`,
+            speaker: "manager" as const,
+            label: "Work created",
+            body: "Prepared the prototype path as a linked Music item plus release mission. The song owns recorded-work state; the mission owns coordinated release work.",
+            workCreatedItems: [
+              {
+                type: "music_item" as const,
+                title: "Night Bus",
+                body: "Music record for the song: lifecycle, files, details, rights, source limits, and linked release work.",
+                id: "song-night-bus",
+              },
+              {
+                type: "mission" as const,
+                title: "Release Night Bus on June 12",
+                body: "Release mission linked to the song with rights, distribution, DSP, creator, press, content, launch-day, and post-release checkpoints.",
+                id: "night-bus-validation",
+              },
+            ],
+          },
+        ] : [])
       ]
     };
 
@@ -2129,6 +2201,8 @@ export default function AiLabelPrototype() {
                 musicObjectsList={musicObjectsList}
                 setMusicObjectsList={setMusicObjectsList}
                 setExternalSigning={setExternalSigning}
+                targetMusicObjectId={pendingMusicOpenId}
+                onTargetMusicObjectOpened={() => setPendingMusicOpenId(null)}
               />
             )}
             {view === "staffWorkspace" && (
@@ -2230,7 +2304,7 @@ export default function AiLabelPrototype() {
               <BrandMark size="sm" />
               <div>
                 <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/74">Ordersounds</p>
-                <h1 className="font-display text-2xl font-display font-bold leading-none tracking-tight">AI Record Label</h1>
+                <h1 className="font-display text-2xl font-display font-bold leading-none tracking-tight">Desk</h1>
               </div>
             </button>
             <Badge>{statusText[view]}</Badge>
@@ -2367,7 +2441,7 @@ const SetupScreen = ({
                 onClick={onContinue} 
                 className="group inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-foreground px-6 text-[12px] font-bold text-background transition-all hover:opacity-90 shadow-sm"
               >
-                Enter Label HQ
+                Enter Desk HQ
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </button>
             </div>
@@ -2414,8 +2488,8 @@ const LabelHQScreen = ({
   <section className="mx-auto max-w-7xl text-foreground">
     <div className="mb-4 flex flex-col gap-3 lg:mb-5 lg:flex-row lg:items-end lg:justify-between">
       <div>
-        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Label Read</p>
-        <h1 className="font-display mt-1.5 text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">Label HQ</h1>
+        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Desk Read</p>
+        <h1 className="font-display mt-1.5 text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">Desk HQ</h1>
       </div>
       <div className="flex gap-3">
         <button onClick={() => onWorkspace("artistProfileWorkspace")} className="group flex h-10 items-center gap-2 rounded-lg border border-foreground/10 bg-background px-4 text-[13px] font-semibold text-foreground transition-colors hover:bg-foreground/5 hover:border-foreground/20">
@@ -2483,9 +2557,12 @@ const LabelHQScreen = ({
         {/* REFINED STAFF GRID */}
         <div className="space-y-5">
            <div className="flex items-center justify-between border-b border-foreground/8 pb-3">
-              <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">Label Staff</p>
+              <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">Team Agents</p>
               <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/55">5 active AI units</span>
            </div>
+           <p className="max-w-2xl text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
+             Specialized AI agents that help the artist and their team prepare work, spot gaps, and move missions forward.
+           </p>
            <div data-testid="mobile-team-strip" className="grid gap-2 rounded-xl border border-foreground/10 bg-background p-3 lg:hidden">
              <div className="flex items-center justify-between">
                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-brand-accent">Team readiness</p>
@@ -2530,10 +2607,10 @@ const StaffWorkspace = ({
     <section className="text-foreground">
       <div className="mb-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Team</p>
-          <h1 className="font-display mt-2 text-[2.25rem] font-bold leading-tight tracking-tight text-foreground sm:text-[2.7rem] lg:text-[3.2rem]">Artist Team</h1>
+          <p className="font-ui text-[11px] font-bold uppercase tracking-[0.15em] text-brand-accent">Team Agents</p>
+          <h1 className="font-display mt-2 text-[2.25rem] font-bold leading-tight tracking-tight text-foreground sm:text-[2.7rem] lg:text-[3.2rem]">Artist Team Agents</h1>
           <p className="mt-2 max-w-2xl text-[16px] font-medium leading-relaxed text-muted-foreground/80">
-            The people around the artist, what they can safely prepare today, and the exact sources or files that would make each specialist stronger.
+            Specialized AI agents that help the artist and their team prepare work, spot gaps, and move missions forward.
           </p>
         </div>
         <div className="grid w-full max-w-xl grid-cols-4 overflow-hidden rounded-[18px] border border-foreground/10 bg-background/80 shadow-sm">
@@ -2643,6 +2720,8 @@ const MusicWorkspace = ({
   musicObjectsList,
   setMusicObjectsList,
   setExternalSigning,
+  targetMusicObjectId,
+  onTargetMusicObjectOpened,
 }: {
   missions: Mission[];
   onBack: () => void;
@@ -2652,6 +2731,8 @@ const MusicWorkspace = ({
   musicObjectsList: MusicObject[];
   setMusicObjectsList: React.Dispatch<React.SetStateAction<MusicObject[]>>;
   setExternalSigning: (signing: { songId: string; contributorName: string } | null) => void;
+  targetMusicObjectId?: string | null;
+  onTargetMusicObjectOpened?: () => void;
 }) => {
   const [tab, setTab] = useState<"songs" | "projects">("songs");
   const [mode, setMode] = useState<"library" | "songDetail" | "projectDetail">("library");
@@ -2679,13 +2760,21 @@ const MusicWorkspace = ({
     setMode(object.kind === "song" ? "songDetail" : "projectDetail");
   };
 
+  useEffect(() => {
+    if (!targetMusicObjectId) return;
+    const targetObject = getMusicObjectFn(targetMusicObjectId);
+    if (!targetObject) return;
+    openObject(targetObject, targetObject.kind === "project" ? "projects" : "songs");
+    onTargetMusicObjectOpened?.();
+  }, [targetMusicObjectId, musicObjectsList]);
+
   const backToLibrary = () => {
     setTab(returnTab);
     setMode("library");
   };
 
   return (
-    <WorkspaceShell eyebrow="Artist objects" title="Music" onBack={onBack}>
+    <WorkspaceShell eyebrow="Artist objects" title="Music" onBack={onBack} showBack={mode === "library"} showHeader={mode === "library"}>
       {mode === "library" && (
         <section data-testid="music-library" className="grid gap-5">
           <div className="flex flex-col gap-4 border-b border-foreground/5 pb-5 lg:flex-row lg:items-end lg:justify-between">
@@ -3007,7 +3096,7 @@ const MusicSongDetail = ({
               </div>
             </div>
           </div>
-          <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={song.linkedTaskIds} onMission={onMission} onWorkspace={onWorkspace} onDrawer={onDrawer} />
+          <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={song.linkedTaskIds} onMission={onMission} />
         </div>
       )}
 
@@ -3168,7 +3257,7 @@ const MusicProjectDetail = ({
             ))}
           </div>
         </div>
-        <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={project.linkedTaskIds} onMission={onMission} onWorkspace={onWorkspace} onDrawer={onDrawer} />
+        <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={project.linkedTaskIds} onMission={onMission} />
       </div>
     </section>
   );
@@ -3202,14 +3291,10 @@ const MusicLinkedWork = ({
   linkedMissions,
   linkedTaskIds,
   onMission,
-  onWorkspace,
-  onDrawer,
 }: {
   linkedMissions: Mission[];
   linkedTaskIds: string[];
   onMission: (id?: string) => void;
-  onWorkspace: (view: View) => void;
-  onDrawer: (drawer: DrawerKind) => void;
 }) => {
   const linkedTasks = linkedTaskIds.map((taskId) => taskRows.find((row) => row.id === taskId)).filter(Boolean) as ReleaseTask[];
 
@@ -3221,7 +3306,9 @@ const MusicLinkedWork = ({
           <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground">Mission path</h4>
         </div>
         {linkedTasks.length ? (
-          <span className="rounded-md border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-semibold text-foreground/78">{linkedTasks.length} tasks</span>
+          <span className="rounded-md border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-semibold text-foreground/78">
+            {linkedTasks.length} task{linkedTasks.length === 1 ? "" : "s"}
+          </span>
         ) : null}
       </div>
 
@@ -3241,7 +3328,6 @@ const MusicLinkedWork = ({
                   <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
                     {linkedTasks.length} task{linkedTasks.length === 1 ? "" : "s"} attached
                   </span>
-                  <span className="text-[11px] font-semibold text-brand-accent">Open linked mission</span>
                 </span>
               </button>
             )) : (
@@ -3251,10 +3337,6 @@ const MusicLinkedWork = ({
         </section>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        <ProductButton variant="secondary" onClick={() => onWorkspace("tasksWorkspace")}>View tasks</ProductButton>
-        <ProductButton variant="quiet" onClick={() => onDrawer("evidence")}>View evidence</ProductButton>
-      </div>
     </aside>
   );
 };
@@ -3315,15 +3397,15 @@ const LabelHQRail = ({
   onSettings: () => void;
 }) => {
   const railItems = [
-    { label: "Label HQ", icon: Gauge, onClick: onLabelHQ, active: active === "labelHQ" },
+    { label: "Desk HQ", icon: Gauge, onClick: onLabelHQ, active: active === "labelHQ" },
     { label: "Music", icon: Library, onClick: onMusic, active: active === "music" },
-    { label: "Staff", icon: UsersRound, onClick: onStaff, active: active === "staff" },
+    { label: "Team Agents", icon: UsersRound, onClick: onStaff, active: active === "staff" },
     { label: "Missions", icon: ClipboardCheck, onClick: onMissions, active: active === "missions" },
   ];
 
   return (
     <nav
-      aria-label="Record label navigation"
+      aria-label="Ordersounds Desk navigation"
       className="hidden min-w-0 flex-col justify-between overflow-y-auto border-r border-foreground/10 bg-background p-3 lg:sticky lg:top-0 lg:flex lg:h-screen"
     >
       {/* TOP: brand + nav */}
@@ -3332,7 +3414,7 @@ const LabelHQRail = ({
           <BrandMark size="sm" />
           <div className="min-w-0">
             <p className="font-display truncate text-[14px] font-semibold text-foreground">Ordersounds</p>
-            <p className="font-ui text-[9px] font-semibold tracking-[0.04em] text-muted-foreground uppercase opacity-70">AI RECORD LABEL</p>
+            <p className="font-ui text-[9px] font-semibold tracking-[0.04em] text-muted-foreground uppercase opacity-70">ARTIST OPERATING DESK</p>
           </div>
         </div>
 
@@ -3495,7 +3577,7 @@ const LightAttentionSummary = ({ onDrawer, onWorkspace }: { onDrawer: (drawer: D
       <div className="space-y-6 pl-1">
         {[
           { label: "Milestone", title: "Started content testing", time: "2h ago" },
-          { label: "Staff", title: "Creative brief sent to Marketing", time: "5h ago" },
+          { label: "Team Agents", title: "Creative brief sent to Marketing", time: "5h ago" },
           { label: "System", title: "Nigeria signal verified by Manager", time: "Yesterday" }
         ].map((item, i) => (
           <div key={i} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
@@ -3905,6 +3987,7 @@ const ManagerDeskPanel = ({
                 <button
                   onClick={startManagerRun}
                   disabled={!askText}
+                  aria-label="Ask Manager"
                   className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-accent text-primary-foreground shadow-lg transition-all hover:scale-105 disabled:opacity-20"
                 >
                   <ArrowRight className="h-5 w-5" />
@@ -4041,7 +4124,7 @@ const ConversationWorkspace = ({
   setDraft: (val: string) => void;
   onSend: () => void;
   onBack: () => void;
-  onOpenCreatedWork: (work: NonNullable<ConversationMessage["workCreated"]>) => void;
+  onOpenCreatedWork: (work: CreatedWorkArtifact) => void;
 }) => {
   return (
     <WorkspaceShell eyebrow="Direct Message" title={conversation.topic} onBack={onBack}>
@@ -4051,12 +4134,13 @@ const ConversationWorkspace = ({
           <div className="flex flex-col gap-10 pb-32">
              {messages.map((msg, idx) => {
                 const isAI = msg.speaker === "manager";
+                const createdWork = normalizeCreatedWork(msg);
                 return (
                    <div key={msg.id} className={cn("flex flex-col gap-4", !isAI && "items-end")}>
                       <div className={cn("flex items-center gap-3", !isAI && "flex-row-reverse")}>
                          <div className={cn(
                             "flex h-8 w-8 items-center justify-center rounded-lg shadow-sm",
-                            isAI ? "bg-foreground text-background" : "bg-brand-accent text-primary-foreground"
+                            isAI ? "bg-foreground text-background" : "bg-foreground/[0.08] text-foreground"
                          )}>
                             {isAI ? <Sparkles className="h-4 w-4" /> : <UsersRound className="h-4 w-4" />}
                          </div>
@@ -4065,35 +4149,48 @@ const ConversationWorkspace = ({
                       <div className={cn(
                          "rounded-2xl border transition-all max-w-2xl",
                          idx === 0 ? "p-5" : "p-6",
-                         isAI ? "rounded-tl-none border-foreground/5 bg-foreground/[0.02] text-foreground/80 shadow-sm" : "rounded-tr-none border-brand-accent/20 bg-brand-accent text-primary-foreground shadow-lg shadow-brand-accent/10"
-                      )}>
-                         <p className={cn("font-medium leading-relaxed", idx === 0 ? "text-[14px]" : "text-[15px]")}>
+                         isAI
+                           ? "rounded-tl-none border-foreground/8 bg-background text-foreground shadow-sm"
+                           : "rounded-tr-none border-foreground/10 bg-foreground text-background shadow-sm"
+                      )}
+                        data-testid={`conversation-message-${msg.speaker}`}
+                      >
+                         <p className={cn("font-normal leading-[1.55] text-current", idx === 0 ? "text-[14px]" : "text-[15px]")}>
                             {msg.body}
                          </p>
                          
-                         {/* Work Created Artifact */}
-                         {msg.workCreated && (
-                            <div className="mt-6 rounded-xl border border-foreground/10 bg-background/50 p-5 shadow-inner">
-                               <div className="flex items-center gap-3 mb-3">
-                                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent text-primary-foreground">
-                                     {msg.workCreated.type === "mission" ? <Route className="h-3.5 w-3.5" /> : 
-                                      msg.workCreated.type === "task" ? <ClipboardCheck className="h-3.5 w-3.5" /> : 
-                                      <Gauge className="h-3.5 w-3.5" />}
+                         {createdWork.length > 0 && (
+                            <div className="mt-6 grid gap-3">
+                              {createdWork.map((work) => {
+                                const WorkIcon =
+                                  work.type === "music_item" ? Music2 :
+                                  work.type === "mission" ? Route :
+                                  work.type === "task" ? ClipboardCheck :
+                                  Gauge;
+                                const artifactLabel = work.type === "music_item" ? "Music item" : work.type;
+                                return (
+                                  <div key={`${work.type}-${work.id ?? work.title}`} className="rounded-xl border border-foreground/10 bg-background p-4 text-foreground shadow-sm">
+                                     <div className="mb-3 flex items-center gap-3">
+                                        <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground">
+                                           <WorkIcon className="h-3.5 w-3.5" />
+                                        </div>
+                                        <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/85">
+                                           {artifactLabel} created
+                                        </p>
+                                     </div>
+                                     <h4 className="text-[14px] font-semibold text-foreground">{work.title}</h4>
+                                     <p className="mt-1.5 text-[12px] leading-[1.5] text-muted-foreground/88">{work.body}</p>
+                                     <button
+                                       onClick={() => onOpenCreatedWork(work)}
+                                       aria-label={`Open created ${artifactLabel}: ${work.title}`}
+                                       className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground/[0.035] py-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-foreground/80 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+                                     >
+                                        Open created {artifactLabel}
+                                        <ChevronRight className="h-3.5 w-3.5" />
+                                     </button>
                                   </div>
-                                  <p className="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/85">
-                                     {msg.workCreated.type} created
-                                  </p>
-                               </div>
-                               <h4 className="text-[14px] font-bold text-foreground">{msg.workCreated.title}</h4>
-                               <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground/88">{msg.workCreated.body}</p>
-                               <button
-                                 onClick={() => onOpenCreatedWork(msg.workCreated!)}
-                                 aria-label={`Open created ${msg.workCreated.type}: ${msg.workCreated.title}`}
-                                 className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground/[0.03] py-2 text-[11px] font-bold uppercase tracking-wider text-foreground/80 transition-all hover:bg-foreground/[0.06] hover:text-foreground"
-                               >
-                                  Open created {msg.workCreated.type}
-                                  <ChevronRight className="h-3.5 w-3.5" />
-                               </button>
+                                );
+                              })}
                             </div>
                          )}
 

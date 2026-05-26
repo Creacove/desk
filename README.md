@@ -1,6 +1,6 @@
-# AI Record Label Prototype
+# Ordersounds Desk Prototype
 
-Standalone copy of the AI record label prototype.
+Standalone copy of the Ordersounds Desk prototype.
 
 ## Files
 

@@ -7,7 +7,7 @@ import AiLabelPrototype from "./pages/AiLabelPrototype";
 const enterLabelHq = () => {
   render(<AiLabelPrototype />);
   fireEvent.click(screen.getByRole("button", { name: /continue to artist context/i }));
-  fireEvent.click(screen.getByRole("button", { name: /enter label hq/i }));
+  fireEvent.click(screen.getByRole("button", { name: /enter desk hq/i }));
 };
 
 beforeEach(() => {
@@ -19,28 +19,28 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("AiLabelPrototype Label HQ operating room", () => {
+describe("AiLabelPrototype Ordersounds Desk operating room", () => {
   it("exposes a mobile app shell with bottom navigation while keeping the desktop rail for larger screens", () => {
     enterLabelHq();
 
-    const desktopRail = screen.getByRole("navigation", { name: /record label navigation/i });
+    const desktopRail = screen.getByRole("navigation", { name: /ordersounds desk navigation/i });
     expect(desktopRail).toHaveClass("hidden", "lg:flex");
 
     const mobileTopBar = screen.getByTestId("mobile-app-topbar");
     expect(mobileTopBar).toHaveClass("lg:hidden");
     expect(mobileTopBar).toHaveTextContent(/ordersounds/i);
-    expect(mobileTopBar).toHaveTextContent(/label hq/i);
+    expect(mobileTopBar).toHaveTextContent(/desk hq/i);
 
-    const mobileNav = screen.getByRole("navigation", { name: /mobile label navigation/i });
+    const mobileNav = screen.getByRole("navigation", { name: /mobile desk navigation/i });
     expect(mobileNav).toHaveClass("lg:hidden");
     expect(screen.getByRole("button", { name: /^hq$/i })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /^missions$/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^manager$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^team$/i })).toBeInTheDocument();
+    expect(within(mobileNav).getByRole("button", { name: /^team agents$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^profile$/i })).toBeInTheDocument();
   }, 15000);
 
-  it("keeps the core Label HQ workflow reachable in the mobile density layout", () => {
+  it("keeps the core Desk HQ workflow reachable in the mobile density layout", () => {
     enterLabelHq();
 
     expect(screen.getByTestId("mobile-priority-stack")).toBeInTheDocument();
@@ -52,7 +52,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByRole("button", { name: /talk to manager/i })).toBeInTheDocument();
   });
 
-  it("routes Label HQ strip signals to the right work surfaces", () => {
+  it("routes Desk HQ strip signals to the right work surfaces", () => {
     enterLabelHq();
     fireEvent.click(screen.getByRole("button", { name: /open active missions/i }));
     expect(screen.getByRole("heading", { name: /^missions\.?$/i })).toBeInTheDocument();
@@ -95,6 +95,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     fireEvent.click(screen.getByRole("button", { name: /open song night bus/i }));
     const nightBusRoom = screen.getByTestId("music-song-detail");
     expect(nightBusRoom).toHaveTextContent(/song room/i);
+    expect(screen.queryByRole("heading", { name: /^music\.?$/i })).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: /song stage/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /recording/i })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: /released/i })).toBeInTheDocument();
@@ -102,6 +103,10 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(within(nightBusRoom).getByRole("button", { name: /^files$/i })).toBeInTheDocument();
     expect(within(nightBusRoom).getByRole("button", { name: /^details$/i })).toBeInTheDocument();
     expect(within(nightBusRoom).getByRole("button", { name: /^rights$/i })).toBeInTheDocument();
+    expect(within(nightBusRoom).queryByRole("button", { name: /^songs$/i })).not.toBeInTheDocument();
+    expect(within(nightBusRoom).queryByRole("button", { name: /^projects$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^back$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /back to music/i })).toBeInTheDocument();
     expect(within(nightBusRoom).queryByRole("button", { name: /^metadata$/i })).not.toBeInTheDocument();
     expect(within(nightBusRoom).queryByRole("button", { name: /^splits$/i })).not.toBeInTheDocument();
     expect(within(nightBusRoom).queryByRole("button", { name: /^manager$/i })).not.toBeInTheDocument();
@@ -110,11 +115,15 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/linked work/i);
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/release night bus on june 12/i);
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/source limit/i);
-    expect(screen.getByRole("button", { name: /open linked mission/i })).toBeInTheDocument();
+    expect(within(nightBusRoom).getByRole("button", { name: /release night bus on june 12/i })).toBeInTheDocument();
     const linkedWork = within(nightBusRoom).getByTestId("music-linked-work");
     expect(linkedWork).toHaveTextContent(/mission path/i);
     expect(linkedWork).toHaveTextContent(/3 tasks attached/i);
+    expect(linkedWork).not.toHaveTextContent(/confirm split sheet/i);
     expect(linkedWork).not.toHaveTextContent(/submit distributor package/i);
+    expect(linkedWork).not.toHaveTextContent(/submit spotify for artists pitch/i);
+    expect(within(linkedWork).queryByRole("button", { name: /view tasks/i })).not.toBeInTheDocument();
+    expect(within(linkedWork).queryByRole("button", { name: /view evidence/i })).not.toBeInTheDocument();
     expect(within(nightBusRoom).queryByText(/^linked tasks$/i)).not.toBeInTheDocument();
 
     fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^files$/i }));
@@ -139,7 +148,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/confirm split sheet/i);
 
     fireEvent.click(within(nightBusRoom).getByRole("button", { name: /^overview$/i }));
-    fireEvent.click(screen.getByRole("button", { name: /open linked mission/i }));
+    fireEvent.click(within(nightBusRoom).getByRole("button", { name: /release night bus on june 12/i }));
     expect(screen.getByRole("heading", { name: /^missions\.?$/i })).toBeInTheDocument();
     expect(screen.getByText(/music subject/i)).toBeInTheDocument();
     expect(screen.getAllByText(/Night Bus/i).length).toBeGreaterThan(0);
@@ -257,7 +266,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
   it("uses compact mobile drill-down patterns for team, missions, tasks, and checkpoints", () => {
     enterLabelHq();
 
-    fireEvent.click(screen.getByRole("button", { name: /^team$/i }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: /mobile desk navigation/i })).getByRole("button", { name: /^team agents$/i }));
     expect(screen.getByTestId("mobile-staff-roster")).toBeInTheDocument();
     expect(screen.getByTestId("mobile-staff-roster")).toHaveTextContent(/helps with/i);
     fireEvent.click(screen.getByRole("button", { name: /marketing lead/i }));
@@ -283,7 +292,7 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByTestId("checkpoint-inspector")).toHaveTextContent(/manager recommendation/i);
   }, 15000);
 
-  it("captures Artist Direction as long-form setup context without crowding Label HQ", () => {
+  it("captures Artist Direction as long-form setup context without crowding Desk HQ", () => {
     render(<AiLabelPrototype />);
     fireEvent.click(screen.getByRole("button", { name: /continue to artist context/i }));
 
@@ -291,20 +300,22 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     const directionField = screen.getByRole("textbox", { name: /artist direction/i });
     expect(directionField.tagName.toLowerCase()).toBe("textarea");
     fireEvent.change(directionField, { target: { value: direction } });
-    fireEvent.click(screen.getByRole("button", { name: /enter label hq/i }));
+    fireEvent.click(screen.getByRole("button", { name: /enter desk hq/i }));
 
     expect(screen.queryByText(direction)).not.toBeInTheDocument();
     expect(screen.getAllByText(/night bus/i).length).toBeGreaterThan(0);
   });
 
-  it("makes Label HQ the operating room and keeps Manager Office focused on conversation", () => {
+  it("makes Desk HQ the operating room and keeps Manager Office focused on conversation", () => {
     enterLabelHq();
 
-    expect(screen.getByRole("heading", { name: /^label hq$/i })).toBeInTheDocument();
-    expect(screen.getByText(/label read/i)).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: /record label navigation/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^label hq$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /^desk hq$/i })).toBeInTheDocument();
+    expect(screen.getByText(/desk read/i)).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /ordersounds desk navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^desk hq$/i })).toBeInTheDocument();
+    expect(screen.queryByText(/^label hq$/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/ai record label/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^team agents$/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /^missions$/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^settings$/i })).toBeInTheDocument();
     expect(screen.queryByText(/notifications/i)).not.toBeInTheDocument();
@@ -323,7 +334,9 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getAllByText(/needs attention/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/manager read/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/next move/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/label staff/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/^team agents$/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/specialized ai agents that help the artist and their team prepare work, spot gaps, and move missions forward/i)).toBeInTheDocument();
+    expect(screen.queryByText(/label staff/i)).not.toBeInTheDocument();
     expect(screen.getByText(/sync & deals/i)).toBeInTheDocument();
     expect(screen.getByText(/finance\/rights/i)).toBeInTheDocument();
 
@@ -346,14 +359,14 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.queryByText(/flagged for you/i)).not.toBeInTheDocument();
   }, 15000);
 
-  it("keeps Label HQ sidebar actions wired to durable prototype surfaces", () => {
+  it("keeps Desk HQ sidebar actions wired to durable prototype surfaces", () => {
     enterLabelHq();
 
     fireEvent.click(screen.getAllByRole("button", { name: /^missions$/i })[0]);
     expect(screen.getByRole("heading", { name: /^missions\.?$/i })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: /record label navigation/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^label hq$/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /ordersounds desk navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^desk hq$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^team agents$/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByRole("button", { name: /^missions$/i }).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /^settings$/i })).toBeInTheDocument();
 
@@ -368,20 +381,20 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     const updatedDirection = "Spend the next quarter proving the Night Bus world, building direct fan demand, and only scaling spend when rights, content, and save data are clean.";
     fireEvent.change(settingsDirection, { target: { value: updatedDirection } });
 
-    fireEvent.click(screen.getByRole("button", { name: /^label hq$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^desk hq$/i }));
     expect(screen.queryByText(updatedDirection)).not.toBeInTheDocument();
     expect(screen.getAllByText(/night bus/i).length).toBeGreaterThan(0);
     fireEvent.click(screen.getByText(/talk to manager/i).closest("button")!);
     expect(screen.getByText(/manager office/i)).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: /record label navigation/i })).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: /ordersounds desk navigation/i })).toBeInTheDocument();
   }, 15000);
 
-  it("opens Staff as a durable sidebar destination and routes agents from there", () => {
+  it("opens Team Agents as a durable sidebar destination and routes agents from there", () => {
     enterLabelHq();
 
-    fireEvent.click(screen.getByRole("button", { name: /^staff$/i }));
-    expect(screen.getByRole("heading", { name: /^artist team$/i })).toBeInTheDocument();
-    expect(screen.getByText(/people around the artist/i)).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /^team agents$/i })[0]);
+    expect(screen.getByRole("heading", { name: /^artist team agents$/i })).toBeInTheDocument();
+    expect(screen.getByText(/specialized ai agents that help the artist and their team prepare work, spot gaps, and move missions forward/i)).toBeInTheDocument();
     expect(screen.getByText(/^5$/i)).toBeInTheDocument();
     expect(screen.getByText(/^1$/i)).toBeInTheDocument();
     expect(screen.getByText(/^4$/i)).toBeInTheDocument();
@@ -391,13 +404,13 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getAllByText(/needs source/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/missing proof/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/connected proof/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^team agents$/i }).length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: /ai manager/i }));
     expect(screen.getByText(/manager office/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^staff$/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /^team agents$/i }).length).toBeGreaterThan(0);
 
-    fireEvent.click(screen.getByRole("button", { name: /^staff$/i }));
+    fireEvent.click(screen.getAllByRole("button", { name: /^team agents$/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /marketing lead/i }));
     expect(screen.getAllByRole("heading", { name: /marketing lead/i }).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/campaign command board/i).length).toBeGreaterThan(0);
@@ -510,11 +523,59 @@ describe("AiLabelPrototype Label HQ operating room", () => {
     expect(screen.getByText(/direct message/i)).toBeInTheDocument();
     expect(screen.getAllByText(/night bus release planning/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/I want to drop a new song next week/i)).toBeInTheDocument();
-    expect(screen.getByText(/Release Night Bus on June 12/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Night Bus/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Release Night Bus on June 12/i).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /open created music item/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open created mission/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open created task/i })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("conversation-message-artist")[0]).toHaveClass("bg-foreground", "text-background");
+    expect(screen.getAllByTestId("conversation-message-manager")[0]).toHaveClass("bg-background", "text-foreground");
 
     fireEvent.click(screen.getByRole("button", { name: /open created mission/i }));
     expect(screen.getByText(/What is happening/i)).toBeInTheDocument();
     expect(screen.getByText(/Mission pulse/i)).toBeInTheDocument();
+  }, 10000);
+
+  it("opens the created Music item from a Manager conversation into the song room", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /talk to manager/i }));
+
+    while (screen.queryByRole("button", { name: /next question|submit context/i })) {
+      fireEvent.click(screen.getByRole("button", { name: /use suggested context/i }));
+      const saveButton = screen.queryByRole("button", { name: /next question|submit context/i });
+      if (saveButton) fireEvent.click(saveButton);
+    }
+
+    fireEvent.click(screen.getByRole("button", { name: /night bus release planning/i }));
+    fireEvent.click(screen.getByRole("button", { name: /open created music item/i }));
+
+    expect(screen.getByTestId("music-song-detail")).toBeInTheDocument();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/song room/i);
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(/night bus/i);
+    expect(screen.getByRole("button", { name: /^overview$/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("music-linked-work")).toHaveTextContent(/release night bus on june 12/i);
+  }, 10000);
+
+  it("creates song and mission artifacts for new release-song Manager prompts", () => {
+    enterLabelHq();
+    fireEvent.click(screen.getByRole("button", { name: /talk to manager/i }));
+
+    while (screen.queryByRole("button", { name: /next question|submit context/i })) {
+      fireEvent.click(screen.getByRole("button", { name: /use suggested context/i }));
+      const saveButton = screen.queryByRole("button", { name: /next question|submit context/i });
+      if (saveButton) fireEvent.click(saveButton);
+    }
+
+    const composer = screen.getByPlaceholderText(/ask the manager/i);
+    fireEvent.change(composer, { target: { value: "I want to release a song next month. What should happen?" } });
+    fireEvent.click(screen.getByRole("button", { name: /ask manager/i }));
+
+    expect(screen.getByText(/direct message/i)).toBeInTheDocument();
+    expect(screen.getByText(/new song release planning/i)).toBeInTheDocument();
+    expect(screen.getByText(/Treat the song as the durable recorded-work object first/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open created music item/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open created mission/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open created task/i })).not.toBeInTheDocument();
   }, 10000);
 
   it("shows the release mission feedback loop from task reviews into checkpoints and mission memory", () => {
