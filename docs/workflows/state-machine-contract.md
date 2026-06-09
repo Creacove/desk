@@ -100,6 +100,96 @@ Rules:
 
 Every task result must include raw note/event, Manager interpretation, mission effect, checkpoint effect, and follow-up.
 
+## Music States
+
+`music_items.lifecycle_stage` and `music_projects.lifecycle_stage`:
+
+- `idea`
+- `recording`
+- `production`
+- `mixing`
+- `mastering`
+- `ready`
+- `scheduled`
+- `released`
+- `catalog`
+- `archived`
+
+Rules:
+
+- User/team actions or trusted integration events can update visible lifecycle stage.
+- Manager suggestions can propose a stage change, but they must not silently mutate the visible stage.
+- `released` requires provider/distributor or user-confirmed release evidence. `catalog` is for released work now managed as existing catalog.
+
+`music_assets.status`:
+
+- `missing`
+- `draft`
+- `uploaded`
+- `confirmed`
+- `replaced`
+- `revoked`
+- `failed`
+
+Rules:
+
+- `confirmed` requires user confirmation, trusted integration confirmation, or source-backed validation.
+- Replacing an asset keeps prior uploaded file history readable through events and supersession.
+- Failed processing keeps the uploaded file/source request recoverable; do not remove the asset trail.
+
+`music_splits.status`:
+
+- `missing`
+- `draft`
+- `pending_confirmation`
+- `partially_confirmed`
+- `cleared`
+- `disputed`
+- `superseded`
+- `revoked`
+
+Rules:
+
+- `pending_confirmation` requires balanced proposed shares and at least one scoped confirmation request.
+- `cleared` requires all required contributors confirmed or an explicit user/team override recorded as a permission-sensitive decision.
+- `disputed`, `revoked`, and `superseded` must create operating events and usually trigger mission/checkpoint review if a release, sync, finance, or distribution mission depends on the split.
+
+`music_split_confirmations.status`:
+
+- `created`
+- `sent`
+- `opened`
+- `confirmed`
+- `rejected`
+- `expired`
+- `revoked`
+- `superseded`
+
+Rules:
+
+- External confirmation links must be scoped to one contributor and one split proposal.
+- Expired, revoked, or superseded confirmations cannot be reused.
+
+`music_distribution_packages.status`:
+
+- `draft`
+- `blocked`
+- `ready_for_approval`
+- `approved`
+- `submitting`
+- `submitted`
+- `accepted`
+- `failed`
+- `cancelled`
+- `superseded`
+
+Rules:
+
+- `ready_for_approval` requires required assets, metadata, and rights readiness.
+- `approved` requires explicit user permission.
+- `submitting` and later states require an approved permission request or explicit user action.
+- `accepted` requires provider confirmation; package creation or local success UI is not enough.
+
 ## Permission Request States
 
 - `pending`

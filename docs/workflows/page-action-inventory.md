@@ -4,9 +4,11 @@ Purpose: account for every prototype surface and define current behavior, produc
 
 Strict coverage matrix: `docs/workflows/prototype-coverage-matrix.md`. Use the matrix for implementation acceptance checks; use this inventory for detailed page notes.
 
+Dynamic data lineage contract: `docs/workflows/prototype-data-lineage-contract.md`. Every state-bearing value listed here must trace to database records, producer workflow, evidence or limitation, and run/usage provenance when AI or provider work is involved.
+
 ## Source Of Truth
 
-Visible prototype source: `src/pages/AiLabelPrototype.tsx`
+Visible prototype source: `src/prototype/AiLabelPrototype.tsx`
 
 Important prototype records:
 
@@ -15,12 +17,14 @@ Important prototype records:
 - `managerQuestions`
 - `baseConversations`
 - `baseMissions`
+- `musicObjects`
 - `taskRows`
 - `missionCheckpoints`
 - `departmentBriefs`
 - `evidence`
 - `decisionRecord`
 - `missionReview`
+- `testReviewImpact`
 - `taskResults`
 - `missionEvents`
 - `workDrafts`
@@ -30,7 +34,7 @@ Important prototype records:
 
 The prototype also contains route/drawer affordances that are not all equally live. Production should preserve the operating model, not blindly expose dormant paths:
 
-- `testLabWorkspace` is the Checkpoints workspace.
+- `testLabWorkspace` is the Checkpoint Review workspace in production naming.
 - `briefsWorkspace` is the Notes / agent handoff workspace.
 - `decisionRecord` drawer is Mission Memory / Mission Record.
 - `workDraft` drawer exists as a future work-product surface and should open only from real drafts.
@@ -116,12 +120,12 @@ Failure state: event missing linked artifact, stale movement, duplicate event.
 ## Music
 
 What the user sees: the artist's recorded work under management, with simple `Songs` and `Projects` tabs, song lifecycle stage, blockers, split status, asset status, Manager next move, source limits, linked missions/tasks/evidence, assets, rights state, and project tracklists.  
-Dynamic data: artist objects, object relationships, identifiers, assets, source snapshots, evidence links, mission subject links, tasks, checkpoints, reviews, and memory summaries.  
-Current behavior: local mock music objects show `Night Bus`, `Glass Room EP`, released catalog, and demo material. Songs open into a four-tab song room: `Overview`, `Files`, `Details`, and `Rights`. `Night Bus` links to the existing release mission and visibly carries the split-sheet blocker.  
-Production behavior: load music objects from Spotify public catalog, distributor data, user-entered unreleased material, uploaded assets, and normalized evidence while preserving source limitations.  
-Data read: `artist_objects`, `artist_object_relationships`, `artist_object_identifiers`, `artist_object_assets`, `mission_subject_links`, `missions`, `tasks`, `evidence_items`, `source_snapshots`, `memory_entries`, `reviews`.  
-Data written: usually none from browsing. User-created or corrected songs/projects write artist objects, identifiers, assets, relationships, operating events, and possible memory entries. Upload affordances in the prototype represent future `artist_object_assets` writes; V1 does not submit to distributors, change public releases, or conclude legal rights without approval.  
-Background action: source matching, object deduplication, readiness calculation, linked work aggregation, and source-limit labeling.  
+Dynamic data: `music_items`, `music_projects`, project tracklists, Music identifiers, assets, credits, splits, split confirmations, distribution packages, source snapshots, evidence links, mission subject links, tasks, checkpoints, reviews, and memory summaries.
+Current behavior: local mock `musicObjects` show `Night Bus`, `Glass Room EP`, released catalog, and demo material. Songs open into a four-tab song room: `Overview`, `Files`, `Details`, and `Rights`. `Night Bus` links to the existing release mission and visibly carries the split-sheet blocker. The Rights tab includes contributor splits, confirmation links, approval log, and a distribution-readiness hub.
+Production behavior: load first-class Music records from Spotify public catalog, distributor data, user-entered unreleased material, uploaded assets, normalized evidence, and saved Music history while preserving source limitations.
+Data read: `music_items`, `music_projects`, `music_project_items`, `music_assets`, `music_identifiers`, `music_credits`, `music_splits`, `music_split_contributors`, `music_split_confirmations`, `music_distribution_packages`, `music_distribution_events`, `mission_subject_links`, `missions`, `tasks`, `evidence_items`, `source_snapshots`, `memory_entries`, `reviews`, `permission_requests`.
+Data written: usually none from browsing. User-created or corrected songs/projects write Music records, project membership, identifiers, assets, credits, splits, operating events, and possible memory entries. Split confirmation and distribution actions write permission/audit records and never execute externally without approved scope.
+Background action: source matching, Music deduplication, readiness calculation, linked work aggregation, source-limit labeling, split-state recomputation, distribution readiness checks, and retrieval of saved Music history for Manager/agent runs.
 User-visible result: a music operating surface that explains what exists, what stage each song is in, what is missing, what is blocked, and which operating work is attached. Projects roll up blockers from their songs without duplicating song state.  
 Failure state: duplicate song/project records, ambiguous provider matches, unreleased material confused with public catalog, unsupported private analytics claims, missing tracklist relationships, stale source data.
 
@@ -130,8 +134,10 @@ Buttons:
 - Songs / Projects: switches between atomic song objects and project containers.
 - Song stage: allows a user to manually choose stage; Manager suggestions are visible but do not silently change the stage.
 - Overview / Files / Details / Rights: reveals Manager read, source limits, linked operating work, upload affordances, song identity, credits, release details, identifiers, and split-sheet state without creating standalone song-task systems.
-- Open linked mission: opens the generic mission attached through `mission_subject_links`; missions are still allowed to have no music subject.
-- View tasks / View evidence: opens existing task or evidence surfaces in the context of the selected music object when available.
+- Add collaborator / Send split confirmation links / Confirm split: updates split proposal and contributor confirmation state through scoped, auditable records.
+- Initialize Global Distribution: creates or advances a permission-gated distribution package only when required assets, metadata, rights, and approval are ready; provider confirmation is required before release success is recorded.
+- Open linked mission: opens the generic mission attached through `mission_subject_links`; missions are still allowed to have no Music subject.
+- View tasks / View evidence: opens existing task or evidence surfaces in the context of the selected Music record when available.
 
 ## Staff
 
@@ -224,16 +230,16 @@ Background action: task transition validation and result interpretation.
 User-visible result: task status, Manager note, mission effect.  
 Failure state: approval required, dependency blocked, save failure, weak proof.
 
-## Checkpoints
+## Checkpoint Review
 
-What the user sees: mission progress map, checkpoint list/detail, required tasks, decision rule, recommendation.  
-Dynamic data: checkpoint state, required task results, watched signals, recommendations.  
-Current behavior: local selected checkpoint; static checkpoint states.  
-Production behavior: AI-owned readiness checks updated from tasks/evidence/reviews.  
-Data read: checkpoints, tasks, task results, evidence, mission memory.  
-Data written: checkpoint update, review, memory.  
-Background action: readiness evaluation.  
-User-visible result: current checkpoint recommendation.  
+What the user sees: mission progress map, checkpoint list/detail, required tasks, decision rule, recommendation, and what changed since the last checkpoint read.
+Dynamic data: checkpoint state, required task results, watched signals, recommendations.
+Current behavior: local selected checkpoint; static checkpoint states.
+Production behavior: AI-owned readiness checks updated from tasks/evidence/reviews.
+Data read: checkpoints, tasks, task results, evidence, mission memory.
+Data written: checkpoint state event, checkpoint result, review, memory, operating event, and usage event when AI evaluates the checkpoint.
+Background action: readiness evaluation, dependency evaluation, delta comparison against the previous checkpoint result, and mission-plan impact calculation.
+User-visible result: current checkpoint recommendation, blockers, cleared dependencies, and the reason progress changed or did not change.
 Failure state: missing required tasks, missing evidence, conflicting source data.
 
 ## Notes

@@ -11,9 +11,23 @@ Visible Label HQ and Today's Brief text follows the same rule. Metrics, region n
 ## Spotify Public Catalog
 
 Provides: artist identity, public profile, public catalog metadata, release/catalog references.  
-Supports: identity confirmation, public catalog context, release matching.  
-Does not support: private saves, skips, listener conversion, source-of-stream, editorial pitch status, revenue.  
+Supports: identity confirmation, public catalog context, release matching, artwork links, Spotify URLs/URIs, ISRC/UPC when returned, release dates, explicit flags, duration, album/project membership, and public popularity metadata where returned.
+Does not support: stream counts, private saves, skips, listener conversion, source-of-stream, editorial pitch status, revenue, royalty state, campaign ROI, or real-time performance.
 Prototype example: `EV-SP-3302`.
+
+## Chartmetric
+
+Provides: third-party music intelligence for resolved artists/tracks/albums, including platform movement, Chartmetric-reported stream/platform metrics where returned, playlists, charts, social/video context, geography, similar-artist context, and cross-platform identifiers where available from the contracted API endpoints.
+Supports: enrichment beyond Spotify public catalog, setup intelligence for the artist profile, setup project/release, and standalone songs, track-level momentum reads, playlist/chart movement, public/social attention signals, source readiness, and stronger Label HQ context when the endpoint returns a supported metric with a time window.
+Does not support: treating third-party estimates as Spotify Web API data, private Spotify for Artists analytics, royalty revenue, legal ownership, guaranteed causation, or conversion unless paired with stronger private/uploaded evidence.
+Credential rule: use `CHARTMETRIC_REFRESH_TOKEN` server-side only; exchange it for a short-lived bearer token and store raw responses before normalization.
+
+## OpenAI Generated Summaries
+
+Provides: derived narrative summaries from saved Music state, source snapshots, evidence items, limitations, memory, and operating events.
+Supports: readable song/project summaries, Label HQ brief language, Manager synthesis drafts, and source-gap explanations.
+Does not support: raw facts by itself. A generated summary is interpretation and must cite or list the source classes and limitations used to create it.
+Credential rule: use `OPENAI_API_KEY` server-side only and write provider/model/usage records for generated summaries.
 
 ## Spotify For Artists Export
 
@@ -53,6 +67,12 @@ Does not support: reliable fan demand or conversion by itself.
 Provides: clicks, destinations, geography, campaign sources, conversion proxies depending on provider.  
 Supports: campaign path analysis and post-release signal reads.  
 Does not support: actual platform saves/listens unless integrated with platform analytics.
+
+## Saved Music State
+
+Provides: durable song/project lifecycle, files, identifiers, credits, split state, contributor confirmations, distribution package state, linked missions, prior Music events, and Manager/agent read history.
+Supports: Manager and specialist continuity, release readiness, rights/readiness blockers, project rollups, source freshness decisions, and avoiding unnecessary provider fetches when saved state is fresh enough.
+Does not support: new factual claims, private analytics, provider availability, rights certainty, revenue, or distribution success without linked evidence, source snapshots, user confirmation, or provider confirmation.
 
 ## Distributor Data
 

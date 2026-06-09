@@ -8,13 +8,15 @@ Status: authoritative V1 schema contract. This document replaces the earlier fut
 
 Use these documents together:
 
-1. Current prototype behavior in `src/pages/AiLabelPrototype.tsx`
+1. Current prototype behavior in `src/prototype/AiLabelPrototype.tsx`
 2. This V1 operational schema contract
-3. `docs/workflows/schema-relationship-contract.md`
-4. `docs/workflows/state-machine-contract.md`
-5. `docs/workflows/source-confidence-contract.md`
-6. `docs/workflows/memory-and-learning-contract.md`
-7. PRD, blueprint, and design handoff for product intent
+3. `docs/workflows/prototype-data-lineage-contract.md`
+4. `docs/workflows/music-lifecycle-storage-contract.md`
+5. `docs/workflows/schema-relationship-contract.md`
+6. `docs/workflows/state-machine-contract.md`
+7. `docs/workflows/source-confidence-contract.md`
+8. `docs/workflows/memory-and-learning-contract.md`
+9. PRD, blueprint, and design handoff for product intent
 
 If this document and a stricter contract differ, use the stricter rule unless the prototype is intentionally changed first.
 
@@ -28,16 +30,43 @@ The schema must support:
 - contextual evidence, not a top-level evidence dashboard
 - Manager-led synthesis, not independent agent writes into the operating plan
 - dynamic missions generated from patterns/playbooks
-- generic artist work objects that missions can reference without becoming release-specific infrastructure
+- first-class Music records for songs, projects, files, rights, splits, distribution readiness, and song/project history
+- generic non-music artist work objects that missions can reference without becoming release-specific infrastructure
 - task/checkpoint feedback loops
 - explicit permission boundaries
 - append-first memory and audit trails
 - source-backed user-facing claims
+- run usage and cost accounting for AI, provider API, and billable tool work
 - rebuildable UI projections for speed
 
 Core rule: if the prototype shows it, the database must account for it. If the Manager claims it, the database must explain where it came from. If AI creates or changes it, the database must link it to the run and action that produced it.
 
 ## Design Principles
+
+### V1 Build Order
+
+Build the database in thin vertical slices. Do not migrate every table in this document before the product has a workflow that writes and reads it.
+
+Phase 1 foundation:
+
+- ownership/workspace/profile tables
+- source connection, source snapshot, evidence, and evidence link tables
+- first-class Music item/project/asset/identifier/credit/split tables needed by the Music workspace
+- Manager/agent run records, usage events, operating events, and artifact links
+- missions, mission plans, checkpoints, tasks, task state events, task results, reviews, memory entries, conversations, and permission requests
+
+Phase 2 workflow depth:
+
+- split confirmations and distribution packages/events when those product actions are enabled
+- work drafts and draft versions when the UI exposes generated work products
+- memory summaries when raw memory becomes too slow or too noisy for Manager retrieval
+- daily brief snapshots and flagged items when exact brief replay or an explicit flagged queue is needed
+
+Phase 3 scale/later:
+
+- materialized projections, cross-artist aggregate learning, extra version tables, and table-specific analytics only after usage proves they are needed.
+
+Migration rule: a table ships when at least one workflow owns its writes, one UI/API path reads it, and the Manager knows how to retrieve it. Otherwise keep the concept as a service projection, JSON payload, or future note.
 
 ### Source Of Truth Vs Read Model
 
@@ -46,6 +75,8 @@ Separate durable truth from UI convenience.
 - Source-of-truth records: artists, profiles, sources, evidence, runs, reports, conversations, missions, plans, tasks, checkpoints, permissions, drafts, reviews, memory, and operating events.
 - Append-only records: messages, snapshots, evidence, runs, reports, run actions, task events, task results, checkpoint events, permission decisions, reviews, memory entries, and outcome observations.
 - UI projections: Label HQ, mission workspace, staff readiness, and conversation summaries. These can be rebuilt from source-of-truth records and should not start as required persisted tables unless performance proves they are needed.
+
+Do not add a table just because a UI card exists. Add a table when the value must be remembered, linked, audited, billed, permissioned, queried independently, or used by future Manager/agent runs.
 
 ### AI Write Provenance
 
@@ -58,6 +89,8 @@ Every AI-created or AI-updated operating artifact must include:
 - linked evidence, memory, user input, report, snapshot, or explicit limitation when the artifact contains a claim
 
 This applies to missions, plans, tasks, checkpoints, notes, reviews, directives, decision packages, memory entries, permission requests, and drafts.
+
+Every AI, provider API, or billable tool invocation must also write `ai_run_usage_events` so the product can explain what was paid for by workflow, mission, song/project, source sync, or run.
 
 ### Explicit Links Over Hidden JSON
 
@@ -72,6 +105,8 @@ Use join/link tables for:
 - task/checkpoint dependencies
 - source snapshots normalized into evidence
 - conversations linked to missions, tasks, decisions, and drafts
+
+If a relationship is rare, read-only, or not queried independently in V1, prefer `artifact_links` over a new bespoke join table. Promote to a typed join table only when the product needs constraints, ordering, status, or frequent queries.
 
 ### No Silent History Rewrites
 
@@ -272,24 +307,27 @@ Fields:
 
 Profile facts are user/team owned. The Manager may suggest edits but must not silently change identity, budget, direction, connected handles, or ownership facts.
 
-## Artist Objects And Context
+## Music Domain
 
-This layer stores durable things the artist team works around: songs, music projects, music packages, campaigns, rights packages, pitch packages, markets, budget pools, partnerships, tours, files, and other focus objects.
+Music is first-class V1 infrastructure. The prototype's Music workspace is not just a convenient view over generic artist objects; it is the durable home for recorded work, lifecycle state, files, identifiers, rights, split confirmations, distribution readiness, Manager reads, linked missions, evidence, and song/project history.
 
-Important distinction: these objects are not missions. A mission is an operating objective or question. An artist object is the subject, asset, package, market, budget, opportunity, or body of work the mission may be about.
+Authoritative detail lives in `docs/workflows/music-lifecycle-storage-contract.md`. This schema contract summarizes the required database shape.
+
+Important distinction: Music records are not missions. A song or project is the subject or source context that work may be about. A mission is the operating objective or question.
 
 Example:
 
-- Artist object: `Night Bus`, type `song`
+- Music item: `Night Bus`, type `song`
+- Music project: `Glass Room EP`, type `ep`
 - Mission: `Release Night Bus on June 12`
 - Pattern: `release_planning`
 - Tasks/checkpoints: generated dynamically from the mission objective and pattern
 
-Do not create a table per mission type. Do not create release-only infrastructure for release-planning missions. Use generic object records plus mission patterns.
+Do not create release-only mission infrastructure, and do not put song/project lifecycle state into generic `artist_objects`.
 
-### `artist_objects`
+### `music_items`
 
-Generic subject/focus objects for artist work.
+Atomic recorded work: songs, demos, released tracks, catalog tracks, and alternate versions.
 
 Fields:
 
@@ -297,7 +335,290 @@ Fields:
 - `account_id`
 - `artist_workspace_id`
 - `artist_id`
-- `object_type`: `song`, `music_project`, `music_package`, `campaign`, `market`, `budget_pool`, `rights_package`, `pitch_package`, `live_opportunity`, `deal_opportunity`, `audience_segment`, `team_process`, `source_gap`, `creative_asset`, `other`
+- `title`
+- `item_type`: `song`, `demo`, `released_track`, `catalog_track`, `alternate_version`
+- `lifecycle_stage`: `idea`, `recording`, `production`, `mixing`, `mastering`, `ready`, `scheduled`, `released`, `catalog`, `archived`
+- `status`
+- `is_active_focus`
+- `manager_read`
+- `manager_next_move`
+- `manager_stage_suggestion`
+- `blocker`
+- `rights_state`
+- `source_kind`
+- `source_limit`
+- `planned_release_date`
+- `released_at`
+- `metadata`
+- `created_by_type`
+- `created_by_id`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+`metadata` can hold type-specific fields that are not yet worth first-class fields. Stable identifiers, files, credits, splits, project membership, evidence links, and mission links must use typed tables or link tables.
+
+### `music_projects`
+
+Release or body-of-work containers: singles, EPs, albums, mixtapes, compilations, deluxe editions, and unreleased bodies of work.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `title`
+- `project_type`: `single`, `ep`, `album`, `mixtape`, `compilation`, `deluxe`, `unreleased_body`, `other`
+- `lifecycle_stage`: `idea`, `recording`, `production`, `mixing`, `mastering`, `ready`, `scheduled`, `released`, `catalog`, `archived`
+- `status`
+- `is_active_focus`
+- `manager_read`
+- `manager_next_move`
+- `blocker`
+- `source_kind`
+- `source_limit`
+- `planned_release_date`
+- `released_at`
+- `metadata`
+- `created_by_type`
+- `created_by_id`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+Project readiness is a rollup from linked songs plus project-level assets and metadata. Do not duplicate song state in a project payload.
+
+### `music_project_items`
+
+Ordered project tracklist membership.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_project_id`
+- `music_item_id`
+- `order_index`
+- `disc_number`
+- `display_title`
+- `relationship`: `contains_track`, `lead_single`, `bonus_track`, `alternate_version`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+
+### `music_assets`
+
+Files or materials attached to a music item or project.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_item_id`
+- `music_project_id`
+- `asset_type`: `demo`, `rough_mix`, `final_master`, `clean_version`, `instrumental`, `stems`, `cover_art`, `alternate_artwork`, `metadata_export`, `split_sheet`, `pitch_asset`, `lyrics`, `epk`, `press_photo`, `royalty_statement`, `distributor_export`, `campaign_report`, `other`
+- `title`
+- `uploaded_file_id`
+- `status`: `missing`, `draft`, `uploaded`, `confirmed`, `replaced`, `revoked`, `failed`
+- `version_label`
+- `notes`
+- `source_snapshot_id`
+- `created_by_type`
+- `created_by_id`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+Use one Music asset table. Do not create separate V1 tables for masters, artwork, stems, split sheets, or pitch assets.
+
+### `music_identifiers`
+
+Provider, catalog, and business identifiers for songs and projects.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_item_id`
+- `music_project_id`
+- `identifier_type`: `isrc`, `upc`, `spotify_track_id`, `spotify_album_id`, `apple_music_id`, `youtube_video_id`, `tiktok_sound_id`, `distributor_id`, `chartmetric_id`, `soundcharts_id`, `custom`
+- `identifier_value`
+- `provider_id`
+- `source_snapshot_id`
+- `confidence`
+- `created_from_run_id`
+- `created_at`
+
+### `music_credits`
+
+Song/project credit facts.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_item_id`
+- `music_project_id`
+- `role`: `primary_artist`, `featured_artist`, `writer`, `producer`, `mix_engineer`, `mastering_engineer`, `publisher`, `label`, `other`
+- `name`
+- `status`: `missing`, `draft`, `confirmed`, `disputed`, `superseded`
+- `source_snapshot_id`
+- `created_by_type`
+- `created_by_id`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+### `music_splits`
+
+Split proposal or confirmed split package for one song.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_item_id`
+- `status`: `missing`, `draft`, `pending_confirmation`, `partially_confirmed`, `cleared`, `disputed`, `superseded`, `revoked`
+- `summary`
+- `publishing_total`
+- `master_total`
+- `document_asset_id`
+- `source_snapshot_id`
+- `linked_task_id`
+- `created_by_type`
+- `created_by_id`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+### `music_split_contributors`
+
+Proposed or confirmed contributor shares.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_split_id`
+- `name`
+- `role`
+- `email`
+- `publishing_share`
+- `master_share`
+- `approval_status`: `draft`, `pending`, `confirmed`, `rejected`, `disputed`, `revoked`
+- `created_at`
+- `updated_at`
+
+### `music_split_confirmations`
+
+Scoped external contributor confirmation records.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_split_id`
+- `music_split_contributor_id`
+- `confirmation_token_hash`
+- `status`: `created`, `sent`, `opened`, `confirmed`, `rejected`, `expired`, `revoked`, `superseded`
+- `confirmed_at`
+- `rejected_at`
+- `expires_at`
+- `ip_hash`
+- `user_agent_hash`
+- `confirmation_text`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+Split confirmation links must expose only the relevant proposal for the invited contributor.
+
+### `music_distribution_packages`
+
+Distribution package readiness and submission state.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_item_id`
+- `music_project_id`
+- `provider_id`
+- `status`: `draft`, `blocked`, `ready_for_approval`, `approved`, `submitting`, `submitted`, `accepted`, `failed`, `cancelled`, `superseded`
+- `planned_release_date`
+- `required_asset_state`
+- `required_rights_state`
+- `metadata_payload`
+- `permission_request_id`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+- `updated_at`
+
+### `music_distribution_events`
+
+Append-only provider submission and readiness events.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `music_distribution_package_id`
+- `event_type`: `readiness_checked`, `approval_requested`, `approved`, `submission_started`, `provider_log`, `submitted`, `accepted`, `failed`, `cancelled`
+- `status`
+- `message`
+- `provider_ref`
+- `payload`
+- `created_from_run_id`
+- `created_from_action_id`
+- `created_at`
+
+Music-specific history can be represented as `operating_events` with Music target types. Do not add a separate `music_events` table in V1 unless Music timeline queries become heavy.
+
+## Non-Music Artist Objects And Context
+
+This layer stores durable non-music things the artist team works around: campaigns, markets, budget pools, partnerships, tours, live opportunities, deal opportunities, audience segments, team processes, source gaps, and other focus objects.
+
+Important distinction: these objects are not missions. A mission is an operating objective or question. A non-music artist object is the subject, market, budget, opportunity, package, process, or source gap the mission may be about.
+
+Use Music tables for recorded works. Use `artist_objects` only for non-music subjects.
+
+### `artist_objects`
+
+Generic non-music subject/focus objects for artist work.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `object_type`: `campaign`, `market`, `budget_pool`, `rights_package`, `pitch_package`, `live_opportunity`, `deal_opportunity`, `audience_segment`, `team_process`, `source_gap`, `creative_asset`, `merchandise`, `other`
 - `title`
 - `description`
 - `status`
@@ -307,80 +628,9 @@ Fields:
 - `created_at`
 - `updated_at`
 
-`metadata` can hold type-specific fields such as lifecycle stage, planned release date, distributor, territory, market, budget amount, asset format, opportunity owner, or provider-native IDs. Stable external identifiers belong in `artist_object_identifiers`. If a type-specific field becomes heavily queried across V1 usage, promote it later through a migration. Do not prematurely create release-specific tables.
-
-Music object conventions:
-
-- `song` is the atomic recorded-work object. Use it for demos, unreleased songs, released tracks, catalog songs, sync candidates, and song-level rights or performance reads.
-- `music_project` is a container for a single, EP, album, mixtape, deluxe edition, compilation, or unreleased body of work.
-- `music_package` is optional and later-facing for sync bundles, pitch packages, or campaign bundles that intentionally group multiple songs/projects for an operating purpose.
-- A released Spotify album and an unreleased EP draft are both `music_project` records, but their `source_snapshot_id`, identifiers, lifecycle metadata, and evidence limits must make their source status clear.
-- Song lifecycle in V1 should stay metadata-backed until usage proves otherwise. Stages such as `idea`, `recording`, `production`, `mixing`, `mastering`, `ready`, `scheduled`, `released`, and `catalog` can be user-set or Manager-suggested, but Manager suggestions should not silently overwrite the user-visible stage.
-
-### `artist_object_identifiers`
-
-Provider, catalog, and business identifiers for generic artist objects.
-
-Fields:
-
-- `id`
-- `account_id`
-- `artist_workspace_id`
-- `artist_id`
-- `artist_object_id`
-- `identifier_type`: `spotify_artist_id`, `spotify_track_id`, `spotify_album_id`, `isrc`, `upc`, `youtube_video_id`, `tiktok_sound_id`, `chartmetric_id`, `soundcharts_id`, `distributor_id`, `custom`
-- `identifier_value`
-- `provider_id`
-- `source_snapshot_id`
-- `confidence`
-- `created_at`
-
-Keep identifiers separate from `artist_objects` so a market, rights package, budget pool, creator campaign, or team process is not forced into track/release-shaped columns.
-
-### `artist_object_relationships`
-
-Explicit relationships between artist objects.
-
-Fields:
-
-- `id`
-- `account_id`
-- `artist_workspace_id`
-- `artist_id`
-- `from_artist_object_id`
-- `to_artist_object_id`
-- `relationship`: `contains_song`, `appears_on_project`, `alternate_version_of`, `belongs_to_rights_package`, `belongs_to_pitch_package`, `supports_campaign`, `related_to`
-- `order_index`
-- `created_from_run_id`
-- `created_from_action_id`
-- `created_at`
-
-Use this for music project tracklists and durable object-to-object relationships. Do not duplicate song state inside a project payload. A project contains song references; each song keeps its own identifiers, assets, evidence, rights state, and linked missions.
-
-### `artist_object_assets`
-
-Files or materials attached to a generic artist object.
-
-Fields:
-
-- `id`
-- `account_id`
-- `artist_workspace_id`
-- `artist_id`
-- `artist_object_id`
-- `asset_type`: `master`, `artwork`, `pitch_asset`, `epk`, `clean_instrumental`, `metadata`, `split_sheet`, `press_photo`, `royalty_statement`, `campaign_report`, `creator_brief`, `other`
-- `title`
-- `uploaded_file_id`
-- `status`
-- `notes`
-- `created_at`
-- `updated_at`
-
 Do not add separate V1 tables for artist goals or constraints. Current goal belongs in `artist_profiles`, active operating goals belong in `missions`, and durable constraints/do-not-repeat rules belong in `memory_entries` with `kind = constraint`, `preference`, `risk`, or `rejected_move`. This avoids three sources of truth for the same management context.
 
-Music lifecycle files should remain asset records, not a separate file subsystem in V1. Audio uploads can be classified through `asset_type`, `title`, and metadata as demo, rough mix, final master, clean, instrumental, or stems. Artwork, split sheets, metadata exports, and pitch assets follow the same `artist_object_assets` path with status and provenance notes.
-
-Do not add separate V1 object-version tables. Important object changes should create `operating_events` and, when they affect future decisions, `memory_entries`. Use `artist_object_relationships` for durable artist-object relationships such as project tracklists; use `artifact_links` for broader cross-artifact links such as conversations, decisions, drafts, or briefs pointing at objects.
+Do not add separate V1 object-version tables. Important object changes should create `operating_events` and, when they affect future decisions, `memory_entries`. Use `artifact_links` for broader cross-artifact links such as conversations, decisions, drafts, or briefs pointing at objects.
 
 ## Sources, Files, And Evidence
 
@@ -637,6 +887,8 @@ Fields:
 - `error`
 - `created_at`
 
+Usage and cost are stored in `ai_run_usage_events`, not summarized only on the run row.
+
 ### `agent_reports`
 
 Append-only agent findings.
@@ -738,6 +990,8 @@ Fields:
 
 Store V1 investigation-screen steps in `steps_payload`. Do not create a separate `manager_run_steps` table until the product needs streaming step updates, step-level retries, or step-level analytics.
 
+Usage and cost are stored in `ai_run_usage_events`, not summarized only on the run row.
+
 ### `manager_run_actions`
 
 Append-only action plan and execution audit.
@@ -759,6 +1013,52 @@ Fields:
 - `result_payload`
 - `error`
 - `created_at`
+
+### `ai_run_usage_events`
+
+Append-only usage and cost ledger for every billable AI, provider API, or tool invocation.
+
+This table is required because the prototype is becoming a per-usage AI operating product. Billing, run history, and "what changed" explanations must be able to trace exactly which workflow spent tokens or provider calls and which artifact benefited.
+
+Fields:
+
+- `id`
+- `account_id`
+- `artist_workspace_id`
+- `artist_id`
+- `workflow_key`: `daily_operating_run`, `manager_conversation_run`, `mission_run`, `task_result_run`, `checkpoint_review_run`, `review_run`, `music_readiness_run`, `music_source_match`, `evidence_extraction`, `agent_run`, `draft_generation`, `source_sync`
+- `run_type`: `manager_synthesis`, `agent`, `review`, `source_sync`, `evidence_extraction`, `music_readiness`, `draft_generation`, `tool_call`
+- `manager_synthesis_run_id`
+- `agent_run_id`
+- `review_id`
+- `source_sync_job_id`
+- `created_from_action_id`
+- `subject_type`: `artist`, `mission`, `task`, `checkpoint`, `music_item`, `music_project`, `conversation`, `source`
+- `subject_id`
+- `provider`
+- `model_or_tool`
+- `operation_key`
+- `status`: `started`, `succeeded`, `failed`, `cancelled`, `rate_limited`, `partial`
+- `input_tokens`
+- `cached_input_tokens`
+- `output_tokens`
+- `reasoning_tokens`
+- `tool_call_count`
+- `provider_request_count`
+- `provider_cost_estimate`
+- `billable_units`
+- `currency`
+- `started_at`
+- `completed_at`
+- `failure_reason`
+- `metadata`
+
+Rules:
+
+- Write usage even when a run fails after incurring cost.
+- Group high-volume provider calls only when the grouped record still preserves workflow, provider, subject, count, cost estimate, and source job.
+- Billing summaries can aggregate from this table; UI projections must not be the billing source of truth.
+- A Manager, agent, Music readiness, evidence extraction, source sync, or review workflow cannot be considered fully recorded until its usage events are attached or explicitly marked not billable.
 
 ### `quality_gate_results`
 
@@ -784,6 +1084,8 @@ Fields:
 ### `daily_brief_snapshots`
 
 Versioned/generated Today's Brief.
+
+Create this table only when the product needs exact historical brief replay, stale-brief fallback, or notification history. Until then, Today's Brief can be assembled from `manager_synthesis_runs`, `operating_directives`, evidence, memory, reviews, and operating events.
 
 Fields:
 
@@ -831,6 +1133,8 @@ Fields:
 ### `flagged_items`
 
 Flagged for you queue.
+
+Create this table when the UI needs a user-manageable queue with dismiss/supersede behavior. If the UI only needs to show current blockers, due reviews, stale sources, and permissions, assemble the queue from source records first.
 
 Fields:
 
@@ -1113,7 +1417,7 @@ Only Manager synthesis creates or updates missions.
 
 ### `mission_subject_links`
 
-Links a mission to the object or objects it is about.
+Links a mission to the Music record or non-music artist object it is about.
 
 Fields:
 
@@ -1122,13 +1426,16 @@ Fields:
 - `artist_workspace_id`
 - `artist_id`
 - `mission_id`
+- `subject_type`: `music_item`, `music_project`, `artist_object`
+- `music_item_id`
+- `music_project_id`
 - `artist_object_id`
 - `relationship`: `primary_subject`, `supporting_subject`, `blocked_by`, `evidence_target`, `permission_target`
 - `created_from_run_id`
 - `created_from_action_id`
 - `created_at`
 
-Use this instead of adding mission-type-specific foreign keys such as `release_id`, `market_id`, `campaign_id`, or `rights_package_id` to `missions`.
+Use this instead of adding mission-type-specific foreign keys such as `release_id`, `market_id`, `campaign_id`, or `rights_package_id` to `missions`. A mission can have no Music subject, one Music subject, or several supporting Music/non-music subjects.
 
 ### `mission_plan_versions`
 
@@ -1523,7 +1830,7 @@ Fields:
 - `checkpoint_id`
 - `source_connection_id`
 - `agent_run_id`
-- `scope`: `artist`, `mission`, `conversation`, `task`, `checkpoint`, `source`, `run`
+- `scope`: `artist`, `mission`, `conversation`, `task`, `checkpoint`, `source`, `run`, `music_item`, `music_project`
 - `kind`: `fact`, `interpretation`, `preference`, `constraint`, `risk`, `blocker`, `hypothesis`, `rejected_move`, `outcome_note`, `open_question`
 - `content`
 - `source_type`
@@ -1604,7 +1911,7 @@ Build these as API response shapes, SQL views, or materialized views only after 
 - Staff readiness projection: agent profile plus source connection/readiness status.
 - Conversation projection: thread summary, latest message, and linked artifacts.
 
-Projection rule: if a field matters for audit, memory, evidence, or future Manager behavior, it must live in a source-of-truth table above, not only in a projection payload.
+Projection rule: if a field matters for audit, memory, evidence, billing, or future Manager behavior, it must live in a source-of-truth table above, not only in a projection payload. Dynamic projection fields must follow `docs/workflows/prototype-data-lineage-contract.md`.
 
 ## Prototype Mapping
 
@@ -1612,8 +1919,8 @@ The current prototype constants map to schema records as follows:
 
 | Prototype source | Database home |
 | --- | --- |
-| `artist` | `artists`, `artist_profiles`, `artist_profile_versions`, `artist_objects` for active focus objects such as Night Bus |
-| `musicObjects` | `artist_objects`, `artist_object_identifiers`, `artist_object_assets`, `artist_object_relationships`, `mission_subject_links` |
+| `artist` | `artists`, `artist_profiles`, `artist_profile_versions`; active focus points may link to Music or non-music artist objects |
+| `musicObjects` | `music_items`, `music_projects`, `music_project_items`, `music_assets`, `music_identifiers`, `music_credits`, `music_splits`, `music_split_contributors`, `music_split_confirmations`, `music_distribution_packages`, `mission_subject_links` |
 | `agents` | `agent_profiles`, `source_capabilities`, `source_connections`; staff readiness is a projection |
 | `managerQuestions` | `manager_context_questions`, `manager_context_answers` |
 | `baseConversations` | `conversations`, `conversation_messages`, `artifact_links` |
@@ -1624,6 +1931,7 @@ The current prototype constants map to schema records as follows:
 | `evidence` | `source_snapshots`, `evidence_items` |
 | `decisionRecord` | `decision_packages`, `memory_summaries`, `artifact_links` |
 | `missionReview` | `reviews` |
+| `testReviewImpact` | `reviews`, `checkpoint_results`, `task_results`, `operating_events`, `memory_entries` |
 | `taskResults` | `task_results`, `task_state_events`, `checkpoint_state_events` |
 | `missionEvents` | `operating_events` |
 | `workDrafts` | `work_drafts`, `work_draft_versions` |
@@ -1647,8 +1955,8 @@ The current prototype constants map to schema records as follows:
 1. Manager synthesis run loads profile, memory, missions, tasks, checkpoints, reviews, reports, evidence, permissions, and recent events.
 2. Run validates every visible claim against evidence capability.
 3. Create operating directive.
-4. Create daily brief snapshot.
-5. Create or update flagged items.
+4. Create daily brief snapshot only when exact replay, stale fallback, or notification history is needed.
+5. Create or update flagged items only when the product needs queue behavior; otherwise return current blockers from source records.
 6. Return or refresh the Label HQ projection from source records.
 
 ### Manager Conversation
@@ -1723,7 +2031,7 @@ Minimum RLS expectations:
 Before backend implementation is accepted:
 
 - Seed Sable Day and the Night Bus prototype from database records only.
-- Reconstruct Label HQ, Today's Brief, Staff readiness, Manager Office, Conversation Workspace, Investigation, Decision Package, Missions, Tasks, Checkpoints, Notes, Mission Memory, Review, Evidence Drawer, and Work Draft Drawer without hardcoded UI data.
+- Reconstruct Label HQ, Today's Brief, Staff readiness, Manager Office, Conversation Workspace, Investigation, Decision Package, Missions, Tasks, Checkpoint Review, Notes, Mission Memory, Review, Evidence Drawer, and Work Draft Drawer without hardcoded UI data.
 - Prove every visible metric, geography, timestamp, source line, warning, and recommendation links to evidence, memory, report, event, user input, or explicit limitation.
 - Prove every button that writes state creates an auditable record.
 - Prove every Manager-created artifact links to `manager_synthesis_runs` and `manager_run_actions`.
@@ -1745,8 +2053,8 @@ The first seed set should include:
 - evidence items matching `EV-TTK-0426`, `EV-YT-1190`, `EV-SP-3302`, `EV-ART-0007`, `EV-RGT-0612`, and `EV-DSP-0612`
 - agent profiles for Manager, Marketing Lead, Sync & Deals, Touring Agent, and Finance/Rights
 - Manager context questions
-- Night Bus artist object and release-planning mission
-- mission subject link from the Night Bus mission to the Night Bus artist object
+- Night Bus `music_item`, Glass Room EP `music_project`, and release-planning mission
+- mission subject link from the Night Bus mission to the Night Bus `music_item`
 - release-planning mission pattern version
 - active mission plan version with five checkpoint phases
 - all prototype tasks and task steps

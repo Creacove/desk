@@ -28,23 +28,24 @@ The visible prototype contract is:
 - The durable post-setup sidebar contains `Label HQ`, `Staff`, `Missions`, and bottom-pinned `Settings`. Manager is not a top-level nav item. Evidence is not a top-level nav item. Review is not a top-level nav item.
 - `Settings` currently opens the Artist Profile workspace.
 - Label HQ contains a top title, `Today's Operating Read`, `The Staff`, `Active missions`, and `Intelligence Alerts`.
+- Music is a first-class workspace for recorded work. It shows `Songs` and `Projects`, song lifecycle, files, details, rights, split confirmations, distribution readiness, linked missions/tasks/evidence, and project tracklists.
 - `Today's Brief` is a full narrative brief, not an expandable brief and not a metric-card dashboard.
 - The prototype's primary active mission is a Release War Room mission: `Release Night Bus on June 12`.
 - The Manager creates that mission from the user request `I want to drop a new song next week` and changes the plan by moving the release to `Friday, June 12, 2026` to protect delivery, DSP pitching, creator seeding, press, rights/metadata QA, and launch execution.
 - `The Staff` shows five agents: Manager online, plus Marketing Lead, Sync & Deals, Touring Agent, and Finance/Rights locked.
 - Intelligence alerts and mission surfaces should point to release-room blockers, including split sheet approval, distributor delivery, creator outreach, press/EPK readiness, and post-release signal reads.
 - Active missions show compact mission rows/cards with progress, review point, task count, checkpoint count, and note count.
-- The Missions workspace must make the operating feedback loop visible through `Tasks`, `Checkpoints`, `Notes`, and `Memory`. These are not separate boards; they are connected inputs into the next Manager review.
+- The Missions workspace must make the operating feedback loop visible through `Tasks`, `Checkpoint Review`, `Notes`, and `Memory`. These are not separate boards; they are connected inputs into the next Manager review.
 - Mission history should be presented as `Memory`, a living mission recap that explains what happened across tasks, checkpoints, notes, decisions, blockers, evidence gaps, and the next Manager review.
 - User-facing tasks must be plain artist/team actions, such as `Confirm split sheet`, `Submit Spotify for Artists pitch`, `Build TikTok creator target list`, `Prepare press angle and EPK`, `Approve launch-week content pack`, or `Verify release live across platforms`. Do not assign humans vague analytics work unless the UI explains exactly what to open, upload, approve, contact, decide, or verify.
 - Task completion must produce task results, not just a done state. The AI should interpret task results in the background and feed mission checkpoints, mission reviews, and mission memory.
 - Blocked or weak task results must be visible as Manager reviews and may revise tasks, change checkpoints, move mission dates, or change the mission path.
-- Internal validation tests may exist as rules and scoring logic, but `Checkpoints` are the primary user-facing surface for AI-owned progress checks. A checkpoint is not a human task.
+- Internal validation tests may exist as rules and scoring logic, but `Checkpoint Review` is the primary user-facing surface for AI-owned progress checks. A checkpoint is not a human task.
 - Agent-to-agent communication is shown as read-only `Notes`, not an approval queue. Users can inspect notes; they do not approve notes unless the note creates a human-facing task, draft, budget action, or external recommendation.
 - Artist profile remains visible user context. Artist operating memory is a deeper AI-readable memory layer that should influence decisions without becoming a generic visible profile page.
 - Recent conversations are passed into Label HQ and Manager Office and remain first-class thread objects.
 
-Backend implementation must mirror this prototype contract. Do not add backend concepts that create different primary navigation, a generic dashboard, a global Evidence page, or a top-level Manager area unless the prototype is intentionally changed first.
+Backend implementation must mirror this prototype contract. Do not add backend concepts that create different primary navigation, a generic dashboard, a global Evidence page, or a top-level Manager area unless the prototype is intentionally changed first. Every dynamic prototype value must trace to source database records, producer workflow, run/action provenance, and evidence or limitation; AI/provider/tool work must also trace to usage and cost records.
 
 ## 1. Executive Summary
 
@@ -535,18 +536,18 @@ Required structure:
 - left mission stack for selecting missions
 - selected mission detail surface on the right
 - mission status, review point, summary, and mission health
-- integrated work lanes for Tasks, Checkpoints, Notes, and Memory
+- integrated work lanes for Tasks, Checkpoint Review, Notes, and Memory
 - current operating read explaining how the lanes connect to the Manager's decision
 
 The selected mission should visually dominate the workspace. The mission list is navigation; the mission detail is the working object.
 
-### Tasks, Checkpoints, Notes, And Memory
+### Tasks, Checkpoint Review, Notes, And Memory
 
 Tasks are owner-ready work items with purpose, dependency, linked evidence, approval state, steps, and completion notes. Tasks that require approval cannot be marked done until approved.
 
-Checkpoints are AI-owned progress checks tied to the mission and, where relevant, linked to specific tasks. Checkpoints can be powered by internal validation tests, but the visible user language must be `Checkpoints`.
+Checkpoints are AI-owned progress checks tied to the mission and, where relevant, linked to specific tasks. Checkpoints can be powered by internal validation tests, but the visible user surface must be `Checkpoint Review`.
 
-Checkpoints must show:
+Checkpoint Review must show:
 
 - the plain-language question being checked
 - status: Waiting for setup, Watching signal, Needs review, Met, or Needs change
@@ -1258,7 +1259,7 @@ Prototype UI requirements:
 - opens into the Missions Workspace
 - can be selected from a mission stack
 - shows status, progress/health, summary, review point, and work counts
-- exposes Tasks, Checkpoints, Notes, and Memory as connected work lanes
+- exposes Tasks, Checkpoint Review, Notes, and Memory as connected work lanes
 - explains how the work lanes connect to the Manager's recommendation
 
 ### ManagerTask
@@ -1300,7 +1301,7 @@ Prototype UI requirements:
 
 ### MissionCheckpoint
 
-A mission checkpoint is an AI-owned progress check that validates whether a mission is working before the team spends more money or changes strategy. Internal test logic can power checkpoints, but the visible user-facing surface is `Checkpoints`.
+A mission checkpoint is an AI-owned progress check that validates whether a mission is working before the team spends more money or changes strategy. Internal test logic can power checkpoints, but the visible user-facing surface is `Checkpoint Review`.
 
 Fields:
 
@@ -1329,11 +1330,11 @@ A 10-day validation path should include setup confirmation, early execution chec
 
 Prototype UI requirements:
 
-- Checkpoints is a dedicated mission-linked workspace
+- Checkpoint Review is a dedicated mission-linked workspace
 - the checkpoint surface shows the plain-language question, capped budget if relevant, what the AI is checking, linked task, and the Manager's decision rule
 - the checkpoint surface must explicitly state when the user does not need to track metrics manually
 - checkpoints are visibly staged and can show Waiting for setup, Watching signal, Needs review, Met, or Needs change
-- budget cap approval is represented as a task; approving the cap must not be hidden inside Checkpoints
+- budget cap approval is represented as a task; approving the cap must not be hidden inside Checkpoint Review
 - a checkpoint may say that budget setup is waiting, but it does not own the human approval action
 
 ### AgentNote
@@ -1798,11 +1799,14 @@ Manager V1 can create Sync/Deals briefs and flag missing metadata or rights read
 
 ## 23. Data Model Requirements
 
-Current prototype status: the repository does not implement these tables yet. All artist, mission, evidence, agent note, and conversation data is held inside the React prototype as local in-memory mock/demo data. A production backend must persist the same objects and relationships that the prototype exposes.
+Current prototype status: the repository does not implement these tables yet. All artist, Music, mission, evidence, agent note, and conversation data is held inside the React prototype as local in-memory mock/demo data. A production backend must persist the same objects and relationships that the prototype exposes.
 
 Backend implementation must preserve the current prototype object boundaries:
 
 - `ArtistProfile` stores identity, market, genre, release, goal, budget, stage, and social handles.
+- `MusicItem` stores atomic recorded work such as songs, demos, released tracks, catalog tracks, lifecycle stage, Manager read, source limits, blocker, rights state, and next move.
+- `MusicProject` stores EPs, albums, singles-as-release-containers, mixtapes, compilations, and unreleased bodies of work; project tracklists link to `MusicItem` records without duplicating song state.
+- `MusicAsset`, `MusicIdentifier`, `MusicCredit`, `MusicSplit`, `MusicSplitContributor`, `MusicSplitConfirmation`, and `MusicDistributionPackage` store files, provider IDs, credits, rights/splits, scoped confirmation links, and distribution readiness.
 - `Agent` stores name, title, status, purpose, tools, evidence needs, connected sources, required sources, optional sources, source actions, and the Manager-prepared output available while locked.
 - `Mission` stores title, status, progress, task/checkpoint/note counts, review point, and summary.
 - `ManagerTask` stores owner, deadline, approval state, purpose, steps, linked evidence ids, dependency, and rationale.
@@ -1818,9 +1822,10 @@ The backend should not introduce a different navigation model or split these wor
 Authoritative V1 schema:
 
 - The database contract lives in `docs/workflows/future-schema-notes.md`.
+- Dynamic prototype lineage lives in `docs/workflows/prototype-data-lineage-contract.md`.
 - That file is no longer a speculative future sketch; it is the V1 operational database schema contract.
 - Backend implementation should derive migrations from that schema contract instead of maintaining a second table list in this PRD.
-- The contract covers ownership/workspaces, artist profile, generic artist work objects, source ingestion, evidence, agents, Manager runs, Label HQ, conversations, decision packages, dynamic missions, tasks, checkpoints, reviews, permissions, drafts, memory, learning, and rebuildable UI projections.
+- The contract covers ownership/workspaces, artist profile, first-class Music, non-music artist work objects, source ingestion, evidence, agents, Manager runs, usage/cost events, Label HQ, conversations, decision packages, dynamic missions, tasks, checkpoints, reviews, permissions, drafts, memory, learning, and rebuildable UI projections.
 
 Minimum security fields on sensitive records:
 
@@ -1855,10 +1860,12 @@ Current prototype status: no API layer is implemented in this repo. The followin
 Implementation alignment requirements:
 
 - Artist Profile Service must power Step 1 / Identity, Step 2 / Context, and the Settings/Artist Profile workspace.
+- Music Service must power the Music workspace, song/project persistence, lifecycle state, assets, identifiers, credits, splits, split confirmation links, distribution packages, and Music retrieval for Manager/agent runs.
 - Manager Run Service must preserve the current gated Manager Office flow: required context questions first, then Ask Manager, then investigation, then decision package.
 - Work Product Service must create and update the same mission, task, checkpoint, note, memory, draft, and conversation objects currently shown in the prototype.
 - Task Result Service must turn task completion, blockage, rejection, and revision into structured results that can change checkpoints, reviews, and mission memory.
 - Checkpoint Result Service must interpret checkpoint progress against stop/continue/scale rules instead of treating checkpoints as passive progress indicators.
+- Run Usage Service must record token, tool, and provider usage by workflow, run, subject, and status so per-usage billing can explain exactly what work happened.
 - Mission Review Service must run after meaningful events and decide whether to continue, revise, pause, cancel, replace, or create mission work.
 - Mission Memory Service must maintain both immutable mission events and compressed AI-readable mission summaries.
 - Artist Operating Memory Service must maintain long-running learned context across missions without exposing it as a normal profile page.
@@ -1873,8 +1880,11 @@ Core services:
 - Source Capability Service
 - Raw Snapshot Service
 - Evidence Normalization Service
+- Music Service
+- Music Distribution Adapter Service
 - Manager Playbook Service
 - Manager Run Service
+- Run Usage Service
 - Quality Gate Service
 - Work Product Service
 - Checkpoint Result Service
@@ -2078,7 +2088,7 @@ Current prototype expression:
 
 - the primary active mission is `Release Night Bus on June 12`
 - the Manager starts from `I want to drop a new song next week` and changes the plan to `Friday, June 12, 2026`
-- the mission exposes release-room `Tasks`, `Checkpoints`, `Notes`, and `Memory`
+- the mission exposes release-room `Tasks`, `Checkpoint Review`, `Notes`, and `Memory`
 - tasks include split sheet confirmation, distributor package submission, Spotify pitch submission, TikTok creator target list, press/EPK package, launch content approval, release-day link verification, and 48-hour signal read
 - task reviews feed checkpoint status; for example, a blocked split sheet changes the Rights & Metadata Gate to `Needs revision`
 - Mission Memory includes the original request, the date move, task results, checkpoint reviews, mission changes, current recommendation, next best action, and append-only mission log events
@@ -2229,7 +2239,7 @@ User can:
 - inspect evidence
 - approve/edit tasks and observe approval-required task blocking
 - view active checkpoints with AI-watched signals, linked tasks, status, decision rule, and no-manual-tracking language
-- approve, edit, or reject budget caps from Tasks, not Checkpoints
+- approve, edit, or reject budget caps from Tasks, not Checkpoint Review
 - view read-only agent-to-agent notes with evidence used and resulting changes
 - view mission memory for the 72-hour signal review, checkpoint results, decisions, blockers, and next recommendation
 - inspect the mission record drawer
@@ -2404,7 +2414,7 @@ Primary surfaces:
 - Manager Answer / Decision Package
 - Missions Workspace
 - Tasks Workspace
-- Checkpoints Workspace
+- Checkpoint Review Workspace
 - Notes Workspace
 - Mission Memory Drawer
 - Evidence Drawer

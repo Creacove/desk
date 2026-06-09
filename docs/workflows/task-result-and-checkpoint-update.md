@@ -1,6 +1,6 @@
 # Task Result And Dynamic Checkpoint Update Workflow
 
-Purpose: define how task activity becomes interpreted results, dynamic checkpoint changes, mission progress, reviews, and memory updates. Tasks and checkpoints are generated from the mission objective and pattern; this workflow must not assume a fixed release checklist.
+Purpose: define how task activity becomes interpreted results, dynamic Checkpoint Review changes, mission progress, reviews, and memory updates. Tasks and checkpoints are generated from the mission objective and pattern; this workflow must not assume a fixed release checklist.
 
 ## Trigger
 
@@ -49,6 +49,7 @@ Production sources:
 - `memory_entries`
 - `evidence_items`
 - `reviews`
+- `ai_run_usage_events` when Manager interpretation or checkpoint evaluation uses AI/provider/tool work
 
 ## Classification Logic
 
@@ -61,7 +62,7 @@ Task update types:
 - Revised: task details changed materially.
 - Missed: deadline passed without completion.
 
-Checkpoint update types are generic across mission patterns:
+Checkpoint Review update types are generic across mission patterns:
 
 - Waiting: required tasks, evidence, reports, or permissions are not ready.
 - Ready for Manager check: required task results are present.
@@ -80,6 +81,7 @@ The mission plan owns the relationship between checkpoints and tasks.
 - A checkpoint can depend on earlier checkpoints.
 - A later checkpoint should not be treated as clear if an earlier required checkpoint is still blocking.
 - When a task result arrives, the system updates the linked checkpoint first, then updates mission progress, review state, and memory.
+- The visible workspace is Checkpoint Review: it explains checkpoint state, the task/evidence inputs that changed it, and the Manager recommendation.
 
 ## Background Steps
 
@@ -88,11 +90,12 @@ The mission plan owns the relationship between checkpoints and tasks.
 3. Create task result with status, summary, interpretation, mission effect, and follow-up.
 4. Recompute linked checkpoint readiness against its decision rule.
 5. Recompute downstream checkpoint dependency state if this checkpoint changed.
-6. If the linked dynamic checkpoint changed, create checkpoint update record.
+6. If the linked dynamic checkpoint changed, create checkpoint state event and checkpoint result records.
 7. If recommendation may change, trigger review.
 8. Update mission progress and status if appropriate.
-9. Append mission memory entry explaining the task result, checkpoint effect, and any path change.
-10. Return updated task/checkpoint/mission UI state.
+9. Write usage events for any AI/provider/tool work used to interpret the result.
+10. Append mission memory entry explaining the task result, checkpoint effect, and any path change.
+11. Return updated task/Checkpoint Review/mission UI state.
 
 ## Artifacts Created Or Updated
 
@@ -116,6 +119,7 @@ The user should see:
 - effect on mission
 - linked checkpoint state
 - downstream checkpoint impact if the task unblocks or blocks later work
+- what changed since the previous checkpoint result
 - next recommended action
 
 Completion should never be just a checkmark. It is input into the operating loop.
@@ -130,4 +134,4 @@ Approving a task is not the same as approving every downstream external action. 
 
 ## Schema/API Implications
 
-Task state and task result should be separate. The task says what should happen; the result says what happened and how the Manager interpreted it. Checkpoint state should reference task result IDs, mission plan version, checkpoint dependency state, and mission pattern context so the system can explain why readiness changed for that specific mission.
+Task state and task result should be separate. The task says what should happen; the result says what happened and how the Manager interpreted it. Checkpoint state should reference task result IDs, mission plan version, checkpoint dependency state, prior checkpoint result, usage events, and mission pattern context so the system can explain why readiness changed for that specific mission.

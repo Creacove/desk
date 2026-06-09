@@ -3,7 +3,7 @@
 Document purpose: UI/UX redesign handoff for Google Stitch  
 Product: Other Sounds AI Record Label  
 Prototype URL during local dev: `http://127.0.0.1:5173/`  
-Current prototype source of truth: `src/pages/AiLabelPrototype.tsx`  
+Current prototype source of truth: `src/prototype/AiLabelPrototype.tsx`
 PRD reference: `docs/ai-record-label-prd.md`  
 Date: May 12, 2026
 

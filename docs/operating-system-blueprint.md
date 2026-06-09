@@ -1,7 +1,7 @@
 # Ordersounds Operating System Blueprint
 
 Document purpose: implementation blueprint for turning the prototype into a real AI record label operating system  
-Primary UI source of truth: `src/pages/AiLabelPrototype.tsx`  
+Primary UI source of truth: `src/prototype/AiLabelPrototype.tsx`
 Product references: `docs/ai-record-label-prd.md`, `docs/google-stitch-redesign-handoff.md`  
 Status: living architecture document
 
@@ -11,21 +11,23 @@ This master blueprint is the readable overview. The contract appendices are impl
 
 Implementation authority order:
 
-1. Prototype visible behavior in `src/pages/AiLabelPrototype.tsx`
+1. Prototype visible behavior in `src/prototype/AiLabelPrototype.tsx`
 2. This master blueprint for product doctrine and system boundaries
-3. Contract appendices for relationships, states, page coverage, personalization, source confidence, and mission patterns
+3. Contract appendices for data lineage, relationships, states, page coverage, personalization, source confidence, and mission patterns
 4. PRD/design handoff for supporting product intent
 
 ## 1. Executive Standard
 
 Ordersounds is not a dashboard with AI text added to it. It is a proactive operating system for an artist's label work. The visible prototype shows the desired surface: the artist enters a label workspace, the Manager understands the artist context, missions collect real work, and the system remembers what changed.
 
-The implementation must make that behavior real without hard-coding the Night Bus release example as the system. Night Bus is one demo mission. The product needs a generic mission engine that can handle career architecture, market expansion, A&R, release planning, budget allocation, source completeness, rights cleanup, creator validation, city validation, revenue investigation, sync readiness, partnerships, positioning, reputation/wellbeing, team operations, and future Manager-defined objectives.
+The implementation must make that behavior real without hard-coding the Night Bus release example as the system. Night Bus is one demo song and one demo release mission. The product needs a first-class Music domain for recorded work plus a generic mission engine that can handle career architecture, market expansion, A&R, release planning, budget allocation, source completeness, rights cleanup, creator validation, city validation, revenue investigation, sync readiness, partnerships, positioning, reputation/wellbeing, team operations, and future Manager-defined objectives.
 
 The standard for this document is traceability:
 
 - Every visible claim must trace to artist profile, user input, memory, evidence, agent report, or explicit limitation.
+- Every dynamic prototype field must trace to a database source, producer workflow, run/action provenance, and evidence or limitation.
 - Every background write must create or update a durable artifact.
+- Every AI, provider API, or billable tool invocation must write usage/cost records so per-usage billing can explain what work was paid for.
 - Every mission must explain why it exists, what pattern/playbook it used, what evidence it needs, what tasks/checkpoints were generated, and what would change the recommendation.
 - Every automatic internal action must be explainable to the user and reversible or reviewable where appropriate.
 - Every external, expensive, legal, financial, reputational, or sensitive action must require human approval.
@@ -50,13 +52,16 @@ The operating loop is:
 ### Core Rules
 
 1. The Manager must be proactive. It can create or update internal operating artifacts when source changes, agent reports, task results, reviews, schedules, or conversations reveal work that needs to exist.
-2. Missions are dynamic operating objects. A release mission is one pattern, not the mission system.
-3. Tasks and checkpoints are generated from the mission objective, selected pattern/playbook, evidence needs, dependencies, risk areas, agent reports, prior memory, and permission boundaries.
-4. Work is durable. A mission, task, checkpoint, note, memory entry, review, draft, directive, report, permission request, or referral must exist when the system says work was created or changed.
-5. Evidence has limits. The system must not claim private analytics, conversion, rights certainty, revenue certainty, or causation unless the source supports it.
-6. Memory is operational, not decorative. Memory must influence future decisions and preserve important context, blockers, rejected moves, and open questions.
-7. The human stays in command. The system can read, recommend, and organize internally; it cannot spend money, send external messages, make legal/financial conclusions, publish/schedule content, change public release plans, or make sensitive commitments without approval.
-8. Locked agents can still produce limited readiness/risk reports from available evidence, but they cannot produce full specialist conclusions without required sources.
+2. Music is first-class recorded-work state. Songs, demos, catalog tracks, projects, files, rights, splits, and distribution readiness belong in Music records, not generic artist objects.
+3. Missions are dynamic operating objects. A release mission is one pattern, not the mission system.
+4. Tasks and checkpoints are generated from the mission objective, selected pattern/playbook, evidence needs, dependencies, risk areas, agent reports, prior memory, Music state where relevant, and permission boundaries.
+5. Work is durable. A music item/project, mission, task, checkpoint, note, memory entry, review, draft, directive, report, permission request, or referral must exist when the system says work was created or changed.
+6. Evidence has limits. The system must not claim private analytics, conversion, rights certainty, revenue certainty, distribution success, or causation unless the source supports it.
+7. Memory is operational, not decorative. Memory must influence future decisions and preserve important context, blockers, rejected moves, and open questions.
+8. The human stays in command. The system can read, recommend, and organize internally; it cannot spend money, send external messages, make legal/financial conclusions, publish/schedule content, initiate distribution, change public release plans, or make sensitive commitments without approval.
+9. Locked agents can still produce limited readiness/risk reports from available evidence and Music state, but they cannot produce full specialist conclusions without required sources.
+10. UI projections are rebuildable. The prototype can have polished text, but production text that reflects state must come from records and lineage, not hand-authored constants.
+11. The database should stay boring. New tables are justified by durable state, audit, permissioning, billing, retrieval, or repeated query needs; otherwise use existing artifacts, links, events, memory, or service projections.
 
 ### Authority Levels
 
@@ -141,6 +146,30 @@ Updated by: user messages, Manager responses, run status, linked artifacts.
 Never automatic: do not fabricate user messages or mutate history; corrections should be new records.  
 Schema candidate: `conversations`, `conversation_messages`.
 
+### Music Item
+
+Purpose: durable recorded-work state for a song, demo, released track, catalog track, or alternate version.
+Owner: user/team for entered/corrected facts; Music service for persisted state; Manager and agents may suggest changes.
+Source of truth: Music item record plus assets, identifiers, credits, splits, evidence links, memory, and operating events.
+User-facing representation: Music workspace song rows and Song Room.
+Background role: gives Manager and specialist agents stable song context before deciding whether a source refresh is needed.
+Created by: user entry, setup focus, source/catalog matching, upload normalization, or approved Manager action.
+Updated by: user edits, trusted integration confirmations, uploaded files, split confirmations, distribution events, or approved Manager suggestions.
+Never automatic: do not treat Music state as proof by itself; do not silently change visible lifecycle stage, rights state, or public release status from an AI suggestion.
+Schema candidate: `music_items`, `music_assets`, `music_identifiers`, `music_credits`, `music_splits`.
+
+### Music Project
+
+Purpose: durable container for a single release package, EP, album, mixtape, compilation, deluxe, or unreleased body of work.
+Owner: user/team for tracklist and release intent; Music service for persisted state.
+Source of truth: project record plus `music_project_items`.
+User-facing representation: Music workspace Projects tab and Project Room.
+Background role: rolls up readiness from contained songs and project-level assets without duplicating song state.
+Created by: user entry, catalog matching, distributor/project source, or approved Manager action.
+Updated by: tracklist changes, user edits, trusted integration events, or approved Manager suggestions.
+Never automatic: do not copy song-level splits, assets, identifiers, or blockers into project payloads.
+Schema candidate: `music_projects`, `music_project_items`.
+
 ### Decision Package
 
 Purpose: a management-grade answer that includes the call, rationale, facts, evidence, rejected moves, work created/updated, and review condition.  
@@ -206,7 +235,7 @@ Schema candidate: `tasks`, `task_results`, `task_state_events`.
 Purpose: an AI-owned question that determines whether a mission can continue, should change, should pause, or needs human review.  
 Owner: Manager system, informed by relevant agents.  
 Source of truth: checkpoint record.  
-User-facing representation: Checkpoints Workspace and mission progress map.  
+User-facing representation: Checkpoint Review workspace and mission progress map.
 Background role: acts as a phase gate inside the mission plan. Each checkpoint groups the tasks, evidence, permissions, and agent findings needed to answer one mission question before the mission proceeds.  
 Created by: dynamic mission plan generation, mission run, decision package, or review.  
 Updated by: task results, source changes, agent reports, mission runs, reviews, and Manager assessment.  
@@ -328,11 +357,11 @@ Conversation is one trigger. The full system loop is broader:
 1. Scheduled cadence, source change, task result, review trigger, mission need, or user conversation starts a run.
 2. Relevant agents run with role-specific prompts and source limits.
 3. Agents produce reports with findings, confidence, evidence, limitations, risks/opportunities, recommended actions, and permission needs.
-4. Manager synthesis reads agent reports, profile, memory, active missions, tasks, checkpoints, notes, evidence, reviews, and conversations.
+4. Manager synthesis reads agent reports, profile, Music state where relevant, memory, active missions, tasks, checkpoints, notes, evidence, reviews, and conversations.
 5. Manager decides whether to do nothing, answer, update the daily brief, create/update a mission, generate or revise the mission plan, create tasks/checkpoints, create notes, update memory, trigger review, request evidence, create a draft, archive/supersede work, or ask for permission.
 6. Safe internal organization writes are applied.
 7. Permission-gated actions are shown to the user.
-8. Label HQ, Today's Brief, Missions, Tasks, Checkpoints, Notes, Memory, Reviews, and Manager Office update.
+8. Label HQ, Today's Brief, Missions, Tasks, Checkpoint Review, Notes, Memory, Reviews, and Manager Office update.
 
 ## 5. Dynamic Mission Engine
 
@@ -375,11 +404,13 @@ Mission generation follows:
 
 Night Bus is a release-planning demo mission. It is not the architecture limit.
 
-## 6. Dynamic Tasks And Checkpoints
+## 6. Dynamic Tasks And Checkpoint Review
 
 Tasks are generated when a human/team action or approved integration action is needed. Each task must sit under a checkpoint phase, because task results are interpreted against the checkpoint question they help answer. Each task must include owner, purpose, dependency, linked checkpoint, evidence needed, approval state, completion result expectations, and risk if late or skipped.
 
 Checkpoints are generated as AI-owned mission questions and ordered into phases. A checkpoint determines whether the mission can continue, should change, should pause, or needs human review. Checkpoints are generated from objective, pattern, evidence needs, dependencies, risks, agent reports, prior memory, and permission boundaries.
+
+The visible surface is **Checkpoint Review**. It is not a separate task system. It reviews checkpoint state, required task results, evidence gaps, dependencies, watched signals, and the Manager recommendation for movement.
 
 Checkpoint/task relationship:
 
@@ -483,6 +514,8 @@ Every page and button must be documented as:
 - background action
 - user-visible result
 - failure state
+- data lineage for state-bearing copy
+- usage/cost provenance when the value came from AI/provider/tool work
 
 The detailed inventory lives in `docs/workflows/page-action-inventory.md`.
 
@@ -492,6 +525,7 @@ The initial backend should be built around explicit records and traceable runs, 
 
 Minimum service boundaries:
 
+- Music service: songs, projects, assets, identifiers, credits, splits, confirmation links, distribution packages, Music readiness, and song/project retrieval.
 - Source/evidence service: source snapshots, evidence extraction, provenance, confidence, limitations.
 - Agent run service: scheduled/triggered agent runs, agent reports, source limits, and role-specific output.
 - Manager synthesis service: report intake, mission-pattern selection, action planning, response generation, and run audit.
@@ -506,6 +540,8 @@ The implementation can start simple, but these boundaries prevent the product fr
 ## 13. Appendix Index
 
 - Schema relationship contract: `docs/workflows/schema-relationship-contract.md`
+- Music lifecycle and storage contract: `docs/workflows/music-lifecycle-storage-contract.md`
+- Prototype data lineage contract: `docs/workflows/prototype-data-lineage-contract.md`
 - State machine contract: `docs/workflows/state-machine-contract.md`
 - Prototype coverage matrix: `docs/workflows/prototype-coverage-matrix.md`
 - Personalization contract: `docs/workflows/personalization-contract.md`

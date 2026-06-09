@@ -11,6 +11,7 @@ Daily brief generation starts when:
 - important source evidence changes
 - agent reports identify a meaningful risk or opportunity
 - mission/task/checkpoint/review state changes enough to alter the day's operating read
+- Music state changes enough to alter the artist-level read, release blocker, or priority
 
 The current prototype shows a narrative brief for Sable Day. Night Bus is one important signal inside that artist read, not the owner or structure of the brief.
 
@@ -18,6 +19,7 @@ The current prototype shows a narrative brief for Sable Day. Night Bus is one im
 
 - artist profile and artist operating memory
 - active missions across all patterns as supporting context
+- relevant Music state and Music-scoped memory/events when a song/project affects today's read
 - current operating directive
 - agent reports since the last brief, used internally by Manager synthesis
 - mission health, task results, checkpoint state, notes, reviews, and permissions
@@ -60,6 +62,8 @@ Production sources:
 - `decision_packages`
 - `conversations`
 - source-specific analytics capable of supporting visible metrics and geography claims
+- `music_items`, `music_projects`, and linked Music assets/splits/distribution packages when the brief mentions recorded-work state
+- `ai_run_usage_events` for AI/provider/tool work used by the daily run
 
 ## Classification Logic
 
@@ -89,7 +93,8 @@ If there is no meaningful new data, the brief should say what remains true about
 8. Generate or update the operating directive.
 9. Generate narrative brief with headline read, signal proof, Manager read, one directive, source line, generated time, and limitations.
 10. Link evidence drawer, Manager Office, active missions, permission requests, and flagged items.
-11. Store generated brief snapshot if production needs audit/history.
+11. Write usage events for AI/model calls, provider API calls, and billable extraction/tool work.
+12. Store generated brief snapshot if production needs history or exact replay.
 
 ## Artifacts Created Or Updated
 
@@ -102,6 +107,7 @@ The daily brief may create or update:
 - mission priority marker
 - permission request surfacing, not approval
 - recent movement feed item sourced from an existing operating event
+- usage/cost events for model/provider/tool work
 
 ## User-Facing Result
 
@@ -129,6 +135,8 @@ Visible structure:
 
 The brief must not show agent-by-agent commentary. Agent reports are internal inputs to Manager synthesis.
 
+Every dynamic text group in the brief must satisfy `prototype-data-lineage-contract.md`: source records, producer workflow, run/action provenance, evidence or limitation, and usage records when billable work was used.
+
 Visible metric rules:
 
 - `tracked streams` requires a connected/uploaded source that actually contains stream counts for the stated window.
@@ -148,4 +156,4 @@ The daily brief can recommend, organize, and route. It cannot approve spend, sub
 
 ## Schema/API Implications
 
-A future `daily_briefs` or `brief_snapshots` table is optional. More important records are `agent_reports`, `manager_synthesis_runs`, `operating_directives`, `operating_events`, evidence links, and mission priority links used to explain why the brief changed.
+A future `daily_briefs` or `brief_snapshots` table is optional. More important records are `agent_reports`, `manager_synthesis_runs`, `ai_run_usage_events`, `operating_directives`, `operating_events`, evidence links, Music links when relevant, and mission priority links used to explain why the brief changed.

@@ -1,0 +1,38 @@
+{
+  "version": "5",
+  "redirects": {
+    "https://esm.sh/@supabase/supabase-js@2": "https://esm.sh/@supabase/supabase-js@2.106.2"
+  },
+  "remote": {
+    "https://esm.sh/@supabase/supabase-js@2.106.2": "239a7bd494d2521e29f1b25f00b2dfb595a6b8eb4694543db239073eaecf8d32"
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@radix-ui/react-dialog@^1.1.14",
+        "npm:@supabase/supabase-js@^2.106.2",
+        "npm:@testing-library/jest-dom@^6.6.0",
+        "npm:@testing-library/react@16",
+        "npm:@types/node@^22.16.5",
+        "npm:@types/react-dom@^18.3.7",
+        "npm:@types/react@^18.3.23",
+        "npm:@vitejs/plugin-react-swc@^3.11.0",
+        "npm:autoprefixer@^10.4.21",
+        "npm:class-variance-authority@~0.7.1",
+        "npm:clsx@^2.1.1",
+        "npm:jsdom@^20.0.3",
+        "npm:lucide-react@0.462",
+        "npm:postcss@^8.5.6",
+        "npm:react-dom@^18.3.1",
+        "npm:react@^18.3.1",
+        "npm:tailwind-merge@^2.6.0",
+        "npm:tailwindcss-animate@^1.0.7",
+        "npm:tailwindcss@^3.4.17",
+        "npm:tus-js-client@^4.3.1",
+        "npm:typescript@^5.8.3",
+        "npm:vite@^5.4.19",
+        "npm:vitest@^3.2.4"
+      ]
+    }
+  }
+}

@@ -1,0 +1,250 @@
+import { ArrowRight, Calendar, ChevronRight, ClipboardCheck, Settings, Upload } from "lucide-react";
+import { ProductButton, WorkspaceHeader } from "../../design-system/components";
+import type {
+  AgentViewModel,
+  ArtistProfileViewModel,
+  AttentionItem,
+  CleanProductionView,
+  DrawerKind,
+  MissionViewModel,
+  MovementItem,
+  PriorityItem,
+} from "../../types/cleanProduction";
+
+export function DeskHQScreen({
+  profile,
+  priority,
+  attention,
+  movement,
+  agents,
+  missions,
+  onNavigate,
+  onManager,
+  onLockedAgent,
+  onDrawer,
+}: {
+  profile: ArtistProfileViewModel;
+  priority: PriorityItem[];
+  attention: AttentionItem[];
+  movement: MovementItem[];
+  agents: AgentViewModel[];
+  missions: MissionViewModel[];
+  onNavigate: (view: CleanProductionView) => void;
+  onManager: () => void;
+  onLockedAgent: (agent: AgentViewModel) => void;
+  onDrawer: (drawer: DrawerKind) => void;
+}) {
+  return (
+    <section>
+      <WorkspaceHeader
+        eyebrow="Desk Read"
+        title="Desk HQ"
+        action={
+          <ProductButton variant="secondary" onClick={() => onNavigate("artistProfileWorkspace")}>
+            <Settings className="h-4 w-4" aria-hidden="true" />
+            Workspace
+          </ProductButton>
+        }
+      />
+
+      <div className="rounded-xl border border-foreground/10 bg-background shadow-sm mb-6">
+        <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-foreground/10 bg-background md:grid-cols-4">
+          {priority.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              className="group flex min-w-0 items-center justify-between gap-3 border-b border-r border-foreground/8 px-3 py-3 text-left transition-colors hover:bg-foreground/[0.025] even:border-r-0 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0 lg:px-4 lg:py-3.5 text-left"
+              aria-label={item.actionLabel}
+              onClick={() => onNavigate(item.target)}
+            >
+              <span>
+                <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{item.label}</span>
+                <span className="mt-1 block text-base font-semibold">{item.value}</span>
+                <span className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 block">{item.meta}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-6">
+          <TodayBrief profile={profile} onManager={onManager} onDrawer={onDrawer} />
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Team Agents</p>
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{agents.length} active AI units</p>
+            </div>
+            <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mb-4">Specialized AI agents that help the artist and their team prepare work, spot gaps, and move missions forward.</p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+              {agents.map((agent) => {
+                const Icon = agent.icon;
+                return (
+                  <button
+                    key={agent.id}
+                    type="button"
+                    className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-center"
+                    onClick={() => (agent.id === "manager" ? onManager() : onLockedAgent(agent))}
+                  >
+                    <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background">
+                      <Icon className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <span className="mt-3 block text-sm font-semibold">{agent.name.replace("AI ", "")}</span>
+                    <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground mt-2 block">{agent.status === "available" ? "Available now" : "Can prepare limited brief"}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Missions</p>
+              <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onNavigate("missionsWorkspace")}>
+                View all
+              </button>
+            </div>
+            <div className="grid gap-3">
+              {missions.map((mission) => (
+                <button key={mission.id} type="button" className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-left" onClick={() => onNavigate("missionsWorkspace")}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="h-2 w-2 rounded-full bg-brand-accent" />
+                    <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Mission</span>
+                    <span className="text-xs font-semibold text-[#c2410c]">Blocker</span>
+                  </div>
+                  <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-3">{mission.title}</p>
+                  <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">{mission.summary}</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Progress {mission.progress}%</span>
+                    <span className="text-sm font-semibold text-muted-foreground">Open mission</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
+
+        <aside className="grid min-w-0 content-start gap-6 self-start pt-1 lg:sticky lg:top-8">
+          <section>
+            <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88 mb-4">Needs Attention</p>
+            <div className="grid gap-3">
+              {attention.length ? attention.slice(0, 3).map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  className="group rounded-xl border border-foreground/10 bg-background p-4 text-left shadow-sm transition-colors hover:border-brand-accent/20 hover:bg-foreground/[0.015]"
+                  onClick={() => (item.tone === "accent" ? onDrawer("evidence") : onNavigate("missionsWorkspace"))}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <span className={item.tone === "warning" ? "flex h-7 w-7 items-center justify-center rounded-lg bg-warning/10 text-warning" : "flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 text-brand-accent"}>
+                      {item.tone === "warning" ? (
+                        <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <Upload className="h-4 w-4" aria-hidden="true" />
+                      )}
+                    </span>
+                    <p className="text-[13px] font-semibold leading-tight text-foreground">{item.title}</p>
+                  </div>
+                  <p className="mt-3 text-[12px] font-medium leading-relaxed text-muted-foreground/80">{item.body}</p>
+                </button>
+              )) : (
+                <div className="rounded-xl border border-foreground/10 bg-background p-4 text-[12px] font-medium leading-relaxed text-muted-foreground/80 shadow-sm">
+                  No urgent items right now.
+                </div>
+              )}
+            </div>
+          </section>
+          <section>
+            <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88 mb-4">Recent Movement</p>
+            <div className="space-y-6 pl-1">
+              {movement.length ? movement.slice(0, 5).map((item) => (
+                <div key={`${item.title}-${item.time}`} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
+                  <p className="text-[12px] font-semibold leading-tight text-foreground">{item.title}</p>
+                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">
+                    {item.label} / {item.time}
+                  </p>
+                </div>
+              )) : (
+                <div className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
+                  <p className="text-[12px] font-semibold leading-tight text-foreground">No new movement yet</p>
+                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">System / Waiting</p>
+                </div>
+              )}
+            </div>
+          </section>
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function TodayBrief({
+  profile,
+  onManager,
+  onDrawer,
+}: {
+  profile: ArtistProfileViewModel;
+  onManager: () => void;
+  onDrawer: (drawer: DrawerKind) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-foreground/10 bg-background shadow-sm overflow-hidden">
+      <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <Calendar className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+          <div>
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Today's Brief</p>
+            <p className="text-sm font-semibold">{profile.name} - Artist operating read</p>
+          </div>
+        </div>
+        <ProductButton onClick={onManager}>Talk to Manager</ProductButton>
+      </div>
+      <div className="p-6">
+        <h2 className="max-w-2xl text-2xl font-semibold leading-tight">
+          {profile.name} has enough setup data for a first operating read, but decisions should stay inside the source limits.
+        </h2>
+        <div className="grid gap-4 md:grid-cols-2 mt-6">
+          <div>
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-success">Available Context</p>
+            <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
+              <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">
+                Spotify public catalog and the artist setup context are available. Use them for identity, catalog, and baseline management context.
+              </p>
+            </div>
+          </div>
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager Read</p>
+            <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
+              <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">
+                Public catalog metadata is useful for orientation, but it cannot prove saves, source-of-stream, revenue,
+                audience conversion, rights clearance, or campaign performance.
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="mt-6 border-t border-border pt-5">
+          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
+            {profile.goal || "The next useful step is to complete the artist operating context and connect stronger private sources before making scale decisions."}
+          </p>
+          <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-5 p-4">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Today's Directive</p>
+            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">
+              Start from verified identity and catalog context. Connect or upload private analytics, rights, assets, and campaign evidence before approving spend, external commitments, or release-readiness claims.
+            </p>
+          </div>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
+              View supporting evidence
+            </button>
+            <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Generated by AI Manager 08:30 AM</span>
+          </div>
+        </div>
+      </div>
+      <div className="hidden">
+        <ArrowRight aria-hidden="true" />
+      </div>
+    </section>
+  );
+}

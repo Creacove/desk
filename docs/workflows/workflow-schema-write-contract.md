@@ -2,11 +2,13 @@
 
 Purpose: define exactly how prototype actions and workflow runs read, write, link, audit, and refresh data in the V1 operational schema.
 
-Status: authoritative V1 write contract. Use this with `docs/workflows/future-schema-notes.md`, `docs/workflows/page-action-inventory.md`, and the workflow contracts in this folder.
+Status: authoritative V1 write contract. Use this with `docs/workflows/future-schema-notes.md`, `docs/workflows/page-action-inventory.md`, `docs/workflows/prototype-data-lineage-contract.md`, and the workflow contracts in this folder.
 
 ## Core Rule
 
 No workflow is real until it names its database writes.
+
+No dynamic prototype field is real until it can trace to source records, producer workflow, evidence or limitation, and run/usage provenance when AI or provider work was involved.
 
 Every action that changes operating state must define:
 
@@ -20,8 +22,21 @@ Every action that changes operating state must define:
 - memory/review behavior
 - failure behavior
 - UI projection refreshed
+- usage/cost accounting when AI, provider APIs, or billable tools are used
 
 This document does not add schema tables. It explains how the V1 schema tables coordinate.
+
+## Simplicity Gate
+
+Before adding a new write path or table, confirm it passes all five checks:
+
+1. A user action, Manager run, agent run, source sync, or provider callback clearly produces it.
+2. A current UI/API path or Manager retrieval path clearly reads it.
+3. It cannot be represented cleanly as an existing source record, `operating_events`, `artifact_links`, `evidence_links`, `memory_entries`, or a service projection.
+4. It has an owner service and a failure state.
+5. It improves trust, permissioning, billing, retrieval, or user clarity enough to justify the extra schema.
+
+If any check fails, keep the data in the existing artifact payload or projection until usage proves a separate table is needed.
 
 ## Coordination Model
 
@@ -51,17 +66,35 @@ AI/system writes use this sequence:
 5. Create `permission_requests` for approval-gated actions.
 6. Create `operating_events`.
 7. Write `memory_entries`, `reviews`, and `memory_summaries` when future behavior or recommendation state changes.
-8. Return refreshed UI projections from source-of-truth records.
+8. Write `ai_run_usage_events` for model, tool, and provider invocations that incurred usage.
+9. Return refreshed UI projections from source-of-truth records.
+
+Manager-triggered workflows should be boring to implement: retrieve context, produce typed actions, validate actions, write owned artifacts, attach lineage, refresh projections. Avoid hidden side effects where a Manager sentence changes state without a `manager_run_action` or a direct user write.
 
 Specialist agents create `agent_reports`, `agent_notes`, and `agent_inbox_items`. They do not directly create/update missions, tasks, or checkpoints. Manager synthesis decides whether to apply specialist recommendations.
+
+### Usage And Cost Writes
+
+Every workflow that calls an AI model, paid provider API, billable extraction tool, or usage-metered connector must write `ai_run_usage_events`.
+
+Required usage links:
+
+- Manager synthesis and conversation runs link usage to `manager_synthesis_run_id`.
+- Specialist runs link usage to `agent_run_id`.
+- Review runs link usage to `review_id` and the Manager/agent run that performed the comparison.
+- Music readiness, source matching, split-document extraction, and distribution-provider calls link usage to the relevant `music_item_id` or `music_project_id` through `subject_type` and `subject_id`.
+- Source sync and evidence extraction link usage to `source_sync_job_id`, source snapshot, or evidence extraction job.
+- Draft generation links usage to the draft and originating run/action.
+
+Usage events must be written for failed or partial provider calls when cost was incurred. Billing and per-usage reporting must aggregate from `ai_run_usage_events`, not from UI text, memory summaries, or rendered run logs.
 
 ### Link Rules
 
 Use links instead of hiding relationships in JSON:
 
 - `evidence_links`: evidence supporting claims, limitations, missing proof, or conflicting proof.
-- `artifact_links`: created/updated/referenced/superseded/dependent relationships between artifacts.
-- `mission_subject_links`: missions to the artist objects they are about.
+- `artifact_links`: created/updated/referenced/superseded/dependent relationships between artifacts, including conversations, decisions, notes, reviews, drafts, permissions, and Music records.
+- `mission_subject_links`: missions to the Music records or non-music artist objects they are about.
 - `task_dependencies` and `checkpoint_dependencies`: mission plan graph.
 
 ## Action Contracts
@@ -139,8 +172,9 @@ Writes:
 
 Conditional writes:
 
-- `artist_objects` for active focus objects such as a track, campaign, market, or source gap
-- `artist_object_identifiers` when stable provider/catalog identifiers are known
+- `music_items` or `music_projects` for active recorded-work focus such as a song, demo, catalog track, single, EP, or album
+- `music_identifiers` when stable provider/catalog identifiers are known
+- `artist_objects` for non-music active focus objects such as a campaign, market, budget pool, live opportunity, team process, or source gap
 - `memory_entries` for durable direction, constraints, budget posture, team capacity, do-not-repeat rules, or important corrections
 - `source_requests` for missing private analytics, rights documents, royalty statements, campaign data, or source handles
 - `evidence_items` only when user-supplied context is being treated as evidence
@@ -149,7 +183,7 @@ Conditional writes:
 Links:
 
 - `evidence_links` for user-supplied evidence
-- `artifact_links` from profile version to active focus object when created
+- `artifact_links` from profile version to active focus Music/non-music object when created
 
 Audit event:
 `operating_events.event_type = artist_profile_updated`
@@ -163,6 +197,259 @@ Reject invalid handles or conflicting identity changes. Do not silently overwrit
 UI projection refreshed:
 Setup, Label HQ, Staff readiness, Manager Office context, Settings.
 
+### Action: Create Or Edit Music Item Or Project
+
+Trigger:
+User creates/corrects a song, demo, catalog track, EP, album, single container, or project; Manager synthesis proposes a Music record from source evidence; provider matching finds a candidate; or setup/current focus points at recorded work.
+
+Primary owner:
+Music Service with Source/Evidence Service when source-backed.
+
+Reads:
+
+- `music_items`
+- `music_projects`
+- `music_project_items`
+- `music_identifiers`
+- `source_snapshots`
+- `evidence_items`
+- `missions`
+- `memory_entries`
+
+Writes:
+
+- `music_items` or `music_projects`
+- `music_project_items` when project membership changes
+- `music_identifiers` when stable provider/catalog identifiers are known
+- `operating_events`
+
+Conditional writes:
+
+- `evidence_items` and `evidence_links` when source-backed facts are normalized
+- `memory_entries` when the change affects future Manager or agent behavior
+- `reviews` when active missions depend on the changed Music state
+- `source_requests` when identity or provider matching is ambiguous
+
+Links:
+
+- `artifact_links` from originating profile/conversation/run/source to the Music record
+- `mission_subject_links` when an active mission is about the song/project
+- `evidence_links` for claim-bearing fields
+
+Audit event:
+`operating_events.event_type = music_item_created`, `music_item_updated`, `music_project_created`, `music_project_updated`, or `music_project_tracklist_updated`
+
+Memory/review behavior:
+Write memory only for durable operating meaning, such as a focus song changing, a project tracklist locking, a material blocker appearing, or a Manager recommendation depending on the change.
+
+Failure behavior:
+If provider matching is ambiguous, create a candidate/source request and do not merge automatically. If a user correction conflicts with source data, preserve both through source limitation/evidence conflict handling.
+
+UI projection refreshed:
+Music Workspace, Label HQ focus/priority strip, Staff readiness, linked Missions, Manager context retrieval.
+
+### Action: Upload Or Replace Music Asset
+
+Trigger:
+User uploads or replaces demo, rough mix, final master, clean version, instrumental, stems, artwork, metadata export, split sheet, pitch asset, lyrics, EPK, royalty statement, distributor export, or campaign report from a Music surface or source request.
+
+Primary owner:
+Music Service with Source/Evidence Service.
+
+Reads:
+
+- `music_items`
+- `music_projects`
+- `music_assets`
+- `uploaded_files`
+- `source_requests`
+- `source_capabilities`
+
+Writes:
+
+- `uploaded_files`
+- `music_assets`
+- `source_snapshots` when the file is parsed or preserved as source
+- `operating_events`
+
+Conditional writes:
+
+- `evidence_items` when facts are normalized from the file
+- `evidence_links` to Music, missions, tasks, checkpoints, decisions, or notes
+- `source_requests` fulfilled/dismissed/superseded state
+- `reviews` when asset state changes mission readiness
+- `memory_entries` when future behavior changes
+
+Links:
+
+- `artifact_links` from upload/source request to Music asset and affected artifacts
+- `evidence_links` for source-backed claims or limitations
+
+Audit event:
+`operating_events.event_type = music_asset_uploaded`, `music_asset_replaced`, `source_snapshot_created`, and optionally `evidence_item_created`
+
+Memory/review behavior:
+Uploading a file is not memory by default. Write memory when it changes a blocker, confidence, recommendation, rights state, distribution readiness, or future retrieval context.
+
+Failure behavior:
+If processing fails, keep `uploaded_files.status = failed`, keep or mark `music_assets.status = failed`, create an operating event, and leave recovery/source request state visible.
+
+UI projection refreshed:
+Music Workspace, Evidence Drawer, Staff readiness, Tasks/Checkpoint Review if linked, Label HQ if source warning or blocker changed.
+
+### Action: Update Music Metadata Credits Or Identifiers
+
+Trigger:
+User edits song/project details; provider matching updates identifiers; uploaded metadata is normalized; or Manager/source run proposes a correction.
+
+Primary owner:
+Music Service with Evidence Service when source-backed.
+
+Reads:
+
+- `music_items`
+- `music_projects`
+- `music_identifiers`
+- `music_credits`
+- `source_snapshots`
+- `evidence_items`
+
+Writes:
+
+- `music_items` or `music_projects` for lifecycle/status/detail changes
+- `music_identifiers`
+- `music_credits`
+- `operating_events`
+
+Conditional writes:
+
+- `evidence_items` and `evidence_links`
+- `reviews` if active mission assumptions change
+- `memory_entries` if the correction matters later
+
+Links:
+
+- `artifact_links` from source/upload/run/user correction to changed Music records
+- `evidence_links` for claim-bearing details
+
+Audit event:
+`operating_events.event_type = music_metadata_updated`, `music_identifier_added`, or `music_credit_updated`
+
+Memory/review behavior:
+Manager suggestions must remain suggestions until user accepted or source-confirmed. If the edit changes release, sync, finance, rights, or campaign readiness, trigger review for linked missions.
+
+Failure behavior:
+Do not silently overwrite conflicting identifiers or credits. Preserve conflict with evidence/source limitations and request confirmation when needed.
+
+UI projection refreshed:
+Music Workspace, linked Missions, Staff readiness, Manager retrieval context.
+
+### Action: Create And Confirm Music Split
+
+Trigger:
+User creates a split proposal, adds contributors, sends confirmation links, an invited contributor opens/confirms/rejects a split, or a split sheet upload is normalized.
+
+Primary owner:
+Music Service with Permission Service and Evidence Service.
+
+Reads:
+
+- `music_items`
+- `music_splits`
+- `music_split_contributors`
+- `music_split_confirmations`
+- `music_assets`
+- `permission_requests`
+- `tasks`
+- `checkpoints`
+
+Writes:
+
+- `music_splits`
+- `music_split_contributors`
+- `music_split_confirmations`
+- `permission_requests` and `permission_decisions` when sending external confirmation links requires approval
+- `operating_events`
+
+Conditional writes:
+
+- `music_assets` when a split sheet document is uploaded/linked
+- `task_state_events` or `task_results` when a linked split task is affected
+- `checkpoint_state_events` or `checkpoint_results` when a rights gate changes
+- `reviews`
+- `memory_entries`
+- `evidence_items` when signed/confirmed documents are normalized
+
+Links:
+
+- `artifact_links` from split proposal to linked task/checkpoint/mission/permission
+- `evidence_links` from split evidence to claims and limitations
+
+Audit event:
+`operating_events.event_type = music_split_created`, `music_split_confirmation_sent`, `music_split_confirmed`, `music_split_rejected`, or `music_split_status_changed`
+
+Memory/review behavior:
+Split status changes that affect release, sync, finance, rights, or distribution readiness must trigger linked mission/checkpoint review and update mission memory if the recommendation changes.
+
+Failure behavior:
+Do not send confirmation links unless share totals and recipient scope are valid. Expired, revoked, or superseded links cannot confirm. A rejected or disputed confirmation blocks readiness until resolved or explicitly overridden.
+
+UI projection refreshed:
+Music Rights tab, Tasks, Checkpoint Review, Mission Memory, Label HQ blockers, Staff readiness.
+
+### Action: Build Or Initiate Music Distribution Package
+
+Trigger:
+User or Manager prepares a distribution package, readiness is checked, user approves submission, or a provider adapter returns submission status.
+
+Primary owner:
+Music Service with Permission Service, Source/Evidence Service, and provider adapter.
+
+Reads:
+
+- `music_items`
+- `music_projects`
+- `music_assets`
+- `music_identifiers`
+- `music_credits`
+- `music_splits`
+- `music_distribution_packages`
+- `music_distribution_events`
+- `permission_requests`
+- `source_capabilities`
+
+Writes:
+
+- `music_distribution_packages`
+- `music_distribution_events`
+- `permission_requests` when approval is needed
+- `permission_decisions` when the user approves/rejects
+- `operating_events`
+
+Conditional writes:
+
+- `music_items` or `music_projects` lifecycle updates only after provider/user-confirmed state changes
+- `source_snapshots` and `evidence_items` for provider responses
+- `reviews` when delivery state changes mission readiness
+- `memory_entries` when recommendation or future behavior changes
+
+Links:
+
+- `artifact_links` from package to Music records, permission, mission/task/checkpoint, provider logs, and decision package
+- `evidence_links` for provider-confirmed submission or limitation claims
+
+Audit event:
+`operating_events.event_type = music_distribution_package_created`, `music_distribution_approval_requested`, `music_distribution_submitted`, `music_distribution_accepted`, or `music_distribution_failed`
+
+Memory/review behavior:
+Package creation alone does not prove release success. Provider confirmation or explicit user confirmation can update Music lifecycle and linked mission/checkpoint state.
+
+Failure behavior:
+If required assets, metadata, rights, or permission are missing, keep package `blocked` and expose the blockers. Provider failure preserves package/event history and does not mark the Music item released.
+
+UI projection refreshed:
+Music Workspace, Tasks, Checkpoint Review, Mission Memory, Label HQ, Evidence Drawer when provider evidence exists.
+
 ### Action: Generate Or Load Label HQ Daily Brief
 
 Trigger:
@@ -174,6 +461,8 @@ Manager Synthesis Service with Evidence Service and Memory Service.
 Reads:
 
 - `artist_profiles`
+- `music_items`
+- `music_projects`
 - `artist_objects`
 - `source_connections`
 - `source_snapshots`
@@ -194,13 +483,13 @@ Writes:
 
 - `manager_synthesis_runs`
 - `manager_run_actions`
-- `daily_brief_snapshots`
 - `operating_directives`
 - `operating_events`
 
 Conditional writes:
 
-- `flagged_items` for permissions, source gaps, stale source warnings, blocked tasks, or due reviews
+- `daily_brief_snapshots` only when exact replay, stale fallback, or notification history is needed
+- `flagged_items` only when the UI needs queue behavior for permissions, source gaps, stale source warnings, blocked tasks, or due reviews
 - `source_requests` if a critical proof gap blocks the brief
 - `reviews` if changed evidence may alter a recommendation
 - `memory_entries` when the brief changes future operating priority
@@ -217,7 +506,7 @@ Memory/review behavior:
 Do not store the brief as memory by default. Store memory only for priority changes, new blockers, new rejected moves, or durable operating learnings.
 
 Failure behavior:
-If generation fails, return last `daily_brief_snapshots` with stale status and failure reason. If a claim cannot be supported, downgrade it to a limitation or create a source request.
+If generation fails, return the last brief snapshot when snapshots are enabled; otherwise return a stale/limited Label HQ projection with failure reason. If a claim cannot be supported, downgrade it to a limitation or create a source request.
 
 UI projection refreshed:
 Label HQ, Today’s Brief, Recent Movement, Staff readiness, Flagged for you.
@@ -278,6 +567,8 @@ Reads:
 - `conversations`
 - `conversation_messages`
 - `artist_profiles`
+- `music_items`
+- `music_projects`
 - `artist_objects`
 - `memory_entries`
 - `memory_summaries`
@@ -401,6 +692,8 @@ Mission Engine Service.
 Reads:
 
 - `artist_profiles`
+- `music_items`
+- `music_projects`
 - `artist_objects`
 - `mission_patterns`
 - `mission_pattern_versions`
@@ -429,8 +722,9 @@ Writes:
 
 Conditional writes:
 
-- `artist_objects` if the mission has a new subject/focus object
-- `artist_object_identifiers` if external IDs are known
+- `music_items` or `music_projects` if the mission needs a new recorded-work subject
+- `music_identifiers` if external Music IDs are known
+- `artist_objects` if the mission needs a new non-music subject/focus object
 - `source_requests`
 - `permission_requests`
 - `agent_notes`
@@ -441,7 +735,7 @@ Conditional writes:
 
 Links:
 
-- `mission_subject_links` from mission to primary/supporting artist objects
+- `mission_subject_links` from mission to primary/supporting Music records or non-music artist objects
 - `evidence_links` to evidence and limitations
 - `artifact_links` from originating run/report/conversation/decision to mission and created artifacts
 
@@ -455,7 +749,7 @@ Failure behavior:
 If an existing active mission likely covers the objective, update that mission or ask a narrowing question. Do not create duplicates. If pattern confidence is low, use an ad hoc/narrow plan or ask for context.
 
 UI projection refreshed:
-Missions, Label HQ active missions, Tasks, Checkpoints, Notes, Mission Memory.
+Missions, Label HQ active missions, Tasks, Checkpoint Review, Notes, Mission Memory.
 
 ### Action: Approve Task
 
@@ -554,7 +848,7 @@ Failure behavior:
 If approval is required and not granted, reject completion and create no task result. If note/proof is weak, accept with low confidence and create source/evidence request.
 
 UI projection refreshed:
-Tasks, Checkpoints, Mission Memory, Missions, Label HQ if priority changed.
+Tasks, Checkpoint Review, Mission Memory, Missions, Label HQ if priority changed.
 
 ### Action: Block, Reject, Revise, Archive, Or Supersede Task
 
@@ -605,7 +899,7 @@ Failure behavior:
 Reject state change if required reason is missing for blocked, archived, or superseded states.
 
 UI projection refreshed:
-Tasks, Checkpoints, Mission Memory, Label HQ if blocker/flag changed.
+Tasks, Checkpoint Review, Mission Memory, Label HQ if blocker/flag changed.
 
 ### Action: Recompute Checkpoint State
 
@@ -658,7 +952,7 @@ Failure behavior:
 If required upstream checkpoints are blocked, do not mark downstream checkpoint met unless Manager synthesis revises the plan and records the reason.
 
 UI projection refreshed:
-Checkpoints, Tasks, Mission Memory, Missions, Label HQ if blocker/priority changed.
+Checkpoint Review, Tasks, Mission Memory, Missions, Label HQ if blocker/priority changed.
 
 ### Action: Create Agent Note Or Inbox Item
 
@@ -827,7 +1121,8 @@ Writes:
 
 Conditional writes:
 
-- `artist_object_assets` if the file belongs to a focus object
+- `music_assets` if the file belongs to a song/project
+- `artist_objects` or `artifact_links` if the file belongs to a non-music focus object
 - `source_connections` readiness/status update
 - `source_requests` fulfilled/dismissed/superseded state
 - `reviews` if evidence changes recommendation
@@ -849,7 +1144,7 @@ Failure behavior:
 If processing fails, keep `uploaded_files.status = failed`, create operating event, and keep source request open.
 
 UI projection refreshed:
-Evidence Drawer, Staff readiness, Locked Agent Workspace, Tasks/Checkpoints if linked, Label HQ if source warning changed.
+Evidence Drawer, Staff readiness, Locked Agent Workspace, Tasks/Checkpoint Review if linked, Label HQ if source warning changed.
 
 ### Action: Link Or Read Evidence Drawer
 
@@ -1181,6 +1476,11 @@ Target page/drawer only.
 | Label HQ | Generate Or Load Label HQ Daily Brief; Navigation Or Drawer Read |
 | Today's Brief | Generate Or Load Label HQ Daily Brief; Link Or Read Evidence Drawer; Submit Manager Question Or Continue Conversation |
 | Recent Movement | Navigation Or Drawer Read |
+| Music library | Create Or Edit Music Item Or Project; Navigation Or Drawer Read |
+| Music song room | Create Or Edit Music Item Or Project; Upload Or Replace Music Asset; Update Music Metadata Credits Or Identifiers; Create And Confirm Music Split; Build Or Initiate Music Distribution Package; Link Or Read Evidence Drawer; Navigation Or Drawer Read |
+| Music project room | Create Or Edit Music Item Or Project; Update Music Metadata Credits Or Identifiers; Navigation Or Drawer Read |
+| Split confirmation portal | Create And Confirm Music Split |
+| Music distribution hub | Build Or Initiate Music Distribution Package |
 | Staff | Navigation Or Drawer Read; Connect Source Or Create Source Request |
 | Manager Office context gate | Save Manager Context Answer |
 | Manager Office composer | Submit Manager Question Or Continue Conversation |
@@ -1189,7 +1489,7 @@ Target page/drawer only.
 | Decision Package | Persist Decision Package; Navigation Or Drawer Read; Link Or Read Evidence Drawer |
 | Missions | Create Or Update Mission; Navigation Or Drawer Read |
 | Tasks | Approve Task; Mark Task Done Or Submit Completion Note; Block, Reject, Revise, Archive, Or Supersede Task |
-| Checkpoints | Recompute Checkpoint State; Navigation Or Drawer Read |
+| Checkpoint Review | Recompute Checkpoint State; Navigation Or Drawer Read |
 | Notes | Create Agent Note Or Inbox Item; Consume Agent Inbox Item During Agent Run; Navigation Or Drawer Read |
 | Mission Memory | Write Memory And Regenerate Summary; Record Outcome Observation; Navigation Or Drawer Read |
 | Settings / Artist Profile | Save Setup Or Artist Profile Context |
@@ -1206,9 +1506,10 @@ Reference/static or owner setup tables:
 
 Runtime write sources:
 
-- setup/profile writes: `artists`, `artist_workspaces`, `artist_aliases`, `artist_profiles`, `artist_profile_versions`, `artist_objects`, `artist_object_identifiers`, `artist_object_assets`
+- setup/profile writes: `artists`, `artist_workspaces`, `artist_aliases`, `artist_profiles`, `artist_profile_versions`, `music_items`, `music_projects`, `music_identifiers`, `artist_objects`
 - source/evidence writes: `source_connections`, `source_credentials`, `source_sync_jobs`, `source_requests`, `uploaded_files`, `source_snapshots`, `evidence_items`, `evidence_links`
-- agent/Manager writes: `agent_runs`, `agent_reports`, `agent_notes`, `agent_inbox_items`, `manager_synthesis_runs`, `manager_run_actions`, `quality_gate_results`
+- music writes: `music_items`, `music_projects`, `music_project_items`, `music_assets`, `music_identifiers`, `music_credits`, `music_splits`, `music_split_contributors`, `music_split_confirmations`, `music_distribution_packages`, `music_distribution_events`
+- agent/Manager writes: `agent_runs`, `agent_reports`, `agent_notes`, `agent_inbox_items`, `manager_synthesis_runs`, `manager_run_actions`, `quality_gate_results`, `ai_run_usage_events`
 - operating picture writes: `daily_brief_snapshots`, `operating_directives`, `flagged_items`, `operating_events`, `navigation_preferences`
 - conversation/decision writes: `conversations`, `conversation_messages`, `manager_context_answers`, `decision_packages`, `decision_package_sections`, `artifact_links`
 - mission/task/checkpoint writes: `missions`, `mission_subject_links`, `mission_plan_versions`, `mission_plan_checkpoints`, `checkpoint_dependencies`, `task_dependencies`, `tasks`, `task_steps`, `task_state_events`, `task_results`, `checkpoints`, `checkpoint_state_events`, `checkpoint_results`
@@ -1221,6 +1522,8 @@ Runtime write sources:
 - Every runtime schema table has at least one write source in this contract.
 - No workflow updates mission/task/checkpoint meaning without an `operating_events` record.
 - No AI/system-created operating artifact is written without `created_from_run_id` or `created_from_action_id` where applicable.
+- No AI, provider API, or billable tool workflow completes without `ai_run_usage_events` or an explicit non-billable marker.
+- No dynamic prototype field is accepted unless it can be traced through `prototype-data-lineage-contract.md` to source records, producer workflow, provenance, and evidence or limitation.
 - No user-facing claim-bearing output lacks `evidence_links`, memory/profile/user-input provenance, report provenance, source snapshot provenance, or explicit limitation.
 - No permission-gated action executes from task/draft/decision state alone; it requires scoped `permission_requests` and `permission_decisions`.
 - UI projections are derived from source records and are not treated as source-of-truth tables in V1.

@@ -31,24 +31,28 @@ Authority: final coordinator for internal organization.
 Lens: audience, content, creators, campaign fit, creative angle, spend-readiness.  
 Output: marketing report, content/campaign risks, creator opportunities, source gaps.  
 Source use: social signals, campaign history, smart-link data, comments, content performance.
+Music use: focus song/project, approved assets, source limits, lifecycle stage, and linked campaign mission context.
 
 ### Sync & Deals
 
 Lens: rights-readiness, pitch assets, brand fit, sync/deal opportunity, deal-risk.  
 Output: readiness/risk report, missing materials, pitch-prep recommendation.  
 Source use: rights documents, pitch assets, catalog metadata, audience proof.
+Music use: Music assets, clean/instrumental/stems status, identifiers, credits, splits, confirmation state, and pitch package readiness.
 
 ### Touring Agent
 
 Lens: city demand, live-readiness, routing, venue/promoter fit.  
 Output: city validation report, live-readiness risk, routing opportunity.  
 Source use: geography, comments, streaming location, ticketing/live history, venue notes.
+Music use: song/project signal as context only; do not treat Music state as live demand without geography or live-market evidence.
 
 ### Finance/Rights
 
 Lens: budget, royalty, splits, payout timing, ownership risk, metadata hygiene.  
 Output: finance/rights readiness report, risk memo, missing proof request.  
 Source use: budget context, royalty statements, split sheets, distributor metadata, payout data.
+Music use: splits, split confirmations, rights documents, distributor events, royalty/payout evidence, metadata hygiene, and ownership limitations.
 
 ## Locked Agent Limits
 
@@ -98,7 +102,7 @@ The best authority model is: agents can propose mission candidates, but the Mana
 
 ## Manager Synthesis
 
-Manager synthesis reads agent reports alongside artist profile, operating memory, missions, tasks, checkpoints, notes, evidence, reviews, conversations, and permissions.
+Manager synthesis reads agent reports alongside artist profile, relevant Music state/history, operating memory, missions, tasks, checkpoints, notes, evidence, reviews, conversations, and permissions.
 
 The Manager decides whether to:
 
@@ -151,5 +155,6 @@ Required candidates:
 - `permission_requests`
 - mission links from runs/reports
 - evidence links from reports
+- `ai_run_usage_events` for every billable model, provider, or tool invocation
 
-Run records should be auditable and should distinguish `artist_wide`, `mission_specific`, `conversation`, `task_result`, `evidence_triggered`, `daily`, `weekly`, and `review` triggers.
+Run records should be auditable and should distinguish `artist_wide`, `mission_specific`, `conversation`, `task_result`, `evidence_triggered`, `daily`, `weekly`, and `review` triggers. Usage records should make per-usage billing explainable by workflow, agent, mission, song/project, provider, status, and cost estimate.

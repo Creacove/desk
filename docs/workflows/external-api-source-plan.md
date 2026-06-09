@@ -2,14 +2,15 @@
 
 Purpose: define the V1 external APIs, cost assumptions, procurement choices, and evidence boundaries needed to power the AI Manager from the prototype's handle-only artist setup.
 
-This plan is procurement-oriented. It should help decide which API keys, trials, and subscriptions are needed before backend schema and ingestion work starts.
+This plan is implementation-oriented as of June 3, 2026. Spotify is already the first catalog source, and Chartmetric credentials are now available for the first paid enrichment slice. This document still records procurement tradeoffs, but the current default is no longer "choose Chartmetric or Soundcharts"; it is "integrate Chartmetric in small verified slices, keep Soundcharts as fallback."
 
 ## CTO Recommendation
 
 V1 should optimize for the lowest paid path that still proves the AI Manager.
 
 - Use Spotify Web API and YouTube Data API immediately as the free/base layer.
-- Choose one paid music intelligence API first: Chartmetric or Soundcharts.
+- Use Chartmetric as the first paid music intelligence API because credentials are available.
+- Keep Soundcharts as the fallback if Chartmetric coverage, quota, or endpoint shape does not support the required V1 evidence.
 - Use Bright Data only as a public TikTok/Instagram raw-data fallback when the primary music intelligence API does not expose enough detail.
 - Use Apify only for low-budget experiments, not as the core evidence pipeline.
 - Evaluate Chartex only if TikTok sound/video depth is a blocker after testing Chartmetric or Soundcharts.
@@ -41,11 +42,37 @@ V1 should optimize for the lowest paid path that still proves the AI Manager.
 
 ### Choose One Primary Paid Music Intelligence API
 
-Choose Chartmetric if the product needs the richest music-industry context and its API confirms coverage for TikTok, Instagram, playlists, charts, track-level movement, and artist-level social intelligence.
+Choose Chartmetric for the current V1 build. The first implementation must prove token exchange, artist/track resolution, setup enrichment queueing, raw snapshot storage, and normalized evidence items before broad ingestion.
 
-Choose Soundcharts if budget and API quota matter more than Chartmetric's dashboard and coverage advantage.
+Choose Soundcharts later only if budget, quota, or coverage gaps make Chartmetric a poor fit for the selected artists/tracks.
 
 Do not pay for Chartmetric and Soundcharts at the same time until V1 has paying users or a clear data gap that one cannot cover.
+
+## Current Credential Setup
+
+Do not paste credentials into docs, source code, browser-visible env vars, or client code.
+
+Server-side environment variables:
+
+- `CHARTMETRIC_REFRESH_TOKEN`: long-lived Chartmetric refresh token.
+- `CHARTMETRIC_BASE_URL`: defaults to `https://api.chartmetric.com`.
+- `OPENAI_API_KEY`: OpenAI API key for server-side summary generation.
+- `OPENAI_SUMMARY_MODEL`: optional model override for source-backed summaries.
+
+Chartmetric access flow:
+
+1. Store the refresh token only in local `.env.local`, Supabase function secrets, or deployment secrets.
+2. Exchange the refresh token with `POST https://api.chartmetric.com/api/token`.
+3. Cache and reuse the returned bearer token until expiry; Chartmetric documents access tokens as one-hour tokens.
+4. Send API calls with `Authorization: Bearer <access token>`.
+5. Respect `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` headers.
+
+OpenAI use:
+
+1. Use OpenAI only after raw snapshots and normalized evidence items exist.
+2. Generate summaries from evidence rows, source limitations, and Music state, not directly from unpersisted provider responses.
+3. Persist model/provider metadata and usage/cost rows when summary generation runs.
+4. Store summary output as a derived artifact that can be regenerated or superseded, not as the source of truth.
 
 ### Add TikTok Raw-Data Fallback Only When Needed
 
@@ -86,9 +113,11 @@ The prototype collects handles and identity fields, not social OAuth. Production
 3. Use the Spotify ID, Spotify URL, artist name, and social URLs to resolve the artist in Chartmetric or Soundcharts.
 4. Store each entered handle as a source candidate with status: `resolved`, `unresolved`, `ambiguous`, `unavailable`, or `not_configured`.
 5. Pull free/public source snapshots first: Spotify catalog and YouTube channel/video data.
-6. Pull primary music intelligence snapshots from the selected paid provider.
-7. Pull Bright Data snapshots only for specific TikTok/Instagram evidence gaps.
-8. Normalize snapshots into evidence items with source, time window, confidence, freshness, provenance, limitation, and raw reference.
+6. After Spotify catalog import, queue Chartmetric setup enrichment for the artist profile, latest setup project/release, and up to five standalone songs outside that project.
+7. Pull primary music intelligence snapshots from the selected paid provider.
+8. Pull Bright Data snapshots only for specific TikTok/Instagram evidence gaps.
+9. Save durable song/project identity into first-class Music records when the source resolves catalog or release context.
+10. Normalize snapshots into evidence items with source, time window, confidence, freshness, provenance, limitation, and raw reference.
 
 Unresolved handles should not block onboarding. They should lower source readiness and create a Manager evidence request when the missing source affects decision quality.
 
@@ -97,15 +126,17 @@ Unresolved handles should not block onboarding. They should lower source readine
 | Manager need | Primary source | Fallback source | Claim boundary |
 | --- | --- | --- | --- |
 | Artist identity | Spotify Web API | Chartmetric/Soundcharts search | Supports identity and public profile only. |
-| Catalog and active release | Spotify Web API | Chartmetric/Soundcharts track/album endpoints | Supports public catalog context, not private release performance. |
-| Track-level momentum | Chartmetric or Soundcharts | Chartex for TikTok sound depth | Must name the platform and time window. |
-| TikTok hook/video movement | Chartmetric/Soundcharts track TikTok endpoints | Bright Data public TikTok scraper, Chartex | Attention signal unless paired with conversion data. |
+| Catalog and active release | Saved Music records + Spotify Web API | Chartmetric/Soundcharts track/album endpoints | Saved Music state supports continuity; source-backed catalog context still cannot prove private release performance. |
+| Track-level momentum | Chartmetric | Soundcharts or Chartex for TikTok sound depth | Must name the platform and time window. |
+| Track-level summary | Saved Music + Spotify public catalog + Chartmetric evidence + uploaded/private analytics where available | OpenAI source-backed synthesis | The summary is generated interpretation, not evidence. It must list source limitations. |
+| Streams/listeners/saves | Spotify for Artists export or authorized/private source when available | Chartmetric for Chartmetric-reported platform streams/listeners only when the endpoint clearly provides the metric and window | Label these as Chartmetric evidence. Do not attribute them to Spotify Web API. Saves/source-of-stream still require a source that supports those exact fields. |
+| TikTok hook/video movement | Chartmetric track/social endpoints where available | Bright Data public TikTok scraper, Chartex | Attention signal unless paired with conversion data. |
 | TikTok comments/themes | Bright Data public TikTok scraper | Apify experiment | Supports qualitative audience reaction, not streaming conversion. |
-| Instagram audience/posts/reels | Chartmetric/Soundcharts | Bright Data Instagram public scraper; Meta Business Discovery for eligible accounts | Public or third-party social signal only unless artist authorizes private insights. |
+| Instagram audience/posts/reels | Chartmetric | Bright Data Instagram public scraper; Meta Business Discovery for eligible accounts | Public or third-party social signal only unless artist authorizes private insights. |
 | YouTube channel/video response | YouTube Data API | Chartmetric/Soundcharts YouTube stats | Public engagement and comment signal, not private YouTube Studio analytics. |
-| Playlist adds/removals | Chartmetric or Soundcharts | None for V1 | Supports playlist movement if source includes date/reach/platform. |
-| Chart appearances | Chartmetric or Soundcharts | Chartex for TikTok/Spotify/YouTube/Instagram chart focus | Supports chart position only inside the source's coverage. |
-| City/market signal | Chartmetric/Soundcharts listener geography where available | YouTube/comment geography as weak signal | Do not claim city demand from comments alone. |
+| Playlist adds/removals | Chartmetric | Soundcharts | Supports playlist movement if source includes date/reach/platform. |
+| Chart appearances | Chartmetric | Chartex for TikTok/Spotify/YouTube/Instagram chart focus | Supports chart position only inside the source's coverage. |
+| City/market signal | Chartmetric geography where available | YouTube/comment geography as weak signal | Do not claim city demand from comments alone. |
 | Conversion evidence | Spotify for Artists export, distributor analytics, smart-link report, campaign report | Uploaded files | Required for saves, source-of-stream, ROI, or conversion claims. |
 
 ## Source Boundaries
@@ -113,6 +144,7 @@ Unresolved handles should not block onboarding. They should lower source readine
 The AI Manager must preserve the source-confidence contract.
 
 - Spotify Web API cannot prove private Spotify saves, skips, source-of-stream, Spotify for Artists pitch status, royalty revenue, or listener conversion.
+- Chartmetric-reported Spotify streams or platform streams can be used as Chartmetric evidence when returned by the contracted endpoint. They are not Spotify Web API data and must not be described as private account analytics.
 - TikTok, Instagram, YouTube, and X public data are attention and context signals unless paired with stronger conversion evidence.
 - Bright Data, Apify, and similar providers should be labeled as public web data providers, not official platform analytics.
 - Scraped/public social data must not be treated as private account analytics.
@@ -132,9 +164,13 @@ The AI Manager must preserve the source-confidence contract.
 ## Implementation Notes For Backend Planning
 
 - Store provider credentials server-side only.
+- Chartmetric refresh tokens are secrets. Never expose them through `VITE_` variables.
 - Create adapter boundaries by provider, not by UI surface.
 - Store raw source snapshots append-only before normalization.
+- Persist resolved songs/projects into Music records so Manager runs can reuse fresh-enough saved state instead of refetching provider data for every decision.
 - Normalize every source result into evidence items before Manager synthesis reads it.
+- In setup, separate project enrichment from standalone-song enrichment: the setup project is enriched as a release/project body of work, while up to five standalone songs are enriched individually.
+- Generate OpenAI summaries from saved evidence and Music records only. Do not let AI summaries become raw evidence.
 - Include cost controls in ingestion jobs: provider enable flags, per-provider monthly spend caps, per-artist refresh intervals, and manual refresh limits.
 - Prefer scheduled refreshes over on-demand full refreshes during V1 to control spend.
 - Use provider-specific stale-state warnings in Label HQ when paid source access is missing or exhausted.
@@ -145,13 +181,16 @@ The AI Manager must preserve the source-confidence contract.
 - Every API in the plan has a V1 purpose, cost posture, and source limitation.
 - The Manager can work from handle-only onboarding without requiring social OAuth.
 - The plan distinguishes public catalog, public social data, third-party music intelligence, and private connected/uploaded analytics.
+- Chartmetric access token exchange is server-side, refresh-token based, rate-limit aware, and covered by tests before broad ingestion.
+- OpenAI summaries are generated only from persisted source snapshots, evidence items, Music records, and explicit limitations.
 - No Manager-visible metric can be generated unless the source class supports that claim.
 - Any TikTok or Instagram public-data fallback includes legal/terms review and monthly spend limits before production use.
 
 ## Source Links
 
 - Chartmetric pricing: [from $350/month API access](https://chartmetric.com/pricing).
-- Chartmetric API docs: [API documentation](https://api.chartmetric.com/apidoc/).
+- Chartmetric API docs: [Developer API quickstart](https://apidocs.chartmetric.com/), [API documentation](https://api.chartmetric.com/apidoc/).
+- OpenAI Responses API: [API reference](https://platform.openai.com/docs/api-reference/responses).
 - Soundcharts pricing/API access: [$250 for 500k queries/month](https://soundcharts.com/en/pricing), [free sandbox and 1,000-request production token](https://help.soundcharts.com/en/articles/10091349-how-can-i-get-access-to-soundcharts-api).
 - Bright Data pricing: [1k free trial requests and $1.50/1k records pay-as-you-go](https://brightdata.com/pricing/web-scraper).
 - Bright Data TikTok scraper docs: [TikTok Scraper API](https://docs.brightdata.com/datasets/scrapers/tiktok/introduction).

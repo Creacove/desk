@@ -22,8 +22,9 @@ The Night Bus release mission in the prototype is one demo mission pattern. It m
 ## Required Context
 
 - artist profile and artist operating memory
-- relevant artist objects such as songs, music projects, campaigns, markets, rights packages, pitch packages, or source gaps
-- artist object relationships when the objective depends on a container or grouping, such as an EP tracklist or pitch package
+- relevant Music records such as songs, demos, catalog tracks, releases, EPs, albums, or unreleased projects
+- relevant non-music artist objects such as campaigns, markets, rights packages, pitch packages, live opportunities, budget pools, team processes, or source gaps
+- Music project membership or non-music object relationships when the objective depends on a container or grouping, such as an EP tracklist or pitch package
 - active missions and archived mission summaries
 - current mission patterns/playbooks
 - originating trigger and run/report/conversation context
@@ -49,8 +50,14 @@ Current prototype sources:
 Production sources:
 
 - `artist_profiles`
-- `artist_objects`
-- `artist_object_relationships`
+- `music_items`
+- `music_projects`
+- `music_project_items`
+- `music_assets`
+- `music_identifiers`
+- `music_splits`
+- `music_distribution_packages`
+- `artist_objects` for non-music subjects
 - `missions`
 - `mission_patterns`
 - `agent_reports`
@@ -133,8 +140,8 @@ Do not create a mission when:
 3. Search active and archived missions for semantic and structured overlap.
 4. Select, adapt, or create mission pattern/playbook.
 5. Define mission objective, reason it exists, originating trigger, relevant agents, required evidence, missing evidence, current recommendation, and change conditions.
-5a. Link zero, one, or many artist-object subjects only when they clarify what the mission is about. Do not force a song/project link for artist-wide, market, team, positioning, source, or process missions.
-5b. If the objective depends on a song lifecycle blocker, link the relevant `song` or `music_project` and reference the missing asset/identifier/state in mission context. Do not create standalone song tasks outside the mission plan; operational work should remain mission/checkpoint/task driven.
+5a. Link zero, one, or many Music/non-music subjects only when they clarify what the mission is about. Do not force a song/project link for artist-wide, market, team, positioning, source, or process missions.
+5b. If the objective depends on a song/project lifecycle blocker, link the relevant `music_item` or `music_project` and reference the missing asset/identifier/split/distribution state in mission context. Do not create standalone song tasks outside the mission plan; operational work should remain mission/checkpoint/task driven.
 6. Generate an ordered mission plan made of checkpoint phases.
 7. Generate tasks only where human/team/integration action is needed and attach each task to its primary checkpoint.
 8. Generate checkpoint dependencies so later phases know which earlier checks must clear first.

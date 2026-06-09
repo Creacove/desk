@@ -19,10 +19,18 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 | --- | --- | --- | --- |
 | `artists` | none | root | profile, conversations, missions, sources |
 | `artist_profiles` | artist | one current profile per artist | artist, updated_by |
-| `artist_objects` | artist | many per artist | object type, status, optional source snapshot |
-| `artist_object_identifiers` | artist object | many per object | provider identifier, confidence, optional source snapshot |
-| `artist_object_assets` | artist object | many per object | uploaded file or asset record, asset type, status |
-| `artist_object_relationships` | artist objects | many per object | from object, to object, relationship, optional order |
+| `music_items` | artist | many per artist | lifecycle, source limit, optional active focus |
+| `music_projects` | artist | many per artist | lifecycle, source limit, optional active focus |
+| `music_project_items` | music project/music item | many per project | project, item, order |
+| `music_assets` | music item/project | many per item/project | uploaded file, asset type, status |
+| `music_identifiers` | music item/project | many per item/project | provider/catalog identifier, confidence, optional source snapshot |
+| `music_credits` | music item/project | many per item/project | role, name, source/provenance |
+| `music_splits` | music item | zero or one current; history via supersession | contributors, document asset, task if blocking |
+| `music_split_contributors` | music split | many per split | name, role, shares, approval status |
+| `music_split_confirmations` | split contributor | many over time | scoped token, status, expiry |
+| `music_distribution_packages` | music item/project | many over time | provider, readiness, permission |
+| `music_distribution_events` | distribution package | append-only | provider event, status, message |
+| `artist_objects` | artist | many per artist | non-music object type, status, optional source snapshot |
 | `source_connections` | artist | many per artist | source, status, capability limits |
 | `source_snapshots` | artist/source | many per source | connection/source, captured_at, raw_ref |
 | `evidence_items` | artist | many per artist | source or user input, provenance, confidence, limitation |
@@ -37,7 +45,7 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 | `decision_packages` | synthesis_run | zero or more per run | recommendation, evidence, linked work |
 | `mission_patterns` | system | reusable | version, evidence needs, checkpoint types |
 | `missions` | artist | many per artist | pattern, origin trigger, current recommendation; optional subject links |
-| `mission_subject_links` | mission | zero or more per mission | optional artist object subjects such as song, project, market, rights package, or source gap |
+| `mission_subject_links` | mission | zero or more per mission | optional `music_item`, `music_project`, or non-music `artist_object` subjects |
 | `mission_plans` | mission | versioned; one active | pattern, generated_from_run |
 | `mission_plan_checkpoints` | mission_plan | many per plan | checkpoint, order, dependencies |
 | `checkpoints` | mission_plan/mission | many per mission | question, decision rule, required tasks |
@@ -46,8 +54,8 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 | `task_results` | task | many over time | user note or integration event, interpretation |
 | `agent_notes` | run/report/mission | many | sender, recipient, subject, resulting change |
 | `agent_inbox_items` | note | many | target agent, consume mode, status |
-| `memory_entries` | artist/mission/conversation | many | scope, source object, confidence |
-| `memory_summaries` | artist/mission/conversation | versioned; one current per scope | source memory/events, generated_from_run |
+| `memory_entries` | artist/mission/conversation/music | many | scope, source object, confidence |
+| `memory_summaries` | artist/mission/conversation/music | versioned; one current per scope | source memory/events, generated_from_run |
 | `outcome_observations` | recommendation/task/checkpoint/mission | many | expected outcome, observed signals, confounders |
 | `pattern_outcomes` | system aggregate | many | segment attributes, privacy level, sample count |
 | `reviews` | mission/checkpoint/decision | many | trigger, previous read, current read |
@@ -68,12 +76,13 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 ## Ownership Rules
 
 - User/team owns profile facts, approvals, uploads, task completion notes, and permission decisions.
-- User/team owns manually entered music objects, project tracklists, uploaded assets, and corrections to object identity.
+- User/team owns manually entered Music records, project tracklists, uploaded assets, contributor corrections, task completion notes, and permission decisions.
 - Manager owns synthesis, mission orchestration, operating directives, reviews, and mission memory.
 - Specialist agents own their runs, reports, notes, and source-readiness claims.
 - Evidence service owns source snapshots and normalized evidence.
 - Memory service owns operating events, memory entries, summaries, outcome observations, and pattern outcomes.
 - Permission service owns execution boundary state.
+- Music service owns persisted song/project state, Music assets, identifiers, credits, split proposals, confirmation records, distribution packages, and Music readiness projections.
 
 ## Implementation Acceptance
 
@@ -82,9 +91,12 @@ Purpose: define required entity relationships, ownership, cardinality, and lifec
 - Any user-facing recommendation must be reconstructable from profile, memory, evidence, reports, or limitations.
 - No task may exist without a mission and primary checkpoint unless it is explicitly a setup/source task outside mission scope.
 - No mission may be forced to have a music subject. Music links are optional context; missions remain objective-first.
-- No music project may duplicate song state. Projects link to songs through object relationships.
-- Song lifecycle fields may live in artist-object metadata in V1. Stage changes can be user-set or Manager-suggested, but AI suggestions must not silently mutate the user-visible song stage.
-- Audio, artwork, metadata files, split sheets, stems, clean versions, instrumentals, and pitch assets belong in `artist_object_assets`; provider catalog IDs belong in `artist_object_identifiers`.
+- No music project may duplicate song state. Projects link to songs through `music_project_items`.
+- Song lifecycle belongs on `music_items` and project lifecycle belongs on `music_projects`. Stage changes can be user-set or trusted-integration confirmed; Manager suggestions must not silently mutate the user-visible stage.
+- Audio, artwork, metadata files, split sheets, stems, clean versions, instrumentals, royalty statements, distributor exports, and pitch assets belong in `music_assets`; provider catalog IDs belong in `music_identifiers`.
 - Project readiness should be a rollup from contained songs and project-level assets, not an independent duplicate of every song blocker.
+- `artist_objects` must not be used for songs, tracks, demos, catalog tracks, EPs, albums, or other recorded-work containers. Use it for non-music operating subjects such as campaigns, markets, budget pools, live opportunities, source gaps, team processes, partnerships, or merchandise.
+- Split confirmation links must be scoped, revocable, auditable, and limited to the relevant `music_split_contributor`.
+- Distribution packages require explicit permission before external submission and provider confirmation before a Music record is treated as distributed/released.
 - Any learning claim must distinguish artist-specific evidence from aggregate pattern guidance.
 - Any claim that a move worked must link to outcome observations and state causal limitations.

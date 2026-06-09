@@ -46,7 +46,7 @@ Memory entries answer: what should the Manager or an agent remember next time?
 
 Every memory entry must include:
 
-- scope
+- scope, including artist, mission, conversation, task, checkpoint, source, run, music item, or music project
 - content
 - source object
 - source type
@@ -152,6 +152,7 @@ When the system changes its mind, it creates a new record or marks the old recor
 For the active artist, the Manager should retrieve:
 
 - durable artist memory
+- relevant Music-scoped memory and recent Music events when a song/project is part of the question or mission
 - mission memory for relevant missions
 - recent operating events
 - prior recommendations and outcomes
