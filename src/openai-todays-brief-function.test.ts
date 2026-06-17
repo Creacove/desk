@@ -8,7 +8,7 @@ const promptSource = readFileSync(join(process.cwd(), "supabase", "functions", "
 const bannedVisibleTerms = ["Chartmetric", "provider", "API", "normalized", "database", "evidence row", "third-party"];
 
 describe("OpenAI Today's Brief generation function", () => {
-  it("authenticates users and builds the packet from saved artist records only", () => {
+  it("authenticates users and builds the packet from all saved artist and music intelligence", () => {
     expect(functionSource).toContain("Deno.serve");
     expect(functionSource).toContain("Authorization");
     expect(functionSource).toContain("auth.getUser()");
@@ -19,6 +19,9 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain('from("music_projects")');
     expect(functionSource).toContain('from("evidence_items")');
     expect(functionSource).toContain('from("source_sync_jobs")');
+    expect(functionSource).toContain("buildIntelligenceSnapshotInputs");
+    expect(functionSource).toContain("deriveInsightComparisons");
+    expect(functionSource).toContain("working catalog in view");
     expect(functionSource).not.toContain("input.evidence");
     expect(functionSource).not.toContain("input.facts");
     expect(functionSource).not.toContain("input.brief");
@@ -37,15 +40,13 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("assertSignalsHaveEvidenceIds");
   });
 
-  it("defines the premium brief fields and hides vendor/backend language from visible copy", () => {
+  it("defines the premium intelligence brief fields and hides vendor/backend language from visible copy", () => {
     for (const field of [
       "headlineRead",
-      "artistSnapshot",
-      "signals",
+      "intelligenceSnapshot",
+      "metrics",
+      "insight",
       "managerRead",
-      "teamRead",
-      "todayDirective",
-      "missingProof",
       "sourceLine",
       "claimAudit",
     ]) {
@@ -54,11 +55,16 @@ describe("OpenAI Today's Brief generation function", () => {
 
     expect(promptSource).toContain("Write as the artist's senior Manager");
     expect(promptSource).toContain("Do not name backend sources or data vendors");
-    expect(promptSource).toContain("Your audience picture is");
-    expect(promptSource).toContain("I would treat this as");
-    expect(promptSource).toContain("private saves");
-    expect(promptSource).toContain("source-of-stream");
-    expect(promptSource).toContain("campaign ROI");
+    expect(promptSource).toContain("If a sentence could be said to another artist, delete it");
+    expect(promptSource).toContain("This is the first setup brief after onboarding");
+    expect(promptSource).toContain("Do not pretend a campaign, mission, rollout, or release plan already exists");
+    expect(promptSource).toContain("Do not explain that the working catalog is not the full discography");
+    expect(promptSource).toContain("Do not lead with missing data");
+    expect(promptSource).toContain("derive ratios, contrasts, and ranking insights");
+    expect(promptSource).toContain("Current Music In View");
+    expect(promptSource).toContain("do not infer full discography size from the workspace catalog");
+    expect(promptSource).not.toContain("Still missing");
+    expect(promptSource).not.toContain("private saves, repeat listeners");
 
     for (const term of bannedVisibleTerms) {
       expect(promptSource).toContain(term);

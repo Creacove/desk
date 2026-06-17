@@ -2057,7 +2057,24 @@ function buildArtistIntelligence(artistName: string, evidenceRows: EvidenceRow[]
   };
 }
 
-const TODAY_BRIEF_BANNED_VISIBLE_TERMS = ["chartmetric", "provider", "api", "normalized", "database", "evidence row", "third-party"];
+const TODAY_BRIEF_BANNED_VISIBLE_TERMS = [
+  "chartmetric",
+  "provider",
+  "api",
+  "normalized",
+  "database",
+  "evidence row",
+  "third-party",
+  "campaign",
+  "mission",
+  "rollout",
+  "private saves",
+  "repeat listeners",
+  "source-of-stream",
+  "conversion proof",
+  "still missing",
+  "missing data",
+];
 
 function todayBriefFromManagerRun(row?: ManagerSynthesisRunRow | null): TodayBriefViewModel | undefined {
   if (!row?.id || row.status !== "completed" || row.classification !== "setup_todays_brief_v1") return undefined;
@@ -2074,41 +2091,45 @@ function todayBriefFromManagerRun(row?: ManagerSynthesisRunRow | null): TodayBri
 
 function todayBriefFromPayload(payload: unknown): TodayBriefViewModel | undefined {
   if (!isPlainRecord(payload)) return undefined;
+  const intelligenceSnapshot = readBriefSnapshotGroups(payload.intelligenceSnapshot);
+  const legacySignals = readLegacyBriefSignals(payload.signals);
+  const snapshot = intelligenceSnapshot.length ? intelligenceSnapshot : legacySnapshotFromSignals(legacySignals);
+  const managerRead = readRequiredBriefString(payload.managerRead);
   const brief: TodayBriefViewModel = {
     headlineRead: readRequiredBriefString(payload.headlineRead),
-    artistSnapshot: readRequiredBriefString(payload.artistSnapshot),
-    signals: readBriefSignals(payload.signals),
-    managerRead: readRequiredBriefString(payload.managerRead),
-    teamRead: readRequiredBriefString(payload.teamRead),
-    todayDirective: readRequiredBriefString(payload.todayDirective),
-    missingProof: readBriefStringArray(payload.missingProof),
+    intelligenceSnapshot: snapshot,
+    snapshotSummary:
+      readRequiredBriefString(payload.snapshotSummary) ||
+      snapshot[0]?.insight ||
+      readRequiredBriefString(payload.artistSnapshot),
+    managerRead,
     sourceLine: readRequiredBriefString(payload.sourceLine),
     confidence: readTodayBriefConfidence(payload.confidence),
     generatedAt: readOptionalBriefString(payload.generatedAt),
     managerSynthesisRunId: readOptionalBriefString(payload.managerSynthesisRunId),
     state: "fresh",
   };
-  if (!brief.headlineRead || !brief.managerRead || !brief.todayDirective || !brief.signals.length) return undefined;
+  if (!brief.headlineRead || !brief.managerRead || !brief.intelligenceSnapshot.length || !brief.snapshotSummary) return undefined;
   return todayBriefHasBannedVisibleTerms(brief) ? undefined : brief;
 }
 
 function buildFallbackTodayBrief(workspace: ProductionWorkspace): TodayBriefViewModel {
   return {
-    headlineRead: `I'm seeing ${workspace.artistName} with enough saved setup context for a limited first operating read.`,
-    artistSnapshot: "Your saved artist profile and imported catalog give the Manager a starting picture, but the first brief still needs stronger private proof before hard decisions.",
-    signals: [
+    headlineRead: `${workspace.artistName}'s first management read is ready to organize around a focused starting point.`,
+    intelligenceSnapshot: [
       {
-        claim: "Your strongest current proof is that the artist identity and catalog setup are saved.",
-        whyItMatters: "That gives the team a real operating starting point instead of an empty workspace.",
-        evidenceIds: ["artist-profile", "catalog-setup"],
+        title: "Current Music In View",
+        insight: "The workspace has enough saved setup context to choose the first management focus.",
+        metrics: [
+          { label: "Artist profile", value: "Saved", context: "setup context", evidenceIds: ["artist-profile"] },
+          { label: "Working catalog", value: "In view", context: "current management focus", evidenceIds: ["catalog-setup"] },
+        ],
       },
     ],
+    snapshotSummary: "The first read should organize the workspace around one management focus, not a generic artist profile.",
     managerRead:
-      "I'm seeing enough context to start the first read, but I would treat it as limited until stronger private proof is connected. I can see public setup context, but I cannot yet see whether people are saving, returning, spending, or converting.",
-    teamRead: "The team should use this as the first operating read, not a final campaign or spend verdict.",
-    todayDirective: "Pick the first music focus and connect stronger private proof before approving spend, revenue claims, or external commitments.",
-    missingProof: ["Private saves, source-of-stream, revenue, conversion, and rights certainty are still missing."],
-    sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+      `This is the first operating read for ${workspace.artistName}. The useful move is not to spread attention across every possible lane; it is to choose the first management focus from the saved profile and current music in view, then let the team build the next work from that center.`,
+    sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
     confidence: "limited",
     state: "fallback",
   };
@@ -2126,13 +2147,48 @@ function readBriefStringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
 }
 
-function readBriefSignals(value: unknown): TodayBriefViewModel["signals"] {
+function readBriefSnapshotGroups(value: unknown): TodayBriefViewModel["intelligenceSnapshot"] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isPlainRecord).map((group) => ({
+    title: readRequiredBriefString(group.title),
+    insight: readRequiredBriefString(group.insight),
+    metrics: readBriefMetrics(group.metrics),
+  })).filter((group) => group.title && group.insight && group.metrics.length);
+}
+
+function readBriefMetrics(value: unknown): TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isPlainRecord).map((item) => ({
+    label: readRequiredBriefString(item.label),
+    value: readRequiredBriefString(item.value),
+    context: readOptionalBriefString(item.context),
+    evidenceIds: readBriefStringArray(item.evidenceIds),
+  })).filter((metric) => metric.label && metric.value && metric.evidenceIds.length);
+}
+
+function readLegacyBriefSignals(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.filter(isPlainRecord).map((item) => ({
     claim: readRequiredBriefString(item.claim),
     whyItMatters: readRequiredBriefString(item.whyItMatters),
     evidenceIds: readBriefStringArray(item.evidenceIds),
   })).filter((signal) => signal.claim && signal.whyItMatters && signal.evidenceIds.length);
+}
+
+function legacySnapshotFromSignals(signals: ReturnType<typeof readLegacyBriefSignals>): TodayBriefViewModel["intelligenceSnapshot"] {
+  if (!signals.length) return [];
+  return [
+    {
+      title: "Artist Intelligence",
+      insight: signals[0].whyItMatters,
+      metrics: signals.slice(0, 4).map((signal, index) => ({
+        label: index === 0 ? "Lead signal" : `Signal ${index + 1}`,
+        value: signal.claim,
+        context: "saved read",
+        evidenceIds: signal.evidenceIds,
+      })),
+    },
+  ];
 }
 
 function readTodayBriefConfidence(value: unknown): TodayBriefViewModel["confidence"] {
@@ -2142,13 +2198,14 @@ function readTodayBriefConfidence(value: unknown): TodayBriefViewModel["confiden
 function todayBriefHasBannedVisibleTerms(brief: TodayBriefViewModel) {
   const text = [
     brief.headlineRead,
-    brief.artistSnapshot,
+    brief.snapshotSummary,
     brief.managerRead,
-    brief.teamRead,
-    brief.todayDirective,
     brief.sourceLine,
-    ...brief.missingProof,
-    ...brief.signals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
+    ...brief.intelligenceSnapshot.flatMap((group) => [
+      group.title,
+      group.insight,
+      ...group.metrics.flatMap((metric) => [metric.label, metric.value, metric.context ?? ""]),
+    ]),
   ].join("\n");
   return TODAY_BRIEF_BANNED_VISIBLE_TERMS.some((term) => new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").test(text));
 }

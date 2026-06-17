@@ -48,21 +48,21 @@ export const productionFixtureData: ProductionFixtureData = {
     { label: "System", title: "Nigeria signal verified by Manager", time: "Yesterday" },
   ],
   todayBrief: {
-    headlineRead: "I’m seeing Sable Day as a developing artist with one clear release lane to protect today.",
-    artistSnapshot: "Your profile, catalog, and team context already give the Manager a usable picture of the artist and the current release focus.",
-    signals: [
+    headlineRead: "Sable Day's first read has a clear current-release center.",
+    intelligenceSnapshot: [
       {
-        claim: "Your strongest current proof is that the release focus is clear enough to organize the team around it.",
-        whyItMatters: "A focused lane keeps decisions practical instead of turning setup into a generic artist profile.",
-        evidenceIds: ["fixture-profile", "fixture-catalog"],
+        title: "Current Music In View",
+        insight: "The workspace is already organized around the newest release lane, so management can start with focus instead of catalog cleanup.",
+        metrics: [
+          { label: "Focus record", value: "Night Bus", context: "current release", evidenceIds: ["fixture-catalog"] },
+          { label: "Budget", value: "$4.1K", context: "working context", evidenceIds: ["fixture-profile"] },
+        ],
       },
     ],
+    snapshotSummary: "The strongest fixture signal is a focused current release with a defined budget context.",
     managerRead:
-      "I’m seeing an artist with enough saved context to start managing the next move. The catalog tells me where the team should focus, but I would not treat public attention as proof of saves, repeat listening, revenue, or campaign conversion yet.",
-    teamRead: "The team should protect the active release lane, clear rights-sensitive blockers, and keep stronger private proof on the source list.",
-    todayDirective: "Keep the release path focused and clear the proof gaps before approving spend or external commitments.",
-    missingProof: ["Private saves, source-of-stream, revenue, conversion, and final rights proof are still missing."],
-    sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+      "This is not a blank artist setup. Sable Day already has a current release lane and a budget context, so the first management decision is focus: decide whether Night Bus is the record that should organize the workspace today. If it is, every next task should protect that lane instead of opening five unrelated directions.",
+    sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
     confidence: "limited",
     generatedAt: "2026-06-17T08:30:00.000Z",
     managerSynthesisRunId: "fixture-brief-run",

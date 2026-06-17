@@ -242,21 +242,21 @@ describe("production Supabase services", () => {
           completed_at: "2026-06-17T08:30:00.000Z",
           action_plan: [
             {
-              headlineRead: "I'm seeing Burna Boy as a global artist with a clear home-market advantage.",
-              artistSnapshot: "Your catalog and public audience picture already show a large international base.",
-              signals: [
+              headlineRead: "London is the clearest pressure point in Burna Boy's current read.",
+              intelligenceSnapshot: [
                 {
-                  claim: "Your strongest current proof is a top home-market position and major listener scale.",
-                  whyItMatters: "That gives the team a real audience base to organize around instead of guessing.",
-                  evidenceIds: ["ev-1", "ev-2"],
+                  title: "Market Power",
+                  insight: "Lagos proves home-market authority, but London is the larger city signal in this setup read.",
+                  metrics: [
+                    { label: "Nigeria rank", value: "#1", context: "artist rank", evidenceIds: ["ev-1"] },
+                    { label: "Lagos", value: "1.34M", context: "listeners", evidenceIds: ["ev-2"] },
+                  ],
                 },
               ],
+              snapshotSummary: "The market read has both home authority and major international pressure.",
               managerRead:
-                "I'm seeing a serious artist profile, not an empty setup. Your audience picture is already broad enough that the next decision should be about focus, not basic validation.",
-              teamRead: "The team should treat the artist profile, imported catalog, and public audience picture as the starting operating context.",
-              todayDirective: "Pick the current release or catalog lane that deserves management attention today.",
-              missingProof: ["Private saves and source-of-stream are still missing."],
-              sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+                "Burna Boy is not a basic validation problem. The useful read is that Nigeria gives the artist authority while the public audience picture points to international leverage. Today, I would choose the first management focus from the records that best connect those two realities.",
+              sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
               confidence: "medium",
               generatedAt: "2026-06-17T08:30:00.000Z",
               managerSynthesisRunId: "brief-run-1",
@@ -276,11 +276,15 @@ describe("production Supabase services", () => {
     const desk = await createSupabaseProductionRepositories(client, workspace).desk.loadDesk();
 
     expect(desk.todayBrief).toMatchObject({
-      headlineRead: "I'm seeing Burna Boy as a global artist with a clear home-market advantage.",
-      managerRead: expect.stringContaining("I'm seeing a serious artist profile"),
-      todayDirective: "Pick the current release or catalog lane that deserves management attention today.",
+      headlineRead: "London is the clearest pressure point in Burna Boy's current read.",
+      managerRead: expect.stringContaining("not a basic validation problem"),
+      snapshotSummary: "The market read has both home authority and major international pressure.",
       managerSynthesisRunId: "brief-run-1",
       state: "fresh",
+    });
+    expect(desk.todayBrief?.intelligenceSnapshot[0]).toMatchObject({
+      title: "Market Power",
+      metrics: expect.arrayContaining([expect.objectContaining({ label: "Nigeria rank", value: "#1" })]),
     });
     expect(JSON.stringify(desk.todayBrief)).not.toMatch(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i);
   });
@@ -288,20 +292,19 @@ describe("production Supabase services", () => {
   it("generates Today's Brief manually from saved normalized sources through the Supabase function", async () => {
     const calls: Array<{ name: string; body: unknown }> = [];
     const brief = {
-      headlineRead: "I'm seeing Nova Vale as a developing artist with enough public proof for a first read.",
-      artistSnapshot: "Your setup gives the Manager a usable picture of stage, direction, catalog, and audience.",
-      signals: [
+      headlineRead: "Nova Vale's first management read has a clear market center.",
+      intelligenceSnapshot: [
         {
-          claim: "The catalog gives us a starting point for management decisions.",
-          whyItMatters: "It lets the team discuss actual work instead of an empty profile.",
-          evidenceIds: ["catalog"],
+          title: "Current Music In View",
+          insight: "The imported music should be treated as current management focus, not a total discography claim.",
+          metrics: [
+            { label: "Recent focus", value: "Latest project + 5 songs", context: "working catalog", evidenceIds: ["catalog"] },
+          ],
         },
       ],
-      managerRead: "The catalog tells me there is enough saved context to begin managing the artist, but not enough private proof to make spend claims.",
-      teamRead: "The team should use this as an operating read, not a final campaign verdict.",
-      todayDirective: "Choose the first music focus and connect stronger private proof before approving spend.",
-      missingProof: ["Private saves, source-of-stream, revenue, and conversion are still missing."],
-      sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+      snapshotSummary: "The first read is ready to choose a management focus.",
+      managerRead: "The current music in view gives Nova Vale enough surface to choose the first management focus. Today, I would pick the record or story that best explains the strongest audience signal.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
       confidence: "limited",
       generatedAt: "2026-06-17T08:30:00.000Z",
       managerSynthesisRunId: "brief-run-2",
@@ -335,10 +338,11 @@ describe("production Supabase services", () => {
       },
     ]);
     expect(result).toMatchObject({
-      headlineRead: "I'm seeing Nova Vale as a developing artist with enough public proof for a first read.",
+      headlineRead: "Nova Vale's first management read has a clear market center.",
       state: "fresh",
       managerSynthesisRunId: "brief-run-2",
     });
+    expect(result.intelligenceSnapshot[0]?.title).toBe("Current Music In View");
   });
 
   it("saves setup context through the atomic profile setup RPC", async () => {

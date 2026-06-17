@@ -1,12 +1,29 @@
-export type TodaysBriefSignalInput = {
+export type TodaysBriefMetricInput = {
   id: string;
-  category: "artist_context" | "market" | "audience" | "catalog" | "playlist" | "social_attention" | "source_limit";
+  category:
+    | "artist_context"
+    | "audience_scale"
+    | "market_heat"
+    | "public_reach"
+    | "playlist"
+    | "discovery"
+    | "track_momentum"
+    | "current_music"
+    | "source_limit";
+  subjectType?: string;
+  subjectLabel?: string;
   label: string;
-  value?: string;
-  whyItMatters: string;
+  value: string;
+  context?: string;
   confidence: "high" | "medium" | "low" | "unknown";
   evidenceIds: string[];
   limitation?: string;
+};
+
+export type TodaysBriefDerivedInsight = {
+  label: string;
+  read: string;
+  evidenceIds: string[];
 };
 
 export type ArtistBriefPacket = {
@@ -19,22 +36,35 @@ export type ArtistBriefPacket = {
     budgetContext?: string;
     socialHandles: Record<string, string>;
   };
-  catalog: {
-    songCount: number;
+  workingCatalog: {
+    scopeLabel: "working catalog in view";
     projectCount: number;
-    albumCount: number;
-    latestTitles: string[];
-    catalogStatus: string;
+    songCount: number;
+    latestProjectTitles: string[];
+    focusSongTitles: string[];
+    note: string;
   };
-  signals: TodaysBriefSignalInput[];
+  intelligenceSnapshotInputs: Array<{
+    title: string;
+    metrics: TodaysBriefMetricInput[];
+    suggestedInsight?: string;
+  }>;
+  derivedInsights: TodaysBriefDerivedInsight[];
   sourceLimits: string[];
   generatedFor: "setup" | "manual";
 };
 
-export type TodaysBriefSignalOutput = {
-  claim: string;
-  whyItMatters: string;
+export type TodaysBriefMetricOutput = {
+  label: string;
+  value: string;
+  context?: string;
   evidenceIds: string[];
+};
+
+export type TodaysBriefSnapshotGroupOutput = {
+  title: string;
+  insight: string;
+  metrics: TodaysBriefMetricOutput[];
 };
 
 export type TodaysBriefClaimAudit = {
@@ -45,12 +75,9 @@ export type TodaysBriefClaimAudit = {
 
 export type TodaysBriefOutput = {
   headlineRead: string;
-  artistSnapshot: string;
-  signals: TodaysBriefSignalOutput[];
+  intelligenceSnapshot: TodaysBriefSnapshotGroupOutput[];
+  snapshotSummary: string;
   managerRead: string;
-  teamRead: string;
-  todayDirective: string;
-  missingProof: string[];
   sourceLine: string;
   confidence: "high" | "medium" | "low" | "limited" | "unknown";
   generatedAt?: string;
@@ -68,6 +95,18 @@ export const bannedVisibleTerms = [
   "third-party",
 ];
 
+const setupVisibleAntiPatterns = [
+  "campaign",
+  "mission",
+  "rollout",
+  "private saves",
+  "repeat listeners",
+  "source-of-stream",
+  "conversion proof",
+  "still missing",
+  "missing data",
+];
+
 export const todaysBriefJsonSchema = {
   name: "setup_todays_brief_v1",
   strict: true,
@@ -76,39 +115,48 @@ export const todaysBriefJsonSchema = {
     additionalProperties: false,
     required: [
       "headlineRead",
-      "artistSnapshot",
-      "signals",
+      "intelligenceSnapshot",
+      "snapshotSummary",
       "managerRead",
-      "teamRead",
-      "todayDirective",
-      "missingProof",
       "sourceLine",
       "confidence",
       "claimAudit",
     ],
     properties: {
-      headlineRead: { type: "string", maxLength: 220 },
-      artistSnapshot: { type: "string", maxLength: 520 },
-      signals: {
+      headlineRead: { type: "string", maxLength: 180 },
+      intelligenceSnapshot: {
         type: "array",
-        minItems: 1,
-        maxItems: 6,
+        minItems: 2,
+        maxItems: 5,
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["claim", "whyItMatters", "evidenceIds"],
+          required: ["title", "insight", "metrics"],
           properties: {
-            claim: { type: "string", maxLength: 260 },
-            whyItMatters: { type: "string", maxLength: 320 },
-            evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+            title: { type: "string", maxLength: 48 },
+            insight: { type: "string", maxLength: 220 },
+            metrics: {
+              type: "array",
+              minItems: 1,
+              maxItems: 6,
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["label", "value", "context", "evidenceIds"],
+                properties: {
+                  label: { type: "string", maxLength: 42 },
+                  value: { type: "string", maxLength: 42 },
+                  context: { type: "string", maxLength: 80 },
+                  evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+                },
+              },
+            },
           },
         },
       },
-      managerRead: { type: "string", maxLength: 1200 },
-      teamRead: { type: "string", maxLength: 620 },
-      todayDirective: { type: "string", maxLength: 320 },
-      missingProof: { type: "array", items: { type: "string" } },
-      sourceLine: { type: "string", maxLength: 260 },
+      snapshotSummary: { type: "string", maxLength: 280 },
+      managerRead: { type: "string", maxLength: 1800 },
+      sourceLine: { type: "string", maxLength: 180 },
       confidence: { type: "string", enum: ["high", "medium", "low", "limited", "unknown"] },
       claimAudit: {
         type: "array",
@@ -130,18 +178,26 @@ export const todaysBriefJsonSchema = {
 
 export function buildTodaysBriefInstructions() {
   return [
-    "Write as the artist's senior Manager. The Manager knows the artist's saved profile, catalog, public audience picture, and current proof limits.",
+    "Write as the artist's senior Manager and elite music strategy analyst. The Manager is decisive, commercial, culturally aware, and specific.",
+    "This is the first setup brief after onboarding. The artist has not created missions, tasks, rollout plans, or campaigns yet.",
+    "Do not pretend a campaign, mission, rollout, or release plan already exists. Do not use the word campaign, mission, or rollout in visible output.",
+    "Visible output has only two product surfaces: Artist Intelligence and Manager's Read. The JSON still includes sourceLine and claimAudit for product/audit use.",
     "Do not name backend sources or data vendors. Never say Chartmetric, provider, API, normalized, database, evidence row, or third-party in any visible field.",
-    "Use Manager language: I'm seeing, Your strongest current proof is, The catalog tells me, Your audience picture is, and I would treat this as where natural.",
-    "Translate all metrics into plain artist/team meaning. Do not expose raw metric names.",
-    "Pick the few facts that change the management read. Do not list every field.",
-    "Make the brief feel specific to this artist, not reusable setup advice.",
-    "End with one useful thing to do today.",
-    "The sourceLine must be exactly this plain-language idea, adjusted only for grammar: Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
-    "The Manager can sound confident, but cannot invent certainty.",
-    "Never claim private saves, repeat listeners, source-of-stream, revenue, rights certainty, campaign ROI, or conversion unless the packet directly supports it.",
-    "If proof is limited, say it like a Manager: I can see public attention, but I cannot yet see whether people are saving, returning, or converting.",
-    "Every signal must include evidenceIds from the packet. Every claimAudit item must include the evidenceIds that support it.",
+    "Use the intelligenceSnapshot to prove the Manager knows the artist: compact groups like Scale, Market Heat, Public Reach, Current Music In View, Playlist/Discovery, or Track Momentum when the packet supports them.",
+    "Current Music In View means the latest project and recent focus records available to manage now; do not infer full discography size from the workspace catalog.",
+    "Do not explain that the working catalog is not the full discography. Use it naturally as current music in view.",
+    "Pick the most useful 8-16 facts from the packet. Do not dump every metric.",
+    "derive ratios, contrasts, and ranking insights from the data: biggest city vs. second city, combined secondary markets, one social platform compared to the others, playlist reach compared to follower scale, current records with stronger evidence than others.",
+    "Every snapshot group insight must say what the numbers mean, not merely repeat the numbers.",
+    "The Manager's Read must go deeper than the artist already knows. Explain the shape of the artist's business right now: power center, hidden second lane, cultural base, public leverage, current music focus, and where management should start.",
+    "Every Manager's Read paragraph must include at least one artist-specific fact, title, market, platform, comparison, or derived inference from the packet.",
+    "If a sentence could be said to another artist, delete it.",
+    "Do not write generic platform advice such as X drives conversation, Instagram controls image, or TikTok tests hooks unless the artist's actual numbers make that point non-obvious.",
+    "Do not lead with missing data. Do not end with missing data. Do not mention private saves or repeat listener gaps unless directly asked by the user.",
+    "Never claim rights certainty, royalties, revenue, return on spend, or conversion unless directly saved in the packet.",
+    "End the Manager's Read with one useful thing to do today: choose the first management focus, meaning the record, market, or story the workspace should organize around first.",
+    "The sourceLine must be exactly: Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+    "Every metric in intelligenceSnapshot must include evidenceIds from the packet. Every claimAudit item must include evidenceIds that support it.",
   ].join("\n");
 }
 
@@ -151,12 +207,9 @@ export function parseTodaysBriefOutput(payload: unknown): TodaysBriefOutput {
 
   const parsed: TodaysBriefOutput = {
     headlineRead: readRequiredString(output.headlineRead, "headlineRead"),
-    artistSnapshot: readRequiredString(output.artistSnapshot, "artistSnapshot"),
-    signals: readSignals(output.signals),
+    intelligenceSnapshot: readSnapshotGroups(output.intelligenceSnapshot),
+    snapshotSummary: readRequiredString(output.snapshotSummary, "snapshotSummary"),
     managerRead: readRequiredString(output.managerRead, "managerRead"),
-    teamRead: readRequiredString(output.teamRead, "teamRead"),
-    todayDirective: readRequiredString(output.todayDirective, "todayDirective"),
-    missingProof: readStringArray(output.missingProof),
     sourceLine: readRequiredString(output.sourceLine, "sourceLine"),
     confidence: readConfidence(output.confidence),
     generatedAt: readOptionalString(output.generatedAt),
@@ -170,9 +223,12 @@ export function parseTodaysBriefOutput(payload: unknown): TodaysBriefOutput {
 }
 
 export function assertSignalsHaveEvidenceIds(output: TodaysBriefOutput) {
-  if (!output.signals.length) throw new Error("Today's Brief must include at least one signal.");
-  for (const signal of output.signals) {
-    if (!signal.evidenceIds.length) throw new Error("Today's Brief signal is missing evidence IDs.");
+  if (!output.intelligenceSnapshot.length) throw new Error("Today's Brief must include artist intelligence.");
+  for (const group of output.intelligenceSnapshot) {
+    if (!group.metrics.length) throw new Error("Today's Brief intelligence group is missing metrics.");
+    for (const metric of group.metrics) {
+      if (!metric.evidenceIds.length) throw new Error("Today's Brief intelligence metric is missing evidence IDs.");
+    }
   }
   if (!output.claimAudit.length) throw new Error("Today's Brief claim audit is missing.");
   for (const audit of output.claimAudit) {
@@ -183,23 +239,36 @@ export function assertSignalsHaveEvidenceIds(output: TodaysBriefOutput) {
 export function assertNoBannedVisibleTerms(output: TodaysBriefOutput) {
   const visibleText = [
     output.headlineRead,
-    output.artistSnapshot,
+    output.snapshotSummary,
     output.managerRead,
-    output.teamRead,
-    output.todayDirective,
     output.sourceLine,
-    ...output.missingProof,
-    ...output.signals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
+    ...output.intelligenceSnapshot.flatMap((group) => [
+      group.title,
+      group.insight,
+      ...group.metrics.flatMap((metric) => [metric.label, metric.value, metric.context ?? ""]),
+    ]),
   ].join("\n");
-  const matched = bannedVisibleTerms.find((term) => new RegExp(`\\b${escapeRegex(term)}\\b`, "i").test(visibleText));
-  if (matched) throw new Error(`Today's Brief visible copy used banned backend/source term: ${matched}.`);
+  const matched = [...bannedVisibleTerms, ...setupVisibleAntiPatterns].find((term) =>
+    new RegExp(`\\b${escapeRegex(term)}\\b`, "i").test(visibleText)
+  );
+  if (matched) throw new Error(`Today's Brief visible copy used banned setup/source term: ${matched}.`);
 }
 
-function readSignals(value: unknown): TodaysBriefSignalOutput[] {
+function readSnapshotGroups(value: unknown): TodaysBriefSnapshotGroupOutput[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((item) => ({
-    claim: readRequiredString(item.claim, "signals.claim"),
-    whyItMatters: readRequiredString(item.whyItMatters, "signals.whyItMatters"),
+    title: readRequiredString(item.title, "intelligenceSnapshot.title"),
+    insight: readRequiredString(item.insight, "intelligenceSnapshot.insight"),
+    metrics: readSnapshotMetrics(item.metrics),
+  }));
+}
+
+function readSnapshotMetrics(value: unknown): TodaysBriefMetricOutput[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    label: readRequiredString(item.label, "intelligenceSnapshot.metrics.label"),
+    value: readRequiredString(item.value, "intelligenceSnapshot.metrics.value"),
+    context: readRequiredString(item.context, "intelligenceSnapshot.metrics.context"),
     evidenceIds: readStringArray(item.evidenceIds),
   }));
 }

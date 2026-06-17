@@ -239,46 +239,36 @@ function TodayBrief({
           </span>
         </div>
         <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-tight">{brief.headlineRead}</h2>
-        <p className="mt-4 max-w-3xl text-[14px] font-semibold leading-relaxed text-muted-foreground/86">{brief.artistSnapshot}</p>
-        <div className="grid gap-4 md:grid-cols-2 mt-6">
-          <div>
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-success">What I'm seeing</p>
-            <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
-              <div className="space-y-4">
-                {brief.signals.slice(0, 4).map((signal) => (
-                  <div key={`${signal.claim}-${signal.evidenceIds.join("-")}`}>
-                    <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">{signal.claim}</p>
-                    <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{signal.whyItMatters}</p>
-                  </div>
-                ))}
+        <p className="mt-4 max-w-3xl text-[14px] font-semibold leading-relaxed text-muted-foreground/86">{brief.snapshotSummary}</p>
+
+        <div className="mt-6">
+          <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-success">Artist Intelligence</p>
+          <div className="mt-3 grid gap-3 lg:grid-cols-2">
+            {brief.intelligenceSnapshot.slice(0, 5).map((group) => (
+              <div key={`${group.title}-${group.metrics.map((metric) => metric.label).join("-")}`} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">{group.title}</p>
+                  <p className="max-w-[320px] text-[11px] font-semibold leading-relaxed text-muted-foreground/78 sm:text-right">{group.insight}</p>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {group.metrics.slice(0, 6).map((metric) => (
+                    <div key={`${group.title}-${metric.label}-${metric.value}`} className="min-h-[76px] rounded-[10px] border border-foreground/8 bg-background px-3 py-2.5">
+                      <p className="text-[11px] font-semibold leading-tight text-muted-foreground/82">{metric.label}</p>
+                      <p className="mt-1 text-[18px] font-bold leading-tight text-foreground">{metric.value}</p>
+                      {metric.context ? <p className="mt-1 text-[10px] font-semibold leading-tight text-muted-foreground/70">{metric.context}</p> : null}
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          </div>
-          <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager Read</p>
-            <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
-              <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{brief.managerRead}</p>
-            </div>
+            ))}
           </div>
         </div>
+
         <div className="mt-6 border-t border-border pt-5">
-          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{brief.teamRead}</p>
-          <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-5 p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Today's Directive</p>
-            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">{brief.todayDirective}</p>
+          <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-5">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
+            <p className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{brief.managerRead}</p>
           </div>
-          {brief.missingProof.length ? (
-            <div className="mt-5">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Still missing</p>
-              <ul className="mt-3 grid gap-2">
-                {brief.missingProof.slice(0, 3).map((item) => (
-                  <li key={item} className="text-[12px] font-medium leading-relaxed text-muted-foreground/82">
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
           {error ? (
             <div className="mt-5 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold leading-relaxed text-warning">
               {error}
@@ -308,21 +298,21 @@ function TodayBrief({
 
 function buildVisibleFallbackBrief(profile: ArtistProfileViewModel): TodayBriefViewModel {
   return {
-    headlineRead: `I'm seeing ${profile.name} with enough saved setup context for a limited first operating read.`,
-    artistSnapshot: "Your saved artist profile and imported catalog give the Manager a starting picture, but the first brief still needs stronger private proof before hard decisions.",
-    signals: [
+    headlineRead: `${profile.name}'s first management read is ready to organize around a focused starting point.`,
+    intelligenceSnapshot: [
       {
-        claim: "Your strongest current proof is that the artist identity and catalog setup are saved.",
-        whyItMatters: "That gives the team a real operating starting point instead of an empty workspace.",
-        evidenceIds: ["artist-profile", "catalog-setup"],
+        title: "Current Music In View",
+        insight: "The workspace has enough saved setup context to choose the first management focus.",
+        metrics: [
+          { label: "Artist profile", value: "Saved", context: "setup context", evidenceIds: ["artist-profile"] },
+          { label: "Working catalog", value: "In view", context: "current management focus", evidenceIds: ["catalog-setup"] },
+        ],
       },
     ],
+    snapshotSummary: "The first read should organize the workspace around one management focus, not a generic artist profile.",
     managerRead:
-      "I'm seeing enough context to start the first read, but I would treat it as limited until stronger private proof is connected. I can see public setup context, but I cannot yet see whether people are saving, returning, spending, or converting.",
-    teamRead: "The team should use this as the first operating read, not a final campaign or spend verdict.",
-    todayDirective: "Pick the first music focus and connect stronger private proof before approving spend, revenue claims, or external commitments.",
-    missingProof: ["Private saves, source-of-stream, revenue, conversion, and rights certainty are still missing."],
-    sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+      `This is the first operating read for ${profile.name}. The useful move is not to spread attention across every possible lane; it is to choose the first management focus from the saved profile and current music in view, then let the team build the next work from that center.`,
+    sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
     confidence: "limited",
     state: "fallback",
   };

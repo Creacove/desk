@@ -59,20 +59,24 @@ export type MovementItem = {
   time: string;
 };
 
-export type TodayBriefSignal = {
-  claim: string;
-  whyItMatters: string;
+export type TodayBriefMetric = {
+  label: string;
+  value: string;
+  context?: string;
   evidenceIds: string[];
+};
+
+export type TodayBriefSnapshotGroup = {
+  title: string;
+  insight: string;
+  metrics: TodayBriefMetric[];
 };
 
 export type TodayBriefViewModel = {
   headlineRead: string;
-  artistSnapshot: string;
-  signals: TodayBriefSignal[];
+  intelligenceSnapshot: TodayBriefSnapshotGroup[];
+  snapshotSummary: string;
   managerRead: string;
-  teamRead: string;
-  todayDirective: string;
-  missingProof: string[];
   sourceLine: string;
   confidence: "high" | "medium" | "low" | "limited" | "unknown";
   generatedAt?: string;

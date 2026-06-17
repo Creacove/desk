@@ -7,7 +7,8 @@ import {
   todaysBriefJsonSchema,
   type ArtistBriefPacket,
   type TodaysBriefOutput,
-  type TodaysBriefSignalInput,
+  type TodaysBriefDerivedInsight,
+  type TodaysBriefMetricInput,
 } from "../_shared/openaiTodaysBrief.ts";
 
 const corsHeaders = {
@@ -116,7 +117,7 @@ Deno.serve(async (request) => {
       payload: {
         manager_synthesis_run_id: runId,
         confidence: completed.confidence,
-        signal_count: completed.signals.length,
+        intelligence_group_count: completed.intelligenceSnapshot.length,
         claimAudit: completed.claimAudit,
       },
     });
@@ -141,17 +142,20 @@ async function buildArtistBriefPacket(
     loadSourceSyncJobs(supabase, input),
   ]);
 
-  const artistName = readString(profile.display_name) ?? readString(profile.spotify_identity?.name) ?? "the artist";
-  const signals = [
-    ...rankEvidenceSignals(evidenceRows),
-    ...catalogSignals(musicItems, musicProjects),
-    ...sourceLimitSignals(evidenceRows, musicItems, musicProjects),
-  ].slice(0, 10);
+  const spotifyIdentity = isRecord(profile.spotify_identity) ? profile.spotify_identity : {};
+  const artistName = readString(profile.display_name) ?? readString(spotifyIdentity.name) ?? "the artist";
+  const metricInputs = evidenceRows
+    .map((row) => evidenceMetric(row))
+    .filter((metric): metric is TodaysBriefMetricInput & { priority: number } => Boolean(metric))
+    .sort((a, b) => b.priority - a.priority)
+    .map(({ priority: _priority, ...metric }) => metric);
+  const intelligenceSnapshotInputs = buildIntelligenceSnapshotInputs(metricInputs, musicItems, musicProjects, syncRows);
+  const derivedInsights = deriveInsightComparisons(metricInputs);
   const sourceLimits = uniqueStrings([
     ...evidenceRows.map((row) => readString(row.limitation)).filter(Boolean),
     ...musicItems.map((row) => readString(row.source_limit)).filter(Boolean),
     ...musicProjects.map((row) => readString(row.source_limit)).filter(Boolean),
-    "Private saves, repeat listeners, source-of-stream, revenue, campaign ROI, rights certainty, and conversion need direct saved proof before the Manager can claim them.",
+    "Revenue, rights certainty, return on spend, and conversion need direct saved proof before the Manager can claim them.",
   ]).slice(0, 8);
 
   const packet: ArtistBriefPacket = {
@@ -164,16 +168,16 @@ async function buildArtistBriefPacket(
       budgetContext: readString(profile.budget_context),
       socialHandles: readSocialHandles(profile.social_handles),
     },
-    catalog: {
+    workingCatalog: {
+      scopeLabel: "working catalog in view",
       songCount: musicItems.length,
       projectCount: musicProjects.length,
-      albumCount: musicProjects.filter((project) => project.project_type === "album").length,
-      latestTitles: latestCatalogTitles(musicItems, musicProjects),
-      catalogStatus: syncRows.some((row: Record<string, unknown>) => row.status === "completed" || row.status === "completed_with_limits")
-        ? "Imported catalog is available."
-        : "Imported catalog is still limited or pending.",
+      latestProjectTitles: musicProjects.map((project) => project.title).filter(Boolean).slice(0, 3),
+      focusSongTitles: musicItems.map((item) => item.title).filter(Boolean).slice(0, 6),
+      note: "This is current music in view for management focus, not a claim about the artist's full discography.",
     },
-    signals: signals.length ? signals : fallbackSignals(artistName),
+    intelligenceSnapshotInputs: intelligenceSnapshotInputs.length ? intelligenceSnapshotInputs : fallbackSnapshotInputs(artistName),
+    derivedInsights,
     sourceLimits,
     generatedFor: input.trigger,
   };
@@ -269,9 +273,8 @@ async function loadArtistEvidence(supabase: any, input: GenerateTodaysBriefInput
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
-    .eq("subject_type", "artist")
     .order("created_at", { ascending: false })
-    .limit(120);
+    .limit(240);
   if (error) throw error;
   return (data ?? []) as EvidenceRow[];
 }
@@ -327,7 +330,7 @@ async function completeManagerSynthesisRun(
       confidence: output.confidence === "limited" ? "low" : output.confidence,
       context_payload: { packet, sourceAudit },
       action_plan: [output],
-      limitations: output.missingProof,
+      limitations: packet.sourceLimits,
       completed_at: new Date().toISOString(),
     })
     .eq("id", runId);
@@ -363,7 +366,17 @@ async function completeUsageEvent(supabase: any, usageId: string, output: Todays
     .from("ai_run_usage_events")
     .update({
       status: "succeeded",
-      output_tokens: [output.headlineRead, output.artistSnapshot, output.managerRead, output.teamRead, output.todayDirective].join(" ").split(/\s+/).length,
+      output_tokens: [
+        output.headlineRead,
+        output.snapshotSummary,
+        output.managerRead,
+        output.sourceLine,
+        ...output.intelligenceSnapshot.flatMap((group) => [
+          group.title,
+          group.insight,
+          ...group.metrics.flatMap((metric) => [metric.label, metric.value, metric.context ?? ""]),
+        ]),
+      ].join(" ").split(/\s+/).length,
       completed_at: new Date().toISOString(),
     })
     .eq("id", usageId);
@@ -432,140 +445,310 @@ async function markUsageFailedSafe(usageId: string, error: unknown) {
   }
 }
 
-function rankEvidenceSignals(rows: EvidenceRow[]): TodaysBriefSignalInput[] {
-  return rows
-    .map((row) => evidenceSignal(row))
-    .filter((signal): signal is TodaysBriefSignalInput & { priority: number } => Boolean(signal))
-    .sort((a, b) => b.priority - a.priority)
-    .map(({ priority: _priority, ...signal }) => signal);
-}
-
-function evidenceSignal(row: EvidenceRow): (TodaysBriefSignalInput & { priority: number }) | null {
+function evidenceMetric(row: EvidenceRow): (TodaysBriefMetricInput & { priority: number; numericValue?: number }) | null {
   const metricName = row.metric_name ?? row.evidence_type ?? "";
-  const value = typeof row.metric_value === "number" ? formatNumber(row.metric_value, row.metric_unit) : undefined;
-  if (!metricName && !value) return null;
-  const category = signalCategory(row);
+  const value = typeof row.metric_value === "number" ? formatMetricValue(row.metric_value, row.metric_unit) : textMetricValue(row);
+  if (!metricName || !value) return null;
+  const category = metricCategory(row);
   return {
     id: row.id,
     category,
+    subjectType: readString(row.subject_type),
+    subjectLabel: readString(row.subject_label),
     label: metricLabel(metricName, row.evidence_type),
     value,
-    whyItMatters: signalMeaning(category),
+    context: metricContext(row),
     confidence: row.confidence ?? "unknown",
     evidenceIds: [row.id],
     limitation: readString(row.limitation),
-    priority: signalPriority(category, metricName),
+    priority: metricPriority(category, metricName, row.subject_type),
+    numericValue: typeof row.metric_value === "number" ? row.metric_value : undefined,
   };
 }
 
-function catalogSignals(items: MusicItemRow[], projects: MusicProjectRow[]): TodaysBriefSignalInput[] {
-  if (!items.length && !projects.length) return [];
-  const albumCount = projects.filter((project) => project.project_type === "album").length;
-  return [
-    {
-      id: "catalog-summary",
-      category: "catalog",
-      label: "Imported catalog depth",
-      value: `${items.length} songs, ${projects.length} projects${albumCount ? `, ${albumCount} albums` : ""}`,
-      whyItMatters: "The Manager can orient around real recorded work instead of an empty setup profile.",
-      confidence: "medium",
-      evidenceIds: ["catalog-summary"],
-    },
+function buildIntelligenceSnapshotInputs(
+  metrics: TodaysBriefMetricInput[],
+  items: MusicItemRow[],
+  projects: MusicProjectRow[],
+  syncRows: Array<Record<string, unknown>>,
+): ArtistBriefPacket["intelligenceSnapshotInputs"] {
+  const groups = [
+    metricGroup("Scale", metrics, ["audience_scale", "artist_context"], 5),
+    metricGroup("Market Heat", metrics, ["market_heat"], 6),
+    metricGroup("Public Reach", metrics, ["public_reach"], 6),
+    metricGroup("Playlist / Discovery", metrics, ["playlist", "discovery"], 6),
+    metricGroup("Track Momentum", metrics, ["track_momentum"], 6),
+    currentMusicGroup(items, projects, syncRows),
   ];
+  return groups.filter((group): group is ArtistBriefPacket["intelligenceSnapshotInputs"][number] => Boolean(group?.metrics.length));
 }
 
-function sourceLimitSignals(evidence: EvidenceRow[], items: MusicItemRow[], projects: MusicProjectRow[]): TodaysBriefSignalInput[] {
-  const hasLimits = evidence.some((row) => row.limitation) || items.some((row) => row.source_limit) || projects.some((row) => row.source_limit);
-  return hasLimits
-    ? [
+function metricGroup(
+  title: string,
+  metrics: TodaysBriefMetricInput[],
+  categories: TodaysBriefMetricInput["category"][],
+  limit: number,
+): ArtistBriefPacket["intelligenceSnapshotInputs"][number] | null {
+  const groupMetrics = metrics.filter((metric) => categories.includes(metric.category)).slice(0, limit);
+  if (!groupMetrics.length) return null;
+  return {
+    title,
+    metrics: groupMetrics,
+    suggestedInsight: suggestedGroupInsight(title, groupMetrics),
+  };
+}
+
+function currentMusicGroup(
+  items: MusicItemRow[],
+  projects: MusicProjectRow[],
+  syncRows: Array<Record<string, unknown>>,
+): ArtistBriefPacket["intelligenceSnapshotInputs"][number] | null {
+  if (!items.length && !projects.length) return null;
+  const latestProject = projects[0]?.title;
+  const focusTitles = items.map((item) => item.title).filter(Boolean).slice(0, 5);
+  const connected = syncRows.some((row) => row.status === "completed" || row.status === "completed_with_limits");
+  return {
+    title: "Current Music In View",
+    metrics: [
+      {
+        id: "working-catalog-scope",
+        category: "current_music",
+        label: "Working catalog",
+        value: workingCatalogValue(items.length, projects.length),
+        context: connected ? "current focus" : "setup focus",
+        confidence: "medium",
+        evidenceIds: ["working-catalog-scope"],
+      },
+      ...(latestProject
+        ? [{
+            id: "latest-project-in-view",
+            category: "current_music" as const,
+            label: "Latest project",
+            value: latestProject,
+            context: "in view",
+            confidence: "medium" as const,
+            evidenceIds: ["latest-project-in-view"],
+          }]
+        : []),
+      ...(focusTitles.length
+        ? [{
+            id: "recent-focus-records",
+            category: "current_music" as const,
+            label: "Recent records",
+            value: `${focusTitles.length} in focus`,
+            context: focusTitles.slice(0, 3).join(", "),
+            confidence: "medium" as const,
+            evidenceIds: ["recent-focus-records"],
+          }]
+        : []),
+    ],
+    suggestedInsight: "These are the current records the workspace can organize around first.",
+  };
+}
+
+function fallbackSnapshotInputs(artistName: string): ArtistBriefPacket["intelligenceSnapshotInputs"] {
+  return [
+    {
+      title: "Artist Intelligence",
+      metrics: [
         {
-          id: "source-limits",
-          category: "source_limit",
-          label: "Decision limits",
-          value: "Private behavior and conversion proof are still limited.",
-          whyItMatters: "The Manager can make a first read while avoiding spend, revenue, and conversion claims that are not proven yet.",
+          id: "artist-profile",
+          category: "artist_context",
+          label: "Artist profile",
+          value: artistName,
+          context: "saved setup",
           confidence: "low",
-          evidenceIds: ["source-limits"],
+          evidenceIds: ["artist-profile"],
         },
-      ]
-    : [];
-}
-
-function fallbackSignals(artistName: string): TodaysBriefSignalInput[] {
-  return [
+      ],
+      suggestedInsight: "The saved setup gives the Manager enough identity context to choose the first focus.",
+    },
     {
-      id: "artist-profile",
-      category: "artist_context",
-      label: "Saved artist profile",
-      value: `${artistName} has a saved setup profile.`,
-      whyItMatters: "The Manager has enough identity context to produce a limited first read.",
-      confidence: "low",
-      evidenceIds: ["artist-profile"],
+      title: "Current Music In View",
+      metrics: [
+        {
+          id: "working-catalog-scope",
+          category: "current_music",
+          label: "Working catalog",
+          value: "In view",
+          context: "current focus",
+          confidence: "low",
+          evidenceIds: ["working-catalog-scope"],
+        },
+      ],
+      suggestedInsight: "The first read should organize the workspace around one practical starting point.",
     },
   ];
 }
 
-function signalCategory(row: EvidenceRow): TodaysBriefSignalInput["category"] {
-  if (row.evidence_type === "market_rank" || row.evidence_type === "market_metric") return "market";
-  if (row.evidence_type === "public_social_metric") return "social_attention";
-  if (row.evidence_type === "artist_career_context") return "artist_context";
-  if ((row.metric_name ?? "").includes("playlist")) return "playlist";
-  if (row.evidence_type === "platform_metric") return "audience";
+function deriveInsightComparisons(metrics: Array<TodaysBriefMetricInput & { numericValue?: number }>): TodaysBriefDerivedInsight[] {
+  const insights: TodaysBriefDerivedInsight[] = [];
+  const markets = metrics
+    .filter((metric) => metric.category === "market_heat" && typeof metric.numericValue === "number")
+    .sort((a, b) => (b.numericValue ?? 0) - (a.numericValue ?? 0));
+  if (markets.length >= 2) {
+    const [top, second] = markets;
+    const difference = Math.round(((top.numericValue ?? 0) / Math.max(second.numericValue ?? 1, 1) - 1) * 100);
+    insights.push({
+      label: "Top market gap",
+      read: `${top.label} is ${difference}% larger than ${second.label} in this read.`,
+      evidenceIds: [...top.evidenceIds, ...second.evidenceIds],
+    });
+  }
+  if (markets.length >= 3) {
+    const secondaryTotal = markets.slice(1, 3).reduce((sum, metric) => sum + (metric.numericValue ?? 0), 0);
+    insights.push({
+      label: "Secondary market weight",
+      read: `${markets[1].label} and ${markets[2].label} combine for ${formatCompactNumber(secondaryTotal)} listeners.`,
+      evidenceIds: [...markets[1].evidenceIds, ...markets[2].evidenceIds],
+    });
+  }
+
+  const publicReach = metrics
+    .filter((metric) => metric.category === "public_reach" && typeof metric.numericValue === "number")
+    .sort((a, b) => (b.numericValue ?? 0) - (a.numericValue ?? 0));
+  if (publicReach.length >= 2) {
+    const [top, ...rest] = publicReach;
+    const restTotal = rest.reduce((sum, metric) => sum + (metric.numericValue ?? 0), 0);
+    const comparison = restTotal > 0 && (top.numericValue ?? 0) > restTotal
+      ? `${top.label} is larger than the other saved public platforms combined.`
+      : `${top.label} is the largest saved public platform in this read.`;
+    insights.push({
+      label: "Public reach shape",
+      read: comparison,
+      evidenceIds: [top, ...rest].slice(0, 4).flatMap((metric) => metric.evidenceIds),
+    });
+  }
+
+  const trackMomentum = metrics.filter((metric) => metric.category === "track_momentum").slice(0, 3);
+  if (trackMomentum.length >= 2) {
+    insights.push({
+      label: "Current record surface area",
+      read: `${trackMomentum.map((metric) => metric.subjectLabel ?? metric.label).filter(Boolean).slice(0, 2).join(" and ")} have current saved momentum signals.`,
+      evidenceIds: trackMomentum.flatMap((metric) => metric.evidenceIds),
+    });
+  }
+
+  return insights.slice(0, 5);
+}
+
+function metricCategory(row: EvidenceRow): TodaysBriefMetricInput["category"] {
+  const metricName = row.metric_name ?? "";
+  if (row.evidence_type === "market_rank" || row.evidence_type === "market_metric" || metricName.startsWith("spotify_listener_city_")) return "market_heat";
+  if (isPublicReachMetric(metricName)) return "public_reach";
+  if (row.subject_type === "music_item" && (metricName.includes("stream") || metricName.includes("tiktok") || metricName.includes("apple_music"))) return "track_momentum";
+  if (metricName.includes("playlist")) return "playlist";
+  if (metricName.includes("shazam") || metricName.includes("airplay") || row.evidence_type === "chart_position") return "discovery";
+  if (metricName.includes("monthly_listeners") || metricName === "spotify_followers" || metricName.includes("popularity") || metricName.includes("pandora") || metricName.includes("deezer")) return "audience_scale";
+  if (row.evidence_type === "artist_career_context" || row.evidence_type === "artist_context") return "artist_context";
   return "artist_context";
 }
 
-function signalPriority(category: TodaysBriefSignalInput["category"], metricName: string) {
+function metricPriority(category: TodaysBriefMetricInput["category"], metricName: string, subjectType?: string | null) {
   if (metricName.includes("monthly_listeners")) return 100;
-  if (metricName.includes("followers")) return 96;
-  if (category === "market") return 92;
-  if (category === "playlist") return 88;
-  if (category === "social_attention") return 80;
-  if (category === "catalog") return 76;
+  if (metricName === "spotify_followers") return 98;
+  if (category === "market_heat") return 96;
+  if (category === "public_reach") return 90;
+  if (category === "track_momentum") return subjectType === "music_item" ? 88 : 82;
+  if (category === "playlist") return 86;
+  if (category === "discovery") return 82;
+  if (category === "artist_context") return 72;
   return 60;
-}
-
-function signalMeaning(category: TodaysBriefSignalInput["category"]) {
-  switch (category) {
-    case "market":
-      return "This tells the team where the artist already has a visible audience or home-market position.";
-    case "audience":
-      return "This gives the Manager a scale read, while still separating public attention from private fan behavior.";
-    case "playlist":
-      return "This shows surface area around the catalog, but it does not prove saves or conversion by itself.";
-    case "social_attention":
-      return "This helps explain public attention, but it must be checked against stronger listener behavior before spend decisions.";
-    case "source_limit":
-      return "This protects the artist from decisions that the current proof cannot support yet.";
-    default:
-      return "This helps the Manager understand who the artist is right now.";
-  }
 }
 
 function metricLabel(metricName: string, evidenceType?: string | null) {
   if (metricName.startsWith("chartmetric_country_rank_")) return `Country rank ${titleCase(metricName.replace("chartmetric_country_rank_", ""))}`;
-  if (metricName.startsWith("spotify_listener_city_")) return `${titleCase(metricName.replace("spotify_listener_city_", ""))} listener base`;
+  if (metricName.startsWith("spotify_listener_city_")) return titleCase(metricName.replace("spotify_listener_city_", ""));
   if (metricName.includes("monthly_listeners")) return "Monthly listeners";
-  if (metricName.includes("followers")) return "Followers";
+  if (metricName === "spotify_followers") return "Followers";
+  if (metricName === "twitter_followers") return "X";
+  if (metricName === "instagram_followers") return "Instagram";
+  if (metricName === "tiktok_followers") return "TikTok";
+  if (metricName === "youtube_subscribers") return "YouTube";
   if (metricName.includes("playlist_total_reach")) return "Playlist reach";
   if (metricName.includes("playlist_count")) return "Playlist count";
   if (metricName.includes("artist_score")) return "Artist score";
   if (metricName.includes("artist_rank")) return "Artist rank";
-  if (metricName.includes("tiktok")) return "Short-form attention";
-  if (metricName.includes("youtube")) return "Video audience";
-  if (metricName.includes("instagram")) return "Social audience";
-  if (metricName.includes("shazam")) return "Discovery activity";
+  if (metricName.includes("tiktok_top_video")) return "Top TikTok video";
+  if (metricName.includes("tiktok_video_creates")) return "TikTok creates";
+  if (metricName.includes("tiktok_track_posts")) return "TikTok track posts";
+  if (metricName.includes("tiktok_likes")) return "TikTok likes";
+  if (metricName.includes("youtube")) return "YouTube";
+  if (metricName.includes("instagram")) return "Instagram";
+  if (metricName.includes("shazam")) return "Shazams";
+  if (metricName.includes("airplay")) return "Airplay";
+  if (metricName.includes("spotify_trailing_28d_streams")) return "Last 28 days";
+  if (metricName.includes("spotify_peak_day_streams")) return "Peak day";
+  if (metricName.includes("spotify_stream_trend")) return "Stream trend";
+  if (metricName.includes("apple_music_plays")) return "Apple Music";
+  if (metricName === "career_stage") return "Career stage";
+  if (metricName === "career_trend") return "Career trend";
+  if (metricName === "artist_primary_genre") return "Primary genre";
+  if (metricName === "artist_record_label") return "Label context";
   return titleCase((metricName || evidenceType || "artist context").replace(/[_-]+/g, " "));
 }
 
-function formatNumber(value: number, unit?: string | null) {
-  const number = value.toLocaleString("en-US");
-  if (unit === "rank") return `#${number}`;
-  if (!unit || unit === "score") return number;
-  return `${number} ${unit}`;
+function metricContext(row: EvidenceRow) {
+  const unit = row.metric_unit;
+  const subject = readString(row.subject_label);
+  const window = [readString(row.freshness)].filter(Boolean).join(" ");
+  if (unit === "rank") return "artist rank";
+  if (row.metric_name?.startsWith("spotify_listener_city_")) return "listeners";
+  if (unit === "followers") return "followers";
+  if (unit === "listeners") return "listeners";
+  if (unit === "streams") return subject ? `${subject}` : "streams";
+  if (unit === "views") return "views";
+  if (unit === "videos" || unit === "video_creates") return "videos";
+  if (unit === "playlists") return "playlists";
+  if (unit === "reach") return "reach";
+  if (unit === "score") return "score";
+  if (unit === "spins") return "spins";
+  if (unit === "shazams") return "Shazams";
+  return subject || window || "saved signal";
 }
 
-function latestCatalogTitles(items: MusicItemRow[], projects: MusicProjectRow[]) {
-  return [...projects.map((project) => project.title), ...items.map((item) => item.title)].filter(Boolean).slice(0, 6);
+function suggestedGroupInsight(title: string, metrics: TodaysBriefMetricInput[]) {
+  if (title === "Market Heat" && metrics.length >= 2) return `${metrics[0].label} leads this saved market read; ${metrics[1].label} is the next market to inspect.`;
+  if (title === "Public Reach" && metrics.length >= 2) return `${metrics[0].label} is the largest saved public room; compare it against the rest before choosing the first communication lane.`;
+  if (title === "Track Momentum" && metrics.length) return `The current music read has record-level movement, so the first focus can be chosen from actual music signals.`;
+  if (title === "Playlist / Discovery" && metrics.length) return `Discovery and playlist surface area can show where music is already travelling.`;
+  return `${title} gives the Manager a stronger first read than a generic setup profile.`;
+}
+
+function textMetricValue(row: EvidenceRow) {
+  const rawRef = readString(row.raw_ref);
+  if (!rawRef) return undefined;
+  const value = rawRef.split(":").pop()?.trim();
+  return value && !value.includes("_") ? value : undefined;
+}
+
+function formatMetricValue(value: number, unit?: string | null) {
+  if (unit === "rank") return `#${value.toLocaleString("en-US")}`;
+  if (unit === "score" || unit === "percent_change") return `${value.toLocaleString("en-US")}${unit === "percent_change" ? "%" : ""}`;
+  return formatCompactNumber(value);
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
+  }).format(value);
+}
+
+function workingCatalogValue(itemCount: number, projectCount: number) {
+  if (projectCount && itemCount) return `Latest project + ${itemCount} songs`;
+  if (projectCount) return `${projectCount} project${projectCount === 1 ? "" : "s"} in view`;
+  return `${itemCount} song${itemCount === 1 ? "" : "s"} in view`;
+}
+
+function isPublicReachMetric(metricName: string) {
+  return [
+    "instagram_",
+    "tiktok_",
+    "twitter_",
+    "youtube_",
+    "genius_",
+  ].some((prefix) => metricName.startsWith(prefix));
 }
 
 function readSocialHandles(value: unknown) {
