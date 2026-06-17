@@ -229,6 +229,118 @@ describe("production Supabase services", () => {
     expect(profile.artistIntelligence?.limitations).toContain("Attention signal, not conversion proof.");
   });
 
+  it("projects the latest completed setup Today's Brief from Manager synthesis runs", async () => {
+    const client = fakeSupabaseClient({
+      source_sync_jobs: [],
+      operating_events: [],
+      manager_synthesis_runs: [
+        {
+          id: "brief-run-1",
+          status: "completed",
+          classification: "setup_todays_brief_v1",
+          confidence: "medium",
+          completed_at: "2026-06-17T08:30:00.000Z",
+          action_plan: [
+            {
+              headlineRead: "I'm seeing Burna Boy as a global artist with a clear home-market advantage.",
+              artistSnapshot: "Your catalog and public audience picture already show a large international base.",
+              signals: [
+                {
+                  claim: "Your strongest current proof is a top home-market position and major listener scale.",
+                  whyItMatters: "That gives the team a real audience base to organize around instead of guessing.",
+                  evidenceIds: ["ev-1", "ev-2"],
+                },
+              ],
+              managerRead:
+                "I'm seeing a serious artist profile, not an empty setup. Your audience picture is already broad enough that the next decision should be about focus, not basic validation.",
+              teamRead: "The team should treat the artist profile, imported catalog, and public audience picture as the starting operating context.",
+              todayDirective: "Pick the current release or catalog lane that deserves management attention today.",
+              missingProof: ["Private saves and source-of-stream are still missing."],
+              sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+              confidence: "medium",
+              generatedAt: "2026-06-17T08:30:00.000Z",
+              managerSynthesisRunId: "brief-run-1",
+              claimAudit: [
+                {
+                  claim: "top home-market position and major listener scale",
+                  evidenceIds: ["ev-1", "ev-2"],
+                  limitation: "Public audience proof, not private conversion proof.",
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    const desk = await createSupabaseProductionRepositories(client, workspace).desk.loadDesk();
+
+    expect(desk.todayBrief).toMatchObject({
+      headlineRead: "I'm seeing Burna Boy as a global artist with a clear home-market advantage.",
+      managerRead: expect.stringContaining("I'm seeing a serious artist profile"),
+      todayDirective: "Pick the current release or catalog lane that deserves management attention today.",
+      managerSynthesisRunId: "brief-run-1",
+      state: "fresh",
+    });
+    expect(JSON.stringify(desk.todayBrief)).not.toMatch(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i);
+  });
+
+  it("generates Today's Brief manually from saved normalized sources through the Supabase function", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const brief = {
+      headlineRead: "I'm seeing Nova Vale as a developing artist with enough public proof for a first read.",
+      artistSnapshot: "Your setup gives the Manager a usable picture of stage, direction, catalog, and audience.",
+      signals: [
+        {
+          claim: "The catalog gives us a starting point for management decisions.",
+          whyItMatters: "It lets the team discuss actual work instead of an empty profile.",
+          evidenceIds: ["catalog"],
+        },
+      ],
+      managerRead: "The catalog tells me there is enough saved context to begin managing the artist, but not enough private proof to make spend claims.",
+      teamRead: "The team should use this as an operating read, not a final campaign verdict.",
+      todayDirective: "Choose the first music focus and connect stronger private proof before approving spend.",
+      missingProof: ["Private saves, source-of-stream, revenue, and conversion are still missing."],
+      sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+      confidence: "limited",
+      generatedAt: "2026-06-17T08:30:00.000Z",
+      managerSynthesisRunId: "brief-run-2",
+      claimAudit: [{ claim: "catalog starting point", evidenceIds: ["catalog"], limitation: "Catalog context only." }],
+    };
+    const client = createMutableSupabaseClient(
+      {
+        source_sync_jobs: [],
+        operating_events: [],
+        manager_synthesis_runs: [],
+      },
+      {
+        invoke: async (name, options) => {
+          calls.push({ name, body: options.body });
+          return { data: { status: "completed", brief }, error: null };
+        },
+      },
+    );
+
+    const result = await createSupabaseProductionRepositories(client, workspace).desk.generateTodaysBrief();
+
+    expect(calls).toEqual([
+      {
+        name: "generate-todays-brief",
+        body: {
+          accountId: "account-1",
+          artistWorkspaceId: "workspace-1",
+          artistId: "artist-1",
+          trigger: "manual",
+        },
+      },
+    ]);
+    expect(result).toMatchObject({
+      headlineRead: "I'm seeing Nova Vale as a developing artist with enough public proof for a first read.",
+      state: "fresh",
+      managerSynthesisRunId: "brief-run-2",
+    });
+  });
+
   it("saves setup context through the atomic profile setup RPC", async () => {
     const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const client = {

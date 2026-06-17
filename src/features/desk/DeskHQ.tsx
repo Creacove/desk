@@ -1,4 +1,4 @@
-import { ArrowRight, Calendar, ChevronRight, ClipboardCheck, Settings, Upload } from "lucide-react";
+import { Calendar, ChevronRight, ClipboardCheck, RefreshCw, Settings, Upload } from "lucide-react";
 import { ProductButton, WorkspaceHeader } from "../../design-system/components";
 import type {
   AgentViewModel,
@@ -9,10 +9,14 @@ import type {
   MissionViewModel,
   MovementItem,
   PriorityItem,
+  TodayBriefViewModel,
 } from "../../types/cleanProduction";
 
 export function DeskHQScreen({
   profile,
+  todayBrief,
+  todayBriefPending,
+  todayBriefError,
   priority,
   attention,
   movement,
@@ -20,10 +24,14 @@ export function DeskHQScreen({
   missions,
   onNavigate,
   onManager,
+  onGenerateTodaysBrief,
   onLockedAgent,
   onDrawer,
 }: {
   profile: ArtistProfileViewModel;
+  todayBrief: TodayBriefViewModel | null;
+  todayBriefPending: boolean;
+  todayBriefError: string | null;
   priority: PriorityItem[];
   attention: AttentionItem[];
   movement: MovementItem[];
@@ -31,6 +39,7 @@ export function DeskHQScreen({
   missions: MissionViewModel[];
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
+  onGenerateTodaysBrief: () => void;
   onLockedAgent: (agent: AgentViewModel) => void;
   onDrawer: (drawer: DrawerKind) => void;
 }) {
@@ -70,7 +79,15 @@ export function DeskHQScreen({
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
-          <TodayBrief profile={profile} onManager={onManager} onDrawer={onDrawer} />
+          <TodayBrief
+            profile={profile}
+            brief={todayBrief ?? buildVisibleFallbackBrief(profile)}
+            pending={todayBriefPending}
+            error={todayBriefError}
+            onGenerate={onGenerateTodaysBrief}
+            onManager={onManager}
+            onDrawer={onDrawer}
+          />
 
           <section>
             <div className="mb-3 flex items-center justify-between">
@@ -182,10 +199,18 @@ export function DeskHQScreen({
 
 function TodayBrief({
   profile,
+  brief,
+  pending,
+  error,
+  onGenerate,
   onManager,
   onDrawer,
 }: {
   profile: ArtistProfileViewModel;
+  brief: TodayBriefViewModel;
+  pending: boolean;
+  error: string | null;
+  onGenerate: () => void;
   onManager: () => void;
   onDrawer: (drawer: DrawerKind) => void;
 }) {
@@ -199,52 +224,113 @@ function TodayBrief({
             <p className="text-sm font-semibold">{profile.name} - Artist operating read</p>
           </div>
         </div>
-        <ProductButton onClick={onManager}>Talk to Manager</ProductButton>
+        <ProductButton onClick={onGenerate} disabled={pending}>
+          <RefreshCw className={pending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
+          {pending ? "Generating Brief" : "Generate Today's Brief"}
+        </ProductButton>
       </div>
       <div className="p-6">
-        <h2 className="max-w-2xl text-2xl font-semibold leading-tight">
-          {profile.name} has enough setup data for a first operating read, but decisions should stay inside the source limits.
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {brief.confidence === "limited" ? "Limited confidence" : `${brief.confidence} confidence`}
+          </span>
+          <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {brief.state === "fresh" ? "Fresh" : brief.state === "fallback" ? "First read" : "Limited"}
+          </span>
+        </div>
+        <h2 className="mt-4 max-w-3xl text-2xl font-semibold leading-tight">{brief.headlineRead}</h2>
+        <p className="mt-4 max-w-3xl text-[14px] font-semibold leading-relaxed text-muted-foreground/86">{brief.artistSnapshot}</p>
         <div className="grid gap-4 md:grid-cols-2 mt-6">
           <div>
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-success">Available Context</p>
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-success">What I'm seeing</p>
             <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
-              <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">
-                Spotify public catalog and the artist setup context are available. Use them for identity, catalog, and baseline management context.
-              </p>
+              <div className="space-y-4">
+                {brief.signals.slice(0, 4).map((signal) => (
+                  <div key={`${signal.claim}-${signal.evidenceIds.join("-")}`}>
+                    <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">{signal.claim}</p>
+                    <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{signal.whyItMatters}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
           <div>
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager Read</p>
             <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
-              <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">
-                Public catalog metadata is useful for orientation, but it cannot prove saves, source-of-stream, revenue,
-                audience conversion, rights clearance, or campaign performance.
-              </p>
+              <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{brief.managerRead}</p>
             </div>
           </div>
         </div>
         <div className="mt-6 border-t border-border pt-5">
-          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
-            {profile.goal || "The next useful step is to complete the artist operating context and connect stronger private sources before making scale decisions."}
-          </p>
+          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{brief.teamRead}</p>
           <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-5 p-4">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Today's Directive</p>
-            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">
-              Start from verified identity and catalog context. Connect or upload private analytics, rights, assets, and campaign evidence before approving spend, external commitments, or release-readiness claims.
-            </p>
+            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">{brief.todayDirective}</p>
           </div>
+          {brief.missingProof.length ? (
+            <div className="mt-5">
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Still missing</p>
+              <ul className="mt-3 grid gap-2">
+                {brief.missingProof.slice(0, 3).map((item) => (
+                  <li key={item} className="text-[12px] font-medium leading-relaxed text-muted-foreground/82">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {error ? (
+            <div className="mt-5 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold leading-relaxed text-warning">
+              {error}
+            </div>
+          ) : null}
           <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
-              View supporting evidence
-            </button>
-            <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Generated by AI Manager 08:30 AM</span>
+            <div className="flex flex-wrap gap-4">
+              <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
+                View supporting evidence
+              </button>
+              <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={onManager}>
+                Ask Manager
+              </button>
+            </div>
+            <div className="text-left sm:text-right">
+              <p className="text-[11px] font-semibold leading-relaxed text-muted-foreground/82">{brief.sourceLine}</p>
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                Generated by AI Manager {formatBriefGeneratedAt(brief.generatedAt)}
+              </p>
+            </div>
           </div>
         </div>
       </div>
-      <div className="hidden">
-        <ArrowRight aria-hidden="true" />
-      </div>
     </section>
   );
+}
+
+function buildVisibleFallbackBrief(profile: ArtistProfileViewModel): TodayBriefViewModel {
+  return {
+    headlineRead: `I'm seeing ${profile.name} with enough saved setup context for a limited first operating read.`,
+    artistSnapshot: "Your saved artist profile and imported catalog give the Manager a starting picture, but the first brief still needs stronger private proof before hard decisions.",
+    signals: [
+      {
+        claim: "Your strongest current proof is that the artist identity and catalog setup are saved.",
+        whyItMatters: "That gives the team a real operating starting point instead of an empty workspace.",
+        evidenceIds: ["artist-profile", "catalog-setup"],
+      },
+    ],
+    managerRead:
+      "I'm seeing enough context to start the first read, but I would treat it as limited until stronger private proof is connected. I can see public setup context, but I cannot yet see whether people are saving, returning, spending, or converting.",
+    teamRead: "The team should use this as the first operating read, not a final campaign or spend verdict.",
+    todayDirective: "Pick the first music focus and connect stronger private proof before approving spend, revenue claims, or external commitments.",
+    missingProof: ["Private saves, source-of-stream, revenue, conversion, and rights certainty are still missing."],
+    sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+    confidence: "limited",
+    state: "fallback",
+  };
+}
+
+function formatBriefGeneratedAt(value?: string) {
+  if (!value) return "when sources were last prepared";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "when sources were last prepared";
+  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }

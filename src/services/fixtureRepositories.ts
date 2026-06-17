@@ -47,6 +47,27 @@ export const productionFixtureData: ProductionFixtureData = {
     { label: "Team Agents", title: "Creative brief sent to Marketing", time: "5h ago" },
     { label: "System", title: "Nigeria signal verified by Manager", time: "Yesterday" },
   ],
+  todayBrief: {
+    headlineRead: "I’m seeing Sable Day as a developing artist with one clear release lane to protect today.",
+    artistSnapshot: "Your profile, catalog, and team context already give the Manager a usable picture of the artist and the current release focus.",
+    signals: [
+      {
+        claim: "Your strongest current proof is that the release focus is clear enough to organize the team around it.",
+        whyItMatters: "A focused lane keeps decisions practical instead of turning setup into a generic artist profile.",
+        evidenceIds: ["fixture-profile", "fixture-catalog"],
+      },
+    ],
+    managerRead:
+      "I’m seeing an artist with enough saved context to start managing the next move. The catalog tells me where the team should focus, but I would not treat public attention as proof of saves, repeat listening, revenue, or campaign conversion yet.",
+    teamRead: "The team should protect the active release lane, clear rights-sensitive blockers, and keep stronger private proof on the source list.",
+    todayDirective: "Keep the release path focused and clear the proof gaps before approving spend or external commitments.",
+    missingProof: ["Private saves, source-of-stream, revenue, conversion, and final rights proof are still missing."],
+    sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+    confidence: "limited",
+    generatedAt: "2026-06-17T08:30:00.000Z",
+    managerSynthesisRunId: "fixture-brief-run",
+    state: "fallback",
+  },
   agents: [
     {
       id: "manager",
@@ -400,7 +421,11 @@ export function createFixtureRepositories(): CleanProductionRepositories {
           priority: productionFixtureData.priority,
           attention: productionFixtureData.attention,
           movement: productionFixtureData.movement,
+          todayBrief: productionFixtureData.todayBrief,
         };
+      },
+      async generateTodaysBrief() {
+        return productionFixtureData.todayBrief;
       },
     },
     staff: {

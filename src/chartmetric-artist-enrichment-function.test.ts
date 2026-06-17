@@ -67,6 +67,13 @@ describe("Chartmetric artist enrichment edge function", () => {
     expect(functionSource).not.toContain('.from("artist_profiles").update');
   });
 
+  it("hands saved artist intelligence to Today's Brief generation without blocking enrichment", () => {
+    expect(functionSource).toContain("generate-todays-brief");
+    expect(functionSource).toContain("generateTodaysBriefAfterArtistEvidence");
+    expect(functionSource).toContain("todays_brief_handoff_failed");
+    expect(functionSource).toContain("Today's Brief handoff failed");
+  });
+
   it("reuses an existing Chartmetric source connection before inserting a new one", () => {
     expect(functionSource).toContain("const { data: existing, error: existingError }");
     expect(functionSource).toContain('.eq("provider_id", providerId)');
