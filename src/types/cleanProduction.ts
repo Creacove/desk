@@ -59,6 +59,27 @@ export type MovementItem = {
   time: string;
 };
 
+export type TodayBriefSignal = {
+  claim: string;
+  whyItMatters: string;
+  evidenceIds: string[];
+};
+
+export type TodayBriefViewModel = {
+  headlineRead: string;
+  artistSnapshot: string;
+  signals: TodayBriefSignal[];
+  managerRead: string;
+  teamRead: string;
+  todayDirective: string;
+  missingProof: string[];
+  sourceLine: string;
+  confidence: "high" | "medium" | "low" | "limited" | "unknown";
+  generatedAt?: string;
+  managerSynthesisRunId?: string;
+  state: "fresh" | "limited" | "fallback" | "failed";
+};
+
 export type AgentViewModel = {
   id: string;
   name: string;
@@ -222,6 +243,7 @@ export type ProductionFixtureData = {
   priority: PriorityItem[];
   attention: AttentionItem[];
   movement: MovementItem[];
+  todayBrief: TodayBriefViewModel;
   agents: AgentViewModel[];
   missions: MissionViewModel[];
   music: MusicObjectViewModel[];
@@ -234,7 +256,8 @@ export type ArtistProfileRepository = {
 };
 
 export type DeskRepository = {
-  loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement">>;
+  loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement" | "todayBrief">>;
+  generateTodaysBrief(): Promise<TodayBriefViewModel>;
 };
 
 export type StaffRepository = {

@@ -15,6 +15,7 @@ import type {
   MusicObjectViewModel,
   SplitConfirmationViewModel,
   SplitContributorInput,
+  TodayBriefViewModel,
 } from "../types/cleanProduction";
 import type {
   ProductionAuthAdapter,
@@ -429,7 +430,11 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     },
     desk: {
       async loadDesk() {
-        const [{ data: syncRows, error: syncError }, { data: eventRows, error: eventError }] = await Promise.all([
+        const [
+          { data: syncRows, error: syncError },
+          { data: eventRows, error: eventError },
+          { data: briefRows, error: briefError },
+        ] = await Promise.all([
           client
             .from("source_sync_jobs")
             .select("status,completed_at,job_type")
@@ -442,14 +447,26 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: false })
             .limit(5),
+          client
+            .from("manager_synthesis_runs")
+            .select("id,status,classification,confidence,action_plan,limitations,completed_at,created_at")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("classification", "setup_todays_brief_v1")
+            .eq("status", "completed")
+            .order("completed_at", { ascending: false })
+            .limit(1),
         ]);
 
         if (syncError) throw syncError;
         if (eventError) throw eventError;
+        if (briefError) throw briefError;
 
         const latestSync = (syncRows as SourceSyncJobRow[] | null)?.[0];
         const connectedLabel = latestSync?.status === "completed_with_limits" ? "Spotify catalog connected with limits" : "Spotify catalog connected";
         const attentionItems = buildDeskAttentionItems(latestSync);
+        const todayBrief =
+          todayBriefFromManagerRun(((briefRows as ManagerSynthesisRunRow[] | null) ?? [])[0]) ??
+          buildFallbackTodayBrief(workspace);
 
         return {
           priority: [
@@ -474,7 +491,28 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             title: formatMovementSummary(event.summary),
             time: formatEventTime(event.created_at),
           })),
+          todayBrief,
         };
+      },
+      async generateTodaysBrief() {
+        const { data, error } = await client.functions.invoke("generate-todays-brief", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            trigger: "manual",
+          },
+        });
+
+        if (error) {
+          await throwFunctionInvokeError(error, "Today's Brief generation failed.");
+        }
+
+        const brief = todayBriefFromPayload((data as { brief?: unknown } | null)?.brief);
+        if (!brief) {
+          throw new Error("Today's Brief generation did not return a usable brief.");
+        }
+        return { ...brief, state: "fresh" as const };
       },
     },
     staff: {
@@ -1083,6 +1121,17 @@ type OperatingEventRow = {
   id: string;
   event_type: string;
   summary: string;
+  created_at?: string | null;
+};
+
+type ManagerSynthesisRunRow = {
+  id: string;
+  status?: string | null;
+  classification?: string | null;
+  confidence?: string | null;
+  action_plan?: unknown;
+  limitations?: string[] | null;
+  completed_at?: string | null;
   created_at?: string | null;
 };
 
@@ -2006,6 +2055,110 @@ function buildArtistIntelligence(artistName: string, evidenceRows: EvidenceRow[]
     socialRead: buildEvidenceRead(socialRows, "No Chartmetric social evidence has been normalized yet."),
     limitations: uniqueStrings(chartmetricRows.map((row) => row.limitation).filter((value): value is string => Boolean(value))).slice(0, 4),
   };
+}
+
+const TODAY_BRIEF_BANNED_VISIBLE_TERMS = ["chartmetric", "provider", "api", "normalized", "database", "evidence row", "third-party"];
+
+function todayBriefFromManagerRun(row?: ManagerSynthesisRunRow | null): TodayBriefViewModel | undefined {
+  if (!row?.id || row.status !== "completed" || row.classification !== "setup_todays_brief_v1") return undefined;
+  const actionPlan = Array.isArray(row.action_plan) ? row.action_plan : [];
+  const brief = todayBriefFromPayload(actionPlan[0]);
+  if (!brief) return undefined;
+  return {
+    ...brief,
+    generatedAt: brief.generatedAt ?? row.completed_at ?? row.created_at ?? undefined,
+    managerSynthesisRunId: brief.managerSynthesisRunId ?? row.id,
+    state: "fresh",
+  };
+}
+
+function todayBriefFromPayload(payload: unknown): TodayBriefViewModel | undefined {
+  if (!isPlainRecord(payload)) return undefined;
+  const brief: TodayBriefViewModel = {
+    headlineRead: readRequiredBriefString(payload.headlineRead),
+    artistSnapshot: readRequiredBriefString(payload.artistSnapshot),
+    signals: readBriefSignals(payload.signals),
+    managerRead: readRequiredBriefString(payload.managerRead),
+    teamRead: readRequiredBriefString(payload.teamRead),
+    todayDirective: readRequiredBriefString(payload.todayDirective),
+    missingProof: readBriefStringArray(payload.missingProof),
+    sourceLine: readRequiredBriefString(payload.sourceLine),
+    confidence: readTodayBriefConfidence(payload.confidence),
+    generatedAt: readOptionalBriefString(payload.generatedAt),
+    managerSynthesisRunId: readOptionalBriefString(payload.managerSynthesisRunId),
+    state: "fresh",
+  };
+  if (!brief.headlineRead || !brief.managerRead || !brief.todayDirective || !brief.signals.length) return undefined;
+  return todayBriefHasBannedVisibleTerms(brief) ? undefined : brief;
+}
+
+function buildFallbackTodayBrief(workspace: ProductionWorkspace): TodayBriefViewModel {
+  return {
+    headlineRead: `I'm seeing ${workspace.artistName} with enough saved setup context for a limited first operating read.`,
+    artistSnapshot: "Your saved artist profile and imported catalog give the Manager a starting picture, but the first brief still needs stronger private proof before hard decisions.",
+    signals: [
+      {
+        claim: "Your strongest current proof is that the artist identity and catalog setup are saved.",
+        whyItMatters: "That gives the team a real operating starting point instead of an empty workspace.",
+        evidenceIds: ["artist-profile", "catalog-setup"],
+      },
+    ],
+    managerRead:
+      "I'm seeing enough context to start the first read, but I would treat it as limited until stronger private proof is connected. I can see public setup context, but I cannot yet see whether people are saving, returning, spending, or converting.",
+    teamRead: "The team should use this as the first operating read, not a final campaign or spend verdict.",
+    todayDirective: "Pick the first music focus and connect stronger private proof before approving spend, revenue claims, or external commitments.",
+    missingProof: ["Private saves, source-of-stream, revenue, conversion, and rights certainty are still missing."],
+    sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+    confidence: "limited",
+    state: "fallback",
+  };
+}
+
+function readRequiredBriefString(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function readOptionalBriefString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readBriefStringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
+}
+
+function readBriefSignals(value: unknown): TodayBriefViewModel["signals"] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isPlainRecord).map((item) => ({
+    claim: readRequiredBriefString(item.claim),
+    whyItMatters: readRequiredBriefString(item.whyItMatters),
+    evidenceIds: readBriefStringArray(item.evidenceIds),
+  })).filter((signal) => signal.claim && signal.whyItMatters && signal.evidenceIds.length);
+}
+
+function readTodayBriefConfidence(value: unknown): TodayBriefViewModel["confidence"] {
+  return value === "high" || value === "medium" || value === "low" || value === "limited" || value === "unknown" ? value : "unknown";
+}
+
+function todayBriefHasBannedVisibleTerms(brief: TodayBriefViewModel) {
+  const text = [
+    brief.headlineRead,
+    brief.artistSnapshot,
+    brief.managerRead,
+    brief.teamRead,
+    brief.todayDirective,
+    brief.sourceLine,
+    ...brief.missingProof,
+    ...brief.signals.flatMap((signal) => [signal.claim, signal.whyItMatters]),
+  ].join("\n");
+  return TODAY_BRIEF_BANNED_VISIBLE_TERMS.some((term) => new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").test(text));
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function buildEvidenceRead(rows: EvidenceRow[], fallback: string) {

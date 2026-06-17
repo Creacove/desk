@@ -36,6 +36,7 @@ import type {
   MovementItem,
   MusicObjectViewModel,
   PriorityItem,
+  TodayBriefViewModel,
 } from "../types/cleanProduction";
 import type {
   ProductionAuthAdapter,
@@ -292,6 +293,7 @@ function CleanProductionWorkspace({
   const [priority, setPriority] = useState<PriorityItem[]>([]);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [movement, setMovement] = useState<MovementItem[]>([]);
+  const [todayBrief, setTodayBrief] = useState<TodayBriefViewModel | null>(null);
   const [agents, setAgents] = useState<AgentViewModel[]>([]);
   const [music, setMusic] = useState<MusicObjectViewModel[]>([]);
   const [conversations, setConversations] = useState<ConversationViewModel[]>([]);
@@ -306,6 +308,8 @@ function CleanProductionWorkspace({
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
   const [setupPending, setSetupPending] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [todayBriefPending, setTodayBriefPending] = useState(false);
+  const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -331,6 +335,7 @@ function CleanProductionWorkspace({
         setPriority(nextDesk.priority);
         setAttention(nextDesk.attention);
         setMovement(nextDesk.movement);
+        setTodayBrief(nextDesk.todayBrief);
         setAgents(nextAgents);
         setMusic(nextMusic);
         setConversations(nextConversations);
@@ -398,6 +403,19 @@ function CleanProductionWorkspace({
   async function reloadMusic() {
     const nextMusic = await repositories.music.loadMusic();
     setMusic(nextMusic);
+  }
+
+  async function generateTodaysBrief() {
+    try {
+      setTodayBriefPending(true);
+      setTodayBriefError(null);
+      const nextBrief = await repositories.desk.generateTodaysBrief();
+      setTodayBrief(nextBrief);
+    } catch (error) {
+      setTodayBriefError(readErrorMessage(error, "Today's Brief could not be generated."));
+    } finally {
+      setTodayBriefPending(false);
+    }
   }
 
   if (viewModelError) {
@@ -476,6 +494,9 @@ function CleanProductionWorkspace({
           {view === "labelHQ" ? (
             <DeskHQScreen
               profile={profile}
+              todayBrief={todayBrief}
+              todayBriefPending={todayBriefPending}
+              todayBriefError={todayBriefError}
               priority={priority}
               attention={attention}
               movement={movement}
@@ -483,6 +504,7 @@ function CleanProductionWorkspace({
               missions={missions}
               onNavigate={navigate}
               onManager={openManager}
+              onGenerateTodaysBrief={generateTodaysBrief}
               onLockedAgent={(agent) => {
                 setSelectedAgent(agent);
                 navigate("lockedAgentWorkspace");

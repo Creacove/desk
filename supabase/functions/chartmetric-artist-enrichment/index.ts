@@ -151,6 +151,7 @@ Deno.serve(async (request) => {
         evidence_count: evidenceItems.length,
       },
     });
+    const todaysBrief = await generateTodaysBriefAfterArtistEvidence(input);
 
     return json({
       status: "completed",
@@ -158,6 +159,7 @@ Deno.serve(async (request) => {
       sourceSnapshotId: snapshotId,
       evidenceCount: evidenceItems.length,
       rateLimit: enrichment.rateLimit,
+      todaysBrief,
     });
   } catch (error) {
     if (jobId && context) {
@@ -433,6 +435,43 @@ async function writeOperatingEvent(
     payload: draft.payload ?? {},
   });
   if (error) throw error;
+}
+
+async function generateTodaysBriefAfterArtistEvidence(input: ArtistEnrichmentInput) {
+  try {
+    const response = await fetch(`${requireEnv("SUPABASE_URL")}/functions/v1/generate-todays-brief`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${requireEnv("SUPABASE_SERVICE_ROLE_KEY")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        trigger: "setup",
+      }),
+    });
+    if (!response.ok) {
+      throw new Error(`Today's Brief generation returned status ${response.status}.`);
+    }
+    const payload = await response.json().catch(() => ({}));
+    return { status: "completed", managerSynthesisRunId: readString(payload.managerSynthesisRunId) };
+  } catch (error) {
+    const message = describeError(error, "Today's Brief handoff failed.");
+    try {
+      const serviceClient = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
+      await writeOperatingEvent(serviceClient, input, {
+        eventType: "todays_brief_handoff_failed",
+        targetType: "artist",
+        targetId: input.artistId,
+        summary: `Today's Brief handoff failed: ${message}`,
+      });
+    } catch {
+      // Preserve successful artist enrichment when failure reporting also fails.
+    }
+    return { status: "failed", error: message };
+  }
 }
 
 async function markFailedSafe(jobId: string, input: ArtistEnrichmentInput, error: unknown) {

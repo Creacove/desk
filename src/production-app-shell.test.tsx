@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ProductionApp } from "./app/ProductionApp";
-import type { ArtistProfileViewModel, CleanProductionRepositories, MusicObjectViewModel } from "./types/cleanProduction";
+import type { ArtistProfileViewModel, CleanProductionRepositories, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
   ProductionProfileSetupService,
@@ -274,7 +274,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).toBeInTheDocument();
     expect(screen.getByText("Today's Brief")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Talk to Manager" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate Today's Brief" })).toBeInTheDocument();
     expect(screen.getByText("Needs Attention")).toBeInTheDocument();
     expect(screen.getByText("Recent Movement")).toBeInTheDocument();
     expect(screen.getByText("Source / Just now")).toBeInTheDocument();
@@ -287,10 +287,72 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
   }, 20000);
 
+  it("renders a generated Manager-language Today's Brief and refreshes it from saved sources", async () => {
+    const initialBrief: TodayBriefViewModel = {
+      headlineRead: "I'm seeing Nova Vale as a focused artist with enough saved context for a real first read.",
+      artistSnapshot: "Your setup already gives the Manager a useful picture of stage, market, direction, and catalog.",
+      signals: [
+        {
+          claim: "Your strongest current proof is a connected artist profile and imported catalog.",
+          whyItMatters: "That gives the team something concrete to manage from today.",
+          evidenceIds: ["profile", "catalog"],
+        },
+      ],
+      managerRead:
+        "I'm seeing enough context to start managing the artist, but not enough private proof to make spend or conversion claims. The catalog tells me where to begin, while the missing private data tells me what not to overstate.",
+      teamRead: "The team should align around the first music focus before turning this into campaign work.",
+      todayDirective: "Choose the first music focus and connect stronger private proof before approving spend.",
+      missingProof: ["Private saves, source-of-stream, revenue, and conversion are still missing."],
+      sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+      confidence: "limited",
+      generatedAt: "2026-06-17T08:30:00.000Z",
+      managerSynthesisRunId: "brief-run-1",
+      state: "fresh",
+    };
+    const refreshedBrief: TodayBriefViewModel = {
+      ...initialBrief,
+      headlineRead: "I'm seeing Nova Vale's setup turn into a clearer operating picture.",
+      todayDirective: "Use today to pick the priority song and define the next proof gap.",
+      managerSynthesisRunId: "brief-run-2",
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      loadDesk: async () => ({
+        priority: [],
+        attention: [],
+        movement: [],
+        todayBrief: initialBrief,
+      }),
+      generateTodaysBrief: async () => refreshedBrief,
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(screen.getByText(initialBrief.headlineRead)).toBeInTheDocument();
+    expect(screen.getByText(initialBrief.managerRead)).toBeInTheDocument();
+    expect(screen.getByText(initialBrief.todayDirective)).toBeInTheDocument();
+    expect(screen.getByText(initialBrief.sourceLine)).toBeInTheDocument();
+    expect(screen.queryByText(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate Today's Brief" }));
+
+    expect(await screen.findByText(refreshedBrief.headlineRead)).toBeInTheDocument();
+    expect(screen.getByText(refreshedBrief.todayDirective)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Talk to Manager" })).not.toBeInTheDocument();
+  }, 20000);
+
   it("keeps Manager conversations persistent and links created work", async () => {
     await enterDeskHq();
 
-    fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
     expect(screen.getByText("Manager Office")).toBeInTheDocument();
 
     for (let index = 0; index < 3; index += 1) {
@@ -883,6 +945,48 @@ function repositoriesFor(
           },
         ],
         movement: [{ label: "Source", title: "Spotify public catalog connected", time: "Just now" }],
+        todayBrief: {
+          headlineRead: `I'm seeing ${artistName} as an artist with enough saved context for a first operating read.`,
+          artistSnapshot: "Your setup gives the Manager a useful picture of stage, direction, catalog, and source limits.",
+          signals: [
+            {
+              claim: "Your strongest current proof is a connected artist profile and imported catalog.",
+              whyItMatters: "That gives the team something concrete to manage from today.",
+              evidenceIds: ["profile", "catalog"],
+            },
+          ],
+          managerRead:
+            "I'm seeing enough context to begin managing the artist, but not enough private proof to make spend, revenue, or conversion claims.",
+          teamRead: "The team should use the saved setup as operating context while stronger private proof is connected.",
+          todayDirective: "Choose the first music focus and connect stronger private proof before approving spend.",
+          missingProof: ["Private saves, source-of-stream, revenue, and conversion are still missing."],
+          sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+          confidence: "limited" as const,
+          generatedAt: "2026-06-17T08:30:00.000Z",
+          managerSynthesisRunId: "test-brief-run",
+          state: "fallback" as const,
+        },
+      }),
+      generateTodaysBrief: async () => ({
+        headlineRead: `I'm seeing ${artistName} as an artist with enough saved context for a first operating read.`,
+        artistSnapshot: "Your setup gives the Manager a useful picture of stage, direction, catalog, and source limits.",
+        signals: [
+          {
+            claim: "Your strongest current proof is a connected artist profile and imported catalog.",
+            whyItMatters: "That gives the team something concrete to manage from today.",
+            evidenceIds: ["profile", "catalog"],
+          },
+        ],
+        managerRead:
+          "I'm seeing enough context to begin managing the artist, but not enough private proof to make spend, revenue, or conversion claims.",
+        teamRead: "The team should use the saved setup as operating context while stronger private proof is connected.",
+        todayDirective: "Choose the first music focus and connect stronger private proof before approving spend.",
+        missingProof: ["Private saves, source-of-stream, revenue, and conversion are still missing."],
+        sourceLine: "Based on your saved artist profile, imported catalog, public audience signals, and current source limits.",
+        confidence: "limited" as const,
+        generatedAt: "2026-06-17T08:30:00.000Z",
+        managerSynthesisRunId: "test-brief-run",
+        state: "fresh" as const,
       }),
     },
     staff: {
