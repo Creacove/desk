@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Pencil, Plus, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Pencil, Plus, RefreshCw, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { WorkspaceHeader } from "../../design-system/components";
 import { cn } from "../../lib/utils";
@@ -37,6 +37,8 @@ export function MusicWorkspace({
   const [detailTarget, setDetailTarget] = useState<{ song: MusicObjectViewModel; groupTitle: string; field: MusicDetailField } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [briefPending, setBriefPending] = useState(false);
+  const [briefError, setBriefError] = useState<string | null>(null);
   const modalActive = Boolean(createKind || uploadTarget || detailTarget);
 
   const getMusicObject = (id: string) => music.find((object) => object.id === id);
@@ -81,6 +83,19 @@ export function MusicWorkspace({
       setActionError(readErrorMessage(error, "Music update failed."));
     } finally {
       setActionPending(false);
+    }
+  }
+
+  async function generateBrief(subjectId: string, subjectType: "music_item" | "music_project") {
+    try {
+      setBriefError(null);
+      setBriefPending(true);
+      await musicRepository.generateMusicSummary(subjectId, subjectType);
+      await onMusicChanged();
+    } catch (error) {
+      setBriefError(readErrorMessage(error, "Brief could not be generated."));
+    } finally {
+      setBriefPending(false);
     }
   }
 
@@ -228,6 +243,9 @@ export function MusicWorkspace({
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
           onRemoveSplitContributor={(contributorId) => removeSplitContributor(selected.id, contributorId)}
           onSendSplitConfirmationLinks={() => sendSplitConfirmationLinks(selected.id)}
+          onGenerateBrief={() => generateBrief(selected.id, "music_item")}
+          briefPending={briefPending}
+          briefError={briefError}
           onBack={backToLibrary}
           onNavigate={onNavigate}
           error={actionError}
@@ -241,6 +259,9 @@ export function MusicWorkspace({
           linkedMissions={linkedMissions}
           onBack={backToLibrary}
           onOpenSong={(song) => openObject(song, "projects")}
+          onGenerateBrief={() => generateBrief(selected.id, "music_project")}
+          briefPending={briefPending}
+          briefError={briefError}
           onNavigate={onNavigate}
           error={actionError}
         />
@@ -282,6 +303,7 @@ export function MusicWorkspace({
 function MusicSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; index: number; onOpen: () => void }) {
   const readiness = getSongReadiness(song);
   const hasBlocker = song.blocker !== "No active blocker" && song.blocker !== "None";
+  const recordRead = buildMusicListRead(song);
   return (
     <button
       type="button"
@@ -299,7 +321,9 @@ function MusicSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; ind
             {hasBlocker ? song.blocker : "Clear"}
           </span>
         </span>
-        <span className="mt-2 block max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">Next: {song.nextMove}</span>
+        <span className="mt-2 block max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">
+          <span className="font-bold text-foreground/70">Record read:</span> {recordRead}
+        </span>
       </span>
       <span className="grid gap-2 rounded-[16px] border border-foreground/6 bg-foreground/[0.025] p-3 sm:grid-cols-3">
         <MusicLibrarySignal label="Files" value={readiness.files} />
@@ -322,6 +346,7 @@ function MusicProjectCard({
   const readiness = getProjectReadiness(project, getMusicObject);
   const primaryBlocker = readiness.blockers[0]?.blocker ?? project.blocker;
   const blockerCount = readiness.blockers.length;
+  const projectRead = buildMusicListRead(project);
   return (
     <button
       type="button"
@@ -349,9 +374,34 @@ function MusicProjectCard({
         <MusicMiniStat label="Ready tracks" value={`${readiness.lockedTracks}/${readiness.trackCount}`} />
         <MusicMiniStat label="First issue" value={primaryBlocker} />
       </div>
-      <p className="border-t border-foreground/5 px-5 py-4 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">Next: {project.nextMove}</p>
+      <p className="border-t border-foreground/5 px-5 py-4 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">
+        <span className="font-bold text-foreground/70">Project read:</span> {projectRead}
+      </p>
     </button>
   );
+}
+
+function buildMusicListRead(item: MusicObjectViewModel) {
+  const snapshotSummary = item.snapshotSummary?.trim();
+  if (snapshotSummary) return trimListRead(snapshotSummary);
+
+  const managerRead = item.managerRead?.trim();
+  if (managerRead) return trimListRead(firstSentence(managerRead));
+
+  const situationLine = item.situationLine?.trim();
+  if (situationLine) return trimListRead(situationLine);
+
+  return item.kind === "project" ? "Project context is ready for a deeper read." : "Record context is ready for a deeper read.";
+}
+
+function firstSentence(value: string) {
+  const match = value.match(/^.+?[.!?](?=\s|$)/);
+  return (match?.[0] ?? value).trim();
+}
+
+function trimListRead(value: string) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  return compact.length > 180 ? `${compact.slice(0, 177).trimEnd()}...` : compact;
 }
 
 function MusicSongDetail({
@@ -365,6 +415,9 @@ function MusicSongDetail({
   onSaveSplitContributor,
   onRemoveSplitContributor,
   onSendSplitConfirmationLinks,
+  onGenerateBrief,
+  briefPending,
+  briefError,
   onBack,
   onNavigate,
   error,
@@ -379,6 +432,9 @@ function MusicSongDetail({
   onSaveSplitContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => void;
   onRemoveSplitContributor: (contributorId: string) => void;
   onSendSplitConfirmationLinks: () => void;
+  onGenerateBrief: () => void;
+  briefPending: boolean;
+  briefError: string | null;
   onBack: () => void;
   onNavigate: (view: CleanProductionView) => void;
   error?: string | null;
@@ -406,6 +462,13 @@ function MusicSongDetail({
   const detailConfirmedCount = allDetailFields.filter((field) => field.status === "Confirmed").length;
   const detailMissingCount = allDetailFields.filter((field) => field.status === "Missing").length;
   const detailDraftCount = allDetailFields.filter((field) => field.status === "Draft").length;
+  const trackIntelligenceMetrics = selectTrackIntelligenceMetrics(song.intelligenceSnapshot ?? []);
+  const trackSnapshotSummary =
+    acceptedVisibleTrackReadText(song.snapshotSummary) ??
+    "Record intelligence is focused on the usable numbers already in view.";
+  const managerReadCopy =
+    acceptedVisibleTrackReadText(song.managerRead) ??
+    buildVisibleSongManagerReadFallback(song, trackIntelligenceMetrics);
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -430,54 +493,64 @@ function MusicSongDetail({
 
       {activeTab === "overview" ? (
         <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
-              <div className="p-5 sm:p-6">
+          <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm p-5 sm:p-6 space-y-6">
+            <div>
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Manager next move</span>
-                  <span className={cn("rounded-md px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.04em]", song.blocker === "No active blocker" || song.blocker === "None" ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
-                    {song.blocker === "No active blocker" || song.blocker === "None" ? "Ready" : "Blocked"}
+                  <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                    {song.confidence === "limited" ? "Limited confidence" : `${song.confidence ?? "high"} confidence`}
                   </span>
-                </div>
-                <p className="mt-4 max-w-3xl font-display text-[20px] font-semibold leading-tight text-foreground">{song.nextMove}</p>
-                <div className="mt-5 rounded-lg border border-foreground/8 bg-foreground/[0.018] p-4">
-                  <div className="flex items-center gap-2">
-                    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Manager read</p>
-                    {song.managerReadState ? (
-                      <span className="rounded-full bg-foreground/[0.06] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                        {song.managerReadState === "fallback" ? "Basic read" : titleCaseStatus(song.managerReadState)}
-                      </span>
-                    ) : null}
-                  </div>
-                  <p data-testid="manager-read-copy" className="mt-2 text-[14px] font-normal leading-relaxed text-muted-foreground/90">{song.managerRead ?? song.sourceLimit}</p>
-                  {song.watchNext ? (
-                    <div className="mt-4 border-t border-foreground/8 pt-3">
-                      <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/72">What I am watching</p>
-                      <p className="mt-1 text-[12.5px] leading-relaxed text-muted-foreground/90">{song.watchNext}</p>
-                    </div>
+                  <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                    {song.managerReadState === "fresh" ? "Fresh" : song.managerReadState === "fallback" ? "First read" : "Limited"}
+                  </span>
+                  {song.blocker && song.blocker !== "No active blocker" && song.blocker !== "None" ? (
+                    <span className="rounded-full bg-warning/10 px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-warning">
+                      Blocker: {song.blocker}
+                    </span>
                   ) : null}
                 </div>
+                <button
+                  type="button"
+                  onClick={onGenerateBrief}
+                  disabled={briefPending}
+                  className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
+                  {briefPending ? "Generating brief…" : "Regenerate brief"}
+                </button>
               </div>
-              <div className="border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Song state</p>
-                <div className="mt-4 grid gap-3">
-                  {[
-                    { label: "Blocker", value: song.blocker },
-                    { label: "Rights / assets", value: `${song.rightsState ?? "Rights proof not connected"}. ${(song.assets ?? []).join(", ")}.` },
-                    {
-                      label: song.sourceSummary?.evidence.length ? "Evidence coverage" : "Source limit",
-                      value: song.sourceSummary?.evidence.length
-                        ? `${song.sourceSummary.evidence.length} normalized intelligence rows available. Spotify catalog limits still apply to private DSP analytics, saves, revenue, conversion, and campaign ROI.`
-                        : `${song.sourceKind ?? "Source"}: ${song.sourceLimit}`,
-                    },
-                  ].map((item) => (
-                    <div key={item.label} className="rounded-lg border border-foreground/8 bg-foreground/[0.018] px-3.5 py-3">
-                      <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/72">{item.label}</p>
-                      <p className="mt-1 text-[12.5px] font-normal leading-relaxed text-muted-foreground/90">{item.value}</p>
-                    </div>
-                  ))}
+              {briefError ? (
+                <p className="mb-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
+                  {briefError}
+                </p>
+              ) : null}
+              <h3 className="font-display text-[22px] font-bold tracking-tight text-foreground leading-tight">{song.situationLine}</h3>
+            </div>
+
+            <section data-testid="track-intelligence-card" className="overflow-hidden rounded-[12px] border border-foreground/10 bg-background shadow-sm">
+              <div className="grid gap-4 border-b border-foreground/8 bg-foreground/[0.012] px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:px-5">
+                <div className="min-w-0 border-l-2 border-[#e11937] pl-3">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#b51224]">Record Intelligence</p>
+                  <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{trackIntelligenceMetrics.length} key signals</p>
                 </div>
+                <p className="min-w-0 text-[13px] font-semibold leading-relaxed text-foreground/72 sm:max-w-3xl">
+                  {trackSnapshotSummary}
+                </p>
               </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
+                {trackIntelligenceMetrics.map((metric) => (
+                  <div key={`${metric.groupTitle}-${metric.label}-${metric.value}`} className="min-w-0 border-t border-foreground/8 px-3 py-3 sm:px-4">
+                    <p className="text-[10px] font-semibold leading-tight text-muted-foreground/82">{metric.label}</p>
+                    <p className="mt-1 break-words text-[20px] font-semibold leading-none text-foreground">{metric.value}</p>
+                    {metric.context ? <p className="mt-1 text-[10px] font-semibold leading-tight text-muted-foreground/70">{metric.context}</p> : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-5">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
+              <p data-testid="manager-read-copy" className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{managerReadCopy}</p>
             </div>
           </div>
           <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={song.linkedTaskIds ?? []} onNavigate={onNavigate} />
@@ -601,6 +674,9 @@ function MusicProjectDetail({
   linkedMissions,
   onBack,
   onOpenSong,
+  onGenerateBrief,
+  briefPending,
+  briefError,
   onNavigate,
   error,
 }: {
@@ -609,6 +685,9 @@ function MusicProjectDetail({
   linkedMissions: MissionViewModel[];
   onBack: () => void;
   onOpenSong: (song: MusicObjectViewModel) => void;
+  onGenerateBrief: () => void;
+  briefPending: boolean;
+  briefError: string | null;
   onNavigate: (view: CleanProductionView) => void;
   error?: string | null;
 }) {
@@ -621,49 +700,163 @@ function MusicProjectDetail({
       <MusicDetailTop object={project} label="Project" onBack={onBack} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 p-5">
-            <div>
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Tracklist</p>
-              <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Project songs</h4>
-              <p className="mt-1 text-[12px] font-semibold text-muted-foreground/78">Songs stay atomic inside projects.</p>
+        <div className="grid gap-5">
+          <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 p-5">
+              <div>
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Tracklist</p>
+                <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Project songs</h4>
+                <p className="mt-1 text-[12px] font-semibold text-muted-foreground/78">Songs stay atomic inside projects.</p>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{readyTracks}/{tracklist.length || 0} clear</span>
+                {blockerRollup ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-bold text-warning">{blockerRollup}</span> : null}
+              </div>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{readyTracks}/{tracklist.length || 0} clear</span>
-              {blockerRollup ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-bold text-warning">{blockerRollup}</span> : null}
-            </div>
-          </div>
 
-          <div className="divide-y divide-foreground/6">
-            {tracklist.map((song, index) => (
-              <button
-                key={song.id}
-                type="button"
-                aria-label={`Open song ${song.title}`}
-                onClick={() => onOpenSong(song)}
-                className="grid w-full gap-3 px-5 py-4 text-left transition-colors hover:bg-brand-accent/[0.03] md:grid-cols-[42px_52px_minmax(0,1fr)_168px_auto] md:items-center"
-              >
-                <span className="font-display text-[17px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
-                <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
-                <span>
-                  <span className="block text-[15px] font-bold text-foreground">{song.title}</span>
-                  <span className="text-[12px] font-semibold text-muted-foreground/80">{song.sourceKind}</span>
-                </span>
-                <span className="flex flex-wrap items-center gap-2 md:justify-end">
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
-                  {isMusicBlocked(song) ? (
-                    <span className="rounded-md bg-warning/10 px-2 py-1 text-[10px] font-bold text-warning">{getProjectBlockerBadge(song.blocker)}</span>
-                  ) : null}
-                </span>
-                <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
-              </button>
-            ))}
+            <div className="divide-y divide-foreground/6">
+              {tracklist.map((song, index) => (
+                <button
+                  key={song.id}
+                  type="button"
+                  aria-label={`Open song ${song.title}`}
+                  onClick={() => onOpenSong(song)}
+                  className="grid w-full gap-3 px-5 py-4 text-left transition-colors hover:bg-brand-accent/[0.03] md:grid-cols-[42px_52px_minmax(0,1fr)_168px_auto] md:items-center"
+                >
+                  <span className="font-display text-[17px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+                  <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
+                  <span>
+                    <span className="block text-[15px] font-bold text-foreground">{song.title}</span>
+                  </span>
+                  <span className="flex flex-wrap items-center gap-2 md:justify-end">
+                    <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
+                    {isMusicBlocked(song) ? (
+                      <span className="rounded-md bg-warning/10 px-2 py-1 text-[10px] font-bold text-warning">{getProjectBlockerBadge(song.blocker)}</span>
+                    ) : null}
+                  </span>
+                  <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
+                </button>
+              ))}
+            </div>
           </div>
+          <MusicProjectBrief project={project} tracklist={tracklist} onGenerateBrief={onGenerateBrief} briefPending={briefPending} briefError={briefError} />
         </div>
         <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={project.linkedTaskIds ?? []} onNavigate={onNavigate} />
       </div>
     </section>
   );
+}
+
+function MusicProjectBrief({
+  project,
+  tracklist,
+  onGenerateBrief,
+  briefPending,
+  briefError,
+}: {
+  project: MusicObjectViewModel;
+  tracklist: MusicObjectViewModel[];
+  onGenerateBrief: () => void;
+  briefPending: boolean;
+  briefError: string | null;
+}) {
+  const projectIntelligenceMetrics = selectTrackIntelligenceMetrics(project.intelligenceSnapshot ?? []);
+  const projectSnapshotSummary =
+    acceptedVisibleTrackReadText(project.snapshotSummary) ??
+    "Project intelligence is focused on the usable release and tracklist facts already in view.";
+  const managerReadCopy =
+    acceptedVisibleTrackReadText(project.managerRead) ??
+    buildVisibleProjectManagerReadFallback(project, projectIntelligenceMetrics, tracklist);
+
+  return (
+    <div className="surface-elevated overflow-hidden rounded-[22px] p-5 shadow-sm sm:p-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {project.confidence === "limited" ? "Limited confidence" : `${project.confidence ?? "high"} confidence`}
+          </span>
+          <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            {project.managerReadState === "fresh" ? "Fresh" : project.managerReadState === "fallback" ? "First read" : "Limited"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onGenerateBrief}
+          disabled={briefPending}
+          className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
+          {briefPending ? "Generating brief..." : "Regenerate brief"}
+        </button>
+      </div>
+
+      {briefError ? (
+        <p className="mt-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
+          {briefError}
+        </p>
+      ) : null}
+
+      <h3 className="mt-4 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">{project.situationLine}</h3>
+
+      <section data-testid="project-intelligence-card" className="mt-5 overflow-hidden rounded-[12px] border border-foreground/10 bg-background shadow-sm">
+        <div className="grid gap-4 border-b border-foreground/8 bg-foreground/[0.012] px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:px-5">
+          <div className="min-w-0 border-l-2 border-[#e11937] pl-3">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#b51224]">Project Intelligence</p>
+            <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{projectIntelligenceMetrics.length} key signals</p>
+          </div>
+          <p className="min-w-0 text-[13px] font-semibold leading-relaxed text-foreground/72 sm:max-w-3xl">
+            {projectSnapshotSummary}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
+          {projectIntelligenceMetrics.map((metric) => (
+            <div key={`${metric.groupTitle}-${metric.label}-${metric.value}`} className="min-w-0 border-t border-foreground/8 px-3 py-3 sm:px-4">
+              <p className="text-[10px] font-semibold leading-tight text-muted-foreground/82">{metric.label}</p>
+              <p className="mt-1 break-words text-[20px] font-semibold leading-none text-foreground">{metric.value}</p>
+              {metric.context ? <p className="mt-1 text-[10px] font-semibold leading-tight text-muted-foreground/70">{metric.context}</p> : null}
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="mt-5 rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-5">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
+        <p data-testid="project-manager-read-copy" className="mt-4 whitespace-pre-line text-[14px] font-semibold leading-relaxed text-foreground/90">{managerReadCopy}</p>
+      </div>
+    </div>
+  );
+}
+
+function buildVisibleSongManagerReadFallback(song: MusicObjectViewModel, metrics: CompactTrackMetric[]) {
+  const leadMetric = metrics[0];
+  const secondMetric = metrics.find((metric) => metric.label !== leadMetric?.label || metric.value !== leadMetric?.value);
+  const metricRead = leadMetric
+    ? secondMetric
+      ? `${leadMetric.label.toLowerCase()} is ${leadMetric.value}${leadMetric.context ? ` (${leadMetric.context})` : ""}, with ${secondMetric.label.toLowerCase()} at ${secondMetric.value}${secondMetric.context ? ` (${secondMetric.context})` : ""}.`
+      : `${leadMetric.label.toLowerCase()} is ${leadMetric.value}${leadMetric.context ? ` (${leadMetric.context})` : ""}.`
+    : "the record is in view with enough saved context to choose the first useful inspection lane.";
+  const lifecycle = song.lifecycleStage ?? song.lifecycle;
+  return `${song.title} is a ${lifecycle.toLowerCase()} record with a usable first read. ${metricRead} I would make ${song.title} the first song to inspect, then decide which visible behavior should lead the next team action.`;
+}
+
+function buildVisibleProjectManagerReadFallback(project: MusicObjectViewModel, metrics: CompactTrackMetric[], tracklist: MusicObjectViewModel[]) {
+  const trackCount = tracklist.length || project.songs?.length || project.songIds?.length || 0;
+  const countLabel = trackCount ? `${trackCount} mapped ${trackCount === 1 ? "track" : "tracks"}` : "a mapped project shape";
+  const focusTrack = tracklist[0]?.title ?? project.songs?.[0];
+  const metricRead = metrics.length
+    ? `The strongest visible facts are ${readableMetricList(metrics.slice(0, 3))}.`
+    : "The useful read should start with the release shape and the tracklist already in view.";
+  const focusRead = focusTrack
+    ? `${focusTrack} is the first song to inspect because it is the clearest mapped entry point for the project decision.`
+    : "The first action is to choose the song that should carry the project decision.";
+  return `${project.title} has ${countLabel}. ${metricRead} ${focusRead}`;
+}
+
+function readableMetricList(metrics: CompactTrackMetric[]) {
+  const values = metrics.map((metric) => `${metric.label.toLowerCase()} ${metric.value}${metric.context ? ` (${metric.context})` : ""}`);
+  if (values.length <= 1) return values[0] ?? "the visible project metrics";
+  if (values.length === 2) return `${values[0]} and ${values[1]}`;
+  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
 }
 
 function isMusicBlocked(song: MusicObjectViewModel) {
@@ -728,7 +921,7 @@ function MusicLinkedWork({ linkedMissions, linkedTaskIds, onNavigate }: { linked
   const hasLinkedWork = linkedMissions.length > 0 || linkedTaskIds.length > 0;
 
   return (
-    <aside data-testid="music-linked-work" className="surface-elevated rounded-[22px] p-5 shadow-sm">
+    <aside data-testid="music-linked-work" className="surface-elevated self-start rounded-[22px] p-5 shadow-sm lg:sticky lg:top-8">
       <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-4">
         <div>
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Linked work</p>
@@ -1320,4 +1513,132 @@ function getProjectReadiness(project: MusicObjectViewModel, getMusicObject: (id:
     lockedTracks,
     blockers,
   };
+}
+
+type CompactTrackMetric = {
+  label: string;
+  value: string;
+  context?: string;
+  evidenceIds: string[];
+  groupTitle: string;
+};
+
+function selectTrackIntelligenceMetrics(groups: { title: string; metrics: { label: string; value: string; context?: string; evidenceIds: string[] }[] }[]): CompactTrackMetric[] {
+  const allMetrics = groups.flatMap((group) => group.metrics.map((metric) => ({ ...metric, groupTitle: group.title })));
+  const uniqueMetrics = allMetrics.filter((metric, index, list) => {
+    const key = `${metric.label.toLowerCase()}-${metric.value.toLowerCase()}`;
+    return list.findIndex((candidate) => `${candidate.label.toLowerCase()}-${candidate.value.toLowerCase()}` === key) === index;
+  });
+
+  const displayMetrics = uniqueMetrics.filter(isDisplayableTrackMetric).map((metric) => ({
+    ...metric,
+    context: compactTrackMetricContext(metric.context),
+  }));
+
+  return displayMetrics
+    .map((metric, index) => ({ metric, index, priority: getTrackMetricPriority(metric) }))
+    .sort((left, right) => left.priority - right.priority || left.index - right.index)
+    .slice(0, 10)
+    .map(({ metric }) => metric);
+}
+
+function isDisplayableTrackMetric(metric: CompactTrackMetric) {
+  const visibleText = [metric.groupTitle, metric.label, metric.value, metric.context ?? ""].join(" ");
+  if (hasBannedTrackVisibleTerm(visibleText)) return false;
+  if (metric.label.trim().length > 30) return false;
+  if (!isCompactTrackMetricValue(metric.value)) return false;
+
+  const priority = getTrackMetricPriority(metric);
+  if (priority < TRACK_METRIC_FALLBACK_PRIORITY) return true;
+  if (/[\d#%]/.test(metric.value)) return true;
+  return /release state|catalog status|read status/i.test(metric.label) && metric.value.trim().length <= 14;
+}
+
+function isCompactTrackMetricValue(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > 22) return false;
+  if (/[.!?]/.test(trimmed.replace(/(\d)\.(\d)/g, "$1$2"))) return false;
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  if (!/[\d#%]/.test(trimmed) && wordCount > 2) return false;
+  return true;
+}
+
+function compactTrackMetricContext(context?: string) {
+  const clean = acceptedVisibleTrackReadText(context);
+  if (!clean) return undefined;
+  if (clean.length <= 52) return clean;
+  return undefined;
+}
+
+function getTrackMetricPriority(metric: { label: string; context?: string }) {
+  const text = `${metric.label} ${metric.context ?? ""}`.toLowerCase();
+  const priorities = [
+    /spotify streams|last 28 days|peak day|stream trend|reported streams/,
+    /popularity|score/,
+    /playlist reach|playlist count|editorial/,
+    /tiktok creates|tiktok posts|tiktok views|tiktok/,
+    /youtube views|youtube/,
+    /shazam/,
+    /airplay|radio/,
+  ];
+  const priority = priorities.findIndex((pattern) => pattern.test(text));
+  return priority === -1 ? TRACK_METRIC_FALLBACK_PRIORITY : priority;
+}
+
+const TRACK_METRIC_FALLBACK_PRIORITY = 99;
+
+const TRACK_VISIBLE_BANNED_TERMS = [
+  "chatgpt",
+  "ai",
+  "bot",
+  "backend",
+  "chartmetric",
+  "provider",
+  "api",
+  "apis",
+  "database",
+  "evidence row",
+  "third-party",
+  "spotify confirms",
+  "spotify for artists",
+  "private conversion data",
+  "private saves",
+  "private analytics",
+  "private document",
+  "private documents",
+  "distributor proof",
+  "proof of listeners",
+  "listeners or saves",
+  "missing saves",
+  "missing listeners",
+  "we do not yet have",
+  "we don't yet have",
+  "repeat listeners",
+  "source-of-stream",
+  "source limits",
+  "source limit",
+  "conversion proof",
+  "campaign roi",
+  "missing proof",
+  "still missing",
+  "missing data",
+  "catalog-only",
+  "metadata-only",
+  "only catalog metadata",
+  "metadata record",
+  "saved track metadata",
+];
+
+function acceptedVisibleTrackReadText(value?: string) {
+  const text = value?.trim();
+  if (!text || hasBannedTrackVisibleTerm(text)) return undefined;
+  return text;
+}
+
+function hasBannedTrackVisibleTerm(value: string) {
+  return TRACK_VISIBLE_BANNED_TERMS.some((term) => new RegExp(`\\b${escapeTrackRegex(term)}\\b`, "i").test(value));
+}
+
+function escapeTrackRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

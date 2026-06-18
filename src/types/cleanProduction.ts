@@ -140,6 +140,10 @@ export type MusicObjectViewModel = {
   watchNext?: string;
   managerReadState?: "fresh" | "limited" | "fallback" | "stale" | "failed";
   nextMove: string;
+  intelligenceSnapshot?: TodayBriefSnapshotGroup[];
+  snapshotSummary?: string;
+  confidence?: string;
+  sourceLine?: string;
   rightsState?: string;
   assets?: string[];
   coverImageUrl?: string;
@@ -270,6 +274,7 @@ export type StaffRepository = {
 
 export type MusicRepository = {
   loadMusic(): Promise<MusicObjectViewModel[]>;
+  generateMusicSummary(subjectId: string, subjectType: "music_item" | "music_project"): Promise<MusicObjectViewModel>;
   createSong(input: { title: string; itemType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
   createProject(input: { title: string; projectType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
   updateLifecycleStage(musicItemId: string, lifecycleStage: string): Promise<void>;

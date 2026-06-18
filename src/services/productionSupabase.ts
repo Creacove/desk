@@ -536,6 +536,31 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const library = await musicLibraryLoader.loadMusicLibrary(workspace);
         return musicViewModelsFromLibrary(library);
       },
+      async generateMusicSummary(subjectId, subjectType) {
+        const subjectLabel = subjectType === "music_project" ? "Project" : "Song";
+        const { data, error } = await client.functions.invoke("generate-music-summary", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            subjectType,
+            subjectId,
+          },
+        });
+
+        if (error) {
+          await throwFunctionInvokeError(error, `${subjectLabel} brief generation failed.`);
+        }
+
+        // Reload the full library so the returned view model carries the fresh brief
+        const library = await musicLibraryLoader.loadMusicLibrary(workspace);
+        const models = musicViewModelsFromLibrary(library);
+        const updated = models.find((m) => m.id === subjectId);
+        if (!updated) {
+          throw new Error(`${subjectLabel} brief was generated but the ${subjectType === "music_project" ? "project" : "track"} could not be reloaded.`);
+        }
+        return updated;
+      },
       async createSong(input) {
         const { data, error } = await client
           .from("music_items")
@@ -1593,7 +1618,7 @@ function mapMusicLibrary({
       discNumber: row.disc_number,
       lifecycleStage: song?.lifecycleStage,
       sourceKind: song?.sourceKind,
-      blocker: song?.splits?.status && song.splits.status !== "Cleared" ? song.splits.status : undefined,
+      blocker: song && requiresInAppSplitProof(song) && song.splits?.status && song.splits.status !== "Cleared" ? song.splits.status : undefined,
     });
     projectTracksById.set(row.music_project_id, tracks);
   }
@@ -1703,7 +1728,21 @@ function readGeneratedManagerRead(metadata: unknown) {
     nextMove: readStringField((managerRead as Record<string, unknown>).nextMove),
     watchNext: readStringField((managerRead as Record<string, unknown>).watchNext),
     generationState: readManagerReadGenerationState((managerRead as Record<string, unknown>).generationState),
+    intelligenceSnapshot: readBriefSnapshotGroups((managerRead as Record<string, unknown>).intelligenceSnapshot),
+    snapshotSummary: readStringField((managerRead as Record<string, unknown>).snapshotSummary),
+    claimAudit: readBriefClaimAudit((managerRead as Record<string, unknown>).claimAudit),
+    confidence: readStringField((managerRead as Record<string, unknown>).confidence),
+    sourceLine: readStringField((managerRead as Record<string, unknown>).sourceLine),
   };
+}
+
+function readBriefClaimAudit(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isPlainRecord).map((item) => ({
+    claim: readRequiredBriefString(item.claim),
+    evidenceIds: readBriefStringArray(item.evidenceIds),
+    limitation: readRequiredBriefString(item.limitation),
+  })).filter((audit) => audit.claim && audit.evidenceIds.length && audit.limitation);
 }
 
 function acceptedGeneratedManagerRead(
@@ -1716,9 +1755,7 @@ function acceptedGeneratedManagerRead(
   const wordCount = value.split(/\s+/).filter(Boolean).length;
   const sentenceCount = (value.match(/[.!?](?=\s|$)/g) ?? []).length;
   const lower = value.toLowerCase();
-  const blockedPhrases = [
-    "chartmetric found",
-    "spotify confirms",
+  const managerDumpPhrases = [
     "the public catalog gives us",
     "exact spotify asset",
     "released under",
@@ -1730,18 +1767,103 @@ function acceptedGeneratedManagerRead(
     "full dsp analytics",
     "copyright owner",
     "catalog-only proof",
-    "metadata-only",
-    "only catalog metadata",
   ];
 
-  if (blockedPhrases.some((phrase) => lower.includes(phrase))) return undefined;
+  if (hasBannedMusicVisibleTerm(value) || managerDumpPhrases.some((phrase) => lower.includes(phrase))) return undefined;
   if (field === "managerRead") {
-    if (wordCount > 170 || sentenceCount > 6) return undefined;
+    if (wordCount > 320 || sentenceCount > 12) return undefined;
   } else if (wordCount > 48 || sentenceCount > 2) {
     return undefined;
   }
 
   return value;
+}
+
+function acceptedGeneratedVisibleMusicText(value?: string) {
+  const text = value?.trim();
+  if (!text || hasBannedMusicVisibleTerm(text)) return undefined;
+  return text;
+}
+
+function acceptedGeneratedIntelligenceSnapshot(groups?: TodayBriefViewModel["intelligenceSnapshot"]) {
+  if (!groups?.length) return undefined;
+  const cleanGroups = groups.map((group) => {
+    const title = acceptedGeneratedVisibleMusicText(group.title);
+    const insight = acceptedGeneratedVisibleMusicText(group.insight);
+    if (!title || !insight) return undefined;
+    const metrics = group.metrics.filter(isAcceptableGeneratedMusicMetric);
+    return metrics.length ? { title, insight, metrics } : undefined;
+  }).filter((group): group is TodayBriefViewModel["intelligenceSnapshot"][number] => Boolean(group));
+
+  return cleanGroups.length ? cleanGroups : undefined;
+}
+
+function isAcceptableGeneratedMusicMetric(metric: TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"][number]) {
+  const label = acceptedGeneratedVisibleMusicText(metric.label);
+  const value = acceptedGeneratedVisibleMusicText(metric.value);
+  const context = metric.context ? acceptedGeneratedVisibleMusicText(metric.context) : undefined;
+  if (!label || !value || !metric.evidenceIds.length) return false;
+  if (metric.context && !context) return false;
+  if (!isCompactMusicMetricValue(value)) return false;
+  return true;
+}
+
+function isCompactMusicMetricValue(value: string) {
+  const trimmed = value.trim();
+  if (trimmed.length > 22) return false;
+  if (/[.!?]/.test(trimmed.replace(/(\d)\.(\d)/g, "$1$2"))) return false;
+  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
+  if (!/[\d#%]/.test(trimmed) && wordCount > 2) return false;
+  return true;
+}
+
+const MUSIC_READ_BANNED_VISIBLE_TERMS = [
+  "chatgpt",
+  "ai",
+  "bot",
+  "backend",
+  "chartmetric",
+  "provider",
+  "api",
+  "apis",
+  "database",
+  "evidence row",
+  "third-party",
+  "spotify confirms",
+  "spotify for artists",
+  "private conversion data",
+  "private saves",
+  "private analytics",
+  "private documents",
+  "distributor proof",
+  "proof of listeners",
+  "listeners or saves",
+  "missing saves",
+  "missing listeners",
+  "we do not yet have",
+  "we don't yet have",
+  "repeat listeners",
+  "source-of-stream",
+  "source limits",
+  "source limit",
+  "conversion proof",
+  "campaign roi",
+  "missing proof",
+  "still missing",
+  "missing data",
+  "catalog-only",
+  "metadata-only",
+  "only catalog metadata",
+  "metadata record",
+  "saved track metadata",
+];
+
+function hasBannedMusicVisibleTerm(value: string) {
+  return MUSIC_READ_BANNED_VISIBLE_TERMS.some((term) => new RegExp(`\\b${escapeRegex(term)}\\b`, "i").test(value));
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function readManagerReadGenerationState(value: unknown): "fresh" | "limited" | undefined {
@@ -2635,82 +2757,236 @@ function musicViewModelsFromLibrary(library: ProductionMusicLibrary): MusicObjec
     }
   }
 
-  const songs = library.songs.map((song) => ({
-    id: song.id,
-    kind: "song" as const,
-    title: song.title,
-    status: song.sourceKind === "spotify_public_catalog" ? "Released catalog" : titleCaseStatus(song.lifecycleStage),
-    lifecycle: song.lifecycleStage,
-    lifecycleStage: titleCaseStatus(song.lifecycleStage),
-    blocker: song.splits?.status && song.splits.status !== "Cleared" ? `${song.splits.status} split proof` : "No active blocker",
-    sourceKind: song.sourceKind ?? "Spotify public catalog",
-    sourceLimit: song.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
-    sourceSummary: buildSongSourceSummary(song),
-    situationLine: song.generatedManagerRead?.situationLine?.trim() || buildSongSituationLine(song),
-    managerRead: acceptedGeneratedManagerRead(song.generatedManagerRead, "managerRead") ?? buildManagerRead(song),
-    watchNext: song.generatedManagerRead?.watchNext?.trim() || buildSongWatchNext(song),
-    managerReadState: acceptedGeneratedManagerRead(song.generatedManagerRead, "managerRead")
-      ? song.generatedManagerRead?.generationState ?? ("fresh" as const)
-      : ("fallback" as const),
-    nextMove: acceptedGeneratedManagerRead(song.generatedManagerRead, "nextMove") ?? buildNextMove(song),
-    rightsState: buildRightsState(song),
-    assets: buildAssetLabels(song),
-    coverImageUrl: song.coverImageUrl,
-    spotifyUrl: song.spotifyUrl,
-    linkedMissionIds: [],
-    linkedTaskIds: [],
-    linkedTaskCount: 0,
-    projectIds: projectIdsBySong.get(song.id) ?? [],
-    files: buildFileAssets(song).map((asset) => ({ label: asset.label, status: asset.status })),
-    fileAssets: buildFileAssets(song),
-    details: buildSongDetails(song).map((field) => ({ label: field.label, value: field.value, status: field.status })),
-    metadataFields: buildMetadataFields(song),
-    releaseFields: buildReleaseFields(song),
-    credits: buildCreditFields(song),
-    identifiers: buildIdentifierFields(song),
-    splits: {
-      status: song.splits?.status ?? "Missing",
-      summary: song.splits?.summary ?? "No collaborator split sheet or rights evidence has been uploaded for this song.",
-      writers: song.splits?.publishingTotal ? `Publishing splits total ${song.splits.publishingTotal}.` : "Writer split proof missing.",
-      producers: song.splits?.masterTotal ? `Master splits total ${song.splits.masterTotal}.` : "Producer/master split proof missing.",
-      publishingTotal: song.splits?.publishingTotal,
-      masterTotal: song.splits?.masterTotal,
-      contributors: song.splits?.contributors ?? [],
-    },
-  }));
+  const songs = library.songs.map((song) => {
+    const generated = song.generatedManagerRead;
+    const generatedManagerRead = acceptedGeneratedManagerRead(generated, "managerRead");
+    const generatedNextMove = acceptedGeneratedManagerRead(generated, "nextMove");
+    const generatedSnapshot = acceptedGeneratedIntelligenceSnapshot(generated?.intelligenceSnapshot);
+    const splitProofRequired = requiresInAppSplitProof(song);
+    const splitProofBlocker = splitProofRequired && song.splits?.status && song.splits.status !== "Cleared";
+    return {
+      id: song.id,
+      kind: "song" as const,
+      title: song.title,
+      status: song.sourceKind === "spotify_public_catalog" ? "Released catalog" : titleCaseStatus(song.lifecycleStage),
+      lifecycle: song.lifecycleStage,
+      lifecycleStage: titleCaseStatus(song.lifecycleStage),
+      blocker: splitProofBlocker ? `${song.splits!.status} split proof` : "No active blocker",
+      sourceKind: song.sourceKind ?? "Spotify public catalog",
+      sourceLimit: song.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
+      sourceSummary: buildSongSourceSummary(song),
+      situationLine: acceptedGeneratedVisibleMusicText(generated?.situationLine) || buildSongSituationLine(song),
+      managerRead: generatedManagerRead ?? buildManagerRead(song),
+      watchNext: acceptedGeneratedVisibleMusicText(generated?.watchNext) || buildSongWatchNext(song),
+      managerReadState: generatedManagerRead
+        ? generated?.generationState ?? ("fresh" as const)
+        : ("fallback" as const),
+      nextMove: generatedNextMove ?? buildNextMove(song),
+      intelligenceSnapshot: generatedSnapshot ?? buildSongFallbackIntelligenceSnapshot(song),
+      snapshotSummary: acceptedGeneratedVisibleMusicText(generated?.snapshotSummary) ?? buildSongFallbackSnapshotSummary(song),
+      confidence: generated?.confidence ?? "high",
+      sourceLine: acceptedGeneratedVisibleMusicText(generated?.sourceLine) ?? "",
+      rightsState: buildRightsState(song),
+      assets: buildAssetLabels(song),
+      coverImageUrl: song.coverImageUrl,
+      spotifyUrl: song.spotifyUrl,
+      linkedMissionIds: [],
+      linkedTaskIds: [],
+      linkedTaskCount: 0,
+      projectIds: projectIdsBySong.get(song.id) ?? [],
+      files: buildFileAssets(song).map((asset) => ({ label: asset.label, status: asset.status })),
+      fileAssets: buildFileAssets(song),
+      details: buildSongDetails(song).map((field) => ({ label: field.label, value: field.value, status: field.status })),
+      metadataFields: buildMetadataFields(song),
+      releaseFields: buildReleaseFields(song),
+      credits: buildCreditFields(song),
+      identifiers: buildIdentifierFields(song),
+      splits: {
+        status: song.splits?.status ?? "Missing",
+        summary: song.splits?.summary ?? "No collaborator split sheet or rights evidence has been uploaded for this song.",
+        writers: song.splits?.publishingTotal ? `Publishing splits total ${song.splits.publishingTotal}.` : "Writer split proof missing.",
+        producers: song.splits?.masterTotal ? `Master splits total ${song.splits.masterTotal}.` : "Producer/master split proof missing.",
+        publishingTotal: song.splits?.publishingTotal,
+        masterTotal: song.splits?.masterTotal,
+        contributors: song.splits?.contributors ?? [],
+      },
+    };
+  });
 
-  const projects = library.projects.map((project) => ({
-    id: project.id,
-    kind: "project" as const,
-    title: project.title,
-    status: titleCaseStatus(project.projectType),
-    lifecycle: project.lifecycleStage,
-    lifecycleStage: titleCaseStatus(project.lifecycleStage),
-    blocker: firstProjectBlocker(project),
-    sourceKind: project.sourceKind ?? "Spotify public catalog",
-    sourceLimit: project.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
-    sourceSummary: buildProjectSourceSummary(project),
-    situationLine: project.generatedManagerRead?.situationLine?.trim() || buildProjectSituationLine(project),
-    managerRead: acceptedGeneratedManagerRead(project.generatedManagerRead, "managerRead") ?? buildProjectManagerRead(project),
-    watchNext: project.generatedManagerRead?.watchNext?.trim() || buildProjectWatchNext(project),
-    managerReadState: acceptedGeneratedManagerRead(project.generatedManagerRead, "managerRead")
-      ? project.generatedManagerRead?.generationState ?? ("fresh" as const)
-      : ("fallback" as const),
-    nextMove: acceptedGeneratedManagerRead(project.generatedManagerRead, "nextMove") ?? buildProjectNextMove(project),
-    coverImageUrl: project.coverImageUrl,
-    spotifyUrl: project.spotifyUrl,
-    linkedMissionIds: [],
-    linkedTaskIds: [],
-    linkedTaskCount: 0,
-    songs: project.tracks.map((track) => track.title),
-    songIds: project.tracks.map((track) => track.id),
-  }));
+  const projects = library.projects.map((project) => {
+    const generated = project.generatedManagerRead;
+    const generatedManagerRead = acceptedGeneratedManagerRead(generated, "managerRead");
+    const generatedNextMove = acceptedGeneratedManagerRead(generated, "nextMove");
+    const generatedSnapshot = acceptedGeneratedIntelligenceSnapshot(generated?.intelligenceSnapshot);
+    return {
+      id: project.id,
+      kind: "project" as const,
+      title: project.title,
+      status: titleCaseStatus(project.projectType),
+      lifecycle: project.lifecycleStage,
+      lifecycleStage: titleCaseStatus(project.lifecycleStage),
+      blocker: firstProjectBlocker(project),
+      sourceKind: project.sourceKind ?? "Spotify public catalog",
+      sourceLimit: project.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
+      sourceSummary: buildProjectSourceSummary(project),
+      situationLine: acceptedGeneratedVisibleMusicText(generated?.situationLine) || buildProjectSituationLine(project),
+      managerRead: generatedManagerRead ?? buildProjectManagerRead(project),
+      watchNext: acceptedGeneratedVisibleMusicText(generated?.watchNext) || buildProjectWatchNext(project),
+      managerReadState: generatedManagerRead
+        ? generated?.generationState ?? ("fresh" as const)
+        : ("fallback" as const),
+      nextMove: generatedNextMove ?? buildProjectNextMove(project),
+      intelligenceSnapshot: generatedSnapshot ?? buildProjectFallbackIntelligenceSnapshot(project),
+      snapshotSummary: acceptedGeneratedVisibleMusicText(generated?.snapshotSummary) ?? buildProjectFallbackSnapshotSummary(project),
+      confidence: generated?.confidence ?? "high",
+      sourceLine: acceptedGeneratedVisibleMusicText(generated?.sourceLine) ?? "",
+      coverImageUrl: project.coverImageUrl,
+      spotifyUrl: project.spotifyUrl,
+      linkedMissionIds: [],
+      linkedTaskIds: [],
+      linkedTaskCount: 0,
+      songs: project.tracks.map((track) => track.title),
+      songIds: project.tracks.map((track) => track.id),
+    };
+  });
 
   return [...songs, ...projects];
 }
 
 function buildAssetLabels(song: ProductionMusicItem) {
   return buildFileAssets(song).map((asset) => asset.label);
+}
+
+function isReleasedSpotifyCatalogMusic(song: Pick<ProductionMusicItem, "sourceKind" | "lifecycleStage" | "spotifyUrl" | "spotifyTrackId">) {
+  const lifecycle = song.lifecycleStage.toLowerCase();
+  const hasSpotifyCatalogSource = song.sourceKind === "spotify_public_catalog" || Boolean(song.spotifyUrl || song.spotifyTrackId);
+  return hasSpotifyCatalogSource && (lifecycle === "released" || lifecycle === "catalog");
+}
+
+function requiresInAppSplitProof(song: Pick<ProductionMusicItem, "sourceKind" | "lifecycleStage" | "spotifyUrl" | "spotifyTrackId">) {
+  return !isReleasedSpotifyCatalogMusic(song);
+}
+
+function buildSongFallbackIntelligenceSnapshot(song: ProductionMusicItem): TodayBriefViewModel["intelligenceSnapshot"] {
+  const signals = buildSongManagementSignals(song);
+  const publicPressure = signals.filter((signal) => ["tiktok_video_count", "tiktok_top_video_views", "youtube_views", "shazam_count", "airplay_spins"].includes(signal.metricName));
+  const platformSupport = signals.filter((signal) => ["spotify_trailing_28d_streams", "spotify_trailing_7d_streams", "spotify_playlist_total_reach", "spotify_playlist_count", "spotify_editorial_playlist_count", "apple_music_editorial_playlist_count"].includes(signal.metricName));
+
+  const groups: TodayBriefViewModel["intelligenceSnapshot"] = [];
+  if (publicPressure.length) {
+    groups.push({
+      title: "Public Pressure",
+      insight: `${song.title} has visible public behavior worth turning into a record-level read.`,
+      metrics: publicPressure.slice(0, 4).map(signalToSnapshotMetric),
+    });
+  }
+  if (platformSupport.length) {
+    groups.push({
+      title: "Music Platform Support",
+      insight: `${song.title} has enough music-platform surface area to compare reach, playlists, and listening shape.`,
+      metrics: platformSupport.slice(0, 5).map(signalToSnapshotMetric),
+    });
+  }
+
+  const remainingSignals = signals.filter((signal) =>
+    !publicPressure.includes(signal) && !platformSupport.includes(signal)
+  );
+  if (remainingSignals.length) {
+    groups.push({
+      title: "Record Intelligence",
+      insight: `${song.title} has additional saved signals that can sharpen the next management read.`,
+      metrics: remainingSignals.slice(0, 4).map(signalToSnapshotMetric),
+    });
+  }
+
+  const metrics: TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"] = [];
+  if (typeof song.popularity === "number") {
+    metrics.push({
+      label: "Spotify Popularity",
+      value: `${song.popularity}`,
+      context: "public record score",
+      evidenceIds: ["catalog-setup"],
+    });
+  }
+  for (const item of song.evidence.filter((item) => !signals.some((signal) => signal.evidenceIds.includes(item.id)))) {
+    metrics.push({
+      label: sentenceCaseMetricName(item.metricName ?? item.evidenceType ?? "signal"),
+      value: formatEvidenceMetricCompact(item),
+      context: item.freshness ?? undefined,
+      evidenceIds: [item.id],
+    });
+  }
+
+  if (metrics.length) {
+    groups.push({
+      title: "Record Details",
+      insight: `${song.title} has supporting details in view; the useful read still comes from audience behavior first.`,
+      metrics: metrics.slice(0, 4),
+    });
+  }
+
+  if (!groups.length) {
+    metrics.push({
+      label: "Catalog status",
+      value: "Imported",
+      context: "record available for management review",
+      evidenceIds: ["catalog-setup"],
+    });
+    groups.push({
+      title: "Record Intelligence",
+      insight: `${song.title} is available in the workspace, but it needs one useful public or team signal before the Manager can call a lane.`,
+      metrics,
+    });
+  }
+
+  return groups.slice(0, 3);
+}
+
+function buildSongFallbackSnapshotSummary(song: ProductionMusicItem): string {
+  const signals = buildSongManagementSignals(song);
+  if (signals.length) {
+    const lead = signals[0];
+    const second = signals[1];
+    return second
+      ? `${song.title} is strongest around ${lead.context}, with ${second.context} giving the Manager a second read.`
+      : `${song.title} is strongest around ${lead.context}; that is the first record behavior to inspect.`;
+  }
+  return `${song.title} is in view, but the first useful record read needs one public or team signal.`;
+}
+
+function buildProjectFallbackIntelligenceSnapshot(project: ProductionMusicProject): TodayBriefViewModel["intelligenceSnapshot"] {
+  const signals = buildProjectManagementSignals(project);
+  const hasProjectSignals = signals.length > 0;
+  const metrics: TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"] = signals.map(signalToSnapshotMetric);
+  if (!metrics.length) {
+    metrics.push({
+      label: "Project catalog",
+      value: "Live",
+      context: `${project.tracks.length} tracklist entries saved`,
+      evidenceIds: ["catalog-setup"],
+    });
+  }
+  return [
+    {
+      title: "Project Intelligence",
+      insight: hasProjectSignals
+        ? `${project.title} has usable project-level facts for choosing the release focus.`
+        : `${project.title} has the release shape in view; the tracklist should decide the first inspection lane.`,
+      metrics: metrics.slice(0, 8),
+    },
+  ];
+}
+
+function buildProjectFallbackSnapshotSummary(project: ProductionMusicProject): string {
+  const signals = buildProjectManagementSignals(project);
+  if (signals.length) {
+    const lead = signals[0];
+    const second = signals[1];
+    return second
+      ? `${project.title} is strongest around ${lead.context}, with ${second.context} giving the Manager a second project read.`
+      : `${project.title} is strongest around ${lead.context}; that is the first project behavior to inspect.`;
+  }
+  return `${project.title} has ${project.tracks.length || project.totalTracks || 0} mapped songs ready for a project-level read.`;
 }
 
 function buildSongSourceSummary(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["sourceSummary"]> {
@@ -2804,6 +3080,15 @@ function formatEvidenceMetric(item: ProductionMusicItem["evidence"][number]) {
   return [value, item.metricUnit].filter(Boolean).join(" ");
 }
 
+function formatEvidenceMetricCompact(item: ProductionMusicItem["evidence"][number]) {
+  if (typeof item.metricValue !== "number") return "Recorded";
+  if (item.metricUnit === "rank") return `#${item.metricValue.toLocaleString("en-US")}`;
+  if (item.metricUnit === "score" || item.metricUnit === "percent_change") {
+    return `${item.metricValue.toLocaleString("en-US")}${item.metricUnit === "percent_change" ? "%" : ""}`;
+  }
+  return formatCompactEvidenceNumber(item.metricValue);
+}
+
 function formatReadableEvidenceMetric(item: ProductionMusicItem["evidence"][number]) {
   const value =
     item.metricValue === undefined || item.metricValue === null
@@ -2835,8 +3120,12 @@ function uniqueStrings(values: string[]) {
 type SongManagementSignal = {
   label: string;
   shortLabel: string;
+  metricLabel: string;
+  value: string;
+  context: string;
   priority: number;
   metricName: string;
+  evidenceIds: string[];
 };
 
 function buildSongManagementSignals(song: ProductionMusicItem) {
@@ -2860,7 +3149,7 @@ function buildSongManagementSignals(song: ProductionMusicItem) {
     },
     {
       priority: 92,
-      match: (metricName) => metricName === "spotify_playlist_total_reach",
+      match: (metricName) => metricName === "spotify_playlist_total_reach" || metricName === "spotify_playlist_reach" || metricName === "spotify_editorial_playlist_reach",
       label: (value) => `${formatCompactEvidenceNumber(value)} Spotify playlist reach`,
       shortLabel: (value) => `${formatCompactEvidenceNumber(value)} playlist reach`,
     },
@@ -2925,16 +3214,191 @@ function buildSongManagementSignals(song: ProductionMusicItem) {
     return [{
       label: definition.label(match.metricValue),
       shortLabel: definition.shortLabel(match.metricValue),
+      metricLabel: signalMetricLabel(match.metricName ?? ""),
+      value: formatCompactEvidenceNumber(match.metricValue),
+      context: signalMetricContext(match.metricName ?? ""),
       priority: definition.priority,
       metricName: match.metricName ?? "",
+      evidenceIds: [match.id],
     }];
   }).sort((a, b) => b.priority - a.priority);
+}
+
+function buildProjectManagementSignals(project: ProductionMusicProject) {
+  return buildManagementSignalsFromEvidence(project.evidence);
+}
+
+function buildManagementSignalsFromEvidence(evidence: ProductionMusicItem["evidence"]) {
+  const definitions: Array<{
+    priority: number;
+    match: (metricName: string) => boolean;
+    label: (value: number) => string;
+    shortLabel: (value: number) => string;
+  }> = [
+    {
+      priority: 100,
+      match: (metricName) => metricName === "spotify_trailing_28d_streams",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Spotify streams in the latest 28-day window`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} Spotify streams in 28 days`,
+    },
+    {
+      priority: 96,
+      match: (metricName) => metricName === "spotify_trailing_7d_streams",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Spotify streams in the latest 7-day window`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} Spotify streams in 7 days`,
+    },
+    {
+      priority: 92,
+      match: (metricName) => metricName === "spotify_playlist_total_reach" || metricName === "spotify_playlist_reach" || metricName === "spotify_editorial_playlist_reach",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Spotify playlist reach`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} playlist reach`,
+    },
+    {
+      priority: 88,
+      match: (metricName) => metricName === "spotify_playlist_count",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Spotify playlists`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} playlists`,
+    },
+    {
+      priority: 86,
+      match: (metricName) => metricName === "spotify_editorial_playlist_count",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Spotify editorial playlists`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} editorial playlists`,
+    },
+    {
+      priority: 84,
+      match: (metricName) => metricName === "apple_music_editorial_playlist_count",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Apple Music editorial playlists`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} Apple editorial playlists`,
+    },
+    {
+      priority: 82,
+      match: (metricName) => metricName === "tiktok_video_count" || metricName.includes("video_creates"),
+      label: (value) => `${formatCompactEvidenceNumber(value)} TikTok videos created around the project`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} TikTok videos`,
+    },
+    {
+      priority: 80,
+      match: (metricName) => metricName === "tiktok_top_video_views",
+      label: (value) => `${formatCompactEvidenceNumber(value)} views on the top TikTok video`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} top TikTok views`,
+    },
+    {
+      priority: 76,
+      match: (metricName) => metricName === "shazam_count",
+      label: (value) => `${formatCompactEvidenceNumber(value)} Shazams`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} Shazams`,
+    },
+    {
+      priority: 72,
+      match: (metricName) => metricName === "youtube_views",
+      label: (value) => `${formatCompactEvidenceNumber(value)} YouTube views`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} YouTube views`,
+    },
+    {
+      priority: 70,
+      match: (metricName) => metricName === "airplay_spins",
+      label: (value) => `${formatCompactEvidenceNumber(value)} airplay spins`,
+      shortLabel: (value) => `${formatCompactEvidenceNumber(value)} airplay spins`,
+    },
+  ];
+
+  return definitions.flatMap((definition): SongManagementSignal[] => {
+    const match = evidence
+      .filter((item) => {
+        const metricName = item.metricName ?? "";
+        return definition.match(metricName) && typeof item.metricValue === "number";
+      })
+      .sort((a, b) => (b.metricValue ?? 0) - (a.metricValue ?? 0))[0];
+    if (!match || typeof match.metricValue !== "number") return [];
+    return [{
+      label: definition.label(match.metricValue),
+      shortLabel: definition.shortLabel(match.metricValue),
+      metricLabel: signalMetricLabel(match.metricName ?? ""),
+      value: formatCompactEvidenceNumber(match.metricValue),
+      context: signalMetricContext(match.metricName ?? ""),
+      priority: definition.priority,
+      metricName: match.metricName ?? "",
+      evidenceIds: [match.id],
+    }];
+  }).sort((a, b) => b.priority - a.priority);
+}
+
+function signalToSnapshotMetric(signal: SongManagementSignal): TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"][number] {
+  return {
+    label: signal.metricLabel,
+    value: signal.value,
+    context: signal.context,
+    evidenceIds: signal.evidenceIds,
+  };
+}
+
+function signalMetricLabel(metricName: string) {
+  switch (metricName) {
+    case "spotify_trailing_28d_streams":
+      return "Recent streams";
+    case "spotify_trailing_7d_streams":
+      return "Last 7 days";
+    case "spotify_playlist_total_reach":
+    case "spotify_playlist_reach":
+    case "spotify_editorial_playlist_reach":
+      return "Playlist reach";
+    case "spotify_playlist_count":
+      return "Playlist count";
+    case "spotify_editorial_playlist_count":
+      return "Editorial support";
+    case "apple_music_editorial_playlist_count":
+      return "Apple editorial";
+    case "tiktok_video_count":
+      return "TikTok videos";
+    case "tiktok_top_video_views":
+      return "Top TikTok clip";
+    case "shazam_count":
+      return "Shazams";
+    case "youtube_views":
+      return "YouTube views";
+    case "airplay_spins":
+      return "Airplay";
+    default:
+      return sentenceCaseMetricName(metricName || "Signal");
+  }
+}
+
+function signalMetricContext(metricName: string) {
+  switch (metricName) {
+    case "spotify_trailing_28d_streams":
+      return "Spotify streams in the latest 28-day window";
+    case "spotify_trailing_7d_streams":
+      return "Spotify streams in the latest 7-day window";
+    case "spotify_playlist_total_reach":
+    case "spotify_playlist_reach":
+    case "spotify_editorial_playlist_reach":
+      return "Spotify playlist reach";
+    case "spotify_playlist_count":
+      return "Spotify playlists carrying the record";
+    case "spotify_editorial_playlist_count":
+      return "Spotify editorial playlist support";
+    case "apple_music_editorial_playlist_count":
+      return "Apple Music editorial support";
+    case "tiktok_video_count":
+      return "TikTok videos created around the record";
+    case "tiktok_top_video_views":
+      return "views on the top TikTok clip";
+    case "shazam_count":
+      return "people actively identifying the record";
+    case "youtube_views":
+      return "YouTube view demand";
+    case "airplay_spins":
+      return "radio spins";
+    default:
+      return "saved record signal";
+  }
 }
 
 function formatCompactEvidenceNumber(value: number) {
   return new Intl.NumberFormat("en-US", {
     notation: "compact",
-    maximumFractionDigits: value >= 10_000 ? 1 : 0,
+    maximumFractionDigits: value >= 1_000 ? 1 : 0,
   }).format(value);
 }
 
@@ -2942,11 +3406,12 @@ function buildManagerRead(song: ProductionMusicItem) {
   const signals = buildSongManagementSignals(song);
   if (song.sourceKind === "spotify_public_catalog" && signals.length) {
     const proof = readableList(signals.slice(0, 4).map((signal) => signal.label));
-    const rightsMove =
-      song.splits?.status && song.splits.status !== "Cleared"
-        ? ` I would clear the ${song.splits.status.toLowerCase()} split proof first, then use DSP/distributor country, save, and source-of-stream reports to choose the spend lane.`
-        : " I would use DSP/distributor country, save, and source-of-stream reports to choose the spend lane before scaling budget.";
-    return `I found ${song.title} is not just a metadata record: ${proof}. That gives the team real attention to work with across streaming, playlists, and short-form content. This packet still does not prove saves, listener quality, revenue, or campaign ROI.${rightsMove}`;
+    const role = inferSongRecordRole(signals);
+    const secondLane = signals[1] ? ` The second useful lane is ${signals[1].context}, which stops this from being a one-platform read.` : "";
+    const unlock = requiresInAppSplitProof(song) && song.splits?.status && song.splits.status !== "Cleared"
+      ? ` If ${song.splits.status.toLowerCase()} split proof is blocking action, clear it as the operating unlock, not as the story of the record.`
+      : "";
+    return `${song.title} is the record with the clearest public pressure right now: ${proof}. I would treat it as the ${role}, because the strongest saved facts are pointing to one song instead of asking the team to split attention across the catalog.${secondLane}${unlock} Today, I would make ${song.title} the first record to inspect, then decide whether ${managementLaneChoice(signals)} should lead the next team action.`;
   }
 
   const outsideDetails = song.evidence
@@ -2955,26 +3420,74 @@ function buildManagerRead(song: ProductionMusicItem) {
 
   if (song.sourceKind === "spotify_public_catalog") {
     const evidenceRead = outsideDetails.length
-      ? `I found ${outsideDetails.join("; ")}.`
-      : "I can confirm the song is live, but I do not yet have recent listening results.";
-    const meaning =
-      " That shows where the song is appearing, but not whether people are saving it, returning to it, or becoming fans.";
-    const decision =
-      song.splits?.status && song.splits.status !== "Cleared"
-        ? ` I would clear the ${song.splits.status.toLowerCase()} split proof and check listener behaviour before spending on a campaign.`
-        : " I would check listener behaviour before spending on a campaign.";
-    return `${evidenceRead}${meaning}${decision}`;
+      ? `${song.title} is live, and the first management read starts with ${outsideDetails.join("; ")}.`
+      : `${song.title} is live, but the first management read is simple: the record is in view and needs one useful public or team signal before I can call its lane.`;
+    return `${evidenceRead} I would not turn this into a broad plan yet; I would make ${song.title} the record to inspect first and wait for one concrete behavior to tell us whether the song is a playlist record, social record, video/search record, or quiet catalog support.`;
   }
 
   const evidenceRead = outsideDetails.length
     ? ` I found ${outsideDetails.join("; ")}.`
     : "";
-  return `I would review ${song.title} against internal files, credits, rights proof, and active release work before making operational claims.${evidenceRead}`;
+  return `${song.title} is in the workspace, but it is still an internal music object until one useful audience or team signal changes the read.${evidenceRead} I would make the next step about finding the first real behavior around this record, not filling the page with setup notes.`;
+}
+
+function inferSongRecordRole(signals: SongManagementSignal[]) {
+  const metricNames = new Set(signals.map((signal) => signal.metricName));
+  if (metricNames.has("tiktok_video_count") || metricNames.has("tiktok_top_video_views")) return "public-pressure record";
+  if (metricNames.has("youtube_views") || metricNames.has("shazam_count")) return "video/search demand record";
+  if (
+    metricNames.has("spotify_playlist_total_reach") ||
+    metricNames.has("spotify_playlist_reach") ||
+    metricNames.has("spotify_editorial_playlist_reach") ||
+    metricNames.has("spotify_playlist_count") ||
+    metricNames.has("spotify_editorial_playlist_count")
+  ) return "playlist-support record";
+  if (metricNames.has("spotify_trailing_28d_streams") || metricNames.has("spotify_trailing_7d_streams")) return "streaming-scale record";
+  return "record with the clearest usable evidence";
+}
+
+function managementLaneFromSignal(signal: SongManagementSignal | undefined) {
+  if (!signal) return "the first visible audience behavior";
+  switch (signal.metricName) {
+    case "tiktok_video_count":
+    case "tiktok_top_video_views":
+      return "short-form discovery";
+    case "youtube_views":
+      return "video/search demand";
+    case "spotify_playlist_total_reach":
+    case "spotify_playlist_reach":
+    case "spotify_editorial_playlist_reach":
+    case "spotify_playlist_count":
+    case "spotify_editorial_playlist_count":
+    case "apple_music_editorial_playlist_count":
+      return "playlist support";
+    case "spotify_trailing_28d_streams":
+    case "spotify_trailing_7d_streams":
+      return "streaming scale";
+    case "shazam_count":
+      return "active discovery";
+    case "airplay_spins":
+      return "radio pressure";
+    default:
+      return signal.context;
+  }
+}
+
+function managementLaneChoice(signals: SongManagementSignal[]) {
+  const lead = managementLaneFromSignal(signals[0]);
+  const preferredContrast = signals.find((signal) =>
+    ["tiktok_video_count", "tiktok_top_video_views", "youtube_views", "shazam_count"].includes(signal.metricName) &&
+    managementLaneFromSignal(signal) !== lead
+  );
+  const fallbackContrast = signals.find((signal) => managementLaneFromSignal(signal) !== lead);
+  const contrast = preferredContrast ?? fallbackContrast;
+  if (!contrast) return lead;
+  return `${lead} or ${managementLaneFromSignal(contrast)}`;
 }
 
 function buildSongSituationLine(song: ProductionMusicItem) {
   const parts = [`${titleCaseStatus(song.lifecycleStage)} song`];
-  const leadSignal = buildSongManagementSignals(song)[0];
+  const leadSignal = buildSongManagementSignals(song).find((signal) => signal.metricName !== "spotify_playlist_reach");
   if (leadSignal) {
     parts.push(leadSignal.shortLabel);
   } else if (song.evidence.length) {
@@ -2989,7 +3502,7 @@ function buildSongSituationLine(song: ProductionMusicItem) {
   } else {
     parts.push("recent listening results are missing");
   }
-  if (song.splits?.status && song.splits.status !== "Cleared") parts.push(`${song.splits.status} split proof`);
+  if (requiresInAppSplitProof(song) && song.splits?.status && song.splits.status !== "Cleared") parts.push(`${song.splits.status} split proof`);
   return parts.join(" · ");
 }
 
@@ -3002,19 +3515,14 @@ function buildSongWatchNext(song: ProductionMusicItem) {
 
 function buildProjectManagerRead(project: ProductionMusicProject) {
   const trackCount = project.tracks.length || project.totalTracks || 0;
-  const lifecycle = titleCaseStatus(project.lifecycleStage).toLowerCase();
-  const type = project.projectType;
-  const trackPhrase = trackCount ? ` with ${trackCount} ${trackCount === 1 ? "track" : "tracks"}` : "";
-  const upcPhrase = project.upc ? ` and a confirmed UPC ${project.upc}` : "";
-  const evidenceDetails = project.evidence.slice(0, 3).map(evidenceDetail);
-  const detailCountLabel = evidenceDetails.length === 2 ? "two" : evidenceDetails.length === 3 ? "three" : `${evidenceDetails.length}`;
-  const evidenceRead = evidenceDetails.length
-    ? ` The project-level read has ${evidenceDetails.length === 1 ? "one useful detail" : `${detailCountLabel} useful details`}: ${evidenceDetails.join("; ")}.`
-    : " I do not yet have a useful project-level performance read beyond the release metadata.";
+  const signals = buildProjectManagementSignals(project);
+  const signalRead = signals.length
+    ? ` The strongest project facts are ${readableList(signals.slice(0, 4).map((signal) => signal.label))}.`
+    : " The release shape is the useful starting point until one project-level audience fact is connected.";
   const trackRead = project.tracks.length
-    ? ` ${project.tracks[0].title} is the track to inspect first because it is ${project.tracks.length === 1 ? "the only track currently mapped into the project" : "first in the mapped tracklist"}.`
-    : " I need the tracklist mapped before I can tell you which song is carrying the project.";
-  return `I found ${project.title} as a ${lifecycle} ${type}${trackPhrase}${upcPhrase}.${evidenceRead}${trackRead} I would not push the whole project as one campaign until we know which songs are earning saves, repeat listening, source-of-stream, and rights clearance.`;
+    ? ` ${project.tracks[0].title} is the first song to inspect because it is ${project.tracks.length === 1 ? "the only track currently mapped into the project" : "first in the mapped tracklist"}.`
+    : " The next read should map the tracklist before choosing the song that carries the project.";
+  return `${project.title} has ${trackCount} mapped ${trackCount === 1 ? "song" : "songs"} as a ${titleCaseStatus(project.lifecycleStage).toLowerCase()} ${project.projectType}.${signalRead}${trackRead} I would use this project read to choose the focus track before treating the whole release as one campaign.`;
 }
 
 function buildProjectSituationLine(project: ProductionMusicProject) {
@@ -3035,10 +3543,10 @@ function buildProjectNextMove(project: ProductionMusicProject) {
   }
 
   if (project.evidence.length) {
-    return "Use the project read to pick the track that deserves action, then pull private analytics before spending against the whole release.";
+    return "Use the project read to pick the track that deserves action, then compare the next visible result before spending against the whole release.";
   }
 
-  return "Map project evidence and private analytics before deciding whether this release needs a campaign, a focus track, or quiet catalog support.";
+  return "Map project evidence before deciding whether this release needs a campaign, a focus track, or quiet catalog support.";
 }
 
 function readableList(values: string[]) {
@@ -3048,27 +3556,27 @@ function readableList(values: string[]) {
 }
 
 function buildNextMove(song: ProductionMusicItem) {
-  if (song.splits?.status && song.splits.status !== "Cleared") {
-    if (buildSongManagementSignals(song).length) {
-      return "Clear split proof, then turn the strongest streaming, playlist, and social evidence into a focused market and content plan after DSP confirmation.";
-    }
-    return "Add rights or split proof before treating this released catalog track as operationally clear.";
+  const signals = buildSongManagementSignals(song);
+
+  if (signals.length) {
+    return `Make ${song.title} the first record to inspect, then decide whether ${managementLaneChoice(signals)} should lead the next team action.`;
+  }
+
+  if (song.sourceKind === "spotify_public_catalog") {
+    return `Make ${song.title} the first music focus only after a useful public or team signal is connected.`;
   }
 
   const missingInternalFile = buildFileAssets(song).some((asset) => asset.group === "Audio" && asset.status === "Missing");
   if (missingInternalFile) {
-    return "Upload or connect internal master files if this catalog track needs operational delivery, edits, pitching, or reuse.";
+    return "Upload or connect internal master files if this track needs operational delivery, edits, pitching, or reuse.";
   }
 
-  if (buildSongManagementSignals(song).length) {
-    return "Use the strongest streaming, playlist, and social evidence to choose one market/content push, then validate with DSP saves and source-of-stream.";
-  }
-
-  return "Review imported public catalog metadata, then connect private analytics before making performance or spend decisions.";
+  return `Make ${song.title} the first music focus only after a useful public or team signal is connected.`;
 }
 
 function buildRightsState(song: ProductionMusicItem) {
   if (song.splits?.status === "Cleared") return "Split sheet confirmed";
+  if (isReleasedSpotifyCatalogMusic(song)) return "Released catalog rights attached outside this app";
   if (song.splits?.status && song.splits.status !== "Missing") return `${song.splits.status} split proof`;
   return "Rights proof not connected";
 }
@@ -3078,6 +3586,7 @@ function buildFileAssets(song: ProductionMusicItem): NonNullable<MusicObjectView
   const hasSpotifyReference = Boolean(song.spotifyUrl);
   const hasConfirmedAudioAsset = assets.some((asset) => asset.group === "Audio" && ["Uploaded", "Confirmed", "Cleared"].includes(asset.status));
   const hasSplitAsset = assets.some((asset) => asset.group === "Splits");
+  const needsSplitProof = requiresInAppSplitProof(song);
 
   return [
     ...(hasSpotifyReference
@@ -3087,7 +3596,8 @@ function buildFileAssets(song: ProductionMusicItem): NonNullable<MusicObjectView
     ...assets.filter((asset) => asset.group === "Artwork"),
     ...assets.filter((asset) => asset.group === "Audio"),
     ...(hasConfirmedAudioAsset ? [] : [{ group: "Audio" as const, label: "User-uploaded master", status: "Missing", action: "Upload final master", assetType: "final_master", canUpload: true }]),
-    ...(hasSplitAsset ? assets.filter((asset) => asset.group === "Splits") : [{ group: "Splits" as const, label: "Split sheet document", status: song.splits?.status === "Cleared" ? "Confirmed" : "Missing", action: "Upload split sheet", assetType: "split_sheet", canUpload: song.splits?.status !== "Cleared" }]),
+    ...assets.filter((asset) => asset.group === "Splits"),
+    ...(!hasSplitAsset && needsSplitProof ? [{ group: "Splits" as const, label: "Split sheet document", status: song.splits?.status === "Cleared" ? "Confirmed" : "Missing", action: "Upload split sheet", assetType: "split_sheet", canUpload: song.splits?.status !== "Cleared" }] : []),
   ];
 }
 
@@ -3164,7 +3674,7 @@ function toFieldStatus(status: string): "Missing" | "Draft" | "Confirmed" {
 
 function firstProjectBlocker(project: ProductionMusicProject) {
   const blocked = project.tracks.find((track) => track.blocker);
-  return blocked?.blocker ?? "Project readiness cannot be inferred from public catalog metadata alone.";
+  return blocked?.blocker ?? "No inherited blockers";
 }
 
 function formatDateLabel(value: string | null | undefined) {

@@ -437,6 +437,12 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       async loadMusic() {
         return music;
       },
+      async generateMusicSummary(subjectId) {
+        // In fixture mode, just return the existing music object as-is
+        const found = music.find((item) => item.id === subjectId);
+        if (!found) throw new Error("Fixture music item not found for brief generation.");
+        return found;
+      },
       async createSong(input) {
         const created = {
           id: `fixture-song-${Date.now()}`,

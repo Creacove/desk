@@ -35,7 +35,6 @@ import type {
   MissionViewModel,
   MovementItem,
   MusicObjectViewModel,
-  PriorityItem,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
 import type {
@@ -290,7 +289,6 @@ function CleanProductionWorkspace({
 }) {
   const [view, setView] = useState<CleanProductionView>(initialView);
   const [profile, setProfile] = useState<ArtistProfileViewModel | null>(null);
-  const [priority, setPriority] = useState<PriorityItem[]>([]);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
   const [movement, setMovement] = useState<MovementItem[]>([]);
   const [todayBrief, setTodayBrief] = useState<TodayBriefViewModel | null>(null);
@@ -332,7 +330,6 @@ function CleanProductionWorkspace({
         }
 
         setProfile(nextProfile);
-        setPriority(nextDesk.priority);
         setAttention(nextDesk.attention);
         setMovement(nextDesk.movement);
         setTodayBrief(nextDesk.todayBrief);
@@ -380,6 +377,11 @@ function CleanProductionWorkspace({
 
   function openManager() {
     navigate("managerOffice");
+  }
+
+  function openMusicFocus(musicObjectId?: string) {
+    setTargetMusicObjectId(musicObjectId ?? null);
+    navigate("musicWorkspace");
   }
 
   function openConversation(conversation: ConversationViewModel) {
@@ -497,11 +499,11 @@ function CleanProductionWorkspace({
               todayBrief={todayBrief}
               todayBriefPending={todayBriefPending}
               todayBriefError={todayBriefError}
-              priority={priority}
               attention={attention}
               movement={movement}
               agents={agents}
               missions={missions}
+              music={music}
               onNavigate={navigate}
               onManager={openManager}
               onGenerateTodaysBrief={generateTodaysBrief}
@@ -510,6 +512,7 @@ function CleanProductionWorkspace({
                 navigate("lockedAgentWorkspace");
               }}
               onDrawer={setDrawer}
+              onOpenMusicFocus={openMusicFocus}
             />
           ) : null}
           {view === "musicWorkspace" ? (

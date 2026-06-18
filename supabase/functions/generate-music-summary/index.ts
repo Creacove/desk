@@ -3,6 +3,9 @@ import {
   buildManagerReadInstructions,
   managerReadJsonSchema,
   parseManagerReadOutput,
+  checkBannedVisibleMusicTerms,
+  checkSourceLine,
+  stripBannedVisibleMusicTerms,
   type ManagerReadOutput,
   type ManagerReadPacket,
   type ManagerReadSubjectType,
@@ -99,6 +102,9 @@ async function buildManagerReadPacket(supabase: any, input: GenerateMusicSummary
     : await loadMusicProject(supabase, input);
   const identifiers = await loadIdentifiers(supabase, input);
   const evidence = await loadEvidence(supabase, input);
+  const artistProfile = await loadArtistProfile(supabase, input);
+  const relatedRecords = await loadRelatedRecordContext(supabase, input);
+  const relatedEvidence = await loadRelatedEvidence(supabase, input);
   const tracklist = input.subjectType === "music_project" ? await loadProjectTracklist(supabase, input) : [];
   const limitations = [
     readString(subject.source_limit) ? `Catalog source limit: ${readString(subject.source_limit)}` : undefined,
@@ -106,51 +112,111 @@ async function buildManagerReadPacket(supabase: any, input: GenerateMusicSummary
     "Do not claim saves, repeat listeners, source-of-stream, revenue, conversion, campaign ROI, or rights certainty unless the packet contains direct proof.",
   ].filter((item): item is string => Boolean(item));
 
+  const formattedEvidence = evidence.map((item: Record<string, unknown>) => {
+    const rawVal = item.metric_value;
+    if (typeof rawVal === "number") {
+      return {
+        ...item,
+        formatted_value: formatMetricValue(rawVal, item.metric_unit as string | null),
+      };
+    }
+    return item;
+  });
+  const formattedRelatedRecords = attachRelatedEvidence(relatedRecords, relatedEvidence, input.subjectId);
+  const derivedInsights = deriveRecordInsights(subject, formattedEvidence, formattedRelatedRecords);
+
   return {
     subjectType: input.subjectType,
     subject,
     identifiers,
-    evidence,
+    evidence: formattedEvidence,
+    artistProfile,
+    relatedRecords: formattedRelatedRecords,
+    derivedInsights,
     tracklist,
     limitations: Array.from(new Set(limitations)),
-    sourcePanelInstruction: "Provider names, provenance, confidence, and limitations belong in the Sources panel; the Manager Read should speak as the Manager.",
+    sourcePanelInstruction: "Source names, provenance, confidence, and limitations belong in the Sources panel; the Manager Read should speak as the Manager.",
   };
 }
 
+/**
+ * Calls OpenAI with automatic retry on banned-term violations.
+ *
+ * Attempt 1: normal call.
+ * Attempts 2-3: feed the violation back as a correction message so the model
+ *               can fix the specific words that slipped through.
+ * After all retries: strip banned terms in-place and return — never hard-fail
+ *                    the artist over a one-word style slip.
+ */
 async function callOpenAIManagerRead(packet: ManagerReadPacket): Promise<ManagerReadOutput> {
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      input: [
-        {
-          role: "system",
-          content: buildManagerReadInstructions(packet.subjectType),
-        },
-        {
-          role: "user",
-          content: JSON.stringify(packet),
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          ...managerReadJsonSchema,
-        },
-      },
-    }),
-  });
+  const MAX_RETRIES = 2;
+  let lastOutput: ManagerReadOutput | null = null;
+  let correctionNote = "";
 
-  if (!response.ok) {
-    throw new Error(`OpenAI Manager Read request failed with status ${response.status}.`);
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const messages: Array<{ role: string; content: string }> = [
+      { role: "system", content: buildManagerReadInstructions(packet.subjectType) },
+      { role: "user", content: JSON.stringify(packet) },
+    ];
+
+    // On retries, append the targeted correction so the model knows exactly what to fix.
+    if (attempt > 0 && correctionNote) {
+      messages.push({ role: "user", content: correctionNote });
+    }
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+        input: messages,
+        text: {
+          format: {
+            type: "json_schema",
+            ...managerReadJsonSchema,
+          },
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI Manager Read request failed with status ${response.status}.`);
+    }
+
+    const payload = await response.json();
+    const output = parseManagerReadOutput(readOutputText(payload));
+    lastOutput = output;
+
+    const bannedTerm = checkBannedVisibleMusicTerms(output);
+    const badSourceLine = !checkSourceLine(output);
+
+    if (!bannedTerm && !badSourceLine) {
+      // Clean output — return immediately.
+      return output;
+    }
+
+    // Build a targeted correction prompt for the next attempt.
+    const violations: string[] = [];
+    if (bannedTerm) violations.push(`the word "${bannedTerm}"`);
+    if (badSourceLine) violations.push(`a sourceLine that does not match the required wording`);
+    correctionNote =
+      `Your previous response included ${violations.join(" and ")} in a visible field. ` +
+      `Rewrite your response removing all instances. The sourceLine must be exactly: ` +
+      `"Prepared from the record details and audience signals I can already see." ` +
+      `All other content rules still apply.`;
+
+    console.warn(
+      `[generate-music-summary] Attempt ${attempt + 1}: violation detected — ${violations.join(", ")}. ` +
+      (attempt < MAX_RETRIES ? "Retrying with correction." : "Retries exhausted — stripping in-place.")
+    );
   }
 
-  const payload = await response.json();
-  return parseManagerReadOutput(readOutputText(payload));
+  // Retries exhausted: strip banned terms in-place rather than hard-failing.
+  // A one-word style slip should never block the artist from receiving their brief.
+  return stripBannedVisibleMusicTerms(lastOutput!);
 }
 
 function readOutputText(payload: unknown) {
@@ -239,6 +305,45 @@ async function loadEvidence(supabase: any, input: GenerateMusicSummaryInput) {
     .eq("subject_id", input.subjectId)
     .order("created_at", { ascending: false })
     .limit(150);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadArtistProfile(supabase: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await supabase
+    .from("artist_profiles")
+    .select("display_name,spotify_identity,genres,home_market,stage,artist_direction,current_goal,budget_context")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+  return isRecord(data) ? data : {};
+}
+
+async function loadRelatedRecordContext(supabase: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await supabase
+    .from("music_items")
+    .select("id,title,item_type,lifecycle_stage,source_kind,released_at,metadata")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .order("released_at", { ascending: false })
+    .limit(12);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadRelatedEvidence(supabase: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await supabase
+    .from("evidence_items")
+    .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .in("subject_type", ["music_item", "music_project"])
+    .order("created_at", { ascending: false })
+    .limit(240);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
 }
@@ -402,6 +507,142 @@ function validateInput(input: GenerateMusicSummaryInput) {
   }
 }
 
+function attachRelatedEvidence(
+  records: Array<Record<string, unknown>>,
+  evidence: Array<Record<string, unknown>>,
+  currentSubjectId: string,
+) {
+  return records.map((record) => {
+    const recordId = readString(record.id);
+    const recordEvidence = evidence
+      .filter((item) => readString(item.subject_id) === recordId)
+      .map(formatEvidenceForPacket)
+      .sort((left, right) => metricPriority(readString(left.metric_name)) - metricPriority(readString(right.metric_name)))
+      .slice(0, 12);
+    return {
+      id: recordId,
+      title: readString(record.title),
+      itemType: readString(record.item_type),
+      lifecycleStage: readString(record.lifecycle_stage),
+      releasedAt: readString(record.released_at),
+      isCurrentSubject: recordId === currentSubjectId,
+      strongestMetric: recordEvidence[0] ?? null,
+      evidence: recordEvidence,
+    };
+  });
+}
+
+function formatEvidenceForPacket(item: Record<string, unknown>) {
+  const rawVal = item.metric_value;
+  return typeof rawVal === "number"
+    ? { ...item, formatted_value: formatMetricValue(rawVal, item.metric_unit as string | null) }
+    : item;
+}
+
+function deriveRecordInsights(
+  subject: Record<string, unknown>,
+  evidence: Array<Record<string, unknown>>,
+  relatedRecords: Array<Record<string, unknown>>,
+) {
+  const subjectTitle = readString(subject.title) ?? "This record";
+  const insights: Array<Record<string, unknown>> = [];
+  const strongest = evidence
+    .filter((item) => typeof item.metric_value === "number")
+    .sort((left, right) => metricPriority(readString(left.metric_name)) - metricPriority(readString(right.metric_name)))[0];
+
+  if (strongest) {
+    insights.push({
+      label: "Lead record behavior",
+      read: `${subjectTitle}'s strongest saved behavior is ${metricLabel(readString(strongest.metric_name))}: ${readString(strongest.formatted_value) ?? strongest.metric_value}.`,
+      evidenceIds: [readString(strongest.id)].filter(Boolean),
+    });
+  }
+
+  const comparison = strongest ? strongestComparison(strongest, relatedRecords, subjectTitle) : undefined;
+  if (comparison) insights.push(comparison);
+
+  const social = evidence.find((item) => {
+    const metric = readString(item.metric_name) ?? "";
+    return metric.includes("tiktok") || metric.includes("youtube") || metric.includes("shazam");
+  });
+  const playlist = evidence.find((item) => {
+    const metric = readString(item.metric_name) ?? "";
+    return metric.includes("playlist") || metric.includes("editorial");
+  });
+  if (social && playlist) {
+    insights.push({
+      label: "Two-lane read",
+      read: `${subjectTitle} has both public discovery behavior and playlist support in view; the Manager should decide which lane leads before asking the team to act.`,
+      evidenceIds: [readString(social.id), readString(playlist.id)].filter(Boolean),
+    });
+  }
+
+  return insights.slice(0, 5);
+}
+
+function strongestComparison(strongest: Record<string, unknown>, relatedRecords: Array<Record<string, unknown>>, subjectTitle: string) {
+  const metricName = readString(strongest.metric_name);
+  const value = typeof strongest.metric_value === "number" ? strongest.metric_value : undefined;
+  if (!metricName || value === undefined) return undefined;
+
+  const peers = relatedRecords.flatMap((record) => {
+    const evidence = Array.isArray(record.evidence) ? record.evidence.filter(isRecord) : [];
+    return evidence
+      .filter((item) => readString(item.metric_name) === metricName && typeof item.metric_value === "number")
+      .map((item) => ({
+        title: readString(record.title) ?? "another current record",
+        value: item.metric_value as number,
+        formattedValue: readString(item.formatted_value) ?? String(item.metric_value),
+        evidenceId: readString(item.id),
+      }));
+  }).sort((left, right) => right.value - left.value);
+
+  const leader = peers[0];
+  if (!leader) return undefined;
+  if (leader.title === subjectTitle || leader.value === value) {
+    return {
+      label: "Workspace comparison",
+      read: `${subjectTitle} is tied to the top current ${metricLabel(metricName)} read in the workspace.`,
+      evidenceIds: [readString(strongest.id), leader.evidenceId].filter(Boolean),
+    };
+  }
+  return {
+    label: "Workspace comparison",
+    read: `${subjectTitle}'s ${metricLabel(metricName)} is ${readString(strongest.formatted_value) ?? value}, while ${leader.title} leads that same lane at ${leader.formattedValue}.`,
+    evidenceIds: [readString(strongest.id), leader.evidenceId].filter(Boolean),
+  };
+}
+
+function metricPriority(metricName?: string) {
+  const metric = metricName ?? "";
+  const priorities = [
+    /spotify_trailing_28d_streams/,
+    /spotify_trailing_7d_streams/,
+    /spotify_playlist_total_reach|spotify_playlist_reach|spotify_editorial_playlist_reach/,
+    /spotify_playlist_count/,
+    /spotify_editorial_playlist_count|apple_music_editorial_playlist_count/,
+    /tiktok_top_video_views|tiktok_video_count|video_creates/,
+    /youtube_views/,
+    /shazam/,
+    /airplay|radio/,
+  ];
+  const index = priorities.findIndex((pattern) => pattern.test(metric));
+  return index === -1 ? priorities.length : index;
+}
+
+function metricLabel(metricName?: string) {
+  const metric = metricName ?? "";
+  if (metric.includes("spotify_trailing_28d_streams")) return "recent streams";
+  if (metric.includes("spotify_trailing_7d_streams")) return "last-7-day streams";
+  if (metric.includes("playlist") || metric.includes("editorial")) return "playlist support";
+  if (metric.includes("tiktok_top_video_views")) return "top TikTok clip";
+  if (metric.includes("tiktok") || metric.includes("video_creates")) return "short-form creation";
+  if (metric.includes("youtube")) return "YouTube demand";
+  if (metric.includes("shazam")) return "active discovery";
+  if (metric.includes("airplay") || metric.includes("radio")) return "radio pressure";
+  return metric.replace(/[_-]+/g, " ").trim() || "saved metric";
+}
+
 function readSubjectTitle(packet: ManagerReadPacket) {
   return readString(packet.subject.title) ?? "Music subject";
 }
@@ -431,4 +672,17 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
+}
+
+function formatMetricValue(value: number, unit?: string | null) {
+  if (unit === "rank") return `#${value.toLocaleString("en-US")}`;
+  if (unit === "score" || unit === "percent_change") return `${value.toLocaleString("en-US")}${unit === "percent_change" ? "%" : ""}`;
+  return formatCompactNumber(value);
+}
+
+function formatCompactNumber(value: number) {
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
+  }).format(value);
 }
