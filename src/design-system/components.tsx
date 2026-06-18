@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, ClipboardCheck, Gauge, Library, LogOut, Settings, UsersRound } from "lucide-react";
+import { ArrowLeft, Bell, ClipboardCheck, Gauge, Library, LogOut, Settings, UsersRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import type { CleanProductionView } from "../types/cleanProduction";
@@ -117,7 +117,10 @@ export function WorkspaceHeader({
   action?: ReactNode;
 }) {
   return (
-    <div className="mb-4 flex flex-col gap-3 lg:mb-5 lg:flex-row lg:items-end lg:justify-between">
+    <div
+      data-testid={`workspace-header-${title}`}
+      className="mb-4 hidden flex-col gap-3 lg:mb-5 lg:flex lg:flex-row lg:items-end lg:justify-between"
+    >
       <div>
         <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
         <h1 className="font-display mt-1.5 text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">{title}</h1>
@@ -269,11 +272,15 @@ export function MobileChrome({
   active,
   title,
   onNavigate,
+  notificationCount = 0,
+  onOpenNotifications,
   onSignOut,
 }: {
   active: NavSection;
   title: string;
   onNavigate: (view: CleanProductionView) => void;
+  notificationCount?: number;
+  onOpenNotifications?: () => void;
   onSignOut?: () => void;
 }) {
   return (
@@ -289,16 +296,34 @@ export function MobileChrome({
             <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/80">{title}</p>
           </div>
         </div>
-        {onSignOut ? (
-          <button
-            type="button"
-            onClick={onSignOut}
-            className="flex h-8 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-background px-2.5 text-[11px] font-bold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-          >
-            <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="sr-only">Sign out</span>
-          </button>
-        ) : null}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {onOpenNotifications ? (
+            <button
+              type="button"
+              data-testid="mobile-notification-trigger"
+              aria-label="Open desk notifications"
+              onClick={onOpenNotifications}
+              className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+            >
+              <Bell className="h-3.5 w-3.5" aria-hidden="true" />
+              {notificationCount ? (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold leading-none text-background">
+                  {notificationCount > 9 ? "9+" : notificationCount}
+                </span>
+              ) : null}
+            </button>
+          ) : null}
+          {onSignOut ? (
+            <button
+              type="button"
+              onClick={onSignOut}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+            >
+              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only">Sign out</span>
+            </button>
+          ) : null}
+        </div>
       </header>
       <nav
         aria-label="Mobile desk navigation"

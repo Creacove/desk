@@ -344,13 +344,13 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    expect(screen.getByText(initialBrief.headlineRead)).toBeInTheDocument();
+    expect(screen.getAllByText(initialBrief.headlineRead).length).toBeGreaterThan(0);
     expect(screen.getByText("Artist Intelligence")).toBeInTheDocument();
-    expect(screen.getByText("1.21M")).toBeInTheDocument();
-    expect(screen.getByText("London")).toBeInTheDocument();
-    expect(screen.getByText("UK rank")).toBeInTheDocument();
-    expect(screen.getByText(initialBrief.snapshotSummary)).toBeInTheDocument();
-    expect(screen.getByText(initialBrief.managerRead)).toBeInTheDocument();
+    expect(screen.getAllByText("1.21M").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("London").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("UK rank").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(initialBrief.snapshotSummary).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(initialBrief.managerRead).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "View supporting evidence" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ask Manager" })).not.toBeInTheDocument();
     expect(screen.queryByText(initialBrief.sourceLine)).not.toBeInTheDocument();
@@ -363,7 +363,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Generate Today's Brief" }));
 
-    expect(await screen.findByText(refreshedBrief.headlineRead)).toBeInTheDocument();
+    expect((await screen.findAllByText(refreshedBrief.headlineRead)).length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: "Talk to Manager" })).not.toBeInTheDocument();
   }, 20000);
 
@@ -430,6 +430,111 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
   }, 20000);
 
+  it("puts mobile Desk HQ attention and movement behind a notification sheet", async () => {
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(screen.getByTestId("desk-mobile-home")).toBeInTheDocument();
+    expect(screen.getByTestId("desk-mobile-generate-brief")).toHaveAttribute("aria-label", "Generate today's brief");
+    expect(screen.queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
+    expect(screen.getByTestId("desk-desktop-attention-rail")).toHaveClass("hidden", "xl:grid");
+
+    fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
+    const notificationSheet = await screen.findByRole("dialog", { name: "Desk notifications" });
+    expect(notificationSheet).toHaveTextContent("Needs Attention");
+    expect(notificationSheet).toHaveTextContent("Recent Movement");
+    expect(notificationSheet).toHaveTextContent("Private analytics missing");
+    expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
+  }, 20000);
+
+  it("keeps mobile Desk HQ useful with expandable manager read, full metrics, and team agents", async () => {
+    const managerReadEnding = "The final check is that mobile keeps the full operating read available instead of making desktop the only serious surface.";
+    const richBrief: TodayBriefViewModel = {
+      headlineRead: "Nova Vale should protect the London signal before opening new lanes.",
+      intelligenceSnapshot: [
+        {
+          title: "Audience Center",
+          insight: "The working read has enough audience, budget, catalog, and channel facts to support the same decision quality on mobile.",
+          metrics: [
+            { label: "Monthly listeners", value: "1.21M", context: "Spotify", evidenceIds: ["metric-1"] },
+            { label: "London rank", value: "#4", context: "city signal", evidenceIds: ["metric-2"] },
+            { label: "Budget", value: "$3K", context: "monthly", evidenceIds: ["metric-3"] },
+            { label: "Catalog tracks", value: "18", context: "imported", evidenceIds: ["metric-4"] },
+            { label: "Save rate", value: "11%", context: "private export", evidenceIds: ["metric-5"] },
+            { label: "Skip rate", value: "21%", context: "quality watch", evidenceIds: ["metric-6"] },
+          ],
+        },
+      ],
+      snapshotSummary: "London, catalog, budget, and quality signals are all part of the same first operating read.",
+      managerRead:
+        "The first decision is not a tiny summary. Nova Vale needs the mobile read to carry the same management usefulness as the desktop read: the strongest city, the budget constraint, the record focus, and the quality watch all need to stay available. " +
+        managerReadEnding,
+      sourceLine: "Based on saved profile, catalog, audience, and source limits.",
+      confidence: "medium",
+      generatedAt: "2026-06-17T08:30:00.000Z",
+      managerSynthesisRunId: "rich-brief-run",
+      state: "fresh",
+    };
+    const baseRepositories = repositoriesFor("Nova Vale");
+    const repositories: CleanProductionRepositories = {
+      ...baseRepositories,
+      desk: {
+        ...baseRepositories.desk,
+        loadDesk: async () => ({
+          priority: [],
+          attention: [],
+          movement: [],
+          todayBrief: richBrief,
+        }),
+        generateTodaysBrief: async () => richBrief,
+      },
+      staff: {
+        loadAgents: async () => productionFixtureData.agents,
+      },
+      missions: {
+        loadMissions: async () => productionFixtureData.missions,
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    const desk = screen.getByTestId("desk-mobile-home");
+    expect(within(desk).queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
+    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("border-l-brand-accent");
+    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("border-l-foreground");
+
+    fireEvent.click(within(desk).getByRole("button", { name: "Read full manager read" }));
+    expect(within(desk).getByTestId("desk-mobile-manager-read")).toHaveTextContent(managerReadEnding);
+    expect(within(desk).getByRole("button", { name: "Show less manager read" })).toBeInTheDocument();
+
+    const mobileMetrics = within(desk).getByTestId("desk-mobile-metrics-grid");
+    expect(mobileMetrics).toHaveTextContent("Monthly listeners");
+    expect(within(mobileMetrics).queryByText("Skip rate")).not.toBeInTheDocument();
+    fireEvent.click(within(desk).getByRole("button", { name: "See all 6 metrics" }));
+    expect(within(mobileMetrics).getByText("Skip rate")).toBeInTheDocument();
+
+    const teamAgents = within(desk).getByTestId("desk-mobile-team-agents");
+    expect(teamAgents).toHaveTextContent("Team Agents");
+    expect(teamAgents).toHaveTextContent("AI Manager");
+    expect(teamAgents).toHaveTextContent("Marketing Lead");
+    expect(within(teamAgents).getByRole("button", { name: "Open team" })).toBeInTheDocument();
+  }, 20000);
+
   it("keeps Desk HQ icon hover states high contrast instead of purple-on-purple", () => {
     const source = readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8");
 
@@ -473,10 +578,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Recorded work under management")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Songs" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Projects" })).toBeInTheDocument();
-    expect(screen.getByText("01")).toBeInTheDocument();
+    expect(screen.getAllByText("01").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Files").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Details").length).toBeGreaterThan(0);
-    expect(screen.getByAltText("Night Bus cover artwork")).toBeInTheDocument();
+    expect(screen.getAllByAltText("Night Bus cover artwork").length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Record read:/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/Next:/i)).not.toBeInTheDocument();
 
@@ -514,6 +619,81 @@ describe("Clean production prototype-match shell", () => {
     expect(songRoom).toHaveTextContent("Night Bus");
     fireEvent.click(screen.getByRole("button", { name: "Back to Music" }));
     expect(screen.getByRole("button", { name: "Projects" })).toHaveAttribute("aria-pressed", "true");
+  }, 20000);
+
+  it("uses compact mobile Music rows instead of tall stacked cards", async () => {
+    await enterDeskHq();
+
+    const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
+    fireEvent.click(within(rail).getByRole("button", { name: "Open Music workspace" }));
+
+    expect(await screen.findByRole("heading", { name: "Music" })).toBeInTheDocument();
+    expect(screen.getByTestId("workspace-header-Music")).toHaveClass("hidden", "lg:flex");
+    expect(screen.getByTestId("music-mobile-controls")).toHaveClass("flex-row");
+    const mobileLibrary = screen.getByTestId("music-mobile-library");
+    const mobileRow = within(mobileLibrary).getByTestId("music-mobile-song-row-Night Bus");
+    expect(mobileLibrary).toHaveClass("lg:hidden");
+    expect(mobileRow).toHaveClass("min-h-0");
+    expect(mobileRow).not.toHaveClass("rounded-[20px]");
+    expect(within(mobileRow).getByTestId("music-mobile-readiness-strip")).toHaveClass("grid-cols-3");
+    expect(within(mobileRow).getByText("Files")).toBeInTheDocument();
+    expect(within(mobileRow).getByText("Details")).toBeInTheDocument();
+    expect(within(mobileRow).getByText("Rights")).toBeInTheDocument();
+  }, 20000);
+
+  it("uses mobile-native song and project room layouts after opening Music items", async () => {
+    await enterDeskHq();
+
+    const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
+    fireEvent.click(within(rail).getByRole("button", { name: "Open Music workspace" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Open mobile song Night Bus" }));
+    let songRoom = screen.getByTestId("music-song-detail");
+    expect(within(songRoom).getByTestId("music-detail-mobile-top")).toHaveClass("lg:hidden");
+    expect(within(songRoom).getByTestId("music-detail-desktop-top")).toHaveClass("hidden", "lg:block");
+    expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
+    expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
+    expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Music" }));
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open mobile project Glass Room EP" }));
+
+    const projectRoom = screen.getByTestId("music-project-detail");
+    expect(within(projectRoom).getByTestId("music-detail-mobile-top")).toHaveClass("lg:hidden");
+    const mobileTracklist = within(projectRoom).getByTestId("project-room-mobile-tracklist");
+    const nightBusTrack = within(mobileTracklist).getByTestId("project-mobile-track-Night Bus");
+    expect(mobileTracklist).toHaveClass("lg:hidden");
+    expect(nightBusTrack).toHaveClass("grid-cols-[28px_44px_minmax(0,1fr)_auto]");
+    expect(nightBusTrack).not.toHaveClass("gap-3 px-5 py-4");
+    expect(within(nightBusTrack).getByText("Night Bus")).toBeInTheDocument();
+
+    fireEvent.click(within(projectRoom).getByRole("button", { name: "Open song Night Bus" }));
+    songRoom = screen.getByTestId("music-song-detail");
+    expect(within(songRoom).getByTestId("music-detail-mobile-top")).toHaveTextContent("Night Bus");
+  }, 20000);
+
+  it("gives Missions, Team, Manager, and Profile dedicated compact mobile surfaces", async () => {
+    await enterDeskHq();
+
+    const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
+    expect(screen.getByTestId("missions-mobile-picker")).toHaveClass("lg:hidden");
+    expect(screen.getByTestId("missions-desktop-list")).toHaveClass("hidden", "lg:block");
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
+    expect(screen.getByTestId("staff-mobile-list")).toHaveClass("md:hidden");
+    expect(screen.getByTestId("staff-desktop-list")).toHaveClass("hidden", "md:grid");
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    expect(screen.getByTestId("manager-mobile-progress")).toHaveClass("lg:hidden");
+    expect(screen.getByTestId("manager-desktop-progress")).toHaveClass("hidden", "lg:block");
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
+    expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");
+    expect(screen.getByTestId("settings-desktop-profile-summary")).toHaveClass("hidden", "sm:flex");
   }, 20000);
 
   it("keeps unlinked Music projects quiet instead of explaining mission absence", async () => {

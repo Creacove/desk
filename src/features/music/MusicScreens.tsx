@@ -179,8 +179,8 @@ export function MusicWorkspace({
                   Songs stay atomic; projects collect songs without duplicating their state.
                 </p>
               </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-                <div className="grid w-full max-w-[260px] grid-cols-2 rounded-full border border-foreground/10 bg-background/80 p-1 shadow-sm">
+              <div data-testid="music-mobile-controls" className="flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
+                <div className="grid min-w-0 flex-1 max-w-[260px] grid-cols-2 rounded-full border border-foreground/10 bg-background/80 p-1 shadow-sm">
                   {(["songs", "projects"] as const).map((item) => (
                     <button
                       key={item}
@@ -198,7 +198,7 @@ export function MusicWorkspace({
                 </div>
                 <button
                   type="button"
-          onClick={() => setCreateKind(tab)}
+                  onClick={() => setCreateKind(tab)}
                   aria-label={tab === "songs" ? "Add song" : "Add project"}
                   title={tab === "songs" ? "Add song" : "Add project"}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground shadow-sm transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
@@ -211,14 +211,24 @@ export function MusicWorkspace({
             <div className="sr-only" aria-live="polite">{actionPending ? "Saving Music update" : ""}</div>
             {actionError ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{actionError}</p> : null}
 
+            <div data-testid="music-mobile-library" className="grid gap-2 lg:hidden">
+              {tab === "songs"
+                ? songs.map((song, index) => (
+                    <MusicMobileSongRow key={song.id} song={song} index={index} onOpen={() => openObject(song, "songs")} />
+                  ))
+                : projects.map((project) => (
+                    <MusicMobileProjectRow key={project.id} project={project} onOpen={() => openObject(project, "projects")} getMusicObject={getMusicObject} />
+                  ))}
+            </div>
+
             {tab === "songs" ? (
-              <div className="grid gap-3">
+              <div className="hidden gap-3 lg:grid">
                 {songs.map((song, index) => (
                   <MusicSongRow key={song.id} song={song} index={index} onOpen={() => openObject(song, "songs")} />
                 ))}
               </div>
             ) : (
-              <div className="grid gap-4 lg:grid-cols-2">
+              <div className="hidden gap-4 lg:grid lg:grid-cols-2">
                 {projects.map((project) => (
                   <MusicProjectCard key={project.id} project={project} onOpen={() => openObject(project, "projects")} getMusicObject={getMusicObject} />
                 ))}
@@ -297,6 +307,93 @@ export function MusicWorkspace({
         />
       ) : null}
     </section>
+  );
+}
+
+function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; index: number; onOpen: () => void }) {
+  const readiness = getSongReadiness(song);
+  const hasBlocker = song.blocker !== "No active blocker" && song.blocker !== "None";
+  const recordRead = buildMusicListRead(song);
+
+  return (
+    <button
+      type="button"
+      data-testid={`music-mobile-song-row-${song.title}`}
+      aria-label={`Open mobile song ${song.title}`}
+      onClick={onOpen}
+      className="group min-h-0 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+    >
+      <span className="flex min-w-0 gap-3">
+        <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
+        <span className="min-w-0 flex-1">
+          <span className="flex min-w-0 items-start justify-between gap-2">
+            <span className="min-w-0">
+              <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{song.title}</span>
+              <span className="mt-1 flex flex-wrap gap-1.5">
+                <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+                  {song.lifecycleStage ?? song.lifecycle}
+                </span>
+                <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]", hasBlocker ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
+                  {hasBlocker ? song.blocker : "Clear"}
+                </span>
+              </span>
+            </span>
+            <span className="font-display shrink-0 text-[13px] font-semibold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+          </span>
+          <span className="mt-2 line-clamp-2 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{recordRead}</span>
+        </span>
+      </span>
+      <span data-testid="music-mobile-readiness-strip" className="mt-3 grid grid-cols-3 gap-1.5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-2.5">
+        <MusicLibrarySignal label="Files" value={readiness.files} />
+        <MusicLibrarySignal label="Details" value={readiness.details} />
+        <MusicLibrarySignal label="Rights" value={readiness.rights} tone={song.splits?.status === "Cleared" ? "good" : "warn"} />
+      </span>
+    </button>
+  );
+}
+
+function MusicMobileProjectRow({
+  project,
+  onOpen,
+  getMusicObject,
+}: {
+  project: MusicObjectViewModel;
+  onOpen: () => void;
+  getMusicObject: (id: string) => MusicObjectViewModel | undefined;
+}) {
+  const readiness = getProjectReadiness(project, getMusicObject);
+  const blockerCount = readiness.blockers.length;
+  const projectRead = buildMusicListRead(project);
+
+  return (
+    <button
+      type="button"
+      data-testid={`music-mobile-project-row-${project.title}`}
+      aria-label={`Open mobile project ${project.title}`}
+      onClick={onOpen}
+      className="min-h-0 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+    >
+      <span className="flex min-w-0 gap-3">
+        <ArtworkFrame title={project.title} imageUrl={project.coverImageUrl} spotifyUrl={project.spotifyUrl} kind="project" size="mini" />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{project.title}</span>
+          <span className="mt-1 flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+              {project.lifecycleStage ?? project.lifecycle}
+            </span>
+            <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]", blockerCount ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
+              {blockerCount ? `${blockerCount} blocker${blockerCount === 1 ? "" : "s"}` : "Clear"}
+            </span>
+          </span>
+          <span className="mt-2 line-clamp-2 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{projectRead}</span>
+        </span>
+      </span>
+      <span className="mt-3 grid grid-cols-3 gap-1.5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-2.5">
+        <MusicLibrarySignal label="Tracks" value={`${readiness.trackCount}`} />
+        <MusicLibrarySignal label="Ready" value={`${readiness.lockedTracks}/${readiness.trackCount}`} />
+        <MusicLibrarySignal label="Issues" value={blockerCount ? `${blockerCount}` : "Clear"} tone={blockerCount ? "warn" : "good"} />
+      </span>
+    </button>
   );
 }
 
@@ -474,7 +571,7 @@ function MusicSongDetail({
     <section data-testid="music-song-detail" className="grid gap-5">
       <MusicDetailTop object={song} label="Song room" onBack={onBack} onStageChange={onStageChange} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
-      <div className="flex flex-wrap gap-2">
+      <div data-testid="song-room-mobile-tabs" className="grid grid-cols-4 gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.035] p-1 lg:flex lg:flex-wrap lg:border-0 lg:bg-transparent lg:p-0">
         {(["overview", "details", "files", "rights"] as const).map((nextTab) => (
           <button
             key={nextTab}
@@ -482,8 +579,8 @@ function MusicSongDetail({
             aria-pressed={activeTab === nextTab}
             onClick={() => onTabChange(nextTab)}
             className={cn(
-              "rounded-full border px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors",
-              activeTab === nextTab ? "border-foreground bg-foreground text-background" : "border-foreground/10 bg-background text-muted-foreground hover:text-foreground",
+              "rounded-[10px] border px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.04em] transition-colors lg:rounded-full lg:px-4 lg:text-[11px]",
+              activeTab === nextTab ? "border-foreground bg-foreground text-background" : "border-transparent bg-transparent text-muted-foreground hover:text-foreground lg:border-foreground/10 lg:bg-background",
             )}
           >
             {nextTab}
@@ -492,8 +589,8 @@ function MusicSongDetail({
       </div>
 
       {activeTab === "overview" ? (
-        <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm p-5 sm:p-6 space-y-6">
+        <div className="grid items-start gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div data-testid="song-room-mobile-overview" className="surface-elevated space-y-5 overflow-hidden rounded-[16px] p-4 shadow-sm sm:p-5 lg:space-y-6 lg:rounded-[22px] lg:p-6">
             <div>
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div className="flex flex-wrap items-center gap-2">
@@ -714,7 +811,33 @@ function MusicProjectDetail({
               </div>
             </div>
 
-            <div className="divide-y divide-foreground/6">
+            <div data-testid="project-room-mobile-tracklist" className="divide-y divide-foreground/6 lg:hidden">
+              {tracklist.map((song, index) => (
+                <button
+                  key={song.id}
+                  type="button"
+                  data-testid={`project-mobile-track-${song.title}`}
+                  aria-label={`Open mobile project track ${song.title}`}
+                  onClick={() => onOpenSong(song)}
+                  className="grid w-full grid-cols-[28px_44px_minmax(0,1fr)_auto] items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-brand-accent/[0.03]"
+                >
+                  <span className="font-display text-[14px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+                  <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-[14px] font-semibold leading-tight text-foreground">{song.title}</span>
+                    <span className="mt-1 flex min-w-0 items-center gap-1.5">
+                      <span className="truncate text-[10px] font-bold uppercase tracking-[0.04em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
+                      {isMusicBlocked(song) ? (
+                        <span className="truncate rounded-md bg-warning/10 px-1.5 py-0.5 text-[9px] font-bold text-warning">{getProjectBlockerBadge(song.blocker)}</span>
+                      ) : null}
+                    </span>
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                </button>
+              ))}
+            </div>
+
+            <div data-testid="project-room-desktop-tracklist" className="hidden divide-y divide-foreground/6 lg:block">
               {tracklist.map((song, index) => (
                 <button
                   key={song.id}
@@ -879,27 +1002,38 @@ function getProjectBlockerRollup(blockedTracks: MusicObjectViewModel[]) {
 }
 
 function MusicDetailTop({ object, label, onBack, onStageChange }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void }) {
+  const stageValue = object.lifecycleStage ?? object.lifecycle;
+  const situationLine = object.situationLine ?? object.sourceLimit;
+
   return (
-    <div className="rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
-      <button type="button" onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground">
-        <ArrowLeft className="h-4 w-4" />
-        Back to Music
-      </button>
-      <div className="grid gap-5 lg:grid-cols-[96px_minmax(0,1fr)_280px] lg:items-end">
-        <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />
-        <div>
-          <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
-          <h2 className="mt-2 font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
-          <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{object.situationLine ?? object.sourceLimit}</p>
+    <>
+      <div data-testid="music-detail-mobile-top" className="rounded-[18px] border border-foreground/10 bg-white p-3.5 shadow-[0_1px_8px_rgba(17,19,24,0.05)] lg:hidden">
+        <div className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            aria-label="Back to Music from mobile room"
+            onClick={onBack}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-muted-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">{label}</span>
+        </div>
+        <div className="mt-3 flex min-w-0 gap-3">
+          <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
+            <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{situationLine}</p>
+          </div>
         </div>
         {object.kind === "song" ? (
-          <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
-            Song stage
+          <label className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/82">
+            Stage
             <select
-              aria-label="Song stage"
-              defaultValue={object.lifecycleStage ?? object.lifecycle}
+              aria-label="Mobile song stage"
+              defaultValue={stageValue}
               onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
-              className="rounded-[12px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
+              className="min-w-0 rounded-[10px] border border-foreground/10 bg-background px-2.5 py-2 text-[12px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
             >
               {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
                 <option key={stage} value={stage}>{stage}</option>
@@ -907,13 +1041,48 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
             </select>
           </label>
         ) : (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="mt-3 grid grid-cols-2 gap-2">
             <MusicMiniStat label="State" value={object.lifecycle} />
             <MusicMiniStat label="Blocker" value={object.blocker} />
           </div>
         )}
       </div>
-    </div>
+
+      <div data-testid="music-detail-desktop-top" className="hidden rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:block">
+        <button type="button" onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" />
+          Back to Music
+        </button>
+        <div className="grid gap-5 lg:grid-cols-[96px_minmax(0,1fr)_280px] lg:items-end">
+          <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />
+          <div>
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
+            <h2 className="mt-2 font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
+            <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{situationLine}</p>
+          </div>
+          {object.kind === "song" ? (
+            <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
+              Song stage
+              <select
+                aria-label="Song stage"
+                defaultValue={stageValue}
+                onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
+                className="rounded-[12px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
+              >
+                {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
+                  <option key={stage} value={stage}>{stage}</option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <MusicMiniStat label="State" value={object.lifecycle} />
+              <MusicMiniStat label="Blocker" value={object.blocker} />
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 

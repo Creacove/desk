@@ -19,7 +19,23 @@ export function SettingsScreen({
   return (
     <WorkspaceShell eyebrow="Settings" title="Artist profile" onBack={onBack}>
       <section className="rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
-        <div className="mb-5 flex flex-col gap-4 border-b border-foreground/8 pb-5 sm:flex-row sm:items-center sm:justify-between">
+        <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
+          <div className="flex min-w-0 items-center gap-3">
+            {profile.imageUrl ? (
+              <img className="h-12 w-12 shrink-0 rounded-[14px] object-cover" src={profile.imageUrl} alt="" />
+            ) : (
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] text-[16px] font-bold text-muted-foreground">
+                {profile.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Artist profile</p>
+              <p className="mt-1 truncate font-display text-[18px] font-semibold tracking-tight text-foreground">{profile.name}</p>
+              <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground">{profile.market} / {profile.genre}</p>
+            </div>
+          </div>
+        </div>
+        <div data-testid="settings-desktop-profile-summary" className="mb-5 hidden flex-col gap-4 border-b border-foreground/8 pb-5 sm:flex sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center gap-3">
             {profile.imageUrl ? (
               <img className="h-14 w-14 shrink-0 rounded-[14px] object-cover" src={profile.imageUrl} alt={`${profile.name} artist image`} />

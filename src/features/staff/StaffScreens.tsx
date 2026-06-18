@@ -23,7 +23,30 @@ export function StaffWorkspace({
         <Stat label="Active" value={String(activeCount)} />
         <Stat label="Waiting" value={String(lockedCount)} />
       </div>
-      <div className="grid gap-3">
+      <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">
+        {agents.map((agent) => {
+          const Icon = agent.icon;
+          return (
+            <button
+              key={agent.id}
+              type="button"
+              aria-label={`Open mobile agent ${agent.name}`}
+              className="flex min-w-0 items-center gap-3 rounded-[14px] border border-foreground/10 bg-white p-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+              onClick={() => (agent.status === "available" ? onManager() : onLockedAgent(agent))}
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+                {agent.status === "available" ? <Icon className="h-4 w-4" aria-hidden="true" /> : <Lock className="h-4 w-4" aria-hidden="true" />}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-semibold text-foreground">{agent.name}</span>
+                <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">{agent.purpose}</span>
+              </span>
+              <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[10px] font-semibold text-muted-foreground">{agent.readiness}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div data-testid="staff-desktop-list" className="hidden gap-3 md:grid">
         {agents.map((agent) => {
           const Icon = agent.icon;
           return (

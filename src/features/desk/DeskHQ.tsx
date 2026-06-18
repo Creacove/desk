@@ -1,4 +1,5 @@
 import { ArrowUpRight, BriefcaseBusiness, ChevronRight, ClipboardCheck, Library, ListChecks, RefreshCw, Upload, UsersRound } from "lucide-react";
+import { useState } from "react";
 import { ProductButton, WorkspaceHeader } from "../../design-system/components";
 import type {
   AgentViewModel,
@@ -64,12 +65,28 @@ export function DeskHQScreen({
 
   return (
     <section>
-      <WorkspaceHeader
-        eyebrow="Desk Read"
-        title="Desk HQ"
+      <div className="hidden lg:block">
+        <WorkspaceHeader
+          eyebrow="Desk Read"
+          title="Desk HQ"
+        />
+      </div>
+
+      <MobileDeskHome
+        profile={profile}
+        brief={todayBrief ?? buildVisibleFallbackBrief(profile)}
+        pending={todayBriefPending}
+        error={todayBriefError}
+        missions={missions}
+        agents={agents}
+        onGenerate={onGenerateTodaysBrief}
+        onDrawer={onDrawer}
+        onNavigate={onNavigate}
+        onManager={onManager}
+        onLockedAgent={onLockedAgent}
       />
 
-      <div className="mb-6 rounded-xl border border-foreground/10 bg-white shadow-[0_2px_12px_rgba(17,19,24,0.06)]">
+      <div className="mb-6 hidden rounded-xl border border-foreground/10 bg-white shadow-[0_2px_12px_rgba(17,19,24,0.06)] lg:block">
         <div className="grid grid-cols-1 overflow-hidden rounded-xl sm:grid-cols-2 xl:grid-cols-4">
           {commandItems.map((item) => {
             const Icon = item.icon;
@@ -98,7 +115,7 @@ export function DeskHQScreen({
         </div>
       </div>
 
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="hidden min-w-0 gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="min-w-0 space-y-6">
           <TodayBrief
             profile={profile}
@@ -173,7 +190,7 @@ export function DeskHQScreen({
           </section>
         </div>
 
-        <aside className="grid min-w-0 content-start gap-6 self-start pt-1 lg:sticky lg:top-8">
+        <aside data-testid="desk-desktop-attention-rail" className="hidden min-w-0 content-start gap-6 self-start pt-1 xl:sticky xl:top-8 xl:grid">
           <section>
             <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88 mb-4">Needs Attention</p>
             <div className="grid gap-3">
@@ -225,6 +242,226 @@ export function DeskHQScreen({
       </div>
     </section>
   );
+}
+
+function MobileDeskHome({
+  profile,
+  brief,
+  pending,
+  error,
+  missions,
+  agents,
+  onGenerate,
+  onDrawer,
+  onNavigate,
+  onManager,
+  onLockedAgent,
+}: {
+  profile: ArtistProfileViewModel;
+  brief: TodayBriefViewModel;
+  pending: boolean;
+  error: string | null;
+  missions: MissionViewModel[];
+  agents: AgentViewModel[];
+  onGenerate: () => void;
+  onDrawer: (drawer: DrawerKind) => void;
+  onNavigate: (view: CleanProductionView) => void;
+  onManager: () => void;
+  onLockedAgent: (agent: AgentViewModel) => void;
+}) {
+  const [managerReadExpanded, setManagerReadExpanded] = useState(false);
+  const [metricsExpanded, setMetricsExpanded] = useState(false);
+  const compactMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
+  const visibleMetrics = metricsExpanded ? compactMetrics : compactMetrics.slice(0, 4);
+  const managerPreview = getManagerReadPreview(brief.managerRead);
+  const managerReadCopy = managerReadExpanded ? brief.managerRead : managerPreview.text;
+  const activeMission = missions[0] ?? null;
+  const visibleAgents = agents.slice(0, 3);
+
+  return (
+    <div data-testid="desk-mobile-home" className="grid gap-4 pb-4 lg:hidden">
+      <section className="overflow-hidden rounded-[18px] border border-foreground/10 bg-white shadow-[0_1px_8px_rgba(17,19,24,0.055)]">
+        <div className="flex items-center justify-between gap-3 border-b border-foreground/8 px-4 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            {profile.imageUrl ? (
+              <img className="h-10 w-10 shrink-0 rounded-[12px] object-cover" src={profile.imageUrl} alt={`${profile.name} artist image`} />
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-foreground/10 bg-foreground/[0.035] text-[12px] font-bold text-muted-foreground">
+                {profile.name.slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Today</p>
+              <p className="truncate text-[13px] font-semibold text-foreground">{profile.name}</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            data-testid="desk-mobile-generate-brief"
+            aria-label="Generate today's brief"
+            onClick={onGenerate}
+            disabled={pending}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-40"
+          >
+            <RefreshCw className={pending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="px-4 py-4">
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+              {brief.confidence === "limited" ? "Limited confidence" : `${brief.confidence} confidence`}
+            </span>
+            <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
+              {brief.state === "fresh" ? "Fresh" : brief.state === "fallback" ? "First read" : "Limited"}
+            </span>
+          </div>
+          <h1 className="font-display text-[22px] font-semibold leading-[1.08] text-foreground">{brief.headlineRead}</h1>
+          <p className="mt-3 text-[13px] font-medium leading-relaxed text-muted-foreground/82">{brief.snapshotSummary}</p>
+
+          {compactMetrics.length ? (
+            <div
+              data-testid="desk-mobile-metrics-grid"
+              className={`mt-4 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.02] ${
+                visibleMetrics.length === 1 ? "grid-cols-1" : "grid-cols-2"
+              }`}
+            >
+              {visibleMetrics.map((metric) => (
+                <div
+                  key={`${metric.groupTitle}-${metric.label}-${metric.value}`}
+                  className={`min-w-0 border-b border-foreground/8 px-3 py-2.5 ${
+                    visibleMetrics.length > 1 ? "border-r even:border-r-0" : ""
+                  }`}
+                >
+                  <p className="truncate text-[10px] font-semibold text-muted-foreground/82">{metric.label}</p>
+                  <p className="mt-0.5 truncate text-[17px] font-semibold leading-none text-foreground">{metric.value}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {compactMetrics.length > 4 ? (
+            <button
+              type="button"
+              aria-expanded={metricsExpanded}
+              className="mt-2 text-[12px] font-semibold text-brand-accent"
+              onClick={() => setMetricsExpanded((current) => !current)}
+            >
+              {metricsExpanded ? "Show fewer metrics" : `See all ${compactMetrics.length} metrics`}
+            </button>
+          ) : null}
+
+          <div
+            data-testid="desk-mobile-manager-read-card"
+            className="mt-4 rounded-[14px] border-l-4 border-y border-r border-brand-accent/18 border-l-brand-accent bg-brand-accent/[0.035] p-3.5"
+          >
+            <p data-testid="desk-mobile-manager-read" className="text-[13px] font-medium leading-relaxed text-foreground/86 whitespace-pre-line">
+              {managerReadCopy}
+            </p>
+            {managerPreview.truncated ? (
+              <button
+                type="button"
+                aria-expanded={managerReadExpanded}
+                className="mt-3 text-[12px] font-semibold text-brand-accent"
+                onClick={() => setManagerReadExpanded((current) => !current)}
+              >
+                {managerReadExpanded ? "Show less manager read" : "Read full manager read"}
+              </button>
+            ) : null}
+          </div>
+          {error ? <p className="mt-3 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold text-warning">{error}</p> : null}
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <button type="button" className="text-[12px] font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
+              Evidence
+            </button>
+            <p className="text-right text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              {formatBriefGeneratedAt(brief.generatedAt)}
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <section data-testid="desk-mobile-team-agents" className="rounded-[18px] border border-foreground/10 bg-white p-4 shadow-[0_1px_8px_rgba(17,19,24,0.05)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Team Agents</p>
+            <p className="mt-1 text-[13px] font-medium text-muted-foreground/82">{agents.length} specialist desks</p>
+          </div>
+          <button type="button" className="text-[12px] font-semibold text-brand-accent" onClick={() => onNavigate("staffWorkspace")}>
+            Open team
+          </button>
+        </div>
+        <div className="grid gap-2">
+          {visibleAgents.length ? visibleAgents.map((agent) => {
+            const Icon = agent.icon;
+            return (
+              <button
+                key={agent.id}
+                type="button"
+                className="flex min-w-0 items-center gap-3 rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left"
+                onClick={() => (agent.id === "manager" ? onManager() : onLockedAgent(agent))}
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[14px] font-semibold text-foreground">{agent.name}</span>
+                  <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">{getAgentCardRead(agent)}</span>
+                </span>
+                <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[10px] font-semibold text-muted-foreground">
+                  {agent.status === "available" ? "Open" : "Preview"}
+                </span>
+              </button>
+            );
+          }) : (
+            <p className="rounded-[14px] border border-dashed border-foreground/12 bg-foreground/[0.02] p-3 text-[12px] font-medium text-muted-foreground">
+              Team desks will appear after the workspace loads its operating team.
+            </p>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-[18px] border border-foreground/10 bg-white p-4 shadow-[0_1px_8px_rgba(17,19,24,0.05)]">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Current work</p>
+          <button type="button" className="text-[12px] font-semibold text-muted-foreground" onClick={() => onNavigate("missionsWorkspace")}>
+            View all
+          </button>
+        </div>
+        {activeMission ? (
+          <button type="button" className="w-full text-left" aria-label="Open mission on mobile" onClick={() => onNavigate("missionsWorkspace")}>
+            <span className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-brand-accent" />
+              <span className="text-[12px] font-semibold text-muted-foreground">Progress {activeMission.progress}%</span>
+            </span>
+            <span className="mt-2 block text-[15px] font-semibold leading-tight text-foreground">{activeMission.title}</span>
+            <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{activeMission.nextTask}</span>
+          </button>
+        ) : (
+          <button type="button" className="w-full rounded-[14px] border border-dashed border-foreground/12 bg-foreground/[0.02] p-3 text-left" onClick={() => onNavigate("missionsWorkspace")}>
+            <span className="block text-[13px] font-semibold text-foreground">No active mission yet</span>
+            <span className="mt-1 block text-[12px] font-medium text-muted-foreground">Turn today&apos;s read into the first mission.</span>
+          </button>
+        )}
+        <div className="mt-3 flex items-center justify-between border-t border-foreground/8 pt-3 text-[12px] text-muted-foreground">
+          <span>{agents.length} agent desks</span>
+          <button type="button" className="font-semibold" onClick={() => onNavigate("staffWorkspace")}>
+            Open team
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function getManagerReadPreview(read: string) {
+  const compact = read.replace(/\s+/g, " ").trim();
+  if (compact.length <= 230) {
+    return { text: read, truncated: false };
+  }
+
+  const sentenceEnd = compact.indexOf(". ", 180);
+  const end = sentenceEnd > 0 && sentenceEnd < 280 ? sentenceEnd + 1 : 230;
+  return { text: `${compact.slice(0, end).trim()}...`, truncated: true };
 }
 
 function buildDeskCommandItems({

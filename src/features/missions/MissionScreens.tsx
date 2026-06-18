@@ -20,8 +20,27 @@ export function MissionsWorkspace({
   return (
     <section>
       <WorkspaceHeader eyebrow="Artist work" title="Missions" />
-      <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <aside className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4">
+      <section data-testid="missions-mobile-picker" className="mb-4 rounded-[16px] border border-foreground/10 bg-white p-3 shadow-[0_1px_6px_rgba(17,19,24,0.045)] lg:hidden">
+        <div className="mb-2 flex items-center justify-between">
+          <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Missions</p>
+          <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{missions.length}</span>
+        </div>
+        <select
+          aria-label="Select mission"
+          value={selected.id}
+          onChange={(event) => {
+            onSelectMission(event.target.value);
+            setTab("overview");
+          }}
+          className="h-10 w-full rounded-[12px] border border-foreground/10 bg-background px-3 text-[13px] font-semibold text-foreground outline-none"
+        >
+          {missions.map((mission) => (
+            <option key={mission.id} value={mission.id}>{mission.title}</option>
+          ))}
+        </select>
+      </section>
+      <div className="grid min-w-0 gap-5 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <aside data-testid="missions-desktop-list" className="hidden rounded-xl border border-foreground/10 bg-background shadow-sm p-4 lg:block">
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Missions</p>
           <div className="grid gap-3 mt-4">
             {missions.map((mission) => (

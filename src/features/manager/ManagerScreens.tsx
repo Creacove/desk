@@ -65,6 +65,10 @@ export function ManagerOfficeScreen({
   return (
     <WorkspaceShell eyebrow="Manager Office" title="Manager Briefing" onBack={onBack}>
       <div className="max-w-5xl">
+        <div data-testid="manager-mobile-progress" className="mb-4 flex items-center justify-between rounded-[14px] border border-foreground/10 bg-white px-3.5 py-3 shadow-[0_1px_6px_rgba(17,19,24,0.045)] lg:hidden">
+          <span className="text-[12px] font-semibold text-muted-foreground">Context progress</span>
+          <span className="rounded-full bg-foreground px-2.5 py-1 text-[11px] font-bold text-background">{answeredCount}/{managerQuestions.length}</span>
+        </div>
         <section className="rounded-xl border border-foreground/10 bg-background shadow-sm p-6">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
             <div className="min-w-0 flex-1">
@@ -107,7 +111,7 @@ export function ManagerOfficeScreen({
                 </div>
               )}
             </div>
-            <aside className="rounded-xl border border-foreground/8 bg-foreground/[0.025] p-4 lg:w-72">
+            <aside data-testid="manager-desktop-progress" className="hidden rounded-xl border border-foreground/8 bg-foreground/[0.025] p-4 lg:block lg:w-72">
               <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Context progress</p>
               <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-2">
                 {answeredCount}/{managerQuestions.length}

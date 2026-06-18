@@ -308,6 +308,7 @@ function CleanProductionWorkspace({
   const [setupError, setSetupError] = useState<string | null>(null);
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
+  const [mobileNotificationsOpen, setMobileNotificationsOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -373,6 +374,7 @@ function CleanProductionWorkspace({
 
     setView(nextView);
     setDrawer(null);
+    setMobileNotificationsOpen(false);
   }
 
   function openManager() {
@@ -492,7 +494,14 @@ function CleanProductionWorkspace({
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
         <DeskRail active={activeSection} onNavigate={navigate} onSignOut={onSignOut} />
         <main className="min-w-0 py-0 lg:px-8 lg:py-7">
-          <MobileChrome active={activeSection} title={mobileTitle} onNavigate={navigate} onSignOut={onSignOut} />
+          <MobileChrome
+            active={activeSection}
+            title={mobileTitle}
+            notificationCount={attention.length + movement.length}
+            onOpenNotifications={() => setMobileNotificationsOpen(true)}
+            onNavigate={navigate}
+            onSignOut={onSignOut}
+          />
           {view === "labelHQ" ? (
             <DeskHQScreen
               profile={profile}
@@ -572,7 +581,113 @@ function CleanProductionWorkspace({
         </main>
       </div>
       <ProductionDrawers drawer={drawer} evidence={evidence} mission={selectedMission} onClose={() => setDrawer(null)} />
+      <MobileNotificationSheet
+        open={mobileNotificationsOpen}
+        attention={attention}
+        movement={movement}
+        onNavigate={navigate}
+        onDrawer={setDrawer}
+        onClose={() => setMobileNotificationsOpen(false)}
+      />
       <span className="sr-only">{workspace?.workspaceName ?? "Ordersounds workspace"}</span>
+    </div>
+  );
+}
+
+function MobileNotificationSheet({
+  open,
+  attention,
+  movement,
+  onNavigate,
+  onDrawer,
+  onClose,
+}: {
+  open: boolean;
+  attention: AttentionItem[];
+  movement: MovementItem[];
+  onNavigate: (view: CleanProductionView) => void;
+  onDrawer: (drawer: DrawerKind) => void;
+  onClose: () => void;
+}) {
+  if (!open) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end bg-foreground/20 px-3 pb-3 lg:hidden" role="presentation">
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label="Desk notifications"
+        className="max-h-[82svh] w-full overflow-y-auto rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)]"
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-foreground/8 bg-background px-4 py-3">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Desk notifications</p>
+            <h2 className="font-display mt-1 text-[18px] font-semibold leading-tight text-foreground">Attention and movement</h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-8 rounded-lg border border-foreground/10 px-3 text-[12px] font-bold text-muted-foreground"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="grid gap-5 px-4 py-4">
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Needs Attention</p>
+              <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{attention.length}</span>
+            </div>
+            <div className="grid gap-2">
+              {attention.length ? attention.slice(0, 4).map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-left"
+                  onClick={() => {
+                    onClose();
+                    if (item.tone === "accent") {
+                      onDrawer("evidence");
+                    } else {
+                      onNavigate("missionsWorkspace");
+                    }
+                  }}
+                >
+                  <span className="block text-[13px] font-semibold text-foreground">{item.title}</span>
+                  <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{item.body}</span>
+                </button>
+              )) : (
+                <p className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-[12px] font-medium text-muted-foreground">No urgent items right now.</p>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Recent Movement</p>
+              <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{movement.length}</span>
+            </div>
+            <div className="grid gap-2">
+              {movement.length ? movement.slice(0, 6).map((item) => (
+                <div key={`${item.title}-${item.time}`} className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
+                  <span className="mt-1.5 h-2 w-2 rounded-full bg-foreground/20" aria-hidden="true" />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-semibold leading-tight text-foreground">{item.title}</span>
+                    <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                      {item.label} / {item.time}
+                    </span>
+                  </span>
+                </div>
+              )) : (
+                <p className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-[12px] font-medium text-muted-foreground">No new movement yet.</p>
+              )}
+            </div>
+          </section>
+        </div>
+      </section>
     </div>
   );
 }
