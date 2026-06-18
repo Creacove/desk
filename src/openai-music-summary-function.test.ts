@@ -175,6 +175,40 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(checkSourceLine(output)).toBe(true);
   });
 
+  it("repairs empty Record Intelligence evidence IDs to the saved source packet instead of failing generation", () => {
+    const payload = {
+      situationLine: "IMMORTAL is a released EP with the tracklist ready for a focus-track read.",
+      headline: "IMMORTAL needs a focus-track decision.",
+      managerRead:
+        "IMMORTAL is useful as a release frame because the mapped tracklist gives the team enough shape to choose a focus track before treating all songs equally. The practical read is that the EP should organize attention around the song with the clearest present behavior, then use the rest of the project as support instead of asking every track to carry the same campaign.",
+      nextMove: "Use IMMORTAL as the release frame, then choose the first focus track from the mapped tracklist.",
+      watchNext: "Watch which mapped song keeps carrying the release read.",
+      generationState: "fresh",
+      whatMatters: [],
+      doNotDoYet: [],
+      missingProof: [],
+      confidence: "medium",
+      evidenceIdsUsed: [],
+      sourcePanelNote: "Prepared from saved source packet context.",
+      intelligenceSnapshot: [
+        {
+          title: "Project Intelligence",
+          insight: "The mapped tracklist is enough to force a focus-track decision.",
+          metrics: [{ label: "Mapped songs", value: "6", context: "songs in the release frame", evidenceIds: [] }],
+        },
+      ],
+      snapshotSummary: "IMMORTAL has a release frame and needs the first focus-track choice.",
+      claimAudit: [{ claim: "IMMORTAL has a mapped release frame.", evidenceIds: [], limitation: "Source packet context, not private account proof." }],
+      sourceLine: "Prepared from the record details and audience signals I can already see.",
+    };
+
+    const output = parseManagerReadOutput(payload);
+
+    expect(output.evidenceIdsUsed).toEqual(["source-packet"]);
+    expect(output.intelligenceSnapshot[0]?.metrics[0]?.evidenceIds).toEqual(["source-packet"]);
+    expect(output.claimAudit[0]?.evidenceIds).toEqual(["source-packet"]);
+  });
+
   it("requires the song brief source line to sound manager-owned instead of source-mechanical", () => {
     const validPayload = {
       situationLine: "Jam is the current public-pressure record.",

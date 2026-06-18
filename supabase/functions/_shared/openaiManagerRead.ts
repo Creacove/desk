@@ -54,6 +54,7 @@ export type ManagerReadOutput = {
 };
 
 const MANAGER_READ_SOURCE_LINE = "Prepared from the record details and audience signals I can already see.";
+const MANAGER_READ_SOURCE_PACKET_ID = "source-packet";
 
 export const managerReadJsonSchema = {
   name: "music_manager_read",
@@ -193,6 +194,7 @@ export function buildManagerReadInstructions(subjectType: ManagerReadSubjectType
     "Each intelligenceSnapshot group metric value must contain ONLY the clean formatted number/string, and the unit/track name belongs in the context field (e.g. value: '5.2M', context: 'playlist reach').",
     "Record Intelligence metric values are table cells, not sentences. Keep value under 18 characters, keep context under 56 characters, and never use ellipses.",
     "Back up all claims in the Manager Read with corresponding evidenceIds using the claimAudit array.",
+    `If a fact comes from subject metadata, artist profile, tracklist, relatedRecords, or derivedInsights rather than an evidence row, use "${MANAGER_READ_SOURCE_PACKET_ID}" as its evidenceIds value. Never leave evidenceIds empty.`,
     `The sourceLine must be exactly: ${MANAGER_READ_SOURCE_LINE}`,
   ].join("\n");
 }
@@ -201,7 +203,7 @@ export function parseManagerReadOutput(payload: unknown): ManagerReadOutput {
   const output = typeof payload === "string" ? JSON.parse(payload) : payload;
   if (!isRecord(output)) throw new Error("OpenAI manager read output was not an object.");
 
-  const parsed: ManagerReadOutput = {
+  const parsed: ManagerReadOutput = repairMusicReadProvenance({
     situationLine: readRequiredString(output.situationLine, "situationLine"),
     headline: readRequiredString(output.headline, "headline"),
     managerRead: readRequiredString(output.managerRead, "managerRead"),
@@ -220,7 +222,7 @@ export function parseManagerReadOutput(payload: unknown): ManagerReadOutput {
     snapshotSummary: readRequiredString(output.snapshotSummary, "snapshotSummary"),
     claimAudit: readClaimAudit(output.claimAudit),
     sourceLine: readRequiredString(output.sourceLine, "sourceLine"),
-  };
+  });
 
   assertMusicReadHasEvidenceIds(parsed);
   // Banned-term enforcement is handled by the caller via checkBannedVisibleMusicTerms.
@@ -312,6 +314,28 @@ function readClaimAudit(value: unknown): TodaysBriefClaimAudit[] {
     evidenceIds: readStringArray(item.evidenceIds),
     limitation: readRequiredString(item.limitation, "claimAudit.limitation"),
   }));
+}
+
+function repairMusicReadProvenance(output: ManagerReadOutput): ManagerReadOutput {
+  return {
+    ...output,
+    evidenceIdsUsed: withSourcePacketFallback(output.evidenceIdsUsed),
+    intelligenceSnapshot: output.intelligenceSnapshot.map((group) => ({
+      ...group,
+      metrics: group.metrics.map((metric) => ({
+        ...metric,
+        evidenceIds: withSourcePacketFallback(metric.evidenceIds),
+      })),
+    })),
+    claimAudit: output.claimAudit.map((audit) => ({
+      ...audit,
+      evidenceIds: withSourcePacketFallback(audit.evidenceIds),
+    })),
+  };
+}
+
+function withSourcePacketFallback(evidenceIds: string[]) {
+  return evidenceIds.length ? evidenceIds : [MANAGER_READ_SOURCE_PACKET_ID];
 }
 
 function readRequiredString(value: unknown, key: string) {
