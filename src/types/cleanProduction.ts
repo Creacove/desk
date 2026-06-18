@@ -84,6 +84,8 @@ export type TodayBriefViewModel = {
   state: "fresh" | "limited" | "fallback" | "failed";
 };
 
+export type TodayBriefGenerationMode = "operating" | "setup-map";
+
 export type AgentViewModel = {
   id: string;
   name: string;
@@ -265,7 +267,7 @@ export type ArtistProfileRepository = {
 
 export type DeskRepository = {
   loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement" | "todayBrief">>;
-  generateTodaysBrief(): Promise<TodayBriefViewModel>;
+  generateTodaysBrief(mode?: TodayBriefGenerationMode): Promise<TodayBriefViewModel>;
 };
 
 export type StaffRepository = {

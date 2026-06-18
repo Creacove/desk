@@ -41,7 +41,6 @@ export function ConnectArtistScreen({
             <p className="mt-5 max-w-[32rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
               Ordersounds starts with one verified artist identity, then turns catalog and context into the first Manager-ready workspace.
             </p>
-            <OnboardingProgress active={searchMode ? "spotify" : "spotify"} />
           </div>
 
           <div className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
@@ -56,7 +55,6 @@ export function ConnectArtistScreen({
             {searchMode ? (
               <div className="mt-6 flex flex-col items-stretch text-left">
                 <label htmlFor="spotify-artist-search">
-                  <span className="font-ui text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/78">Step 1 / Identity</span>
                   <span className="relative mt-2 block">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
                     <input
@@ -192,7 +190,6 @@ export function SetupScreen({
             <p className="mt-5 max-w-[28rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
               Give the Manager enough operational context to target release strategy, team constraints, and source limits.
             </p>
-            <OnboardingProgress active="setup" />
 
             <div className="mt-6 rounded-[16px] border border-foreground/8 bg-white/72 p-5 shadow-sm">
               <div className="flex items-center gap-3">
@@ -282,41 +279,6 @@ function ArtistAvatar({ name, imageUrl }: { name: string; imageUrl?: string }) {
     <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-[#1db954]/10 text-[#1db954]">
       <BrandMark size="sm" />
     </span>
-  );
-}
-
-function OnboardingProgress({ active }: { active: "account" | "spotify" | "setup" | "ready" }) {
-  const steps = [
-    { key: "account", label: "Account" },
-    { key: "spotify", label: "Spotify identity" },
-    { key: "setup", label: "Manager basics" },
-    { key: "ready", label: "Desk ready" },
-  ] as const;
-  const activeIndex = steps.findIndex((step) => step.key === active);
-
-  return (
-    <div className="mt-8 grid gap-2 sm:grid-cols-2">
-      {steps.map((step, index) => {
-        const complete = index < activeIndex;
-        const current = index === activeIndex;
-        return (
-          <div
-            key={step.key}
-            className={cn(
-              "rounded-[12px] border bg-white/72 p-3 shadow-sm transition-colors",
-              complete && "border-brand-accent/18 bg-brand-accent/[0.045]",
-              current && "border-foreground/18 bg-white",
-              !complete && !current && "border-foreground/8 text-muted-foreground",
-            )}
-          >
-            <p className={cn("font-ui text-[10px] font-bold", complete || current ? "text-brand-accent" : "text-muted-foreground/70")}>
-              {String(index + 1).padStart(2, "0")}
-            </p>
-            <p className="mt-1.5 text-[12px] font-bold leading-tight">{step.label}</p>
-          </div>
-        );
-      })}
-    </div>
   );
 }
 

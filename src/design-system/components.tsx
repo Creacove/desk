@@ -305,14 +305,12 @@ export function MobileChrome({
   onNavigate,
   notificationCount = 0,
   onOpenNotifications,
-  onSignOut,
 }: {
   active: NavSection;
   title: string;
   onNavigate: (view: CleanProductionView) => void;
   notificationCount?: number;
   onOpenNotifications?: () => void;
-  onSignOut?: () => void;
 }) {
   return (
     <>
@@ -344,21 +342,22 @@ export function MobileChrome({
               ) : null}
             </button>
           ) : null}
-          {onSignOut ? (
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-            >
-              <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="sr-only">Sign out</span>
-            </button>
-          ) : null}
+          <button
+            type="button"
+            aria-label="Open settings"
+            onClick={() => onNavigate("artistProfileWorkspace")}
+            className={cn(
+              "flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+              active === "settings" && "border-foreground/20 bg-foreground text-background",
+            )}
+          >
+            <Settings className={cn("h-3.5 w-3.5", active === "settings" && "text-brand-accent")} aria-hidden="true" />
+          </button>
         </div>
       </header>
       <nav
         aria-label="Mobile desk navigation"
-        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-5 rounded-xl border border-foreground/10 bg-background p-1.5 shadow-[0_8px_24px_rgba(17,19,24,0.08)] lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-xl border border-foreground/10 bg-background p-1.5 shadow-[0_8px_24px_rgba(17,19,24,0.08)] lg:hidden"
         style={{ paddingBottom: "calc(0.375rem + env(safe-area-inset-bottom))" }}
       >
         {navItems.map((item) => {
@@ -378,17 +377,6 @@ export function MobileChrome({
             </button>
           );
         })}
-        <button
-          type="button"
-          onClick={() => onNavigate("artistProfileWorkspace")}
-          className={cn(
-            "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-[10px] font-semibold transition-colors",
-            active === "settings" ? "bg-foreground text-background" : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
-          )}
-        >
-          <Settings className={cn("h-[15px] w-[15px]", active === "settings" ? "text-brand-accent" : "opacity-65")} aria-hidden="true" />
-          <span className="truncate">Profile</span>
-        </button>
       </nav>
     </>
   );

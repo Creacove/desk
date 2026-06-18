@@ -34,6 +34,7 @@ import type {
   MissionViewModel,
   MovementItem,
   MusicObjectViewModel,
+  TodayBriefGenerationMode,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
 import type {
@@ -405,11 +406,11 @@ function CleanProductionWorkspace({
     setMusic(nextMusic);
   }
 
-  async function generateTodaysBrief() {
+  async function generateTodaysBrief(mode: TodayBriefGenerationMode = "operating") {
     try {
       setTodayBriefPending(true);
       setTodayBriefError(null);
-      const nextBrief = await repositories.desk.generateTodaysBrief();
+      const nextBrief = await repositories.desk.generateTodaysBrief(mode);
       setTodayBrief(nextBrief);
     } catch (error) {
       setTodayBriefError(readErrorMessage(error, "Today's Brief could not be generated."));
@@ -491,7 +492,6 @@ function CleanProductionWorkspace({
             notificationCount={attention.length + movement.length}
             onOpenNotifications={() => setMobileNotificationsOpen(true)}
             onNavigate={navigate}
-            onSignOut={onSignOut}
           />
           {view === "labelHQ" ? (
             <DeskHQScreen
@@ -733,13 +733,8 @@ function AuthScreen({
         </div>
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Session required</p>
-            <h1 className="font-display mt-2 text-[22px] font-bold leading-tight tracking-tight text-foreground">Sign in to Ordersounds</h1>
-            <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Use your account to open the production workspace.</p>
+            <h1 className="font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">Sign in to Ordersounds</h1>
           </div>
-          <span className="hidden rounded-full border border-foreground/10 bg-background px-2.5 py-1 font-ui text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground sm:inline-flex">
-            Secure desk
-          </span>
         </div>
 
         <div data-testid="auth-mode-switch" className="mt-6 grid grid-cols-2 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
@@ -785,7 +780,7 @@ function AuthScreen({
           {message ? <p className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-3 text-sm font-semibold text-muted-foreground">{message}</p> : null}
           <div className="flex flex-col gap-3">
             <ProductButton type="submit" disabled={pending}>
-              {pending ? (isSignUp ? "Creating secure desk account" : "Opening secure desk session") : isSignUp ? "Create account" : "Sign in"}
+              {pending ? (isSignUp ? "Creating account" : "Signing in") : isSignUp ? "Create account" : "Sign in"}
             </ProductButton>
             <ProductButton
               variant="secondary"
@@ -798,9 +793,6 @@ function AuthScreen({
               {isSignUp ? "Use existing account" : "Create account"}
             </ProductButton>
           </div>
-          <p className="border-t border-foreground/8 pt-3 text-[11px] font-semibold leading-relaxed text-muted-foreground/78">
-            Ordersounds keeps access tied to your authenticated artist workspace. Provider login options are not enabled for this V1 flow.
-          </p>
         </form>
       </section>
     </AuthFrame>
@@ -928,19 +920,11 @@ function AuthFrame({ children, logoTestId }: { children: ReactNode; logoTestId?:
             </div>
           </div>
           <h2 className="mt-12 max-w-[31rem] font-display text-[46px] font-semibold leading-[0.98] tracking-tight text-foreground">
-            Your artist workspace, ready before the room opens.
+            Open the artist's operating read.
           </h2>
           <p className="mt-5 max-w-[28rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
-            Ordersounds starts with identity, source proof, and operating context so the Manager can make a useful first read instead of a generic dashboard.
+            Return to the signals, blockers, tasks, and Manager decisions that need the team's attention today.
           </p>
-          <div className="mt-10 grid max-w-[34rem] grid-cols-4 gap-2">
-            {["Account", "Spotify identity", "Manager basics", "Desk ready"].map((step, index) => (
-              <div key={step} className="rounded-[12px] border border-foreground/10 bg-white/72 p-3 shadow-sm">
-                <p className="font-ui text-[10px] font-bold text-brand-accent">{String(index + 1).padStart(2, "0")}</p>
-                <p className="mt-2 min-h-8 text-[12px] font-bold leading-tight text-foreground">{step}</p>
-              </div>
-            ))}
-          </div>
         </aside>
         <div className="mx-auto w-full max-w-[27.5rem]">{children}</div>
       </div>

@@ -10,6 +10,9 @@ import type {
   MissionViewModel,
   MovementItem,
   MusicObjectViewModel,
+  TodayBriefGenerationMode,
+  TodayBriefMetric,
+  TodayBriefSnapshotGroup,
   TodayBriefViewModel,
 } from "../../types/cleanProduction";
 
@@ -49,7 +52,7 @@ export function DeskHQScreen({
   music: MusicObjectViewModel[];
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
-  onGenerateTodaysBrief: () => void;
+  onGenerateTodaysBrief: (mode?: TodayBriefGenerationMode) => void;
   onLockedAgent: (agent: AgentViewModel) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
@@ -263,18 +266,18 @@ function MobileDeskHome({
   error: string | null;
   missions: MissionViewModel[];
   agents: AgentViewModel[];
-  onGenerate: () => void;
+  onGenerate: (mode?: TodayBriefGenerationMode) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
   onLockedAgent: (agent: AgentViewModel) => void;
 }) {
-  const [managerReadExpanded, setManagerReadExpanded] = useState(false);
   const [metricsExpanded, setMetricsExpanded] = useState(false);
+  const [managerReadExpanded, setManagerReadExpanded] = useState(false);
   const compactMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
   const visibleMetrics = metricsExpanded ? compactMetrics : compactMetrics.slice(0, 4);
-  const managerPreview = getManagerReadPreview(brief.managerRead);
-  const managerReadCopy = managerReadExpanded ? brief.managerRead : managerPreview.text;
+  const managerReadParagraphs = formatManagerReadParagraphs(brief.managerRead);
+  const managerReadDisplay = getManagerReadDisplay(managerReadParagraphs, managerReadExpanded);
   const activeMission = missions[0] ?? null;
   const visibleAgents = agents.slice(0, 3);
 
@@ -299,7 +302,7 @@ function MobileDeskHome({
             type="button"
             data-testid="desk-mobile-generate-brief"
             aria-label="Generate today's brief"
-            onClick={onGenerate}
+            onClick={() => onGenerate("operating")}
             disabled={pending}
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-40"
           >
@@ -327,15 +330,14 @@ function MobileDeskHome({
               }`}
             >
               {visibleMetrics.map((metric) => (
-                <div
+                <ArtistMetricCell
                   key={`${metric.groupTitle}-${metric.label}-${metric.value}`}
-                  className={`min-w-0 border-b border-foreground/8 px-3 py-2.5 ${
+                  metric={metric}
+                  className={`border-b border-foreground/8 px-3 py-2.5 ${
                     visibleMetrics.length > 1 ? "border-r even:border-r-0" : ""
                   }`}
-                >
-                  <p className="truncate text-[10px] font-semibold text-muted-foreground/82">{metric.label}</p>
-                  <p className="mt-0.5 truncate text-[17px] font-semibold leading-none text-foreground">{metric.value}</p>
-                </div>
+                  compact
+                />
               ))}
             </div>
           ) : null}
@@ -354,17 +356,20 @@ function MobileDeskHome({
             data-testid="desk-mobile-manager-read-card"
             className="mt-4 rounded-[14px] border-l-4 border-y border-r border-brand-accent/18 border-l-brand-accent bg-brand-accent/[0.035] p-3.5"
           >
-            <p data-testid="desk-mobile-manager-read" className="text-[13px] font-medium leading-relaxed text-foreground/86 whitespace-pre-line">
-              {managerReadCopy}
-            </p>
-            {managerPreview.truncated ? (
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
+            <div data-testid="desk-mobile-manager-read" className="mt-3 space-y-3 text-[13px] font-medium leading-relaxed text-foreground/86">
+              {managerReadDisplay.paragraphs.map((paragraph, index) => (
+                <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
+              ))}
+            </div>
+            {managerReadDisplay.canExpand ? (
               <button
                 type="button"
                 aria-expanded={managerReadExpanded}
                 className="mt-3 text-[12px] font-semibold text-brand-accent"
                 onClick={() => setManagerReadExpanded((current) => !current)}
               >
-                {managerReadExpanded ? "Show less manager read" : "Read full manager read"}
+                {managerReadExpanded ? "Show less Manager's Read" : "See full Manager's Read"}
               </button>
             ) : null}
           </div>
@@ -451,17 +456,6 @@ function MobileDeskHome({
       </section>
     </div>
   );
-}
-
-function getManagerReadPreview(read: string) {
-  const compact = read.replace(/\s+/g, " ").trim();
-  if (compact.length <= 230) {
-    return { text: read, truncated: false };
-  }
-
-  const sentenceEnd = compact.indexOf(". ", 180);
-  const end = sentenceEnd > 0 && sentenceEnd < 280 ? sentenceEnd + 1 : 230;
-  return { text: `${compact.slice(0, end).trim()}...`, truncated: true };
 }
 
 function buildDeskCommandItems({
@@ -552,10 +546,13 @@ function TodayBrief({
   brief: TodayBriefViewModel;
   pending: boolean;
   error: string | null;
-  onGenerate: () => void;
+  onGenerate: (mode?: TodayBriefGenerationMode) => void;
   onDrawer: (drawer: DrawerKind) => void;
 }) {
   const compactIntelligenceMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
+  const [managerReadExpanded, setManagerReadExpanded] = useState(false);
+  const managerReadParagraphs = formatManagerReadParagraphs(brief.managerRead);
+  const managerReadDisplay = getManagerReadDisplay(managerReadParagraphs, managerReadExpanded);
 
   return (
     <section className="rounded-xl border border-foreground/10 bg-white shadow-[0_2px_12px_rgba(17,19,24,0.07)] overflow-hidden">
@@ -577,7 +574,7 @@ function TodayBrief({
             <p className="text-sm font-semibold">{profile.name} - Artist operating read</p>
           </div>
         </div>
-        <ProductButton onClick={onGenerate} disabled={pending}>
+        <ProductButton onClick={() => onGenerate("operating")} disabled={pending}>
           <RefreshCw className={pending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
           {pending ? "Generating Brief" : "Generate Today's Brief"}
         </ProductButton>
@@ -597,8 +594,25 @@ function TodayBrief({
 
         <div className="mt-6 border-t border-border pt-5">
           <div className="rounded-[12px] border-l-4 border-y border-r border-brand-accent/18 border-l-brand-accent bg-brand-accent/[0.035] p-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.015)]">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
-            <p className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{brief.managerRead}</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
+            <div
+              data-testid="desk-desktop-manager-read"
+              className="mt-4 space-y-4 text-[14px] font-semibold leading-relaxed text-foreground/90"
+            >
+              {managerReadDisplay.paragraphs.map((paragraph, index) => (
+                <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
+              ))}
+            </div>
+            {managerReadDisplay.canExpand ? (
+              <button
+                type="button"
+                aria-expanded={managerReadExpanded}
+                className="mt-4 text-sm font-semibold text-brand-accent"
+                onClick={() => setManagerReadExpanded((current) => !current)}
+              >
+                {managerReadExpanded ? "Show less Manager's Read" : "See full Manager's Read"}
+              </button>
+            ) : null}
           </div>
           {error ? (
             <div className="mt-5 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold leading-relaxed text-warning">
@@ -609,6 +623,14 @@ function TodayBrief({
             <div className="flex flex-wrap gap-4">
               <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
                 View supporting evidence
+              </button>
+              <button
+                type="button"
+                className="text-sm font-semibold text-brand-accent disabled:opacity-40"
+                onClick={() => onGenerate("setup-map")}
+                disabled={pending}
+              >
+                Generate setup map
               </button>
             </div>
             <div className="text-left sm:text-right">
@@ -621,6 +643,34 @@ function TodayBrief({
       </div>
     </section>
   );
+}
+
+function sanitizeManagerRead(read: string) {
+  return read
+    .replace(/\[(?:EV|ev|evidence)[\w\s:.-]*?\]/g, "")
+    .replace(/\b(?:EV|ev)[-\s]?\d+\b/g, "")
+    .replace(/\bevidence[-\s]?\d+\b/gi, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .trim();
+}
+
+function formatManagerReadParagraphs(read: string) {
+  const sanitized = sanitizeManagerRead(read);
+  const sourceParagraphs = sanitized.includes("\n")
+    ? sanitized.split(/\n{2,}|\n/)
+    : sanitized.split(/(?=\b(?:Power center|Hidden second lane|Cultural base|Public leverage|Current music focus|Where management should start|Today)\s*:)/gi);
+  return sourceParagraphs
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function getManagerReadDisplay(paragraphs: string[], expanded: boolean) {
+  const canExpand = paragraphs.length > 4;
+  return {
+    paragraphs: canExpand && !expanded ? paragraphs.slice(0, 4) : paragraphs,
+    canExpand,
+  };
 }
 
 type CompactArtistMetric = TodayBriefMetric & {
@@ -639,15 +689,49 @@ function ArtistIntelligenceCard({ summary, metrics }: { summary: string; metrics
       </div>
       <div className="grid grid-cols-2 bg-white sm:grid-cols-3 xl:grid-cols-5">
         {metrics.map((metric) => (
-          <div key={`${metric.groupTitle}-${metric.label}-${metric.value}`} className="min-w-0 border-t border-foreground/8 px-3 py-3 sm:px-4">
-            <p className="truncate text-[10px] font-semibold leading-tight text-muted-foreground/82">{metric.label}</p>
-            <p className="mt-1 truncate text-[20px] font-semibold leading-none text-foreground">{metric.value}</p>
-            {metric.context ? <p className="mt-1 truncate text-[10px] font-semibold leading-tight text-muted-foreground/70">{metric.context}</p> : null}
-          </div>
+          <ArtistMetricCell
+            key={`${metric.groupTitle}-${metric.label}-${metric.value}`}
+            metric={metric}
+            className="border-t border-foreground/8 px-3 py-3 sm:px-4"
+          />
         ))}
       </div>
     </section>
   );
+}
+
+function ArtistMetricCell({
+  metric,
+  className,
+  compact = false,
+}: {
+  metric: CompactArtistMetric;
+  className?: string;
+  compact?: boolean;
+}) {
+  const display = formatArtistMetricDisplay(metric);
+  return (
+    <div className={`min-w-0 ${className ?? ""}`}>
+      <p className="text-[10px] font-semibold leading-snug text-muted-foreground/82 break-words">{display.label}</p>
+      <p className={`${compact ? "mt-1 text-[17px]" : "mt-1.5 text-[20px]"} font-semibold leading-tight text-foreground break-words`}>
+        {display.value}
+      </p>
+      {display.context ? (
+        <p className="mt-1 text-[10px] font-semibold leading-snug text-muted-foreground/70 break-words">{display.context}</p>
+      ) : null}
+    </div>
+  );
+}
+
+function formatArtistMetricDisplay(metric: CompactArtistMetric) {
+  const valueParts = metric.value.match(/^(.+?)\s+\((.+)\)$/);
+  const value = valueParts?.[1]?.trim() || metric.value;
+  const parentheticalContext = valueParts?.[2]?.trim();
+  return {
+    label: metric.label.replace(/\s+[—-]\s+/g, " - ").trim(),
+    value,
+    context: [metric.context, parentheticalContext].filter(Boolean).join(" / "),
+  };
 }
 
 function selectArtistIntelligenceMetrics(groups: TodayBriefSnapshotGroup[]): CompactArtistMetric[] {

@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -29,7 +31,14 @@ const workspace: ProductionWorkspace = {
   latestCatalogSyncStatus: "completed",
 };
 
+const productionSupabaseSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
+
 describe("production Supabase services", () => {
+  it("does not discard saved Today's Brief records for copy style terms", () => {
+    expect(productionSupabaseSource).not.toContain("TODAY_BRIEF_BANNED_VISIBLE_TERMS");
+    expect(productionSupabaseSource).not.toContain("todayBriefHasBannedVisibleTerms");
+  });
+
   it("creates the first artist workspace through the onboarding RPC", async () => {
     const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const client = {
@@ -289,6 +298,26 @@ describe("production Supabase services", () => {
     expect(JSON.stringify(desk.todayBrief)).not.toMatch(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i);
   });
 
+  it("does not expose internal Today's Brief style-policy failures in Desk movement", async () => {
+    const client = fakeSupabaseClient({
+      source_sync_jobs: [],
+      operating_events: [
+        {
+          id: "event-1",
+          event_type: "setup_todays_brief_failed",
+          summary: "Today's Brief visible copy used banned setup/source term: campaign.",
+          created_at: "2026-06-17T08:30:00.000Z",
+        },
+      ],
+      manager_synthesis_runs: [],
+    });
+
+    const desk = await createSupabaseProductionRepositories(client, workspace).desk.loadDesk();
+
+    expect(desk.movement[0].title).toBe("Today's Brief needs a fresh Manager read.");
+    expect(desk.movement[0].title).not.toMatch(/banned|campaign|source term/i);
+  });
+
   it("generates Today's Brief manually from saved normalized sources through the Supabase function", async () => {
     const calls: Array<{ name: string; body: unknown }> = [];
     const brief = {
@@ -334,6 +363,7 @@ describe("production Supabase services", () => {
           artistWorkspaceId: "workspace-1",
           artistId: "artist-1",
           trigger: "manual",
+          generationMode: "operating",
         },
       },
     ]);
@@ -343,6 +373,54 @@ describe("production Supabase services", () => {
       managerSynthesisRunId: "brief-run-2",
     });
     expect(result.intelligenceSnapshot[0]?.title).toBe("Current Music In View");
+  });
+
+  it("passes setup-map generation mode through the Supabase function", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const client = createMutableSupabaseClient(
+      {
+        source_sync_jobs: [],
+        operating_events: [],
+        manager_synthesis_runs: [],
+      },
+      {
+        invoke: async (name, options) => {
+          calls.push({ name, body: options.body });
+          return {
+            data: {
+              brief: {
+                headlineRead: "Nova Vale is a city-led artist with a record-led operating map.",
+                intelligenceSnapshot: [
+                  {
+                    title: "Artist Intelligence",
+                    insight: "London and Jam define the first operating map.",
+                    metrics: [{ label: "London", value: "1.2M", context: "listeners", evidenceIds: ["ev-1"] }],
+                  },
+                ],
+                snapshotSummary: "The setup map is centered on the artist's actual audience shape.",
+                managerRead: "Nova Vale's first map is not a generic checklist.",
+                sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+                confidence: "medium",
+              },
+            },
+            error: null,
+          };
+        },
+      },
+    );
+
+    await createSupabaseProductionRepositories(client, workspace).desk.generateTodaysBrief("setup-map");
+
+    expect(calls[0]).toEqual({
+      name: "generate-todays-brief",
+      body: {
+        accountId: "account-1",
+        artistWorkspaceId: "workspace-1",
+        artistId: "artist-1",
+        trigger: "setup",
+        generationMode: "setup-map",
+      },
+    });
   });
 
   it("saves setup context through the atomic profile setup RPC", async () => {

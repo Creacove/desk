@@ -1,11 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
-  assertNoBannedVisibleTerms,
   assertSignalsHaveEvidenceIds,
   buildTodaysBriefInstructions,
   parseTodaysBriefOutput,
   todaysBriefJsonSchema,
   type ArtistBriefPacket,
+  type TodaysBriefPromptMode,
   type TodaysBriefOutput,
   type TodaysBriefDerivedInsight,
   type TodaysBriefMetricInput,
@@ -22,6 +22,7 @@ type GenerateTodaysBriefInput = {
   artistWorkspaceId: string;
   artistId: string;
   trigger: "setup" | "manual";
+  generationMode?: "operating" | "setup-map";
 };
 
 type EvidenceRow = {
@@ -71,6 +72,7 @@ Deno.serve(async (request) => {
   try {
     input = (await request.json()) as GenerateTodaysBriefInput;
     validateInput(input);
+    const generationMode = readGenerationMode(input);
 
     const authHeader = request.headers.get("Authorization");
     if (!authHeader) return json({ error: "Missing Authorization header." }, 401);
@@ -99,17 +101,16 @@ Deno.serve(async (request) => {
     }
 
     const { packet, sourceAudit } = await buildArtistBriefPacket(authClient, input);
-    runId = await createManagerSynthesisRun(authClient, input, packet, sourceAudit);
+    runId = await createManagerSynthesisRun(authClient, input, packet, sourceAudit, generationMode);
     usageId = await createUsageEvent(authClient, input, runId);
-    const output = await callOpenAITodaysBrief(packet);
+    const output = await callOpenAITodaysBrief(packet, generationMode);
     const completed = {
       ...output,
       generatedAt: new Date().toISOString(),
       managerSynthesisRunId: runId,
     };
     assertSignalsHaveEvidenceIds(completed);
-    assertNoBannedVisibleTerms(completed);
-    await completeManagerSynthesisRun(authClient, runId, packet, sourceAudit, completed);
+    await completeManagerSynthesisRun(authClient, runId, packet, sourceAudit, completed, generationMode);
     await completeUsageEvent(authClient, usageId, completed);
     await writeOperatingEventSafe(authClient, input, {
       eventType: input.trigger === "setup" ? "setup_todays_brief_generated" : "setup_todays_brief_refreshed",
@@ -118,6 +119,7 @@ Deno.serve(async (request) => {
         manager_synthesis_run_id: runId,
         confidence: completed.confidence,
         intelligence_group_count: completed.intelligenceSnapshot.length,
+        generationMode,
         claimAudit: completed.claimAudit,
       },
     });
@@ -198,7 +200,7 @@ async function buildArtistBriefPacket(
   };
 }
 
-async function callOpenAITodaysBrief(packet: ArtistBriefPacket): Promise<TodaysBriefOutput> {
+async function callOpenAITodaysBrief(packet: ArtistBriefPacket, generationMode: TodaysBriefPromptMode): Promise<TodaysBriefOutput> {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -207,7 +209,7 @@ async function callOpenAITodaysBrief(packet: ArtistBriefPacket): Promise<TodaysB
     },
     body: JSON.stringify({
       model: Deno.env.get("OPENAI_TODAYS_BRIEF_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      instructions: buildTodaysBriefInstructions(),
+      instructions: buildTodaysBriefInstructions(generationMode),
       input: JSON.stringify(packet),
       text: {
         format: {
@@ -297,6 +299,7 @@ async function createManagerSynthesisRun(
   input: GenerateTodaysBriefInput,
   packet: ArtistBriefPacket,
   sourceAudit: Array<Record<string, unknown>>,
+  generationMode: TodaysBriefPromptMode,
 ) {
   const { data, error } = await supabase
     .from("manager_synthesis_runs")
@@ -307,7 +310,7 @@ async function createManagerSynthesisRun(
       trigger_type: input.trigger === "setup" ? "evidence_triggered" : "manual",
       status: "running",
       classification: "setup_todays_brief_v1",
-      context_payload: { packet, sourceAudit },
+      context_payload: { packet, sourceAudit, generationMode },
       started_at: new Date().toISOString(),
     })
     .select("id")
@@ -322,13 +325,14 @@ async function completeManagerSynthesisRun(
   packet: ArtistBriefPacket,
   sourceAudit: Array<Record<string, unknown>>,
   output: TodaysBriefOutput,
+  generationMode: TodaysBriefPromptMode,
 ) {
   const { error } = await supabase
     .from("manager_synthesis_runs")
     .update({
       status: "completed",
       confidence: output.confidence === "limited" ? "low" : output.confidence,
-      context_payload: { packet, sourceAudit },
+      context_payload: { packet, sourceAudit, generationMode },
       action_plan: [output],
       limitations: packet.sourceLimits,
       completed_at: new Date().toISOString(),
@@ -779,6 +783,18 @@ function validateInput(input: GenerateTodaysBriefInput) {
   if (input.trigger !== "setup" && input.trigger !== "manual") {
     throw new Error("trigger must be setup or manual.");
   }
+  if (
+    input.generationMode !== undefined &&
+    input.generationMode !== "operating" &&
+    input.generationMode !== "setup-map"
+  ) {
+    throw new Error("generationMode must be operating or setup-map.");
+  }
+}
+
+function readGenerationMode(input: GenerateTodaysBriefInput): TodaysBriefPromptMode {
+  if (input.generationMode === "setup-map" || input.generationMode === "operating") return input.generationMode;
+  return input.trigger === "setup" ? "setup-map" : "operating";
 }
 
 function readString(value: unknown) {

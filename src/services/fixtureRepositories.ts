@@ -424,7 +424,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
           todayBrief: productionFixtureData.todayBrief,
         };
       },
-      async generateTodaysBrief() {
+      async generateTodaysBrief(_mode = "operating") {
         return productionFixtureData.todayBrief;
       },
     },

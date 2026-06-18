@@ -54,7 +54,15 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
     expect(container.querySelector('img[src="/logo.png"]')).toBeInTheDocument();
     expect(screen.getAllByText("Artist operating desk").length).toBeGreaterThan(0);
-    expect(screen.getByText("Use your account to open the production workspace.")).toBeInTheDocument();
+    expect(screen.getByText("Open the artist's operating read.")).toBeInTheDocument();
+    expect(screen.getByText("Return to the signals, blockers, tasks, and Manager decisions that need the team's attention today.")).toBeInTheDocument();
+    expect(screen.queryByText("Account")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manager basics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Desk ready")).not.toBeInTheDocument();
+    expect(screen.queryByText("Session required")).not.toBeInTheDocument();
+    expect(screen.queryByText("Use your account to open the production workspace.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Secure desk")).not.toBeInTheDocument();
+    expect(screen.queryByText(/provider login options/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("auth-mode-switch")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
@@ -92,7 +100,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Preparing artist, music, mission, and manager views.")).toBeInTheDocument();
   });
 
-  it("disables sign-in submission while the secure session is opening", async () => {
+  it("disables sign-in submission while signing in", async () => {
     const signIns: string[] = [];
     render(<ProductionApp authAdapter={authWithPendingPasswordSignIn(signIns)} workspaceLoader={workspaceLoaderWith(workspace)} />);
 
@@ -102,7 +110,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
 
     expect(signIns).toEqual(["artist@example.com|super-secret"]);
-    expect(screen.getByRole("button", { name: /opening secure desk session/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
   });
 
   it("keeps a fixture runtime available for demo and parity verification", async () => {
@@ -112,7 +120,9 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("heading", { name: "Sign in to Ordersounds" })).not.toBeInTheDocument();
     expect(screen.getByText("Sable Day")).toBeInTheDocument();
     expect(screen.getAllByText("Spotify identity").length).toBeGreaterThan(0);
-    expect(screen.getByText("Account")).toBeInTheDocument();
+    expect(screen.queryByText("Account")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manager basics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Desk ready")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue to artist context" })).toHaveClass("rounded-[10px]");
   });
@@ -152,6 +162,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Connect artist profile" })).toBeInTheDocument();
     expect(screen.getByLabelText("Search Spotify artist")).toBeInTheDocument();
+    expect(screen.queryByText("Step 1 / Identity")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Search Spotify artist"), { target: { value: "Nova" } });
     expect(screen.getByTestId("spotify-search-loader")).toBeInTheDocument();
@@ -378,6 +389,14 @@ describe("Clean production prototype-match shell", () => {
       headlineRead: "X is larger than Instagram and TikTok combined for Nova Vale.",
       managerSynthesisRunId: "brief-run-2",
     };
+    const setupMapBrief: TodayBriefViewModel = {
+      ...initialBrief,
+      headlineRead: "Nova Vale's operating map starts with London, then explains the catalog that can carry it.",
+      snapshotSummary: "The setup map reads the artist's city power, public surface, and current music together.",
+      managerRead: "Nova Vale is not a blank setup profile; the first map is London-led and record-aware.",
+      managerSynthesisRunId: "brief-run-setup-map",
+    };
+    const generationModes: string[] = [];
     const repositories = repositoriesFor("Nova Vale");
     repositories.desk = {
       loadDesk: async () => ({
@@ -386,7 +405,10 @@ describe("Clean production prototype-match shell", () => {
         movement: [],
         todayBrief: initialBrief,
       }),
-      generateTodaysBrief: async () => refreshedBrief,
+      generateTodaysBrief: async (mode = "operating") => {
+        generationModes.push(mode);
+        return mode === "setup-map" ? setupMapBrief : refreshedBrief;
+      },
     };
 
     render(
@@ -407,6 +429,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText(initialBrief.snapshotSummary).length).toBeGreaterThan(0);
     expect(screen.getAllByText(initialBrief.managerRead).length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "View supporting evidence" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate setup map" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ask Manager" })).not.toBeInTheDocument();
     expect(screen.queryByText(initialBrief.sourceLine)).not.toBeInTheDocument();
     expect(screen.queryByText(/Generated by AI Manager/i)).not.toBeInTheDocument();
@@ -419,6 +442,12 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Generate Today's Brief" }));
 
     expect((await screen.findAllByText(refreshedBrief.headlineRead)).length).toBeGreaterThan(0);
+    expect(generationModes).toEqual(["operating"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Generate setup map" }));
+
+    expect((await screen.findAllByText(setupMapBrief.headlineRead)).length).toBeGreaterThan(0);
+    expect(generationModes).toEqual(["operating", "setup-map"]);
     expect(screen.queryByRole("button", { name: "Talk to Manager" })).not.toBeInTheDocument();
   }, 20000);
 
@@ -509,8 +538,9 @@ describe("Clean production prototype-match shell", () => {
     expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
   }, 20000);
 
-  it("keeps mobile Desk HQ useful with expandable manager read, full metrics, and team agents", async () => {
+  it("keeps mobile Desk HQ useful with titled expandable manager read, paragraphs, full metrics, and team agents", async () => {
     const managerReadEnding = "The final check is that mobile keeps the full operating read available instead of making desktop the only serious surface.";
+    const evidenceTaggedSentence = "The read should not expose EV-204 or evidence-1 inside the Manager copy.";
     const richBrief: TodayBriefViewModel = {
       headlineRead: "Nova Vale should protect the London signal before opening new lanes.",
       intelligenceSnapshot: [
@@ -529,7 +559,9 @@ describe("Clean production prototype-match shell", () => {
       ],
       snapshotSummary: "London, catalog, budget, and quality signals are all part of the same first operating read.",
       managerRead:
-        "The first decision is not a tiny summary. Nova Vale needs the mobile read to carry the same management usefulness as the desktop read: the strongest city, the budget constraint, the record focus, and the quality watch all need to stay available. " +
+        "Power center: London is the first management center because the city signal is strong enough to shape the operating read.\n\n" +
+        "Hidden second lane: Nova Vale needs the mobile read to carry the same management usefulness as the desktop read: the strongest city, the budget constraint, the record focus, and the quality watch all need to stay available.\n\n" +
+        `Evidence handling: ${evidenceTaggedSentence}\n\n` +
         managerReadEnding,
       sourceLine: "Based on saved profile, catalog, audience, and source limits.",
       confidence: "medium",
@@ -572,10 +604,18 @@ describe("Clean production prototype-match shell", () => {
     expect(within(desk).queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
     expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("border-l-brand-accent");
     expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("border-l-foreground");
-
-    fireEvent.click(within(desk).getByRole("button", { name: "Read full manager read" }));
+    expect(within(desk).getByText("Manager's Read")).toBeInTheDocument();
     expect(within(desk).getByTestId("desk-mobile-manager-read")).toHaveTextContent(managerReadEnding);
-    expect(within(desk).getByRole("button", { name: "Show less manager read" })).toBeInTheDocument();
+    expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("EV-204");
+    expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("evidence-1");
+    expect(within(desk).getByTestId("desk-mobile-manager-read").querySelectorAll("p")).toHaveLength(4);
+
+    expect(screen.getAllByText("Manager's Read").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent(managerReadEnding);
+    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("EV-204");
+    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("evidence-1");
+    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveClass("overflow-hidden");
+    expect(screen.getByTestId("desk-desktop-manager-read").querySelectorAll("p")).toHaveLength(4);
 
     const mobileMetrics = within(desk).getByTestId("desk-mobile-metrics-grid");
     expect(mobileMetrics).toHaveTextContent("Monthly listeners");
@@ -588,6 +628,191 @@ describe("Clean production prototype-match shell", () => {
     expect(teamAgents).toHaveTextContent("AI Manager");
     expect(teamAgents).toHaveTextContent("Marketing Lead");
     expect(within(teamAgents).getByRole("button", { name: "Open team" })).toBeInTheDocument();
+  }, 20000);
+
+  it("renders saved Today's Brief copy instead of dropping it for style-policy terms", async () => {
+    const savedBrief: TodayBriefViewModel = {
+      headlineRead: "Nova Vale has a clear campaign starting point.",
+      intelligenceSnapshot: [
+        {
+          title: "Artist Intelligence",
+          insight: "The campaign read is centered on London.",
+          metrics: [{ label: "Campaign signal", value: "1.2M", context: "campaign context", evidenceIds: ["ev-1"] }],
+        },
+      ],
+      snapshotSummary: "The first campaign read has a usable shape.",
+      managerRead: "The campaign should start with London because the artist already has public pull there.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      generatedAt: "2026-06-17T08:30:00.000Z",
+      managerSynthesisRunId: "style-term-brief",
+      state: "fresh",
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      loadDesk: async () => ({
+        priority: [],
+        attention: [],
+        movement: [],
+        todayBrief: savedBrief,
+      }),
+      generateTodaysBrief: async () => savedBrief,
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(screen.getAllByText(savedBrief.headlineRead).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent("London");
+    expect(screen.queryByText(/generation failed/i)).not.toBeInTheDocument();
+  }, 20000);
+
+  it("expands a long Manager's Read at paragraph boundaries without losing the full read", async () => {
+    const finalParagraph = "Today, use the remaining budget context to make M$NEY the operating center first.";
+    const longBrief: TodayBriefViewModel = {
+      headlineRead: "Asake owns a complete operating read with enough room for a full sentence.",
+      intelligenceSnapshot: [
+        {
+          title: "Artist Intelligence",
+          insight: "The read has enough paragraph depth to need an intentional expansion state.",
+          metrics: [{ label: "Monthly listeners", value: "8.7M", context: "public audience", evidenceIds: ["ev-1"] }],
+        },
+      ],
+      snapshotSummary: "The summary should remain readable and complete instead of disappearing into a clipped line.",
+      managerRead: [
+        "Power center: Lagos is the first operating center because it has the strongest visible audience base.",
+        "Hidden second lane: Abuja and Port Harcourt combine into a second market lane that should not be treated like noise.",
+        "Public leverage: BADMAN GANGSTA gives the team a clear public-story asset because the social proof is already visible.",
+        "Current music focus: M$NEY has enough playlist surface to organize the first workstream around a specific record.",
+        finalParagraph,
+      ].join("\n\n"),
+      sourceLine: "Based on saved profile, catalog, audience, and source limits.",
+      confidence: "medium",
+      generatedAt: "2026-06-17T08:30:00.000Z",
+      managerSynthesisRunId: "long-brief-run",
+      state: "fresh",
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      loadDesk: async () => ({
+        priority: [],
+        attention: [],
+        movement: [],
+        todayBrief: longBrief,
+      }),
+      generateTodaysBrief: async () => longBrief,
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(screen.getAllByText(longBrief.headlineRead).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(longBrief.snapshotSummary).length).toBeGreaterThan(0);
+    expect(screen.queryByText(finalParagraph)).not.toBeInTheDocument();
+
+    const expandButtons = screen.getAllByRole("button", { name: "See full Manager's Read" });
+    expect(expandButtons).toHaveLength(2);
+    fireEvent.click(expandButtons[1]);
+
+    expect(screen.getByText(finalParagraph)).toBeInTheDocument();
+    expect(screen.getByTestId("desk-desktop-manager-read").querySelectorAll("p")).toHaveLength(5);
+  }, 20000);
+
+  it("keeps Artist Intelligence metric labels and values readable instead of truncating them", async () => {
+    const metricBrief: TodayBriefViewModel = {
+      headlineRead: "Make Them Run has enough signal detail for a readable intelligence grid.",
+      intelligenceSnapshot: [
+        {
+          title: "Artist Intelligence",
+          insight: "The grid should carry long labels and values without hiding the fact the Manager is using.",
+          metrics: [
+            {
+              label: "Track score - Make Them Run",
+              value: "97.886",
+              context: "track-level score",
+              evidenceIds: ["ev-1"],
+            },
+            {
+              label: "Top TikTok video - Make Them Run",
+              value: "1.3M views",
+              context: "single top clip",
+              evidenceIds: ["ev-2"],
+            },
+          ],
+        },
+      ],
+      snapshotSummary: "Metric labels and values should wrap cleanly, not disappear behind ellipses.",
+      managerRead: "Power center: Make Them Run has enough public behavior to deserve the first operating read.",
+      sourceLine: "Based on saved profile, catalog, audience, and source limits.",
+      confidence: "medium",
+      state: "fresh",
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      loadDesk: async () => ({
+        priority: [],
+        attention: [],
+        movement: [],
+        todayBrief: metricBrief,
+      }),
+      generateTodaysBrief: async () => metricBrief,
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    const intelligenceCard = screen.getByTestId("artist-intelligence-card");
+    expect(intelligenceCard).toHaveTextContent("Track score - Make Them Run");
+    expect(intelligenceCard).toHaveTextContent("Top TikTok video - Make Them Run");
+    expect(intelligenceCard).toHaveTextContent("1.3M views");
+    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.label}</p>");
+    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.value}</p>");
+  }, 20000);
+
+  it("keeps mobile navigation to four items and moves Settings into the top bar", async () => {
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    const topbar = screen.getByTestId("mobile-app-topbar");
+    expect(within(topbar).getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+    expect(within(topbar).queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
+
+    const mobileNav = screen.getByRole("navigation", { name: "Mobile desk navigation" });
+    expect(within(mobileNav).getAllByRole("button")).toHaveLength(4);
+    expect(within(mobileNav).queryByText("Profile")).not.toBeInTheDocument();
+    expect(within(mobileNav).queryByText("Settings")).not.toBeInTheDocument();
+
+    fireEvent.click(within(topbar).getByRole("button", { name: "Open settings" }));
+    expect(screen.getByRole("heading", { name: "Artist profile." })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0);
   }, 20000);
 
   it("keeps Desk HQ icon hover states high contrast instead of purple-on-purple", () => {

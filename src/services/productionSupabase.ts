@@ -15,6 +15,7 @@ import type {
   MusicObjectViewModel,
   SplitConfirmationViewModel,
   SplitContributorInput,
+  TodayBriefGenerationMode,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
 import type {
@@ -494,13 +495,14 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           todayBrief,
         };
       },
-      async generateTodaysBrief() {
+      async generateTodaysBrief(mode: TodayBriefGenerationMode = "operating") {
         const { data, error } = await client.functions.invoke("generate-todays-brief", {
           body: {
             accountId: workspace.accountId,
             artistWorkspaceId: workspace.artistWorkspaceId,
             artistId: workspace.artistId,
-            trigger: "manual",
+            trigger: mode === "setup-map" ? "setup" : "manual",
+            generationMode: mode,
           },
         });
 
@@ -2179,25 +2181,6 @@ function buildArtistIntelligence(artistName: string, evidenceRows: EvidenceRow[]
   };
 }
 
-const TODAY_BRIEF_BANNED_VISIBLE_TERMS = [
-  "chartmetric",
-  "provider",
-  "api",
-  "normalized",
-  "database",
-  "evidence row",
-  "third-party",
-  "campaign",
-  "mission",
-  "rollout",
-  "private saves",
-  "repeat listeners",
-  "source-of-stream",
-  "conversion proof",
-  "still missing",
-  "missing data",
-];
-
 function todayBriefFromManagerRun(row?: ManagerSynthesisRunRow | null): TodayBriefViewModel | undefined {
   if (!row?.id || row.status !== "completed" || row.classification !== "setup_todays_brief_v1") return undefined;
   const actionPlan = Array.isArray(row.action_plan) ? row.action_plan : [];
@@ -2232,7 +2215,7 @@ function todayBriefFromPayload(payload: unknown): TodayBriefViewModel | undefine
     state: "fresh",
   };
   if (!brief.headlineRead || !brief.managerRead || !brief.intelligenceSnapshot.length || !brief.snapshotSummary) return undefined;
-  return todayBriefHasBannedVisibleTerms(brief) ? undefined : brief;
+  return brief;
 }
 
 function buildFallbackTodayBrief(workspace: ProductionWorkspace): TodayBriefViewModel {
@@ -2315,25 +2298,6 @@ function legacySnapshotFromSignals(signals: ReturnType<typeof readLegacyBriefSig
 
 function readTodayBriefConfidence(value: unknown): TodayBriefViewModel["confidence"] {
   return value === "high" || value === "medium" || value === "low" || value === "limited" || value === "unknown" ? value : "unknown";
-}
-
-function todayBriefHasBannedVisibleTerms(brief: TodayBriefViewModel) {
-  const text = [
-    brief.headlineRead,
-    brief.snapshotSummary,
-    brief.managerRead,
-    brief.sourceLine,
-    ...brief.intelligenceSnapshot.flatMap((group) => [
-      group.title,
-      group.insight,
-      ...group.metrics.flatMap((metric) => [metric.label, metric.value, metric.context ?? ""]),
-    ]),
-  ].join("\n");
-  return TODAY_BRIEF_BANNED_VISIBLE_TERMS.some((term) => new RegExp(`\\b${escapeRegExp(term)}\\b`, "i").test(text));
-}
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -3749,6 +3713,9 @@ function buildDeskAttentionItems(latestSync: SourceSyncJobRow | undefined) {
 function formatMovementSummary(value: string | null | undefined) {
   const summary = value?.trim();
   if (!summary) return "Workspace activity recorded";
+  if (/today'?s brief.*(?:visible copy used banned|banned setup\/source|source term)/i.test(summary)) {
+    return "Today's Brief needs a fresh Manager read.";
+  }
   return summary.replace(/\s*\/\s*recorded$/i, "").replace(/\s+/g, " ");
 }
 
