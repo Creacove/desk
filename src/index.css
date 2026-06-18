@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    --background: 220 20% 98%;
+    --background: 40 28% 97%;
     --foreground: 222 24% 9%;
 
     --card: 0 0% 100%;
@@ -51,8 +51,8 @@
     --ai-border: 220 13% 88%;
     --ai-accent: 263 72% 52%;
     --ai-muted: 220 8% 43%;
-    --surface-canvas: 220 20% 98%;
-    --surface-panel: 0 0% 100%;
+    --surface-canvas: 40 28% 97%;
+    --surface-panel: 40 25% 99%;
     --surface-elevated: 0 0% 100%;
     --surface-muted: 220 14% 95%;
     --surface-intelligence: 263 55% 96%;
@@ -738,7 +738,7 @@
   }
 
   .app-light {
-    background: #f7f8fa !important;
+    background: #f8f6f1 !important;
     color: #111318 !important;
     --os-text-primary: #111318;
     --os-text-secondary: #4f5663;
@@ -1348,6 +1348,37 @@
     }
   }
 
+  @keyframes ordersounds-logo-breathe {
+    0%, 100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 hsl(var(--brand-accent) / 0.18);
+    }
+    50% {
+      transform: scale(1.035);
+      box-shadow: 0 0 0 7px hsl(var(--brand-accent) / 0);
+    }
+  }
+
+  @keyframes ordersounds-rail-scan {
+    0% {
+      transform: translateX(-120%);
+    }
+    55% {
+      transform: translateX(45%);
+    }
+    100% {
+      transform: translateX(220%);
+    }
+  }
+
+  .ordersounds-loader-logo {
+    animation: ordersounds-logo-breathe 1.65s ease-in-out infinite;
+  }
+
+  .ordersounds-loader-rail {
+    animation: ordersounds-rail-scan 1.4s cubic-bezier(0.2, 0.8, 0.2, 1) infinite;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     html {
       scroll-behavior: auto;
@@ -1360,6 +1391,11 @@
       animation-iteration-count: 1 !important;
       transition-duration: 1ms !important;
       scroll-behavior: auto !important;
+    }
+
+    .ordersounds-loader-logo,
+    .ordersounds-loader-rail {
+      animation: none !important;
     }
   }
 }

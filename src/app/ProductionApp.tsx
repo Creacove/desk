@@ -1,6 +1,5 @@
-import { Loader2, ShieldCheck } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
+import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
 import { DeskHQScreen } from "../features/desk/DeskHQ";
 import { ProductionDrawers } from "../features/drawers/ProductionDrawers";
 import {
@@ -199,13 +198,12 @@ export function ProductionApp({
 
   if (status === "loading") {
     return (
-      <AuthFrame>
-        <div className="w-[min(100%,28rem)] rounded-[24px] border border-foreground/8 bg-background/80 p-6 shadow-2xl backdrop-blur-xl">
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-          <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-4">Loading Ordersounds</p>
-          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">Checking session and active artist workspace.</p>
-        </div>
-      </AuthFrame>
+      <BrandedLoader
+        title="Loading Ordersounds"
+        body="Checking session and active artist workspace."
+        steps={["Session", "Workspace", "Sources"]}
+        logoTestId="auth-brand-logo"
+      />
     );
   }
 
@@ -232,14 +230,12 @@ export function ProductionApp({
   if (status === "error") {
     return (
       <AuthFrame>
-        <div className="w-[min(100%,28rem)] rounded-[24px] border border-foreground/8 bg-background/80 p-6 shadow-2xl backdrop-blur-xl">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Load failed</p>
-          <h1 className="font-display text-[18px] font-bold tracking-tight text-foreground mt-3">Production workspace could not load</h1>
-          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-3">{error}</p>
-          <div className="mt-5">
-            <ProductButton onClick={loadProductionState}>Retry</ProductButton>
-          </div>
-        </div>
+        <AuthMessageCard
+          eyebrow="Load failed"
+          title="Production workspace could not load"
+          body={error}
+          action={<ProductButton onClick={loadProductionState}>Retry</ProductButton>}
+        />
       </AuthFrame>
     );
   }
@@ -425,24 +421,19 @@ function CleanProductionWorkspace({
   if (viewModelError) {
     return (
       <AuthFrame>
-        <div className="w-[min(100%,28rem)] rounded-[24px] border border-foreground/8 bg-background/80 p-6 shadow-2xl backdrop-blur-xl">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">View data failed</p>
-          <h1 className="font-display text-[18px] font-bold tracking-tight text-foreground mt-3">Workspace data could not load</h1>
-          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-3">{viewModelError}</p>
-        </div>
+        <AuthMessageCard eyebrow="View data failed" title="Workspace data could not load" body={viewModelError} />
       </AuthFrame>
     );
   }
 
   if (!profile) {
     return (
-      <AuthFrame>
-        <div className="w-[min(100%,28rem)] rounded-[24px] border border-foreground/8 bg-background/80 p-6 shadow-2xl backdrop-blur-xl">
-          <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />
-          <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-4">Loading workspace data</p>
-          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">Preparing artist, music, mission, and manager views.</p>
-        </div>
-      </AuthFrame>
+      <BrandedLoader
+        title="Loading workspace data"
+        body="Preparing artist, music, mission, and manager views."
+        steps={["Artist", "Music", "Missions", "Manager"]}
+        logoTestId="auth-brand-logo"
+      />
     );
   }
 
@@ -731,31 +722,74 @@ function AuthScreen({
   }
 
   return (
-    <AuthFrame>
-      <section className="w-[min(100%,28rem)] rounded-[24px] border border-foreground/8 bg-background/80 p-6 shadow-2xl backdrop-blur-xl">
-        <div className="flex items-center gap-3">
-          <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-foreground text-background">
-            <ShieldCheck className="h-5 w-5" aria-hidden="true" />
-          </span>
+    <AuthFrame logoTestId="auth-brand-logo">
+      <section className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
+        <div className="mb-5 flex items-center gap-3 lg:hidden">
+          <BrandMark size="sm" />
           <div>
-            <p className="text-sm font-semibold">Ordersounds</p>
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Artist operating desk</p>
+            <p className="font-display text-[14px] font-bold leading-none text-foreground">Ordersounds</p>
+            <p className="mt-1 font-ui text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Artist operating desk</p>
           </div>
         </div>
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent mt-6">Session required</p>
-        <h1 className="font-display text-[18px] font-bold tracking-tight text-foreground mt-2">Sign in to Ordersounds</h1>
-        <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-3">Use your account to open the production workspace.</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Session required</p>
+            <h1 className="font-display mt-2 text-[22px] font-bold leading-tight tracking-tight text-foreground">Sign in to Ordersounds</h1>
+            <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Use your account to open the production workspace.</p>
+          </div>
+          <span className="hidden rounded-full border border-foreground/10 bg-background px-2.5 py-1 font-ui text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground sm:inline-flex">
+            Secure desk
+          </span>
+        </div>
+
+        <div data-testid="auth-mode-switch" className="mt-6 grid grid-cols-2 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
+          <button
+            type="button"
+            aria-label="Use sign in mode"
+            onClick={() => {
+              setMode("sign-in");
+              setMessage(null);
+            }}
+            className={`h-9 rounded-[9px] font-ui text-[12px] font-bold transition-all ${
+              !isSignUp ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Sign in
+          </button>
+          <button
+            type="button"
+            aria-label="Use sign-up mode"
+            onClick={() => {
+              setMode("sign-up");
+              setMessage(null);
+            }}
+            className={`h-9 rounded-[9px] font-ui text-[12px] font-bold transition-all ${
+              isSignUp ? "bg-white text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            Sign up
+          </button>
+        </div>
+
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-          <Field label="Email" value={email} onChange={setEmail} type="email" />
-          <Field label="Password" value={password} onChange={setPassword} type="password" />
-          {message ? <p className="rounded-xl border border-foreground/8 bg-foreground/[0.025] p-3 text-sm font-semibold text-muted-foreground">{message}</p> : null}
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <Field label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" required disabled={pending} />
+          <Field
+            label="Password"
+            value={password}
+            onChange={setPassword}
+            type="password"
+            autoComplete={isSignUp ? "new-password" : "current-password"}
+            required
+            disabled={pending}
+          />
+          {message ? <p className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-3 text-sm font-semibold text-muted-foreground">{message}</p> : null}
+          <div className="flex flex-col gap-3">
             <ProductButton type="submit" disabled={pending}>
-              {pending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
-              {isSignUp ? "Create account" : "Sign in"}
+              {pending ? (isSignUp ? "Creating secure desk account" : "Opening secure desk session") : isSignUp ? "Create account" : "Sign in"}
             </ProductButton>
             <ProductButton
               variant="secondary"
+              disabled={pending}
               onClick={() => {
                 setMode(isSignUp ? "sign-in" : "sign-up");
                 setMessage(null);
@@ -764,6 +798,9 @@ function AuthScreen({
               {isSignUp ? "Use existing account" : "Create account"}
             </ProductButton>
           </div>
+          <p className="border-t border-foreground/8 pt-3 text-[11px] font-semibold leading-relaxed text-muted-foreground/78">
+            Ordersounds keeps access tied to your authenticated artist workspace. Provider login options are not enabled for this V1 flow.
+          </p>
         </form>
       </section>
     </AuthFrame>
@@ -877,8 +914,143 @@ function SpotifyIdentityGate({
   );
 }
 
-function AuthFrame({ children }: { children: ReactNode }) {
-  return <div className="app-light grid min-h-screen place-items-center bg-background px-5 py-5 text-foreground">{children}</div>;
+function AuthFrame({ children, logoTestId }: { children: ReactNode; logoTestId?: string }) {
+  return (
+    <div data-testid="auth-shell" className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.38] [background-image:linear-gradient(rgba(17,19,24,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.045)_1px,transparent_1px)] [background-size:44px_44px]" />
+      <div className="relative z-10 mx-auto grid min-h-[calc(100vh-2.5rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(22rem,0.72fr)]">
+        <aside className="hidden max-w-xl lg:block">
+          <div className="flex items-center gap-3">
+            <BrandMark size="lg" testId={logoTestId} />
+            <div>
+              <p className="font-display text-[18px] font-bold leading-none text-foreground">Ordersounds</p>
+              <p className="mt-1 font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">Artist operating desk</p>
+            </div>
+          </div>
+          <h2 className="mt-12 max-w-[31rem] font-display text-[46px] font-semibold leading-[0.98] tracking-tight text-foreground">
+            Your artist workspace, ready before the room opens.
+          </h2>
+          <p className="mt-5 max-w-[28rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
+            Ordersounds starts with identity, source proof, and operating context so the Manager can make a useful first read instead of a generic dashboard.
+          </p>
+          <div className="mt-10 grid max-w-[34rem] grid-cols-4 gap-2">
+            {["Account", "Spotify identity", "Manager basics", "Desk ready"].map((step, index) => (
+              <div key={step} className="rounded-[12px] border border-foreground/10 bg-white/72 p-3 shadow-sm">
+                <p className="font-ui text-[10px] font-bold text-brand-accent">{String(index + 1).padStart(2, "0")}</p>
+                <p className="mt-2 min-h-8 text-[12px] font-bold leading-tight text-foreground">{step}</p>
+              </div>
+            ))}
+          </div>
+        </aside>
+        <div className="mx-auto w-full max-w-[27.5rem]">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function BrandedLoader({
+  title,
+  body,
+  steps,
+  logoTestId,
+}: {
+  title: string;
+  body: string;
+  steps: string[];
+  logoTestId?: string;
+}) {
+  const isWorkspaceLoader = title.toLowerCase().includes("workspace");
+  const statusLabel = isWorkspaceLoader ? "PREPARING WORKSPACE" : "CONNECTING DESK";
+
+  return (
+    <>
+      <style>{`
+        @keyframes red-antler-float-pulse {
+          0%, 100% {
+            transform: translateY(0px) scale(0.97) rotate(0deg);
+            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.05);
+          }
+          50% {
+            transform: translateY(-6px) scale(1.03) rotate(2deg);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+          }
+        }
+        @keyframes red-antler-scan {
+          0% {
+            transform: translateX(-100%);
+          }
+          100% {
+            transform: translateX(200%);
+          }
+        }
+      `}</style>
+      
+      <div
+        data-testid="branded-loader"
+        className="fixed inset-0 z-50 flex flex-col items-center justify-center min-h-screen w-screen bg-background select-none"
+      >
+        <div className="relative flex flex-col items-center justify-center">
+          {/* Centered Brand Icon Tile */}
+          <span
+            aria-hidden="true"
+            data-testid={logoTestId}
+            className="relative inline-flex h-16 w-16 md:h-[72px] md:w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[16px] border border-foreground/10 bg-[#111] transition-all duration-300"
+            style={{
+              animation: "red-antler-float-pulse 4s ease-in-out infinite",
+            }}
+          >
+            <img src="/logo.png" alt="" className="h-full w-full object-cover" />
+          </span>
+
+          {/* wide-tracked elegant uppercase status text */}
+          <p className="font-ui mt-10 text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/60 leading-none">
+            {statusLabel}
+          </p>
+
+          {/* Minimalist ultra-thin progress bar */}
+          <div className="mt-5 h-[1.5px] w-24 overflow-hidden rounded-full bg-foreground/5">
+            <span
+              className="block h-full w-[48px] rounded-full bg-brand-accent"
+              style={{
+                animation: "red-antler-scan 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Accessibility & Vitest compatibility layer */}
+        <div className="sr-only">
+          <h1>{title}</h1>
+          <p>{body}</p>
+          {steps.map((step) => (
+            <div key={step}>{step}</div>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AuthMessageCard({
+  eyebrow,
+  title,
+  body,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  body: string | null;
+  action?: ReactNode;
+}) {
+  return (
+    <section className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
+      <BrandMark size="md" />
+      <p className="font-ui mt-6 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">{eyebrow}</p>
+      <h1 className="font-display mt-3 text-[20px] font-bold tracking-tight text-foreground">{title}</h1>
+      <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{body}</p>
+      {action ? <div className="mt-5">{action}</div> : null}
+    </section>
+  );
 }
 
 function readErrorMessage(error: unknown, fallback: string) {

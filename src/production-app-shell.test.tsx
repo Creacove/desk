@@ -47,14 +47,62 @@ describe("Clean production prototype-match shell", () => {
   it("renders auth in the Ordersounds visual system without loading workspace data", async () => {
     const workspaceLoader = workspaceLoaderWith(workspace);
 
-    render(<ProductionApp authAdapter={authWithoutSession()} workspaceLoader={workspaceLoader} />);
+    const { container } = render(<ProductionApp authAdapter={authWithoutSession()} workspaceLoader={workspaceLoader} />);
 
     expect(await screen.findByRole("heading", { name: "Sign in to Ordersounds" })).toBeInTheDocument();
-    expect(screen.getByText("Artist operating desk")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-shell")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
+    expect(container.querySelector('img[src="/logo.png"]')).toBeInTheDocument();
+    expect(screen.getAllByText("Artist operating desk").length).toBeGreaterThan(0);
     expect(screen.getByText("Use your account to open the production workspace.")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-mode-switch")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /google/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /sso/i })).not.toBeInTheDocument();
     expect(workspaceLoader.calls).toBe(0);
+  });
+
+  it("uses the branded loader while checking the signed-in session", async () => {
+    render(<ProductionApp authAdapter={authWithPendingSession()} workspaceLoader={workspaceLoaderWith(workspace)} />);
+
+    expect(screen.getByTestId("branded-loader")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
+    expect(screen.getByText("Loading Ordersounds")).toBeInTheDocument();
+    expect(screen.getByText("Checking session and active artist workspace.")).toBeInTheDocument();
+  });
+
+  it("uses the branded loader while preparing workspace view data", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.artistProfile.loadProfile = async () => new Promise(() => undefined);
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByText("Loading workspace data")).toBeInTheDocument();
+    expect(screen.getByTestId("branded-loader")).toBeInTheDocument();
+    expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
+    expect(screen.getByText("Loading workspace data")).toBeInTheDocument();
+    expect(screen.getByText("Preparing artist, music, mission, and manager views.")).toBeInTheDocument();
+  });
+
+  it("disables sign-in submission while the secure session is opening", async () => {
+    const signIns: string[] = [];
+    render(<ProductionApp authAdapter={authWithPendingPasswordSignIn(signIns)} workspaceLoader={workspaceLoaderWith(workspace)} />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in to Ordersounds" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "artist@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "super-secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(signIns).toEqual(["artist@example.com|super-secret"]);
+    expect(screen.getByRole("button", { name: /opening secure desk session/i })).toBeDisabled();
   });
 
   it("keeps a fixture runtime available for demo and parity verification", async () => {
@@ -63,9 +111,10 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Connect artist profile" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Sign in to Ordersounds" })).not.toBeInTheDocument();
     expect(screen.getByText("Sable Day")).toBeInTheDocument();
-    expect(screen.getByText("Artist Setup")).toHaveClass("text-brand-accent");
+    expect(screen.getAllByText("Spotify identity").length).toBeGreaterThan(0);
+    expect(screen.getByText("Account")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign out" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue to artist context" })).toHaveClass("rounded-[12px]");
+    expect(screen.getByRole("button", { name: "Continue to artist context" })).toHaveClass("rounded-[10px]");
   });
 
   it("searches Spotify, saves identity, and lets catalog import continue in the background", async () => {
@@ -105,6 +154,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByLabelText("Search Spotify artist")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Search Spotify artist"), { target: { value: "Nova" } });
+    expect(screen.getByTestId("spotify-search-loader")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Select Spotify artist Nova Vale" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Spotify artist Nova Vale" }));
 
@@ -169,7 +219,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enter Desk HQ" })).toBeDisabled();
     expect(screen.getByText("Complete artist stage, home market, genre, artist direction, and monthly budget to enter Desk HQ.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Back to profile" })).toHaveClass("rounded-full");
+    expect(screen.getByRole("button", { name: "Back to profile" })).toHaveClass("rounded-[10px]");
 
     fireEvent.change(screen.getByLabelText("Artist stage"), { target: { value: "Emerging artist with catalog traction" } });
     fireEvent.change(screen.getByLabelText("Home market"), { target: { value: "Lagos" } });
@@ -190,15 +240,13 @@ describe("Clean production prototype-match shell", () => {
       latestCatalogSyncStatus: "running",
     } satisfies ProductionWorkspace;
     const saves: string[] = [];
+    let resolveSave: ((workspace: ProductionWorkspace) => void) | null = null;
     const profileSetupService: ProductionProfileSetupService = {
       async saveSetupContext(_workspace, profile) {
         saves.push(`${profile.stage}|${profile.market}|${profile.genre}|${profile.goal}|${profile.budget}`);
-        return {
-          ...setupWorkspace,
-          status: "active",
-          contextComplete: true,
-          latestCatalogSyncStatus: "running",
-        };
+        return new Promise<ProductionWorkspace>((resolve) => {
+          resolveSave = resolve;
+        });
       },
     };
 
@@ -215,6 +263,13 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     expect(screen.getByText(/spotify catalog import is running in the background/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(screen.getByTestId("setup-save-loader")).toBeInTheDocument();
+    resolveSave?.({
+      ...setupWorkspace,
+      status: "active",
+      contextComplete: true,
+      latestCatalogSyncStatus: "running",
+    });
 
     await screen.findByRole("heading", { name: "Desk HQ" });
     expect(saves).toEqual([
@@ -1270,6 +1325,22 @@ async function enterDeskHq() {
 function authWithSession(result: Awaited<ReturnType<ProductionAuthAdapter["getSession"]>>): ProductionAuthAdapter {
   return {
     getSession: async () => result,
+  };
+}
+
+function authWithPendingSession(): ProductionAuthAdapter {
+  return {
+    getSession: async () => new Promise(() => undefined),
+  };
+}
+
+function authWithPendingPasswordSignIn(signIns: string[]): ProductionAuthAdapter {
+  return {
+    getSession: async () => ({ user: null }),
+    async signInWithPassword({ email, password }) {
+      signIns.push(`${email}|${password}`);
+      return new Promise(() => undefined);
+    },
   };
 }
 

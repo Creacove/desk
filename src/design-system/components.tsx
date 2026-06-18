@@ -4,13 +4,24 @@ import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import type { CleanProductionView } from "../types/cleanProduction";
 
-export function BrandMark({ size = "md" }: { size?: "sm" | "md" }) {
+export function BrandMark({
+  size = "md",
+  testId,
+  className,
+}: {
+  size?: "sm" | "md" | "lg";
+  testId?: string;
+  className?: string;
+}) {
   return (
     <span
       aria-hidden="true"
+      data-testid={testId}
       className={cn(
         "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-foreground/10 bg-[#111]",
         size === "sm" ? "h-8 w-8" : "h-10 w-10",
+        size === "lg" && "h-12 w-12 rounded-[14px]",
+        className,
       )}
     >
       <img src="/logo.png" alt="" className="h-full w-full object-cover" />
@@ -66,15 +77,31 @@ export function Field({
   value,
   onChange,
   type = "text",
+  autoComplete,
+  required,
+  disabled,
+  helper,
+  error,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   type?: "text" | "email" | "password";
+  autoComplete?: string;
+  required?: boolean;
+  disabled?: boolean;
+  helper?: string;
+  error?: string;
 }) {
   const id = `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <div className="group rounded-[12px] border border-foreground/8 bg-background p-2.5 transition-all duration-300 focus-within:border-brand-accent/50 focus-within:ring-2 focus-within:ring-brand-accent/5">
+    <div
+      className={cn(
+        "group rounded-[12px] border bg-background p-2.5 transition-all duration-300 focus-within:border-brand-accent/50 focus-within:ring-2 focus-within:ring-brand-accent/5",
+        error ? "border-destructive/45 bg-destructive/[0.025]" : "border-foreground/8",
+        disabled && "opacity-60",
+      )}
+    >
       <label htmlFor={id} className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85 transition-colors group-focus-within:text-brand-accent">
         {label}
       </label>
@@ -82,9 +109,13 @@ export function Field({
         id={id}
         type={type}
         value={value}
+        autoComplete={autoComplete}
+        required={required}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         className="mt-1 w-full bg-transparent text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60"
       />
+      {error || helper ? <p className={cn("mt-1.5 text-[11px] font-semibold", error ? "text-destructive" : "text-muted-foreground/80")}>{error ?? helper}</p> : null}
     </div>
   );
 }
