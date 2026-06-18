@@ -19,8 +19,9 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(openAiIndex).toBeGreaterThan(authIndex);
   });
 
-  it("allows exact service-role invocations for controlled backfills", () => {
+  it("allows service-role invocations for controlled backfills", () => {
     expect(functionSource).toContain("isServiceRoleInvocation");
+    expect(functionSource).toContain('readBearerJwtRole(authHeader) === "service_role"');
     expect(functionSource).toContain("X-Chartmetric-Backfill-Token");
     expect(functionSource).toContain('Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN")');
     expect(functionSource).toContain('requireEnv("SUPABASE_SERVICE_ROLE_KEY")');

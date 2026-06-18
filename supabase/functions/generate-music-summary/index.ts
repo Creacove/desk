@@ -45,8 +45,11 @@ Deno.serve(async (request) => {
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const configuredBackfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
     const presentedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
+    // Supabase's reserved runtime service key can differ from the legacy
+    // service-role JWT that callers send, so trust the verified JWT role too.
     const isServiceRoleInvocation =
       authHeader === `Bearer ${serviceRoleKey}` ||
+      readBearerJwtRole(authHeader) === "service_role" ||
       Boolean(
         configuredBackfillToken &&
         presentedBackfillToken &&
@@ -505,6 +508,26 @@ function validateInput(input: GenerateMusicSummaryInput) {
   if (input.subjectType !== "music_item" && input.subjectType !== "music_project") {
     throw new Error("subjectType must be music_item or music_project.");
   }
+}
+
+function readBearerJwtRole(authHeader: string) {
+  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return undefined;
+  const [, encodedPayload] = token.split(".");
+  if (!encodedPayload) return undefined;
+
+  try {
+    const payload = JSON.parse(decodeBase64Url(encodedPayload));
+    return isRecord(payload) && typeof payload.role === "string" ? payload.role : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return atob(padded);
 }
 
 function attachRelatedEvidence(
