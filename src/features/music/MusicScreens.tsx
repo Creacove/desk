@@ -313,7 +313,6 @@ export function MusicWorkspace({
 function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; index: number; onOpen: () => void }) {
   const readiness = getSongReadiness(song);
   const hasBlocker = song.blocker !== "No active blocker" && song.blocker !== "None";
-  const recordRead = buildMusicListRead(song);
 
   return (
     <button
@@ -340,7 +339,6 @@ function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewMode
             </span>
             <span className="font-display shrink-0 text-[13px] font-semibold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
           </span>
-          <span className="mt-2 line-clamp-2 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{recordRead}</span>
         </span>
       </span>
       <span data-testid="music-mobile-readiness-strip" className="mt-3 grid grid-cols-3 gap-1.5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-2.5">
@@ -363,7 +361,6 @@ function MusicMobileProjectRow({
 }) {
   const readiness = getProjectReadiness(project, getMusicObject);
   const blockerCount = readiness.blockers.length;
-  const projectRead = buildMusicListRead(project);
 
   return (
     <button
@@ -385,7 +382,6 @@ function MusicMobileProjectRow({
               {blockerCount ? `${blockerCount} blocker${blockerCount === 1 ? "" : "s"}` : "Clear"}
             </span>
           </span>
-          <span className="mt-2 line-clamp-2 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{projectRead}</span>
         </span>
       </span>
       <span className="mt-3 grid grid-cols-3 gap-1.5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-2.5">
@@ -499,6 +495,11 @@ function firstSentence(value: string) {
 function trimListRead(value: string) {
   const compact = value.replace(/\s+/g, " ").trim();
   return compact.length > 180 ? `${compact.slice(0, 177).trimEnd()}...` : compact;
+}
+
+function mobileDetailFieldTestId(label: string) {
+  const normalized = label.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "");
+  return `song-mobile-detail-field-${normalized}`;
 }
 
 function MusicSongDetail({
@@ -703,52 +704,106 @@ function MusicSongDetail({
       ) : null}
 
       {activeTab === "details" ? (
-        <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
-            <div>
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Metadata board</p>
-              <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Song identity</h4>
+        <div className="grid gap-4">
+          <div data-testid="song-room-mobile-details" className="surface-elevated rounded-[16px] p-4 shadow-sm lg:hidden">
+            <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-3">
+              <div className="min-w-0">
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Details</p>
+                <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Song identity</h4>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
+                <span className="rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-semibold text-success">{detailConfirmedCount} confirmed</span>
+                {detailMissingCount ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[10px] font-semibold text-warning">{detailMissingCount} missing</span> : null}
+              </div>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <span className="rounded-md bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">{detailConfirmedCount} confirmed</span>
-              {detailDraftCount ? <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{detailDraftCount} draft</span> : null}
-              {detailMissingCount ? <span className="rounded-md bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning">{detailMissingCount} missing</span> : null}
+
+            <div className="mt-3 grid gap-3">
+              {detailGroups.map((group) => (
+                <section key={group.title} className="overflow-hidden rounded-[14px] border border-foreground/8 bg-background/72">
+                  <div className="flex items-center justify-between gap-3 border-b border-foreground/8 bg-foreground/[0.025] px-3 py-2.5">
+                    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
+                    <span className="text-[10px] font-semibold text-muted-foreground">{countCompleteMusicItems(group.fields)}/{group.fields.length}</span>
+                  </div>
+                  <div className="divide-y divide-foreground/6">
+                    {group.fields.map((field) => (
+                      <div
+                        key={`${group.title}-mobile-${field.label}`}
+                        data-testid={mobileDetailFieldTestId(field.label)}
+                        className="grid min-h-[64px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
+                          <span className="mt-0.5 block truncate text-[13px] font-medium text-foreground">{field.value}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-1.5">
+                          {canEditDetailField(field) ? (
+                            <button
+                              type="button"
+                              aria-label={`Edit mobile ${field.label}`}
+                              title={`Edit ${field.label}`}
+                              onClick={() => onEditDetail(group.title, field)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                          <MusicStatusPill value={field.status} />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4">
-            {detailGroups.map((group) => (
-              <section key={group.title} className="rounded-[16px] border border-foreground/8 bg-background/72">
-                <div className="flex items-center justify-between gap-4 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
-                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
-                  <span className="text-[11px] font-semibold text-muted-foreground">{countCompleteMusicItems(group.fields)}/{group.fields.length} confirmed</span>
-                </div>
-                <div className="grid divide-y divide-foreground/6 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
-                  {group.fields.map((field) => (
-                    <div key={`${group.title}-${field.label}`} className="flex min-h-[74px] items-center justify-between gap-4 border-b border-foreground/6 px-4 py-3 last:border-b-0 lg:[&:nth-last-child(-n+2)]:border-b-0">
-                      <span className="min-w-0">
-                        <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
-                        <span className="mt-1 block truncate text-[14px] font-medium text-foreground">{field.value}</span>
-                      </span>
-                      <span className="flex shrink-0 items-center gap-2">
-                        {canEditDetailField(field) ? (
-                          <button
-                            type="button"
-                            aria-label={`Edit ${field.label}`}
-                            title={`Edit ${field.label}`}
-                            onClick={() => onEditDetail(group.title, field)}
-                            className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        ) : null}
-                        <MusicStatusPill value={field.status} />
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </section>
-            ))}
+          <div data-testid="song-room-desktop-details" className="surface-elevated hidden rounded-[22px] p-5 shadow-sm lg:block">
+            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+              <div>
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Metadata board</p>
+                <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Song identity</h4>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2">
+                <span className="rounded-md bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">{detailConfirmedCount} confirmed</span>
+                {detailDraftCount ? <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{detailDraftCount} draft</span> : null}
+                {detailMissingCount ? <span className="rounded-md bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning">{detailMissingCount} missing</span> : null}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4">
+              {detailGroups.map((group) => (
+                <section key={group.title} className="rounded-[16px] border border-foreground/8 bg-background/72">
+                  <div className="flex items-center justify-between gap-4 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
+                    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
+                    <span className="text-[11px] font-semibold text-muted-foreground">{countCompleteMusicItems(group.fields)}/{group.fields.length} confirmed</span>
+                  </div>
+                  <div className="grid divide-y divide-foreground/6 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+                    {group.fields.map((field) => (
+                      <div key={`${group.title}-${field.label}`} className="flex min-h-[74px] items-center justify-between gap-4 border-b border-foreground/6 px-4 py-3 last:border-b-0 lg:[&:nth-last-child(-n+2)]:border-b-0">
+                        <span className="min-w-0">
+                          <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
+                          <span className="mt-1 block truncate text-[14px] font-medium text-foreground">{field.value}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          {canEditDetailField(field) ? (
+                            <button
+                              type="button"
+                              aria-label={`Edit ${field.label}`}
+                              title={`Edit ${field.label}`}
+                              onClick={() => onEditDetail(group.title, field)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
+                          ) : null}
+                          <MusicStatusPill value={field.status} />
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
           </div>
         </div>
       ) : null}

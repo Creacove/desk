@@ -639,6 +639,14 @@ describe("Clean production prototype-match shell", () => {
     expect(within(mobileRow).getByText("Files")).toBeInTheDocument();
     expect(within(mobileRow).getByText("Details")).toBeInTheDocument();
     expect(within(mobileRow).getByText("Rights")).toBeInTheDocument();
+    expect(within(mobileRow).queryByText(/strongest current focus asset/i)).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    const mobileProjectRow = within(mobileLibrary).getByTestId("music-mobile-project-row-Glass Room EP");
+    expect(within(mobileProjectRow).getByText("Tracks")).toBeInTheDocument();
+    expect(within(mobileProjectRow).getByText("Ready")).toBeInTheDocument();
+    expect(within(mobileProjectRow).getByText("Issues")).toBeInTheDocument();
+    expect(within(mobileProjectRow).queryByText(/project context is ready|mapped track|project read/i)).not.toBeInTheDocument();
   }, 20000);
 
   it("uses mobile-native song and project room layouts after opening Music items", async () => {
@@ -654,6 +662,15 @@ describe("Clean production prototype-match shell", () => {
     expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
+
+    fireEvent.click(within(songRoom).getByRole("button", { name: "details" }));
+    const mobileDetails = within(songRoom).getByTestId("song-room-mobile-details");
+    expect(mobileDetails).toHaveClass("lg:hidden");
+    expect(mobileDetails).toHaveClass("rounded-[16px]");
+    expect(mobileDetails).not.toHaveClass("rounded-[22px]");
+    expect(within(songRoom).getByTestId("song-room-desktop-details")).toHaveClass("hidden", "lg:block");
+    expect(within(mobileDetails).getByText("ISRC")).toBeInTheDocument();
+    expect(within(mobileDetails).getByTestId("song-mobile-detail-field-ISRC")).toHaveClass("grid-cols-[minmax(0,1fr)_auto]");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Music" }));
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
