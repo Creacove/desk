@@ -45,4 +45,16 @@ describe("Phase 2 Spotify catalog bootstrap infrastructure", () => {
     expect(migrations).toMatch(/grant select, insert, update, delete on public\.evidence_links to authenticated, service_role/i);
     expect(migrations).toMatch(/grant select, insert on public\.operating_events to authenticated, service_role/i);
   });
+
+  it("grants authenticated users access to account-scoped agent operating tables", () => {
+    const migrationsRoot = join(root, "supabase", "migrations");
+    const migrations = ["20260619000100_agent_reports_and_related_tables.sql", "20260619000200_agent_tables_authenticated_grants.sql"]
+      .map((file) => readFileSync(join(migrationsRoot, file), "utf8"))
+      .join("\n");
+
+    for (const table of ["agent_runs", "agent_reports", "agent_notes", "agent_inbox_items"]) {
+      expect(migrations).toMatch(new RegExp(`alter table public\\.${table} enable row level security`, "i"));
+      expect(migrations).toMatch(new RegExp(`grant select, insert, update, delete on public\\.${table} to authenticated`, "i"));
+    }
+  });
 });

@@ -6,6 +6,7 @@ import type {
   DrawerKind,
   MissionCheckpointViewModel,
   MissionEventViewModel,
+  MissionGenesisResultViewModel,
   MissionNoteViewModel,
   MissionRecapViewModel,
   MissionTaskResultViewModel,
@@ -15,28 +16,26 @@ import type {
 
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "notes" | "recap";
 
-const testMission: MissionViewModel = {
-  id: "mission-validation",
-  title: "Test mission: Release readiness",
-  status: "active",
-  progress: 0,
-  review: "Campaign planning",
-  summary: "Use $1,850 for a 10-day validation test while holding back $2,250 until private signals are cleaner.",
-  recommendation: "Run a capped test, then review saves, clicks, follows, and demand comments.",
-  musicSubject: "Night Bus",
-  nextTask: "Approve capped campaign test budget",
-};
-
 export function MissionsWorkspace({
   missions,
   selectedMissionId,
+  missionGenesisResult,
+  missionGenesisPending,
   onSelectMission,
+  onRunMissionGenesis,
+  onOpenMissionGenesisQuestions,
   onDrawer,
   openRoomRequestKey = 0,
 }: {
   missions: MissionViewModel[];
   selectedMissionId: string;
+  missionGenesisResult: MissionGenesisResultViewModel | null;
+  missionGenesisPending: boolean;
   onSelectMission: (id: string) => void;
+  onRunMissionGenesis: () => void;
+  onOpenMissionGenesisQuestions: () => void;
+  onApproveTask: (taskId: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked") => Promise<void>;
   onDrawer: (drawer: DrawerKind) => void;
   openRoomRequestKey?: number;
 }) {
@@ -65,18 +64,17 @@ export function MissionsWorkspace({
     setTab(nextTab);
   }
 
-  const handleTestMission = () => {
-    setLocalMissions([testMission]);
-    onSelectMission(testMission.id);
-    setRoomMode("room");
-    setTab("pulse");
-  };
-
   if (!localMissions.length) {
     return (
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
-        <EmptyMissionState onTestMission={handleTestMission} />
+        <MissionGenesisPanel
+          result={missionGenesisResult}
+          pending={missionGenesisPending}
+          onRun={onRunMissionGenesis}
+          onOpenQuestions={onOpenMissionGenesisQuestions}
+        />
+        <EmptyMissionState onRunMissionGenesis={onRunMissionGenesis} missionGenesisPending={missionGenesisPending} />
       </section>
     );
   }
@@ -85,6 +83,12 @@ export function MissionsWorkspace({
     return (
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
+        <MissionGenesisPanel
+          result={missionGenesisResult}
+          pending={missionGenesisPending}
+          onRun={onRunMissionGenesis}
+          onOpenQuestions={onOpenMissionGenesisQuestions}
+        />
         <div data-testid="missions-mobile-picker" className="space-y-8 lg:hidden">
           <MissionShortcutTabs mission={activeMissions[0] ?? localMissions[0]} onOpen={openMission} />
           <MissionList activeMissions={activeMissions} completedMissions={completedMissions} onOpen={openMission} />
@@ -107,7 +111,58 @@ export function MissionsWorkspace({
   );
 }
 
-function EmptyMissionState({ onTestMission }: { onTestMission?: () => void }) {
+function MissionGenesisPanel({
+  result,
+  pending,
+  onRun,
+  onOpenQuestions,
+}: {
+  result: MissionGenesisResultViewModel | null;
+  pending: boolean;
+  onRun: () => void;
+  onOpenQuestions: () => void;
+}) {
+  return (
+    <section className="mb-5 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Genesis</p>
+          <h2 className="mt-2 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">
+            Create only the mission this artist actually needs
+          </h2>
+          <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">
+            The Manager checks artist stage, signals, memory, budget, source limits, and execution capacity before activating mission work.
+          </p>
+        </div>
+        <ProductButton variant="secondary" onClick={onRun} disabled={pending}>
+          {pending ? "Running Mission Genesis" : "Run Mission Genesis"}
+        </ProductButton>
+      </div>
+      {result ? (
+        <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{result.outcome.replaceAll("_", " ")}</p>
+          <h3 className="mt-2 text-sm font-semibold text-foreground">{result.title}</h3>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
+          {result.questions.length ? (
+            <div className="mt-4">
+              <ProductButton variant="primary" onClick={onOpenQuestions}>
+                Answer in Manager Office
+              </ProductButton>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function EmptyMissionState({
+  onRunMissionGenesis,
+  missionGenesisPending,
+}: {
+  onRunMissionGenesis: () => void;
+  missionGenesisPending: boolean;
+}) {
   return (
     <section className="surface-elevated rounded-[24px] p-6 shadow-sm">
       <div className="flex max-w-2xl flex-col gap-3">
@@ -116,17 +171,11 @@ function EmptyMissionState({ onTestMission }: { onTestMission?: () => void }) {
         <p className="text-[14px] font-semibold leading-relaxed text-muted-foreground/86">
           The Manager has not activated mission work for this artist yet. Missions appear here after there is a durable objective, source context, checkpoints, and tasks worth coordinating.
         </p>
-        {onTestMission && (
-          <div className="mt-4">
-            <button
-              type="button"
-              onClick={onTestMission}
-              className="rounded-lg bg-brand-accent px-4 py-2 text-[13px] font-semibold text-background hover:bg-brand-accent/90"
-            >
-              Test mission page
-            </button>
-          </div>
-        )}
+        <div className="mt-4">
+          <ProductButton onClick={onRunMissionGenesis} disabled={missionGenesisPending}>
+            {missionGenesisPending ? "Running Mission Genesis" : "Run Mission Genesis for this artist"}
+          </ProductButton>
+        </div>
       </div>
     </section>
   );
