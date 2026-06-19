@@ -586,6 +586,7 @@ describe("Clean production prototype-match shell", () => {
         loadAgents: async () => productionFixtureData.agents,
       },
       missions: {
+        ...baseRepositories.missions,
         loadMissions: async () => productionFixtureData.missions,
       },
     };
@@ -991,6 +992,150 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");
     expect(screen.getByTestId("settings-desktop-profile-summary")).toHaveClass("hidden", "sm:flex");
+  }, 20000);
+
+  it("runs Mission Genesis from Missions, routes context questions through Manager, and activates generated work", async () => {
+    render(<ProductionApp fixtureMode initialView="missionsWorkspace" />);
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /run mission genesis/i }));
+
+    expect(await screen.findByRole("heading", { name: "Manager Briefing." })).toBeInTheDocument();
+    expect(screen.getByText("Mission candidate needs context")).toBeInTheDocument();
+    expect(screen.getByLabelText("What should the Manager optimize for over the next 90 days?")).toBeInTheDocument();
+    expect(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?")).toBeInTheDocument();
+    expect(screen.getByLabelText("Who can actually execute work this month?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Mission Genesis needs context/i }));
+    expect(await screen.findByRole("heading", { name: "Manager Briefing." })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("What should the Manager optimize for over the next 90 days?"), { target: { value: "Market entry" } });
+    fireEvent.change(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?"), { target: { value: "$5,000" } });
+    fireEvent.change(screen.getByLabelText("Who can actually execute work this month?"), { target: { value: "Small team" } });
+    fireEvent.click(screen.getByRole("button", { name: /continue mission genesis/i }));
+
+    expect(await screen.findByText("Mission activated")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getAllByText("Validate whether a rising market deserves focused operating attention").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getAllByText("Verify geography signal quality").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
+    expect(await screen.findByText("approved")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark done" })[0]);
+    expect(await screen.findByText("completed")).toBeInTheDocument();
+    expect(screen.getByText("Completed: Marked done from Missions workspace.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Checkpoints" }));
+    expect(screen.getByText("Is this market signal real enough to deserve focused operating attention?")).toBeInTheDocument();
+    expect(screen.getByText("Required task results are ready for Manager review.")).toBeInTheDocument();
+  }, 20000);
+
+  it("offers a real Mission Genesis run from the empty Missions page and keeps loading visible", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let missions = [] as Awaited<ReturnType<CleanProductionRepositories["missions"]["loadMissions"]>>;
+    let resolveRun: ((value: Awaited<ReturnType<CleanProductionRepositories["missionGenesis"]["runMissionGenesis"]>>) => void) | undefined;
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => missions,
+    };
+    repositories.missionGenesis = {
+      ...repositories.missionGenesis,
+      runMissionGenesis: async () => new Promise((resolve) => {
+        resolveRun = resolve;
+      }),
+      answerMissionGenesisContext: async () => {
+        missions = [
+          {
+            id: "mission-generated",
+            title: "Validate whether a rising market deserves focused operating attention",
+            status: "active",
+            progress: 0,
+            review: "Market signal quality",
+            summary: "Use saved context, audience signal, and team capacity to test whether the rising market deserves focused work.",
+            recommendation: "Use source-backed evidence before spend.",
+            musicSubject: "Artist-wide",
+            nextTask: "Verify geography signal quality",
+            checkpoints: [
+              {
+                id: "checkpoint-generated",
+                title: "Market signal quality",
+                question: "Is this market signal real enough to deserve focused operating attention?",
+                status: "waiting",
+              },
+            ],
+            tasks: [
+              {
+                id: "task-generated",
+                title: "Verify geography signal quality",
+                status: "proposed",
+                ownerRole: "Manager",
+                checkpointId: "checkpoint-generated",
+                purpose: "Confirm whether the market signal is source-backed.",
+              },
+            ],
+          },
+        ];
+        return {
+          outcome: "activate_mission",
+          title: "Mission activated",
+          body: "The Manager used the new context to activate a personalized operating mission with checkpoint questions and tasks.",
+          reasons: ["Context was answered."],
+          questions: [],
+          evidenceNeeded: [],
+          activatedMissionId: "mission-generated",
+        };
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getByText("No active missions")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
+    expect(screen.getAllByText("Running Mission Genesis").length).toBeGreaterThan(0);
+
+    resolveRun?.({
+      outcome: "candidate_needs_context",
+      title: "Mission candidate needs context",
+      body: "The Manager needs operating context before activating work.",
+      reasons: ["Budget and team capacity are missing."],
+      questions: [
+        {
+          key: "current_priority",
+          question: "What should the Manager optimize for over the next 90 days?",
+          reason: "The mission changes based on the artist's current priority.",
+          answerKind: "single_select",
+          options: ["Market entry", "Revenue"],
+        },
+        {
+          key: "budget_boundary",
+          question: "What budget range can the Manager plan around before asking for explicit spend approval?",
+          reason: "Budget posture controls the recommended plan.",
+          answerKind: "money_range",
+        },
+      ],
+      evidenceNeeded: [],
+      candidateMissionId: "candidate-generated",
+    });
+
+    expect(await screen.findByRole("heading", { name: "Manager Briefing." })).toBeInTheDocument();
+    expect(screen.getByText("Mission candidate needs context")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("What should the Manager optimize for over the next 90 days?"), { target: { value: "Market entry" } });
+    fireEvent.change(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?"), { target: { value: "$5,000" } });
+    fireEvent.click(screen.getByRole("button", { name: /continue mission genesis/i }));
+
+    expect(await screen.findByText("Mission activated")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getAllByText("Validate whether a rising market deserves focused operating attention").length).toBeGreaterThan(0);
   }, 20000);
 
   it("keeps unlinked Music projects quiet instead of explaining mission absence", async () => {
@@ -1479,7 +1624,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getByText("What is happening")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
-    expect(screen.getByText("Release tasks")).toBeInTheDocument();
+    expect(screen.getByText("Mission tasks")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Mission recap" }));
     expect(screen.getByText("Living recap of the mission")).toBeInTheDocument();
 
@@ -1758,6 +1903,28 @@ function repositoriesFor(
     },
     missions: {
       loadMissions: async () => [],
+      approveTask: async () => undefined,
+      completeTask: async () => {
+        throw new Error("No mission task fixture configured.");
+      },
+    },
+    missionGenesis: {
+      runMissionGenesis: async () => ({
+        outcome: "no_mission",
+        title: "No mission created",
+        body: "Mission Genesis is not configured in this test.",
+        reasons: [],
+        questions: [],
+        evidenceNeeded: [],
+      }),
+      answerMissionGenesisContext: async () => ({
+        outcome: "no_mission",
+        title: "No mission created",
+        body: "Mission Genesis is not configured in this test.",
+        reasons: [],
+        questions: [],
+        evidenceNeeded: [],
+      }),
     },
     evidence: {
       loadEvidence: async () => [],

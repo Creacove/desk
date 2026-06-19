@@ -31,6 +31,7 @@ import type {
   ConversationViewModel,
   DrawerKind,
   EvidenceItemViewModel,
+  MissionGenesisResultViewModel,
   MissionViewModel,
   MovementItem,
   MusicObjectViewModel,
@@ -306,6 +307,9 @@ function CleanProductionWorkspace({
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [mobileNotificationsOpen, setMobileNotificationsOpen] = useState(false);
+  const [missionGenesisResult, setMissionGenesisResult] = useState<MissionGenesisResultViewModel | null>(null);
+  const [missionGenesisAnswers, setMissionGenesisAnswers] = useState<Record<string, string>>({});
+  const [missionGenesisPending, setMissionGenesisPending] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -417,6 +421,97 @@ function CleanProductionWorkspace({
     } finally {
       setTodayBriefPending(false);
     }
+  }
+
+  async function runMissionGenesis() {
+    try {
+      setMissionGenesisPending(true);
+      const result = await repositories.missionGenesis.runMissionGenesis();
+      setMissionGenesisResult(result);
+      setMissionGenesisAnswers({});
+      if (result.outcome === "candidate_needs_context" && result.questions.length) {
+        addMissionGenesisAttention();
+        navigate("managerOffice");
+      }
+      if (result.activatedMissionId) {
+        clearMissionGenesisAttention();
+        const nextMissions = await repositories.missions.loadMissions();
+        setMissions(nextMissions);
+        setSelectedMissionId(result.activatedMissionId);
+        navigate("missionsWorkspace");
+      }
+    } finally {
+      setMissionGenesisPending(false);
+    }
+  }
+
+  async function submitMissionGenesisAnswers() {
+    if (!missionGenesisResult?.candidateMissionId) return;
+    try {
+      setMissionGenesisPending(true);
+      const result = await repositories.missionGenesis.answerMissionGenesisContext({
+        candidateMissionId: missionGenesisResult.candidateMissionId,
+        answers: missionGenesisResult.questions.map((question) => ({
+          questionKey: question.key,
+          answer: missionGenesisAnswers[question.key] ?? "",
+        })),
+      });
+      setMissionGenesisResult(result);
+      const nextMissions = await repositories.missions.loadMissions();
+      setMissions(nextMissions);
+      setSelectedMissionId(result.activatedMissionId ?? nextMissions[0]?.id ?? "");
+      if (result.activatedMissionId) {
+        clearMissionGenesisAttention();
+      }
+    } finally {
+      setMissionGenesisPending(false);
+    }
+  }
+
+  function addMissionGenesisAttention() {
+    setAttention((current) => {
+      const filtered = current.filter((item) => item.title !== "Mission Genesis needs context");
+      return [
+        {
+          title: "Mission Genesis needs context",
+          body: "The Manager has questions to answer before creating this artist's next mission.",
+          tone: "warning",
+          target: "managerOffice",
+        },
+        ...filtered,
+      ];
+    });
+    setMovement((current) => [
+      { label: "Manager", title: "Mission Genesis opened a context request", time: "Just now" },
+      ...current.filter((item) => item.title !== "Mission Genesis opened a context request"),
+    ]);
+  }
+
+  function clearMissionGenesisAttention() {
+    setAttention((current) => current.filter((item) => item.title !== "Mission Genesis needs context"));
+  }
+
+  function openCreatedMissionFromManager() {
+    if (missionGenesisResult?.activatedMissionId) {
+      setSelectedMissionId(missionGenesisResult.activatedMissionId);
+    }
+    navigate("missionsWorkspace");
+  }
+
+  async function approveMissionTask(taskId: string) {
+    await repositories.missions.approveTask(taskId);
+    const nextMissions = await repositories.missions.loadMissions();
+    setMissions(nextMissions);
+    setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
+  }
+
+  async function completeMissionTask(taskId: string, status: "completed" | "blocked") {
+    const updatedMission = await repositories.missions.completeTask(taskId, {
+      status,
+      note: status === "blocked" ? "Marked blocked from Missions workspace." : "Marked done from Missions workspace.",
+    });
+    setMissions((current) => current.map((mission) => mission.id === updatedMission.id ? updatedMission : mission));
+    setSelectedMissionId(updatedMission.id);
   }
 
   if (viewModelError) {
@@ -544,6 +639,12 @@ function CleanProductionWorkspace({
               answers={managerAnswers}
               setAnswers={setManagerAnswers}
               conversations={conversations}
+              missionGenesisResult={missionGenesisResult}
+              missionGenesisAnswers={missionGenesisAnswers}
+              missionGenesisPending={missionGenesisPending}
+              onMissionGenesisAnswerChange={(key, value) => setMissionGenesisAnswers((current) => ({ ...current, [key]: value }))}
+              onSubmitMissionGenesisAnswers={submitMissionGenesisAnswers}
+              onOpenCreatedMission={openCreatedMissionFromManager}
               onBack={() => navigate("labelHQ")}
               onConversation={openConversation}
               onInvestigation={() => navigate("investigation")}
@@ -562,7 +663,13 @@ function CleanProductionWorkspace({
             <MissionsWorkspace
               missions={missions}
               selectedMissionId={selectedMissionId}
+              missionGenesisResult={missionGenesisResult}
+              missionGenesisPending={missionGenesisPending}
               onSelectMission={setSelectedMissionId}
+              onRunMissionGenesis={runMissionGenesis}
+              onOpenMissionGenesisQuestions={() => navigate("managerOffice")}
+              onApproveTask={approveMissionTask}
+              onCompleteTask={completeMissionTask}
               onDrawer={setDrawer}
             />
           ) : null}
@@ -640,7 +747,9 @@ function MobileNotificationSheet({
                   className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-left"
                   onClick={() => {
                     onClose();
-                    if (item.tone === "accent") {
+                    if (item.target) {
+                      onNavigate(item.target);
+                    } else if (item.tone === "accent") {
                       onDrawer("evidence");
                     } else {
                       onNavigate("missionsWorkspace");

@@ -11,6 +11,7 @@ import type {
   ArtistProfileViewModel,
   CleanProductionRepositories,
   EvidenceItemViewModel,
+  MissionGenesisResultViewModel,
   MissionViewModel,
   MusicObjectViewModel,
   SplitConfirmationViewModel,
@@ -32,6 +33,9 @@ import type {
   ProductionWorkspace,
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
+import { runMissionGenesis as runMissionGenesisDecision } from "./missionGenesis";
+import { draftMissionPlan, type MissionPlanDraft } from "./missionGenesis/missionPlanDraft";
+import type { ArtistOperatingPacket, ContextQuestion, MissionPressure } from "./missionGenesis/types";
 
 const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -989,7 +993,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async loadMissions() {
         const { data, error } = await client
           .from("missions")
-          .select("id,title,status,summary,current_recommendation")
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
           .eq("artist_workspace_id", workspace.artistWorkspaceId)
           .order("created_at", { ascending: false })
           .limit(20);
@@ -998,7 +1002,271 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           throw error;
         }
 
-        return ((data as MissionRow[] | null) ?? []).map(missionFromRow);
+        const activeRows = ((data as MissionRow[] | null) ?? []).filter((mission) => !["candidate", "archived", "cancelled"].includes(mission.status ?? ""));
+        const missionIds = new Set(activeRows.map((mission) => mission.id));
+        const [{ data: checkpointData, error: checkpointError }, { data: taskData, error: taskError }] = await Promise.all([
+          client
+            .from("checkpoints")
+            .select("id,mission_id,title,question,status,recommendation")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+          client
+            .from("tasks")
+            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+        ]);
+
+        if (checkpointError) throw checkpointError;
+        if (taskError) throw taskError;
+
+        const checkpoints = ((checkpointData as CheckpointRow[] | null) ?? []).filter((checkpoint) => missionIds.has(checkpoint.mission_id));
+        const tasks = ((taskData as TaskRow[] | null) ?? []).filter((task) => task.mission_id && missionIds.has(task.mission_id));
+
+        return activeRows.map((mission) => missionFromRow(
+          mission,
+          checkpoints.filter((checkpoint) => checkpoint.mission_id === mission.id),
+          tasks.filter((task) => task.mission_id === mission.id),
+        ));
+      },
+      async approveTask(taskId) {
+        const { error } = await client
+          .from("tasks")
+          .update({ approval_state: "approved", status: "approved" })
+          .eq("id", taskId)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+        if (error) throw error;
+      },
+      async completeTask(taskId, input) {
+        const { data: taskData, error: taskError } = await client
+          .from("tasks")
+          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose")
+          .eq("id", taskId)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId)
+          .maybeSingle();
+
+        if (taskError) throw taskError;
+        const task = taskData as TaskRow | null;
+        if (!task?.mission_id) {
+          throw new Error("Mission task was not found.");
+        }
+
+        const previousStatus = task.status;
+        const completedStatus = input.status;
+        const now = new Date().toISOString();
+        const { error: updateError } = await client
+          .from("tasks")
+          .update({
+            status: completedStatus,
+            completed_at: completedStatus === "completed" ? now : undefined,
+            blocked_at: completedStatus === "blocked" ? now : undefined,
+            latest_result_note: input.note,
+          })
+          .eq("id", task.id)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+        if (updateError) throw updateError;
+
+        const interpretation = interpretTaskResult(task, input);
+        const checkpointId = task.primary_checkpoint_id ?? undefined;
+
+        const { error: eventError } = await client.from("task_state_events").insert({
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: task.mission_id,
+          task_id: task.id,
+          checkpoint_id: checkpointId,
+          from_status: previousStatus,
+          to_status: completedStatus,
+          actor_type: "user",
+          note: input.note,
+        });
+
+        if (eventError) throw eventError;
+
+        const { error: resultError } = await client.from("task_results").insert({
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: task.mission_id,
+          task_id: task.id,
+          checkpoint_id: checkpointId,
+          status: completedStatus,
+          note: input.note,
+          manager_interpretation: interpretation,
+          result_type: completedStatus === "blocked" ? "blocker" : "completion",
+        });
+
+        if (resultError) throw resultError;
+
+        const { data: missionTaskData, error: missionTaskError } = await client
+          .from("tasks")
+          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose")
+          .eq("mission_id", task.mission_id)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+        if (missionTaskError) throw missionTaskError;
+        const missionTasks = ((missionTaskData as TaskRow[] | null) ?? []).map((missionTask) =>
+          missionTask.id === task.id ? { ...missionTask, status: completedStatus } : missionTask,
+        );
+
+        const { data: checkpointData, error: checkpointLoadError } = await client
+          .from("checkpoints")
+          .select("id,mission_id,title,question,status,recommendation")
+          .eq("mission_id", task.mission_id)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+        if (checkpointLoadError) throw checkpointLoadError;
+        let checkpoints = (checkpointData as CheckpointRow[] | null) ?? [];
+        const checkpoint = checkpoints.find((item) => item.id === checkpointId);
+        const checkpointReview = buildCheckpointReview(checkpoint, task, missionTasks, input);
+
+        if (checkpointId) {
+          const { error: checkpointUpdateError } = await client
+            .from("checkpoints")
+            .update({
+              status: checkpointReview.status,
+              recommendation: checkpointReview.recommendation,
+            })
+            .eq("id", checkpointId)
+            .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+          if (checkpointUpdateError) throw checkpointUpdateError;
+          checkpoints = checkpoints.map((checkpoint) =>
+            checkpoint.id === checkpointId
+              ? { ...checkpoint, status: checkpointReview.status, recommendation: checkpointReview.recommendation }
+              : checkpoint,
+          );
+        }
+
+        const progress = deriveMissionProgress(missionTasks);
+        const missionRecommendation = checkpointReview.recommendation;
+        const { data: missionData, error: missionUpdateError } = await client
+          .from("missions")
+          .update({
+            progress,
+            review_point: checkpointReview.title,
+            current_recommendation: missionRecommendation,
+          })
+          .eq("id", task.mission_id)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId)
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
+          .single();
+
+        if (missionUpdateError) throw missionUpdateError;
+
+        const { error: memoryError } = await client.from("memory_entries").insert({
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: task.mission_id,
+          task_id: task.id,
+          checkpoint_id: checkpointId,
+          scope: "mission",
+          kind: "task_result",
+          content: input.note,
+          source_type: "task_result",
+          confidence: completedStatus === "completed" ? "medium" : "low",
+          reason: interpretation,
+        });
+
+        if (memoryError) throw memoryError;
+
+        await writeOperatingEvent(client, workspace, {
+          eventType: completedStatus === "blocked" ? "task_blocked" : "task_completed",
+          targetType: "task",
+          targetId: task.id,
+          sourceType: "task_result",
+          sourceId: task.id,
+          summary: interpretation,
+          payload: {
+            mission_id: task.mission_id,
+            checkpoint_id: checkpointId,
+            status: completedStatus,
+          },
+        });
+
+        return missionFromRow(missionData as MissionRow, checkpoints, missionTasks);
+      },
+    },
+    missionGenesis: {
+      async runMissionGenesis() {
+        const packet = await buildArtistOperatingPacket(client, workspace);
+        const result = runMissionGenesisDecision(packet);
+        const runId = await writeManagerRun(client, workspace, {
+          classification: `mission_genesis_${result.outcome}`,
+          confidence: result.stage.confidence,
+          contextPayload: {
+            stage: result.stage,
+            pressure: result.pressure,
+            candidate: result.candidate,
+            draft: result.draft,
+            questions: result.questions,
+          },
+        });
+
+        if (result.outcome === "candidate_needs_context" && result.candidate) {
+          const missionId = await createMissionCandidate(client, workspace, result, runId);
+          return missionGenesisViewModel({
+            outcome: result.outcome,
+            title: "Mission candidate needs context",
+            body: "The Manager found a durable management pressure, but user-controlled context could materially change the mission plan.",
+            reasons: result.reasons,
+            questions: result.questions,
+            evidenceNeeded: result.evidenceNeeded,
+            candidateMissionId: missionId,
+          });
+        }
+
+        if (result.outcome === "activate_mission" && result.draft) {
+          const missionId = await createActiveMissionFromDraft(client, workspace, result.draft, runId);
+          return missionGenesisViewModel({
+            outcome: result.outcome,
+            title: "Mission activated",
+            body: result.draft.mission.summary,
+            reasons: result.reasons,
+            questions: [],
+            evidenceNeeded: result.evidenceNeeded,
+            activatedMissionId: missionId,
+          });
+        }
+
+        return missionGenesisViewModel({
+          outcome: result.outcome,
+          title: missionGenesisOutcomeTitle(result.outcome),
+          body: result.reasons[0] ?? "Mission Genesis completed.",
+          reasons: result.reasons,
+          questions: result.questions,
+          evidenceNeeded: result.evidenceNeeded,
+        });
+      },
+      async answerMissionGenesisContext(input) {
+        await saveMissionGenesisAnswers(client, workspace, input.candidateMissionId, input.answers);
+        const packet = applyMissionGenesisAnswersToPacket(await buildArtistOperatingPacket(client, workspace), input.answers);
+        const result = runMissionGenesisDecision(packet);
+        const draft = result.draft ?? draftMissionPlan(packet, pressureFromCandidate(packet));
+        const runId = await writeManagerRun(client, workspace, {
+          classification: "mission_genesis_activate_mission",
+          confidence: result.stage.confidence,
+          contextPayload: {
+            stage: result.stage,
+            pressure: result.pressure,
+            draft,
+            answeredQuestions: input.answers,
+          },
+        });
+
+        await activateCandidateMission(client, workspace, input.candidateMissionId, draft, runId);
+
+        return missionGenesisViewModel({
+          outcome: "activate_mission",
+          title: "Mission activated",
+          body: "The Manager used the saved context to activate a personalized operating mission with checkpoint questions and tasks.",
+          reasons: ["The candidate now has enough context to create useful managed work."],
+          questions: [],
+          evidenceNeeded: result.evidenceNeeded,
+          activatedMissionId: input.candidateMissionId,
+        });
       },
     },
     evidence: {
@@ -1184,9 +1452,32 @@ type ConversationRow = {
 type MissionRow = {
   id: string;
   title: string;
+  objective?: string | null;
   status?: MissionViewModel["status"] | null;
+  progress?: number | null;
+  review_point?: string | null;
   summary?: string | null;
   current_recommendation?: string | null;
+  pattern_name?: string | null;
+};
+
+type CheckpointRow = {
+  id: string;
+  mission_id: string;
+  title: string;
+  question: string;
+  status: string;
+  recommendation?: string | null;
+};
+
+type TaskRow = {
+  id: string;
+  mission_id?: string | null;
+  primary_checkpoint_id?: string | null;
+  title: string;
+  status: string;
+  owner_role?: string | null;
+  purpose?: string | null;
 };
 
 type EvidenceRow = {
@@ -1204,6 +1495,667 @@ type EvidenceRow = {
   confidence?: string | null;
   limitation?: string | null;
 };
+
+async function buildArtistOperatingPacket(client: SupabaseClient, workspace: ProductionWorkspace): Promise<ArtistOperatingPacket> {
+  const [
+    { data: profileRows, error: profileError },
+    { data: evidenceRows, error: evidenceError },
+    { data: itemRows, error: itemError },
+    { data: projectRows, error: projectError },
+    { data: splitRows, error: splitError },
+    { data: missionRows, error: missionError },
+    { data: memoryRows, error: memoryError },
+    { data: agentRows, error: agentError },
+  ] = await Promise.all([
+    client
+      .from("artist_profiles")
+      .select("display_name,genres,home_market,stage,current_goal,artist_direction,budget_context")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(1),
+    client
+      .from("evidence_items")
+      .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(100),
+    client
+      .from("music_items")
+      .select("id,title,lifecycle_stage,source_kind,source_limit,metadata")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(100),
+    client
+      .from("music_projects")
+      .select("id,title,project_type,lifecycle_stage,source_kind,source_limit,metadata")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(100),
+    client
+      .from("music_splits")
+      .select("music_item_id,status,summary")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(100),
+    client
+      .from("missions")
+      .select("id,title,objective,status,pattern_name")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(50),
+    client
+      .from("memory_entries")
+      .select("content,kind,confidence")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(100),
+    client
+      .from("agent_reports")
+      .select("id,agent_key,summary,confidence,limitations")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .limit(20),
+  ]);
+
+  if (profileError) throw profileError;
+  if (evidenceError) throw evidenceError;
+  if (itemError) throw itemError;
+  if (projectError) throw projectError;
+  if (splitError) throw splitError;
+  if (missionError) throw missionError;
+  if (memoryError) throw memoryError;
+  if (agentError) throw agentError;
+
+  const profile = ((profileRows as WorkspaceProfileRow[] | null) ?? [])[0];
+  const evidence = (evidenceRows as EvidenceRow[] | null) ?? [];
+  const memory = ((memoryRows as Array<{ content?: string | null; kind?: string | null; confidence?: string | null }> | null) ?? []);
+  const splits = ((splitRows as Array<{ music_item_id?: string | null; status?: string | null; summary?: string | null }> | null) ?? []);
+  const rightsRisks = splits
+    .filter((split) => /missing|draft|pending|blocked/i.test(split.status ?? ""))
+    .map((split) => split.summary || `Rights status ${split.status} for music item ${split.music_item_id}`);
+
+  const evidenceSignals = evidence.map(formatEvidenceSignal).filter(Boolean);
+  const geographySignals = evidenceSignals.filter((signal) => /city|country|geograph|market|lagos|london|new york|los angeles|atlanta/i.test(signal));
+  const momentumSignals = evidenceSignals.filter((signal) => /listener|stream|playlist|tiktok|youtube|shazam|growth|momentum|views|posts/i.test(signal));
+  const sourceLimitations = evidence.map((row) => row.limitation).filter((value): value is string => Boolean(value));
+  const goal = readStringField(profile?.current_goal);
+  const budgetContext = readStringField(profile?.budget_context) ?? "";
+  const direction = readStringField(profile?.artist_direction);
+  const teamCapacityMemory = memory.find((entry) => /team|capacity|owner|execute/i.test(entry.content ?? ""));
+
+  return {
+    artist: {
+      id: workspace.artistId,
+      name: profile?.display_name ?? workspace.artistName,
+      stage: parseArtistStage(profile?.stage),
+      stageReason: readStringField(profile?.stage) || "Stage will be inferred from source and operating context.",
+      goals: goal ? [goal] : [],
+      genreContext: readStringArray(profile?.genres),
+      marketContext: [readStringField(profile?.home_market)].filter(Boolean),
+      positioning: [direction].filter(Boolean),
+      constraints: memory.filter((entry) => entry.kind === "constraint").map((entry) => entry.content ?? "").filter(Boolean),
+      doNotDo: memory.filter((entry) => entry.kind === "rejected_move").map((entry) => entry.content ?? "").filter(Boolean),
+    },
+    budget: {
+      posture: budgetPostureFromText(budgetContext),
+      statedAmount: readBudgetAmount(budgetContext),
+      currency: budgetContext.includes("$") ? "USD" : undefined,
+      source: budgetContext ? "profile" : "unknown",
+      confidence: budgetContext ? "medium" : "unknown",
+    },
+    team: {
+      capacity: teamCapacityMemory ? "small_team" : "unknown",
+      availableRoles: teamCapacityMemory ? ["artist_team"] : [],
+      constraints: teamCapacityMemory?.content ? [teamCapacityMemory.content] : [],
+    },
+    music: {
+      songs: ((itemRows as Array<{ id: string; title: string; lifecycle_stage?: string | null; source_limit?: string | null }> | null) ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        lifecycleStage: row.lifecycle_stage ?? "unknown",
+        readiness: row.source_limit ?? "Music readiness has not been summarized.",
+        blockers: rightsRisks.filter((risk) => risk.includes(row.id)),
+        evidenceSignals: evidenceSignals.filter((signal) => signal.includes(row.title)),
+      })),
+      projects: ((projectRows as Array<{ id: string; title: string; project_type?: string | null; lifecycle_stage?: string | null }> | null) ?? []).map((row) => ({
+        id: row.id,
+        title: row.title,
+        projectType: row.project_type ?? "project",
+        lifecycleStage: row.lifecycle_stage ?? "unknown",
+        trackCount: 0,
+        blockers: [],
+        evidenceSignals: evidenceSignals.filter((signal) => signal.includes(row.title)),
+      })),
+    },
+    audience: {
+      chartmetricScore: readChartmetricScore(evidence),
+      momentumSignals,
+      geographySignals,
+      platformSignals: evidenceSignals.filter((signal) => /spotify|youtube|tiktok|playlist|shazam/i.test(signal)),
+      sourceLimitations,
+    },
+    business: {
+      rightsRisks,
+      metadataRisks: [],
+      distributionRisks: [],
+      revenueSignals: evidenceSignals.filter((signal) => /revenue|royalty|payout|income/i.test(signal)),
+    },
+    memory: {
+      durableContext: memory.map((entry) => entry.content ?? "").filter(Boolean),
+      priorDecisions: memory.filter((entry) => entry.kind === "interpretation").map((entry) => entry.content ?? "").filter(Boolean),
+      rejectedMoves: memory.filter((entry) => entry.kind === "rejected_move").map((entry) => entry.content ?? "").filter(Boolean),
+      activeConstraints: memory.filter((entry) => entry.kind === "constraint").map((entry) => entry.content ?? "").filter(Boolean),
+    },
+    existingMissions: ((missionRows as MissionRow[] | null) ?? []).map((mission) => ({
+      id: mission.id,
+      title: mission.title,
+      objective: mission.objective ?? mission.summary ?? mission.title,
+      status: mission.status ?? "active",
+      patternName: mission.pattern_name ?? undefined,
+    })),
+    recentAgentInputs: ((agentRows as Array<{ id: string; agent_key?: string | null; summary?: string | null; confidence?: string | null; limitations?: string[] | null }> | null) ?? []).map((report) => ({
+      id: report.id,
+      agentKey: report.agent_key ?? "agent",
+      summary: report.summary ?? "Agent report saved.",
+      confidence: report.confidence ?? "unknown",
+      limitations: report.limitations ?? [],
+    })),
+    sourceConfidence: {
+      strong: evidence.filter((row) => row.confidence === "high").map(formatEvidenceSignal).filter(Boolean),
+      weak: evidence.filter((row) => row.confidence === "low").map(formatEvidenceSignal).filter(Boolean),
+      missing: [],
+      stale: evidence.filter((row) => /stale/i.test(row.freshness ?? "")).map(formatEvidenceSignal).filter(Boolean),
+    },
+  };
+}
+
+async function writeManagerRun(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  input: { classification: string; confidence: string; contextPayload: Record<string, unknown> },
+) {
+  const { data, error } = await client
+    .from("manager_synthesis_runs")
+    .insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      trigger_type: "manual",
+      status: "completed",
+      classification: input.classification,
+      confidence: input.confidence === "unknown" ? "low" : input.confidence,
+      context_payload: input.contextPayload,
+      steps_payload: [],
+      action_plan: [],
+      limitations: [],
+      started_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return (data as { id: string }).id;
+}
+
+async function createMissionCandidate(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  result: ReturnType<typeof runMissionGenesisDecision>,
+  runId: string,
+) {
+  if (!result.candidate) throw new Error("Mission Genesis candidate result is missing candidate details.");
+  const { data, error } = await client
+    .from("missions")
+    .insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      title: result.candidate.title,
+      objective: result.candidate.objective,
+      reason: result.candidate.reason,
+      status: "candidate",
+      priority: 0,
+      progress: 0,
+      summary: result.candidate.summary,
+      pattern_name: result.candidate.patternName,
+      pattern_confidence: result.pressure?.confidence ?? "medium",
+      originating_trigger: "manual_mission_genesis",
+      required_evidence: result.pressure?.supportingSignals ?? [],
+      missing_evidence: result.evidenceNeeded,
+      current_recommendation: "Answer Mission Genesis context questions before activation.",
+      change_conditions: result.candidate.changeConditions,
+      created_from_run_id: runId,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  const missionId = (data as { id: string }).id;
+  await writeOperatingEvent(client, workspace, {
+    eventType: "mission_candidate_created",
+    targetType: "mission",
+    targetId: missionId,
+    summary: `Mission candidate created: ${result.candidate.title}.`,
+    payload: { outcome: result.outcome, questions: result.questions.map((question) => question.key) },
+  });
+  return missionId;
+}
+
+async function createActiveMissionFromDraft(client: SupabaseClient, workspace: ProductionWorkspace, draft: MissionPlanDraft, runId: string) {
+  const { data, error } = await client
+    .from("missions")
+    .insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      title: draft.mission.title,
+      objective: draft.mission.objective,
+      reason: draft.mission.reason,
+      status: "active",
+      priority: 1,
+      progress: 0,
+      summary: draft.mission.summary,
+      pattern_name: draft.mission.patternName,
+      pattern_confidence: "medium",
+      originating_trigger: "manual_mission_genesis",
+      required_evidence: draft.checkpoints.flatMap((checkpoint) => checkpoint.requiredEvidence),
+      missing_evidence: draft.checkpoints.flatMap((checkpoint) => checkpoint.missingEvidence),
+      current_recommendation: draft.mission.currentRecommendation,
+      change_conditions: draft.mission.changeConditions,
+      review_point: draft.checkpoints[0]?.title,
+      created_from_run_id: runId,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  const missionId = (data as { id: string }).id;
+  await writeMissionPlanRecords(client, workspace, missionId, draft, runId);
+  return missionId;
+}
+
+async function activateCandidateMission(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  missionId: string,
+  draft: MissionPlanDraft,
+  runId: string,
+) {
+  const { error } = await client
+    .from("missions")
+    .update({
+      title: draft.mission.title,
+      objective: draft.mission.objective,
+      reason: draft.mission.reason,
+      status: "active",
+      priority: 1,
+      progress: 0,
+      summary: draft.mission.summary,
+      pattern_name: draft.mission.patternName,
+      pattern_confidence: "medium",
+      required_evidence: draft.checkpoints.flatMap((checkpoint) => checkpoint.requiredEvidence),
+      missing_evidence: draft.checkpoints.flatMap((checkpoint) => checkpoint.missingEvidence),
+      current_recommendation: draft.mission.currentRecommendation,
+      change_conditions: draft.mission.changeConditions,
+      review_point: draft.checkpoints[0]?.title,
+      created_from_run_id: runId,
+    })
+    .eq("id", missionId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+  if (error) throw error;
+  await writeMissionPlanRecords(client, workspace, missionId, draft, runId);
+}
+
+async function writeMissionPlanRecords(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  missionId: string,
+  draft: MissionPlanDraft,
+  runId: string,
+) {
+  const { data: planData, error: planError } = await client
+    .from("mission_plan_versions")
+    .insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      mission_id: missionId,
+      version: 1,
+      status: "active",
+      generated_from_run_id: runId,
+      summary: `${draft.mission.timeline}`,
+    })
+    .select("id")
+    .single();
+
+  if (planError) throw planError;
+  const planId = (planData as { id: string }).id;
+  const checkpointIdsByKey = new Map<string, string>();
+
+  for (const [index, checkpoint] of draft.checkpoints.entries()) {
+    const { data, error } = await client
+      .from("checkpoints")
+      .insert({
+        account_id: workspace.accountId,
+        artist_workspace_id: workspace.artistWorkspaceId,
+        artist_id: workspace.artistId,
+        mission_id: missionId,
+        mission_plan_version_id: planId,
+        title: checkpoint.title,
+        status: "waiting",
+        question: checkpoint.question,
+        reason_for_checkpoint: checkpoint.decisionRule,
+        watched_signals: checkpoint.requiredEvidence,
+        decision_rule: checkpoint.decisionRule,
+        recommendation: "Waiting for task results and evidence before Manager review.",
+        required_evidence: checkpoint.requiredEvidence,
+        missing_evidence: checkpoint.missingEvidence,
+        created_from_run_id: runId,
+      })
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    const checkpointId = (data as { id: string }).id;
+    checkpointIdsByKey.set(checkpoint.key, checkpointId);
+
+    const { error: linkError } = await client.from("mission_plan_checkpoints").insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      mission_plan_version_id: planId,
+      mission_id: missionId,
+      checkpoint_id: checkpointId,
+      order_index: index + 1,
+      phase_label: checkpoint.title,
+      unlock_rule: checkpoint.decisionRule,
+    });
+
+    if (linkError) throw linkError;
+  }
+
+  for (const task of draft.tasks) {
+    const checkpointId = checkpointIdsByKey.get(task.primaryCheckpointKey) ?? [...checkpointIdsByKey.values()][0];
+    if (!checkpointId) continue;
+    const { error } = await client.from("tasks").insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      scope: "mission",
+      mission_id: missionId,
+      mission_plan_version_id: planId,
+      primary_checkpoint_id: checkpointId,
+      title: task.title,
+      owner_role: task.ownerRole,
+      priority: 0,
+      status: "proposed",
+      approval_state: "not_required",
+      purpose: task.purpose,
+      evidence_needed: task.evidenceNeeded,
+      completion_expectation: task.completionExpectation,
+      risk_if_late: task.riskIfLate,
+      created_from_run_id: runId,
+    });
+
+    if (error) throw error;
+  }
+
+  for (const request of draft.permissionRequests) {
+    const { error } = await client.from("permission_requests").insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      mission_id: missionId,
+      request_type: permissionRequestType(request.requestType),
+      title: request.title,
+      body: request.body,
+      risk: request.risk,
+      status: "pending",
+      created_from_run_id: runId,
+    });
+
+    if (error) throw error;
+  }
+
+  const { error: missionPlanError } = await client
+    .from("missions")
+    .update({ active_plan_version_id: planId })
+    .eq("id", missionId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+  if (missionPlanError) throw missionPlanError;
+
+  await writeOperatingEvent(client, workspace, {
+    eventType: "mission_activated",
+    targetType: "mission",
+    targetId: missionId,
+    summary: `Activated mission plan: ${draft.mission.title}.`,
+    payload: { plan_id: planId, checkpoints: draft.checkpoints.length, tasks: draft.tasks.length },
+  });
+}
+
+async function saveMissionGenesisAnswers(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  candidateMissionId: string,
+  answers: Array<{ questionKey: string; answer: string }>,
+) {
+  const { data, error } = await client
+    .from("manager_context_questions")
+    .select("id,question_key");
+
+  if (error) throw error;
+  const questions = (data as Array<{ id: string; question_key: string }> | null) ?? [];
+  const questionIdByKey = new Map(questions.map((question) => [question.question_key, question.id]));
+
+  for (const answer of answers) {
+    const normalizedAnswer = answer.answer.trim();
+    if (!normalizedAnswer) continue;
+    const seededKey = seededQuestionKey(answer.questionKey);
+    const questionId = questionIdByKey.get(seededKey);
+    if (!questionId) {
+      throw new Error(`Mission Genesis context question is not seeded: ${seededKey}`);
+    }
+
+    const { data: memoryData, error: memoryError } = await client
+      .from("memory_entries")
+      .insert({
+        account_id: workspace.accountId,
+        artist_workspace_id: workspace.artistWorkspaceId,
+        artist_id: workspace.artistId,
+        mission_id: candidateMissionId,
+        scope: "artist",
+        kind: memoryKindForQuestion(answer.questionKey),
+        content: normalizedAnswer,
+        source_type: "manager_context_answer",
+        confidence: "medium",
+        reason: `Mission Genesis answer for ${answer.questionKey}.`,
+      })
+      .select("id")
+      .single();
+
+    if (memoryError) throw memoryError;
+
+    const { error: answerError } = await client.from("manager_context_answers").insert({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      question_id: questionId,
+      answer: normalizedAnswer,
+      source: "typed",
+      memory_entry_id: (memoryData as { id: string }).id,
+    });
+
+    if (answerError) throw answerError;
+  }
+}
+
+function applyMissionGenesisAnswersToPacket(
+  packet: ArtistOperatingPacket,
+  answers: Array<{ questionKey: string; answer: string }>,
+): ArtistOperatingPacket {
+  const next: ArtistOperatingPacket = {
+    ...packet,
+    artist: { ...packet.artist },
+    budget: { ...packet.budget },
+    team: { ...packet.team },
+  };
+
+  for (const answer of answers) {
+    if (answer.questionKey === "mission_90_day_goal" && answer.answer.trim()) {
+      next.artist.goals = [answer.answer.trim()];
+    }
+    if (answer.questionKey === "mission_budget_range" && answer.answer.trim()) {
+      next.budget = {
+        posture: budgetPostureFromText(answer.answer),
+        statedAmount: readBudgetAmount(answer.answer),
+        currency: answer.answer.includes("$") ? "USD" : undefined,
+        source: "context_answer",
+        confidence: "medium",
+      };
+    }
+    if (answer.questionKey === "mission_team_capacity" && answer.answer.trim()) {
+      next.team = {
+        capacity: teamCapacityFromAnswer(answer.answer),
+        availableRoles: [answer.answer.trim()],
+        constraints: [],
+      };
+    }
+    if (answer.questionKey === "mission_do_not_do" && answer.answer.trim()) {
+      next.artist.doNotDo = [...next.artist.doNotDo, answer.answer.trim()];
+    }
+  }
+
+  return next;
+}
+
+function pressureFromCandidate(packet: ArtistOperatingPacket): MissionPressure {
+  const geographySignal = packet.audience.geographySignals[0];
+  if (geographySignal) {
+    return {
+      pressureKey: "market-expansion-signal",
+      category: "market_expansion",
+      title: "Validate whether a rising market deserves focused operating attention",
+      whyNow: "Geography signal exists and Mission Genesis context has now been answered.",
+      artistStageFit: "Market validation fits this artist if scoped to proof, budget, and capacity.",
+      supportingSignals: packet.audience.geographySignals,
+      missingContext: [],
+      missingEvidence: [],
+      risksIfIgnored: ["The team may miss a real market opening or spend against a weak geographic signal."],
+      likelyPatterns: ["Market Expansion", "Audience Development", "Budget Allocation"],
+      estimatedTimeline: {
+        minDays: 45,
+        maxDays: 120,
+        reason: "Market validation needs enough time to test content, audience quality, and conversion before scaling.",
+      },
+      confidence: "medium",
+    };
+  }
+
+  return {
+    pressureKey: "source-completeness",
+    category: "data_source_completeness",
+    title: "Resolve source and context gaps before higher-stakes management work",
+    whyNow: "Mission Genesis needs a first useful operating mission.",
+    artistStageFit: "Source completeness protects the artist from generic management work.",
+    supportingSignals: ["Mission Genesis context was answered."],
+    missingContext: [],
+    missingEvidence: [],
+    risksIfIgnored: ["The app may recommend work that does not fit the artist or cannot be executed."],
+    likelyPatterns: ["Data / Source Completeness"],
+    estimatedTimeline: {
+      minDays: 1,
+      maxDays: 14,
+      reason: "Source and context setup should be short.",
+    },
+    confidence: "medium",
+  };
+}
+
+function missionGenesisViewModel(input: MissionGenesisResultViewModel): MissionGenesisResultViewModel {
+  return {
+    ...input,
+    questions: input.questions.map((question) => ({
+      key: question.key,
+      question: question.question,
+      reason: question.reason,
+      answerKind: question.answerKind,
+      options: question.options,
+    })),
+  };
+}
+
+function missionGenesisOutcomeTitle(outcome: MissionGenesisResultViewModel["outcome"]) {
+  if (outcome === "request_evidence") return "Mission Genesis needs evidence";
+  if (outcome === "update_existing_mission") return "Existing mission should be updated";
+  if (outcome === "no_mission") return "No mission created";
+  return "Mission Genesis completed";
+}
+
+function seededQuestionKey(questionKey: string) {
+  const map: Record<string, string> = {
+    mission_90_day_goal: "current_priority",
+    mission_budget_range: "budget_boundary",
+    mission_team_capacity: "team_capacity",
+    mission_timing_boundary: "risk_boundary",
+    mission_do_not_do: "risk_boundary",
+  };
+  return map[questionKey] ?? questionKey;
+}
+
+function memoryKindForQuestion(questionKey: string) {
+  if (questionKey === "mission_team_capacity" || questionKey === "mission_budget_range" || questionKey === "mission_timing_boundary") {
+    return "constraint";
+  }
+  if (questionKey === "mission_do_not_do") return "preference";
+  return "fact";
+}
+
+function permissionRequestType(value: MissionPlanDraft["permissionRequests"][number]["requestType"]) {
+  if (value === "legal_financial") return "legal_finance_rights";
+  if (value === "external_contact") return "external_outreach";
+  if (value === "public_action") return "publish";
+  return value;
+}
+
+function formatEvidenceSignal(row: EvidenceRow) {
+  const metric = [row.metric_name, row.metric_value, row.metric_unit].filter((value) => value !== undefined && value !== null && value !== "").join(" ");
+  const subject = row.subject_label ? `${row.subject_label}: ` : "";
+  return `${subject}${metric || row.evidence_type || row.source}`.trim();
+}
+
+function parseArtistStage(value: string | null | undefined): ArtistOperatingPacket["artist"]["stage"] {
+  const normalized = value?.toLowerCase() ?? "";
+  if (/foundation|new|setup|starter/.test(normalized)) return "foundation";
+  if (/emerging/.test(normalized)) return "emerging";
+  if (/breakout|viral|scaling/.test(normalized)) return "breakout";
+  if (/established|superstar|major/.test(normalized)) return "established";
+  if (/catalog|legacy/.test(normalized)) return "catalog_legacy";
+  return "developing";
+}
+
+function budgetPostureFromText(value: string | null | undefined): ArtistOperatingPacket["budget"]["posture"] {
+  const amount = readBudgetAmount(value);
+  if (amount === undefined && !value?.trim()) return "unknown";
+  if (amount === undefined) return "moderate";
+  if (amount <= 0) return "none";
+  if (amount < 2500) return "low";
+  if (amount < 15000) return "moderate";
+  if (amount < 75000) return "serious";
+  return "enterprise";
+}
+
+function readBudgetAmount(value: string | null | undefined) {
+  const amount = Number.parseFloat((value ?? "").replace(/[^0-9.]/g, ""));
+  return Number.isFinite(amount) ? amount : undefined;
+}
+
+function teamCapacityFromAnswer(value: string): ArtistOperatingPacket["team"]["capacity"] {
+  if (/label/i.test(value)) return "label_team";
+  if (/vendor|full/i.test(value)) return "full_team";
+  if (/small/i.test(value)) return "small_team";
+  if (/artist/i.test(value)) return "solo";
+  return "unknown";
+}
+
+function readChartmetricScore(evidence: EvidenceRow[]) {
+  const score = evidence.find((row) => /chartmetric.*score|score.*chartmetric/i.test(row.metric_name ?? ""));
+  return readNumberField(score?.metric_value);
+}
 
 type SupabaseStorageClient = {
   storage?: {
@@ -3654,17 +4606,83 @@ function formatDuration(durationMs: number) {
   return `${minutes}:${seconds}`;
 }
 
-function missionFromRow(row: MissionRow): MissionViewModel {
+function missionFromRow(row: MissionRow, checkpoints: CheckpointRow[] = [], tasks: TaskRow[] = []): MissionViewModel {
+  const nextTask = tasks.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
   return {
     id: row.id,
     title: row.title,
     status: row.status ?? "active",
-    progress: 0,
-    review: "No review has run yet.",
+    progress: row.progress ?? deriveMissionProgress(tasks),
+    review: row.review_point ?? checkpoints[0]?.title ?? "No review has run yet.",
     summary: row.summary ?? "No mission summary has been generated yet.",
     recommendation: row.current_recommendation ?? "No current recommendation.",
     musicSubject: "No linked music subject",
-    nextTask: "No next task selected.",
+    nextTask: nextTask?.title ?? "No next task selected.",
+    checkpoints: checkpoints.map((checkpoint) => ({
+      id: checkpoint.id,
+      title: checkpoint.title,
+      question: checkpoint.question,
+      status: checkpoint.status,
+      recommendation: checkpoint.recommendation ?? undefined,
+    })),
+    tasks: tasks.map((task) => ({
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      ownerRole: task.owner_role ?? undefined,
+      checkpointId: task.primary_checkpoint_id ?? undefined,
+      purpose: task.purpose ?? undefined,
+    })),
+  };
+}
+
+function deriveMissionProgress(tasks: TaskRow[]) {
+  if (!tasks.length) return 0;
+  const completed = tasks.filter((task) => task.status === "completed").length;
+  return Math.round((completed / tasks.length) * 100);
+}
+
+function interpretTaskResult(task: TaskRow, input: { status: "completed" | "blocked"; note: string }) {
+  const trimmedNote = input.note.trim();
+  if (input.status === "blocked") {
+    return `Task blocked: ${task.title}. The Manager should revise the checkpoint before more work continues. ${trimmedNote}`;
+  }
+
+  return `Task completed: ${task.title}. The result is now checkpoint evidence for Manager review. ${trimmedNote}`;
+}
+
+function buildCheckpointReview(
+  checkpoint: CheckpointRow | undefined,
+  task: TaskRow,
+  missionTasks: TaskRow[],
+  input: { status: "completed" | "blocked"; note: string },
+) {
+  const checkpointTasks = task.primary_checkpoint_id
+    ? missionTasks.filter((missionTask) => missionTask.primary_checkpoint_id === task.primary_checkpoint_id)
+    : missionTasks;
+  const title = checkpoint?.title ?? "Mission checkpoint";
+
+  if (input.status === "blocked") {
+    return {
+      title,
+      status: "needs_revision",
+      recommendation: `Task blocked on ${task.title}. Revise the plan before spending more effort: ${input.note.trim()}`,
+    };
+  }
+
+  const allCheckpointTasksCompleted = checkpointTasks.length > 0 && checkpointTasks.every((missionTask) => missionTask.status === "completed");
+  if (allCheckpointTasksCompleted) {
+    return {
+      title,
+      status: "ready_for_manager_check",
+      recommendation: `${title} is ready for Manager review. Use the completed task evidence before deciding whether to continue, revise, or stop.`,
+    };
+  }
+
+  return {
+    title,
+    status: "in_progress",
+    recommendation: `${task.title} is complete. Continue the remaining checkpoint tasks before Manager review.`,
   };
 }
 

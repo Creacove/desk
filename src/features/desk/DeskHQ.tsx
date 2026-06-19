@@ -202,7 +202,7 @@ export function DeskHQScreen({
                   key={item.title}
                   type="button"
                   className="group rounded-xl border border-foreground/10 bg-background p-4 text-left shadow-sm transition-colors hover:border-brand-accent/20 hover:bg-foreground/[0.015]"
-                  onClick={() => (item.tone === "accent" ? onDrawer("evidence") : onNavigate("missionsWorkspace"))}
+                  onClick={() => (item.target ? onNavigate(item.target) : item.tone === "accent" ? onDrawer("evidence") : onNavigate("missionsWorkspace"))}
                 >
                   <div className="flex items-center gap-2.5">
                     <span className={item.tone === "warning" ? "flex h-7 w-7 items-center justify-center rounded-lg bg-warning/10 text-warning" : "flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 text-brand-accent"}>

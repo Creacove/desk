@@ -1,17 +1,29 @@
 import { ClipboardCheck } from "lucide-react";
 import { ProductButton, WorkspaceHeader } from "../../design-system/components";
-import type { DrawerKind, MissionViewModel } from "../../types/cleanProduction";
+import type { DrawerKind, MissionGenesisResultViewModel, MissionViewModel } from "../../types/cleanProduction";
 import { useState } from "react";
 
 export function MissionsWorkspace({
   missions,
   selectedMissionId,
+  missionGenesisResult,
+  missionGenesisPending,
   onSelectMission,
+  onRunMissionGenesis,
+  onOpenMissionGenesisQuestions,
+  onApproveTask,
+  onCompleteTask,
   onDrawer,
 }: {
   missions: MissionViewModel[];
   selectedMissionId: string;
+  missionGenesisResult: MissionGenesisResultViewModel | null;
+  missionGenesisPending: boolean;
   onSelectMission: (id: string) => void;
+  onRunMissionGenesis: () => void;
+  onOpenMissionGenesisQuestions: () => void;
+  onApproveTask: (taskId: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked") => Promise<void>;
   onDrawer: (drawer: DrawerKind) => void;
 }) {
   const [tab, setTab] = useState<"overview" | "tasks" | "checkpoints" | "notes" | "recap">("overview");
@@ -20,6 +32,27 @@ export function MissionsWorkspace({
   return (
     <section>
       <WorkspaceHeader eyebrow="Artist work" title="Missions" />
+      <MissionGenesisPanel
+        result={missionGenesisResult}
+        pending={missionGenesisPending}
+        onRun={onRunMissionGenesis}
+        onOpenQuestions={onOpenMissionGenesisQuestions}
+      />
+      {!selected ? (
+        <section className="rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">No active missions</p>
+          <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
+            Run Mission Genesis to decide whether this artist has durable management work worth organizing.
+          </p>
+          <div className="mt-4">
+            <ProductButton onClick={onRunMissionGenesis} disabled={missionGenesisPending}>
+              {missionGenesisPending ? "Running Mission Genesis" : "Run Mission Genesis for this artist"}
+            </ProductButton>
+          </div>
+        </section>
+      ) : null}
+      {selected ? (
+        <>
       <section data-testid="missions-mobile-picker" className="mb-4 rounded-[16px] border border-foreground/10 bg-white p-3 shadow-[0_1px_6px_rgba(17,19,24,0.045)] lg:hidden">
         <div className="mb-2 flex items-center justify-between">
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Missions</p>
@@ -86,13 +119,58 @@ export function MissionsWorkspace({
           </div>
           <div className="mt-5">
             {tab === "overview" ? <MissionOverview mission={selected} onDrawer={onDrawer} /> : null}
-            {tab === "tasks" ? <TasksPanel /> : null}
-            {tab === "checkpoints" ? <CheckpointsPanel /> : null}
+            {tab === "tasks" ? <TasksPanel mission={selected} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} /> : null}
+            {tab === "checkpoints" ? <CheckpointsPanel mission={selected} /> : null}
             {tab === "notes" ? <NotesPanel /> : null}
             {tab === "recap" ? <MissionRecapPanel /> : null}
           </div>
         </main>
       </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function MissionGenesisPanel({
+  result,
+  pending,
+  onRun,
+  onOpenQuestions,
+}: {
+  result: MissionGenesisResultViewModel | null;
+  pending: boolean;
+  onRun: () => void;
+  onOpenQuestions: () => void;
+}) {
+  return (
+    <section className="mb-5 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Genesis</p>
+          <h2 className="mt-2 font-display text-[18px] font-bold tracking-tight text-foreground">Create only the mission this artist actually needs</h2>
+          <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
+            The Manager checks artist stage, signals, context, memory, source limits, budget, and team capacity before activating mission work.
+          </p>
+        </div>
+        <ProductButton variant="secondary" onClick={onRun} disabled={pending}>
+          {pending ? "Running Mission Genesis" : "Run Mission Genesis"}
+        </ProductButton>
+      </div>
+      {result ? (
+        <div className="mt-5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{result.outcome.replaceAll("_", " ")}</p>
+          <h3 className="mt-2 text-sm font-semibold text-foreground">{result.title}</h3>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
+          {result.questions.length ? (
+            <div className="mt-4">
+              <ProductButton variant="primary" onClick={onOpenQuestions}>
+                Answer in Manager Office
+              </ProductButton>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -110,41 +188,87 @@ function MissionOverview({ mission, onDrawer }: { mission: MissionViewModel; onD
   );
 }
 
-function TasksPanel() {
+function TasksPanel({
+  mission,
+  onApproveTask,
+  onCompleteTask,
+}: {
+  mission: MissionViewModel;
+  onApproveTask: (taskId: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked") => Promise<void>;
+}) {
+  const tasks = mission.tasks ?? [];
   return (
     <section className="rounded-xl border border-foreground/10 bg-background shadow-sm p-5">
-      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Release tasks</p>
+      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission tasks</p>
       <div className="grid gap-3 mt-4">
-        {["Confirm split sheet", "Submit Spotify for Artists pitch", "Build TikTok creator target list"].map((task, index) => (
-          <div key={task} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
+        {tasks.length ? tasks.map((task, index) => (
+          <div key={task.id} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Task {index + 1}</p>
-            <p className="text-sm font-semibold mt-2">{task}</p>
-            <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">Owner-ready work with purpose, dependency, evidence, and completion note.</p>
-            <div className="mt-4 flex gap-3">
-              <ProductButton variant="secondary">Approve</ProductButton>
-              <ProductButton variant="secondary">Mark done</ProductButton>
+            <p className="text-sm font-semibold mt-2">{task.title}</p>
+            <p className="mt-2 inline-flex rounded-full border border-foreground/10 bg-background px-2.5 py-1 font-ui text-[11px] font-semibold text-muted-foreground">
+              {task.status}
+            </p>
+            <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">
+              {task.purpose ?? "Owner-ready work with purpose, dependency, evidence, and completion note."}
+            </p>
+            {task.managerInterpretation ? <p className="mt-3 text-[12px] font-semibold leading-relaxed text-foreground/90">{task.managerInterpretation}</p> : null}
+            <div className="mt-4 flex flex-wrap gap-3">
+              <ProductButton
+                variant="secondary"
+                disabled={task.status === "approved" || task.status === "completed"}
+                onClick={() => {
+                  void onApproveTask(task.id);
+                }}
+              >
+                Approve
+              </ProductButton>
+              <ProductButton
+                variant="secondary"
+                disabled={task.status === "completed"}
+                onClick={() => {
+                  void onCompleteTask(task.id, "completed");
+                }}
+              >
+                Mark done
+              </ProductButton>
+              <ProductButton
+                variant="quiet"
+                disabled={task.status === "completed" || task.status === "blocked"}
+                onClick={() => {
+                  void onCompleteTask(task.id, "blocked");
+                }}
+              >
+                Mark blocked
+              </ProductButton>
             </div>
           </div>
-        ))}
+        )) : (
+          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">No tasks have been generated for this mission yet.</p>
+        )}
       </div>
     </section>
   );
 }
 
-function CheckpointsPanel() {
+function CheckpointsPanel({ mission }: { mission: MissionViewModel }) {
+  const checkpoints = mission.checkpoints ?? [];
   return (
     <section className="rounded-xl border border-foreground/10 bg-background shadow-sm p-5">
       <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission checkpoints</p>
       <div className="grid gap-3 mt-4">
-        {["Rights & Metadata Gate", "Campaign Build", "72-hour signal review"].map((checkpoint) => (
-          <div key={checkpoint} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
+        {checkpoints.length ? checkpoints.map((checkpoint) => (
+          <div key={checkpoint.id} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
             <div className="flex items-center gap-3">
               <ClipboardCheck className="h-4 w-4 text-success" aria-hidden="true" />
-              <p className="text-sm font-semibold">{checkpoint}</p>
+              <p className="text-sm font-semibold">{checkpoint.title}</p>
             </div>
-            <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">Manager recommendation depends on required task results, watched signals, and evidence limits.</p>
+            <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">{checkpoint.question}</p>
+            {checkpoint.recommendation ? <p className="mt-3 text-[12px] font-semibold leading-relaxed text-foreground/90">{checkpoint.recommendation}</p> : null}
           </div>
-        ))}
+        )) : (
+          <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">No checkpoints have been generated for this mission yet.</p>
+        )}
       </div>
     </section>
   );
