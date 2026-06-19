@@ -21,6 +21,7 @@ export function MissionsWorkspace({
   selectedMissionId,
   missionGenesisResult,
   missionGenesisPending,
+  missionGenesisError,
   onSelectMission,
   onRunMissionGenesis,
   onOpenMissionGenesisQuestions,
@@ -31,6 +32,7 @@ export function MissionsWorkspace({
   selectedMissionId: string;
   missionGenesisResult: MissionGenesisResultViewModel | null;
   missionGenesisPending: boolean;
+  missionGenesisError: string | null;
   onSelectMission: (id: string) => void;
   onRunMissionGenesis: () => void;
   onOpenMissionGenesisQuestions: () => void;
@@ -71,6 +73,7 @@ export function MissionsWorkspace({
         <MissionGenesisPanel
           result={missionGenesisResult}
           pending={missionGenesisPending}
+          error={missionGenesisError}
           onRun={onRunMissionGenesis}
           onOpenQuestions={onOpenMissionGenesisQuestions}
         />
@@ -86,6 +89,7 @@ export function MissionsWorkspace({
         <MissionGenesisPanel
           result={missionGenesisResult}
           pending={missionGenesisPending}
+          error={missionGenesisError}
           onRun={onRunMissionGenesis}
           onOpenQuestions={onOpenMissionGenesisQuestions}
         />
@@ -114,11 +118,13 @@ export function MissionsWorkspace({
 function MissionGenesisPanel({
   result,
   pending,
+  error,
   onRun,
   onOpenQuestions,
 }: {
   result: MissionGenesisResultViewModel | null;
   pending: boolean;
+  error: string | null;
   onRun: () => void;
   onOpenQuestions: () => void;
 }) {
@@ -150,6 +156,12 @@ function MissionGenesisPanel({
               </ProductButton>
             </div>
           ) : null}
+        </div>
+      ) : null}
+      {error ? (
+        <div role="alert" className="mt-5 rounded-[16px] border border-red-500/20 bg-red-500/[0.055] p-4">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{error}</p>
         </div>
       ) : null}
     </section>

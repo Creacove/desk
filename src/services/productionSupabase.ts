@@ -35,7 +35,7 @@ import type {
 } from "../types/productionApp";
 import { runMissionGenesis as runMissionGenesisDecision } from "./missionGenesis";
 import { draftMissionPlan, type MissionPlanDraft } from "./missionGenesis/missionPlanDraft";
-import type { ArtistOperatingPacket, ContextQuestion, MissionPressure } from "./missionGenesis/types";
+import type { ArtistOperatingPacket, ContextQuestion } from "./missionGenesis/types";
 
 const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -1244,28 +1244,41 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         await saveMissionGenesisAnswers(client, workspace, input.candidateMissionId, input.answers);
         const packet = applyMissionGenesisAnswersToPacket(await buildArtistOperatingPacket(client, workspace), input.answers);
         const result = runMissionGenesisDecision(packet);
-        const draft = result.draft ?? draftMissionPlan(packet, pressureFromCandidate(packet));
         const runId = await writeManagerRun(client, workspace, {
-          classification: "mission_genesis_activate_mission",
+          classification: `mission_genesis_${result.outcome}`,
           confidence: result.stage.confidence,
           contextPayload: {
             stage: result.stage,
             pressure: result.pressure,
-            draft,
+            draft: result.draft,
             answeredQuestions: input.answers,
           },
         });
 
-        await activateCandidateMission(client, workspace, input.candidateMissionId, draft, runId);
+        if (result.outcome === "activate_mission" && result.draft) {
+          await activateCandidateMission(client, workspace, input.candidateMissionId, result.draft, runId);
+
+          return missionGenesisViewModel({
+            outcome: "activate_mission",
+            title: "Mission activated",
+            body: "The Manager used the saved context to activate a personalized operating mission with checkpoint questions and tasks.",
+            reasons: result.reasons,
+            questions: [],
+            evidenceNeeded: result.evidenceNeeded,
+            activatedMissionId: input.candidateMissionId,
+          });
+        }
+
+        await keepMissionCandidateUnactivated(client, workspace, input.candidateMissionId, result, runId);
 
         return missionGenesisViewModel({
-          outcome: "activate_mission",
-          title: "Mission activated",
-          body: "The Manager used the saved context to activate a personalized operating mission with checkpoint questions and tasks.",
-          reasons: ["The candidate now has enough context to create useful managed work."],
-          questions: [],
+          outcome: result.outcome,
+          title: missionGenesisOutcomeTitle(result.outcome),
+          body: result.reasons[0] ?? "Mission Genesis did not activate this candidate.",
+          reasons: result.reasons,
+          questions: result.questions,
           evidenceNeeded: result.evidenceNeeded,
-          activatedMissionId: input.candidateMissionId,
+          candidateMissionId: input.candidateMissionId,
         });
       },
     },
@@ -1800,6 +1813,41 @@ async function activateCandidateMission(
   await writeMissionPlanRecords(client, workspace, missionId, draft, runId);
 }
 
+async function keepMissionCandidateUnactivated(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  missionId: string,
+  result: ReturnType<typeof runMissionGenesisDecision>,
+  runId: string,
+) {
+  const recommendation = result.reasons[0] ?? "Mission Genesis did not find enough artist-specific evidence to activate this candidate.";
+  const { error } = await client
+    .from("missions")
+    .update({
+      status: "candidate",
+      missing_evidence: result.evidenceNeeded,
+      current_recommendation: recommendation,
+      created_from_run_id: runId,
+    })
+    .eq("id", missionId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId);
+
+  if (error) throw error;
+
+  await writeOperatingEvent(client, workspace, {
+    eventType: "mission_genesis_not_activated",
+    targetType: "mission",
+    targetId: missionId,
+    summary: `Mission Genesis did not activate candidate: ${recommendation}`,
+    payload: {
+      outcome: result.outcome,
+      reasons: result.reasons,
+      questions: result.questions.map((question) => question.key),
+      evidence_needed: result.evidenceNeeded,
+    },
+  });
+}
+
 async function writeMissionPlanRecords(
   client: SupabaseClient,
   workspace: ProductionWorkspace,
@@ -2021,49 +2069,6 @@ function applyMissionGenesisAnswersToPacket(
   }
 
   return next;
-}
-
-function pressureFromCandidate(packet: ArtistOperatingPacket): MissionPressure {
-  const geographySignal = packet.audience.geographySignals[0];
-  if (geographySignal) {
-    return {
-      pressureKey: "market-expansion-signal",
-      category: "market_expansion",
-      title: "Validate whether a rising market deserves focused operating attention",
-      whyNow: "Geography signal exists and Mission Genesis context has now been answered.",
-      artistStageFit: "Market validation fits this artist if scoped to proof, budget, and capacity.",
-      supportingSignals: packet.audience.geographySignals,
-      missingContext: [],
-      missingEvidence: [],
-      risksIfIgnored: ["The team may miss a real market opening or spend against a weak geographic signal."],
-      likelyPatterns: ["Market Expansion", "Audience Development", "Budget Allocation"],
-      estimatedTimeline: {
-        minDays: 45,
-        maxDays: 120,
-        reason: "Market validation needs enough time to test content, audience quality, and conversion before scaling.",
-      },
-      confidence: "medium",
-    };
-  }
-
-  return {
-    pressureKey: "source-completeness",
-    category: "data_source_completeness",
-    title: "Resolve source and context gaps before higher-stakes management work",
-    whyNow: "Mission Genesis needs a first useful operating mission.",
-    artistStageFit: "Source completeness protects the artist from generic management work.",
-    supportingSignals: ["Mission Genesis context was answered."],
-    missingContext: [],
-    missingEvidence: [],
-    risksIfIgnored: ["The app may recommend work that does not fit the artist or cannot be executed."],
-    likelyPatterns: ["Data / Source Completeness"],
-    estimatedTimeline: {
-      minDays: 1,
-      maxDays: 14,
-      reason: "Source and context setup should be short.",
-    },
-    confidence: "medium",
-  };
 }
 
 function missionGenesisViewModel(input: MissionGenesisResultViewModel): MissionGenesisResultViewModel {

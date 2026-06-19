@@ -49,7 +49,11 @@ export function draftMissionPlan(packet: ArtistOperatingPacket, pressure: Missio
     return rightsBusinessDraft(packet, pressure);
   }
 
-  return genericDraft(packet, pressure);
+  if (pressure.category === "audience_development") {
+    return audienceDevelopmentDraft(packet, pressure);
+  }
+
+  throw new Error(`Mission Genesis cannot activate ${pressure.category} yet because no production mission plan writer exists for that category.`);
 }
 
 function marketExpansionDraft(packet: ArtistOperatingPacket, pressure: MissionPressure): MissionPlanDraft {
@@ -172,28 +176,62 @@ function rightsBusinessDraft(packet: ArtistOperatingPacket, pressure: MissionPre
   };
 }
 
-function genericDraft(packet: ArtistOperatingPacket, pressure: MissionPressure): MissionPlanDraft {
+function audienceDevelopmentDraft(packet: ArtistOperatingPacket, pressure: MissionPressure): MissionPlanDraft {
   return {
-    mission: baseMission(packet, pressure, pressure.likelyPatterns.join(" + ") || "Ad hoc management mission"),
+    mission: baseMission(packet, pressure, "Audience Development + Creator / Content Validation"),
     checkpoints: [
       {
-        key: "objective_quality",
-        title: "Objective quality",
-        question: "Is this objective specific, timely, and aligned enough to organize work?",
-        decisionRule: "Proceed only if the objective can produce a clear next action and review rule.",
-        requiredEvidence: pressure.supportingSignals,
-        missingEvidence: [...pressure.missingContext, ...pressure.missingEvidence],
+        key: "attention_quality",
+        title: "Attention quality",
+        question: "Is the current attention specific enough to separate real audience interest from passive noise?",
+        decisionRule: "Proceed only if the signal has a named source, current window, and clear limitation.",
+        requiredEvidence: ["current audience signal", "source limitation"],
+        missingEvidence: pressure.missingEvidence,
+      },
+      {
+        key: "capture_path",
+        title: "Audience capture path",
+        question: "What owned or repeatable path will capture this attention before any scale decision?",
+        decisionRule: "Do not recommend scale spend until the team has a low-risk way to capture, retarget, or re-engage the audience.",
+        requiredEvidence: ["artist goal", "team capacity", "capture channel or content path"],
+        missingEvidence: pressure.missingContext,
+      },
+      {
+        key: "repeat_behavior_review",
+        title: "Repeat behavior review",
+        question: "Which signal will prove that attention is becoming repeat audience behavior?",
+        decisionRule: "Continue only when the review signal shows repeat behavior, conversion intent, or a clear learning from the test.",
+        requiredEvidence: ["review window", "repeat behavior metric", "stop/change rule"],
+        missingEvidence: [],
       },
     ],
     tasks: [
       {
-        title: "Prepare first Manager read",
+        title: "Verify attention quality",
         ownerRole: "Manager",
-        primaryCheckpointKey: "objective_quality",
-        purpose: "Turn the detected pressure into a concrete operating read with limits.",
+        primaryCheckpointKey: "attention_quality",
+        purpose: "Confirm whether the attention signal is strong, weak, stale, or unsupported before the team builds around it.",
         evidenceNeeded: pressure.supportingSignals,
-        completionExpectation: "A Manager read that states next action, limitation, and review rule.",
-        riskIfLate: "The mission may remain abstract instead of becoming useful work.",
+        completionExpectation: "A source-limited read on which audience signal is real enough to shape the next move.",
+        riskIfLate: "The team may mistake visible attention for durable fandom.",
+      },
+      {
+        title: "Define the audience capture path",
+        ownerRole: "Manager",
+        primaryCheckpointKey: "capture_path",
+        purpose: "Turn the artist goal, budget, and team capacity into the smallest practical audience-capture move.",
+        evidenceNeeded: ["artist goal", "budget posture", "team capacity"],
+        completionExpectation: "A capture path with owner, channel, review date, and stop/change rule.",
+        riskIfLate: "Audience interest may fade without a repeatable way to keep or learn from it.",
+      },
+      {
+        title: "Set the repeat-behavior review rule",
+        ownerRole: "Manager",
+        primaryCheckpointKey: "repeat_behavior_review",
+        purpose: "Define what will count as repeat behavior before the mission recommends scaling or changing direction.",
+        evidenceNeeded: ["review metric", "review window"],
+        completionExpectation: "A review rule naming the metric, window, and threshold for continue/change/pause.",
+        riskIfLate: "The mission may continue on vibes instead of measured behavior.",
       },
     ],
     permissionRequests: [],

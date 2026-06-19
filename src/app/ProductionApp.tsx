@@ -311,6 +311,7 @@ function CleanProductionWorkspace({
   const [missionGenesisResult, setMissionGenesisResult] = useState<MissionGenesisResultViewModel | null>(null);
   const [missionGenesisAnswers, setMissionGenesisAnswers] = useState<Record<string, string>>({});
   const [missionGenesisPending, setMissionGenesisPending] = useState(false);
+  const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -428,6 +429,7 @@ function CleanProductionWorkspace({
   async function runMissionGenesis() {
     try {
       setMissionGenesisPending(true);
+      setMissionGenesisError(null);
       const result = await repositories.missionGenesis.runMissionGenesis();
       setMissionGenesisResult(result);
       setMissionGenesisAnswers({});
@@ -442,6 +444,8 @@ function CleanProductionWorkspace({
         setSelectedMissionId(result.activatedMissionId);
         navigate("missionsWorkspace");
       }
+    } catch (error) {
+      setMissionGenesisError(readErrorMessage(error, "Mission Genesis failed."));
     } finally {
       setMissionGenesisPending(false);
     }
@@ -451,6 +455,7 @@ function CleanProductionWorkspace({
     if (!missionGenesisResult?.candidateMissionId) return;
     try {
       setMissionGenesisPending(true);
+      setMissionGenesisError(null);
       const result = await repositories.missionGenesis.answerMissionGenesisContext({
         candidateMissionId: missionGenesisResult.candidateMissionId,
         answers: missionGenesisResult.questions.map((question) => ({
@@ -465,6 +470,8 @@ function CleanProductionWorkspace({
       if (result.activatedMissionId) {
         clearMissionGenesisAttention();
       }
+    } catch (error) {
+      setMissionGenesisError(readErrorMessage(error, "Mission Genesis failed."));
     } finally {
       setMissionGenesisPending(false);
     }
@@ -644,6 +651,7 @@ function CleanProductionWorkspace({
               missionGenesisResult={missionGenesisResult}
               missionGenesisAnswers={missionGenesisAnswers}
               missionGenesisPending={missionGenesisPending}
+              missionGenesisError={missionGenesisError}
               onMissionGenesisAnswerChange={(key, value) => setMissionGenesisAnswers((current) => ({ ...current, [key]: value }))}
               onSubmitMissionGenesisAnswers={submitMissionGenesisAnswers}
               onOpenCreatedMission={openCreatedMissionFromManager}
@@ -667,6 +675,7 @@ function CleanProductionWorkspace({
               selectedMissionId={selectedMissionId}
               missionGenesisResult={missionGenesisResult}
               missionGenesisPending={missionGenesisPending}
+              missionGenesisError={missionGenesisError}
               onSelectMission={setSelectedMissionId}
               onRunMissionGenesis={runMissionGenesis}
               onOpenMissionGenesisQuestions={() => navigate("managerOffice")}

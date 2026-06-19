@@ -168,6 +168,66 @@ describe("Mission plan drafting", () => {
     expect(draft.tasks.some((task) => task.title.toLowerCase().includes("geography"))).toBe(true);
     expect(draft.tasks.every((task) => task.primaryCheckpointKey)).toBe(true);
   });
+
+  it("turns an audience development pressure into real audience checkpoints instead of a generic Manager-read placeholder", () => {
+    const pressure: MissionPressure = {
+      pressureKey: "audience-development-repeat-behavior",
+      category: "audience_development",
+      title: "Test whether current attention is becoming repeatable audience behavior",
+      whyNow: "Momentum exists, but the Manager must determine whether it is durable enough to shape operating work.",
+      artistStageFit: "Audience development fits artists with early or growing public signal.",
+      supportingSignals: ["Monthly listeners increased", "Playlist adds are rising"],
+      missingContext: [],
+      missingEvidence: [],
+      risksIfIgnored: ["The team may mistake attention for fandom or fail to capture real demand."],
+      likelyPatterns: ["Audience Development", "Creator / Content Validation"],
+      estimatedTimeline: {
+        minDays: 14,
+        maxDays: 45,
+        reason: "Audience validation needs a short testing window plus reviewable signal.",
+      },
+      confidence: "medium",
+    };
+
+    const draft = draftMissionPlan(basePacket(), pressure);
+
+    expect(draft.mission.patternName).toBe("Audience Development + Creator / Content Validation");
+    expect(draft.checkpoints.map((checkpoint) => checkpoint.key)).toEqual([
+      "attention_quality",
+      "capture_path",
+      "repeat_behavior_review",
+    ]);
+    expect(draft.tasks.map((task) => task.title)).toEqual([
+      "Verify attention quality",
+      "Define the audience capture path",
+      "Set the repeat-behavior review rule",
+    ]);
+    expect(draft.checkpoints.map((checkpoint) => checkpoint.title)).not.toContain("Objective quality");
+    expect(draft.tasks.map((task) => task.title)).not.toContain("Prepare first Manager read");
+  });
+
+  it("refuses unsupported mission categories instead of activating generic fallback work", () => {
+    const pressure: MissionPressure = {
+      pressureKey: "unsupported-team-pressure",
+      category: "team_operations",
+      title: "Clarify recurring team ownership",
+      whyNow: "Ownership is unclear.",
+      artistStageFit: "Team operations may fit this artist.",
+      supportingSignals: ["No one owns weekly review."],
+      missingContext: [],
+      missingEvidence: [],
+      risksIfIgnored: ["Work may stall."],
+      likelyPatterns: ["Team Operations"],
+      estimatedTimeline: {
+        minDays: 7,
+        maxDays: 14,
+        reason: "Team process can be clarified quickly.",
+      },
+      confidence: "medium",
+    };
+
+    expect(() => draftMissionPlan(basePacket(), pressure)).toThrow("Mission Genesis cannot activate team_operations yet");
+  });
 });
 
 describe("Mission Genesis orchestration", () => {

@@ -1693,6 +1693,188 @@ describe("production Supabase services", () => {
     expect(tables.operating_events.map((event) => event.event_type)).toContain("mission_activated");
   });
 
+  it("does not activate a candidate from context answers when Genesis finds no real pressure", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      manager_context_questions: [
+        { id: "question-current", question_key: "current_priority" },
+        { id: "question-budget", question_key: "budget_boundary" },
+      ],
+      artist_profiles: [
+        {
+          id: "profile-1",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          display_name: "Nova Vale",
+          stage: "Developing",
+          genres: ["alt-pop"],
+          home_market: "Lagos",
+          current_goal: "",
+          budget_context: "",
+        },
+      ],
+      missions: [
+        {
+          id: "mission-candidate",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          title: "Candidate mission waiting for real signal",
+          objective: "Candidate mission waiting for real signal.",
+          reason: "Created before source-backed pressure was available.",
+          status: "candidate",
+          summary: "Candidate mission waiting for context.",
+          pattern_name: "Audience Development",
+          current_recommendation: "Answer context questions before activation.",
+        },
+      ],
+      evidence_items: [],
+      music_items: [],
+      music_projects: [],
+      music_assets: [],
+      music_splits: [],
+      music_project_items: [],
+      memory_entries: [],
+      manager_context_answers: [],
+      manager_synthesis_runs: [],
+      mission_plan_versions: [],
+      checkpoints: [],
+      mission_plan_checkpoints: [],
+      tasks: [],
+      operating_events: [],
+      agent_reports: [],
+    };
+
+    const repositories = createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace);
+    const result = await repositories.missionGenesis.answerMissionGenesisContext({
+      candidateMissionId: "mission-candidate",
+      answers: [
+        { questionKey: "mission_90_day_goal", answer: "Build audience proof" },
+        { questionKey: "mission_budget_range", answer: "$5,000" },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      outcome: "no_mission",
+      candidateMissionId: "mission-candidate",
+    });
+    expect(result.activatedMissionId).toBeUndefined();
+    expect(tables.missions[0]).toMatchObject({
+      status: "candidate",
+      current_recommendation: expect.stringContaining("No durable management pressure"),
+    });
+    expect(tables.mission_plan_versions).toEqual([]);
+    expect(tables.checkpoints).toEqual([]);
+    expect(tables.tasks).toEqual([]);
+    expect(tables.operating_events.map((event) => event.event_type)).not.toContain("mission_activated");
+    expect(tables.operating_events.map((event) => event.event_type)).toContain("mission_genesis_not_activated");
+  });
+
+  it("activates audience development with real checkpoint tasks instead of generic placeholder work", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      artist_profiles: [
+        {
+          id: "profile-1",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          display_name: "Nova Vale",
+          stage: "Developing",
+          genres: ["alt-pop"],
+          home_market: "Lagos",
+          current_goal: "Build repeatable audience proof",
+          artist_direction: "Build carefully from real audience proof.",
+          budget_context: "$5,000",
+        },
+      ],
+      evidence_items: [
+        {
+          id: "evidence-listeners",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source: "Chartmetric",
+          source_kind: "third_party_provider",
+          evidence_type: "platform_metric",
+          subject_type: "artist",
+          subject_id: "artist-1",
+          subject_label: "Nova Vale",
+          metric_name: "spotify_monthly_listeners_growth",
+          metric_value: 38,
+          metric_unit: "percent",
+          freshness: "provider_window",
+          confidence: "medium",
+        },
+        {
+          id: "evidence-playlists",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source: "Chartmetric",
+          source_kind: "third_party_provider",
+          evidence_type: "platform_metric",
+          subject_type: "artist",
+          subject_id: "artist-1",
+          subject_label: "Nova Vale",
+          metric_name: "spotify_playlist_adds",
+          metric_value: 22,
+          metric_unit: "adds",
+          freshness: "provider_window",
+          confidence: "medium",
+        },
+      ],
+      memory_entries: [
+        {
+          id: "memory-team",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          kind: "operating_context",
+          content: "Small team can execute content and fan capture work this month.",
+          confidence: "medium",
+        },
+      ],
+      missions: [],
+      mission_plan_versions: [],
+      checkpoints: [],
+      mission_plan_checkpoints: [],
+      tasks: [],
+      manager_synthesis_runs: [],
+      operating_events: [],
+      agent_reports: [],
+      music_items: [],
+      music_projects: [],
+      music_assets: [],
+      music_splits: [],
+      music_project_items: [],
+    };
+
+    const result = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).missionGenesis.runMissionGenesis();
+
+    expect(result).toMatchObject({
+      outcome: "activate_mission",
+      title: "Mission activated",
+      activatedMissionId: "mission-1",
+    });
+    expect(tables.missions[0]).toMatchObject({
+      status: "active",
+      pattern_name: "Audience Development + Creator / Content Validation",
+      title: "Test whether current attention is becoming repeatable audience behavior",
+    });
+    expect(tables.checkpoints.map((checkpoint) => checkpoint.title)).toEqual([
+      "Attention quality",
+      "Audience capture path",
+      "Repeat behavior review",
+    ]);
+    expect(tables.tasks.map((task) => task.title)).toEqual([
+      "Verify attention quality",
+      "Define the audience capture path",
+      "Set the repeat-behavior review rule",
+    ]);
+    expect(tables.checkpoints.map((checkpoint) => checkpoint.title)).not.toContain("Objective quality");
+    expect(tables.tasks.map((task) => task.title)).not.toContain("Prepare first Manager read");
+  });
+
   it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {
     const client = fakeSupabaseClient({
       missions: [

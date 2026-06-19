@@ -1088,6 +1088,35 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText("Validate whether a rising market deserves focused operating attention").length).toBeGreaterThan(0);
   }, 20000);
 
+  it("shows the real Mission Genesis error on the Missions page when the run fails", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => [],
+    };
+    repositories.missionGenesis = {
+      ...repositories.missionGenesis,
+      runMissionGenesis: async () => {
+        throw new Error("permission denied for table agent_reports");
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
+
+    expect(await screen.findByText("Mission Genesis failed")).toBeInTheDocument();
+    expect(screen.getByText("permission denied for table agent_reports")).toBeInTheDocument();
+  }, 20000);
+
   it("keeps unlinked Music projects quiet instead of explaining mission absence", async () => {
     const music: MusicObjectViewModel[] = [
       {

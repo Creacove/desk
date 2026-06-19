@@ -31,6 +31,7 @@ export function ManagerOfficeScreen({
   missionGenesisResult,
   missionGenesisAnswers,
   missionGenesisPending,
+  missionGenesisError,
   onMissionGenesisAnswerChange,
   onSubmitMissionGenesisAnswers,
   onOpenCreatedMission,
@@ -44,6 +45,7 @@ export function ManagerOfficeScreen({
   missionGenesisResult: MissionGenesisResultViewModel | null;
   missionGenesisAnswers: Record<string, string>;
   missionGenesisPending: boolean;
+  missionGenesisError: string | null;
   onMissionGenesisAnswerChange: (key: string, value: string) => void;
   onSubmitMissionGenesisAnswers: () => void;
   onOpenCreatedMission: () => void;
@@ -81,6 +83,7 @@ export function ManagerOfficeScreen({
           result={missionGenesisResult}
           answers={missionGenesisAnswers}
           pending={missionGenesisPending}
+          error={missionGenesisError}
           onAnswerChange={onMissionGenesisAnswerChange}
           onSubmit={onSubmitMissionGenesisAnswers}
           onOpenCreatedMission={onOpenCreatedMission}
@@ -174,6 +177,7 @@ function MissionGenesisManagerPanel({
   result,
   answers,
   pending,
+  error,
   onAnswerChange,
   onSubmit,
   onOpenCreatedMission,
@@ -181,20 +185,35 @@ function MissionGenesisManagerPanel({
   result: MissionGenesisResultViewModel | null;
   answers: Record<string, string>;
   pending: boolean;
+  error: string | null;
   onAnswerChange: (key: string, value: string) => void;
   onSubmit: () => void;
   onOpenCreatedMission: () => void;
 }) {
-  if (!result || (result.outcome !== "candidate_needs_context" && result.outcome !== "activate_mission")) {
+  if (!result && !error) {
+    return null;
+  }
+
+  if (result && result.outcome !== "candidate_needs_context" && result.outcome !== "activate_mission" && !error) {
     return null;
   }
 
   return (
     <section className="mb-5 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
       <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Genesis</p>
-      <h2 className="mt-2 font-display text-[18px] font-bold tracking-tight text-foreground">{result.title}</h2>
-      <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
-      {result.questions.length ? (
+      {result ? (
+        <>
+          <h2 className="mt-2 font-display text-[18px] font-bold tracking-tight text-foreground">{result.title}</h2>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
+        </>
+      ) : null}
+      {error ? (
+        <div role="alert" className="mt-4 rounded-[12px] border border-red-500/20 bg-red-500/[0.055] p-4">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{error}</p>
+        </div>
+      ) : null}
+      {result?.questions.length ? (
         <div className="mt-4 grid gap-3">
           {result.questions.map((question) => (
             <label key={question.key} className="grid gap-1.5 text-[12px] font-semibold text-foreground">
@@ -229,7 +248,7 @@ function MissionGenesisManagerPanel({
           </div>
         </div>
       ) : null}
-      {result.activatedMissionId ? (
+      {result?.activatedMissionId ? (
         <div className="mt-4 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Work created</p>
           <p className="mt-2 text-sm font-semibold text-foreground">Mission work is ready in Missions.</p>
