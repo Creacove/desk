@@ -398,6 +398,11 @@ export const productionFixtureData: ProductionFixtureData = {
 };
 
 export function createFixtureRepositories(): CleanProductionRepositories {
+  let missions = productionFixtureData.missions.map((mission) => ({
+    ...mission,
+    checkpoints: mission.checkpoints?.map((checkpoint) => ({ ...checkpoint })),
+    tasks: mission.tasks?.map((task) => ({ ...task })),
+  }));
   let music = productionFixtureData.music.map((item) => ({
     ...item,
     files: item.files?.map((file) => ({ ...file })),
@@ -584,7 +589,153 @@ export function createFixtureRepositories(): CleanProductionRepositories {
     },
     missions: {
       async loadMissions() {
-        return productionFixtureData.missions;
+        return missions.filter((mission) => mission.status !== "candidate");
+      },
+      async approveTask(taskId) {
+        missions = missions.map((mission) => ({
+          ...mission,
+          tasks: mission.tasks?.map((task) => task.id === taskId ? { ...task, status: "approved" } : task),
+        }));
+      },
+      async completeTask(taskId, input) {
+        let updatedMission = missions[0];
+        missions = missions.map((mission) => {
+          const hasTask = mission.tasks?.some((task) => task.id === taskId);
+          if (!hasTask) return mission;
+          const nextTasks = mission.tasks?.map((task) =>
+            task.id === taskId
+              ? {
+                  ...task,
+                  status: input.status,
+                  managerInterpretation: input.status === "blocked"
+                    ? `Blocked: ${input.note}`
+                    : `Completed: ${input.note}`,
+                }
+              : task,
+          );
+          const nextCheckpoints = mission.checkpoints?.map((checkpoint) => {
+            const checkpointTasks = nextTasks?.filter((task) => task.checkpointId === checkpoint.id) ?? [];
+            if (checkpointTasks.some((task) => task.status === "blocked")) {
+              return { ...checkpoint, status: "needs_revision", recommendation: "A linked task is blocked; Manager review should revise the path." };
+            }
+            if (checkpointTasks.length && checkpointTasks.every((task) => task.status === "completed")) {
+              return { ...checkpoint, status: "ready_for_manager_check", recommendation: "Required task results are ready for Manager review." };
+            }
+            return checkpoint;
+          });
+          updatedMission = { ...mission, tasks: nextTasks, checkpoints: nextCheckpoints };
+          return updatedMission;
+        });
+        return updatedMission;
+      },
+    },
+    missionGenesis: {
+      async runMissionGenesis() {
+        const candidateId = "fixture-mission-candidate";
+        missions = [
+          {
+            id: candidateId,
+            title: "Validate whether a rising market deserves focused operating attention",
+            status: "candidate",
+            progress: 0,
+            review: "Context gate",
+            summary: "The Manager sees a possible market or audience pressure, but needs operating context before activating work.",
+            recommendation: "Answer Mission Genesis context questions before activation.",
+            musicSubject: "Artist-wide",
+            nextTask: "Answer context questions",
+          },
+          ...missions.filter((mission) => mission.id !== candidateId),
+        ];
+        return {
+          outcome: "candidate_needs_context",
+          title: "Mission candidate needs context",
+          body: "The Manager found a possible audience or market operating pressure, but needs budget, goal, and team capacity before activating mission work.",
+          reasons: ["Context could materially change the mission plan."],
+          questions: [
+            {
+              key: "mission_90_day_goal",
+              question: "What should the Manager optimize for over the next 90 days?",
+              reason: "The mission changes depending on whether the artist needs audience growth, revenue, industry leverage, market entry, catalog value, or creative reset.",
+              answerKind: "single_select" as const,
+              options: ["Audience growth", "Revenue", "Industry leverage", "Market entry", "Catalog value", "Creative reset"],
+            },
+            {
+              key: "mission_budget_range",
+              question: "What budget range can the Manager plan around before asking for explicit spend approval?",
+              reason: "Budget posture controls whether the mission recommends proof gathering, capped tests, or larger coordinated work.",
+              answerKind: "money_range" as const,
+            },
+            {
+              key: "mission_team_capacity",
+              question: "Who can actually execute work this month?",
+              reason: "The mission timeline and task ownership must match real capacity.",
+              answerKind: "single_select" as const,
+              options: ["Artist only", "Small team", "Label team", "External vendors available", "Unknown"],
+            },
+          ],
+          evidenceNeeded: [],
+          candidateMissionId: candidateId,
+        };
+      },
+      async answerMissionGenesisContext(input) {
+        const activatedId = input.candidateMissionId;
+        missions = [
+          {
+            id: activatedId,
+            title: "Validate whether a rising market deserves focused operating attention",
+            status: "active",
+            progress: 0,
+            review: "Market signal quality",
+            summary: "Use saved context, audience signal, and team capacity to test whether the rising market deserves focused work.",
+            recommendation: "Organize the work internally, preserve evidence limits, and request permission before external or spend-sensitive action.",
+            musicSubject: "Artist-wide",
+            nextTask: "Verify geography signal quality",
+            checkpoints: [
+              {
+                id: "fixture-checkpoint-market-signal",
+                title: "Market signal quality",
+                question: "Is this market signal real enough to deserve focused operating attention?",
+                status: "waiting",
+                recommendation: "Verify source-backed geography before spending.",
+              },
+              {
+                id: "fixture-checkpoint-test-design",
+                title: "Scoped market test",
+                question: "What is the smallest credible test that can prove whether the market deserves more work?",
+                status: "waiting",
+                recommendation: "Keep the test inside the answered budget and team capacity.",
+              },
+            ],
+            tasks: [
+              {
+                id: "fixture-task-geography",
+                title: "Verify geography signal quality",
+                status: "proposed",
+                ownerRole: "Manager",
+                checkpointId: "fixture-checkpoint-market-signal",
+                purpose: "Confirm whether the market signal is source-backed and current enough to influence strategy.",
+              },
+              {
+                id: "fixture-task-test-boundary",
+                title: "Define the market test boundary",
+                status: "proposed",
+                ownerRole: "Manager",
+                checkpointId: "fixture-checkpoint-test-design",
+                purpose: "Scope the market test to the artist's budget, team capacity, and positioning.",
+              },
+            ],
+          },
+          ...missions.filter((mission) => mission.id !== activatedId),
+        ];
+        return {
+          outcome: "activate_mission",
+          title: "Mission activated",
+          body: "The Manager used the new context to activate a personalized operating mission with checkpoint questions and tasks.",
+          reasons: ["The candidate now has enough context to create useful managed work."],
+          questions: [],
+          evidenceNeeded: [],
+          activatedMissionId: activatedId,
+        };
       },
     },
     evidence: {

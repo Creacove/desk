@@ -1512,6 +1512,346 @@ describe("production Supabase services", () => {
     ]);
   });
 
+  it("runs Mission Genesis as a candidate when artist-specific context is missing", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      artist_profiles: [
+        {
+          id: "profile-1",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          display_name: "Nova Vale",
+          stage: "Developing",
+          genres: ["alt-pop"],
+          home_market: "Lagos",
+          current_goal: "",
+          artist_direction: "Build carefully from real audience proof.",
+          budget_context: "",
+        },
+      ],
+      music_items: [],
+      music_projects: [],
+      music_assets: [],
+      music_splits: [],
+      music_project_items: [],
+      evidence_items: [
+        {
+          id: "evidence-london",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source: "Chartmetric",
+          source_kind: "third_party_provider",
+          evidence_type: "market_metric",
+          subject_type: "artist",
+          subject_id: "artist-1",
+          subject_label: "Nova Vale",
+          metric_name: "spotify_listener_city_london",
+          metric_value: 42000,
+          metric_unit: "listeners",
+          freshness: "provider_window",
+          confidence: "medium",
+          limitation: "Chartmetric city listener signal does not prove conversion.",
+        },
+      ],
+      memory_entries: [],
+      agent_reports: [],
+      missions: [],
+      manager_synthesis_runs: [],
+      operating_events: [],
+    };
+
+    const result = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).missionGenesis.runMissionGenesis();
+
+    expect(result).toMatchObject({
+      outcome: "candidate_needs_context",
+      title: "Mission candidate needs context",
+      candidateMissionId: "mission-1",
+    });
+    expect(result.questions.map((question) => question.key)).toEqual(["mission_90_day_goal", "mission_budget_range", "mission_team_capacity"]);
+    expect(tables.manager_synthesis_runs[0]).toMatchObject({
+      trigger_type: "manual",
+      classification: "mission_genesis_candidate_needs_context",
+      status: "completed",
+    });
+    expect(tables.missions[0]).toMatchObject({
+      status: "candidate",
+      title: "Validate whether a rising market deserves focused operating attention",
+      originating_trigger: "manual_mission_genesis",
+    });
+    expect(tables.operating_events[0]).toMatchObject({
+      event_type: "mission_candidate_created",
+      target_type: "mission",
+      target_id: "mission-1",
+    });
+  });
+
+  it("saves Mission Genesis context, activates the candidate, and writes plan records", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      manager_context_questions: [
+        { id: "question-current", question_key: "current_priority" },
+        { id: "question-budget", question_key: "budget_boundary" },
+        { id: "question-team", question_key: "team_capacity" },
+        { id: "question-risk", question_key: "risk_boundary" },
+      ],
+      artist_profiles: [
+        {
+          id: "profile-1",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          display_name: "Nova Vale",
+          stage: "Developing",
+          genres: ["alt-pop"],
+          home_market: "Lagos",
+          current_goal: "",
+          budget_context: "",
+        },
+      ],
+      evidence_items: [
+        {
+          id: "evidence-london",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source: "Chartmetric",
+          source_kind: "third_party_provider",
+          evidence_type: "market_metric",
+          subject_type: "artist",
+          subject_id: "artist-1",
+          subject_label: "Nova Vale",
+          metric_name: "spotify_listener_city_london",
+          metric_value: 42000,
+          metric_unit: "listeners",
+          freshness: "provider_window",
+          confidence: "medium",
+        },
+      ],
+      missions: [
+        {
+          id: "mission-candidate",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          title: "Validate whether a rising market deserves focused operating attention",
+          objective: "Validate whether a rising market deserves focused operating attention for Nova Vale.",
+          reason: "Geography signal exists, but context was missing.",
+          status: "candidate",
+          summary: "Candidate mission waiting for context.",
+          pattern_name: "Market Expansion + Audience Development",
+          current_recommendation: "Answer context questions before activation.",
+        },
+      ],
+      music_items: [],
+      music_projects: [],
+      music_assets: [],
+      music_splits: [],
+      music_project_items: [],
+      memory_entries: [],
+      manager_context_answers: [],
+      manager_synthesis_runs: [],
+      mission_plan_versions: [],
+      checkpoints: [],
+      mission_plan_checkpoints: [],
+      tasks: [],
+      operating_events: [],
+      agent_reports: [],
+    };
+
+    const repositories = createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace);
+    const result = await repositories.missionGenesis.answerMissionGenesisContext({
+      candidateMissionId: "mission-candidate",
+      answers: [
+        { questionKey: "mission_90_day_goal", answer: "Market entry" },
+        { questionKey: "mission_budget_range", answer: "$5,000" },
+        { questionKey: "mission_team_capacity", answer: "Small team" },
+      ],
+    });
+
+    expect(result).toMatchObject({
+      outcome: "activate_mission",
+      activatedMissionId: "mission-candidate",
+    });
+    expect(tables.manager_context_answers).toEqual([
+      expect.objectContaining({ question_id: "question-current", answer: "Market entry", source: "typed" }),
+      expect.objectContaining({ question_id: "question-budget", answer: "$5,000", source: "typed" }),
+      expect.objectContaining({ question_id: "question-team", answer: "Small team", source: "typed" }),
+    ]);
+    expect(tables.memory_entries).toHaveLength(3);
+    expect(tables.missions[0]).toMatchObject({
+      status: "active",
+      current_recommendation: expect.stringContaining("Organize the work internally"),
+    });
+    expect(tables.mission_plan_versions[0]).toMatchObject({
+      mission_id: "mission-candidate",
+      version: 1,
+      status: "active",
+    });
+    expect(tables.checkpoints.length).toBeGreaterThan(1);
+    expect(tables.tasks.length).toBeGreaterThan(1);
+    expect(tables.tasks.every((task) => task.mission_id === "mission-candidate" && task.primary_checkpoint_id)).toBe(true);
+    expect(tables.operating_events.map((event) => event.event_type)).toContain("mission_activated");
+  });
+
+  it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {
+    const client = fakeSupabaseClient({
+      missions: [
+        {
+          id: "mission-active",
+          title: "Validate London market signal",
+          status: "active",
+          summary: "Market signal deserves focused operating attention.",
+          current_recommendation: "Verify signal quality before spend.",
+          progress: 20,
+          review_point: "Market signal quality",
+        },
+        {
+          id: "mission-candidate",
+          title: "Candidate mission",
+          status: "candidate",
+          summary: "Hidden candidate.",
+          current_recommendation: "Answer questions first.",
+        },
+      ],
+      mission_plan_versions: [
+        { id: "plan-1", mission_id: "mission-active", version: 1, status: "active" },
+      ],
+      checkpoints: [
+        {
+          id: "checkpoint-1",
+          mission_id: "mission-active",
+          mission_plan_version_id: "plan-1",
+          title: "Market signal quality",
+          question: "Is this market signal real enough to deserve focused operating attention?",
+          status: "waiting",
+          recommendation: "Verify the signal.",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-1",
+          mission_id: "mission-active",
+          mission_plan_version_id: "plan-1",
+          primary_checkpoint_id: "checkpoint-1",
+          title: "Verify geography signal quality",
+          status: "proposed",
+          owner_role: "Manager",
+          purpose: "Confirm whether the market signal is source-backed.",
+        },
+      ],
+    });
+
+    const missions = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+
+    expect(missions).toHaveLength(1);
+    expect(missions[0]).toMatchObject({
+      id: "mission-active",
+      title: "Validate London market signal",
+      progress: 20,
+      review: "Market signal quality",
+      checkpoints: [expect.objectContaining({ id: "checkpoint-1", question: expect.stringContaining("real enough") })],
+      tasks: [expect.objectContaining({ id: "task-1", title: "Verify geography signal quality", checkpointId: "checkpoint-1" })],
+    });
+  });
+
+  it("records completed mission tasks as checkpoint evidence and refreshes mission state", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      missions: [
+        {
+          id: "mission-active",
+          title: "Validate London market signal",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          status: "active",
+          progress: 0,
+          review_point: "Market signal quality",
+          summary: "Market signal deserves focused operating attention.",
+          current_recommendation: "Complete source-backed validation tasks.",
+        },
+      ],
+      checkpoints: [
+        {
+          id: "checkpoint-1",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          mission_id: "mission-active",
+          title: "Market signal quality",
+          question: "Is this market signal real enough to deserve focused operating attention?",
+          status: "waiting",
+          recommendation: "Verify the signal.",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-1",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          mission_id: "mission-active",
+          primary_checkpoint_id: "checkpoint-1",
+          title: "Verify geography signal quality",
+          status: "approved",
+          owner_role: "Manager",
+          purpose: "Confirm whether the market signal is source-backed.",
+        },
+      ],
+      task_state_events: [],
+      task_results: [],
+      memory_entries: [],
+      operating_events: [],
+    };
+    const client = createMutableSupabaseClient(tables);
+
+    const mission = await createSupabaseProductionRepositories(client, workspace).missions.completeTask("task-1", {
+      status: "completed",
+      note: "London listener concentration is real across Spotify city data and repeated short-form saves.",
+    });
+
+    expect(tables.tasks[0]).toMatchObject({
+      id: "task-1",
+      status: "completed",
+    });
+    expect(tables.task_state_events[0]).toMatchObject({
+      task_id: "task-1",
+      mission_id: "mission-active",
+      checkpoint_id: "checkpoint-1",
+      from_status: "approved",
+      to_status: "completed",
+    });
+    expect(tables.task_results[0]).toMatchObject({
+      task_id: "task-1",
+      mission_id: "mission-active",
+      status: "completed",
+      note: expect.stringContaining("London listener concentration"),
+      manager_interpretation: expect.stringContaining("Task completed"),
+    });
+    expect(tables.checkpoints[0]).toMatchObject({
+      status: "ready_for_manager_check",
+      recommendation: expect.stringContaining("ready for Manager review"),
+    });
+    expect(tables.missions[0]).toMatchObject({
+      progress: 100,
+      review_point: "Market signal quality",
+      current_recommendation: expect.stringContaining("ready for Manager review"),
+    });
+    expect(tables.memory_entries[0]).toMatchObject({
+      mission_id: "mission-active",
+      task_id: "task-1",
+      kind: "task_result",
+      source_type: "task_result",
+    });
+    expect(tables.operating_events[0]).toMatchObject({
+      event_type: "task_completed",
+      target_type: "task",
+      target_id: "task-1",
+    });
+    expect(mission.progress).toBe(100);
+    expect(mission.tasks?.[0]).toMatchObject({ id: "task-1", status: "completed" });
+    expect(mission.checkpoints?.[0]).toMatchObject({ id: "checkpoint-1", status: "ready_for_manager_check" });
+  });
+
   it("updates music details and uploads assets through an intent/finalize flow", async () => {
     const uploadedFiles: Array<{ bucket: string; path: string; fileName: string; options: Record<string, unknown> }> = [];
     const tables: Record<string, Array<Record<string, unknown>>> = {

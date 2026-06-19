@@ -118,13 +118,29 @@ export type AgentViewModel = {
 export type MissionViewModel = {
   id: string;
   title: string;
-  status: "active" | "review" | "blocked" | "complete";
+  status: "candidate" | "active" | "review" | "blocked" | "paused" | "complete" | "archived" | "cancelled";
   progress: number;
   review: string;
   summary: string;
   recommendation: string;
   musicSubject: string;
   nextTask: string;
+  checkpoints?: Array<{
+    id: string;
+    title: string;
+    question: string;
+    status: string;
+    recommendation?: string;
+  }>;
+  tasks?: Array<{
+    id: string;
+    title: string;
+    status: string;
+    ownerRole?: string;
+    checkpointId?: string;
+    purpose?: string;
+    managerInterpretation?: string;
+  }>;
 };
 
 export type MusicObjectViewModel = {
@@ -300,6 +316,35 @@ export type ManagerRepository = {
 
 export type MissionRepository = {
   loadMissions(): Promise<MissionViewModel[]>;
+  approveTask(taskId: string): Promise<void>;
+  completeTask(taskId: string, input: { status: "completed" | "blocked"; note: string }): Promise<MissionViewModel>;
+};
+
+export type MissionGenesisQuestionViewModel = {
+  key: string;
+  question: string;
+  reason: string;
+  answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
+  options?: string[];
+};
+
+export type MissionGenesisResultViewModel = {
+  outcome: "activate_mission" | "candidate_needs_context" | "request_evidence" | "update_existing_mission" | "no_mission";
+  title: string;
+  body: string;
+  reasons: string[];
+  questions: MissionGenesisQuestionViewModel[];
+  evidenceNeeded: string[];
+  candidateMissionId?: string;
+  activatedMissionId?: string;
+};
+
+export type MissionGenesisRepository = {
+  runMissionGenesis(): Promise<MissionGenesisResultViewModel>;
+  answerMissionGenesisContext(input: {
+    candidateMissionId: string;
+    answers: Array<{ questionKey: string; answer: string }>;
+  }): Promise<MissionGenesisResultViewModel>;
 };
 
 export type EvidenceRepository = {
@@ -313,5 +358,6 @@ export type CleanProductionRepositories = {
   music: MusicRepository;
   manager: ManagerRepository;
   missions: MissionRepository;
+  missionGenesis: MissionGenesisRepository;
   evidence: EvidenceRepository;
 };

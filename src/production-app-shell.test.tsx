@@ -586,6 +586,7 @@ describe("Clean production prototype-match shell", () => {
         loadAgents: async () => productionFixtureData.agents,
       },
       missions: {
+        ...baseRepositories.missions,
         loadMissions: async () => productionFixtureData.missions,
       },
     };
@@ -991,6 +992,36 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");
     expect(screen.getByTestId("settings-desktop-profile-summary")).toHaveClass("hidden", "sm:flex");
+  }, 20000);
+
+  it("runs Mission Genesis, asks compact context questions, and activates generated mission work", async () => {
+    render(<ProductionApp fixtureMode initialView="missionsWorkspace" />);
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /run mission genesis/i }));
+
+    expect(await screen.findByText("Mission candidate needs context")).toBeInTheDocument();
+    expect(screen.getByLabelText("What should the Manager optimize for over the next 90 days?")).toBeInTheDocument();
+    expect(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?")).toBeInTheDocument();
+    expect(screen.getByLabelText("Who can actually execute work this month?")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("What should the Manager optimize for over the next 90 days?"), { target: { value: "Market entry" } });
+    fireEvent.change(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?"), { target: { value: "$5,000" } });
+    fireEvent.change(screen.getByLabelText("Who can actually execute work this month?"), { target: { value: "Small team" } });
+    fireEvent.click(screen.getByRole("button", { name: /continue mission genesis/i }));
+
+    expect(await screen.findByText("Mission activated")).toBeInTheDocument();
+    expect(screen.getAllByText("Validate whether a rising market deserves focused operating attention").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
+    expect(screen.getAllByText("Verify geography signal quality").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "Approve" })[0]);
+    expect(await screen.findByText("approved")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Mark done" })[0]);
+    expect(await screen.findByText("completed")).toBeInTheDocument();
+    expect(screen.getByText("Completed: Marked done from Missions workspace.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Checkpoints" }));
+    expect(screen.getByText("Is this market signal real enough to deserve focused operating attention?")).toBeInTheDocument();
+    expect(screen.getByText("Required task results are ready for Manager review.")).toBeInTheDocument();
   }, 20000);
 
   it("keeps unlinked Music projects quiet instead of explaining mission absence", async () => {
@@ -1479,7 +1510,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getByText("What is happening")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Tasks" }));
-    expect(screen.getByText("Release tasks")).toBeInTheDocument();
+    expect(screen.getByText("Mission tasks")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Mission recap" }));
     expect(screen.getByText("Living recap of the mission")).toBeInTheDocument();
 
@@ -1758,6 +1789,28 @@ function repositoriesFor(
     },
     missions: {
       loadMissions: async () => [],
+      approveTask: async () => undefined,
+      completeTask: async () => {
+        throw new Error("No mission task fixture configured.");
+      },
+    },
+    missionGenesis: {
+      runMissionGenesis: async () => ({
+        outcome: "no_mission",
+        title: "No mission created",
+        body: "Mission Genesis is not configured in this test.",
+        reasons: [],
+        questions: [],
+        evidenceNeeded: [],
+      }),
+      answerMissionGenesisContext: async () => ({
+        outcome: "no_mission",
+        title: "No mission created",
+        body: "Mission Genesis is not configured in this test.",
+        reasons: [],
+        questions: [],
+        evidenceNeeded: [],
+      }),
     },
     evidence: {
       loadEvidence: async () => [],

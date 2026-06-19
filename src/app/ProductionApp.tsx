@@ -31,6 +31,7 @@ import type {
   ConversationViewModel,
   DrawerKind,
   EvidenceItemViewModel,
+  MissionGenesisResultViewModel,
   MissionViewModel,
   MovementItem,
   MusicObjectViewModel,
@@ -306,6 +307,9 @@ function CleanProductionWorkspace({
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [mobileNotificationsOpen, setMobileNotificationsOpen] = useState(false);
+  const [missionGenesisResult, setMissionGenesisResult] = useState<MissionGenesisResultViewModel | null>(null);
+  const [missionGenesisAnswers, setMissionGenesisAnswers] = useState<Record<string, string>>({});
+  const [missionGenesisPending, setMissionGenesisPending] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -417,6 +421,53 @@ function CleanProductionWorkspace({
     } finally {
       setTodayBriefPending(false);
     }
+  }
+
+  async function runMissionGenesis() {
+    try {
+      setMissionGenesisPending(true);
+      const result = await repositories.missionGenesis.runMissionGenesis();
+      setMissionGenesisResult(result);
+      setMissionGenesisAnswers({});
+    } finally {
+      setMissionGenesisPending(false);
+    }
+  }
+
+  async function submitMissionGenesisAnswers() {
+    if (!missionGenesisResult?.candidateMissionId) return;
+    try {
+      setMissionGenesisPending(true);
+      const result = await repositories.missionGenesis.answerMissionGenesisContext({
+        candidateMissionId: missionGenesisResult.candidateMissionId,
+        answers: missionGenesisResult.questions.map((question) => ({
+          questionKey: question.key,
+          answer: missionGenesisAnswers[question.key] ?? "",
+        })),
+      });
+      setMissionGenesisResult(result);
+      const nextMissions = await repositories.missions.loadMissions();
+      setMissions(nextMissions);
+      setSelectedMissionId(result.activatedMissionId ?? nextMissions[0]?.id ?? "");
+    } finally {
+      setMissionGenesisPending(false);
+    }
+  }
+
+  async function approveMissionTask(taskId: string) {
+    await repositories.missions.approveTask(taskId);
+    const nextMissions = await repositories.missions.loadMissions();
+    setMissions(nextMissions);
+    setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
+  }
+
+  async function completeMissionTask(taskId: string, status: "completed" | "blocked") {
+    const updatedMission = await repositories.missions.completeTask(taskId, {
+      status,
+      note: status === "blocked" ? "Marked blocked from Missions workspace." : "Marked done from Missions workspace.",
+    });
+    setMissions((current) => current.map((mission) => mission.id === updatedMission.id ? updatedMission : mission));
+    setSelectedMissionId(updatedMission.id);
   }
 
   if (viewModelError) {
@@ -562,7 +613,15 @@ function CleanProductionWorkspace({
             <MissionsWorkspace
               missions={missions}
               selectedMissionId={selectedMissionId}
+              missionGenesisResult={missionGenesisResult}
+              missionGenesisAnswers={missionGenesisAnswers}
+              missionGenesisPending={missionGenesisPending}
               onSelectMission={setSelectedMissionId}
+              onRunMissionGenesis={runMissionGenesis}
+              onMissionGenesisAnswerChange={(key, value) => setMissionGenesisAnswers((current) => ({ ...current, [key]: value }))}
+              onSubmitMissionGenesisAnswers={submitMissionGenesisAnswers}
+              onApproveTask={approveMissionTask}
+              onCompleteTask={completeMissionTask}
               onDrawer={setDrawer}
             />
           ) : null}
