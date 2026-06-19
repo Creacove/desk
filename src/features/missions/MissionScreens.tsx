@@ -7,12 +7,10 @@ export function MissionsWorkspace({
   missions,
   selectedMissionId,
   missionGenesisResult,
-  missionGenesisAnswers,
   missionGenesisPending,
   onSelectMission,
   onRunMissionGenesis,
-  onMissionGenesisAnswerChange,
-  onSubmitMissionGenesisAnswers,
+  onOpenMissionGenesisQuestions,
   onApproveTask,
   onCompleteTask,
   onDrawer,
@@ -20,12 +18,10 @@ export function MissionsWorkspace({
   missions: MissionViewModel[];
   selectedMissionId: string;
   missionGenesisResult: MissionGenesisResultViewModel | null;
-  missionGenesisAnswers: Record<string, string>;
   missionGenesisPending: boolean;
   onSelectMission: (id: string) => void;
   onRunMissionGenesis: () => void;
-  onMissionGenesisAnswerChange: (key: string, value: string) => void;
-  onSubmitMissionGenesisAnswers: () => void;
+  onOpenMissionGenesisQuestions: () => void;
   onApproveTask: (taskId: string) => Promise<void>;
   onCompleteTask: (taskId: string, status: "completed" | "blocked") => Promise<void>;
   onDrawer: (drawer: DrawerKind) => void;
@@ -38,11 +34,9 @@ export function MissionsWorkspace({
       <WorkspaceHeader eyebrow="Artist work" title="Missions" />
       <MissionGenesisPanel
         result={missionGenesisResult}
-        answers={missionGenesisAnswers}
         pending={missionGenesisPending}
         onRun={onRunMissionGenesis}
-        onAnswerChange={onMissionGenesisAnswerChange}
-        onSubmit={onSubmitMissionGenesisAnswers}
+        onOpenQuestions={onOpenMissionGenesisQuestions}
       />
       {!selected ? (
         <section className="rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
@@ -50,6 +44,11 @@ export function MissionsWorkspace({
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
             Run Mission Genesis to decide whether this artist has durable management work worth organizing.
           </p>
+          <div className="mt-4">
+            <ProductButton onClick={onRunMissionGenesis} disabled={missionGenesisPending}>
+              {missionGenesisPending ? "Running Mission Genesis" : "Run Mission Genesis for this artist"}
+            </ProductButton>
+          </div>
         </section>
       ) : null}
       {selected ? (
@@ -135,18 +134,14 @@ export function MissionsWorkspace({
 
 function MissionGenesisPanel({
   result,
-  answers,
   pending,
   onRun,
-  onAnswerChange,
-  onSubmit,
+  onOpenQuestions,
 }: {
   result: MissionGenesisResultViewModel | null;
-  answers: Record<string, string>;
   pending: boolean;
   onRun: () => void;
-  onAnswerChange: (key: string, value: string) => void;
-  onSubmit: () => void;
+  onOpenQuestions: () => void;
 }) {
   return (
     <section className="mb-5 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
@@ -168,38 +163,10 @@ function MissionGenesisPanel({
           <h3 className="mt-2 text-sm font-semibold text-foreground">{result.title}</h3>
           <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
           {result.questions.length ? (
-            <div className="mt-4 grid gap-3">
-              {result.questions.map((question) => (
-                <label key={question.key} className="grid gap-1.5 text-[12px] font-semibold text-foreground">
-                  <span>{question.question}</span>
-                  <span className="text-[11px] leading-relaxed text-muted-foreground/82">{question.reason}</span>
-                  {question.answerKind === "single_select" ? (
-                    <select
-                      aria-label={question.question}
-                      value={answers[question.key] ?? ""}
-                      onChange={(event) => onAnswerChange(question.key, event.target.value)}
-                      className="h-10 rounded-[10px] border border-foreground/10 bg-background px-3 text-[13px] font-semibold outline-none"
-                    >
-                      <option value="">Select answer</option>
-                      {(question.options ?? []).map((option) => (
-                        <option key={option} value={option}>{option}</option>
-                      ))}
-                    </select>
-                  ) : (
-                    <input
-                      aria-label={question.question}
-                      value={answers[question.key] ?? ""}
-                      onChange={(event) => onAnswerChange(question.key, event.target.value)}
-                      className="h-10 rounded-[10px] border border-foreground/10 bg-background px-3 text-[13px] font-semibold outline-none"
-                    />
-                  )}
-                </label>
-              ))}
-              <div>
-                <ProductButton variant="primary" onClick={onSubmit} disabled={pending}>
-                  {pending ? "Continuing Mission Genesis" : "Continue Mission Genesis"}
-                </ProductButton>
-              </div>
+            <div className="mt-4">
+              <ProductButton variant="primary" onClick={onOpenQuestions}>
+                Answer in Manager Office
+              </ProductButton>
             </div>
           ) : null}
         </div>

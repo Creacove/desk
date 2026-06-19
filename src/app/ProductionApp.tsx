@@ -429,6 +429,17 @@ function CleanProductionWorkspace({
       const result = await repositories.missionGenesis.runMissionGenesis();
       setMissionGenesisResult(result);
       setMissionGenesisAnswers({});
+      if (result.outcome === "candidate_needs_context" && result.questions.length) {
+        addMissionGenesisAttention();
+        navigate("managerOffice");
+      }
+      if (result.activatedMissionId) {
+        clearMissionGenesisAttention();
+        const nextMissions = await repositories.missions.loadMissions();
+        setMissions(nextMissions);
+        setSelectedMissionId(result.activatedMissionId);
+        navigate("missionsWorkspace");
+      }
     } finally {
       setMissionGenesisPending(false);
     }
@@ -449,9 +460,42 @@ function CleanProductionWorkspace({
       const nextMissions = await repositories.missions.loadMissions();
       setMissions(nextMissions);
       setSelectedMissionId(result.activatedMissionId ?? nextMissions[0]?.id ?? "");
+      if (result.activatedMissionId) {
+        clearMissionGenesisAttention();
+      }
     } finally {
       setMissionGenesisPending(false);
     }
+  }
+
+  function addMissionGenesisAttention() {
+    setAttention((current) => {
+      const filtered = current.filter((item) => item.title !== "Mission Genesis needs context");
+      return [
+        {
+          title: "Mission Genesis needs context",
+          body: "The Manager has questions to answer before creating this artist's next mission.",
+          tone: "warning",
+          target: "managerOffice",
+        },
+        ...filtered,
+      ];
+    });
+    setMovement((current) => [
+      { label: "Manager", title: "Mission Genesis opened a context request", time: "Just now" },
+      ...current.filter((item) => item.title !== "Mission Genesis opened a context request"),
+    ]);
+  }
+
+  function clearMissionGenesisAttention() {
+    setAttention((current) => current.filter((item) => item.title !== "Mission Genesis needs context"));
+  }
+
+  function openCreatedMissionFromManager() {
+    if (missionGenesisResult?.activatedMissionId) {
+      setSelectedMissionId(missionGenesisResult.activatedMissionId);
+    }
+    navigate("missionsWorkspace");
   }
 
   async function approveMissionTask(taskId: string) {
@@ -595,6 +639,12 @@ function CleanProductionWorkspace({
               answers={managerAnswers}
               setAnswers={setManagerAnswers}
               conversations={conversations}
+              missionGenesisResult={missionGenesisResult}
+              missionGenesisAnswers={missionGenesisAnswers}
+              missionGenesisPending={missionGenesisPending}
+              onMissionGenesisAnswerChange={(key, value) => setMissionGenesisAnswers((current) => ({ ...current, [key]: value }))}
+              onSubmitMissionGenesisAnswers={submitMissionGenesisAnswers}
+              onOpenCreatedMission={openCreatedMissionFromManager}
               onBack={() => navigate("labelHQ")}
               onConversation={openConversation}
               onInvestigation={() => navigate("investigation")}
@@ -614,12 +664,10 @@ function CleanProductionWorkspace({
               missions={missions}
               selectedMissionId={selectedMissionId}
               missionGenesisResult={missionGenesisResult}
-              missionGenesisAnswers={missionGenesisAnswers}
               missionGenesisPending={missionGenesisPending}
               onSelectMission={setSelectedMissionId}
               onRunMissionGenesis={runMissionGenesis}
-              onMissionGenesisAnswerChange={(key, value) => setMissionGenesisAnswers((current) => ({ ...current, [key]: value }))}
-              onSubmitMissionGenesisAnswers={submitMissionGenesisAnswers}
+              onOpenMissionGenesisQuestions={() => navigate("managerOffice")}
               onApproveTask={approveMissionTask}
               onCompleteTask={completeMissionTask}
               onDrawer={setDrawer}
@@ -699,7 +747,9 @@ function MobileNotificationSheet({
                   className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-left"
                   onClick={() => {
                     onClose();
-                    if (item.tone === "accent") {
+                    if (item.target) {
+                      onNavigate(item.target);
+                    } else if (item.tone === "accent") {
                       onDrawer("evidence");
                     } else {
                       onNavigate("missionsWorkspace");

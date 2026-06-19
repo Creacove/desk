@@ -51,6 +51,7 @@ export type AttentionItem = {
   title: string;
   body: string;
   tone: "warning" | "accent";
+  target?: CleanProductionView;
 };
 
 export type MovementItem = {

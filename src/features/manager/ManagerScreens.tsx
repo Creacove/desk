@@ -1,6 +1,6 @@
 import { ArrowRight, ClipboardCheck } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
-import type { CleanProductionView, ConversationViewModel } from "../../types/cleanProduction";
+import type { CleanProductionView, ConversationViewModel, MissionGenesisResultViewModel } from "../../types/cleanProduction";
 import { useState } from "react";
 
 const managerQuestions = [
@@ -28,6 +28,12 @@ export function ManagerOfficeScreen({
   answers,
   setAnswers,
   conversations,
+  missionGenesisResult,
+  missionGenesisAnswers,
+  missionGenesisPending,
+  onMissionGenesisAnswerChange,
+  onSubmitMissionGenesisAnswers,
+  onOpenCreatedMission,
   onBack,
   onConversation,
   onInvestigation,
@@ -35,6 +41,12 @@ export function ManagerOfficeScreen({
   answers: Record<string, string>;
   setAnswers: (answers: Record<string, string>) => void;
   conversations: ConversationViewModel[];
+  missionGenesisResult: MissionGenesisResultViewModel | null;
+  missionGenesisAnswers: Record<string, string>;
+  missionGenesisPending: boolean;
+  onMissionGenesisAnswerChange: (key: string, value: string) => void;
+  onSubmitMissionGenesisAnswers: () => void;
+  onOpenCreatedMission: () => void;
   onBack: () => void;
   onConversation: (conversation: ConversationViewModel) => void;
   onInvestigation: () => void;
@@ -65,6 +77,14 @@ export function ManagerOfficeScreen({
   return (
     <WorkspaceShell eyebrow="Manager Office" title="Manager Briefing" onBack={onBack}>
       <div className="max-w-5xl">
+        <MissionGenesisManagerPanel
+          result={missionGenesisResult}
+          answers={missionGenesisAnswers}
+          pending={missionGenesisPending}
+          onAnswerChange={onMissionGenesisAnswerChange}
+          onSubmit={onSubmitMissionGenesisAnswers}
+          onOpenCreatedMission={onOpenCreatedMission}
+        />
         <div data-testid="manager-mobile-progress" className="mb-4 flex items-center justify-between rounded-[14px] border border-foreground/10 bg-white px-3.5 py-3 shadow-[0_1px_6px_rgba(17,19,24,0.045)] lg:hidden">
           <span className="text-[12px] font-semibold text-muted-foreground">Context progress</span>
           <span className="rounded-full bg-foreground px-2.5 py-1 text-[11px] font-bold text-background">{answeredCount}/{managerQuestions.length}</span>
@@ -147,6 +167,78 @@ export function ManagerOfficeScreen({
         ) : null}
       </div>
     </WorkspaceShell>
+  );
+}
+
+function MissionGenesisManagerPanel({
+  result,
+  answers,
+  pending,
+  onAnswerChange,
+  onSubmit,
+  onOpenCreatedMission,
+}: {
+  result: MissionGenesisResultViewModel | null;
+  answers: Record<string, string>;
+  pending: boolean;
+  onAnswerChange: (key: string, value: string) => void;
+  onSubmit: () => void;
+  onOpenCreatedMission: () => void;
+}) {
+  if (!result || (result.outcome !== "candidate_needs_context" && result.outcome !== "activate_mission")) {
+    return null;
+  }
+
+  return (
+    <section className="mb-5 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
+      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Genesis</p>
+      <h2 className="mt-2 font-display text-[18px] font-bold tracking-tight text-foreground">{result.title}</h2>
+      <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
+      {result.questions.length ? (
+        <div className="mt-4 grid gap-3">
+          {result.questions.map((question) => (
+            <label key={question.key} className="grid gap-1.5 text-[12px] font-semibold text-foreground">
+              <span>{question.question}</span>
+              <span className="text-[11px] leading-relaxed text-muted-foreground/82">{question.reason}</span>
+              {question.answerKind === "single_select" ? (
+                <select
+                  aria-label={question.question}
+                  value={answers[question.key] ?? ""}
+                  onChange={(event) => onAnswerChange(question.key, event.target.value)}
+                  className="h-10 rounded-[10px] border border-foreground/10 bg-background px-3 text-[13px] font-semibold outline-none"
+                >
+                  <option value="">Select answer</option>
+                  {(question.options ?? []).map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  aria-label={question.question}
+                  value={answers[question.key] ?? ""}
+                  onChange={(event) => onAnswerChange(question.key, event.target.value)}
+                  className="h-10 rounded-[10px] border border-foreground/10 bg-background px-3 text-[13px] font-semibold outline-none"
+                />
+              )}
+            </label>
+          ))}
+          <div>
+            <ProductButton onClick={onSubmit} disabled={pending}>
+              {pending ? "Continuing Mission Genesis" : "Continue Mission Genesis"}
+            </ProductButton>
+          </div>
+        </div>
+      ) : null}
+      {result.activatedMissionId ? (
+        <div className="mt-4 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
+          <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Work created</p>
+          <p className="mt-2 text-sm font-semibold text-foreground">Mission work is ready in Missions.</p>
+          <div className="mt-4">
+            <ProductButton onClick={onOpenCreatedMission}>Open created mission</ProductButton>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
