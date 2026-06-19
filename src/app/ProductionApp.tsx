@@ -300,6 +300,7 @@ function CleanProductionWorkspace({
   const [selectedAgent, setSelectedAgent] = useState<AgentViewModel | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<ConversationViewModel | null>(null);
   const [selectedMissionId, setSelectedMissionId] = useState("");
+  const [missionRoomOpenRequestKey, setMissionRoomOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
   const [setupPending, setSetupPending] = useState(false);
@@ -401,6 +402,7 @@ function CleanProductionWorkspace({
 
     if (type === "mission") {
       setSelectedMissionId(id ?? missions[0]?.id ?? "");
+      setMissionRoomOpenRequestKey((current) => current + 1);
       navigate("missionsWorkspace");
     }
   }
@@ -671,6 +673,7 @@ function CleanProductionWorkspace({
               onApproveTask={approveMissionTask}
               onCompleteTask={completeMissionTask}
               onDrawer={setDrawer}
+              openRoomRequestKey={missionRoomOpenRequestKey}
             />
           ) : null}
           {view === "artistProfileWorkspace" ? (

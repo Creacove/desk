@@ -51,7 +51,6 @@ export type AttentionItem = {
   title: string;
   body: string;
   tone: "warning" | "accent";
-  target?: CleanProductionView;
 };
 
 export type MovementItem = {
@@ -119,29 +118,92 @@ export type AgentViewModel = {
 export type MissionViewModel = {
   id: string;
   title: string;
-  status: "candidate" | "active" | "review" | "blocked" | "paused" | "complete" | "archived" | "cancelled";
+  status: "active" | "review" | "blocked" | "complete";
   progress: number;
   review: string;
   summary: string;
   recommendation: string;
   musicSubject: string;
   nextTask: string;
-  checkpoints?: Array<{
-    id: string;
-    title: string;
-    question: string;
-    status: string;
-    recommendation?: string;
-  }>;
-  tasks?: Array<{
-    id: string;
-    title: string;
-    status: string;
-    ownerRole?: string;
-    checkpointId?: string;
-    purpose?: string;
-    managerInterpretation?: string;
-  }>;
+  tasks?: MissionTaskViewModel[];
+  checkpoints?: MissionCheckpointViewModel[];
+  notes?: MissionNoteViewModel[];
+  recap?: MissionRecapViewModel;
+  events?: MissionEventViewModel[];
+};
+
+export type MissionTaskResultViewModel = {
+  status: "completed" | "blocked" | "missed" | "rejected" | "revised" | "pending";
+  summary: string;
+  userNote: string;
+  interpretation: string;
+  missionEffect: string;
+  followUp: string;
+};
+
+export type MissionTaskViewModel = {
+  id: string;
+  checkpointId: string;
+  title: string;
+  owner: string;
+  deadline: string;
+  approvalState: "not_required" | "needs approval" | "approved" | "blocked" | "active";
+  purpose: string;
+  steps: string[];
+  evidenceIds: string[];
+  dependency: string;
+  riskIfLate: string;
+  result?: MissionTaskResultViewModel;
+};
+
+export type MissionCheckpointViewModel = {
+  id: string;
+  phase: number;
+  title: string;
+  status: "Waiting on tasks" | "Ready for AI review" | "Needs revision" | "Watching signal" | "Met";
+  question: string;
+  requiredTaskIds: string[];
+  dependsOnCheckpointIds: string[];
+  unlocks: string[];
+  blockedReason: string;
+  dependencyImpact: string;
+  watchedSignals: string[];
+  decisionRule: string;
+  recommendation: string;
+  resultSummary: string;
+  nextAction: string;
+};
+
+export type MissionNoteViewModel = {
+  id: string;
+  route: string;
+  subject: string;
+  message: string;
+  status: string;
+  sourceBasis: string;
+  recommendedAction: string;
+  resultingChange: string;
+  briefType: string;
+};
+
+export type MissionRecapViewModel = {
+  finalCall: string;
+  currentState: string;
+  originalRequest: string;
+  confidence: string;
+  reviewDate: string;
+  sections: Array<{ label: string; value: string }>;
+  missingEvidence: string[];
+  alternativesRejected: string[];
+  changeDecision: string;
+  override: string;
+  qualityGate: string;
+};
+
+export type MissionEventViewModel = {
+  type: string;
+  actor: string;
+  summary: string;
 };
 
 export type MusicObjectViewModel = {
@@ -317,35 +379,6 @@ export type ManagerRepository = {
 
 export type MissionRepository = {
   loadMissions(): Promise<MissionViewModel[]>;
-  approveTask(taskId: string): Promise<void>;
-  completeTask(taskId: string, input: { status: "completed" | "blocked"; note: string }): Promise<MissionViewModel>;
-};
-
-export type MissionGenesisQuestionViewModel = {
-  key: string;
-  question: string;
-  reason: string;
-  answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
-  options?: string[];
-};
-
-export type MissionGenesisResultViewModel = {
-  outcome: "activate_mission" | "candidate_needs_context" | "request_evidence" | "update_existing_mission" | "no_mission";
-  title: string;
-  body: string;
-  reasons: string[];
-  questions: MissionGenesisQuestionViewModel[];
-  evidenceNeeded: string[];
-  candidateMissionId?: string;
-  activatedMissionId?: string;
-};
-
-export type MissionGenesisRepository = {
-  runMissionGenesis(): Promise<MissionGenesisResultViewModel>;
-  answerMissionGenesisContext(input: {
-    candidateMissionId: string;
-    answers: Array<{ questionKey: string; answer: string }>;
-  }): Promise<MissionGenesisResultViewModel>;
 };
 
 export type EvidenceRepository = {
@@ -359,6 +392,5 @@ export type CleanProductionRepositories = {
   music: MusicRepository;
   manager: ManagerRepository;
   missions: MissionRepository;
-  missionGenesis: MissionGenesisRepository;
   evidence: EvidenceRepository;
 };
