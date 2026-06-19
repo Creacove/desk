@@ -15,6 +15,18 @@ import type {
 
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "notes" | "recap";
 
+const testMission: MissionViewModel = {
+  id: "mission-validation",
+  title: "Test mission: Release readiness",
+  status: "active",
+  progress: 0,
+  review: "Campaign planning",
+  summary: "Use $1,850 for a 10-day validation test while holding back $2,250 until private signals are cleaner.",
+  recommendation: "Run a capped test, then review saves, clicks, follows, and demand comments.",
+  musicSubject: "Night Bus",
+  nextTask: "Approve capped campaign test budget",
+};
+
 export function MissionsWorkspace({
   missions,
   selectedMissionId,
@@ -28,11 +40,17 @@ export function MissionsWorkspace({
   onDrawer: (drawer: DrawerKind) => void;
   openRoomRequestKey?: number;
 }) {
+  const [localMissions, setLocalMissions] = useState<MissionViewModel[]>(missions);
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
   const [tab, setTab] = useState<MissionRoomTab>("pulse");
-  const activeMissions = missions.filter((mission) => mission.status !== "complete");
-  const completedMissions = missions.filter((mission) => mission.status === "complete");
-  const selected = missions.find((mission) => mission.id === selectedMissionId) ?? activeMissions[0] ?? missions[0] ?? null;
+
+  useEffect(() => {
+    setLocalMissions(missions);
+  }, [missions]);
+
+  const activeMissions = localMissions.filter((mission) => mission.status !== "complete");
+  const completedMissions = localMissions.filter((mission) => mission.status === "complete");
+  const selected = localMissions.find((mission) => mission.id === selectedMissionId) ?? activeMissions[0] ?? localMissions[0] ?? null;
 
   useEffect(() => {
     if (openRoomRequestKey > 0) {
@@ -47,11 +65,18 @@ export function MissionsWorkspace({
     setTab(nextTab);
   }
 
-  if (!missions.length) {
+  const handleTestMission = () => {
+    setLocalMissions([testMission]);
+    onSelectMission(testMission.id);
+    setRoomMode("room");
+    setTab("pulse");
+  };
+
+  if (!localMissions.length) {
     return (
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
-        <EmptyMissionState />
+        <EmptyMissionState onTestMission={handleTestMission} />
       </section>
     );
   }
@@ -61,7 +86,7 @@ export function MissionsWorkspace({
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <div data-testid="missions-mobile-picker" className="space-y-8 lg:hidden">
-          <MissionShortcutTabs mission={activeMissions[0] ?? missions[0]} onOpen={openMission} />
+          <MissionShortcutTabs mission={activeMissions[0] ?? localMissions[0]} onOpen={openMission} />
           <MissionList activeMissions={activeMissions} completedMissions={completedMissions} onOpen={openMission} />
         </div>
         <div data-testid="missions-desktop-list" className="hidden lg:block">
@@ -82,7 +107,7 @@ export function MissionsWorkspace({
   );
 }
 
-function EmptyMissionState() {
+function EmptyMissionState({ onTestMission }: { onTestMission?: () => void }) {
   return (
     <section className="surface-elevated rounded-[24px] p-6 shadow-sm">
       <div className="flex max-w-2xl flex-col gap-3">
@@ -91,6 +116,17 @@ function EmptyMissionState() {
         <p className="text-[14px] font-semibold leading-relaxed text-muted-foreground/86">
           The Manager has not activated mission work for this artist yet. Missions appear here after there is a durable objective, source context, checkpoints, and tasks worth coordinating.
         </p>
+        {onTestMission && (
+          <div className="mt-4">
+            <button
+              type="button"
+              onClick={onTestMission}
+              className="rounded-lg bg-brand-accent px-4 py-2 text-[13px] font-semibold text-background hover:bg-brand-accent/90"
+            >
+              Test mission page
+            </button>
+          </div>
+        )}
       </div>
     </section>
   );
