@@ -4,6 +4,7 @@ import {
   buildMissionGenesisRepairInstructions,
   missionGenesisJsonSchema,
   parseMissionGenesisOutput,
+  parseMissionGenesisOutputSafe,
   type MissionGenesisMode,
   type MissionGenesisOutput,
   type MissionGenesisQuestion,
@@ -313,11 +314,20 @@ async function callOpenAIMissionGenesis(
       buildMissionGenesisRepairInstructions(mode, validationError),
       { ...context, invalidOutput: first.outputText, validationError },
     );
-    return {
-      output: parseMissionGenesisOutput(repaired.outputText, context.packet, mode),
-      usage: mergeOpenAIUsage(first.usage, repaired.usage),
-      requestCount: 2,
-    };
+    try {
+      return {
+        output: parseMissionGenesisOutput(repaired.outputText, context.packet, mode),
+        usage: mergeOpenAIUsage(first.usage, repaired.usage),
+        requestCount: 2,
+      };
+    } catch (secondError) {
+      console.warn("Mission Genesis repair failed, running safe self-healing parser:", secondError);
+      return {
+        output: parseMissionGenesisOutputSafe(repaired.outputText, context.packet, mode),
+        usage: mergeOpenAIUsage(first.usage, repaired.usage),
+        requestCount: 2,
+      };
+    }
   }
 }
 

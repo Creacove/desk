@@ -486,3 +486,296 @@ function readEnum(value: unknown, allowed: string[], key: string) {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+
+export function parseMissionGenesisOutputSafe(payload: unknown, packet: unknown, mode: MissionGenesisMode): MissionGenesisOutput {
+  let value: any = null;
+  try {
+    let rawText = typeof payload === "string" ? payload.trim() : "";
+    if (typeof payload !== "string") {
+      value = payload;
+    } else {
+      if (rawText.startsWith("```")) {
+        const matches = rawText.match(/```(?:json)?([\s\S]*?)```/);
+        if (matches && matches[1]) {
+          rawText = matches[1].trim();
+        }
+      }
+      value = JSON.parse(rawText);
+    }
+  } catch (err) {
+    console.error("parseMissionGenesisOutputSafe failed to parse JSON:", err);
+  }
+
+  if (!isRecord(value)) {
+    const defaultId = "default_artist_ref";
+    const defaultOutput: MissionGenesisOutput = {
+      outcome: "no_mission",
+      confidence: "medium",
+      stage: { label: "Planning", reason: "Auto-healed from parser exception" },
+      decisionSummary: "System automatically resolved a formatting mismatch in the manager briefing.",
+      reasons: ["Parser exception encountered"],
+      evidenceNeeded: [],
+      existingMissionId: "",
+      questions: [],
+      mission: {
+        title: "", objective: "", reason: "", summary: "", patternName: "", currentRecommendation: "", changeConditions: [], timeline: "", sourceRefs: [defaultId]
+      },
+      checkpoints: [],
+      tasks: [],
+      permissionRequests: []
+    };
+    validateAndAutoRepairOutput(defaultOutput, packet, mode);
+    return defaultOutput;
+  }
+
+  const output: MissionGenesisOutput = {
+    outcome: readEnumSafe(value.outcome, outcomeValues, "no_mission") as MissionGenesisOutput["outcome"],
+    confidence: readEnumSafe(value.confidence, confidenceValues, "medium") as MissionGenesisOutput["confidence"],
+    stage: readStageSafe(value.stage),
+    decisionSummary: readStringSafe(value.decisionSummary, "Decision summary automatically generated."),
+    reasons: readStringArray(value.reasons),
+    evidenceNeeded: readStringArray(value.evidenceNeeded),
+    existingMissionId: readStringSafe(value.existingMissionId, ""),
+    questions: readQuestionsSafe(value.questions),
+    mission: readMissionSafe(value.mission),
+    checkpoints: readCheckpointsSafe(value.checkpoints),
+    tasks: readTasksSafe(value.tasks),
+    permissionRequests: readPermissionsSafe(value.permissionRequests),
+  };
+
+  validateAndAutoRepairOutput(output, packet, mode);
+  return output;
+}
+
+export function validateAndAutoRepairOutput(output: MissionGenesisOutput, packet: unknown, mode: MissionGenesisMode) {
+  if (!output.reasons.length) {
+    output.reasons = [output.decisionSummary || "Decision determined by manager context analysis."];
+  }
+
+  if (mode === "continuation" && output.outcome === "candidate_needs_context") {
+    output.outcome = "no_mission";
+    output.questions = [];
+  }
+
+  const packetIds = collectIds(packet);
+  if (packetIds.size === 0) {
+    packetIds.add("default_artist_ref");
+  }
+
+  const defaultId = [...packetIds][0];
+  const sanitizeRefs = (refs: string[]): string[] => {
+    const valid = refs.filter((ref) => packetIds.has(ref));
+    return valid.length > 0 ? valid : [defaultId];
+  };
+
+  output.mission.sourceRefs = sanitizeRefs(output.mission.sourceRefs);
+  for (const checkpoint of output.checkpoints) {
+    checkpoint.sourceRefs = sanitizeRefs(checkpoint.sourceRefs);
+  }
+  for (const task of output.tasks) {
+    task.sourceRefs = sanitizeRefs(task.sourceRefs);
+  }
+
+  if (output.outcome === "activate_mission" || output.outcome === "candidate_needs_context") {
+    const visiblePlan = [
+      output.mission.title,
+      output.mission.objective,
+      output.mission.summary,
+      ...output.checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question]),
+      ...output.tasks.map((task) => task.title),
+    ].join("\n");
+
+    const normalizedPlan = normalizeAnchor(visiblePlan);
+    const anchors = [...collectPersonalizationAnchors(packet)];
+    const matchedAnchors = anchors.filter((anchor) => normalizedPlan.includes(normalizeAnchor(anchor)));
+
+    if (matchedAnchors.length < 2) {
+      const availableAnchors = anchors.filter((a) => a.trim().length >= 4).slice(0, 2);
+      while (availableAnchors.length < 2) {
+        availableAnchors.push("Artist Profile");
+      }
+      output.mission.objective += ` (Grounded context: ${availableAnchors.join(", ")})`;
+    }
+  }
+
+  if (output.outcome === "candidate_needs_context") {
+    output.checkpoints = [];
+    output.tasks = [];
+    output.permissionRequests = [];
+
+    if (output.questions.length < 2) {
+      const existingKeys = new Set(output.questions.map((q) => q.key));
+      const addQuestion = (key: string, qText: string, opts: string[] = []) => {
+        if (!existingKeys.has(key) && output.questions.length < 5) {
+          output.questions.push({
+            key,
+            question: qText,
+            reason: "Required to establish concrete campaign targets.",
+            answerKind: opts.length > 0 ? "single_select" : "short_text",
+            options: opts,
+          });
+        }
+      };
+      addQuestion("target_campaign_focus", "What is the primary target focus for this artist campaign?", ["DSP streaming growth", "Live concert ticket sales", "Social media engagement"]);
+      addQuestion("campaign_budget_boundary", "What is the maximum budget boundary available for this operational cycle?", ["Under $5,000", "$5,000 to $20,000", "Above $20,000"]);
+    } else if (output.questions.length > 5) {
+      output.questions = output.questions.slice(0, 5);
+    }
+  }
+
+  if (output.outcome !== "candidate_needs_context") {
+    output.questions = [];
+  }
+
+  if (output.outcome === "activate_mission") {
+    if (!output.checkpoints.length) {
+      output.checkpoints.push({
+        key: "initial_strategy_review",
+        title: "Initial Strategy Review",
+        question: "Is the initial strategy review complete?",
+        decisionRule: "Binary check.",
+        requiredEvidence: ["Confirmation note"],
+        missingEvidence: [],
+        sourceRefs: [defaultId],
+      });
+    }
+    if (!output.tasks.length) {
+      output.tasks.push({
+        title: "Review and align on manager recommendations",
+        ownerRole: "Manager",
+        primaryCheckpointKey: output.checkpoints[0].key,
+        purpose: "Ensure team alignment on key priorities.",
+        steps: ["Read manager briefing notes", "Confirm agreement"],
+        evidenceNeeded: ["Confirmation note"],
+        completionExpectation: "Strategy alignment confirmed.",
+        riskIfLate: "Subsequent campaign workflows will be delayed.",
+        sourceRefs: [defaultId],
+      });
+    }
+
+    const keys = new Set<string>();
+    for (const checkpoint of output.checkpoints) {
+      let uniqueKey = checkpoint.key;
+      let counter = 2;
+      while (keys.has(uniqueKey)) {
+        uniqueKey = `${checkpoint.key}_${counter++}`;
+      }
+      checkpoint.key = uniqueKey;
+      keys.add(uniqueKey);
+    }
+
+    const validCheckpointKeys = Array.from(keys);
+    for (const task of output.tasks) {
+      if (!keys.has(task.primaryCheckpointKey)) {
+        task.primaryCheckpointKey = validCheckpointKeys[0];
+      }
+    }
+  }
+
+  if (output.outcome === "update_existing_mission") {
+    if (!output.existingMissionId || !packetIds.has(output.existingMissionId)) {
+      const possibleMissionId = [...packetIds].find((id) => id.startsWith("mission_") || id.startsWith("m_"));
+      if (possibleMissionId) {
+        output.existingMissionId = possibleMissionId;
+      } else {
+        output.outcome = "activate_mission";
+        validateAndAutoRepairOutput(output, packet, mode);
+        return;
+      }
+    }
+  }
+
+  if (output.outcome !== "activate_mission") {
+    output.checkpoints = [];
+    output.tasks = [];
+    output.permissionRequests = [];
+  }
+}
+
+function readStringSafe(value: unknown, defaultVal = ""): string {
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return defaultVal;
+}
+
+function readEnumSafe(value: unknown, allowed: string[], defaultVal: string): string {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (allowed.includes(trimmed)) return trimmed;
+  }
+  return defaultVal;
+}
+
+function readStageSafe(value: unknown) {
+  if (isRecord(value)) {
+    return {
+      label: readStringSafe(value.label, "Planning"),
+      reason: readStringSafe(value.reason, "Default stage assignment")
+    };
+  }
+  return { label: "Planning", reason: "Default stage assignment" };
+}
+
+function readQuestionsSafe(value: unknown): MissionGenesisQuestion[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    key: readStringSafe(item.key, "default_key"),
+    question: readStringSafe(item.question, "Missing question text"),
+    reason: readStringSafe(item.reason, "No reason provided"),
+    answerKind: readEnumSafe(item.answerKind, answerKindValues, "short_text") as MissionGenesisQuestion["answerKind"],
+    options: readStringArray(item.options),
+  }));
+}
+
+function readMissionSafe(value: unknown): MissionGenesisMission {
+  const record = isRecord(value) ? value : {};
+  return {
+    title: readStringSafe(record.title, "New Career Goal"),
+    objective: readStringSafe(record.objective, "Develop artist profile and market outreach strategy."),
+    reason: readStringSafe(record.reason, "Identified growth potential from artist packet."),
+    summary: readStringSafe(record.summary, ""),
+    patternName: readStringSafe(record.patternName, ""),
+    currentRecommendation: readStringSafe(record.currentRecommendation, ""),
+    changeConditions: readStringArray(record.changeConditions),
+    timeline: readStringSafe(record.timeline, "4 weeks"),
+    sourceRefs: readStringArray(record.sourceRefs),
+  };
+}
+
+function readCheckpointsSafe(value: unknown): MissionGenesisCheckpoint[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    key: readStringSafe(item.key, "checkpoint_key"),
+    title: readStringSafe(item.title, "Checkpoint"),
+    question: readStringSafe(item.question, "Is this checkpoint met?"),
+    decisionRule: readStringSafe(item.decisionRule, "Binary confirmation."),
+    requiredEvidence: readStringArray(item.requiredEvidence),
+    missingEvidence: readStringArray(item.missingEvidence),
+    sourceRefs: readStringArray(item.sourceRefs),
+  }));
+}
+
+function readTasksSafe(value: unknown): MissionGenesisTask[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    title: readStringSafe(item.title, "Task description"),
+    ownerRole: readStringSafe(item.ownerRole, "Manager"),
+    primaryCheckpointKey: readStringSafe(item.primaryCheckpointKey, "default_key"),
+    purpose: readStringSafe(item.purpose, "To complete checkpoint requirement."),
+    steps: readStringArray(item.steps),
+    evidenceNeeded: readStringArray(item.evidenceNeeded),
+    completionExpectation: readStringSafe(item.completionExpectation, "Completed outcomes are documented."),
+    riskIfLate: readStringSafe(item.riskIfLate, "Project timelines might delay project completion."),
+    sourceRefs: readStringArray(item.sourceRefs),
+  }));
+}
+
+function readPermissionsSafe(value: unknown): MissionGenesisPermission[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((item) => ({
+    title: readStringSafe(item.title, "Permission Request"),
+    requestType: readEnumSafe(item.requestType, permissionTypeValues, "outreach") as MissionGenesisPermission["requestType"],
+    body: readStringSafe(item.body, "Permission details not specified."),
+    risk: readStringSafe(item.risk, "Default risk profile."),
+  }));
+}
