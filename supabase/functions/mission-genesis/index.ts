@@ -635,7 +635,6 @@ async function writeMissionPlan(db: any, input: MissionGenesisInput, runId: stri
         account_id: input.accountId,
         artist_workspace_id: input.artistWorkspaceId,
         artist_id: input.artistId,
-        mission_id: missionId,
         task_id: taskRow.id,
         body,
         order_index: index + 1,
