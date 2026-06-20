@@ -3,30 +3,7 @@ import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import type { CleanProductionView, ConversationViewModel, MissionGenesisResultViewModel } from "../../types/cleanProduction";
 import { useState } from "react";
 
-const managerQuestions = [
-  {
-    id: "goal",
-    label: "Current goal",
-    prompt: "What outcome should the Manager protect first?",
-    suggestion: "Validate the strongest current music or catalog opportunity before approving scale spend.",
-  },
-  {
-    id: "budget",
-    label: "Budget posture",
-    prompt: "What budget constraint should shape recommendations?",
-    suggestion: "Keep the monthly budget at $5,000 and avoid full-scale spend until private signals improve.",
-  },
-  {
-    id: "risk",
-    label: "Decision risk",
-    prompt: "What should the Manager avoid?",
-    suggestion: "Do not rush public commitments, expensive spend, or rights-sensitive moves without proof.",
-  },
-];
-
 export function ManagerOfficeScreen({
-  answers,
-  setAnswers,
   conversations,
   missionGenesisResult,
   missionGenesisAnswers,
@@ -39,8 +16,6 @@ export function ManagerOfficeScreen({
   onConversation,
   onInvestigation,
 }: {
-  answers: Record<string, string>;
-  setAnswers: (answers: Record<string, string>) => void;
   conversations: ConversationViewModel[];
   missionGenesisResult: MissionGenesisResultViewModel | null;
   missionGenesisAnswers: Record<string, string>;
@@ -53,29 +28,6 @@ export function ManagerOfficeScreen({
   onConversation: (conversation: ConversationViewModel) => void;
   onInvestigation: () => void;
 }) {
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
-  const answeredCount = managerQuestions.filter((question) => answers[question.id]?.trim()).length;
-  const activeQuestion = managerQuestions[activeIndex] ?? managerQuestions[managerQuestions.length - 1];
-  const allAnswered = submitted;
-
-  function saveSuggestion() {
-    setAnswers({ ...answers, [activeQuestion.id]: activeQuestion.suggestion });
-  }
-
-  function advance() {
-    if (!answers[activeQuestion.id]?.trim()) {
-      saveSuggestion();
-      return;
-    }
-
-    if (activeIndex < managerQuestions.length - 1) {
-      setActiveIndex((current) => current + 1);
-    } else {
-      setSubmitted(true);
-    }
-  }
-
   return (
     <WorkspaceShell eyebrow="Manager Office" title="Manager Briefing" onBack={onBack}>
       <div className="max-w-5xl">
@@ -88,40 +40,12 @@ export function ManagerOfficeScreen({
           onSubmit={onSubmitMissionGenesisAnswers}
           onOpenCreatedMission={onOpenCreatedMission}
         />
-        <div data-testid="manager-mobile-progress" className="mb-4 flex items-center justify-between rounded-[14px] border border-foreground/10 bg-white px-3.5 py-3 shadow-[0_1px_6px_rgba(17,19,24,0.045)] lg:hidden">
-          <span className="text-[12px] font-semibold text-muted-foreground">Context progress</span>
-          <span className="rounded-full bg-foreground px-2.5 py-1 text-[11px] font-bold text-background">{answeredCount}/{managerQuestions.length}</span>
-        </div>
-        <section className="rounded-xl border border-foreground/10 bg-background shadow-sm p-6">
-          <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-            <div className="min-w-0 flex-1">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager context</p>
-              <h2 className="font-display text-[18px] font-bold tracking-tight text-foreground mt-2">{allAnswered ? "Context synchronized" : activeQuestion.prompt}</h2>
-              <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-3">
-                The Manager asks for durable operating context before turning a question into a decision package or mission work.
-              </p>
-              {!allAnswered ? (
-                <div className="mt-5">
-                  <label className="grid gap-1.5">
-                    <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{activeQuestion.label}</span>
-                    <textarea
-                      className="rounded-[12px] border border-foreground/8 bg-background p-3 text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60 focus:border-brand-accent/50 focus:ring-2 focus:ring-brand-accent/5 min-h-28"
-                      value={answers[activeQuestion.id] ?? ""}
-                      onChange={(event) => setAnswers({ ...answers, [activeQuestion.id]: event.target.value })}
-                    />
-                  </label>
-                  <div className="mt-4 flex flex-wrap gap-3">
-                    <ProductButton variant="secondary" onClick={saveSuggestion}>
-                      Use suggested context
-                    </ProductButton>
-                    <ProductButton onClick={advance}>
-                      {answeredCount === managerQuestions.length - 1 ? "Submit Context" : "Next Question"}
-                    </ProductButton>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-5">
-                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Manager directive</p>
+        {!missionGenesisResult && (
+          <>
+            <section className="rounded-xl border border-foreground/10 bg-background shadow-sm p-6">
+              <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+                <div className="min-w-0 flex-1">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager directive</p>
                   <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] mt-3 p-4">
                     <p className="text-[13px] font-semibold leading-relaxed text-foreground/90">
                       Keep the release moving, protect the rights gate, and only recommend spend that has a measurable review path.
@@ -132,42 +56,33 @@ export function ManagerOfficeScreen({
                     <ProductButton onClick={onInvestigation}>Ask Manager</ProductButton>
                   </div>
                 </div>
-              )}
-            </div>
-            <aside data-testid="manager-desktop-progress" className="hidden rounded-xl border border-foreground/8 bg-foreground/[0.025] p-4 lg:block lg:w-72">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Context progress</p>
-              <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-2">
-                {answeredCount}/{managerQuestions.length}
-              </p>
-              <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">Recent conversations unlock after required context is saved.</p>
-            </aside>
-          </div>
-        </section>
+              </div>
+            </section>
 
-        {allAnswered ? (
-          <section className="mt-6">
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground mb-3">Conversation History</p>
-            <div className="grid gap-3">
-              {conversations.map((conversation) => (
-                <button
-                  key={conversation.id}
-                  type="button"
-                  aria-label={conversation.topic}
-                  className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-left"
-                  onClick={() => onConversation(conversation)}
-                >
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="text-base font-semibold">{conversation.topic}</p>
-                      <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-1">{conversation.summary}</p>
+            <section className="mt-6">
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground mb-3">Conversation History</p>
+              <div className="grid gap-3">
+                {conversations.map((conversation) => (
+                  <button
+                    key={conversation.id}
+                    type="button"
+                    aria-label={conversation.topic}
+                    className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-left"
+                    onClick={() => onConversation(conversation)}
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-base font-semibold">{conversation.topic}</p>
+                        <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-1">{conversation.summary}</p>
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     </div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
+                  </button>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </WorkspaceShell>
   );

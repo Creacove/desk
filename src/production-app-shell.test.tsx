@@ -828,14 +828,6 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
     expect(screen.getByText("Manager Office")).toBeInTheDocument();
-
-    for (let index = 0; index < 3; index += 1) {
-      fireEvent.click(screen.getByRole("button", { name: "Use suggested context" }));
-      await waitFor(() => expect(screen.getByRole("textbox")).toHaveValue());
-      fireEvent.click(screen.getByRole("button", { name: /Next Question|Submit Context/ }));
-    }
-
-    expect(await screen.findByText("Context synchronized")).toBeInTheDocument();
     expect(screen.getByText("Conversation History")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Night Bus release planning" }));
@@ -985,8 +977,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
-    expect(screen.getByTestId("manager-mobile-progress")).toHaveClass("lg:hidden");
-    expect(screen.getByTestId("manager-desktop-progress")).toHaveClass("hidden", "lg:block");
+    expect(screen.getByText("Manager Office")).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");

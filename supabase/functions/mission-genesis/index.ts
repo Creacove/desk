@@ -53,6 +53,65 @@ Deno.serve(async (request) => {
     const db = createClient(supabaseUrl, serviceRoleKey);
     await assertWorkspace(db, input);
 
+    if (input.mode === "initial") {
+      const { data: existingCandidate } = await db
+        .from("missions")
+        .select("id,title,objective,reason,summary,pattern_name,current_recommendation,change_conditions,status")
+        .eq("artist_workspace_id", input.artistWorkspaceId)
+        .eq("status", "candidate")
+        .maybeSingle();
+
+      if (existingCandidate) {
+        const prefix = questionPrefix(existingCandidate.id);
+        const { data: questionRows } = await db
+          .from("manager_context_questions")
+          .select("id,question_key,question,order_index")
+          .like("question_key", `${prefix}%`)
+          .eq("status", "active")
+          .order("order_index", { ascending: true });
+
+        if (questionRows && questionRows.length > 0) {
+          const questionIds = questionRows.map((q: any) => q.id);
+          const { data: answerRows } = await db
+            .from("manager_context_answers")
+            .select("question_id,answer")
+            .in("question_id", questionIds);
+
+          const answerMap = new Map((answerRows ?? []).map((ans: any) => [ans.question_id, ans.answer]));
+          const unansweredQuestions = questionRows.filter((q: any) => !answerMap.get(q.id));
+
+          if (unansweredQuestions.length > 0) {
+            const questions = questionRows.map(mapQuestionFromRow);
+            const output: MissionGenesisOutput = {
+              outcome: "candidate_needs_context",
+              confidence: "medium",
+              stage: { label: "Context collection", reason: "An existing candidate mission is awaiting context." },
+              decisionSummary: existingCandidate.objective,
+              reasons: [existingCandidate.reason],
+              evidenceNeeded: [],
+              existingMissionId: existingCandidate.id,
+              questions: [],
+              mission: {
+                title: existingCandidate.title,
+                objective: existingCandidate.objective,
+                reason: existingCandidate.reason,
+                summary: existingCandidate.summary ?? "",
+                patternName: existingCandidate.pattern_name ?? "",
+                currentRecommendation: existingCandidate.current_recommendation ?? "",
+                changeConditions: existingCandidate.change_conditions ?? [],
+                timeline: "",
+                sourceRefs: [],
+              },
+              checkpoints: [],
+              tasks: [],
+              permissionRequests: [],
+            };
+            return json(toViewModel(output, { missionId: existingCandidate.id, questions }));
+          }
+        }
+      }
+    }
+
     let contextAnswers: Array<{ questionKey: string; answer: string }> = [];
     let priorCandidate: Record<string, unknown> | null = null;
     if (input.mode === "continuation") {
@@ -386,12 +445,16 @@ async function persistDecision(db: any, input: MissionGenesisInput, runId: strin
   } else if (output.outcome === "update_existing_mission") {
     missionId = output.existingMissionId;
     const { error } = await db.from("missions").update({
+      status: "active",
+      priority: 1,
       current_recommendation: output.mission.currentRecommendation || output.decisionSummary,
       change_conditions: output.mission.changeConditions,
       review_point: output.checkpoints[0]?.title ?? "Manager review",
       updated_at: new Date().toISOString(),
     }).eq("id", missionId).eq("artist_workspace_id", input.artistWorkspaceId);
     if (error) throw error;
+
+    await writeMissionPlan(db, input, runId, action.id, missionId, output);
   } else if (input.candidateMissionId) {
     const { error } = await db.from("missions").update({
       status: "archived",
@@ -644,7 +707,7 @@ function toViewModel(output: MissionGenesisOutput, persisted: { missionId?: stri
     questions: persisted.questions,
     evidenceNeeded: output.evidenceNeeded,
     ...(output.outcome === "candidate_needs_context" ? { candidateMissionId: persisted.missionId } : {}),
-    ...(output.outcome === "activate_mission" ? { activatedMissionId: persisted.missionId } : {}),
+    ...((output.outcome === "activate_mission" || output.outcome === "update_existing_mission") ? { activatedMissionId: persisted.missionId } : {}),
   };
 }
 
@@ -716,4 +779,36 @@ function isRecord(value: unknown): value is Record<string, any> {
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+
+function mapQuestionFromRow(row: any): MissionGenesisQuestion {
+  const key = row.question_key;
+  let answerKind: MissionGenesisQuestion["answerKind"] = "short_text";
+  let options: string[] = [];
+  let reason = "Provide context to activate this mission.";
+
+  if (key.endsWith("approve_mission") || key.endsWith("approve")) {
+    answerKind = "single_select";
+    options = ["Yes, approve", "No, decline"];
+    reason = "An explicit decision is required to allocate resources and authorize external outreach.";
+  } else if (key.endsWith("execution_owner") || key.endsWith("owner")) {
+    answerKind = "single_select";
+    options = ["Artist", "Manager", "Team"];
+    reason = "We must assign a single accountable owner to route approvals correctly.";
+  } else if (key.endsWith("budget_allocation") || key.endsWith("budget") || key.endsWith("budget_boundary")) {
+    answerKind = "money_range";
+    reason = "A realistic allocation is required before we create vendor scope and paid media plans.";
+  } else if (key.endsWith("priority_markets") || key.endsWith("markets")) {
+    answerKind = "short_text";
+    reason = "Specify priority territories (e.g. US, UK, NG) to target curator and social campaigns.";
+  }
+
+  return {
+    key,
+    question: row.question,
+    reason,
+    answerKind,
+    options,
+  };
 }
