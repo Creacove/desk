@@ -1001,27 +1001,47 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         const activeRows = ((data as MissionRow[] | null) ?? []).filter((mission) => !["candidate", "archived", "cancelled"].includes(mission.status ?? ""));
         const missionIds = new Set(activeRows.map((mission) => mission.id));
-        const [{ data: checkpointData, error: checkpointError }, { data: taskData, error: taskError }] = await Promise.all([
+        const [
+          { data: checkpointData, error: checkpointError },
+          { data: taskData, error: taskError },
+          { data: stepData, error: stepError },
+          { data: resultData, error: resultError }
+        ] = await Promise.all([
           client
             .from("checkpoints")
-            .select("id,mission_id,title,question,status,recommendation")
+            .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
             .eq("artist_workspace_id", workspace.artistWorkspaceId),
           client
             .from("tasks")
-            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose")
+            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,risk_if_late")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+          client
+            .from("task_steps")
+            .select("task_id,body,order_index")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .order("order_index", { ascending: true }),
+          client
+            .from("task_results")
+            .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up")
             .eq("artist_workspace_id", workspace.artistWorkspaceId),
         ]);
 
         if (checkpointError) throw checkpointError;
         if (taskError) throw taskError;
+        if (stepError) throw stepError;
+        if (resultError) throw resultError;
 
         const checkpoints = ((checkpointData as CheckpointRow[] | null) ?? []).filter((checkpoint) => missionIds.has(checkpoint.mission_id));
         const tasks = ((taskData as TaskRow[] | null) ?? []).filter((task) => task.mission_id && missionIds.has(task.mission_id));
+        const steps = ((stepData as TaskStepRow[] | null) ?? []).filter((step) => tasks.some((t) => t.id === step.task_id));
+        const results = ((resultData as TaskResultRow[] | null) ?? []).filter((res) => tasks.some((t) => t.id === res.task_id));
 
         return activeRows.map((mission) => missionFromRow(
           mission,
           checkpoints.filter((checkpoint) => checkpoint.mission_id === mission.id),
           tasks.filter((task) => task.mission_id === mission.id),
+          steps,
+          results,
         ));
       },
       async approveTask(taskId) {
@@ -1036,7 +1056,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async completeTask(taskId, input) {
         const { data: taskData, error: taskError } = await client
           .from("tasks")
-          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose")
+          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,risk_if_late")
           .eq("id", taskId)
           .eq("artist_workspace_id", workspace.artistWorkspaceId)
           .maybeSingle();
@@ -1089,16 +1109,15 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           task_id: task.id,
           checkpoint_id: checkpointId,
           status: completedStatus,
-          note: input.note,
+          user_note: input.note,
           manager_interpretation: interpretation,
-          result_type: completedStatus === "blocked" ? "blocker" : "completion",
         });
 
         if (resultError) throw resultError;
 
         const { data: missionTaskData, error: missionTaskError } = await client
           .from("tasks")
-          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose")
+          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,risk_if_late")
           .eq("mission_id", task.mission_id)
           .eq("artist_workspace_id", workspace.artistWorkspaceId);
 
@@ -1107,13 +1126,31 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           missionTask.id === task.id ? { ...missionTask, status: completedStatus } : missionTask,
         );
 
-        const { data: checkpointData, error: checkpointLoadError } = await client
-          .from("checkpoints")
-          .select("id,mission_id,title,question,status,recommendation")
-          .eq("mission_id", task.mission_id)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId);
+        const [
+          { data: checkpointData, error: checkpointLoadError },
+          { data: stepData, error: stepLoadError },
+          { data: resultData, error: resultLoadError }
+        ] = await Promise.all([
+          client
+            .from("checkpoints")
+            .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
+            .eq("mission_id", task.mission_id)
+            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+          client
+            .from("task_steps")
+            .select("task_id,body,order_index")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .order("order_index", { ascending: true }),
+          client
+            .from("task_results")
+            .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+        ]);
 
         if (checkpointLoadError) throw checkpointLoadError;
+        if (stepLoadError) throw stepLoadError;
+        if (resultLoadError) throw resultLoadError;
+
         let checkpoints = (checkpointData as CheckpointRow[] | null) ?? [];
         const checkpoint = checkpoints.find((item) => item.id === checkpointId);
         const checkpointReview = buildCheckpointReview(checkpoint, task, missionTasks, input);
@@ -1183,7 +1220,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           },
         });
 
-        return missionFromRow(missionData as MissionRow, checkpoints, missionTasks);
+        return missionFromRow(
+          missionData as MissionRow,
+          checkpoints,
+          missionTasks,
+          (stepData as TaskStepRow[] | null) ?? [],
+          (resultData as TaskResultRow[] | null) ?? [],
+        );
       },
     },
     missionGenesis: {
@@ -1413,6 +1456,14 @@ type CheckpointRow = {
   question: string;
   status: string;
   recommendation?: string | null;
+  decision_rule?: string | null;
+  next_action?: string | null;
+  blocked_reason?: string | null;
+  dependency_impact?: string | null;
+  watched_signals?: string[] | null;
+  required_evidence?: string[] | null;
+  missing_evidence?: string[] | null;
+  reason_for_checkpoint?: string | null;
 };
 
 type TaskRow = {
@@ -1423,6 +1474,28 @@ type TaskRow = {
   status: string;
   owner_role?: string | null;
   purpose?: string | null;
+  deadline?: string | null;
+  priority?: number | null;
+  approval_state?: string | null;
+  dependency?: string | null;
+  evidence_needed?: string[] | null;
+  risk_if_late?: string | null;
+};
+
+type TaskStepRow = {
+  task_id: string;
+  body: string;
+  order_index: number;
+};
+
+type TaskResultRow = {
+  task_id: string;
+  status: string;
+  summary?: string | null;
+  user_note?: string | null;
+  manager_interpretation?: string | null;
+  mission_effect?: string | null;
+  recommended_follow_up?: string | null;
 };
 
 type EvidenceRow = {
@@ -3911,33 +3984,103 @@ function formatDuration(durationMs: number) {
   return `${minutes}:${seconds}`;
 }
 
-function missionFromRow(row: MissionRow, checkpoints: CheckpointRow[] = [], tasks: TaskRow[] = []): MissionViewModel {
+function mapCheckpointStatus(status: string): MissionCheckpointViewModel["status"] {
+  if (status === "needs_revision" || status === "Needs revision") return "Needs revision";
+  if (status === "ready_for_manager_check" || status === "Ready for AI review") return "Ready for AI review";
+  if (status === "cleared" || status === "Met") return "Met";
+  if (status === "watching_signal" || status === "Watching signal") return "Watching signal";
+  return "Waiting on tasks";
+}
+
+function mapTaskApprovalState(state: string | null | undefined): MissionTaskViewModel["approvalState"] {
+  if (state === "needs approval" || state === "needs_approval") return "needs approval";
+  if (state === "approved") return "approved";
+  if (state === "blocked") return "blocked";
+  if (state === "active") return "active";
+  return "not_required";
+}
+
+function missionFromRow(
+  row: MissionRow,
+  checkpoints: CheckpointRow[] = [],
+  tasks: TaskRow[] = [],
+  steps: TaskStepRow[] = [],
+  results: TaskResultRow[] = [],
+): MissionViewModel {
   const nextTask = tasks.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
+
+  const mappedTasks: MissionTaskViewModel[] = tasks.map((task) => {
+    const taskSteps = steps
+      .filter((step) => step.task_id === task.id)
+      .map((step) => step.body);
+
+    const taskResult = results.find((res) => res.task_id === task.id);
+    const resultViewModel: MissionTaskResultViewModel | undefined = taskResult
+      ? {
+          status: taskResult.status as MissionTaskResultViewModel["status"],
+          summary: taskResult.summary ?? "No summary.",
+          userNote: taskResult.user_note ?? "",
+          interpretation: taskResult.manager_interpretation ?? "",
+          missionEffect: taskResult.mission_effect ?? "",
+          followUp: taskResult.recommended_follow_up ?? "",
+        }
+      : undefined;
+
+    return {
+      id: task.id,
+      checkpointId: task.primary_checkpoint_id ?? "",
+      title: task.title,
+      owner: task.owner_role ?? "Manager",
+      deadline: task.deadline ? new Date(task.deadline).toLocaleDateString() : "Next review",
+      approvalState: mapTaskApprovalState(task.approval_state),
+      purpose: task.purpose ?? "",
+      steps: taskSteps,
+      evidenceIds: task.evidence_needed ?? [],
+      dependency: task.dependency ?? "None",
+      riskIfLate: task.risk_if_late ?? "None",
+      result: resultViewModel,
+    };
+  });
+
+  const mappedCheckpoints: MissionCheckpointViewModel[] = checkpoints.map((checkpoint, index) => {
+    const requiredTaskIds = mappedTasks
+      .filter((t) => t.checkpointId === checkpoint.id)
+      .map((t) => t.id);
+
+    const dependsOnCheckpointIds = index > 0 ? [checkpoints[index - 1].id] : [];
+    const unlocks = index < checkpoints.length - 1 ? [checkpoints[index + 1].title] : [];
+
+    return {
+      id: checkpoint.id,
+      phase: index + 1,
+      title: checkpoint.title,
+      status: mapCheckpointStatus(checkpoint.status),
+      question: checkpoint.question,
+      requiredTaskIds,
+      dependsOnCheckpointIds,
+      unlocks,
+      blockedReason: checkpoint.blocked_reason ?? "",
+      dependencyImpact: checkpoint.dependency_impact ?? "Downstream work should wait until this review has task results.",
+      watchedSignals: checkpoint.watched_signals ?? [],
+      decisionRule: checkpoint.decision_rule ?? "Do not change the mission state without task results or source-backed context.",
+      recommendation: checkpoint.recommendation ?? "No recommendation.",
+      resultSummary: checkpoint.reason_for_checkpoint ?? checkpoint.question,
+      nextAction: checkpoint.next_action ?? "Complete tasks under this checkpoint.",
+    };
+  });
+
   return {
     id: row.id,
     title: row.title,
     status: row.status ?? "active",
     progress: row.progress ?? deriveMissionProgress(tasks),
-    review: row.review_point ?? checkpoints[0]?.title ?? "No review has run yet.",
+    review: row.review_point ?? mappedCheckpoints[0]?.title ?? "No review has run yet.",
     summary: row.summary ?? "No mission summary has been generated yet.",
     recommendation: row.current_recommendation ?? "No current recommendation.",
     musicSubject: "No linked music subject",
     nextTask: nextTask?.title ?? "No next task selected.",
-    checkpoints: checkpoints.map((checkpoint) => ({
-      id: checkpoint.id,
-      title: checkpoint.title,
-      question: checkpoint.question,
-      status: checkpoint.status,
-      recommendation: checkpoint.recommendation ?? undefined,
-    })),
-    tasks: tasks.map((task) => ({
-      id: task.id,
-      title: task.title,
-      status: task.status,
-      ownerRole: task.owner_role ?? undefined,
-      checkpointId: task.primary_checkpoint_id ?? undefined,
-      purpose: task.purpose ?? undefined,
-    })),
+    checkpoints: mappedCheckpoints,
+    tasks: mappedTasks,
   };
 }
 

@@ -240,6 +240,15 @@ export function buildMissionGenesisInstructions(mode: MissionGenesisMode) {
   ].join("\n");
 }
 
+export function buildMissionGenesisRepairInstructions(mode: MissionGenesisMode, validationError: string) {
+  return [
+    buildMissionGenesisInstructions(mode),
+    "You must correct your prior structured decision. Preserve its artist-specific evidence and reasoning, but make the outcome, questions, mission, checkpoints, tasks, and permissions internally consistent.",
+    `The prior output failed validation: ${validationError}`,
+    "Do not replace it with generic work, a template, or a deterministic fallback. Return only the corrected structured decision.",
+  ].join("\n");
+}
+
 export function parseMissionGenesisOutput(payload: unknown, packet: unknown, mode: MissionGenesisMode): MissionGenesisOutput {
   const value = typeof payload === "string" ? JSON.parse(payload) : payload;
   if (!isRecord(value)) throw new Error("OpenAI Mission Genesis output was not an object.");

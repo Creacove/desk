@@ -1715,7 +1715,7 @@ describe("production Supabase services", () => {
       task_id: "task-1",
       mission_id: "mission-active",
       status: "completed",
-      note: expect.stringContaining("London listener concentration"),
+      user_note: expect.stringContaining("London listener concentration"),
       manager_interpretation: expect.stringContaining("Task completed"),
     });
     expect(tables.checkpoints[0]).toMatchObject({
@@ -1739,8 +1739,8 @@ describe("production Supabase services", () => {
       target_id: "task-1",
     });
     expect(mission.progress).toBe(100);
-    expect(mission.tasks?.[0]).toMatchObject({ id: "task-1", status: "completed" });
-    expect(mission.checkpoints?.[0]).toMatchObject({ id: "checkpoint-1", status: "ready_for_manager_check" });
+    expect(mission.tasks?.[0]).toMatchObject({ id: "task-1", result: { status: "completed" } });
+    expect(mission.checkpoints?.[0]).toMatchObject({ id: "checkpoint-1", status: "Ready for AI review" });
   });
 
   it("updates music details and uploads assets through an intent/finalize flow", async () => {
@@ -2235,6 +2235,7 @@ function mutableQuery(table: string, tableData: Record<string, Array<Record<stri
       limitCount = count;
       return query;
     },
+    order: () => query,
     insert: (nextPayload: Record<string, unknown>) => {
       mode = "insert";
       payload = nextPayload;
@@ -2289,3 +2290,4 @@ function mutableQuery(table: string, tableData: Record<string, Array<Record<stri
 
   return query;
 }
+

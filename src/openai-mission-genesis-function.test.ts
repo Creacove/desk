@@ -1,12 +1,19 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildMissionGenesisInstructions,
+  buildMissionGenesisRepairInstructions,
   parseMissionGenesisOutput,
 } from "../supabase/functions/_shared/openaiMissionGenesis";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "mission-genesis", "index.ts"), "utf8");
+const serviceRoleGrantMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260620000100_mission_genesis_service_role_grants.sql",
+);
 
 const packet = {
   artist: { id: "artist-1", name: "Nova Vale", stage: "developing", goals: ["Build a durable London audience"] },
@@ -67,6 +74,51 @@ function activeOutput() {
 }
 
 describe("OpenAI Mission Genesis", () => {
+  it("grants the server-side workflow access to every packet and mission graph table it uses", () => {
+    expect(existsSync(serviceRoleGrantMigrationPath)).toBe(true);
+
+    const migration = readFileSync(serviceRoleGrantMigrationPath, "utf8");
+    for (const table of [
+      "artist_profiles",
+      "artist_workspaces",
+      "evidence_items",
+      "music_items",
+      "music_projects",
+      "source_connections",
+      "agent_reports",
+    ]) {
+      expect(migration).toMatch(new RegExp(`grant select on public\\.${table} to service_role`, "i"));
+    }
+
+    for (const table of [
+      "manager_synthesis_runs",
+      "ai_run_usage_events",
+      "manager_run_actions",
+      "missions",
+    ]) {
+      expect(migration).toMatch(new RegExp(`grant select, insert, update on public\\.${table} to service_role`, "i"));
+    }
+
+    for (const table of [
+      "mission_plan_versions",
+      "checkpoints",
+      "tasks",
+      "manager_context_questions",
+      "memory_entries",
+    ]) {
+      expect(migration).toMatch(new RegExp(`grant select, insert on public\\.${table} to service_role`, "i"));
+    }
+
+    for (const table of [
+      "mission_plan_checkpoints",
+      "permission_requests",
+      "manager_context_answers",
+      "operating_events",
+    ]) {
+      expect(migration).toMatch(new RegExp(`grant insert on public\\.${table} to service_role`, "i"));
+    }
+  });
+
   it("builds the complete artist packet server-side and gives OpenAI sole authorship of the decision and plan", () => {
     expect(functionSource).toContain("Deno.serve");
     expect(functionSource).toContain("auth.getUser()");
@@ -91,6 +143,20 @@ describe("OpenAI Mission Genesis", () => {
     expect(initial).toContain("Ask every material user-controlled question at once");
     expect(initial).toContain("Do not create a mission merely because this workflow was invoked");
     expect(continuation).toContain("must not ask another round of context questions");
+  });
+
+  it("asks OpenAI to repair an invalid structured decision once without creating a local fallback", () => {
+    const repair = buildMissionGenesisRepairInstructions(
+      "initial",
+      "Mission Genesis returned questions for an outcome that does not accept context.",
+    );
+
+    expect(repair).toContain("correct your prior structured decision");
+    expect(repair).toContain("returned questions for an outcome that does not accept context");
+    expect(repair).toContain("Do not replace it with generic work");
+    expect(functionSource).toContain("buildMissionGenesisRepairInstructions");
+    expect(functionSource).toContain("invalidOutput");
+    expect(functionSource).toContain("requestCount: 2");
   });
 
   it("accepts a grounded personalized mission graph", () => {

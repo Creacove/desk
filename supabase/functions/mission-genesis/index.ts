@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildMissionGenesisInstructions,
+  buildMissionGenesisRepairInstructions,
   missionGenesisJsonSchema,
   parseMissionGenesisOutput,
   type MissionGenesisMode,
@@ -63,10 +64,10 @@ Deno.serve(async (request) => {
     runId = await createManagerRun(db, input, packet, contextAnswers, priorCandidate);
     usageId = await createUsageEvent(db, input, runId);
 
-    const { output, usage } = await callOpenAIMissionGenesis({ packet, contextAnswers, priorCandidate }, input.mode);
+    const { output, usage, requestCount } = await callOpenAIMissionGenesis({ packet, contextAnswers, priorCandidate }, input.mode);
     const persisted = await persistDecision(db, input, runId, output);
     await completeManagerRun(db, runId, output, persisted.missionId);
-    await completeUsageEvent(db, usageId, usage);
+    await completeUsageEvent(db, usageId, usage, requestCount);
 
     return json(toViewModel(output, persisted));
   } catch (error) {
@@ -240,12 +241,34 @@ async function callOpenAIMissionGenesis(
   context: { packet: unknown; contextAnswers: unknown[]; priorCandidate: Record<string, unknown> | null },
   mode: MissionGenesisMode,
 ) {
+  const first = await requestOpenAIMissionGenesis(buildMissionGenesisInstructions(mode), context);
+  try {
+    return {
+      output: parseMissionGenesisOutput(first.outputText, context.packet, mode),
+      usage: first.usage,
+      requestCount: 1,
+    };
+  } catch (error) {
+    const validationError = describeError(error, "OpenAI Mission Genesis returned an invalid structured decision.");
+    const repaired = await requestOpenAIMissionGenesis(
+      buildMissionGenesisRepairInstructions(mode, validationError),
+      { ...context, invalidOutput: first.outputText, validationError },
+    );
+    return {
+      output: parseMissionGenesisOutput(repaired.outputText, context.packet, mode),
+      usage: mergeOpenAIUsage(first.usage, repaired.usage),
+      requestCount: 2,
+    };
+  }
+}
+
+async function requestOpenAIMissionGenesis(instructions: string, context: unknown) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      instructions: buildMissionGenesisInstructions(mode),
+      instructions,
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...missionGenesisJsonSchema } },
     }),
@@ -256,8 +279,25 @@ async function callOpenAIMissionGenesis(
   }
   const payload = await response.json();
   return {
-    output: parseMissionGenesisOutput(readOutputText(payload), context.packet, mode),
+    outputText: readOutputText(payload),
     usage: isRecord(payload.usage) ? payload.usage : {},
+  };
+}
+
+function mergeOpenAIUsage(first: Record<string, unknown>, second: Record<string, unknown>) {
+  const firstInput = isRecord(first.input_tokens_details) ? first.input_tokens_details : {};
+  const secondInput = isRecord(second.input_tokens_details) ? second.input_tokens_details : {};
+  const firstOutput = isRecord(first.output_tokens_details) ? first.output_tokens_details : {};
+  const secondOutput = isRecord(second.output_tokens_details) ? second.output_tokens_details : {};
+  return {
+    input_tokens: (numberOrNull(first.input_tokens) ?? 0) + (numberOrNull(second.input_tokens) ?? 0),
+    output_tokens: (numberOrNull(first.output_tokens) ?? 0) + (numberOrNull(second.output_tokens) ?? 0),
+    input_tokens_details: {
+      cached_tokens: (numberOrNull(firstInput.cached_tokens) ?? 0) + (numberOrNull(secondInput.cached_tokens) ?? 0),
+    },
+    output_tokens_details: {
+      reasoning_tokens: (numberOrNull(firstOutput.reasoning_tokens) ?? 0) + (numberOrNull(secondOutput.reasoning_tokens) ?? 0),
+    },
   };
 }
 
@@ -573,11 +613,12 @@ async function completeManagerRun(db: any, runId: string, output: MissionGenesis
   if (error) throw error;
 }
 
-async function completeUsageEvent(db: any, usageId: string, usage: Record<string, unknown>) {
+async function completeUsageEvent(db: any, usageId: string, usage: Record<string, unknown>, requestCount: number) {
   const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
   const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
   const { error } = await db.from("ai_run_usage_events").update({
     status: "succeeded",
+    provider_request_count: requestCount,
     input_tokens: numberOrNull(usage.input_tokens),
     cached_input_tokens: numberOrNull(inputDetails.cached_tokens),
     output_tokens: numberOrNull(usage.output_tokens),
