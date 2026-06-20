@@ -514,10 +514,10 @@ function CleanProductionWorkspace({
     setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
   }
 
-  async function completeMissionTask(taskId: string, status: "completed" | "blocked") {
+  async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string) {
     const updatedMission = await repositories.missions.completeTask(taskId, {
       status,
-      note: status === "blocked" ? "Marked blocked from Missions workspace." : "Marked done from Missions workspace.",
+      note,
     });
     setMissions((current) => current.map((mission) => mission.id === updatedMission.id ? updatedMission : mission));
     setSelectedMissionId(updatedMission.id);
@@ -645,8 +645,6 @@ function CleanProductionWorkspace({
           ) : null}
           {view === "managerOffice" ? (
             <ManagerOfficeScreen
-              answers={managerAnswers}
-              setAnswers={setManagerAnswers}
               conversations={conversations}
               missionGenesisResult={missionGenesisResult}
               missionGenesisAnswers={missionGenesisAnswers}

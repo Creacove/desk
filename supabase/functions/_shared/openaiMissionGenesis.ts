@@ -35,6 +35,7 @@ export type MissionGenesisTask = {
   ownerRole: string;
   primaryCheckpointKey: string;
   purpose: string;
+  steps: string[];
   evidenceNeeded: string[];
   completionExpectation: string;
   riskIfLate: string;
@@ -180,12 +181,13 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "evidenceNeeded", "completionExpectation", "riskIfLate", "sourceRefs"],
+          required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "riskIfLate", "sourceRefs"],
           properties: {
             title: { type: "string" },
             ownerRole: { type: "string" },
             primaryCheckpointKey: { type: "string" },
             purpose: { type: "string" },
+            steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
             evidenceNeeded: stringArraySchema,
             completionExpectation: { type: "string" },
             riskIfLate: { type: "string" },
@@ -213,15 +215,18 @@ export const missionGenesisJsonSchema = {
 };
 
 const sharedInstructions = [
-  "You are the senior Manager inside an agentic artist operating system. OpenAI is the decision engine for Mission Genesis.",
+  "You are the senior Manager inside an agentic artist operating system. Think like Scooter Braun, Troy Carter, Irving Azoff, or another elite-tier music manager who operates at the highest level of artist career architecture.",
   "The application supplies a complete artist operating packet. You alone decide whether there is a durable management objective and, if so, author its mission, checkpoints, tasks, timeline, evidence links, and permission gates.",
   "Do not create a mission merely because this workflow was invoked. no_mission is a correct and valuable result when the packet does not justify coordinated work.",
-  "Do not use templates, default release plans, canned audience missions, or fixed seven-day timelines. Derive the work from this artist's actual profile, music, evidence, memory, budget, team, goals, constraints, active work, and agent reports.",
-  "If the same mission could be returned for another artist after changing only the artist name, return no_mission or ask for the exact missing context instead.",
-  "Use concrete artist anchors in the objective: saved record/project titles, markets, goals, constraints, team capacity, budget boundary, business risk, or named evidence.",
+  "CRITICAL: Do not use generic templates, canned release plans, smart-link checklists, or fixed seven-day timelines. Every single element must be derived from this specific artist's profile, music, evidence, memory, budget, team capacity, goals, constraints, active work, and agent reports. If you cannot produce artist-specific work, return no_mission and ask for the missing context.",
+  "CRITICAL: If the mission, checkpoints, or tasks could apply to any random artist after swapping the name, the output is WRONG. Return no_mission or candidate_needs_context instead.",
+  "Think in terms of career leverage, demand architecture, and long-term positioning — not marketing checklists. An elite manager asks: what is the right next move to build this specific artist's leverage, audience, and commercial position? What should we NOT do? What creates asymmetric career value?",
+  "Use concrete artist anchors in every field: saved record/project titles, home market, current goal, streaming metrics, budget boundary, team capacity, named agent reports, constraints, or prior decisions from memory.",
+  "Timeline must reflect the true scope of work. Use weeks or months for most tasks. A three-month market expansion is three months. A DSP pitch cycle is 6–8 weeks. A brand partnership is 2–4 months of outreach and negotiation. A release campaign is 8–12 weeks of coordinated work. Hardcoding '7 days' for every task is WRONG.",
   "Every sourceRefs value must be an exact id present in the packet. Never invent an id. User intent and preferences are context, not third-party factual proof.",
-  "A mission is a durable objective requiring coordinated work and review. A task is an action that produces evidence for one checkpoint. A checkpoint is a decision question, not a renamed task list.",
-  "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: days, weeks, or months according to the work.",
+  "A mission is a durable objective requiring coordinated work and review, not a to-do list. A task is an action that produces evidence for one checkpoint. A checkpoint is a decision question with a binary pass/fail rule, not a renamed task grouping.",
+  "Every task MUST include a 'steps' array with 2–6 plain-language sequential actions. Steps describe exactly what to do — specific enough that someone could execute them without needing a meeting. No vague steps like 'do the research' or 'complete the task'. Good step examples: 'Pull city-level streaming breakdown from Spotify for Artists for the last 90 days', 'Build a creator brief with hook timestamp, posting window, and niche context for each target', 'Draft contract term sheet and send to entertainment attorney for review by [week 2]'.",
+  "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: weeks or months based on the actual scope of the work involved.",
   "Ask every material user-controlled question at once, between two and five questions. Do not ask anything already answered by profile, memory, evidence, or prior context answers.",
   "Missing source proof produces request_evidence. Missing user-controlled intent, capacity, budget, timing, or boundaries may produce candidate_needs_context.",
   "If active work already owns the objective, return update_existing_mission with its exact id. Do not create duplicate work.",
@@ -405,6 +410,7 @@ function readTasks(value: unknown): MissionGenesisTask[] {
     ownerRole: readString(item.ownerRole, "tasks.ownerRole", true),
     primaryCheckpointKey: readString(item.primaryCheckpointKey, "tasks.primaryCheckpointKey", true),
     purpose: readString(item.purpose, "tasks.purpose", true),
+    steps: readStringArray(item.steps),
     evidenceNeeded: readStringArray(item.evidenceNeeded),
     completionExpectation: readString(item.completionExpectation, "tasks.completionExpectation", true),
     riskIfLate: readString(item.riskIfLate, "tasks.riskIfLate", true),

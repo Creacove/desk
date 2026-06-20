@@ -598,7 +598,7 @@ async function writeMissionPlan(db: any, input: MissionGenesisInput, runId: stri
   }
 
   for (const task of output.tasks) {
-    const { error } = await db.from("tasks").insert({
+    const { data: taskRow, error } = await db.from("tasks").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
@@ -617,8 +617,22 @@ async function writeMissionPlan(db: any, input: MissionGenesisInput, runId: stri
       risk_if_late: task.riskIfLate,
       created_from_run_id: runId,
       created_from_action_id: actionId,
-    });
+    }).select("id").single();
     if (error) throw error;
+
+    if (task.steps?.length && taskRow?.id) {
+      const stepRows = task.steps.map((body: string, index: number) => ({
+        account_id: input.accountId,
+        artist_workspace_id: input.artistWorkspaceId,
+        artist_id: input.artistId,
+        mission_id: missionId,
+        task_id: taskRow.id,
+        body,
+        order_index: index + 1,
+      }));
+      const { error: stepError } = await db.from("task_steps").insert(stepRows);
+      if (stepError) throw stepError;
+    }
   }
 
   for (const permission of output.permissionRequests) {

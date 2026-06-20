@@ -63,6 +63,11 @@ function activeOutput() {
         ownerRole: "Manager",
         primaryCheckpointKey: "london_return_signal",
         purpose: "Create the baseline needed to judge whether attention is becoming durable.",
+        steps: [
+          "Pull city-level streaming data from Spotify for Artists for the last 30 days filtered to London.",
+          "Identify the top-performing After Midnight stream dates and note any listener return patterns.",
+          "Record the agreed baseline metric and review threshold in the mission notes.",
+        ],
         evidenceNeeded: ["Current London response baseline"],
         completionExpectation: "A dated baseline and one agreed review metric are saved.",
         riskIfLate: "The team cannot distinguish movement from noise.",
@@ -70,7 +75,7 @@ function activeOutput() {
       },
     ],
     permissionRequests: [],
-  } as const;
+  };
 }
 
 describe("OpenAI Mission Genesis", () => {
@@ -138,8 +143,8 @@ describe("OpenAI Mission Genesis", () => {
     const initial = buildMissionGenesisInstructions("initial");
     const continuation = buildMissionGenesisInstructions("continuation");
 
-    expect(initial).toContain("OpenAI is the decision engine");
-    expect(initial).toContain("If the same mission could be returned for another artist");
+    expect(initial).toContain("Think like Scooter Braun");
+    expect(initial).toContain("If the mission, checkpoints, or tasks could apply to any random artist");
     expect(initial).toContain("Ask every material user-controlled question at once");
     expect(initial).toContain("Do not create a mission merely because this workflow was invoked");
     expect(continuation).toContain("must not ask another round of context questions");

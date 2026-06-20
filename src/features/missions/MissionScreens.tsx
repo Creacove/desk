@@ -25,6 +25,8 @@ export function MissionsWorkspace({
   onSelectMission,
   onRunMissionGenesis,
   onOpenMissionGenesisQuestions,
+  onApproveTask,
+  onCompleteTask,
   onDrawer,
   openRoomRequestKey = 0,
 }: {
@@ -37,7 +39,7 @@ export function MissionsWorkspace({
   onRunMissionGenesis: () => void;
   onOpenMissionGenesisQuestions: () => void;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked") => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
   onDrawer: (drawer: DrawerKind) => void;
   openRoomRequestKey?: number;
 }) {
@@ -111,6 +113,8 @@ export function MissionsWorkspace({
       onTab={setTab}
       onBack={() => setRoomMode("list")}
       onDrawer={onDrawer}
+      onApproveTask={onApproveTask}
+      onCompleteTask={onCompleteTask}
     />
   );
 }
@@ -146,7 +150,7 @@ function MissionGenesisPanel({
       </div>
       {result ? (
         <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{result.outcome.replaceAll("_", " ")}</p>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{result.outcome.replace(/_/g, " ")}</p>
           <h3 className="mt-2 text-sm font-semibold text-foreground">{result.title}</h3>
           <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
           {result.questions.length ? (
@@ -294,12 +298,16 @@ function MissionRoom({
   onTab,
   onBack,
   onDrawer,
+  onApproveTask,
+  onCompleteTask,
 }: {
   mission: MissionViewModel;
   tab: MissionRoomTab;
   onTab: (tab: MissionRoomTab) => void;
   onBack: () => void;
   onDrawer: (drawer: DrawerKind) => void;
+  onApproveTask: (taskId: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
 }) {
   const checkpoints = missionCheckpoints(mission);
   const tasks = missionTasks(mission);
@@ -375,7 +383,7 @@ function MissionRoom({
 
       <div className="min-h-[400px]">
         {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onDrawer={onDrawer} /> : null}
-        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} /> : null}
+        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} /> : null}
         {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
         {tab === "notes" ? <NotesPanel notes={notes} /> : null}
         {tab === "recap" ? <MissionRecapPanel mission={mission} recap={recap} events={events} /> : null}
@@ -450,16 +458,54 @@ function MissionPulse({
   );
 }
 
-function TasksPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointViewModel[]; tasks: MissionTaskViewModel[] }) {
+function TasksPanel({
+  checkpoints,
+  tasks,
+  onApproveTask,
+  onCompleteTask,
+}: {
+  checkpoints: MissionCheckpointViewModel[];
+  tasks: MissionTaskViewModel[];
+  onApproveTask: (taskId: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
+}) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
   const [activeCheckpointId, setActiveCheckpointId] = useState(activeBlocker?.id ?? checkpoints[0]?.id ?? "");
   const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
   const [approvedTaskIds, setApprovedTaskIds] = useState<string[]>([]);
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
+  const [completionNote, setCompletionNote] = useState<{ taskId: string; status: "completed" | "blocked"; note: string } | null>(null);
+  const [completionPending, setCompletionPending] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
 
   const toggleTaskDetails = (taskId: string) => {
     setExpandedTaskIds((current) => (current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]));
   };
+
+  function startCompletion(taskId: string, status: "completed" | "blocked") {
+    setCompletionNote({ taskId, status, note: "" });
+    setCompletionError(null);
+  }
+
+  async function confirmCompletion() {
+    if (!completionNote) return;
+    const note = completionNote.note.trim();
+    if (!note) {
+      setCompletionError("Please describe what you did or what happened before marking this task done.");
+      return;
+    }
+    setCompletionPending(true);
+    setCompletionError(null);
+    try {
+      await onCompleteTask(completionNote.taskId, completionNote.status, note);
+      setCompletedTaskIds((current) => [...new Set([...current, completionNote.taskId])]);
+      setCompletionNote(null);
+    } catch (err) {
+      setCompletionError(err instanceof Error ? err.message : "Task completion failed. Please try again.");
+    } finally {
+      setCompletionPending(false);
+    }
+  }
 
   return (
     <section className="surface-elevated rounded-[22px] p-4 shadow-sm sm:p-5">
@@ -538,6 +584,7 @@ function TasksPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointView
                       const blocked = task.approvalState === "blocked" || task.result?.status === "blocked";
                       const detailsOpen = expandedTaskIds.includes(task.id);
                       const completionBlocked = task.approvalState === "needs approval" && !approved;
+                      const isConfirmingCompletion = completionNote?.taskId === task.id;
 
                       return (
                         <div key={task.id} className="grid min-w-0 gap-4 rounded-[16px] border border-foreground/8 bg-background/78 p-3.5 lg:grid-cols-[minmax(0,1fr)_180px]">
@@ -559,12 +606,56 @@ function TasksPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointView
                                 Approval is required before this task can be marked done.
                               </p>
                             ) : null}
+                            {isConfirmingCompletion ? (
+                              <div className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
+                                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">
+                                  {completionNote.status === "blocked" ? "Why is this task blocked?" : "What did you do? What was the result?"}
+                                </p>
+                                <p className="text-[12px] font-semibold leading-relaxed text-foreground/80">
+                                  Record a specific outcome note. The Manager uses this to update checkpoints and shape the next recommendation.
+                                </p>
+                                <textarea
+                                  id={`task-note-${task.id}`}
+                                  rows={3}
+                                  value={completionNote.note}
+                                  onChange={(e) => setCompletionNote((current) => current ? { ...current, note: e.target.value } : null)}
+                                  placeholder={completionNote.status === "blocked" ? "e.g. The distributor rejected the submission — missing ISRC codes. Waiting on the label admin team." : "e.g. Submitted the Spotify editorial pitch for 'Night Drive' with genre context, release story, and target playlist. Confirmation received."}
+                                  className="w-full resize-none rounded-[10px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:border-brand-accent/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+                                />
+                                {completionError ? (
+                                  <p role="alert" className="text-[12px] font-semibold text-red-600">{completionError}</p>
+                                ) : null}
+                                <div className="flex gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={completionPending}
+                                    onClick={confirmCompletion}
+                                    className="rounded-[10px] bg-foreground px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-40"
+                                  >
+                                    {completionPending ? "Saving…" : completionNote.status === "blocked" ? "Mark blocked" : "Confirm done"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={completionPending}
+                                    onClick={() => { setCompletionNote(null); setCompletionError(null); }}
+                                    className="rounded-[10px] border border-foreground/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
                           </div>
                           <div className="flex min-w-0 flex-col items-start justify-start gap-2 lg:items-end">
                             {task.approvalState === "needs approval" ? (
                               <button
                                 type="button"
-                                onClick={() => setApprovedTaskIds((current) => [...new Set([...current, task.id])])}
+                                onClick={() => {
+                                  setApprovedTaskIds((current) => [...new Set([...current, task.id])]);
+                                  onApproveTask(task.id).catch(() => {
+                                    setApprovedTaskIds((current) => current.filter((id) => id !== task.id));
+                                  });
+                                }}
                                 disabled={approved || done}
                                 className="w-full rounded-[10px] border border-foreground/10 px-3 py-2 text-[11px] font-bold text-muted-foreground/80 transition-colors hover:bg-foreground/5 hover:text-black disabled:opacity-40"
                               >
@@ -573,8 +664,8 @@ function TasksPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointView
                             ) : null}
                             <button
                               type="button"
-                              disabled={done || completionBlocked || blocked}
-                              onClick={() => setCompletedTaskIds((current) => [...new Set([...current, task.id])])}
+                              disabled={done || completionBlocked || blocked || isConfirmingCompletion}
+                              onClick={() => startCompletion(task.id, "completed")}
                               className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
                             >
                               Mark done

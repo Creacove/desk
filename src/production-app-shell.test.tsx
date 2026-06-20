@@ -587,6 +587,8 @@ describe("Clean production prototype-match shell", () => {
       },
       missions: {
         loadMissions: async () => productionFixtureData.missions,
+        approveTask: async () => undefined,
+        completeTask: baseRepositories.missions.completeTask,
       },
     };
 
