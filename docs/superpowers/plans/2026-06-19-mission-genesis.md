@@ -6,6 +6,25 @@
 
 **Architecture:** Mission Genesis is a Manager synthesis workflow, not a template picker. It builds an Artist Operating Packet, classifies artist stage and strategic pressures, generates mission candidates, applies worthiness gates, asks bounded context questions when confidence is not high enough, and only activates missions that are personalized, evidenced, and useful. Candidate missions may exist as controlled draft/candidate records, but they must not appear as active operating work until the missing context is answered and activation gates pass.
 
+## Production Architecture Correction
+
+The deterministic classifier, pressure detector, and mission plan writer described later in this original implementation plan are retired and must not be restored to production. They proved the storage workflow but cannot provide the artist-specific intelligence required by the product.
+
+The production contract is now agentic-first:
+
+1. An authenticated Supabase Edge Function assembles the complete Artist Operating Packet from profile, music, evidence, memory, source state, existing work, and specialist agent reports.
+2. OpenAI receives that packet and is the sole author of the stage read, worthiness decision, context questions, mission, checkpoints, tasks, timeline, source references, and permission requests.
+3. Local code performs authorization, strict schema validation, evidence-reference validation, duplicate/graph safety checks, and database persistence. It does not select a pressure or draft work.
+4. Context questions are asked once as a complete batch. Answers are saved to durable memory and sent back to OpenAI with the full refreshed packet for the final decision.
+5. A failed model call or invalid model result is shown as an error. No fallback mission, sample mission, template, or placeholder is created.
+6. `no_mission` and `request_evidence` create no active work and render `Mission was not created` with the actual reasoning or evidence gap.
+
+Authoritative implementation files:
+
+- `supabase/functions/mission-genesis/index.ts`
+- `supabase/functions/_shared/openaiMissionGenesis.ts`
+- `src/services/productionSupabase.ts`
+
 **Tech Stack:** React, TypeScript, Supabase, Postgres RLS, Vitest, existing `ProductionApp` repository abstraction, existing mission/task/checkpoint schema.
 
 ---
