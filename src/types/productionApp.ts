@@ -101,6 +101,11 @@ export type ProductionMusicItem = {
     nextMove?: string;
     watchNext?: string;
     generationState?: "fresh" | "limited";
+    intelligenceSnapshot?: Array<{ title: string; insight: string; metrics: Array<{ label: string; value: string; context?: string; evidenceIds: string[] }> }>;
+    snapshotSummary?: string;
+    claimAudit?: Array<{ claim: string; evidenceIds: string[]; limitation: string }>;
+    confidence?: string;
+    sourceLine?: string;
   };
   assets: Array<{ label: string; status: string; group: "Audio" | "Artwork" | "Splits"; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
   credits: Array<{ role: string; names: string; status: string }>;
@@ -151,6 +156,11 @@ export type ProductionMusicProject = {
     nextMove?: string;
     watchNext?: string;
     generationState?: "fresh" | "limited";
+    intelligenceSnapshot?: Array<{ title: string; insight: string; metrics: Array<{ label: string; value: string; context?: string; evidenceIds: string[] }> }>;
+    snapshotSummary?: string;
+    claimAudit?: Array<{ claim: string; evidenceIds: string[]; limitation: string }>;
+    confidence?: string;
+    sourceLine?: string;
   };
   evidence: Array<{
     id: string;

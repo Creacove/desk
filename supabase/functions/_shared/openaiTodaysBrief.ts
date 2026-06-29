@@ -78,6 +78,14 @@ export type TodaysBriefOutput = {
   intelligenceSnapshot: TodaysBriefSnapshotGroupOutput[];
   snapshotSummary: string;
   managerRead: string;
+  managerEvidenceReads?: Array<{
+    label: string;
+    value?: string;
+    category: "kpi" | "signal" | "asset" | "market" | "management";
+    read: string;
+    evidenceIds: string[];
+    confidence?: string;
+  }>;
   sourceLine: string;
   confidence: "high" | "medium" | "low" | "limited" | "unknown";
   generatedAt?: string;
@@ -204,6 +212,9 @@ const sharedTodaysBriefInstructions = [
     "Do not name backend sources or data vendors. Never say Chartmetric, provider, API, normalized, database, evidence row, or third-party in any visible field.",
     "Use the intelligenceSnapshot to prove the Manager knows the artist. Pick group titles that fit the actual read, such as Scale, Market Heat, Public Reach, Current Music In View, Playlist/Discovery, Track Momentum, Catalog Center, or Audience Map when the packet supports them.",
     "Metric value must be the atomic number or short fact only. Put artist, record, window, source meaning, or explanation in metric label/context. Do not put parenthetical explanations in metric value.",
+    "Use managerEvidenceReads to explain what the visible evidence means inside the Manager's Read. Do not interpret only KPI scores; interpret the strongest KPI, signal, asset, market, and management evidence available in the packet.",
+    "Artist goal or artist direction is ambition context, not the object of today's work. Do not quote broad goals like 'to be the biggest in the world' as if they are a song, signal, campaign, or task.",
+    "Do not turn a broad artist goal into wording like do-this / do-not-do rules. Translate ambition into a concrete management focus grounded in evidence: record, market, audience, positioning, rights, team capacity, or public context.",
     "Current Music In View means the latest project and recent focus records available to manage now; do not infer full discography size from the workspace catalog.",
     "Do not explain that the working catalog is not the full discography. Use it naturally as current music in view.",
     "Pick the most useful 8-16 facts from the packet. Do not dump every metric.",
@@ -218,6 +229,7 @@ const sharedTodaysBriefInstructions = [
     "Never claim rights certainty, royalties, revenue, return on spend, or conversion unless directly saved in the packet.",
     "The sourceLine must be exactly: Based on your saved artist profile, current music in view, public audience signals, and source limits.",
     "Every metric in intelligenceSnapshot must include evidenceIds from the packet. Every claimAudit item must include evidenceIds that support it.",
+    "Never print evidence IDs, UUIDs, database IDs, source refs, or parenthetical evidence citations in headlineRead, snapshotSummary, intelligenceSnapshot visible text, or managerRead. IDs belong only in evidenceIds arrays and claimAudit.",
 ];
 
 const operatingTodaysBriefInstructions = [
@@ -311,6 +323,9 @@ function sanitizeVisibleString(value: string) {
     .map((paragraph) =>
       visibleCopyReplacements
         .reduce((text, [pattern, replacement]) => text.replace(pattern, replacement), paragraph)
+        .replace(/\((?:evidence|source refs?|refs?|ids?)\s*:\s*[^)]*\)/gi, "")
+        .replace(/\b(?:evidence|source refs?|refs?|ids?)\s*:\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\s*[,;]\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})*/gi, "")
+        .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
         .replace(/[ \t]+([,.;:!?])/g, "$1")
         .replace(/[ \t]{2,}/g, " ")
         .trim()

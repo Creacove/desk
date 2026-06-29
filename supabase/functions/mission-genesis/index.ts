@@ -4,16 +4,42 @@ import {
   buildMissionGenesisRepairInstructions,
   missionGenesisJsonSchema,
   parseMissionGenesisOutput,
-  parseMissionGenesisOutputSafe,
+  type MissionGenesisCandidate,
   type MissionGenesisMode,
   type MissionGenesisOutput,
   type MissionGenesisQuestion,
 } from "../_shared/openaiMissionGenesis.ts";
+import {
+  getMissionPatternRegistry,
+  selectMissionPatternsForPacket,
+} from "../_shared/mission-patterns/missionPatternRegistry.ts";
+import { persistMissionGenesisGraphPlan } from "../_shared/missionGraphPersistence.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+const MISSION_GENESIS_PACKET_LIMITS = {
+  evidence: 36,
+  musicItems: 24,
+  musicProjects: 16,
+  memory: 32,
+  agentReports: 24,
+  missions: 16,
+  tasks: 24,
+  sources: 12,
+  managerAssetReads: 8,
+  managerMarketReads: 8,
+  managerDomainReads: 8,
+  managerPublicContext: 6,
+  managerOpenDecisions: 8,
+  managerDoNotDo: 8,
+  arrayItems: 12,
+  objectKeys: 14,
+  stringLength: 420,
+  depth: 3,
 };
 
 type MissionGenesisInput = {
@@ -106,6 +132,7 @@ Deno.serve(async (request) => {
               checkpoints: [],
               tasks: [],
               permissionRequests: [],
+              missionCandidates: [],
             };
             return json(toViewModel(output, { missionId: existingCandidate.id, questions }));
           }
@@ -124,12 +151,19 @@ Deno.serve(async (request) => {
     runId = await createManagerRun(db, input, packet, contextAnswers, priorCandidate);
     usageId = await createUsageEvent(db, input, runId);
 
-    const { output, usage, requestCount } = await callOpenAIMissionGenesis({ packet, contextAnswers, priorCandidate }, input.mode);
-    const persisted = await persistDecision(db, input, runId, output);
-    await completeManagerRun(db, runId, output, persisted.missionId);
-    await completeUsageEvent(db, usageId, usage, requestCount);
+    scheduleMissionGenesisBackgroundRun(
+      completeMissionGenesisRun({
+        db,
+        input,
+        runId,
+        usageId,
+        packet,
+        contextAnswers,
+        priorCandidate,
+      }),
+    );
 
-    return json(toViewModel(output, persisted));
+    return json({ status: "processing", runId }, 202);
   } catch (error) {
     const message = describeError(error, "Mission Genesis failed.");
     if (runId) await markRunFailedSafe(runId, message);
@@ -137,6 +171,45 @@ Deno.serve(async (request) => {
     return json({ error: message }, 500);
   }
 });
+
+function scheduleMissionGenesisBackgroundRun(task: Promise<void>) {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof runtime?.waitUntil === "function") {
+    runtime.waitUntil(task);
+    return;
+  }
+
+  task.catch((error) => console.error("Mission Genesis background run failed:", error));
+}
+
+async function completeMissionGenesisRun({
+  db,
+  input,
+  runId,
+  usageId,
+  packet,
+  contextAnswers,
+  priorCandidate,
+}: {
+  db: any;
+  input: MissionGenesisInput;
+  runId: string;
+  usageId: string;
+  packet: unknown;
+  contextAnswers: Array<{ questionKey: string; answer: string }>;
+  priorCandidate: Record<string, unknown> | null;
+}) {
+  try {
+    const { output, usage, requestCount } = await callOpenAIMissionGenesis({ packet, contextAnswers, priorCandidate }, input.mode);
+    const persisted = await persistDecision(db, input, runId, output);
+    await completeManagerRun(db, runId, output, persisted.missionId);
+    await completeUsageEvent(db, usageId, usage, requestCount);
+  } catch (error) {
+    const message = describeError(error, "Mission Genesis failed.");
+    await markRunFailedSafe(runId, message);
+    await markUsageFailedSafe(usageId, message);
+  }
+}
 
 function validateInput(input: MissionGenesisInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId) throw new Error("Mission Genesis workspace input is incomplete.");
@@ -227,19 +300,20 @@ async function persistContextAnswers(db: any, input: MissionGenesisInput) {
 }
 
 async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
-  const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, sources] = await Promise.all([
+  const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, sources, managerPackets] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context,social_handles", input, 1),
-    selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 240),
-    selectMany(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 120),
-    selectMany(db, "music_projects", "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 80),
-    selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,created_at", input, 160),
-    selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 40),
-    selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 80),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, 160),
-    selectMany(db, "source_connections", "id,provider_id,handle_or_external_ref,status,last_sync_at,next_sync_at,freshness_target,limitations,created_at", input, 80),
+    selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref,created_at", input, MISSION_GENESIS_PACKET_LIMITS.evidence),
+    selectMany(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit", input, MISSION_GENESIS_PACKET_LIMITS.musicItems),
+    selectMany(db, "music_projects", "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit", input, MISSION_GENESIS_PACKET_LIMITS.musicProjects),
+    selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,created_at", input, MISSION_GENESIS_PACKET_LIMITS.memory),
+    selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, MISSION_GENESIS_PACKET_LIMITS.agentReports),
+    selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, MISSION_GENESIS_PACKET_LIMITS.missions),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, MISSION_GENESIS_PACKET_LIMITS.tasks),
+    selectMany(db, "source_connections", "id,provider_id,handle_or_external_ref,status,last_sync_at,next_sync_at,freshness_target,limitations,created_at", input, MISSION_GENESIS_PACKET_LIMITS.sources),
+    selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,domain_reads_json,public_context_json,open_decisions_json,do_not_do_json,mission_seed_json,created_at", input, 1),
   ]);
-
-  return {
+  const managerIntelligence = buildManagerIntelligenceMissionContext(managerPackets[0] ?? null);
+  const packet = {
     packetVersion: "mission_genesis_v2",
     generatedAt: new Date().toISOString(),
     artist: {
@@ -253,28 +327,29 @@ async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
       socialHandles: profile[0]?.social_handles ?? {},
       profileRef: profile[0]?.id ?? "",
     },
-    evidence: evidence.map((row: any) => ({
-      id: row.id,
-      source: row.source,
-      kind: row.evidence_type,
-      subjectId: row.subject_id,
-      subject: row.subject_label,
-      label: row.metric_name,
-      value: row.metric_value == null ? "" : `${row.metric_value}${row.metric_unit ? ` ${row.metric_unit}` : ""}`,
-      freshness: row.freshness,
-      confidence: row.confidence,
-      provenance: row.provenance,
-      limitation: row.limitation,
-    })),
+    evidence: buildMissionEvidenceContext(evidence),
     music: {
-      items: musicItems,
-      projects: musicProjects,
+      items: boundedValue(musicItems),
+      projects: boundedValue(musicProjects),
     },
-    memory,
-    recentAgentReports: agentReports,
-    existingMissions: missions,
-    existingTasks: tasks,
-    sources,
+    memory: boundedValue(memory),
+    managerIntelligence: {
+      packetId: managerIntelligence.packetId,
+      packetType: managerIntelligence.packetType,
+      createdAt: managerIntelligence.createdAt,
+      managerIntelligenceProfileProjection: managerIntelligence.profileProjection,
+      managerIntelligenceMissionSeed: managerIntelligence.missionSeed,
+      managerIntelligenceDomainReads: managerIntelligence.domainReads,
+      managerIntelligencePublicContext: managerIntelligence.publicContext,
+      managerIntelligenceOpenDecisions: managerIntelligence.openDecisions,
+      managerIntelligenceDoNotDo: managerIntelligence.doNotDo,
+      assetReads: managerIntelligence.assetReads,
+      marketReads: managerIntelligence.marketReads,
+    },
+    recentAgentReports: boundedValue(agentReports),
+    existingMissions: boundedValue(missions),
+    existingTasks: boundedValue(tasks),
+    sources: boundedValue(sources),
     rules: {
       userContextIsNotThirdPartyEvidence: true,
       externalActionsRequirePermission: true,
@@ -282,6 +357,108 @@ async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
       noMissionIsValid: true,
     },
   };
+
+  return {
+    ...packet,
+    missionPatternRegistry: getMissionPatternRegistry(),
+    recommendedMissionPatterns: selectMissionPatternsForPacket(packet as any),
+  };
+}
+
+function buildManagerIntelligenceMissionContext(row: any) {
+  if (!row) {
+    return {
+      packetId: "",
+      packetType: "",
+      createdAt: "",
+      profileProjection: {},
+      strategicDiagnosis: {},
+      missionSeed: {},
+      assetReads: [],
+      marketReads: [],
+      domainReads: [],
+      publicContext: [],
+      openDecisions: [],
+      doNotDo: [],
+    };
+  }
+
+  return {
+    packetId: row.id ?? "",
+    packetType: row.packet_type ?? "",
+    createdAt: row.created_at ?? "",
+    profileProjection: boundedValue(row.profile_projection_json),
+    strategicDiagnosis: boundedValue(row.strategic_diagnosis_json),
+    missionSeed: boundedValue(row.mission_seed_json),
+    assetReads: boundedArray(row.asset_reads_json, MISSION_GENESIS_PACKET_LIMITS.managerAssetReads),
+    marketReads: boundedArray(row.market_reads_json, MISSION_GENESIS_PACKET_LIMITS.managerMarketReads),
+    domainReads: boundedArray(row.domain_reads_json, MISSION_GENESIS_PACKET_LIMITS.managerDomainReads),
+    publicContext: boundedArray(row.public_context_json, MISSION_GENESIS_PACKET_LIMITS.managerPublicContext),
+    openDecisions: boundedArray(row.open_decisions_json, MISSION_GENESIS_PACKET_LIMITS.managerOpenDecisions),
+    doNotDo: boundedArray(row.do_not_do_json, MISSION_GENESIS_PACKET_LIMITS.managerDoNotDo),
+  };
+}
+
+function buildMissionEvidenceContext(rows: any[]) {
+  return rows
+    .map((row) => {
+      const rawRef = isRecord(row.raw_ref) ? row.raw_ref : {};
+      return {
+        id: row.id,
+        source: row.source,
+        sourceKind: row.source_kind,
+        kind: row.evidence_type,
+        subject: row.subject_label,
+        label: row.metric_name,
+        value: row.metric_value == null ? "" : `${row.metric_value}${row.metric_unit ? ` ${row.metric_unit}` : ""}`,
+        freshness: row.freshness,
+        confidence: row.confidence,
+        provenance: row.provenance,
+        limitation: row.limitation,
+        url: typeof rawRef.url === "string" ? rawRef.url : undefined,
+        domain: typeof rawRef.domain === "string" ? rawRef.domain : undefined,
+      };
+    })
+    .sort((left, right) => evidencePriority(right) - evidencePriority(left))
+    .slice(0, MISSION_GENESIS_PACKET_LIMITS.evidence);
+}
+
+function evidencePriority(row: Record<string, unknown>) {
+  const text = `${row.kind ?? ""} ${row.label ?? ""} ${row.sourceKind ?? ""}`.toLowerCase();
+  let score = 0;
+  if (text.includes("rights") || text.includes("split")) score += 9;
+  if (text.includes("mission") || text.includes("management")) score += 8;
+  if (text.includes("public_web") || text.includes("public")) score += 7;
+  if (text.includes("market") || text.includes("city")) score += 6;
+  if (text.includes("playlist") || text.includes("shazam") || text.includes("tiktok")) score += 5;
+  if (text.includes("monthly") || text.includes("rank") || text.includes("score")) score += 4;
+  if (row.url) score += 2;
+  if (row.confidence === "high") score += 2;
+  if (row.confidence === "medium") score += 1;
+  return score;
+}
+
+function boundedArray(value: unknown, limit: number) {
+  return Array.isArray(value) ? value.slice(0, limit).map((item) => boundedValue(item, MISSION_GENESIS_PACKET_LIMITS.depth - 1)) : [];
+}
+
+function boundedValue(value: unknown, depth = MISSION_GENESIS_PACKET_LIMITS.depth): unknown {
+  if (typeof value === "string") {
+    return value.length > MISSION_GENESIS_PACKET_LIMITS.stringLength
+      ? `${value.slice(0, MISSION_GENESIS_PACKET_LIMITS.stringLength)}...`
+      : value;
+  }
+  if (typeof value !== "object" || value === null) return value;
+  if (depth <= 0) return Array.isArray(value) ? `[${value.length} items]` : "[object]";
+  if (Array.isArray(value)) {
+    return value.slice(0, MISSION_GENESIS_PACKET_LIMITS.arrayItems).map((item) => boundedValue(item, depth - 1));
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .slice(0, MISSION_GENESIS_PACKET_LIMITS.objectKeys)
+      .map(([key, item]) => [key, boundedValue(item, depth - 1)]),
+  );
 }
 
 async function selectMany(db: any, table: string, columns: string, input: MissionGenesisInput, limit: number) {
@@ -321,12 +498,7 @@ async function callOpenAIMissionGenesis(
         requestCount: 2,
       };
     } catch (secondError) {
-      console.warn("Mission Genesis repair failed, running safe self-healing parser:", secondError);
-      return {
-        output: parseMissionGenesisOutputSafe(repaired.outputText, context.packet, mode),
-        usage: mergeOpenAIUsage(first.usage, repaired.usage),
-        requestCount: 2,
-      };
+      throw secondError;
     }
   }
 }
@@ -382,7 +554,7 @@ async function createManagerRun(db: any, input: MissionGenesisInput, packet: unk
       status: "running",
       classification: "mission_genesis_v2",
       confidence: "unknown",
-      context_payload: { mode: input.mode, packet, contextAnswers, priorCandidate },
+      context_payload: buildMissionGenesisRunAudit(input, packet, contextAnswers, priorCandidate),
       steps_payload: [{ step: "packet_built", status: "completed" }, { step: "openai_synthesis", status: "running" }],
       action_plan: [],
       limitations: [],
@@ -392,6 +564,36 @@ async function createManagerRun(db: any, input: MissionGenesisInput, packet: unk
     .single();
   if (error) throw error;
   return data.id as string;
+}
+
+function buildMissionGenesisRunAudit(input: MissionGenesisInput, packet: unknown, contextAnswers: unknown[], priorCandidate: unknown) {
+  const record = isRecord(packet) ? packet : {};
+  const music = isRecord(record.music) ? record.music : {};
+  const managerIntelligence = isRecord(record.managerIntelligence) ? record.managerIntelligence : {};
+  return {
+    mode: input.mode,
+    packetVersion: record.packetVersion ?? "mission_genesis_v2",
+    generatedAt: record.generatedAt ?? new Date().toISOString(),
+    candidateMissionId: input.candidateMissionId ?? null,
+    counts: {
+      evidence: arrayLength(record.evidence),
+      musicItems: arrayLength(music.items),
+      musicProjects: arrayLength(music.projects),
+      memory: arrayLength(record.memory),
+      agentReports: arrayLength(record.recentAgentReports),
+      missions: arrayLength(record.existingMissions),
+      tasks: arrayLength(record.existingTasks),
+      sources: arrayLength(record.sources),
+      recommendedMissionPatterns: arrayLength(record.recommendedMissionPatterns),
+    },
+    managerIntelligencePacketId: typeof managerIntelligence.packetId === "string" ? managerIntelligence.packetId : "",
+    contextAnswers: boundedValue(contextAnswers, 2),
+    priorCandidateId: isRecord(priorCandidate) && typeof priorCandidate.id === "string" ? priorCandidate.id : null,
+  };
+}
+
+function arrayLength(value: unknown) {
+  return Array.isArray(value) ? value.length : 0;
 }
 
 async function createUsageEvent(db: any, input: MissionGenesisInput, runId: string) {
@@ -422,6 +624,9 @@ async function createUsageEvent(db: any, input: MissionGenesisInput, runId: stri
 async function persistDecision(db: any, input: MissionGenesisInput, runId: string, output: MissionGenesisOutput) {
   let missionId: string | undefined;
   let questions = output.questions;
+  let missionIds: string[] = [];
+  let activatedMissionIds: string[] = [];
+  let candidateMissionIds: string[] = [];
 
   const { data: action, error: actionError } = await db
     .from("manager_run_actions")
@@ -443,28 +648,79 @@ async function persistDecision(db: any, input: MissionGenesisInput, runId: strin
     .single();
   if (actionError) throw actionError;
 
-  if (output.outcome === "candidate_needs_context") {
-    missionId = await createCandidate(db, input, runId, action.id, output);
-    questions = await persistQuestions(db, missionId, output.questions);
-  } else if (output.outcome === "activate_mission") {
-    missionId = input.candidateMissionId
-      ? await activateCandidate(db, input, runId, action.id, output)
-      : await createActiveMission(db, input, runId, action.id, output);
-    await writeMissionPlan(db, input, runId, action.id, missionId, output);
-    await finalizeMissionActivation(db, input, missionId);
-  } else if (output.outcome === "update_existing_mission") {
+  const shouldPersistMultipleCandidates = !input.candidateMissionId && output.missionCandidates.length > 1;
+  if (output.outcome === "update_existing_mission") {
     missionId = output.existingMissionId;
+    missionIds = [missionId];
+    activatedMissionIds = [missionId];
     const { error } = await db.from("missions").update({
+      title: output.mission.title,
+      objective: output.mission.objective,
+      reason: output.mission.reason,
+      summary: output.mission.summary,
+      pattern_name: output.mission.patternName,
       status: "active",
       priority: 1,
       current_recommendation: output.mission.currentRecommendation || output.decisionSummary,
       change_conditions: output.mission.changeConditions,
       review_point: output.checkpoints[0]?.title ?? "Manager review",
+      required_evidence: unique(output.checkpoints.flatMap((c) => c.requiredEvidence)),
+      missing_evidence: unique([...output.evidenceNeeded, ...output.checkpoints.flatMap((c) => c.missingEvidence)]),
+      originating_trigger: "manual_mission_genesis_openai",
       updated_at: new Date().toISOString(),
     }).eq("id", missionId).eq("artist_workspace_id", input.artistWorkspaceId);
     if (error) throw error;
 
-    await writeMissionPlan(db, input, runId, action.id, missionId, output);
+    await persistMissionGenesisGraphPlan(db, input, { runId, actionId: action.id }, missionId, output);
+
+    if (output.missionCandidates.length > 0) {
+      const allQuestions: MissionGenesisQuestion[] = [];
+      for (const [index, candidate] of output.missionCandidates.entries()) {
+        if (candidate.key === output.existingMissionId) continue;
+        const persistedCandidate = await persistMissionCandidate(db, input, runId, action.id, output, candidate, index);
+        if (persistedCandidate.missionId) {
+          missionIds.push(persistedCandidate.missionId);
+        }
+        if (persistedCandidate.outcome === "activate_mission" && persistedCandidate.missionId) {
+          activatedMissionIds.push(persistedCandidate.missionId);
+        }
+        if (persistedCandidate.outcome === "candidate_needs_context" && persistedCandidate.missionId) {
+          candidateMissionIds.push(persistedCandidate.missionId);
+        }
+        allQuestions.push(...persistedCandidate.questions);
+      }
+      questions = [...output.questions, ...allQuestions];
+    }
+  } else if (shouldPersistMultipleCandidates) {
+    const allQuestions: MissionGenesisQuestion[] = [];
+    for (const [index, candidate] of output.missionCandidates.entries()) {
+      const persistedCandidate = await persistMissionCandidate(db, input, runId, action.id, output, candidate, index);
+      if (persistedCandidate.missionId) {
+        missionIds.push(persistedCandidate.missionId);
+      }
+      if (persistedCandidate.outcome === "activate_mission" && persistedCandidate.missionId) {
+        activatedMissionIds.push(persistedCandidate.missionId);
+      }
+      if (persistedCandidate.outcome === "candidate_needs_context" && persistedCandidate.missionId) {
+        candidateMissionIds.push(persistedCandidate.missionId);
+      }
+      allQuestions.push(...persistedCandidate.questions);
+    }
+    missionId = activatedMissionIds[0] ?? candidateMissionIds[0] ?? missionIds[0];
+    questions = allQuestions;
+  } else if (output.outcome === "candidate_needs_context") {
+    missionId = await createCandidate(db, input, runId, action.id, output);
+    missionIds = [missionId];
+    candidateMissionIds = [missionId];
+    questions = await persistQuestions(db, missionId, output.questions);
+  } else if (output.outcome === "activate_mission") {
+    missionId = input.candidateMissionId
+      ? await activateCandidate(db, input, runId, action.id, output)
+      : await createActiveMission(db, input, runId, action.id, output);
+    missionIds = [missionId];
+    activatedMissionIds = [missionId];
+    await persistMissionGenesisGraphPlan(db, input, { runId, actionId: action.id }, missionId, output);
+    await finalizeMissionActivation(db, input, missionId);
   } else if (input.candidateMissionId) {
     const { error } = await db.from("missions").update({
       status: "archived",
@@ -475,15 +731,61 @@ async function persistDecision(db: any, input: MissionGenesisInput, runId: strin
     if (error) throw error;
   }
 
-  await writeOperatingEvent(db, input, runId, missionId, output);
+  if (!shouldPersistMultipleCandidates) {
+    await writeOperatingEvent(db, input, runId, missionId, output);
+  }
   const { error: completeActionError } = await db.from("manager_run_actions").update({
     target_id: missionId || output.existingMissionId || null,
     status: output.outcome === "request_evidence" ? "skipped" : "applied",
-    result_payload: { outcome: output.outcome, missionId: missionId ?? null },
+    result_payload: { outcome: output.outcome, missionId: missionId ?? null, missionIds, activatedMissionIds, candidateMissionIds, questions },
   }).eq("id", action.id);
   if (completeActionError) throw completeActionError;
 
-  return { missionId, questions };
+  return { missionId, primaryMissionId: missionId, missionIds, activatedMissionIds, candidateMissionIds, questions };
+}
+
+async function persistMissionCandidate(
+  db: any,
+  input: MissionGenesisInput,
+  runId: string,
+  actionId: string,
+  output: MissionGenesisOutput,
+  candidate: MissionGenesisCandidate,
+  index: number,
+) {
+  const candidateOutput = outputFromCandidate(output, candidate, index);
+  let missionId: string | undefined;
+  let questions: MissionGenesisQuestion[] = [];
+  if (candidate.outcome === "candidate_needs_context") {
+    missionId = await createCandidate(db, input, runId, actionId, candidateOutput);
+    questions = await persistQuestions(db, missionId, candidate.questions);
+    await writeOperatingEvent(db, input, runId, missionId, candidateOutput);
+  } else if (candidate.outcome === "activate_mission") {
+    missionId = await createActiveMission(db, input, runId, actionId, candidateOutput);
+    await persistMissionGenesisGraphPlan(db, input, { runId, actionId }, missionId, candidateOutput);
+    await finalizeMissionActivation(db, input, missionId);
+    await writeOperatingEvent(db, input, runId, missionId, candidateOutput);
+  }
+  return { missionId, questions, outcome: candidate.outcome };
+}
+
+function outputFromCandidate(output: MissionGenesisOutput, candidate: MissionGenesisCandidate, index: number): MissionGenesisOutput {
+  return {
+    ...output,
+    outcome: candidate.outcome,
+    confidence: candidate.confidence,
+    decisionSummary: candidate.mission.summary || output.decisionSummary,
+    reasons: candidate.reasons.length ? candidate.reasons : output.reasons,
+    evidenceNeeded: candidate.evidenceNeeded,
+    existingMissionId: "",
+    questions: candidate.questions,
+    mission: candidate.mission,
+    checkpoints: candidate.checkpoints,
+    tasks: candidate.tasks,
+    permissionRequests: candidate.permissionRequests,
+    missionCandidates: [candidate],
+    stage: { ...output.stage, label: `${output.stage.label} candidate ${index + 1}` },
+  };
 }
 
 async function createCandidate(db: any, input: MissionGenesisInput, runId: string, actionId: string, output: MissionGenesisOutput) {
@@ -556,115 +858,6 @@ async function persistQuestions(db: any, missionId: string, questions: MissionGe
   return (data ?? []).sort((a: any, b: any) => a.order_index - b.order_index).map((row: any, index: number) => ({ ...questions[index], key: row.question_key }));
 }
 
-async function writeMissionPlan(db: any, input: MissionGenesisInput, runId: string, actionId: string, missionId: string, output: MissionGenesisOutput) {
-  const { data: plan, error: planError } = await db.from("mission_plan_versions").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    mission_id: missionId,
-    version: 1,
-    status: "active",
-    generated_from_run_id: runId,
-    generated_from_action_id: actionId,
-    summary: `${output.mission.timeline}. ${output.mission.summary}`,
-  }).select("id").single();
-  if (planError) throw planError;
-
-  const checkpointIds = new Map<string, string>();
-  for (const [index, checkpoint] of output.checkpoints.entries()) {
-    const { data, error } = await db.from("checkpoints").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      mission_id: missionId,
-      mission_plan_version_id: plan.id,
-      title: checkpoint.title,
-      status: "waiting",
-      question: checkpoint.question,
-      reason_for_checkpoint: checkpoint.question,
-      watched_signals: checkpoint.sourceRefs,
-      decision_rule: checkpoint.decisionRule,
-      recommendation: output.mission.currentRecommendation,
-      required_evidence: checkpoint.requiredEvidence,
-      missing_evidence: checkpoint.missingEvidence,
-      custom_reason: `Authored by OpenAI Mission Genesis from packet refs: ${checkpoint.sourceRefs.join(", ")}`,
-      created_from_run_id: runId,
-      created_from_action_id: actionId,
-    }).select("id").single();
-    if (error) throw error;
-    checkpointIds.set(checkpoint.key, data.id);
-    const { error: linkError } = await db.from("mission_plan_checkpoints").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      mission_plan_version_id: plan.id,
-      mission_id: missionId,
-      checkpoint_id: data.id,
-      order_index: index + 1,
-      phase_label: checkpoint.title,
-      unlock_rule: checkpoint.decisionRule,
-    });
-    if (linkError) throw linkError;
-  }
-
-  for (const task of output.tasks) {
-    const { data: taskRow, error } = await db.from("tasks").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      scope: "mission",
-      mission_id: missionId,
-      mission_plan_version_id: plan.id,
-      primary_checkpoint_id: checkpointIds.get(task.primaryCheckpointKey),
-      title: task.title,
-      owner_role: task.ownerRole,
-      priority: 1,
-      status: "proposed",
-      approval_state: "not_required",
-      purpose: task.purpose,
-      evidence_needed: task.evidenceNeeded,
-      completion_expectation: task.completionExpectation,
-      risk_if_late: task.riskIfLate,
-      created_from_run_id: runId,
-      created_from_action_id: actionId,
-    }).select("id").single();
-    if (error) throw error;
-
-    if (task.steps?.length && taskRow?.id) {
-      const stepRows = task.steps.map((body: string, index: number) => ({
-        account_id: input.accountId,
-        artist_workspace_id: input.artistWorkspaceId,
-        artist_id: input.artistId,
-        task_id: taskRow.id,
-        body,
-        order_index: index + 1,
-      }));
-      const { error: stepError } = await db.from("task_steps").insert(stepRows);
-      if (stepError) throw stepError;
-    }
-  }
-
-  for (const permission of output.permissionRequests) {
-    const { error } = await db.from("permission_requests").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      mission_id: missionId,
-      request_type: permission.requestType,
-      title: permission.title,
-      body: permission.body,
-      risk: permission.risk,
-      status: "pending",
-      created_from_run_id: runId,
-      created_from_action_id: actionId,
-    });
-    if (error) throw error;
-  }
-
-  const { error: missionError } = await db.from("missions").update({ active_plan_version_id: plan.id }).eq("id", missionId);
-  if (missionError) throw missionError;
-}
-
 async function writeOperatingEvent(db: any, input: MissionGenesisInput, runId: string, missionId: string | undefined, output: MissionGenesisOutput) {
   const eventType = output.outcome === "activate_mission" ? "mission_activated" : output.outcome === "candidate_needs_context" ? "mission_candidate_created" : `mission_genesis_${output.outcome}`;
   const { error } = await db.from("operating_events").insert({
@@ -714,7 +907,7 @@ async function completeUsageEvent(db: any, usageId: string, usage: Record<string
   if (error) throw error;
 }
 
-function toViewModel(output: MissionGenesisOutput, persisted: { missionId?: string; questions: MissionGenesisQuestion[] }) {
+function toViewModel(output: MissionGenesisOutput, persisted: { missionId?: string; primaryMissionId?: string; missionIds?: string[]; activatedMissionIds?: string[]; candidateMissionIds?: string[]; questions: MissionGenesisQuestion[] }) {
   const titles: Record<MissionGenesisOutput["outcome"], string> = {
     activate_mission: "Mission activated",
     candidate_needs_context: "The Manager needs context",
@@ -729,8 +922,10 @@ function toViewModel(output: MissionGenesisOutput, persisted: { missionId?: stri
     reasons: output.reasons,
     questions: persisted.questions,
     evidenceNeeded: output.evidenceNeeded,
-    ...(output.outcome === "candidate_needs_context" ? { candidateMissionId: persisted.missionId } : {}),
-    ...((output.outcome === "activate_mission" || output.outcome === "update_existing_mission") ? { activatedMissionId: persisted.missionId } : {}),
+    ...(persisted.candidateMissionIds?.length ? { candidateMissionIds: persisted.candidateMissionIds } : {}),
+    ...(persisted.activatedMissionIds?.length ? { activatedMissionIds: persisted.activatedMissionIds } : {}),
+    ...(output.outcome === "candidate_needs_context" ? { candidateMissionId: persisted.candidateMissionIds?.[0] ?? persisted.missionId } : {}),
+    ...((output.outcome === "activate_mission" || output.outcome === "update_existing_mission") ? { activatedMissionId: persisted.activatedMissionIds?.[0] ?? persisted.primaryMissionId ?? persisted.missionId } : {}),
   };
 }
 

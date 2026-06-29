@@ -73,19 +73,49 @@ export type TodayBriefSnapshotGroup = {
   metrics: TodayBriefMetric[];
 };
 
+export type TodayBriefManagerEvidenceRead = {
+  label: string;
+  value?: string;
+  category?: "kpi" | "signal" | "asset" | "market" | "management";
+  read: string;
+  evidenceIds: string[];
+  confidence?: string;
+};
+
 export type TodayBriefViewModel = {
   headlineRead: string;
   intelligenceSnapshot: TodayBriefSnapshotGroup[];
   snapshotSummary: string;
   managerRead: string;
+  managerEvidenceReads?: TodayBriefManagerEvidenceRead[];
   sourceLine: string;
   confidence: "high" | "medium" | "low" | "limited" | "unknown";
   generatedAt?: string;
   managerSynthesisRunId?: string;
+  managerOutputId?: string;
+  managerIntelligencePacketId?: string;
   state: "fresh" | "limited" | "fallback" | "failed";
 };
 
 export type TodayBriefGenerationMode = "operating" | "setup-map";
+
+export type MusicReadTarget = {
+  subjectType: "music_item" | "music_project";
+  subjectId: string;
+};
+
+export type TodayBriefGenerationResult = {
+  brief: TodayBriefViewModel;
+  setupMusicReadTargets?: MusicReadTarget[];
+};
+
+export type TodayBriefGenerationResponse = TodayBriefViewModel | TodayBriefGenerationResult;
+
+export type PublicContextRefreshResult = {
+  findingsInserted: number;
+  evidenceItemIds: string[];
+  summary?: string;
+};
 
 export type AgentViewModel = {
   id: string;
@@ -220,7 +250,7 @@ export type MusicObjectViewModel = {
   managerRead?: string;
   situationLine?: string;
   watchNext?: string;
-  managerReadState?: "fresh" | "limited" | "fallback" | "stale" | "failed";
+  managerReadState?: "fresh" | "limited" | "loading" | "fallback" | "stale" | "failed";
   nextMove: string;
   intelligenceSnapshot?: TodayBriefSnapshotGroup[];
   snapshotSummary?: string;
@@ -300,6 +330,34 @@ export type ConversationMessageViewModel = {
   speaker: "artist" | "manager";
   label: string;
   body: string;
+  status?: "sending" | "streaming" | "sent" | "failed";
+  runId?: string;
+  createdAt?: string;
+  createdWork?: Array<{
+    type: "music_item" | "mission" | "task";
+    title: string;
+    body: string;
+    id?: string;
+    parentMissionId?: string;
+      status?: "created" | "updated" | "approval_required" | "failed" | "pending";
+  }>;
+  contextRequestId?: string;
+  contextQuestions?: ManagerMissionContextQuestion[];
+};
+
+export type ManagerRunStepViewModel = {
+  id: string;
+  label: string;
+  status: "queued" | "running" | "completed" | "failed";
+  detail?: string;
+};
+
+export type ManagerRunViewModel = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  steps: ManagerRunStepViewModel[];
+  streamedText?: string;
+  error?: string;
 };
 
 export type ConversationViewModel = {
@@ -308,13 +366,89 @@ export type ConversationViewModel = {
   status: string;
   summary: string;
   prompt: string;
+  lastUpdate?: string;
   messages: ConversationMessageViewModel[];
+  activeRun?: ManagerRunViewModel;
   createdWork: Array<{
     type: "music_item" | "mission" | "task";
     title: string;
     body: string;
     id?: string;
+    parentMissionId?: string;
+    status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
+};
+
+export type ManagerConversationStreamEvent =
+  | {
+      type: "conversation.started";
+      conversation: Partial<ConversationViewModel> & { id: string };
+      run?: Partial<ManagerRunViewModel> & { id: string };
+    }
+  | {
+      type: "run.step";
+      runId?: string;
+      stepId?: string;
+      label: string;
+      status: ManagerRunStepViewModel["status"];
+      detail?: string;
+    }
+  | {
+      type: "tool.started" | "tool.completed";
+      runId?: string;
+      tool: string;
+      label: string;
+      status?: ManagerRunStepViewModel["status"];
+      detail?: string;
+    }
+  | {
+      type: "assistant.delta";
+      conversationId?: string;
+      runId?: string;
+      delta: string;
+    }
+  | {
+      type: "artifact.changed";
+      runId?: string;
+      artifact: ConversationViewModel["createdWork"][number];
+      refresh?: ManagerConversationRefreshHint;
+    }
+  | {
+      type: "conversation.completed";
+      conversation: ConversationViewModel;
+      refresh?: ManagerConversationRefreshHint;
+    }
+  | {
+      type: "error";
+      conversationId?: string;
+      runId?: string;
+      message: string;
+    };
+
+export type ManagerConversationRefreshHint = {
+  conversations?: boolean;
+  missions?: boolean;
+  missionIds?: string[];
+  taskIds?: string[];
+  music?: boolean;
+  desk?: boolean;
+};
+
+export type ManagerConversationStreamHandlers = {
+  onEvent(event: ManagerConversationStreamEvent): void;
+};
+
+export type ManagerMissionContextQuestion = {
+  key: string;
+  question: string;
+  reason: string;
+  answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
+  options?: string[];
+};
+
+export type ManagerConversationContextAnswer = {
+  questionKey: string;
+  answer: string;
 };
 
 export type EvidenceItemViewModel = {
@@ -347,7 +481,8 @@ export type ArtistProfileRepository = {
 
 export type DeskRepository = {
   loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement" | "todayBrief">>;
-  generateTodaysBrief(mode?: TodayBriefGenerationMode): Promise<TodayBriefViewModel>;
+  generateTodaysBrief(mode?: TodayBriefGenerationMode): Promise<TodayBriefGenerationResponse>;
+  refreshPublicContext?(): Promise<PublicContextRefreshResult>;
 };
 
 export type StaffRepository = {
@@ -376,6 +511,21 @@ export type MusicRepository = {
 
 export type ManagerRepository = {
   loadConversations(): Promise<ConversationViewModel[]>;
+  sendMessage(input: {
+    conversationId?: string;
+    body: string;
+    contextRequestId?: string;
+    contextAnswers?: ManagerConversationContextAnswer[];
+  }): Promise<ConversationViewModel>;
+  sendMessageStream?(
+    input: {
+      conversationId?: string;
+      body: string;
+      contextRequestId?: string;
+      contextAnswers?: ManagerConversationContextAnswer[];
+    },
+    handlers: ManagerConversationStreamHandlers,
+  ): Promise<void>;
 };
 
 export type MissionRepository = {
@@ -399,8 +549,11 @@ export type MissionGenesisResultViewModel = {
   reasons: string[];
   questions: MissionGenesisQuestionViewModel[];
   evidenceNeeded: string[];
+  missionIds?: string[];
   candidateMissionId?: string;
+  candidateMissionIds?: string[];
   activatedMissionId?: string;
+  activatedMissionIds?: string[];
 };
 
 export type MissionGenesisRepository = {

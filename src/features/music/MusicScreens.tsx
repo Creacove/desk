@@ -599,7 +599,7 @@ function MusicSongDetail({
                     {song.confidence === "limited" ? "Limited confidence" : `${song.confidence ?? "high"} confidence`}
                   </span>
                   <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                    {song.managerReadState === "fresh" ? "Fresh" : song.managerReadState === "fallback" ? "First read" : "Limited"}
+                    {managerReadStateLabel(song.managerReadState)}
                   </span>
                   {song.blocker && song.blocker !== "No active blocker" && song.blocker !== "None" ? (
                     <span className="rounded-full bg-warning/10 px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-warning">
@@ -954,7 +954,7 @@ function MusicProjectBrief({
             {project.confidence === "limited" ? "Limited confidence" : `${project.confidence ?? "high"} confidence`}
           </span>
           <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {project.managerReadState === "fresh" ? "Fresh" : project.managerReadState === "fallback" ? "First read" : "Limited"}
+            {managerReadStateLabel(project.managerReadState)}
           </span>
         </div>
         <button
@@ -1015,6 +1015,15 @@ function buildVisibleSongManagerReadFallback(song: MusicObjectViewModel, metrics
     : "the record is in view with enough saved context to choose the first useful inspection lane.";
   const lifecycle = song.lifecycleStage ?? song.lifecycle;
   return `${song.title} is a ${lifecycle.toLowerCase()} record with a usable first read. ${metricRead} I would make ${song.title} the first song to inspect, then decide which visible behavior should lead the next team action.`;
+}
+
+function managerReadStateLabel(state: MusicObjectViewModel["managerReadState"]) {
+  if (state === "fresh") return "Fresh";
+  if (state === "limited") return "Limited";
+  if (state === "loading") return "Loading";
+  if (state === "failed") return "Failed";
+  if (state === "stale") return "Refresh needed";
+  return "First read";
 }
 
 function buildVisibleProjectManagerReadFallback(project: MusicObjectViewModel, metrics: CompactTrackMetric[], tracklist: MusicObjectViewModel[]) {

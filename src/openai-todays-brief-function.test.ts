@@ -12,8 +12,11 @@ describe("OpenAI Today's Brief generation function", () => {
   it("authenticates users and builds the packet from all saved artist and music intelligence", () => {
     expect(functionSource).toContain("Deno.serve");
     expect(functionSource).toContain("Authorization");
+    expect(functionSource).toContain("isServiceRoleInvocation");
+    expect(functionSource).toContain('readBearerJwtRole(authHeader) === "service_role"');
     expect(functionSource).toContain("auth.getUser()");
     expect(functionSource).toContain("is_account_member");
+    expect(functionSource).toContain("if (!isServiceRoleInvocation)");
     expect(functionSource).toContain("buildArtistBriefPacket");
     expect(functionSource).toContain('from("artist_profiles")');
     expect(functionSource).toContain('from("music_items")');
@@ -41,10 +44,45 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("assertSignalsHaveEvidenceIds");
   });
 
+  it("persists the consolidated Manager Intelligence packet and visible output rows", () => {
+    expect(functionSource).toContain("buildManagerIntelligencePacket");
+    expect(functionSource).toContain("persistManagerIntelligencePacket");
+    expect(functionSource).toContain("persistManagerOutput");
+    expect(functionSource).toContain("fallbackBriefFromManagerPacket");
+    expect(functionSource).toContain("persistFallbackManagerOutput");
+    expect(functionSource).toContain("persistManagerPacketEvidenceLinks");
+    expect(functionSource).toContain("persistManagerPacketMemorySeeds");
+    expect(functionSource).toContain('from("manager_intelligence_packets")');
+    expect(functionSource).toContain('from("memory_entries")');
+    expect(functionSource).toContain('source_type: "manager_intelligence_packet"');
+    expect(functionSource).toContain("domain_reads_json");
+    expect(functionSource).toContain("public_context_json");
+    expect(functionSource).toContain("open_decisions_json");
+    expect(functionSource).toContain("do_not_do_json");
+    expect(functionSource).toContain('from("manager_outputs")');
+    expect(functionSource).toContain('from("evidence_links")');
+    expect(functionSource).toContain("source_packet_id");
+    expect(functionSource).toContain("output_type");
+    expect(functionSource).toContain("setup_first_manager_read");
+    expect(functionSource).toContain("recurring_todays_brief");
+    expect(functionSource).toContain("manager_outputs");
+    expect(functionSource).toContain("retireCurrentManagerOutput");
+    expect(functionSource).toContain("is_current: false");
+  });
+
+  it("retries OpenAI rate limits before falling back to packet-backed output", () => {
+    expect(functionSource).toContain("callOpenAITodaysBriefWithRetry");
+    expect(functionSource).toContain("isRetryableOpenAIError");
+    expect(functionSource).toContain("await delay(openAiRetryDelayMs(attempt))");
+    expect(functionSource).toContain("OpenAI Today's Brief request failed with status 429");
+    expect(functionSource).toContain("fallbackBriefFromManagerPacket");
+  });
+
   it("selects separate setup-map and operating prompt modes", () => {
     expect(functionSource).toContain('generationMode?: "operating" | "setup-map"');
     expect(functionSource).toContain("readGenerationMode(input)");
-    expect(functionSource).toContain("callOpenAITodaysBrief(packet, generationMode)");
+    expect(functionSource).toContain("buildTodaysBriefModelPacket(packet, managerIntelligencePacket)");
+    expect(functionSource).toContain("appendManagerEvidenceReads(output, managerIntelligencePacket)");
 
     const setupMapPrompt = buildTodaysBriefInstructions("setup-map");
     const operatingPrompt = buildTodaysBriefInstructions("operating");
@@ -59,12 +97,24 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(operatingPrompt).not.toContain("Artist Operating Map");
   });
 
+  it("returns setup music read targets and dispatches their Manager Reads after the setup-map packet", () => {
+    expect(functionSource).toContain("setupMusicReadTargets");
+    expect(functionSource).toContain("selectSetupMusicReadTargets");
+    expect(functionSource).toContain("dispatchSetupMusicReadsSequentially");
+    expect(functionSource).toContain("EdgeRuntime.waitUntil");
+    expect(functionSource).toContain("generate-music-summary");
+    expect(functionSource).toContain('subjectType: "music_project"');
+    expect(functionSource).toContain('subjectType: "music_item"');
+  });
+
   it("allows complete Today's Brief copy instead of forcing short character caps", () => {
     expect(promptSource).toContain("3-5 short paragraphs separated by blank lines");
     expect(promptSource).toContain("complete sentences");
     expect(promptSource).toContain("Do not stop mid-sentence");
     expect(promptSource).toContain("Metric value must be the atomic number or short fact only");
     expect(promptSource).toContain("Do not put parenthetical explanations in metric value");
+    expect(promptSource).toContain("Use managerEvidenceReads to explain what the visible evidence means");
+    expect(promptSource).toContain("Do not interpret only KPI scores");
     expect(promptSource).not.toContain('headlineRead: { type: "string", maxLength: 180 }');
     expect(promptSource).not.toContain('snapshotSummary: { type: "string", maxLength: 280 }');
     expect(promptSource).not.toContain('managerRead: { type: "string", maxLength: 1800 }');
@@ -104,6 +154,48 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(visibleCopy).not.toMatch(/\bcampaign\b/i);
     expect(output.managerRead).toContain("London");
     expect(output.intelligenceSnapshot[0].metrics[0].evidenceIds).toEqual(["ev-1"]);
+  });
+
+  it("keeps evidence IDs out of visible Today's Brief prose while preserving audit IDs", () => {
+    const uuid = "54dcf7c5-93b8-4e83-a389-4bdaa6854ca2";
+    const output = parseTodaysBriefOutput({
+      headlineRead: `Nova Vale has a London signal (${uuid}) that should guide today's read.`,
+      intelligenceSnapshot: [
+        {
+          title: "Audience Map",
+          insight: `London is the lead market; evidence: ${uuid}.`,
+          metrics: [
+            { label: `London listeners ${uuid}`, value: "42K", context: `public signal ${uuid}`, evidenceIds: [uuid] },
+          ],
+        },
+      ],
+      snapshotSummary: `The source ids ${uuid} should not be displayed to the artist.`,
+      managerRead: `London is the power center (evidence: ${uuid}). Keep the ID in audit only.`,
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      claimAudit: [{ claim: `London leads. ${uuid}`, evidenceIds: [uuid], limitation: `Public signal only. ${uuid}` }],
+    });
+
+    const visibleCopy = [
+      output.headlineRead,
+      output.snapshotSummary,
+      output.managerRead,
+      ...output.intelligenceSnapshot.flatMap((group) => [
+        group.title,
+        group.insight,
+        ...group.metrics.flatMap((metric) => [metric.label, metric.value, metric.context ?? ""]),
+      ]),
+    ].join(" ");
+
+    expect(visibleCopy).not.toContain(uuid);
+    expect(output.claimAudit[0].evidenceIds).toEqual([uuid]);
+  });
+
+  it("treats broad artist goals as ambition context, not the object of today's work", () => {
+    const operatingPrompt = buildTodaysBriefInstructions("operating");
+    expect(operatingPrompt).toContain("Artist goal or artist direction is ambition context");
+    expect(operatingPrompt).toContain("Do not quote broad goals like");
+    expect(operatingPrompt).toContain("do-this / do-not-do");
   });
 
   it("defines the premium intelligence brief fields and hides vendor/backend language from visible copy", () => {

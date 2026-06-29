@@ -31,11 +31,18 @@ import type {
   ConversationViewModel,
   DrawerKind,
   EvidenceItemViewModel,
+  ManagerConversationContextAnswer,
+  ManagerConversationRefreshHint,
+  ManagerConversationStreamEvent,
+  ManagerRunStepViewModel,
   MissionGenesisResultViewModel,
   MissionViewModel,
   MovementItem,
   MusicObjectViewModel,
+  MusicReadTarget,
+  PublicContextRefreshResult,
   TodayBriefGenerationMode,
+  TodayBriefGenerationResponse,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
 import type {
@@ -124,6 +131,16 @@ export function ProductionApp({
   const [session, setSession] = useState<ProductionSession | null>(null);
   const [workspace, setWorkspace] = useState<ProductionWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const sessionUser = session?.user ?? null;
+  const activeWorkspaceId = workspace?.artistWorkspaceId ?? null;
+  const activeCatalogSyncStatus = workspace?.latestCatalogSyncStatus;
+  const activeRepositories = useMemo(() => {
+    if (!workspace) {
+      return null;
+    }
+
+    return runtime.repositoriesForWorkspace(workspace);
+  }, [runtime, workspace?.accountId, workspace?.artistWorkspaceId, workspace?.artistId]);
 
   const loadProductionState = useCallback(async () => {
     try {
@@ -171,16 +188,18 @@ export function ProductionApp({
   }, [loadProductionState]);
 
   useEffect(() => {
-    if (!session?.user || !workspace || !isCatalogSyncPending(workspace.latestCatalogSyncStatus)) {
+    if (!sessionUser || !activeWorkspaceId || !isCatalogSyncPending(activeCatalogSyncStatus)) {
       return;
     }
 
     let cancelled = false;
     const poll = async () => {
       try {
-        const nextWorkspace = await runtime.workspaceLoader.loadActiveWorkspace(session.user as ProductionUser);
+        const nextWorkspace = await runtime.workspaceLoader.loadActiveWorkspace(sessionUser as ProductionUser);
         if (!cancelled && nextWorkspace) {
-          setWorkspace(nextWorkspace);
+          setWorkspace((currentWorkspace) =>
+            currentWorkspace && areWorkspacesEquivalent(currentWorkspace, nextWorkspace) ? currentWorkspace : nextWorkspace,
+          );
         }
       } catch {
         // Catalog polling should never break the active onboarding/session view.
@@ -196,7 +215,7 @@ export function ProductionApp({
       cancelled = true;
       window.clearInterval(handle);
     };
-  }, [runtime.workspaceLoader, session?.user, workspace]);
+  }, [runtime.workspaceLoader, sessionUser, activeWorkspaceId, activeCatalogSyncStatus]);
 
   if (status === "loading") {
     return (
@@ -261,7 +280,7 @@ export function ProductionApp({
   return (
     <CleanProductionWorkspace
       workspace={workspace}
-      repositories={runtime.repositoriesForWorkspace(workspace as ProductionWorkspace)}
+      repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
       initialView={shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
       onWorkspaceChange={setWorkspace}
@@ -301,17 +320,23 @@ function CleanProductionWorkspace({
   const [selectedConversation, setSelectedConversation] = useState<ConversationViewModel | null>(null);
   const [selectedMissionId, setSelectedMissionId] = useState("");
   const [missionRoomOpenRequestKey, setMissionRoomOpenRequestKey] = useState(0);
+  const [missionRoomOpenTab, setMissionRoomOpenTab] = useState<"pulse" | "tasks" | "checkpoints" | "notes" | "recap">("pulse");
+  const [missionRoomOpenTaskId, setMissionRoomOpenTaskId] = useState<string | null>(null);
+  const [missionListOpenRequestKey, setMissionListOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
   const [setupPending, setSetupPending] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
+  const [publicContextPending, setPublicContextPending] = useState(false);
   const [mobileNotificationsOpen, setMobileNotificationsOpen] = useState(false);
   const [missionGenesisResult, setMissionGenesisResult] = useState<MissionGenesisResultViewModel | null>(null);
   const [missionGenesisAnswers, setMissionGenesisAnswers] = useState<Record<string, string>>({});
   const [missionGenesisPending, setMissionGenesisPending] = useState(false);
   const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
+  const [managerSendPending, setManagerSendPending] = useState(false);
+  const [managerSendError, setManagerSendError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -394,16 +419,236 @@ function CleanProductionWorkspace({
     navigate("conversationWorkspace");
   }
 
-  function openCreatedWork(type: "music_item" | "mission" | "task", id?: string) {
+  async function sendManagerMessage(
+    body: string,
+    conversationId?: string,
+    stableTopic?: string,
+    options: { contextRequestId?: string; contextAnswers?: ManagerConversationContextAnswer[] } = {},
+  ) {
+    const trimmedBody = body.trim();
+    if (!trimmedBody) return;
+
+    const sourceConversation = conversationId
+      ? conversations.find((conversation) => conversation.id === conversationId) ??
+        (selectedConversation?.id === conversationId ? selectedConversation : undefined)
+      : undefined;
+    const optimisticConversation = conversationId
+      ? withOptimisticManagerMessage(sourceConversation, trimmedBody)
+      : createOptimisticManagerConversation(trimmedBody);
+    const optimisticId = optimisticConversation?.id;
+    const lockedTopic = stableTopic ?? sourceConversation?.topic;
+    let streamCompleted = false;
+
+    try {
+      setManagerSendPending(true);
+      setManagerSendError(null);
+      if (optimisticConversation) {
+        setSelectedConversation(optimisticConversation);
+        setConversations((current) => [optimisticConversation, ...current.filter((item) => item.id !== optimisticConversation.id)]);
+        navigate("conversationWorkspace");
+      }
+
+      const managerInput = {
+        body: trimmedBody,
+        ...(conversationId ? { conversationId } : {}),
+        ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
+        ...(options.contextAnswers?.length ? { contextAnswers: options.contextAnswers } : {}),
+      };
+
+      if (repositories.manager.sendMessageStream) {
+        await repositories.manager.sendMessageStream(
+          managerInput,
+          {
+            onEvent: (event) => {
+              if (streamCompleted) return;
+              handleManagerConversationStreamEvent(event, {
+                optimisticId,
+                conversationId,
+                lockedTopic,
+                userBody: trimmedBody,
+              });
+              if (event.type === "conversation.completed") {
+                streamCompleted = true;
+              }
+            },
+          },
+        );
+        return;
+      }
+
+      const conversation = await repositories.manager.sendMessage(managerInput);
+      const mergedConversation = lockedTopic ? { ...conversation, topic: lockedTopic } : conversation;
+      setConversations((current) => [mergedConversation, ...current.filter((item) => item.id !== mergedConversation.id && item.id !== optimisticId)]);
+      setSelectedConversation(mergedConversation);
+      if (conversationHasMissionWork(conversation)) {
+        const nextMissions = await repositories.missions.loadMissions();
+        setMissions(nextMissions);
+        setSelectedMissionId(selectCreatedMissionId(conversation, nextMissions));
+      }
+      navigate("conversationWorkspace");
+    } catch (error) {
+      if (streamCompleted) {
+        return;
+      }
+      setManagerSendError(readErrorMessage(error, "Manager conversation failed."));
+    } finally {
+      setManagerSendPending(false);
+    }
+  }
+
+  function handleManagerConversationStreamEvent(
+    event: ManagerConversationStreamEvent,
+    context: { optimisticId?: string; conversationId?: string; lockedTopic?: string; userBody: string },
+  ) {
+    if (event.type === "conversation.started") {
+      const nextConversation = conversationFromStartedEvent(event, context);
+      reconcileStartedConversationState(context.optimisticId, nextConversation);
+      return;
+    }
+
+    if (event.type === "run.step") {
+      updateActiveConversation((conversation) => appendManagerRunStep(conversation, {
+        id: event.stepId ?? normalizeStepId(event.label),
+        label: event.label,
+        status: event.status,
+        detail: event.detail,
+      }, event.runId));
+      return;
+    }
+
+    if (event.type === "tool.started" || event.type === "tool.completed") {
+      updateActiveConversation((conversation) => appendManagerRunStep(conversation, {
+        id: normalizeStepId(event.tool),
+        label: event.label,
+        status: event.status ?? (event.type === "tool.completed" ? "completed" : "running"),
+        detail: event.detail,
+      }, event.runId));
+      return;
+    }
+
+    if (event.type === "assistant.delta") {
+      updateActiveConversation((conversation) => appendManagerDelta(conversation, event.delta, event.runId));
+      return;
+    }
+
+    if (event.type === "artifact.changed") {
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        createdWork: upsertCreatedWork(conversation.createdWork, event.artifact),
+        messages: conversation.messages.map((message, index, messages) =>
+          index === messages.length - 1 && message.speaker === "manager"
+            ? { ...message, createdWork: upsertCreatedWork(message.createdWork ?? [], event.artifact) }
+            : message,
+        ),
+      }));
+      void refreshFromManagerHint(event.refresh);
+      return;
+    }
+
+    if (event.type === "conversation.completed") {
+      const completedConversation = context.lockedTopic ? { ...event.conversation, topic: context.lockedTopic } : event.conversation;
+      updateCompletedManagerConversation(context.optimisticId, completedConversation, Boolean(context.lockedTopic));
+      void refreshFromManagerHint(event.refresh ?? { missions: conversationHasMissionWork(completedConversation) });
+      return;
+    }
+
+    if (event.type === "error") {
+      applyManagerStreamError(event.message);
+    }
+  }
+
+  function reconcileStartedConversationState(previousId: string | undefined, nextConversation: ConversationViewModel) {
+    setSelectedConversation((current) => {
+      const merged = mergeStartedConversation(current, nextConversation);
+      setConversations((items) => {
+        const existing = items.find((item) => item.id === previousId || item.id === nextConversation.id);
+        const fromList = existing && existing !== current ? mergeStartedConversation(existing, merged) : merged;
+        return [fromList, ...items.filter((item) => item.id !== previousId && item.id !== nextConversation.id)];
+      });
+      return merged;
+    });
+  }
+
+  function updateActiveConversation(updater: (conversation: ConversationViewModel) => ConversationViewModel) {
+    setSelectedConversation((current) => {
+      if (!current) return current;
+      const nextConversation = updater(current);
+      setConversations((items) => [nextConversation, ...items.filter((item) => item.id !== current.id && item.id !== nextConversation.id)]);
+      return nextConversation;
+    });
+  }
+
+  function updateCompletedManagerConversation(previousId: string | undefined, completedConversation: ConversationViewModel, preserveCurrentTopic = false) {
+    setSelectedConversation((current) => {
+      const merged = mergeCompletedConversation(current, completedConversation, preserveCurrentTopic);
+      setConversations((items) => [merged, ...items.filter((item) => item.id !== previousId && item.id !== merged.id)]);
+      return merged;
+    });
+  }
+
+  function applyManagerStreamError(message: string) {
+    setManagerSendError(message);
+    updateActiveConversation((conversation) => ({
+      ...conversation,
+      status: "Manager failed",
+      activeRun: conversation.activeRun ? { ...conversation.activeRun, status: "failed", error: message } : undefined,
+      messages: [
+        ...conversation.messages.filter((item) => item.status !== "streaming"),
+        {
+          id: `manager-error-${Date.now()}`,
+          speaker: "manager",
+          label: "Manager",
+          body: message,
+          status: "failed",
+        },
+      ],
+    }));
+  }
+
+  async function refreshFromManagerHint(hint?: ManagerConversationRefreshHint) {
+    if (!hint) return;
+    if (hint.conversations) {
+      const nextConversations = await repositories.manager.loadConversations();
+      setConversations(nextConversations);
+      setSelectedConversation((current) => current ? nextConversations.find((conversation) => conversation.id === current.id) ?? current : current);
+    }
+    if (hint.missions) {
+      const nextMissions = await repositories.missions.loadMissions();
+      setMissions(nextMissions);
+      setSelectedMissionId((current) => selectTargetMissionId(hint, nextMissions) || current || nextMissions[0]?.id || "");
+    }
+    if (hint.music) {
+      await reloadMusic();
+    }
+    if (hint.desk) {
+      const nextDesk = await repositories.desk.loadDesk();
+      setAttention(nextDesk.attention);
+      setMovement(nextDesk.movement);
+      setTodayBrief(nextDesk.todayBrief);
+    }
+  }
+
+  async function openCreatedWork(type: "music_item" | "mission" | "task", id?: string) {
     if (type === "music_item") {
       setTargetMusicObjectId(id ?? null);
       navigate("musicWorkspace");
       return;
     }
 
-    if (type === "mission") {
-      setSelectedMissionId(id ?? missions[0]?.id ?? "");
-      setMissionRoomOpenRequestKey((current) => current + 1);
+    if (type === "mission" || type === "task") {
+      const nextMissions = await repositories.missions.loadMissions();
+      setMissions(nextMissions);
+      const targetMissionId = type === "task"
+        ? selectMissionIdForTask(id, nextMissions) ?? selectMissionId(id, nextMissions)
+        : selectMissionId(id, nextMissions);
+      setSelectedMissionId(targetMissionId);
+      setMissionRoomOpenTab(type === "task" ? "tasks" : "pulse");
+      setMissionRoomOpenTaskId(type === "task" ? id ?? null : null);
+      if (targetMissionId) {
+        setMissionRoomOpenRequestKey((current) => current + 1);
+      } else {
+        setMissionListOpenRequestKey((current) => current + 1);
+      }
       navigate("missionsWorkspace");
     }
   }
@@ -411,18 +656,66 @@ function CleanProductionWorkspace({
   async function reloadMusic() {
     const nextMusic = await repositories.music.loadMusic();
     setMusic(nextMusic);
+    return nextMusic;
   }
 
   async function generateTodaysBrief(mode: TodayBriefGenerationMode = "operating") {
     try {
       setTodayBriefPending(true);
       setTodayBriefError(null);
-      const nextBrief = await repositories.desk.generateTodaysBrief(mode);
+      const result = await repositories.desk.generateTodaysBrief(mode);
+      const nextBrief = briefFromGenerationResult(result);
       setTodayBrief(nextBrief);
+      return result;
     } catch (error) {
       setTodayBriefError(readErrorMessage(error, "Today's Brief could not be generated."));
+      throw error;
     } finally {
       setTodayBriefPending(false);
+    }
+  }
+
+  async function refreshPublicContext() {
+    if (!repositories.desk.refreshPublicContext) {
+      setTodayBriefError("Public context refresh is not available in this runtime.");
+      return;
+    }
+
+    try {
+      setPublicContextPending(true);
+      setTodayBriefError(null);
+      const result = await repositories.desk.refreshPublicContext();
+      addPublicContextMovement(result);
+    } catch (error) {
+      setTodayBriefError(readErrorMessage(error, "Public context could not be refreshed."));
+    } finally {
+      setPublicContextPending(false);
+    }
+  }
+
+  function addPublicContextMovement(result: PublicContextRefreshResult) {
+    const title = result.findingsInserted
+      ? `Public context added ${result.findingsInserted} sourced signal${result.findingsInserted === 1 ? "" : "s"}`
+      : "Public context refresh found no new sourced signals";
+    setMovement((current) => [
+      { label: "Public web", title, time: "Just now" },
+      ...current.filter((item) => item.title !== title),
+    ]);
+  }
+
+  async function refreshSetupMusicReadTargets(targets: MusicReadTarget[]) {
+    if (!targets.length) return;
+    const targetKeys = new Set(targets.map((target) => `${target.subjectType}:${target.subjectId}`));
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const nextMusic = await reloadMusic();
+      const allTargetsResolved = nextMusic
+        .filter((item) => {
+          const subjectType = item.kind === "project" ? "music_project" : "music_item";
+          return targetKeys.has(`${subjectType}:${item.id}`);
+        })
+        .every((item) => isResolvedManagerReadState(item.managerReadState));
+      if (allTargetsResolved) return;
+      await delay(1200);
     }
   }
 
@@ -437,11 +730,12 @@ function CleanProductionWorkspace({
         addMissionGenesisAttention();
         navigate("managerOffice");
       }
-      if (result.activatedMissionId) {
+      if (shouldOpenMissionGenesisMissions(result)) {
         clearMissionGenesisAttention();
         const nextMissions = await repositories.missions.loadMissions();
         setMissions(nextMissions);
-        setSelectedMissionId(result.activatedMissionId);
+        setSelectedMissionId(selectMissionGenesisMissionId(result, nextMissions));
+        setMissionListOpenRequestKey((current) => current + 1);
         navigate("missionsWorkspace");
       }
     } catch (error) {
@@ -466,9 +760,12 @@ function CleanProductionWorkspace({
       setMissionGenesisResult(result);
       const nextMissions = await repositories.missions.loadMissions();
       setMissions(nextMissions);
-      setSelectedMissionId(result.activatedMissionId ?? nextMissions[0]?.id ?? "");
-      if (result.activatedMissionId) {
+      const selectedMissionId = selectMissionGenesisMissionId(result, nextMissions);
+      setSelectedMissionId(selectedMissionId);
+      if (selectedMissionId) {
         clearMissionGenesisAttention();
+        setMissionListOpenRequestKey((current) => current + 1);
+        navigate("missionsWorkspace");
       }
     } catch (error) {
       setMissionGenesisError(readErrorMessage(error, "Mission Genesis failed."));
@@ -501,9 +798,11 @@ function CleanProductionWorkspace({
   }
 
   function openCreatedMissionFromManager() {
-    if (missionGenesisResult?.activatedMissionId) {
-      setSelectedMissionId(missionGenesisResult.activatedMissionId);
+    const activatedMissionId = firstMissionGenesisMissionId(missionGenesisResult);
+    if (activatedMissionId) {
+      setSelectedMissionId(activatedMissionId);
     }
+    setMissionListOpenRequestKey((current) => current + 1);
     navigate("missionsWorkspace");
   }
 
@@ -568,7 +867,13 @@ function CleanProductionWorkspace({
               const nextWorkspace = await profileSetupService.saveSetupContext(workspace, nextProfile);
               onWorkspaceChange?.(nextWorkspace);
               setDrawer(null);
-              setView(isWorkspaceReadyForDesk(nextWorkspace) ? "labelHQ" : "setup");
+              if (isWorkspaceReadyForDesk(nextWorkspace)) {
+                const setupGeneration = await generateTodaysBrief("setup-map");
+                setView("labelHQ");
+                void refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
+              } else {
+                setView("setup");
+              }
             } catch (saveError) {
               setSetupError(readErrorMessage(saveError, "Artist context could not be saved."));
             } finally {
@@ -603,6 +908,7 @@ function CleanProductionWorkspace({
               todayBrief={todayBrief}
               todayBriefPending={todayBriefPending}
               todayBriefError={todayBriefError}
+              publicContextPending={publicContextPending}
               attention={attention}
               movement={movement}
               agents={agents}
@@ -611,6 +917,7 @@ function CleanProductionWorkspace({
               onNavigate={navigate}
               onManager={openManager}
               onGenerateTodaysBrief={generateTodaysBrief}
+              onRefreshPublicContext={refreshPublicContext}
               onLockedAgent={(agent) => {
                 setSelectedAgent(agent);
                 navigate("lockedAgentWorkspace");
@@ -655,6 +962,9 @@ function CleanProductionWorkspace({
               onOpenCreatedMission={openCreatedMissionFromManager}
               onBack={() => navigate("labelHQ")}
               onConversation={openConversation}
+              onAskManager={(body) => void sendManagerMessage(body)}
+              askManagerPending={managerSendPending}
+              askManagerError={managerSendError}
               onInvestigation={() => navigate("investigation")}
             />
           ) : null}
@@ -663,6 +973,18 @@ function CleanProductionWorkspace({
               conversation={activeConversation}
               onBack={() => navigate("managerOffice")}
               onOpenCreatedWork={openCreatedWork}
+              onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic)}
+              onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
+                void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers })
+              }
+              onRetryLastMessage={() => {
+                const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
+                if (lastArtistMessage) {
+                  void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic);
+                }
+              }}
+              sendPending={managerSendPending}
+              sendError={managerSendError}
             />
           ) : null}
           {view === "investigation" ? <InvestigationScreen onBack={() => navigate("managerOffice")} onDecision={() => navigate("decisionPackage")} /> : null}
@@ -681,6 +1003,9 @@ function CleanProductionWorkspace({
               onCompleteTask={completeMissionTask}
               onDrawer={setDrawer}
               openRoomRequestKey={missionRoomOpenRequestKey}
+              openRoomTab={missionRoomOpenTab}
+              openTaskId={missionRoomOpenTaskId}
+              listRequestKey={missionListOpenRequestKey}
             />
           ) : null}
           {view === "artistProfileWorkspace" ? (
@@ -781,8 +1106,8 @@ function MobileNotificationSheet({
               <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{movement.length}</span>
             </div>
             <div className="grid gap-2">
-              {movement.length ? movement.slice(0, 6).map((item) => (
-                <div key={`${item.title}-${item.time}`} className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
+              {movement.length ? movement.slice(0, 6).map((item, index) => (
+                <div key={`${item.title}-${item.time}-${index}`} className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
                   <span className="mt-1.5 h-2 w-2 rounded-full bg-foreground/20" aria-hidden="true" />
                   <span className="min-w-0">
                     <span className="block text-[13px] font-semibold leading-tight text-foreground">{item.title}</span>
@@ -1171,6 +1496,314 @@ function readErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function createOptimisticManagerConversation(body: string): ConversationViewModel {
+  const id = `pending-conversation-${Date.now()}`;
+  const runId = `pending-run-${Date.now()}`;
+  return {
+    id,
+    topic: titleFromManagerBody(body),
+    status: "Manager is thinking",
+    summary: body,
+    prompt: body,
+    lastUpdate: "Now",
+    activeRun: {
+      id: runId,
+      status: "running",
+      streamedText: "",
+      steps: [{ id: "start", label: "Starting Manager run", status: "running" }],
+    },
+    messages: [
+      {
+        id: `pending-user-${Date.now()}`,
+        speaker: "artist",
+        label: "You",
+        body,
+        status: "sent",
+      },
+    ],
+    createdWork: [],
+  };
+}
+
+function withOptimisticManagerMessage(conversation: ConversationViewModel | undefined, body: string): ConversationViewModel | null {
+  if (!conversation) return null;
+  const optimisticId = `pending-user-${Date.now()}`;
+  const runId = `pending-run-${Date.now()}`;
+  return {
+    ...conversation,
+    status: "Manager is thinking",
+    lastUpdate: "Now",
+    activeRun: {
+      id: runId,
+      status: "running",
+      streamedText: "",
+      steps: [{ id: "start", label: "Starting Manager run", status: "running" }],
+    },
+    messages: [
+      ...conversation.messages,
+      {
+        id: optimisticId,
+        speaker: "artist",
+        label: "You",
+        body,
+        status: "sent",
+      },
+    ],
+  };
+}
+
+function conversationFromStartedEvent(
+  event: Extract<ManagerConversationStreamEvent, { type: "conversation.started" }>,
+  context: { optimisticId?: string; lockedTopic?: string; userBody: string },
+): ConversationViewModel {
+  const id = event.conversation.id;
+  const runId = event.run?.id ?? `run-${id}`;
+  return {
+    id,
+    topic: context.lockedTopic ?? event.conversation.topic ?? titleFromManagerBody(context.userBody),
+    status: event.conversation.status ?? "Manager is thinking",
+    summary: event.conversation.summary ?? context.userBody,
+    prompt: event.conversation.prompt ?? context.userBody,
+    lastUpdate: event.conversation.lastUpdate ?? "Now",
+    messages: event.conversation.messages?.length
+      ? event.conversation.messages
+      : [
+          {
+            id: `pending-user-${id}`,
+            speaker: "artist",
+            label: "You",
+            body: context.userBody,
+            status: "sent",
+          },
+        ],
+    activeRun: {
+      id: runId,
+      status: event.run?.status ?? "running",
+      streamedText: "",
+      steps: [{ id: "start", label: "Starting Manager run", status: "completed" }],
+    },
+    createdWork: event.conversation.createdWork ?? [],
+  };
+}
+
+function mergeStartedConversation(current: ConversationViewModel | null, started: ConversationViewModel): ConversationViewModel {
+  if (!current || (current.id !== started.id && !current.id.startsWith("pending-conversation-"))) return started;
+  return {
+    ...current,
+    ...started,
+    topic: current.topic || started.topic,
+    summary: started.summary || current.summary,
+    prompt: current.prompt || started.prompt,
+    messages: mergeConversationMessages(current.messages, started.messages),
+    createdWork: started.createdWork.length ? mergeCreatedWorkItems(current.createdWork, started.createdWork) : current.createdWork,
+    activeRun: started.activeRun ?? current.activeRun,
+  };
+}
+
+function appendManagerRunStep(conversation: ConversationViewModel, step: ManagerRunStepViewModel, runId?: string): ConversationViewModel {
+  const activeRun = conversation.activeRun ?? {
+    id: runId ?? `run-${conversation.id}`,
+    status: "running" as const,
+    steps: [],
+    streamedText: "",
+  };
+  const steps = upsertRunStep(activeRun.steps, step);
+  return {
+    ...conversation,
+    activeRun: {
+      ...activeRun,
+      id: runId ?? activeRun.id,
+      status: step.status === "failed" ? "failed" : activeRun.status === "completed" ? "completed" : "running",
+      steps,
+    },
+  };
+}
+
+function appendManagerDelta(conversation: ConversationViewModel, delta: string, runId?: string): ConversationViewModel {
+  const activeRun = conversation.activeRun ?? { id: runId ?? `run-${conversation.id}`, status: "running" as const, steps: [], streamedText: "" };
+  const streamedText = `${activeRun.streamedText ?? ""}${delta}`;
+  const streamingMessageId = `streaming-manager-${runId ?? activeRun.id}`;
+  const existingStreamingMessage = conversation.messages.find((message) => message.id === streamingMessageId);
+  const nextMessages = existingStreamingMessage
+    ? conversation.messages.map((message) => message.id === streamingMessageId ? { ...message, body: streamedText, status: "streaming" as const } : message)
+    : [
+        ...conversation.messages,
+        {
+          id: streamingMessageId,
+          speaker: "manager" as const,
+          label: "Manager",
+          body: streamedText,
+          status: "streaming" as const,
+          runId: runId ?? activeRun.id,
+        },
+      ];
+
+  return {
+    ...conversation,
+    status: "Manager is thinking",
+    activeRun: { ...activeRun, id: runId ?? activeRun.id, status: "running", streamedText },
+    messages: nextMessages,
+  };
+}
+
+function mergeCompletedConversation(current: ConversationViewModel | null, completed: ConversationViewModel, preserveCurrentTopic = false): ConversationViewModel {
+  if (!current) return { ...completed, activeRun: completed.activeRun ? { ...completed.activeRun, status: "completed" } : undefined };
+  const incomingMessages = completed.messages.length ? completed.messages : [];
+  return {
+    ...completed,
+    topic: preserveCurrentTopic && current.topic ? current.topic : completed.topic,
+    messages: mergeConversationMessages(current.messages.filter((message) => message.status !== "streaming"), incomingMessages),
+    createdWork: completed.createdWork.length ? mergeCreatedWorkItems(current.createdWork, completed.createdWork) : current.createdWork,
+    activeRun: current.activeRun ? { ...current.activeRun, status: "completed", streamedText: "" } : completed.activeRun,
+  };
+}
+
+function mergeConversationMessages(current: ConversationViewModel["messages"], incoming: ConversationViewModel["messages"]) {
+  const merged: ConversationViewModel["messages"] = [];
+  const byId = new Map<string, number>();
+  for (const message of current) {
+    byId.set(message.id, merged.length);
+    merged.push(message);
+  }
+  for (const message of incoming) {
+    const normalized = { ...message, status: message.status ?? "sent" };
+    const existingIndex = byId.get(message.id);
+    if (existingIndex !== undefined) {
+      merged[existingIndex] = normalized;
+      continue;
+    }
+    const equivalentIndex = merged.findIndex((item) => equivalentConversationMessage(item, normalized));
+    if (equivalentIndex >= 0) {
+      merged[equivalentIndex] = { ...merged[equivalentIndex], ...normalized };
+      byId.set(normalized.id, equivalentIndex);
+      continue;
+    }
+    byId.set(normalized.id, merged.length);
+    merged.push(normalized);
+  }
+  return merged;
+}
+
+function equivalentConversationMessage(
+  current: ConversationViewModel["messages"][number],
+  incoming: ConversationViewModel["messages"][number],
+) {
+  if (current.speaker !== incoming.speaker) return false;
+  if (current.body.trim() !== incoming.body.trim()) return false;
+  return current.id.startsWith("pending-") || incoming.id.startsWith("pending-");
+}
+
+function mergeCreatedWorkItems(
+  current: ConversationViewModel["createdWork"],
+  incoming: ConversationViewModel["createdWork"],
+) {
+  return incoming.reduce(upsertCreatedWork, current);
+}
+
+function upsertRunStep(steps: ManagerRunStepViewModel[], step: ManagerRunStepViewModel) {
+  const index = steps.findIndex((item) => item.id === step.id);
+  if (index < 0) return [...steps, step];
+  return steps.map((item, itemIndex) => itemIndex === index ? { ...item, ...step } : item);
+}
+
+function upsertCreatedWork(
+  current: ConversationViewModel["createdWork"],
+  next: ConversationViewModel["createdWork"][number],
+) {
+  const key = `${next.type}:${next.id ?? next.title}`;
+  const filtered = current.filter((item) => `${item.type}:${item.id ?? item.title}` !== key);
+  return [...filtered, next];
+}
+
+function normalizeStepId(label: string) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `step-${Date.now()}`;
+}
+
+function titleFromManagerBody(body: string) {
+  const cleaned = body.trim().replace(/\s+/g, " ");
+  return cleaned.length > 72 ? `${cleaned.slice(0, 69)}...` : cleaned || "Manager conversation";
+}
+
+function conversationHasMissionWork(conversation: ConversationViewModel) {
+  return conversationWorkItems(conversation).some((work) => work.type === "mission" || work.type === "task");
+}
+
+function selectCreatedMissionId(conversation: ConversationViewModel, missions: MissionViewModel[]) {
+  const createdMissionId = conversationWorkItems(conversation)
+    .find((work) => work.type === "mission" && typeof work.id === "string" && work.id.trim())?.id;
+  return selectMissionId(createdMissionId, missions);
+}
+
+function selectTargetMissionId(hint: ManagerConversationRefreshHint, missions: MissionViewModel[]) {
+  const missionId = hint.missionIds?.find((id) => missions.some((mission) => mission.id === id));
+  if (missionId) return missionId;
+  const taskId = hint.taskIds?.find(Boolean);
+  return selectMissionIdForTask(taskId, missions) ?? "";
+}
+
+function selectMissionId(id: string | undefined, missions: MissionViewModel[]) {
+  return id && missions.some((mission) => mission.id === id) ? id : missions[0]?.id ?? "";
+}
+
+function selectMissionIdForTask(taskId: string | undefined, missions: MissionViewModel[]) {
+  if (!taskId) return undefined;
+  return missions.find((mission) => (mission.tasks ?? []).some((task) => task.id === taskId))?.id;
+}
+
+function conversationWorkItems(conversation: ConversationViewModel) {
+  return conversation.createdWork.length
+    ? conversation.createdWork
+    : conversation.messages.flatMap((message) => message.createdWork ?? []);
+}
+
+function shouldOpenMissionGenesisMissions(result: MissionGenesisResultViewModel) {
+  return result.outcome === "activate_mission" || result.outcome === "update_existing_mission";
+}
+
+function selectMissionGenesisMissionId(result: MissionGenesisResultViewModel, missions: MissionViewModel[]) {
+  const missionIds = missionGenesisMissionIds(result);
+  return missionIds.find((missionId) => missions.some((mission) => mission.id === missionId)) ?? missions[0]?.id ?? "";
+}
+
+function firstMissionGenesisMissionId(result: MissionGenesisResultViewModel | null) {
+  return result ? missionGenesisMissionIds(result)[0] : undefined;
+}
+
+function missionGenesisMissionIds(result: MissionGenesisResultViewModel) {
+  return uniqueMissionGenesisIds([
+    result.activatedMissionId,
+    ...(result.activatedMissionIds ?? []),
+    ...(result.missionIds ?? []),
+    result.candidateMissionId,
+    ...(result.candidateMissionIds ?? []),
+  ]);
+}
+
+function uniqueMissionGenesisIds(values: Array<string | undefined>) {
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()))];
+}
+
+function briefFromGenerationResult(result: TodayBriefGenerationResponse): TodayBriefViewModel {
+  return isTodayBriefGenerationResult(result) ? result.brief : result;
+}
+
+function setupMusicReadTargetsFromGenerationResult(result: TodayBriefGenerationResponse): MusicReadTarget[] {
+  if (!isTodayBriefGenerationResult(result)) return [];
+  return Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [];
+}
+
+function isTodayBriefGenerationResult(result: TodayBriefGenerationResponse): result is { brief: TodayBriefViewModel; setupMusicReadTargets?: MusicReadTarget[] } {
+  return Boolean(result && typeof result === "object" && "brief" in result);
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function isResolvedManagerReadState(state: MusicObjectViewModel["managerReadState"]) {
+  return state === "fresh" || state === "limited";
+}
+
 function isWorkspaceReadyForDesk(workspace: ProductionWorkspace) {
   return workspace.contextComplete;
 }
@@ -1185,4 +1818,22 @@ function resolveWorkspaceInitialView(workspace: ProductionWorkspace, initialView
 
 function isCatalogSyncPending(status: ProductionWorkspace["latestCatalogSyncStatus"]) {
   return status === "queued" || status === "running";
+}
+
+function areWorkspacesEquivalent(currentWorkspace: ProductionWorkspace, nextWorkspace: ProductionWorkspace) {
+  return (
+    currentWorkspace.accountId === nextWorkspace.accountId &&
+    currentWorkspace.artistWorkspaceId === nextWorkspace.artistWorkspaceId &&
+    currentWorkspace.artistId === nextWorkspace.artistId &&
+    currentWorkspace.artistName === nextWorkspace.artistName &&
+    currentWorkspace.workspaceName === nextWorkspace.workspaceName &&
+    currentWorkspace.status === nextWorkspace.status &&
+    currentWorkspace.spotifyConnected === nextWorkspace.spotifyConnected &&
+    currentWorkspace.spotifyArtistId === nextWorkspace.spotifyArtistId &&
+    currentWorkspace.spotifyArtistName === nextWorkspace.spotifyArtistName &&
+    currentWorkspace.spotifyArtistUrl === nextWorkspace.spotifyArtistUrl &&
+    currentWorkspace.spotifyImageUrl === nextWorkspace.spotifyImageUrl &&
+    currentWorkspace.contextComplete === nextWorkspace.contextComplete &&
+    currentWorkspace.latestCatalogSyncStatus === nextWorkspace.latestCatalogSyncStatus
+  );
 }

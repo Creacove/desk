@@ -38,6 +38,10 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(functionSource).toContain("buildManagerReadPacket");
     expect(functionSource).toContain("loadArtistProfile");
     expect(functionSource).toContain("loadRelatedRecordContext");
+    expect(functionSource).toContain("loadLatestManagerIntelligencePacket");
+    expect(functionSource).toContain("packetAssetReads");
+    expect(functionSource).toContain("packetSubjectRead");
+    expect(functionSource).toContain('from("manager_intelligence_packets")');
     expect(functionSource).toContain("deriveRecordInsights");
     expect(functionSource).toContain("relatedRecords");
     expect(functionSource).toContain("derivedInsights");
@@ -58,10 +62,36 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(functionSource).toContain("failure_reason");
     expect(functionSource).toContain("operating_events");
     expect(functionSource).toContain("persistGeneratedRead");
-    expect(functionSource).toContain("manager_read");
+    expect(functionSource).toContain("manager_outputs");
+    expect(functionSource).toContain("callOpenAIManagerReadWithRetry");
+    expect(functionSource).toContain("isRetryableOpenAIError");
+    expect(functionSource).toContain("await delay(openAiRetryDelayMs(attempt))");
     expect(promptSource).toContain("situationLine");
     expect(promptSource).toContain("watchNext");
     expect(promptSource).toContain("generationState");
+  });
+
+  it("stores generated song and project reads as manager_outputs instead of canonical music metadata", () => {
+    expect(functionSource).toContain('from("manager_outputs")');
+    expect(functionSource).toContain("song_manager_read");
+    expect(functionSource).toContain("project_manager_read");
+    expect(functionSource).toContain("subject_type: input.subjectType");
+    expect(functionSource).toContain("subject_id: input.subjectId");
+    expect(functionSource).toContain("render_json: output");
+    expect(functionSource).toContain("fallbackManagerReadFromPacket");
+    expect(functionSource).toContain("persistFallbackGeneratedRead");
+    expect(functionSource).toContain("retireCurrentManagerOutput");
+    expect(functionSource).toContain("is_current: false");
+    expect(functionSource).not.toContain("nextMetadata");
+  });
+
+  it("builds a compact OpenAI model packet instead of sending the full Manager Intelligence packet", () => {
+    expect(functionSource).toContain("buildManagerReadModelPacket");
+    expect(functionSource).toContain("MAX_MANAGER_READ_MODEL_PACKET_CHARS");
+    expect(functionSource).toContain("packetSubjectRead");
+    expect(functionSource).toContain("packetMissionSeed");
+    expect(functionSource).not.toContain('{ role: "user", content: JSON.stringify(packet) }');
+    expect(promptSource).toContain("When packetSubjectRead or packetAssetReads exists");
   });
 
   it("uses a valid operating-event actor and does not fail a completed read when telemetry fails", () => {
@@ -93,6 +123,7 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(promptSource).toContain("Do not use analytics jargon");
     expect(promptSource).toContain("Record Intelligence");
     expect(promptSource).toContain("record role");
+    expect(promptSource).toContain("When packetSubjectRead or packetAssetReads exists");
     expect(promptSource).toContain("Do not lead with missing data");
     expect(promptSource).toContain("If a sentence could be said to another record");
     expect(promptSource).toContain("The final sentence of the Manager Read must be today's practical move");

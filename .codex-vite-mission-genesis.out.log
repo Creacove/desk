@@ -1,0 +1,79 @@
+
+> desk@0.1.0 dev
+> vite --host 127.0.0.1 --port 5173
+
+Port 5173 is in use, trying another one...
+
+  VITE v5.4.21  ready in 8169 ms
+
+  ➜  Local:   http://127.0.0.1:5174/
+8:26:34 AM [vite] page reload src/production-supabase-service.test.ts
+8:28:36 AM [vite] page reload src/production-app-shell.test.tsx
+8:30:35 AM [vite] page reload src/types/cleanProduction.ts
+8:31:22 AM [vite] page reload src/services/productionSupabase.ts
+8:31:40 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+8:33:08 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+8:33:24 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+8:40:28 AM [vite] page reload src/services/productionSupabase.ts
+8:40:28 AM [vite] page reload src/services/productionSupabase.ts
+8:42:45 AM [vite] page reload src/production-app-shell.test.tsx
+8:44:45 AM [vite] hmr update /src/features/desk/DeskHQ.tsx, /src/index.css
+8:44:56 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+8:48:38 AM [vite] page reload src/production-supabase-service.test.ts
+12:03:15 AM [vite] page reload src/production-app-shell.test.tsx
+12:08:24 AM [vite] page reload src/production-app-shell.test.tsx
+12:09:27 AM [vite] page reload src/production-supabase-service.test.ts
+12:16:26 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+12:16:55 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+12:17:03 AM [vite] hmr update /src/features/missions/MissionScreens.tsx, /src/index.css
+12:17:19 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+12:17:26 AM [vite] page reload src/services/productionSupabase.ts
+12:18:29 AM [vite] page reload src/production-app-shell.test.tsx
+12:18:38 AM [vite] page reload src/production-app-shell.test.tsx
+12:18:53 AM [vite] page reload src/production-app-shell.test.tsx
+12:18:53 AM [vite] page reload src/production-app-shell.test.tsx
+12:20:53 AM [vite] page reload src/production-app-shell.test.tsx
+12:21:06 AM [vite] page reload src/production-app-shell.test.tsx
+12:22:48 AM [vite] page reload src/production-app-shell.test.tsx
+12:27:33 AM [vite] page reload src/production-app-shell.test.tsx
+8:57:27 AM [vite] page reload src/production-app-shell.test.tsx
+9:00:08 AM [vite] page reload src/types/cleanProduction.ts
+9:00:46 AM [vite] page reload src/services/productionSupabase.ts
+9:00:57 AM [vite] page reload src/services/productionSupabase.ts
+9:01:04 AM [vite] page reload src/services/productionSupabase.ts
+9:01:16 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:01:33 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:01:59 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:02:26 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:02:35 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:02:43 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:03:11 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+9:03:31 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+9:03:39 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:12:03 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+9:13:22 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+9:15:04 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:16:37 AM [vite] page reload src/production-app-shell.test.tsx
+9:18:09 AM [vite] page reload src/production-supabase-service.test.ts
+9:18:23 AM [vite] page reload src/production-supabase-service.test.ts
+9:18:35 AM [vite] page reload src/openai-manager-conversation-function.test.ts
+9:56:32 AM [vite] page reload src/production-app-shell.test.tsx
+9:58:35 AM [vite] page reload src/types/cleanProduction.ts
+9:58:53 AM [vite] hmr update /src/features/missions/MissionScreens.tsx, /src/index.css
+9:59:10 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:59:10 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:59:19 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:59:38 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+9:59:51 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+10:00:17 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+10:00:25 AM [vite] hmr update /src/app/ProductionApp.tsx, /src/index.css
+10:00:53 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+10:01:04 AM [vite] page reload src/services/productionSupabase.ts
+10:02:23 AM [vite] page reload src/production-app-shell.test.tsx
+10:05:30 AM [vite] page reload src/openai-manager-conversation-function.test.ts
+10:12:02 AM [vite] page reload src/production-supabase-service.test.ts
+10:14:10 AM [vite] page reload src/openai-manager-conversation-function.test.ts
+10:17:40 AM [vite] page reload src/production-app-shell.test.tsx
+10:17:41 AM [vite] page reload src/production-app-shell.test.tsx
+10:26:35 AM [vite] hmr update /src/features/manager/ManagerScreens.tsx, /src/index.css
+10:29:51 AM [vite] page reload src/production-app-shell.test.tsx

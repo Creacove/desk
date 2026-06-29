@@ -10,6 +10,15 @@ import {
   type TodaysBriefDerivedInsight,
   type TodaysBriefMetricInput,
 } from "../_shared/openaiTodaysBrief.ts";
+import {
+  appendManagerEvidenceReads,
+  buildTodaysBriefModelPacket,
+} from "../_shared/manager-intelligence/brief/briefPacketProjection.ts";
+import { buildManagerIntelligencePacket } from "../_shared/manager-intelligence/packet/strategicIntelligencePacket.ts";
+
+declare const EdgeRuntime: {
+  waitUntil(promise: Promise<unknown>): void;
+};
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -17,12 +26,19 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const OPENAI_TODAYS_BRIEF_RATE_LIMIT_MESSAGE = "OpenAI Today's Brief request failed with status 429";
+
 type GenerateTodaysBriefInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
   trigger: "setup" | "manual";
   generationMode?: "operating" | "setup-map";
+};
+
+type SetupMusicReadTarget = {
+  subjectType: "music_item" | "music_project";
+  subjectId: string;
 };
 
 type EvidenceRow = {
@@ -80,7 +96,9 @@ Deno.serve(async (request) => {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const isServiceRoleInvocation = authHeader === `Bearer ${serviceRoleKey}`;
+    const isServiceRoleInvocation =
+      authHeader === `Bearer ${serviceRoleKey}` ||
+      readBearerJwtRole(authHeader) === "service_role";
     const scopedAuthHeader = isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader;
     const authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
       global: { headers: { Authorization: scopedAuthHeader } },
@@ -100,10 +118,22 @@ Deno.serve(async (request) => {
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
 
-    const { packet, sourceAudit } = await buildArtistBriefPacket(authClient, input);
+    const { packet, sourceAudit, managerIntelligencePacket, setupMusicReadTargets } = await buildArtistBriefPacket(authClient, input);
     runId = await createManagerSynthesisRun(authClient, input, packet, sourceAudit, generationMode);
     usageId = await createUsageEvent(authClient, input, runId);
-    const output = await callOpenAITodaysBrief(packet, generationMode);
+    const managerPacketId = await persistManagerIntelligencePacket(authClient, managerIntelligencePacket, runId);
+    await persistManagerPacketEvidenceLinks(authClient, input, runId, managerPacketId, managerIntelligencePacket);
+    await persistManagerPacketMemorySeeds(authClient, input, runId, managerPacketId, managerIntelligencePacket);
+    let fallbackError: unknown = null;
+    let output: TodaysBriefOutput;
+    try {
+      const modelPacket = buildTodaysBriefModelPacket(packet, managerIntelligencePacket);
+      output = await callOpenAITodaysBriefWithRetry(modelPacket, generationMode);
+      output = appendManagerEvidenceReads(output, managerIntelligencePacket);
+    } catch (error) {
+      fallbackError = error;
+      output = fallbackBriefFromManagerPacket(packet, managerIntelligencePacket, runId, error);
+    }
     const completed = {
       ...output,
       generatedAt: new Date().toISOString(),
@@ -111,20 +141,45 @@ Deno.serve(async (request) => {
     };
     assertSignalsHaveEvidenceIds(completed);
     await completeManagerSynthesisRun(authClient, runId, packet, sourceAudit, completed, generationMode);
-    await completeUsageEvent(authClient, usageId, completed);
+    const managerOutputId = fallbackError
+      ? await persistFallbackManagerOutput(authClient, input, runId, managerPacketId, completed)
+      : await persistManagerOutput(authClient, input, runId, managerPacketId, completed);
+    if (fallbackError) {
+      await markUsageFailedSafe(usageId, fallbackError);
+    } else {
+      await completeUsageEvent(authClient, usageId, completed);
+    }
     await writeOperatingEventSafe(authClient, input, {
-      eventType: input.trigger === "setup" ? "setup_todays_brief_generated" : "setup_todays_brief_refreshed",
-      summary: `Generated Today's Brief for ${packet.profile.artistName}.`,
+      eventType: fallbackError
+        ? "setup_todays_brief_fallback_generated"
+        : input.trigger === "setup"
+          ? "setup_todays_brief_generated"
+          : "setup_todays_brief_refreshed",
+      summary: fallbackError
+        ? `Prepared packet-backed Today's Brief for ${packet.profile.artistName}.`
+        : `Generated Today's Brief for ${packet.profile.artistName}.`,
       payload: {
         manager_synthesis_run_id: runId,
+        manager_intelligence_packet_id: managerPacketId,
+        manager_output_id: managerOutputId,
         confidence: completed.confidence,
         intelligence_group_count: completed.intelligenceSnapshot.length,
         generationMode,
         claimAudit: completed.claimAudit,
+        fallback_reason: fallbackError ? describeError(fallbackError, "Provider generation failed.") : undefined,
       },
     });
 
-    return json({ status: "completed", managerSynthesisRunId: runId, brief: completed });
+    if (generationMode === "setup-map" && setupMusicReadTargets.length) {
+      dispatchSetupMusicReadsSequentially(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
+    }
+
+    return json({
+      status: fallbackError ? "completed_with_fallback" : "completed",
+      managerSynthesisRunId: runId,
+      brief: completed,
+      setupMusicReadTargets: generationMode === "setup-map" ? setupMusicReadTargets : [],
+    });
   } catch (error) {
     if (runId && input) await markRunFailedSafe(runId, input, error);
     if (usageId) await markUsageFailedSafe(usageId, error);
@@ -135,7 +190,7 @@ Deno.serve(async (request) => {
 async function buildArtistBriefPacket(
   supabase: any,
   input: GenerateTodaysBriefInput,
-): Promise<{ packet: ArtistBriefPacket; sourceAudit: Array<Record<string, unknown>> }> {
+): Promise<{ packet: ArtistBriefPacket; sourceAudit: Array<Record<string, unknown>>; managerIntelligencePacket: Record<string, unknown>; setupMusicReadTargets: SetupMusicReadTarget[] }> {
   const [profile, musicItems, musicProjects, evidenceRows, syncRows] = await Promise.all([
     loadArtistProfile(supabase, input),
     loadMusicItems(supabase, input),
@@ -183,9 +238,28 @@ async function buildArtistBriefPacket(
     sourceLimits,
     generatedFor: input.trigger,
   };
+  const managerIntelligencePacket = buildManagerIntelligencePacket({
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    packetType: input.trigger === "setup" ? "setup" : "manual_refresh",
+    profile: profile as {
+      display_name?: string | null;
+      stage?: string | null;
+      home_market?: string | null;
+      genres?: string[] | null;
+      current_goal?: string | null;
+      artist_direction?: string | null;
+    },
+    musicItems,
+    musicProjects,
+    evidenceRows,
+  });
 
   return {
     packet,
+    managerIntelligencePacket,
+    setupMusicReadTargets: selectSetupMusicReadTargets(musicItems, musicProjects),
     sourceAudit: evidenceRows.map((row) => ({
       id: row.id,
       source: row.source,
@@ -200,7 +274,82 @@ async function buildArtistBriefPacket(
   };
 }
 
-async function callOpenAITodaysBrief(packet: ArtistBriefPacket, generationMode: TodaysBriefPromptMode): Promise<TodaysBriefOutput> {
+function selectSetupMusicReadTargets(musicItems: MusicItemRow[], musicProjects: MusicProjectRow[]): SetupMusicReadTarget[] {
+  return [
+    ...musicProjects.slice(0, 1).map((project) => ({ subjectType: "music_project" as const, subjectId: project.id })),
+    ...musicItems.slice(0, 5).map((item) => ({ subjectType: "music_item" as const, subjectId: item.id })),
+  ].filter((target) => Boolean(target.subjectId));
+}
+
+function dispatchSetupMusicReadsSequentially(
+  supabaseUrl: string,
+  anonKey: string,
+  authHeader: string,
+  input: GenerateTodaysBriefInput,
+  setupMusicReadTargets: SetupMusicReadTarget[],
+) {
+  const work = (async () => {
+    for (const [index, target] of setupMusicReadTargets.entries()) {
+      if (index > 0) await delay(1200);
+      await dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target);
+    }
+  })().catch((error) => {
+    console.warn("setup music Manager Read dispatch failed", {
+      message: describeError(error, "Setup music Manager Read dispatch failed."),
+    });
+  });
+
+  EdgeRuntime.waitUntil(work);
+}
+
+async function dispatchSetupMusicRead(
+  supabaseUrl: string,
+  anonKey: string,
+  authHeader: string,
+  input: GenerateTodaysBriefInput,
+  target: SetupMusicReadTarget,
+) {
+  const response = await fetch(`${supabaseUrl}/functions/v1/generate-music-summary`, {
+    method: "POST",
+    headers: {
+      Authorization: authHeader,
+      apikey: anonKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      subjectType: target.subjectType,
+      subjectId: target.subjectId,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Setup music Manager Read ${target.subjectType}:${target.subjectId} failed with ${response.status}.`);
+  }
+}
+
+async function callOpenAITodaysBriefWithRetry(
+  packet: unknown,
+  generationMode: TodaysBriefPromptMode,
+): Promise<TodaysBriefOutput> {
+  const maxAttempts = 3;
+  let lastError: unknown = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await callOpenAITodaysBrief(packet, generationMode);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableOpenAIError(error) || attempt === maxAttempts - 1) throw error;
+      await delay(openAiRetryDelayMs(attempt));
+    }
+  }
+
+  throw lastError ?? new Error("OpenAI Today's Brief request failed.");
+}
+
+async function callOpenAITodaysBrief(packet: unknown, generationMode: TodaysBriefPromptMode): Promise<TodaysBriefOutput> {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -226,6 +375,70 @@ async function callOpenAITodaysBrief(packet: ArtistBriefPacket, generationMode: 
 
   const payload = await response.json();
   return parseTodaysBriefOutput(readOutputText(payload));
+}
+
+function fallbackBriefFromManagerPacket(
+  packet: ArtistBriefPacket,
+  managerIntelligencePacket: Record<string, unknown>,
+  runId: string,
+  error: unknown,
+): TodaysBriefOutput {
+  const artistName = packet.profile.artistName;
+  const packetEvidenceIds = readPacketEvidenceIds(managerIntelligencePacket);
+  const metricEvidenceIds = packet.intelligenceSnapshotInputs.flatMap((group) => group.metrics.flatMap((metric) => metric.evidenceIds));
+  const evidenceIds = uniqueStrings([...packetEvidenceIds, ...metricEvidenceIds]).slice(0, 12);
+  const groups = ensureTodaysBriefSnapshotGroups(packet.intelligenceSnapshotInputs.map((group) => ({
+    title: group.title,
+    insight: group.suggestedInsight ?? `${group.title} gives the Manager a concrete read from saved evidence.`,
+    metrics: group.metrics.slice(0, 6).map((metric) => ({
+      label: metric.label,
+      value: metric.value,
+      context: metric.context ?? metric.subjectLabel ?? "saved signal",
+      evidenceIds: metric.evidenceIds.length ? metric.evidenceIds : evidenceIds.slice(0, 1),
+    })),
+  })), evidenceIds);
+  const catalog = packet.workingCatalog.focusSongTitles.length
+    ? packet.workingCatalog.focusSongTitles.slice(0, 3).join(", ")
+    : packet.workingCatalog.latestProjectTitles.slice(0, 2).join(", ") || "the current music in view";
+  const topGroup = groups[0];
+  const firstMetric = topGroup.metrics[0];
+  const sourceLine = "Based on your saved artist profile, current music in view, public audience signals, and source limits.";
+  const limitation = `Prepared from the stored Manager Intelligence Packet after live prose generation could not complete: ${describeError(error, "rate limited")}`;
+
+  return appendManagerEvidenceReads({
+    headlineRead: `${artistName}'s management read is ready from saved evidence, with ${catalog} as the first focus.`,
+    intelligenceSnapshot: groups,
+    snapshotSummary: `${topGroup.title} is the first useful read: ${topGroup.insight}`,
+    managerRead: `${artistName} already has enough saved intelligence for a focused first management read. The useful move is not to spread attention across every possible lane; it is to start from ${catalog} and the strongest public audience facts already in view.\n\nThe first marker I would use is ${firstMetric.label}: ${firstMetric.value}${firstMetric.context ? ` (${firstMetric.context})` : ""}. That gives the team a concrete anchor for the next operating decision instead of a generic profile summary.\n\nI would keep this read narrow until more proof is connected: choose the record or project that best matches the saved audience evidence, then build the next work from that center.`,
+    sourceLine,
+    confidence: evidenceIds.length >= 4 ? "medium" : "limited",
+    managerSynthesisRunId: runId,
+    claimAudit: [{
+      claim: `${artistName}'s fallback management read was prepared from the stored packet and saved evidence.`,
+      evidenceIds: evidenceIds.length ? evidenceIds.slice(0, 8) : ["working-catalog-scope"],
+      limitation,
+    }],
+  }, managerIntelligencePacket);
+}
+
+function ensureTodaysBriefSnapshotGroups(
+  groups: TodaysBriefOutput["intelligenceSnapshot"],
+  evidenceIds: string[],
+): TodaysBriefOutput["intelligenceSnapshot"] {
+  const usable = groups.filter((group) => group.metrics.length).slice(0, 5);
+  while (usable.length < 2) {
+    usable.push({
+      title: usable.length ? "Current Music In View" : "Artist Intelligence",
+      insight: "The saved setup gives the Manager a practical starting point.",
+      metrics: [{
+        label: usable.length ? "Working catalog" : "Artist profile",
+        value: usable.length ? "In view" : "Saved",
+        context: "setup context",
+        evidenceIds: evidenceIds.length ? evidenceIds.slice(0, 1) : ["working-catalog-scope"],
+      }],
+    });
+  }
+  return usable;
 }
 
 async function loadArtistProfile(supabase: any, input: GenerateTodaysBriefInput) {
@@ -468,6 +681,223 @@ function evidenceMetric(row: EvidenceRow): (TodaysBriefMetricInput & { priority:
     priority: metricPriority(category, metricName, row.subject_type),
     numericValue: typeof row.metric_value === "number" ? row.metric_value : undefined,
   };
+}
+
+async function persistManagerIntelligencePacket(supabase: any, packet: Record<string, unknown>, runId: string) {
+  const { data, error } = await supabase
+    .from("manager_intelligence_packets")
+    .insert({
+      account_id: packet.account_id,
+      artist_workspace_id: packet.artist_workspace_id,
+      artist_id: packet.artist_id,
+      packet_date: packet.packet_date,
+      packet_type: packet.packet_type,
+      status: packet.status,
+      profile_projection_json: packet.profile_projection_json,
+      signal_snapshot_json: packet.signal_snapshot_json,
+      data_freshness_json: packet.data_freshness_json,
+      executive_read_json: packet.executive_read_json,
+      strategic_diagnosis_json: packet.strategic_diagnosis_json,
+      kpi_read_json: packet.kpi_read_json,
+      signal_map_json: packet.signal_map_json,
+      management_insights_json: packet.management_insights_json,
+      asset_reads_json: packet.asset_reads_json,
+      market_reads_json: packet.market_reads_json,
+      domain_reads_json: packet.domain_reads_json,
+      public_context_json: packet.public_context_json,
+      open_decisions_json: packet.open_decisions_json,
+      do_not_do_json: packet.do_not_do_json,
+      mission_seed_json: packet.mission_seed_json,
+      conversation_memory_seed_json: packet.conversation_memory_seed_json,
+      supporting_evidence_json: packet.supporting_evidence_json,
+      internal_only_json: packet.internal_only_json,
+      schema_version: packet.schema_version,
+      created_from_run_id: runId,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function persistManagerPacketEvidenceLinks(
+  supabase: any,
+  input: GenerateTodaysBriefInput,
+  runId: string,
+  managerPacketId: string,
+  packet: Record<string, unknown>,
+) {
+  const evidenceIds = readPacketEvidenceIds(packet);
+  if (!evidenceIds.length) return;
+  const { error } = await supabase.from("evidence_links").insert(
+    evidenceIds.map((evidenceId) => ({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      evidence_item_id: evidenceId,
+      target_type: "manager_intelligence_packet",
+      target_id: managerPacketId,
+      usage: "supports_claim",
+      claim_text: "Manager Intelligence Packet supporting evidence",
+      created_from_run_id: runId,
+    })),
+  );
+  if (error) throw error;
+}
+
+async function persistManagerPacketMemorySeeds(
+  supabase: any,
+  input: GenerateTodaysBriefInput,
+  runId: string,
+  managerPacketId: string,
+  packet: Record<string, unknown>,
+) {
+  const memorySeed = isRecord(packet.conversation_memory_seed_json) ? packet.conversation_memory_seed_json : {};
+  const remember = stringArray(memorySeed.what_manager_should_remember).slice(0, 6).map((content) => ({
+    kind: memoryKindForContent(content),
+    content,
+    reason: "Saved from the Artist Operating Packet because it should shape future Manager decisions.",
+    payload: { source: "conversation_memory_seed_json" },
+  }));
+  const openDecisions = arrayValue(packet.open_decisions_json).slice(0, 6).map((item) => {
+    const decision = isRecord(item) ? readString(item.decision) : undefined;
+    return decision
+      ? {
+          kind: "open_question",
+          content: decision,
+          reason: "Saved because this open decision should affect future Mission Genesis and Manager reads.",
+          payload: item,
+        }
+      : null;
+  }).filter(Boolean);
+  const rejectedMoves = stringArray(packet.do_not_do_json).slice(0, 6).map((content) => ({
+    kind: "rejected_move",
+    content,
+    reason: "Saved as a do-not-do guardrail from the Artist Operating Packet.",
+    payload: { source: "do_not_do_json" },
+  }));
+
+  const rows = [...remember, ...openDecisions, ...rejectedMoves].filter((row): row is {
+    kind: string;
+    content: string;
+    reason: string;
+    payload: unknown;
+  } => Boolean(row?.content?.trim())).slice(0, 16);
+  if (!rows.length) return;
+
+  const { error } = await supabase.from("memory_entries").insert(
+    rows.map((row) => ({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      scope: "artist",
+      kind: row.kind,
+      content: row.content,
+      source_type: "manager_intelligence_packet",
+      source_id: managerPacketId,
+      confidence: "medium",
+      reason: row.reason,
+      payload: row.payload,
+      created_from_run_id: runId,
+    })),
+  );
+  if (error) throw error;
+}
+
+async function persistManagerOutput(
+  supabase: any,
+  input: GenerateTodaysBriefInput,
+  runId: string,
+  managerPacketId: string,
+  output: TodaysBriefOutput,
+) {
+  const outputType = input.trigger === "setup" ? "setup_first_manager_read" : "recurring_todays_brief";
+  await retireCurrentManagerOutput(supabase, {
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    subjectType: "artist",
+    subjectId: input.artistId,
+    outputType,
+  });
+
+  const { data, error } = await supabase
+    .from("manager_outputs")
+    .insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      source_packet_id: managerPacketId,
+      subject_type: "artist",
+      subject_id: input.artistId,
+      output_type: outputType,
+      hero_json: {
+        headline: output.headlineRead,
+        confidence: {
+          level: output.confidence,
+          reason: output.sourceLine,
+        },
+      },
+      blocks_json: output.intelligenceSnapshot.map((group, index) => ({
+        block_id: `brief_block_${index + 1}`,
+        block_type: "signal_stack",
+        title: group.title,
+        content: group.insight,
+        items: group.metrics,
+      })),
+      summary: output.snapshotSummary,
+      primary_recommendation_json: {
+        summary: output.managerRead,
+      },
+      avoid_json: [],
+      confidence_json: {
+        level: output.confidence,
+        reason: output.sourceLine,
+      },
+      supporting_evidence_json: output.claimAudit,
+      render_json: output,
+      schema_version: "manager-output-v1",
+      created_from_run_id: runId,
+      is_current: true,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function persistFallbackManagerOutput(
+  supabase: any,
+  input: GenerateTodaysBriefInput,
+  runId: string,
+  managerPacketId: string,
+  output: TodaysBriefOutput,
+) {
+  return persistManagerOutput(supabase, input, runId, managerPacketId, output);
+}
+
+async function retireCurrentManagerOutput(
+  supabase: any,
+  input: {
+    accountId: string;
+    artistWorkspaceId: string;
+    artistId: string;
+    subjectType: string;
+    subjectId: string;
+    outputType: string;
+  },
+) {
+  const { error } = await supabase
+    .from("manager_outputs")
+    .update({ is_current: false })
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("subject_type", input.subjectType)
+    .eq("subject_id", input.subjectId)
+    .eq("output_type", input.outputType)
+    .eq("is_current", true);
+  if (error) throw error;
 }
 
 function buildIntelligenceSnapshotInputs(
@@ -772,6 +1202,15 @@ function readOutputText(payload: unknown) {
   throw new Error("OpenAI response did not include structured output text.");
 }
 
+function readPacketEvidenceIds(packet: Record<string, unknown>) {
+  const evidence = Array.isArray(packet.supporting_evidence_json) ? packet.supporting_evidence_json : [];
+  return Array.from(new Set(
+    evidence
+      .map((item) => (isRecord(item) && typeof item.id === "string" ? item.id : undefined))
+      .filter((id): id is string => Boolean(id)),
+  ));
+}
+
 function validateInput(input: GenerateTodaysBriefInput) {
   for (const [key, value] of Object.entries({
     accountId: input.accountId,
@@ -797,6 +1236,26 @@ function readGenerationMode(input: GenerateTodaysBriefInput): TodaysBriefPromptM
   return input.trigger === "setup" ? "setup-map" : "operating";
 }
 
+function readBearerJwtRole(authHeader: string) {
+  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!token) return undefined;
+  const [, encodedPayload] = token.split(".");
+  if (!encodedPayload) return undefined;
+
+  try {
+    const payload = JSON.parse(decodeBase64Url(encodedPayload));
+    return isRecord(payload) && typeof payload.role === "string" ? payload.role : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function decodeBase64Url(value: string) {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  return atob(padded);
+}
+
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -815,6 +1274,21 @@ function uniqueStrings(values: Array<string | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim()))));
 }
 
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
+}
+
+function memoryKindForContent(content: string) {
+  if (/avoid|do not|never|reject/i.test(content)) return "rejected_move";
+  if (/block|risk|uncertain|missing/i.test(content)) return "risk";
+  if (/priority|direction|goal|thesis|market|catalog|positioning/i.test(content)) return "interpretation";
+  return "fact";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -823,6 +1297,20 @@ function describeError(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) return error.message.trim();
   if (isRecord(error) && typeof error.message === "string" && error.message.trim()) return error.message.trim();
   return fallback;
+}
+
+function isRetryableOpenAIError(error: unknown) {
+  const message = describeError(error, "");
+  const status = Number(message.match(/\bstatus\s+(\d{3})\b/i)?.[1]);
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function openAiRetryDelayMs(attempt: number) {
+  return [1000, 2500, 5000][attempt] ?? 5000;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function requireEnv(key: string) {

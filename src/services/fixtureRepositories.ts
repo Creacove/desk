@@ -734,6 +734,11 @@ export function createFixtureRepositories(): CleanProductionRepositories {
     credits: item.credits?.map((credit) => ({ ...credit })),
     identifiers: item.identifiers?.map((identifier) => ({ ...identifier })),
   }));
+  let conversations = productionFixtureData.conversations.map((conversation) => ({
+    ...conversation,
+    messages: conversation.messages.map((message) => ({ ...message, createdWork: message.createdWork?.map((work) => ({ ...work })) })),
+    createdWork: conversation.createdWork.map((work) => ({ ...work })),
+  }));
 
   return {
     artistProfile: {
@@ -751,7 +756,10 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         };
       },
       async generateTodaysBrief(_mode = "operating") {
-        return productionFixtureData.todayBrief;
+        return { brief: productionFixtureData.todayBrief, setupMusicReadTargets: [] };
+      },
+      async refreshPublicContext() {
+        return { findingsInserted: 0, evidenceItemIds: [], summary: "Fixture public context refresh skipped." };
       },
     },
     staff: {
@@ -905,7 +913,78 @@ export function createFixtureRepositories(): CleanProductionRepositories {
     },
     manager: {
       async loadConversations() {
-        return productionFixtureData.conversations;
+        return conversations;
+      },
+      async sendMessage(input) {
+        const body = input.body.trim();
+        const existing = input.conversationId ? conversations.find((conversation) => conversation.id === input.conversationId) : null;
+        const nextConversation = {
+          id: existing?.id ?? `fixture-conversation-${Date.now()}`,
+          topic: existing?.topic ?? body.slice(0, 72),
+          status: "Manager responded",
+          summary: existing?.summary ?? "Fixture Manager conversation.",
+          prompt: existing?.prompt ?? body,
+          lastUpdate: "Just now",
+          messages: [
+            ...(existing?.messages ?? []),
+            { id: `fixture-user-${Date.now()}`, speaker: "artist" as const, label: "You", body },
+            {
+              id: `fixture-manager-${Date.now()}`,
+              speaker: "manager" as const,
+              label: "Manager",
+              body: "Use the current workspace packet to define the next bounded decision, then tie any task to evidence the team can actually inspect.",
+            },
+          ],
+          createdWork: existing?.createdWork ?? [],
+        };
+        conversations = [nextConversation, ...conversations.filter((conversation) => conversation.id !== nextConversation.id)];
+        return nextConversation;
+      },
+      async sendMessageStream(input, handlers) {
+        const body = input.body.trim();
+        const existing = input.conversationId ? conversations.find((conversation) => conversation.id === input.conversationId) : null;
+        const id = existing?.id ?? `fixture-conversation-${Date.now()}`;
+        const runId = `fixture-run-${Date.now()}`;
+        handlers.onEvent({
+          type: "conversation.started",
+          conversation: {
+            id,
+            topic: existing?.topic ?? body.slice(0, 72),
+            status: "Manager is thinking",
+          },
+          run: { id: runId, status: "running" },
+        });
+        handlers.onEvent({ type: "run.step", runId, label: "Reading workspace packet", status: "completed" });
+        handlers.onEvent({ type: "run.step", runId, label: "Matching missions and evidence", status: "completed" });
+
+        const reply = "Use the current workspace packet to define the next bounded decision, then tie any task to evidence the team can actually inspect.";
+        for (const chunk of reply.match(/.{1,24}(\s|$)/g) ?? [reply]) {
+          handlers.onEvent({ type: "assistant.delta", conversationId: id, runId, delta: chunk });
+        }
+
+        const nextConversation = {
+          id,
+          topic: existing?.topic ?? body.slice(0, 72),
+          status: "Manager responded",
+          summary: existing?.summary ?? "Fixture Manager conversation.",
+          prompt: existing?.prompt ?? body,
+          lastUpdate: "Just now",
+          messages: [
+            ...(existing?.messages ?? []),
+            { id: `fixture-user-${Date.now()}`, speaker: "artist" as const, label: "You", body, status: "sent" as const },
+            {
+              id: `fixture-manager-${Date.now()}`,
+              speaker: "manager" as const,
+              label: "Manager",
+              body: reply,
+              status: "sent" as const,
+            },
+          ],
+          activeRun: { id: runId, status: "completed" as const, steps: [] },
+          createdWork: existing?.createdWork ?? [],
+        };
+        conversations = [nextConversation, ...conversations.filter((conversation) => conversation.id !== nextConversation.id)];
+        handlers.onEvent({ type: "conversation.completed", conversation: nextConversation, refresh: {} });
       },
     },
     missions: {

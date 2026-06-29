@@ -60,6 +60,21 @@ describe("Chartmetric setup enrichment edge function", () => {
     expect(returnIndex).toBeGreaterThan(dispatchIndex);
   });
 
+  it("serializes setup enrichment dispatch to avoid provider rate-limit bursts", () => {
+    expect(functionSource).toContain("dispatchEnrichmentWorkersSequentially");
+    expect(functionSource).toContain("SETUP_ENRICHMENT_DISPATCH_DELAY_MS");
+    expect(functionSource).toContain("await delay(SETUP_ENRICHMENT_DISPATCH_DELAY_MS)");
+    expect(functionSource).not.toContain("Promise.all(jobs.map");
+  });
+
+  it("marks queued jobs failed and records a setup dispatch failure event when worker dispatch breaks", () => {
+    expect(functionSource).toContain("markSetupDispatchFailed");
+    expect(functionSource).toContain('status: "failed"');
+    expect(functionSource).toContain("chartmetric_setup_enrichment_dispatch_failed");
+    expect(functionSource).toContain(".in(\"id\", jobs.map((job) => job.id))");
+    expect(functionSource).toContain("dispatch_failure");
+  });
+
   it("reuses existing Chartmetric source connections when setup is tested repeatedly", () => {
     expect(functionSource).toContain("const { data: existing, error: existingError }");
     expect(functionSource).toContain('.eq("provider_id", providerId)');

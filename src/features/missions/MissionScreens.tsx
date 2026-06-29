@@ -29,6 +29,9 @@ export function MissionsWorkspace({
   onCompleteTask,
   onDrawer,
   openRoomRequestKey = 0,
+  openRoomTab,
+  openTaskId,
+  listRequestKey = 0,
 }: {
   missions: MissionViewModel[];
   selectedMissionId: string;
@@ -42,6 +45,9 @@ export function MissionsWorkspace({
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
   onDrawer: (drawer: DrawerKind) => void;
   openRoomRequestKey?: number;
+  openRoomTab?: MissionRoomTab;
+  openTaskId?: string | null;
+  listRequestKey?: number;
 }) {
   const [localMissions, setLocalMissions] = useState<MissionViewModel[]>(missions);
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
@@ -58,9 +64,16 @@ export function MissionsWorkspace({
   useEffect(() => {
     if (openRoomRequestKey > 0) {
       setRoomMode("room");
+      setTab(openRoomTab ?? "pulse");
+    }
+  }, [openRoomRequestKey, openRoomTab]);
+
+  useEffect(() => {
+    if (listRequestKey > 0) {
+      setRoomMode("list");
       setTab("pulse");
     }
-  }, [openRoomRequestKey]);
+  }, [listRequestKey]);
 
   function openMission(mission: MissionViewModel, nextTab: MissionRoomTab = "pulse") {
     onSelectMission(mission.id);
@@ -115,6 +128,7 @@ export function MissionsWorkspace({
       onDrawer={onDrawer}
       onApproveTask={onApproveTask}
       onCompleteTask={onCompleteTask}
+      targetTaskId={openTaskId ?? undefined}
     />
   );
 }
@@ -300,6 +314,7 @@ function MissionRoom({
   onDrawer,
   onApproveTask,
   onCompleteTask,
+  targetTaskId,
 }: {
   mission: MissionViewModel;
   tab: MissionRoomTab;
@@ -308,6 +323,7 @@ function MissionRoom({
   onDrawer: (drawer: DrawerKind) => void;
   onApproveTask: (taskId: string) => Promise<void>;
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
+  targetTaskId?: string;
 }) {
   const checkpoints = missionCheckpoints(mission);
   const tasks = missionTasks(mission);
@@ -383,7 +399,7 @@ function MissionRoom({
 
       <div className="min-h-[400px]">
         {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onDrawer={onDrawer} /> : null}
-        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} /> : null}
+        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} /> : null}
         {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
         {tab === "notes" ? <NotesPanel notes={notes} /> : null}
         {tab === "recap" ? <MissionRecapPanel mission={mission} recap={recap} events={events} /> : null}
@@ -461,22 +477,31 @@ function MissionPulse({
 function TasksPanel({
   checkpoints,
   tasks,
+  targetTaskId,
   onApproveTask,
   onCompleteTask,
 }: {
   checkpoints: MissionCheckpointViewModel[];
   tasks: MissionTaskViewModel[];
+  targetTaskId?: string;
   onApproveTask: (taskId: string) => Promise<void>;
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
 }) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
-  const [activeCheckpointId, setActiveCheckpointId] = useState(activeBlocker?.id ?? checkpoints[0]?.id ?? "");
+  const targetTask = targetTaskId ? tasks.find((task) => task.id === targetTaskId) : undefined;
+  const [activeCheckpointId, setActiveCheckpointId] = useState(targetTask?.checkpointId ?? activeBlocker?.id ?? checkpoints[0]?.id ?? "");
   const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
   const [approvedTaskIds, setApprovedTaskIds] = useState<string[]>([]);
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
   const [completionNote, setCompletionNote] = useState<{ taskId: string; status: "completed" | "blocked"; note: string } | null>(null);
   const [completionPending, setCompletionPending] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (targetTask?.checkpointId) {
+      setActiveCheckpointId(targetTask.checkpointId);
+    }
+  }, [targetTask?.checkpointId]);
 
   const toggleTaskDetails = (taskId: string) => {
     setExpandedTaskIds((current) => (current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]));
@@ -587,7 +612,14 @@ function TasksPanel({
                       const isConfirmingCompletion = completionNote?.taskId === task.id;
 
                       return (
-                        <div key={task.id} className="grid min-w-0 gap-4 rounded-[16px] border border-foreground/8 bg-background/78 p-3.5 lg:grid-cols-[minmax(0,1fr)_180px]">
+                        <div
+                          key={task.id}
+                          data-highlighted={targetTaskId === task.id ? "true" : undefined}
+                          className={cn(
+                            "grid min-w-0 gap-4 rounded-[16px] border bg-background/78 p-3.5 lg:grid-cols-[minmax(0,1fr)_180px]",
+                            targetTaskId === task.id ? "border-brand-accent/50 shadow-lg shadow-brand-accent/10" : "border-foreground/8",
+                          )}
+                        >
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className={cn("inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold", blocked ? "bg-[#f97316] text-white" : done ? "bg-brand-accent text-background" : "bg-foreground/[0.07] text-foreground")}>{taskIndex + 1}</span>

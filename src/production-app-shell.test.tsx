@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -98,6 +98,28 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
     expect(screen.getByText("Loading workspace data")).toBeInTheDocument();
     expect(screen.getByText("Preparing artist, music, mission, and manager views.")).toBeInTheDocument();
+  });
+
+  it("does not continuously restart workspace polling while catalog sync is running", async () => {
+    const runningWorkspace = {
+      ...workspace,
+      latestCatalogSyncStatus: "running" as const,
+    };
+    const workspaceLoader = workspaceLoaderWithClonedResults(runningWorkspace);
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoader}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(workspaceLoader.calls).toBe(2);
   });
 
   it("disables sign-in submission while signing in", async () => {
@@ -288,6 +310,114 @@ describe("Clean production prototype-match shell", () => {
     ]);
   }, 20000);
 
+  it("automatically generates the setup map and refreshes queued song/project reads after setup is saved", async () => {
+    const setupWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      latestCatalogSyncStatus: "completed",
+    } satisfies ProductionWorkspace;
+    const activeWorkspace = {
+      ...setupWorkspace,
+      status: "active" as const,
+      contextComplete: true,
+    };
+    const setupMapBrief: TodayBriefViewModel = {
+      headlineRead: "Nova Vale's first setup map is ready from the full packet.",
+      intelligenceSnapshot: [
+        {
+          title: "Chartmetric KPI Read",
+          insight: "The KPI interpretation is part of the Manager read, not a side panel.",
+          metrics: [{ label: "Artist score", value: "92", context: "manager intelligence", evidenceIds: ["ev-kpi"] }],
+        },
+      ],
+      snapshotSummary: "Chartmetric KPI interpretation and current music are loaded together.",
+      managerRead: "Nova Vale's setup map waits for the important intelligence before calling the brief ready.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      generatedAt: "2026-06-26T08:00:00.000Z",
+      managerSynthesisRunId: "setup-map-run",
+      state: "fresh",
+    };
+    const generationModes: string[] = [];
+    let loadMusicCalls = 0;
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      ...repositories.desk,
+      generateTodaysBrief: async (mode = "operating") => {
+        generationModes.push(mode);
+        return {
+          brief: setupMapBrief,
+          setupMusicReadTargets: [
+            { subjectType: "music_project", subjectId: "project-setup" },
+            { subjectType: "music_item", subjectId: "song-setup" },
+          ],
+        } as any;
+      },
+    };
+    repositories.music = {
+      ...repositories.music,
+      loadMusic: async () => {
+        loadMusicCalls += 1;
+        return [
+          {
+            id: "song-setup",
+            kind: "song" as const,
+            title: "Setup Song",
+            lifecycle: "Released",
+            lifecycleStage: "Released",
+            blocker: "No active blocker",
+            sourceKind: "spotify_public_catalog",
+            sourceLimit: "Public catalog connected.",
+            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
+            managerRead: loadMusicCalls > 1 ? "Setup Song has a generated Manager Read." : undefined,
+            nextMove: "Wait for setup intelligence.",
+            linkedMissionIds: [],
+            linkedTaskCount: 0,
+          },
+          {
+            id: "project-setup",
+            kind: "project" as const,
+            title: "Setup Project",
+            lifecycle: "Released",
+            lifecycleStage: "Released",
+            blocker: "No active blocker",
+            sourceKind: "spotify_public_catalog",
+            sourceLimit: "Public catalog connected.",
+            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
+            managerRead: loadMusicCalls > 1 ? "Setup Project has a generated Manager Read." : undefined,
+            nextMove: "Wait for setup intelligence.",
+            linkedMissionIds: [],
+            linkedTaskCount: 0,
+            songIds: ["song-setup"],
+          },
+        ];
+      },
+    };
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        return activeWorkspace;
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(setupWorkspace)}
+        profileSetupService={profileSetupService}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+
+    await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
+    await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
+    await waitFor(() => expect(loadMusicCalls).toBeGreaterThan(1));
+  }, 20000);
+
   it("lets a signed-in user sign out from setup and Desk HQ", async () => {
     const signOutFromSetup = vi.fn(async () => undefined);
     const setupWorkspace = {
@@ -378,6 +508,15 @@ describe("Clean production prototype-match shell", () => {
       snapshotSummary: "London is the lead signal; Lagos gives the story cultural weight.",
       managerRead:
         "The UK is not a growth experiment for Nova Vale. London is the strongest city in the read, and the UK rank gives that city signal a business shape. Today, I would choose the first management focus around the record or story that best explains why London is already leaning in.",
+      managerEvidenceReads: [
+        {
+          label: "Artist Score",
+          value: "92",
+          read: "Artist Score is a broad strength input for the Manager read, not a separate visible section.",
+          category: "kpi",
+          evidenceIds: ["ev-artist-score"],
+        },
+      ],
       sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
       confidence: "medium",
       generatedAt: "2026-06-17T08:30:00.000Z",
@@ -428,6 +567,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText("UK rank").length).toBeGreaterThan(0);
     expect(screen.getAllByText(initialBrief.snapshotSummary).length).toBeGreaterThan(0);
     expect(screen.getAllByText(initialBrief.managerRead).length).toBeGreaterThan(0);
+    expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
+    expect(screen.queryByText("Artist Score is a broad strength input for the Manager read, not a separate visible section.")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "View supporting evidence" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Generate setup map" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Ask Manager" })).not.toBeInTheDocument();
@@ -536,6 +677,42 @@ describe("Clean production prototype-match shell", () => {
     expect(notificationSheet).toHaveTextContent("Recent Movement");
     expect(notificationSheet).toHaveTextContent("Private analytics missing");
     expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
+  }, 20000);
+
+  it("keeps duplicate Desk movement titles from producing React key warnings", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const baseRepositories = repositoriesFor("Nova Vale");
+    const repositories: CleanProductionRepositories = {
+      ...baseRepositories,
+      desk: {
+        ...baseRepositories.desk,
+        loadDesk: async () => ({
+          priority: [],
+          attention: [],
+          movement: [
+            { label: "Manager", title: "Generated Manager Read for Chanel (feat. Asake).", time: "14h ago" },
+            { label: "Manager", title: "Generated Manager Read for Chanel (feat. Asake).", time: "14h ago" },
+          ],
+          todayBrief: await baseRepositories.desk.loadDesk().then((desk) => desk.todayBrief),
+        }),
+      },
+    };
+
+    try {
+      render(
+        <ProductionApp
+          authAdapter={authWithSession(session)}
+          workspaceLoader={workspaceLoaderWith(workspace)}
+          repositories={repositories}
+          initialView="labelHQ"
+        />,
+      );
+
+      expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+      expect(consoleError).not.toHaveBeenCalledWith(expect.stringContaining("Encountered two children with the same key"), expect.anything(), expect.anything());
+    } finally {
+      consoleError.mockRestore();
+    }
   }, 20000);
 
   it("keeps mobile Desk HQ useful with titled expandable manager read, paragraphs, full metrics, and team agents", async () => {
@@ -759,6 +936,16 @@ describe("Clean production prototype-match shell", () => {
       ],
       snapshotSummary: "Metric labels and values should wrap cleanly, not disappear behind ellipses.",
       managerRead: "Power center: Make Them Run has enough public behavior to deserve the first operating read.",
+      managerEvidenceReads: [
+        {
+          label: "Track score - Make Them Run",
+          value: "97.886",
+          category: "signal",
+          read: "Treat this as track-level exposure context, not proof of owned fan conversion.",
+          evidenceIds: ["ev-1"],
+          confidence: "Medium",
+        },
+      ],
       sourceLine: "Based on saved profile, catalog, audience, and source limits.",
       confidence: "medium",
       state: "fresh",
@@ -788,6 +975,8 @@ describe("Clean production prototype-match shell", () => {
     expect(intelligenceCard).toHaveTextContent("Track score - Make Them Run");
     expect(intelligenceCard).toHaveTextContent("Top TikTok video - Make Them Run");
     expect(intelligenceCard).toHaveTextContent("1.3M views");
+    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
+    expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.label}</p>");
     expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.value}</p>");
   }, 20000);
@@ -838,8 +1027,754 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Open created mission" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
-    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    expect(screen.getByText("Mission pulse")).toBeInTheDocument();
+    expect((await screen.findAllByText("Release Night Bus on June 12")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Mission pulse")).toBeInTheDocument();
+  }, 20000);
+
+  it("continues Manager chat messages in place with a pending manager reply", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const existingConversation = {
+      id: "conv-1",
+      topic: "Night Bus release planning",
+      status: "Manager responded",
+      summary: "Release planning thread.",
+      prompt: "I want to drop a new song next week.",
+      lastUpdate: "14h ago",
+      messages: [
+        { id: "msg-1", speaker: "artist" as const, label: "You", body: "I want to drop a new song next week." },
+        { id: "msg-2", speaker: "manager" as const, label: "Manager", body: "Validate the hook first, then build the release room." },
+      ],
+      createdWork: [],
+    };
+    repositories.manager.loadConversations = vi.fn(async () => [existingConversation]);
+    let resolveSend: (conversation: Awaited<ReturnType<CleanProductionRepositories["manager"]["sendMessage"]>>) => void = () => {};
+    repositories.manager.sendMessage = vi.fn(() => new Promise((resolve) => {
+      resolveSend = resolve;
+    }));
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
+
+    const messageBox = await screen.findByPlaceholderText("Type a message to the Manager...");
+    fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
+
+    expect(screen.getByText("What changed after the campaign result?")).toBeInTheDocument();
+    expect(screen.getByText("Manager is writing a reply.")).toBeInTheDocument();
+    expect(repositories.manager.sendMessage).toHaveBeenCalledWith({
+      conversationId: "conv-1",
+      body: "What changed after the campaign result?",
+    });
+
+    await act(async () => {
+      resolveSend({
+        id: "conv-1",
+        topic: "Night Bus release planning",
+        status: "Manager responded",
+        summary: "The Manager answered the follow-up.",
+        prompt: "I want to drop a new song next week.",
+        lastUpdate: "Just now",
+        messages: [
+          { id: "msg-1", speaker: "artist", label: "You", body: "I want to drop a new song next week." },
+          { id: "msg-2", speaker: "manager", label: "Manager", body: "Validate the hook first, then build the release room." },
+          { id: "msg-3", speaker: "artist", label: "You", body: "What changed after the campaign result?" },
+          { id: "msg-4", speaker: "manager", label: "Manager", body: "The result changes the workstream from release prep to audience ownership." },
+        ],
+        createdWork: [],
+      });
+    });
+
+    expect(await screen.findByText("The result changes the workstream from release prep to audience ownership.")).toBeInTheDocument();
+    expect(screen.queryByText("Manager is writing a reply.")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("opens a new Manager conversation immediately and streams the reply in place", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let handlers: any = null;
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
+    fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    expect(await screen.findByText("We have $5,000. What should we do this month?")).toBeInTheDocument();
+    expect(screen.getByText("Manager is thinking")).toBeInTheDocument();
+    expect(screen.queryByText("Manager is reading the workspace packet.")).not.toBeInTheDocument();
+    expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
+      { body: "We have $5,000. What should we do this month?" },
+      expect.any(Object),
+    );
+
+    await act(async () => {
+      handlers.onEvent({ type: "conversation.started", conversation: { id: "conv-stream", topic: "We have $5,000. What should we do this month?" }, run: { id: "run-1", status: "running" } });
+      handlers.onEvent({ type: "run.step", runId: "run-1", label: "Reading workspace packet", status: "completed" });
+      handlers.onEvent({ type: "assistant.delta", conversationId: "conv-stream", delta: "Run a capped" });
+    });
+
+    expect(screen.getByRole("button", { name: /View Manager activity/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /View Manager activity/i }));
+    expect(screen.getByText("Reading workspace packet")).toBeInTheDocument();
+    expect(screen.getByText(/Run a capped/)).toBeInTheDocument();
+
+    await act(async () => {
+      handlers.onEvent({ type: "assistant.delta", conversationId: "conv-stream", delta: " proof loop." });
+      handlers.onEvent({
+        type: "conversation.completed",
+        conversation: {
+          id: "conv-stream",
+          topic: "Budget validation",
+          status: "Manager responded",
+          summary: "Manager created a validation thread.",
+          prompt: "We have $5,000. What should we do this month?",
+          lastUpdate: "Just now",
+          messages: [
+            { id: "msg-user", speaker: "artist", label: "You", body: "We have $5,000. What should we do this month?" },
+            { id: "msg-manager", speaker: "manager", label: "Manager", body: "Run a capped proof loop." },
+          ],
+          createdWork: [],
+        },
+        refresh: {},
+      });
+    });
+
+    expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
+    expect(screen.getByText("Run a capped proof loop.")).toBeInTheDocument();
+    expect(screen.queryByText("Manager is thinking")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("keeps a completed streamed Manager reply when the stream closes with a late error", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.manager.sendMessageStream = vi.fn(async (_input, handlers) => {
+      handlers.onEvent({ type: "conversation.started", conversation: { id: "conv-late-error", topic: "Promotion priority" }, run: { id: "run-late-error", status: "running" } });
+      handlers.onEvent({ type: "assistant.delta", conversationId: "conv-late-error", runId: "run-late-error", delta: "Focus on Night Bus and M$NEY." });
+      handlers.onEvent({
+        type: "conversation.completed",
+        conversation: {
+          id: "conv-late-error",
+          topic: "Promotion priority",
+          status: "Manager responded",
+          summary: "Manager chose the songs to promote.",
+          prompt: "what two songs should we focus on promoting as much as possible",
+          lastUpdate: "Just now",
+          messages: [
+            { id: "msg-user", speaker: "artist", label: "You", body: "what two songs should we focus on promoting as much as possible" },
+            { id: "msg-manager", speaker: "manager", label: "Manager", body: "Focus on Night Bus and M$NEY." },
+          ],
+          createdWork: [],
+        },
+      });
+      throw new Error("Manager conversation failed.");
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "what two songs should we focus on promoting as much as possible" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    expect(await screen.findByText("Focus on Night Bus and M$NEY.")).toBeInTheDocument();
+    expect(screen.queryByText("Manager conversation failed.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry Manager message" })).not.toBeInTheDocument();
+  }, 20000);
+
+  it("renders Manager mission context questions in chat and submits structured answers", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let handlers: any = null;
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Create the next mission." } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    await act(async () => {
+      handlers.onEvent({
+        type: "conversation.completed",
+        conversation: {
+          id: "conv-context",
+          topic: "Mission context",
+          status: "Manager needs context",
+          summary: "Manager needs context before creating work.",
+          prompt: "Create the next mission.",
+          lastUpdate: "Just now",
+          messages: [
+            { id: "msg-user", speaker: "artist", label: "You", body: "Create the next mission." },
+            {
+              id: "msg-manager",
+              speaker: "manager",
+              label: "Manager",
+              body: "I need one boundary before I create the mission graph.",
+              contextRequestId: "ctx-1",
+              contextQuestions: [
+                {
+                  key: "budget_boundary",
+                  question: "What budget should the Manager protect before asking for approval?",
+                  reason: "Spend changes the task plan and permission gate.",
+                  answerKind: "money_range",
+                  options: [],
+                },
+              ],
+            },
+          ],
+          createdWork: [],
+        },
+      });
+    });
+
+    expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send Manager context answers" }));
+
+    expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
+      {
+        conversationId: "conv-context",
+        body: "Context answers for Manager mission decision.",
+        contextRequestId: "ctx-1",
+        contextAnswers: [{ questionKey: "budget_boundary", answer: "$5,000" }],
+      },
+      expect.any(Object),
+    );
+  }, 20000);
+
+  it("preserves existing Manager thread history when a streamed follow-up starts with a partial conversation event", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let handlers: any = null;
+    repositories.manager.loadConversations = vi.fn(async () => [
+      {
+        id: "conv-history",
+        topic: "Night Bus release planning",
+        status: "Manager responded",
+        summary: "Release planning thread.",
+        prompt: "Should we release Night Bus this month?",
+        lastUpdate: "14h ago",
+        messages: [
+          { id: "msg-1", speaker: "artist" as const, label: "You", body: "Should we release Night Bus this month?" },
+          { id: "msg-2", speaker: "manager" as const, label: "Manager", body: "Only if the rights packet and city proof are ready." },
+          { id: "msg-3", speaker: "artist" as const, label: "You", body: "The rights packet is complete." },
+          { id: "msg-4", speaker: "manager" as const, label: "Manager", body: "Then move the work to rollout validation." },
+        ],
+        createdWork: [],
+      },
+    ]);
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
+
+    const messageBox = await screen.findByPlaceholderText("Type a message to the Manager...");
+    fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
+
+    await act(async () => {
+      handlers.onEvent({
+        type: "conversation.started",
+        conversation: {
+          id: "conv-history",
+          status: "Manager is thinking",
+          messages: [
+            { id: "msg-5", speaker: "artist", label: "You", body: "What changed after the campaign result?", status: "sent" },
+          ],
+          createdWork: [],
+        },
+        run: { id: "run-history", status: "running" },
+      });
+    });
+
+    expect(screen.getByText("Should we release Night Bus this month?")).toBeInTheDocument();
+    expect(screen.getByText("Only if the rights packet and city proof are ready.")).toBeInTheDocument();
+    expect(screen.getByText("The rights packet is complete.")).toBeInTheDocument();
+    expect(screen.getByText("Then move the work to rollout validation.")).toBeInTheDocument();
+    expect(screen.getByText("What changed after the campaign result?")).toBeInTheDocument();
+
+    await act(async () => {
+      handlers.onEvent({ type: "assistant.delta", conversationId: "conv-history", runId: "run-history", delta: "The result shifts the plan" });
+      handlers.onEvent({
+        type: "conversation.completed",
+        conversation: {
+          id: "conv-history",
+          topic: "Campaign result follow-up",
+          status: "Manager responded",
+          summary: "Manager answered the follow-up.",
+          prompt: "Should we release Night Bus this month?",
+          lastUpdate: "Just now",
+          messages: [
+            { id: "msg-5", speaker: "artist", label: "You", body: "What changed after the campaign result?" },
+            { id: "msg-6", speaker: "manager", label: "Manager", body: "The result shifts the plan from release prep to audience ownership." },
+          ],
+          createdWork: [],
+        },
+      });
+    });
+
+    expect(await screen.findByText("The result shifts the plan from release prep to audience ownership.")).toBeInTheDocument();
+    expect(screen.getByText("Then move the work to rollout validation.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Night Bus release planning/i })).toBeInTheDocument();
+  }, 20000);
+
+  it("opens Manager-created task artifacts in the parent mission Tasks tab", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const managerMission = {
+      id: "mission-manager-created",
+      title: "Build manager-created audience loop",
+      status: "active" as const,
+      progress: 12,
+      review: "Audience loop review",
+      summary: "A mission created by Manager chat should be reachable from the task card.",
+      recommendation: "Use the first task to confirm the audience loop.",
+      musicSubject: "Artist-wide",
+      nextTask: "Confirm task routing",
+      checkpoints: [
+        {
+          id: "checkpoint-manager-created",
+          phase: 1,
+          title: "Route chat-created tasks",
+          status: "Watching signal" as const,
+          question: "Can the created task open inside its canonical mission?",
+          requiredTaskIds: ["task-manager-created"],
+          dependsOnCheckpointIds: [],
+          unlocks: [],
+          blockedReason: "",
+          dependencyImpact: "The team cannot execute work that only exists in chat.",
+          watchedSignals: ["task-route"],
+          decisionRule: "Pass when task opens from chat.",
+          recommendation: "Keep task artifacts connected to Missions.",
+          resultSummary: "",
+          nextAction: "Open the task from chat.",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-manager-created",
+          checkpointId: "checkpoint-manager-created",
+          title: "Confirm task routing",
+          owner: "Manager",
+          deadline: "2026-07-05",
+          approvalState: "not_required" as const,
+          purpose: "Make sure Manager-created task cards resolve to canonical mission work.",
+          steps: ["Open chat card", "Open parent mission", "Review task"],
+          evidenceIds: ["task-route"],
+          dependency: "Manager chat persistence",
+          riskIfLate: "The created task is invisible outside the conversation.",
+        },
+      ],
+    };
+    repositories.missions.loadMissions = vi.fn(async () => [managerMission]);
+    repositories.manager.loadConversations = vi.fn(async () => [
+      {
+        id: "conv-task-artifact",
+        topic: "Canonical task routing",
+        status: "Manager responded",
+        summary: "Manager created a task artifact.",
+        prompt: "Create a task.",
+        lastUpdate: "Just now",
+        messages: [
+          { id: "msg-user", speaker: "artist" as const, label: "You", body: "Create a task." },
+          {
+            id: "msg-manager",
+            speaker: "manager" as const,
+            label: "Manager",
+            body: "I created a task under the audience mission.",
+            createdWork: [
+              {
+                type: "task" as const,
+                id: "task-manager-created",
+                parentMissionId: "mission-manager-created",
+                title: "Confirm task routing",
+                body: "This task is attached to the canonical mission.",
+                status: "created" as const,
+              },
+            ],
+          },
+        ],
+        createdWork: [
+          {
+            type: "task" as const,
+            id: "task-manager-created",
+            parentMissionId: "mission-manager-created",
+            title: "Confirm task routing",
+            body: "This task is attached to the canonical mission.",
+            status: "created" as const,
+          },
+        ],
+      },
+    ]);
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Canonical task routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open created task: Confirm task routing" }));
+
+    expect(await screen.findByRole("heading", { name: "Build manager-created audience loop" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Tasks/i }).find((button) => button.getAttribute("aria-pressed") === "true")).toBeTruthy();
+    expect(screen.getByText("Confirm task routing")).toBeInTheDocument();
+  }, 20000);
+
+  it("keeps Manager activity subtle with detailed steps collapsed by default", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let handlers: any = null;
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Plan the next mission." } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    await act(async () => {
+      handlers.onEvent({ type: "conversation.started", conversation: { id: "conv-activity", topic: "Plan the next mission" }, run: { id: "run-activity", status: "running" } });
+      handlers.onEvent({ type: "run.step", runId: "run-activity", label: "Reading workspace packet", status: "completed" });
+      handlers.onEvent({ type: "run.step", runId: "run-activity", label: "Matching missions and evidence", status: "running" });
+    });
+
+    expect(screen.getByText("Manager is thinking")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /View Manager activity/i })).toBeInTheDocument();
+    expect(screen.queryByText("Manager activity")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reading workspace packet")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /View Manager activity/i }));
+    expect(screen.getByText("Reading workspace packet")).toBeInTheDocument();
+    expect(screen.getByText("Matching missions and evidence")).toBeInTheDocument();
+  }, 20000);
+
+  it("keeps an existing Manager thread title stable after streamed follow-up completion", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const existingConversation = {
+      id: "conv-stable-title",
+      topic: "Night Bus release planning",
+      status: "Manager responded",
+      summary: "Release planning thread.",
+      prompt: "I want to drop a new song next week.",
+      lastUpdate: "14h ago",
+      messages: [
+        { id: "msg-1", speaker: "artist" as const, label: "You", body: "I want to drop a new song next week." },
+        { id: "msg-2", speaker: "manager" as const, label: "Manager", body: "Validate the hook first, then build the release room." },
+      ],
+      createdWork: [],
+    };
+    repositories.manager.loadConversations = vi.fn(async () => [existingConversation]);
+    let handlers: any = null;
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
+    const messageBox = await screen.findByPlaceholderText("Type a message to the Manager...");
+    fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
+
+    await act(async () => {
+      handlers.onEvent({
+        type: "conversation.completed",
+        conversation: {
+          ...existingConversation,
+          topic: "Audience ownership pivot",
+          status: "Manager responded",
+          messages: [
+            ...existingConversation.messages,
+            { id: "msg-3", speaker: "artist", label: "You", body: "What changed after the campaign result?" },
+            { id: "msg-4", speaker: "manager", label: "Manager", body: "The result changes the workstream from release prep to audience ownership." },
+          ],
+          createdWork: [],
+        },
+        refresh: {},
+      });
+    });
+
+    expect(await screen.findByRole("heading", { name: /Night Bus release planning/i })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Audience ownership pivot" })).not.toBeInTheDocument();
+    expect(screen.getByText("I want to drop a new song next week.")).toBeInTheDocument();
+    expect(screen.getByText("The result changes the workstream from release prep to audience ownership.")).toBeInTheDocument();
+  }, 20000);
+
+  it("renders streamed Manager failures as recoverable chat messages", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let handlers: any = null;
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Should we move the release?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    await act(async () => {
+      handlers.onEvent({ type: "error", message: "Manager conversation failed." });
+    });
+
+    expect(await screen.findByText("Manager conversation failed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry Manager message" })).toBeInTheDocument();
+  }, 20000);
+
+  it("starts a persisted Manager conversation from the prototype-style directive composer", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const createdConversation = {
+      id: "conv-manager-new",
+      topic: "Budget validation",
+      status: "Manager responded",
+      summary: "Manager created a validation thread from the current workspace packet.",
+      prompt: "We have $5,000. What should we do this month?",
+      lastUpdate: "Just now",
+      messages: [
+        { id: "msg-user", speaker: "artist" as const, label: "You", body: "We have $5,000. What should we do this month?" },
+        {
+          id: "msg-manager",
+          speaker: "manager" as const,
+          label: "Manager",
+          body: "Hold scale spend and run a capped proof loop tied to verified city response, rights clearance, and conversion proof.",
+          createdWork: [
+            {
+              type: "task" as const,
+              title: "Define capped spend proof loop",
+              body: "Create the test before committing the full budget.",
+              id: "task-proof-loop",
+            },
+          ],
+        },
+      ],
+      createdWork: [
+        {
+          type: "task" as const,
+          title: "Define capped spend proof loop",
+          body: "Create the test before committing the full budget.",
+          id: "task-proof-loop",
+        },
+      ],
+    };
+    repositories.manager.sendMessage = vi.fn(async () => createdConversation);
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
+    fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    expect(repositories.manager.sendMessage).toHaveBeenCalledWith({
+      body: "We have $5,000. What should we do this month?",
+    });
+    expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
+    expect(screen.getByText("Hold scale spend and run a capped proof loop tied to verified city response, rights clearance, and conversion proof.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open created task: Define capped spend proof loop" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Investigation" })).not.toBeInTheDocument();
+  }, 20000);
+
+  it("shows Manager-created missions on the Missions page without a page reload", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let missionRows = [] as Awaited<ReturnType<CleanProductionRepositories["missions"]["loadMissions"]>>;
+    let loadMissionsCalls = 0;
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => {
+        loadMissionsCalls += 1;
+        return missionRows;
+      },
+    };
+    repositories.manager.sendMessage = vi.fn(async () => {
+      missionRows = [
+        {
+          id: "mission-manager-created",
+          title: "Build Blaqbonez's manager-created mission",
+          status: "active",
+          progress: 0,
+          review: "Manager-created work quality",
+          summary: "A mission created from a Manager chat should appear in Missions immediately.",
+          recommendation: "Review the created mission and assign the first task.",
+          musicSubject: "Artist-wide",
+          nextTask: "Confirm the Manager-created mission scope",
+          checkpoints: [
+            {
+              id: "checkpoint-manager-created",
+              phase: 1,
+              title: "Manager-created work quality",
+              status: "Watching signal",
+              question: "Is the created mission visible and actionable on the Missions page?",
+              requiredTaskIds: ["task-manager-created"],
+              dependsOnCheckpointIds: [],
+              unlocks: [],
+              blockedReason: "",
+              dependencyImpact: "The team cannot act on hidden work.",
+              watchedSignals: ["mission-visible"],
+              decisionRule: "Pass only if the mission is visible after the chat reply.",
+              recommendation: "Keep Manager-created work visible.",
+              resultSummary: "",
+              nextAction: "Open the mission from Missions.",
+            },
+          ],
+          tasks: [
+            {
+              id: "task-manager-created",
+              checkpointId: "checkpoint-manager-created",
+              title: "Confirm the Manager-created mission scope",
+              owner: "Manager",
+              deadline: "2026-07-05",
+              approvalState: "not_required",
+              purpose: "Make sure chat-created mission work is durable in the mission system.",
+              steps: ["Open Missions", "Confirm the mission appears", "Review the first checkpoint"],
+              evidenceIds: ["mission-visible"],
+              dependency: "Manager chat persistence",
+              riskIfLate: "Created work exists in chat but not in the operating mission page.",
+            },
+          ],
+        },
+      ];
+      return {
+        id: "conv-manager-created-mission",
+        topic: "Manager-created mission",
+        status: "Manager responded",
+        summary: "Manager created mission work from chat.",
+        prompt: "Create the mission from this chat.",
+        lastUpdate: "Just now",
+        messages: [
+          { id: "msg-user", speaker: "artist" as const, label: "You", body: "Create the mission from this chat." },
+          {
+            id: "msg-manager",
+            speaker: "manager" as const,
+            label: "Manager",
+            body: "I created a durable mission and attached the first checkpoint.",
+            createdWork: [
+              {
+                type: "mission" as const,
+                id: "mission-manager-created",
+                title: "Build Blaqbonez's manager-created mission",
+                body: "Mission work is persisted and ready for the Missions page.",
+              },
+            ],
+          },
+        ],
+        createdWork: [
+          {
+            type: "mission" as const,
+            id: "mission-manager-created",
+            title: "Build Blaqbonez's manager-created mission",
+            body: "Mission work is persisted and ready for the Missions page.",
+          },
+        ],
+      };
+    });
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
+    fireEvent.change(askBox, { target: { value: "Create the mission from this chat." } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
+
+    expect(await screen.findByRole("heading", { name: "Manager-created mission." })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Missions" }));
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getAllByText("Build Blaqbonez's manager-created mission").length).toBeGreaterThan(0);
+    expect(loadMissionsCalls).toBeGreaterThanOrEqual(2);
   }, 20000);
 
   it("rebuilds Music as a durable recorded-work area with song/project rooms", async () => {
@@ -1011,6 +1946,44 @@ describe("Clean production prototype-match shell", () => {
             recommendation: "Use source-backed evidence before spend.",
             musicSubject: "Artist-wide",
             nextTask: "Verify geography signal quality",
+            checkpoints: [
+              {
+                id: "checkpoint-1",
+                phase: 1,
+                title: "Market signal quality",
+                status: "Watching signal",
+                question: "Is this market signal real enough?",
+                requiredTaskIds: ["task-1"],
+                dependsOnCheckpointIds: [],
+                unlocks: [],
+                blockedReason: "",
+                dependencyImpact: "Impact warning if delayed",
+                watchedSignals: ["signal-london"],
+                decisionRule: "Check Spotify listener count in London",
+                recommendation: "Verify target geography",
+                resultSummary: "Confirmed geography relevance",
+                nextAction: "Perform audience check",
+              }
+            ],
+            tasks: [
+              {
+                id: "task-1",
+                checkpointId: "checkpoint-1",
+                title: "Verify geography signal quality",
+                owner: "Manager",
+                deadline: "2026-07-01",
+                approvalState: "not_required",
+                purpose: "Confirm the city metrics are correct",
+                steps: [
+                  "Open Spotify for Artists",
+                  "Filter by London monthly listeners",
+                  "Compare with historical baseline"
+                ],
+                evidenceIds: ["signal-london"],
+                dependency: "None",
+                riskIfLate: "We might launch in a stale region"
+              }
+            ]
           },
         ];
         return {
@@ -1076,9 +2049,287 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /continue mission genesis/i }));
 
     expect(await screen.findByText("Mission activated")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getAllByText("Validate whether a rising market deserves focused operating attention").length).toBeGreaterThan(0);
+
+    // Click the mission card to open the Mission Room
+    const headings = screen.getAllByRole("heading", { name: "Validate whether a rising market deserves focused operating attention" });
+    fireEvent.click(headings[0]);
+
+    // Verify Pulse tab recommendation & summary
+    expect(screen.getByText("Use source-backed evidence before spend.")).toBeInTheDocument();
+    expect(screen.getAllByText("Use saved context, audience signal, and team capacity to test whether the rising market deserves focused work.").length).toBeGreaterThan(0);
+
+    // Navigate to the Tasks tab
+    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
+    expect(screen.getByText("Verify geography signal quality")).toBeInTheDocument();
+    expect(screen.getByText(/Confirm the city metrics are correct/i)).toBeInTheDocument();
+
+    // Open task details and verify steps
+    fireEvent.click(screen.getByRole("button", { name: /Show task details/i }));
+    expect(screen.getByText(/Open Spotify for Artists/i)).toBeInTheDocument();
+    expect(screen.getByText(/Filter by London monthly listeners/i)).toBeInTheDocument();
+    expect(screen.getByText(/Compare with historical baseline/i)).toBeInTheDocument();
+    expect(screen.getByText(/We might launch in a stale region/i)).toBeInTheDocument();
+
+    // Navigate to the Checkpoints tab
+    fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
+    expect(screen.getAllByText("Market signal quality").length).toBeGreaterThan(0);
+    expect(screen.getByText("Is this market signal real enough?")).toBeInTheDocument();
+    expect(screen.getAllByText("Verify geography signal quality").length).toBeGreaterThan(0);
+  }, 20000);
+
+  it("renders a directly activated Mission Genesis workstream after the mission graph reloads", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let missions = [] as Awaited<ReturnType<CleanProductionRepositories["missions"]["loadMissions"]>>;
+    let loadMissionsCalls = 0;
+    let resolveRun: ((value: Awaited<ReturnType<CleanProductionRepositories["missionGenesis"]["runMissionGenesis"]>>) => void) | undefined;
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => {
+        loadMissionsCalls += 1;
+        return missions;
+      },
+    };
+    repositories.missionGenesis = {
+      ...repositories.missionGenesis,
+      runMissionGenesis: async () => new Promise((resolve) => {
+        resolveRun = resolve;
+      }),
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getByText("No active missions yet")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
+    expect(screen.getAllByText("Running Mission Genesis").length).toBeGreaterThan(0);
+
+    missions = [
+      {
+        id: "mission-feature-leverage",
+        title: "Turn the Asake feature into Blaqbonez-owned leverage",
+        status: "active",
+        progress: 0,
+        review: "Feature leverage quality",
+        summary: "Use the feature moment to strengthen Blaqbonez's own public position.",
+        recommendation: "Only scale activity that transfers attention back to Blaqbonez.",
+        musicSubject: "Blaqbonez x Asake feature",
+        nextTask: "Map the feature attention back to Blaqbonez",
+        checkpoints: [
+          {
+            id: "checkpoint-feature-leverage",
+            phase: 1,
+            title: "Feature leverage quality",
+            status: "Watching signal",
+            question: "If the song grows but Blaqbonez's profile does not, should spend stop and the story reframe around artist identity?",
+            requiredTaskIds: ["task-feature-leverage"],
+            dependsOnCheckpointIds: [],
+            unlocks: [],
+            blockedReason: "",
+            dependencyImpact: "Overshadowing risk increases if the feature story outruns Blaqbonez's identity.",
+            watchedSignals: ["blaqbonez-profile-lift"],
+            decisionRule: "Continue only if Blaqbonez-owned attention rises with the feature.",
+            recommendation: "Protect Blaqbonez-owned leverage before scaling the collaboration.",
+            resultSummary: "",
+            nextAction: "Reframe around Blaqbonez's artist position if profile lift is weak.",
+          },
+        ],
+        tasks: [
+          {
+            id: "task-feature-leverage",
+            checkpointId: "checkpoint-feature-leverage",
+            title: "Map the feature attention back to Blaqbonez",
+            owner: "Manager",
+            deadline: "2026-07-05",
+            approvalState: "not_required",
+            purpose: "Separate song-level momentum from Blaqbonez-owned audience and narrative gains.",
+            steps: [
+              "Compare song-level traction with Blaqbonez profile lift",
+              "Identify the strongest Blaqbonez-owned story angle",
+              "Choose whether to scale or reframe the feature moment",
+            ],
+            evidenceIds: ["blaqbonez-profile-lift"],
+            dependency: "Public collaboration data",
+            riskIfLate: "The feature can become Asake-led momentum without Blaqbonez-owned leverage.",
+          },
+        ],
+      },
+    ];
+    resolveRun?.({
+      outcome: "activate_mission",
+      title: "Mission activated",
+      body: "The Manager activated a focused feature leverage workstream.",
+      reasons: ["The collaboration moment needs Blaqbonez-owned leverage."],
+      questions: [],
+      evidenceNeeded: [],
+      activatedMissionId: "mission-feature-leverage",
+      activatedMissionIds: ["mission-feature-leverage"],
+    });
+
+    expect(await screen.findByText("Mission activated")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect((await screen.findAllByText("Turn the Asake feature into Blaqbonez-owned leverage")).length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole("heading", { name: "Turn the Asake feature into Blaqbonez-owned leverage" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
+    expect(screen.getByText("Map the feature attention back to Blaqbonez")).toBeInTheDocument();
+    expect(screen.getByText(/Separate song-level momentum from Blaqbonez-owned audience/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
+    expect(screen.getAllByText("Feature leverage quality").length).toBeGreaterThan(0);
+    expect(screen.getByText(/If the song grows but Blaqbonez's profile does not/i)).toBeInTheDocument();
+    expect(loadMissionsCalls).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Mission Genesis failed")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("renders split Mission Genesis missions when the result only returns missionIds", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    let missions = [] as Awaited<ReturnType<CleanProductionRepositories["missions"]["loadMissions"]>>;
+    let loadMissionsCalls = 0;
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => {
+        loadMissionsCalls += 1;
+        return missions;
+      },
+    };
+    repositories.missionGenesis = {
+      ...repositories.missionGenesis,
+      runMissionGenesis: async () => {
+        missions = [
+          {
+            id: "mission-position",
+            title: "Define Blaqbonez's 90-day career position",
+            status: "active",
+            progress: 0,
+            review: "Career position quality",
+            summary: "Resolve the artist position before scaling the feature moment.",
+            recommendation: "Choose the career thesis that Blaqbonez should own this quarter.",
+            musicSubject: "Blaqbonez",
+            nextTask: "Choose the 90-day Blaqbonez position",
+            checkpoints: [
+              {
+                id: "checkpoint-position",
+                phase: 1,
+                title: "Career position quality",
+                status: "Watching signal",
+                question: "Can the team choose Blaqbonez's owned position before campaign scale?",
+                requiredTaskIds: ["task-position"],
+                dependsOnCheckpointIds: [],
+                unlocks: [],
+                blockedReason: "",
+                dependencyImpact: "Feature scale stays unfocused until the position is chosen.",
+                watchedSignals: ["position-choice"],
+                decisionRule: "Pass only if one owned position is chosen.",
+                recommendation: "Decide the position before spend.",
+                resultSummary: "",
+                nextAction: "Approve the chosen position.",
+              },
+            ],
+            tasks: [
+              {
+                id: "task-position",
+                checkpointId: "checkpoint-position",
+                title: "Choose the 90-day Blaqbonez position",
+                owner: "Manager",
+                deadline: "2026-07-05",
+                approvalState: "not_required",
+                purpose: "Make the career thesis explicit before the team scales activity.",
+                steps: ["Choose the position", "Write the examples", "Reject off-thesis angles"],
+                evidenceIds: ["position-choice"],
+                dependency: "Artist/team approval",
+                riskIfLate: "The feature moment can turn into unfocused campaign work.",
+              },
+            ],
+          },
+          {
+            id: "mission-feature",
+            title: "Turn the Asake feature into Blaqbonez-owned leverage",
+            status: "active",
+            progress: 0,
+            review: "Feature leverage quality",
+            summary: "Use the feature without letting the collaborator own the whole narrative.",
+            recommendation: "Scale only if attention transfers back to Blaqbonez.",
+            musicSubject: "Blaqbonez x Asake feature",
+            nextTask: "Measure whether the feature lifts Blaqbonez",
+            checkpoints: [
+              {
+                id: "checkpoint-feature",
+                phase: 1,
+                title: "Feature leverage quality",
+                status: "Watching signal",
+                question: "If the song grows but Blaqbonez's profile does not, should the feature plan stop or reframe?",
+                requiredTaskIds: ["task-feature"],
+                dependsOnCheckpointIds: [],
+                unlocks: [],
+                blockedReason: "",
+                dependencyImpact: "The collaboration can grow without Blaqbonez-owned leverage.",
+                watchedSignals: ["profile-lift"],
+                decisionRule: "Continue only if Blaqbonez-owned attention rises.",
+                recommendation: "Watch profile lift before scaling.",
+                resultSummary: "",
+                nextAction: "Reframe the story if profile lift is weak.",
+              },
+            ],
+            tasks: [
+              {
+                id: "task-feature",
+                checkpointId: "checkpoint-feature",
+                title: "Measure whether the feature lifts Blaqbonez",
+                owner: "Manager",
+                deadline: "2026-07-05",
+                approvalState: "not_required",
+                purpose: "Separate song-level lift from Blaqbonez-owned career leverage.",
+                steps: ["Compare song lift", "Compare profile lift", "Decide scale or reframe"],
+                evidenceIds: ["profile-lift"],
+                dependency: "Public collaboration data",
+                riskIfLate: "The collaborator can own the moment.",
+              },
+            ],
+          },
+        ];
+        return {
+          outcome: "activate_mission",
+          title: "Missions activated",
+          body: "The Manager split career position and feature leverage into separate missions.",
+          reasons: ["The objectives should not live in one mission."],
+          questions: [],
+          evidenceNeeded: [],
+          missionIds: ["mission-position", "mission-feature"],
+        } as any;
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
+
+    expect(await screen.findByText("Missions activated")).toBeInTheDocument();
+    expect((await screen.findAllByText("Define Blaqbonez's 90-day career position")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Turn the Asake feature into Blaqbonez-owned leverage").length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getAllByRole("heading", { name: "Define Blaqbonez's 90-day career position" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
+    expect(screen.getByText("Choose the 90-day Blaqbonez position")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
+    expect(screen.getAllByText("Career position quality").length).toBeGreaterThan(0);
+    expect(loadMissionsCalls).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText("Mission Genesis failed")).not.toBeInTheDocument();
   }, 20000);
 
   it("shows the real Mission Genesis error on the Missions page when the run fails", async () => {
@@ -1736,6 +2987,16 @@ function workspaceLoaderWith(workspaceResult: Awaited<ReturnType<ProductionWorks
     async loadActiveWorkspace() {
       this.calls += 1;
       return workspaceResult;
+    },
+  } satisfies ProductionWorkspaceLoader & { calls: number };
+}
+
+function workspaceLoaderWithClonedResults(workspaceResult: ProductionWorkspace) {
+  return {
+    calls: 0,
+    async loadActiveWorkspace() {
+      this.calls += 1;
+      return { ...workspaceResult };
     },
   } satisfies ProductionWorkspaceLoader & { calls: number };
 }

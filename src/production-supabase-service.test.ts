@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { ReadableStream } from "node:stream/web";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -296,6 +297,92 @@ describe("production Supabase services", () => {
       metrics: expect.arrayContaining([expect.objectContaining({ label: "Nigeria rank", value: "#1" })]),
     });
     expect(JSON.stringify(desk.todayBrief)).not.toMatch(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i);
+  });
+
+  it("prefers current packet-backed Manager outputs over legacy Manager synthesis action plans", async () => {
+    const client = fakeSupabaseClient({
+      source_sync_jobs: [],
+      operating_events: [],
+      manager_outputs: [
+        {
+          id: "manager-output-1",
+          source_packet_id: "packet-1",
+          created_from_run_id: "brief-run-2",
+          output_type: "setup_first_manager_read",
+          subject_type: "artist",
+          subject_id: "artist-1",
+          is_current: true,
+          render_json: {
+            headlineRead: "The durable Manager read should lead with the clearest city signal.",
+            intelligenceSnapshot: [
+              {
+                title: "Strategic Signal",
+                insight: "London is the strongest public pressure point, with private conversion still missing.",
+                metrics: [{ label: "London", value: "1.34M", context: "listeners", evidenceIds: ["ev-city"] }],
+              },
+            ],
+            snapshotSummary: "A city-led operating read is stronger than the old action plan.",
+            managerRead:
+              "The current useful move is to organize management around London pressure while the team asks for private conversion proof.",
+            managerEvidenceReads: [
+              {
+                label: "Artist Score",
+                value: "92",
+                category: "kpi",
+                read: "Artist Score is high, so treat it as broad strength rather than proof that London pressure converts.",
+                evidenceIds: ["ev-score"],
+                confidence: "Medium",
+              },
+            ],
+            sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+            confidence: "medium",
+            generatedAt: "2026-06-18T08:30:00.000Z",
+          },
+          created_at: "2026-06-18T08:30:00.000Z",
+        },
+      ],
+      manager_synthesis_runs: [
+        {
+          id: "brief-run-legacy",
+          status: "completed",
+          classification: "setup_todays_brief_v1",
+          completed_at: "2026-06-17T08:30:00.000Z",
+          action_plan: [
+            {
+              headlineRead: "Legacy action plan should not win.",
+              intelligenceSnapshot: [
+                {
+                  title: "Old Signal",
+                  insight: "This is stale.",
+                  metrics: [{ label: "Old", value: "1", evidenceIds: ["old"] }],
+                },
+              ],
+              snapshotSummary: "Old summary.",
+              managerRead: "Old manager read.",
+              sourceLine: "Old source line.",
+              confidence: "low",
+            },
+          ],
+        },
+      ],
+    });
+
+    const desk = await createSupabaseProductionRepositories(client, workspace).desk.loadDesk();
+
+    expect(desk.todayBrief).toMatchObject({
+      headlineRead: "The durable Manager read should lead with the clearest city signal.",
+      snapshotSummary: "A city-led operating read is stronger than the old action plan.",
+      managerSynthesisRunId: "brief-run-2",
+      managerOutputId: "manager-output-1",
+      managerIntelligencePacketId: "packet-1",
+      state: "fresh",
+    });
+    expect(desk.todayBrief?.intelligenceSnapshot[0]?.metrics[0]).toMatchObject({ label: "London", evidenceIds: ["ev-city"] });
+    expect(desk.todayBrief?.managerEvidenceReads?.[0]).toMatchObject({
+      label: "Artist Score",
+      read: expect.stringContaining("broad strength"),
+      evidenceIds: ["ev-score"],
+    });
   });
 
   it("does not expose internal Today's Brief style-policy failures in Desk movement", async () => {
@@ -685,10 +772,10 @@ describe("production Supabase services", () => {
     expect(musicViewModels.find((item) => item.id === "song-1")).toEqual(
       expect.objectContaining({
         situationLine: "Released song · 1 current result available",
-        managerRead: expect.stringContaining("North Star is the record with the clearest public pressure"),
-        watchNext: "Check whether people keep listening after playlist support changes.",
-        managerReadState: "fallback",
-        nextMove: "Make North Star the first record to inspect, then decide whether playlist support should lead the next team action.",
+        managerRead: expect.stringContaining("The Manager's Read for North Star is being prepared from the saved packet."),
+        watchNext: "Watch this room for the generated Manager Read for North Star.",
+        managerReadState: "loading",
+        nextMove: "Wait for North Star's generated Manager Read, or regenerate it if the read does not appear shortly.",
         blocker: "No active blocker",
         rightsState: "Released catalog rights attached outside this app",
         linkedTaskCount: 0,
@@ -738,7 +825,8 @@ describe("production Supabase services", () => {
     ]);
     expect(musicViewModels.find((item) => item.id === "project-1")).toEqual(
       expect.objectContaining({
-        managerRead: expect.stringContaining("Midnight Signal has 1 mapped song"),
+        managerRead: expect.stringContaining("The Manager's Read for Midnight Signal is being prepared from the saved packet."),
+        managerReadState: "loading",
         snapshotSummary: expect.stringContaining("Spotify streams"),
         sourceSummary: expect.objectContaining({
           badges: expect.arrayContaining(["Spotify", "Chartmetric"]),
@@ -749,9 +837,11 @@ describe("production Supabase services", () => {
       }),
     );
     const projectView = musicViewModels.find((item) => item.id === "project-1");
-    expect(projectView?.managerRead).toContain("845K Spotify streams in the latest 28-day window");
-    expect(projectView?.managerRead).toContain("1.8M Spotify playlist reach");
-    expect(projectView?.managerRead).toContain("North Star is the first song to inspect");
+    expect(projectView?.nextMove).toBe("Wait for Midnight Signal's generated Manager Read, or regenerate it if the read does not appear shortly.");
+    expect(projectView?.intelligenceSnapshot?.[0]?.metrics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: "Recent streams", value: "845K" }),
+      expect.objectContaining({ label: "Playlist reach", value: "1.8M" }),
+    ]));
     expect(projectView?.managerRead).not.toMatch(/private saves|repeat listeners|source-of-stream|campaign ROI|rights clearance/i);
   });
 
@@ -818,6 +908,99 @@ describe("production Supabase services", () => {
     });
   });
 
+  it("prefers current song and project Manager outputs over legacy Music metadata reads", async () => {
+    const client = fakeSupabaseClient({
+      music_items: [
+        {
+          id: "song-output",
+          title: "Signal Run",
+          item_type: "released_track",
+          lifecycle_stage: "released",
+          source_kind: "spotify_public_catalog",
+          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
+          metadata: {
+            spotify: { track_id: "spotify-track-output", popularity: 45 },
+            manager_read: {
+              managerRead: "Legacy song metadata should not win.",
+              nextMove: "Use the old metadata move.",
+              generationState: "limited",
+            },
+          },
+        },
+      ],
+      music_projects: [
+        {
+          id: "project-output",
+          title: "Signal Pack",
+          project_type: "ep",
+          lifecycle_stage: "released",
+          source_kind: "spotify_public_catalog",
+          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
+          metadata: {
+            spotify: { album_id: "spotify-album-output", total_tracks: 4 },
+            manager_read: {
+              managerRead: "Legacy project metadata should not win.",
+              nextMove: "Use the old project move.",
+            },
+          },
+        },
+      ],
+      manager_outputs: [
+        {
+          id: "song-output-read",
+          output_type: "song_manager_read",
+          subject_type: "music_item",
+          subject_id: "song-output",
+          is_current: true,
+          render_json: {
+            situationLine: "Released song - playlist support and city pressure are visible",
+            managerRead:
+              "Signal Run is the record with the clearest working read: playlist support and city pressure are pointing to the same song. I would make Signal Run the first music-room focus and inspect whether the playlist base or the city signal should shape the next team action.",
+            nextMove: "Use Signal Run as the first music-room focus, then compare playlist support against the city signal.",
+            watchNext: "Watch whether playlist support keeps matching the city signal.",
+            generationState: "fresh",
+          },
+          created_at: "2026-06-18T08:30:00.000Z",
+        },
+        {
+          id: "project-output-read",
+          output_type: "project_manager_read",
+          subject_type: "music_project",
+          subject_id: "project-output",
+          is_current: true,
+          render_json: {
+            managerRead:
+              "Signal Pack reads like a project that needs a focus-track decision before a broad release push. The next read should rank the four songs by outside attention and choose the one that deserves management time first.",
+            nextMove: "Rank the four songs by outside attention, then choose the first focus track.",
+            generationState: "fresh",
+          },
+          created_at: "2026-06-18T08:30:00.000Z",
+        },
+      ],
+      music_project_items: [],
+      music_assets: [],
+      music_credits: [],
+      music_splits: [],
+      music_identifiers: [],
+      evidence_items: [],
+    });
+
+    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
+
+    expect(musicViewModels.find((item) => item.id === "song-output")).toMatchObject({
+      managerRead: expect.stringContaining("Signal Run is the record with the clearest working read"),
+      nextMove: "Use Signal Run as the first music-room focus, then compare playlist support against the city signal.",
+      managerReadState: "fresh",
+    });
+    expect(musicViewModels.find((item) => item.id === "song-output")?.managerRead).not.toContain("Legacy song metadata");
+    expect(musicViewModels.find((item) => item.id === "project-output")).toMatchObject({
+      managerRead: expect.stringContaining("Signal Pack reads like a project"),
+      nextMove: "Rank the four songs by outside attention, then choose the first focus track.",
+      managerReadState: "fresh",
+    });
+    expect(musicViewModels.find((item) => item.id === "project-output")?.managerRead).not.toContain("Legacy project metadata");
+  });
+
   it("rejects bloated generated Manager reads that sound like source dumps or fake commands", async () => {
     const client = fakeSupabaseClient({
       music_items: [
@@ -857,13 +1040,13 @@ describe("production Supabase services", () => {
     const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
     const song = musicViewModels.find((item) => item.id === "song-bad-generated");
 
-    expect(song?.managerRead).toContain("6 Million is live, but the first management read is simple");
-    expect(song?.managerRead).toContain("make 6 Million the record to inspect first");
+    expect(song?.managerRead).toContain("The Manager's Read for 6 Million is being prepared from the saved packet.");
+    expect(song?.managerReadState).toBe("loading");
     expect(song?.managerRead).not.toContain("released under Major Recordings");
     expect(song?.managerRead).not.toContain("The public catalog gives us");
     expect(song?.managerRead).not.toContain("territory/scene lanes");
     expect(song?.managerRead).not.toMatch(/source-of-stream|private saves|repeat listeners|campaign ROI/i);
-    expect(song?.nextMove).toBe("Make 6 Million the first music focus only after a useful public or team signal is connected.");
+    expect(song?.nextMove).toBe("Wait for 6 Million's generated Manager Read, or regenerate it if the read does not appear shortly.");
     expect(song?.nextMove).not.toContain("Within 48 hours I will demand");
   });
 
@@ -1150,16 +1333,12 @@ describe("production Supabase services", () => {
     const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
     const song = musicViewModels.find((item) => item.id === "song-ranked-fallback");
 
-    expect(song?.managerReadState).toBe("fallback");
-    expect(song?.managerRead).toContain("Colorado is the record with the clearest public pressure");
-    expect(song?.managerRead).toContain("154.2M Spotify streams in the latest 28-day window");
-    expect(song?.managerRead).toContain("4.2M Spotify playlist reach");
-    expect(song?.managerRead).toContain("408.4K TikTok videos");
-    expect(song?.managerRead).toContain("make Colorado the first record to inspect");
+    expect(song?.managerReadState).toBe("loading");
+    expect(song?.managerRead).toContain("The Manager's Read for Colorado is being prepared from the saved packet.");
     expect(song?.managerRead).not.toMatch(/private saves|repeat listeners|source-of-stream|campaign ROI|still missing/i);
     expect(song?.managerRead).not.toContain("video_creates");
     expect(song?.managerRead).not.toContain("provider_window");
-    expect(song?.nextMove).toBe("Make Colorado the first record to inspect, then decide whether streaming scale or short-form discovery should lead the next team action.");
+    expect(song?.nextMove).toBe("Wait for Colorado's generated Manager Read, or regenerate it if the read does not appear shortly.");
     expect(song?.blocker).toBe("No active blocker");
     expect(song?.situationLine).not.toMatch(/split proof/i);
     expect(song?.rightsState).not.toMatch(/split proof/i);
@@ -1341,11 +1520,8 @@ describe("production Supabase services", () => {
       nextMove: project?.nextMove,
     });
 
-    expect(project?.managerReadState).toBe("fallback");
-    expect(project?.managerRead).toContain("REAL, Vol. 1 has 2 mapped songs");
-    expect(project?.managerRead).toContain("5.7K Spotify playlists");
-    expect(project?.managerRead).toContain("16.2M Spotify playlist reach");
-    expect(project?.managerRead).toContain("Alaye is the first song to inspect");
+    expect(project?.managerReadState).toBe("loading");
+    expect(project?.managerRead).toContain("The Manager's Read for REAL, Vol. 1 is being prepared from the saved packet.");
     expect(project?.snapshotSummary).toContain("playlist reach");
     expect(project?.intelligenceSnapshot?.[0]?.metrics).toEqual(expect.arrayContaining([
       expect.objectContaining({ label: "Playlist count", value: "5.7K" }),
@@ -1546,6 +1722,507 @@ describe("production Supabase services", () => {
     expect(result).toEqual(expected);
   });
 
+  it("keeps multi-mission Mission Genesis activation ids from the function response", async () => {
+    const expected = {
+      outcome: "activate_mission" as const,
+      title: "Missions activated",
+      body: "The Manager activated two coordinated workstreams.",
+      reasons: ["Both workstreams are grounded in the packet."],
+      questions: [],
+      evidenceNeeded: [],
+      activatedMissionId: "mission-a",
+      activatedMissionIds: ["mission-a", "mission-b"],
+      candidateMissionIds: ["mission-c"],
+    };
+    const client = createMutableSupabaseClient({}, {
+      invoke: async () => ({ data: expected, error: null }),
+    });
+
+    const result = await createSupabaseProductionRepositories(client, workspace).missionGenesis.runMissionGenesis();
+
+    expect(result).toEqual(expected);
+  });
+
+  it("treats split Mission Genesis missionIds as activated ids when the function omits activatedMissionIds", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      missions: [
+        {
+          id: "mission-position",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          title: "Define Blaqbonez's 90-day career position",
+          status: "active",
+          summary: "Resolve the artist position before scaling the feature moment.",
+          current_recommendation: "Choose the career thesis that Blaqbonez should own this quarter.",
+          progress: 0,
+          review_point: "Career position quality",
+        },
+        {
+          id: "mission-feature",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          title: "Turn the Asake feature into Blaqbonez-owned leverage",
+          status: "active",
+          summary: "Use the feature without letting the collaborator own the whole narrative.",
+          current_recommendation: "Scale only if attention transfers back to Blaqbonez.",
+          progress: 0,
+          review_point: "Feature leverage quality",
+        },
+      ],
+      mission_plan_versions: [
+        { id: "plan-position", mission_id: "mission-position", version: 1, status: "active" },
+        { id: "plan-feature", mission_id: "mission-feature", version: 1, status: "active" },
+      ],
+      checkpoints: [
+        {
+          id: "checkpoint-position",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: "mission-position",
+          mission_plan_version_id: "plan-position",
+          title: "Career position quality",
+          question: "Can the team choose Blaqbonez's owned position before campaign scale?",
+          status: "waiting",
+          recommendation: "Decide the position before spend.",
+        },
+        {
+          id: "checkpoint-feature",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: "mission-feature",
+          mission_plan_version_id: "plan-feature",
+          title: "Feature leverage quality",
+          question: "If the song grows but Blaqbonez's profile does not, should the feature plan stop or reframe?",
+          status: "waiting",
+          recommendation: "Watch profile lift before scaling.",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-position",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: "mission-position",
+          mission_plan_version_id: "plan-position",
+          primary_checkpoint_id: "checkpoint-position",
+          title: "Choose the 90-day Blaqbonez position",
+          status: "proposed",
+          owner_role: "Manager",
+          purpose: "Make the career thesis explicit before the team scales activity.",
+        },
+        {
+          id: "task-feature",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: "mission-feature",
+          mission_plan_version_id: "plan-feature",
+          primary_checkpoint_id: "checkpoint-feature",
+          title: "Measure whether the feature lifts Blaqbonez",
+          status: "proposed",
+          owner_role: "Manager",
+          purpose: "Separate song-level lift from Blaqbonez-owned career leverage.",
+        },
+      ],
+    };
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async () => ({
+        data: {
+          outcome: "activate_mission",
+          title: "Missions activated",
+          body: "The Manager split career position and feature leverage into separate missions.",
+          reasons: ["The objectives should not live in one mission."],
+          questions: [],
+          evidenceNeeded: [],
+          missionIds: ["mission-position", "mission-feature"],
+        },
+        error: null,
+      }),
+    });
+    const repositories = createSupabaseProductionRepositories(client, workspace);
+
+    const result = await repositories.missionGenesis.runMissionGenesis();
+    const missions = await repositories.missions.loadMissions();
+
+    expect(result).toMatchObject({
+      outcome: "activate_mission",
+      activatedMissionId: "mission-position",
+      activatedMissionIds: ["mission-position", "mission-feature"],
+    });
+    expect(missions.map((mission) => mission.title)).toEqual([
+      "Define Blaqbonez's 90-day career position",
+      "Turn the Asake feature into Blaqbonez-owned leverage",
+    ]);
+    expect(missions[0].tasks[0]).toMatchObject({ title: "Choose the 90-day Blaqbonez position" });
+    expect(missions[1].checkpoints[0]).toMatchObject({ title: "Feature leverage quality" });
+  });
+
+  it("polls a background Mission Genesis run until the persisted action result is ready", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      manager_synthesis_runs: [
+        {
+          id: "mission-run-1",
+          artist_workspace_id: workspace.artistWorkspaceId,
+          status: "completed",
+        },
+      ],
+      manager_run_actions: [
+        {
+          id: "action-1",
+          manager_synthesis_run_id: "mission-run-1",
+          order_index: 1,
+          payload: {
+            outcome: "activate_mission",
+            decisionSummary: "The Manager activated a focused London proof loop.",
+            reasons: ["London is the strongest current signal."],
+            evidenceNeeded: [],
+            questions: [],
+          },
+          result_payload: {
+            outcome: "activate_mission",
+            missionId: "mission-1",
+            missionIds: ["mission-1"],
+            activatedMissionIds: ["mission-1"],
+            candidateMissionIds: [],
+            questions: [],
+          },
+        },
+      ],
+    };
+    const invocations: Array<{ name: string; body: unknown }> = [];
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async (name, options) => {
+        invocations.push({ name, body: options.body });
+        return { data: { status: "processing", runId: "mission-run-1" }, error: null };
+      },
+    });
+
+    const result = await createSupabaseProductionRepositories(client, workspace).missionGenesis.runMissionGenesis();
+
+    expect(invocations).toHaveLength(1);
+    expect(result).toEqual({
+      outcome: "activate_mission",
+      title: "Mission activated",
+      body: "The Manager activated a focused London proof loop.",
+      reasons: ["London is the strongest current signal."],
+      questions: [],
+      evidenceNeeded: [],
+      missionIds: ["mission-1"],
+      activatedMissionId: "mission-1",
+      activatedMissionIds: ["mission-1"],
+    });
+  });
+
+  it("recovers a background Mission Genesis result when the run status is stale but the mission graph exists", async () => {
+    vi.useFakeTimers();
+
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      manager_synthesis_runs: [
+        {
+          id: "mission-run-stale-status",
+          artist_workspace_id: workspace.artistWorkspaceId,
+          status: "running",
+        },
+      ],
+      manager_run_actions: [
+        {
+          id: "action-stale-status",
+          manager_synthesis_run_id: "mission-run-stale-status",
+          order_index: 1,
+          payload: {
+            outcome: "activate_mission",
+            decisionSummary: "The Manager activated Blaqbonez-owned feature leverage.",
+            reasons: ["The collaboration can grow the song without clarifying Blaqbonez's position."],
+            evidenceNeeded: [],
+            questions: [],
+          },
+          result_payload: {
+            outcome: "activate_mission",
+            missionId: "mission-feature-leverage",
+            missionIds: ["mission-feature-leverage"],
+            activatedMissionIds: ["mission-feature-leverage"],
+            candidateMissionIds: ["mission-identity-position"],
+            questions: [],
+          },
+        },
+      ],
+      missions: [
+        {
+          id: "mission-feature-leverage",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          title: "Turn the Asake feature into Blaqbonez-owned leverage",
+          status: "active",
+          summary: "Use the feature moment to strengthen Blaqbonez's own public position.",
+          current_recommendation: "Only scale activity that transfers attention back to Blaqbonez.",
+          progress: 0,
+          review_point: "Feature leverage quality",
+        },
+        {
+          id: "mission-identity-position",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          title: "Define Blaqbonez's 90-day career position",
+          status: "candidate",
+          summary: "Hidden until selected.",
+          current_recommendation: "Resolve the artist identity gap.",
+        },
+      ],
+      mission_plan_versions: [
+        { id: "plan-feature-leverage", mission_id: "mission-feature-leverage", version: 1, status: "active" },
+      ],
+      checkpoints: [
+        {
+          id: "checkpoint-feature-leverage",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: "mission-feature-leverage",
+          mission_plan_version_id: "plan-feature-leverage",
+          title: "Feature leverage quality",
+          question: "If the song grows but Blaqbonez's profile does not, should spend stop and the story reframe around artist identity?",
+          status: "waiting",
+          recommendation: "Protect Blaqbonez-owned leverage before scaling the collaboration.",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-feature-leverage",
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          mission_id: "mission-feature-leverage",
+          mission_plan_version_id: "plan-feature-leverage",
+          primary_checkpoint_id: "checkpoint-feature-leverage",
+          title: "Map the feature attention back to Blaqbonez",
+          status: "proposed",
+          owner_role: "Manager",
+          purpose: "Separate song-level momentum from Blaqbonez-owned audience and narrative gains.",
+        },
+      ],
+    };
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async () => ({ data: { status: "processing", runId: "mission-run-stale-status" }, error: null }),
+    });
+    const repositories = createSupabaseProductionRepositories(client, workspace);
+
+    const resultPromise = repositories.missionGenesis.runMissionGenesis();
+    await vi.advanceTimersByTimeAsync(1500 * 240);
+    const result = await resultPromise;
+    const missions = await repositories.missions.loadMissions();
+
+    expect(result).toMatchObject({
+      outcome: "activate_mission",
+      activatedMissionId: "mission-feature-leverage",
+      activatedMissionIds: ["mission-feature-leverage"],
+    });
+    expect(missions).toHaveLength(1);
+    expect(missions[0]).toMatchObject({
+      id: "mission-feature-leverage",
+      title: "Turn the Asake feature into Blaqbonez-owned leverage",
+      tasks: [
+        expect.objectContaining({
+          id: "task-feature-leverage",
+          title: "Map the feature attention back to Blaqbonez",
+          checkpointId: "checkpoint-feature-leverage",
+        }),
+      ],
+      checkpoints: [
+        expect.objectContaining({
+          id: "checkpoint-feature-leverage",
+          question: expect.stringContaining("Blaqbonez's profile does not"),
+        }),
+      ],
+    });
+  });
+
+  it("loads Manager conversation messages and created work from persisted message metadata", async () => {
+    const client = fakeSupabaseClient({
+      conversations: [
+        {
+          id: "conversation-1",
+          topic: "Budget validation",
+          status: "active",
+          summary: "Manager created a validation thread.",
+          last_update_at: "2026-06-26T08:00:00.000Z",
+          created_at: "2026-06-26T07:55:00.000Z",
+        },
+      ],
+      conversation_messages: [
+        {
+          id: "message-1",
+          conversation_id: "conversation-1",
+          speaker: "artist",
+          label: "You",
+          body: "We have $5,000. What should we do this month?",
+          metadata: {},
+          created_at: "2026-06-26T07:56:00.000Z",
+        },
+        {
+          id: "message-2",
+          conversation_id: "conversation-1",
+          speaker: "manager",
+          label: "Manager",
+          body: "Run a capped proof loop before scaling spend.",
+          metadata: {
+            createdWork: [
+              {
+                type: "task",
+                title: "Define capped spend proof loop",
+                body: "Create the test before committing the full budget.",
+                id: "task-1",
+                parentMissionId: "mission-1",
+                status: "created",
+              },
+            ],
+          },
+          created_at: "2026-06-26T07:57:00.000Z",
+        },
+      ],
+    });
+
+    const conversations = await createSupabaseProductionRepositories(client, workspace).manager.loadConversations();
+
+    expect(conversations).toEqual([
+      expect.objectContaining({
+        id: "conversation-1",
+        topic: "Budget validation",
+        lastUpdate: "2026-06-26T08:00:00.000Z",
+        messages: [
+          expect.objectContaining({ id: "message-1", speaker: "artist", body: "We have $5,000. What should we do this month?" }),
+          expect.objectContaining({
+            id: "message-2",
+            speaker: "manager",
+            body: "Run a capped proof loop before scaling spend.",
+            createdWork: [
+              expect.objectContaining({
+                type: "task",
+                title: "Define capped spend proof loop",
+                id: "task-1",
+                parentMissionId: "mission-1",
+                status: "created",
+              }),
+            ],
+          }),
+        ],
+        createdWork: [
+          expect.objectContaining({
+            type: "task",
+            title: "Define capped spend proof loop",
+            id: "task-1",
+            parentMissionId: "mission-1",
+            status: "created",
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  it("sends Manager chat messages through the authenticated conversation router function", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const expected = {
+      id: "conversation-2",
+      topic: "Release plan",
+      status: "Manager responded",
+      summary: "Manager answered the release plan question.",
+      prompt: "Should we move the release date?",
+      lastUpdate: "Just now",
+      messages: [
+        { id: "message-user", speaker: "artist", label: "You", body: "Should we move the release date?" },
+        { id: "message-manager", speaker: "manager", label: "Manager", body: "Do not move it until rights proof is clear." },
+      ],
+      createdWork: [],
+    };
+    const client = createMutableSupabaseClient({}, {
+      invoke: async (name, options) => {
+        calls.push({ name, body: options.body });
+        return { data: expected, error: null };
+      },
+    });
+
+    const result = await createSupabaseProductionRepositories(client, workspace).manager.sendMessage({
+      conversationId: "conversation-existing",
+      body: "Should we move the release date?",
+    });
+
+    expect(calls).toEqual([
+      {
+        name: "manager-conversation",
+        body: {
+          accountId: workspace.accountId,
+          artistWorkspaceId: workspace.artistWorkspaceId,
+          artistId: workspace.artistId,
+          conversationId: "conversation-existing",
+          body: "Should we move the release date?",
+        },
+      },
+    ]);
+    expect(result).toEqual(expected);
+  });
+
+  it("streams Manager chat messages through the native fetch stream function", async () => {
+    vi.stubEnv("VITE_SUPABASE_URL", "https://supabase.test");
+    const fetchCalls: Array<{ url: string; init: RequestInit }> = [];
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"type":"assistant.delta","conversationId":"conversation-existing","delta":"Streaming reply."}\n\n'));
+        controller.close();
+      },
+    });
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (url, init) => {
+      fetchCalls.push({ url: String(url), init: init as RequestInit });
+      return new Response(stream, { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const client = {
+      auth: {
+        getSession: async () => ({ data: { session: { access_token: "token-1" } }, error: null }),
+      },
+    } as unknown as SupabaseClient;
+    const events: string[] = [];
+
+    try {
+      await createSupabaseProductionRepositories(client, workspace).manager.sendMessageStream?.(
+        {
+          conversationId: "conversation-existing",
+          body: "Should we move the release date?",
+        },
+        {
+          onEvent: (event) => {
+            if (event.type === "assistant.delta") events.push(event.delta);
+          },
+        },
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      vi.unstubAllEnvs();
+    }
+
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0].url).toBe("https://supabase.test/functions/v1/manager-conversation-stream");
+    expect(fetchCalls[0].init.headers).toEqual({
+      Authorization: "Bearer token-1",
+      "Content-Type": "application/json",
+    });
+    expect(JSON.parse(String(fetchCalls[0].init.body))).toEqual({
+      accountId: workspace.accountId,
+      artistWorkspaceId: workspace.artistWorkspaceId,
+      artistId: workspace.artistId,
+      conversationId: "conversation-existing",
+      body: "Should we move the release date?",
+    });
+    expect(events).toEqual(["Streaming reply."]);
+  });
+
   it("sends the complete context answer batch back through OpenAI", async () => {
     const calls: Array<{ name: string; body: unknown }> = [];
     const client = createMutableSupabaseClient({}, {
@@ -1582,6 +2259,30 @@ describe("production Supabase services", () => {
       candidateMissionId: "candidate-1",
       answers,
     } }]);
+  });
+
+  it("loads every active mission instead of only the first page", async () => {
+    const client = fakeSupabaseClient({
+      missions: Array.from({ length: 25 }, (_, index) => ({
+        id: `mission-${String(index + 1).padStart(2, "0")}`,
+        title: `Visible mission ${index + 1}`,
+        status: "active",
+        summary: `Mission ${index + 1} should remain visible.`,
+        current_recommendation: "Keep created mission work visible.",
+        progress: index,
+        review_point: "Visibility",
+        created_at: `2026-06-${String(28 - index).padStart(2, "0")}T00:00:00.000Z`,
+      })),
+      checkpoints: [],
+      tasks: [],
+      task_steps: [],
+      task_results: [],
+    });
+
+    const missions = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+
+    expect(missions).toHaveLength(25);
+    expect(missions.map((mission) => mission.title)).toContain("Visible mission 25");
   });
 
   it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {
@@ -2221,6 +2922,7 @@ function createMutableSupabaseClient(
 
 function mutableQuery(table: string, tableData: Record<string, Array<Record<string, unknown>>>) {
   const filters: Array<{ key: string; value: unknown }> = [];
+  const inFilters: Array<{ key: string; values: unknown[] }> = [];
   let mode: "select" | "insert" | "update" | "delete" = "select";
   let payload: Record<string, unknown> | null = null;
   let limitCount: number | undefined;
@@ -2229,6 +2931,10 @@ function mutableQuery(table: string, tableData: Record<string, Array<Record<stri
     select: () => query,
     eq: (key: string, value: unknown) => {
       filters.push({ key, value });
+      return query;
+    },
+    in: (key: string, values: unknown[]) => {
+      inFilters.push({ key, values });
       return query;
     },
     limit: (count: number) => {
@@ -2257,7 +2963,10 @@ function mutableQuery(table: string, tableData: Record<string, Array<Record<stri
 
   function matchingRows() {
     const rows = tableData[table] ?? [];
-    const matched = rows.filter((row) => filters.every((filter) => row[filter.key] === filter.value));
+    const matched = rows.filter((row) =>
+      filters.every((filter) => row[filter.key] === filter.value) &&
+      inFilters.every((filter) => filter.values.includes(row[filter.key])),
+    );
     return typeof limitCount === "number" ? matched.slice(0, limitCount) : matched;
   }
 

@@ -10,6 +10,7 @@ import type {
   AgentViewModel,
   ArtistProfileViewModel,
   CleanProductionRepositories,
+  ConversationViewModel,
   EvidenceItemViewModel,
   MissionGenesisResultViewModel,
   MissionViewModel,
@@ -19,6 +20,7 @@ import type {
   TodayBriefGenerationMode,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
+import { consumeManagerConversationEventStream } from "./managerConversationStream";
 import type {
   ProductionAuthAdapter,
   ProductionMusicItem,
@@ -38,6 +40,17 @@ const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
 const MUSIC_UPLOADS_BUCKET = "music-uploads";
 const RESUMABLE_UPLOAD_THRESHOLD_BYTES = 6 * 1024 * 1024;
+const MISSION_GENESIS_POLL_INTERVAL_MS = 1500;
+const MISSION_GENESIS_POLL_ATTEMPTS = 240;
+
+function supabaseFunctionUrl(functionName: string) {
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+  if (!supabaseUrl) {
+    throw new Error("Missing VITE_SUPABASE_URL for Manager conversation streaming.");
+  }
+
+  return `${String(supabaseUrl).replace(/\/$/, "")}/functions/v1/${functionName}`;
+}
 
 export function createSupabaseAuthAdapter(client: SupabaseClient): ProductionAuthAdapter {
   return {
@@ -276,6 +289,19 @@ export function createSupabaseMusicLibraryLoader(client: SupabaseClient): Produc
         throw evidenceError;
       }
 
+      const { data: managerOutputRows, error: managerOutputError } = await client
+        .from("manager_outputs")
+        .select("id,source_packet_id,created_from_run_id,output_type,subject_type,subject_id,is_current,render_json,created_at")
+        .eq("artist_workspace_id", workspace.artistWorkspaceId)
+        .eq("is_current", true)
+        .in("subject_type", ["music_item", "music_project"])
+        .in("output_type", ["song_manager_read", "project_manager_read"])
+        .order("created_at", { ascending: false });
+
+      if (managerOutputError) {
+        throw managerOutputError;
+      }
+
       const splitIds = ((splitRows ?? []) as MusicSplitRow[]).map((row) => row.id).filter(Boolean);
       const { data: splitContributorRows, error: splitContributorError } = splitIds.length
         ? await client
@@ -298,6 +324,7 @@ export function createSupabaseMusicLibraryLoader(client: SupabaseClient): Produc
         splitRows: (splitRows ?? []) as MusicSplitRow[],
         splitContributorRows: (splitContributorRows ?? []) as MusicSplitContributorRow[],
         evidenceRows: (evidenceRows ?? []) as EvidenceRow[],
+        managerOutputRows: (managerOutputRows ?? []) as ManagerOutputRow[],
       });
     },
   };
@@ -435,6 +462,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const [
           { data: syncRows, error: syncError },
           { data: eventRows, error: eventError },
+          { data: managerOutputRows, error: managerOutputError },
           { data: briefRows, error: briefError },
         ] = await Promise.all([
           client
@@ -450,6 +478,16 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: false })
             .limit(5),
           client
+            .from("manager_outputs")
+            .select("id,source_packet_id,created_from_run_id,output_type,subject_type,subject_id,is_current,render_json,hero_json,blocks_json,summary,confidence_json,supporting_evidence_json,created_at")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("subject_type", "artist")
+            .eq("subject_id", workspace.artistId)
+            .eq("is_current", true)
+            .in("output_type", ["setup_first_manager_read", "recurring_todays_brief"])
+            .order("created_at", { ascending: false })
+            .limit(1),
+          client
             .from("manager_synthesis_runs")
             .select("id,status,classification,confidence,action_plan,limitations,completed_at,created_at")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
@@ -461,12 +499,14 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         if (syncError) throw syncError;
         if (eventError) throw eventError;
+        if (managerOutputError) throw managerOutputError;
         if (briefError) throw briefError;
 
         const latestSync = (syncRows as SourceSyncJobRow[] | null)?.[0];
         const connectedLabel = latestSync?.status === "completed_with_limits" ? "Spotify catalog connected with limits" : "Spotify catalog connected";
         const attentionItems = buildDeskAttentionItems(latestSync);
         const todayBrief =
+          todayBriefFromManagerOutput(((managerOutputRows as ManagerOutputRow[] | null) ?? [])[0]) ??
           todayBriefFromManagerRun(((briefRows as ManagerSynthesisRunRow[] | null) ?? [])[0]) ??
           buildFallbackTodayBrief(workspace);
 
@@ -511,11 +551,32 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           await throwFunctionInvokeError(error, "Today's Brief generation failed.");
         }
 
-        const brief = todayBriefFromPayload((data as { brief?: unknown } | null)?.brief);
+        const payload = data as { brief?: unknown; setupMusicReadTargets?: unknown } | null;
+        const brief = todayBriefFromPayload(payload?.brief);
         if (!brief) {
           throw new Error("Today's Brief generation did not return a usable brief.");
         }
-        return { ...brief, state: "fresh" as const };
+        const freshBrief = { ...brief, state: "fresh" as const };
+        return {
+          ...freshBrief,
+          brief: freshBrief,
+          setupMusicReadTargets: readSetupMusicReadTargets(payload?.setupMusicReadTargets),
+        };
+      },
+      async refreshPublicContext() {
+        const { data, error } = await client.functions.invoke("refresh-public-context", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+          },
+        });
+
+        if (error) {
+          await throwFunctionInvokeError(error, "Public context refresh failed.");
+        }
+
+        return readPublicContextRefreshResult(data);
       },
     },
     staff: {
@@ -966,24 +1027,95 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async loadConversations() {
         const { data, error } = await client
           .from("conversations")
-          .select("id,topic,status,summary")
+          .select("id,topic,status,summary,last_update_at,created_at")
           .eq("artist_workspace_id", workspace.artistWorkspaceId)
-          .order("created_at", { ascending: false })
+          .order("last_update_at", { ascending: false })
           .limit(20);
 
         if (error) {
           throw error;
         }
 
-        return ((data as ConversationRow[] | null) ?? []).map((row) => ({
-          id: row.id,
-          topic: row.topic,
-          status: row.status,
-          summary: row.summary ?? "No summary has been generated yet.",
-          prompt: row.summary ?? "",
-          messages: [],
-          createdWork: [],
-        }));
+        const rows = (data as ConversationRow[] | null) ?? [];
+        if (!rows.length) {
+          return [];
+        }
+
+        const { data: messageData, error: messageError } = await client
+          .from("conversation_messages")
+          .select("id,conversation_id,speaker,label,body,metadata,created_at")
+          .eq("artist_workspace_id", workspace.artistWorkspaceId)
+          .in("conversation_id", rows.map((row) => row.id))
+          .order("created_at", { ascending: true });
+
+        if (messageError) {
+          throw messageError;
+        }
+
+        const messagesByConversation = new Map<string, ConversationMessageRow[]>();
+        for (const message of (messageData as ConversationMessageRow[] | null) ?? []) {
+          const bucket = messagesByConversation.get(message.conversation_id) ?? [];
+          bucket.push(message);
+          messagesByConversation.set(message.conversation_id, bucket);
+        }
+
+        return rows.map((row) => conversationFromRows(row, messagesByConversation.get(row.id) ?? []));
+      },
+      async sendMessage(input) {
+        const body = input.body.trim();
+        if (!body) {
+          throw new Error("Ask Manager requires a directive or question.");
+        }
+
+        const { data, error } = await client.functions.invoke("manager-conversation", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            conversationId: input.conversationId,
+            body,
+            ...(input.contextRequestId ? { contextRequestId: input.contextRequestId } : {}),
+            ...(input.contextAnswers?.length ? { contextAnswers: input.contextAnswers } : {}),
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "Manager conversation failed.");
+        return conversationViewModel(data);
+      },
+      async sendMessageStream(input, handlers) {
+        const body = input.body.trim();
+        if (!body) {
+          throw new Error("Ask Manager requires a directive or question.");
+        }
+
+        const session = await client.auth.getSession();
+        const accessToken = session.data.session?.access_token;
+        if (!accessToken) {
+          throw new Error("Manager conversation streaming requires an authenticated session.");
+        }
+
+        const response = await fetch(supabaseFunctionUrl("manager-conversation-stream"), {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            conversationId: input.conversationId,
+            body,
+            ...(input.contextRequestId ? { contextRequestId: input.contextRequestId } : {}),
+            ...(input.contextAnswers?.length ? { contextAnswers: input.contextAnswers } : {}),
+          }),
+        });
+
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => "");
+          throw new Error(errorBody || `Manager conversation stream failed with status ${response.status}.`);
+        }
+
+        await consumeManagerConversationEventStream(response.body, handlers.onEvent);
       },
     },
     missions: {
@@ -992,8 +1124,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           .from("missions")
           .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
           .eq("artist_workspace_id", workspace.artistWorkspaceId)
-          .order("created_at", { ascending: false })
-          .limit(20);
+          .order("created_at", { ascending: false });
 
         if (error) {
           throw error;
@@ -1240,7 +1371,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           },
         });
         if (error) await throwFunctionInvokeError(error, "Mission Genesis failed.");
-        return missionGenesisViewModel(data);
+        return resolveMissionGenesisResponse(client, workspace, data);
       },
       async answerMissionGenesisContext(input) {
         const { data, error } = await client.functions.invoke("mission-genesis", {
@@ -1254,7 +1385,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           },
         });
         if (error) await throwFunctionInvokeError(error, "Mission Genesis failed.");
-        return missionGenesisViewModel(data);
+        return resolveMissionGenesisResponse(client, workspace, data);
       },
     },
     evidence: {
@@ -1418,6 +1549,23 @@ type ManagerSynthesisRunRow = {
   created_at?: string | null;
 };
 
+type ManagerOutputRow = {
+  id: string;
+  source_packet_id?: string | null;
+  created_from_run_id?: string | null;
+  output_type?: string | null;
+  subject_type?: string | null;
+  subject_id?: string | null;
+  is_current?: boolean | null;
+  render_json?: unknown;
+  hero_json?: unknown;
+  blocks_json?: unknown;
+  summary?: string | null;
+  confidence_json?: unknown;
+  supporting_evidence_json?: unknown;
+  created_at?: string | null;
+};
+
 type AgentProfileRow = {
   agent_key: string;
   name: string;
@@ -1435,6 +1583,18 @@ type ConversationRow = {
   topic: string;
   status: string;
   summary?: string | null;
+  last_update_at?: string | null;
+  created_at?: string | null;
+};
+
+type ConversationMessageRow = {
+  id: string;
+  conversation_id: string;
+  speaker: "artist" | "manager" | "system";
+  label?: string | null;
+  body: string;
+  metadata?: unknown;
+  created_at?: string | null;
 };
 
 type MissionRow = {
@@ -1514,13 +1674,258 @@ type EvidenceRow = {
   limitation?: string | null;
 };
 
+function conversationFromRows(row: ConversationRow, messages: ConversationMessageRow[]): ConversationViewModel {
+  const mappedMessages = messages.map(conversationMessageFromRow);
+  const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
+
+  return {
+    id: row.id,
+    topic: row.topic,
+    status: row.status,
+    summary: row.summary ?? "No summary has been generated yet.",
+    prompt,
+    lastUpdate: row.last_update_at ?? row.created_at ?? undefined,
+    messages: mappedMessages,
+    createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
+  };
+}
+
+function conversationMessageFromRow(row: ConversationMessageRow): ConversationViewModel["messages"][number] {
+  const metadata = isPlainRecord(row.metadata) ? row.metadata : {};
+  const speaker = row.speaker === "artist" ? "artist" : "manager";
+  const createdWork = normalizeCreatedWork(metadata.createdWork);
+  const contextQuestions = normalizeContextQuestions(metadata.contextQuestions);
+  const contextRequestId = readOptionalConversationString(metadata.contextRequestId);
+  return {
+    id: row.id,
+    speaker,
+    label: row.label ?? (speaker === "artist" ? "You" : "Manager"),
+    body: row.body,
+    ...(createdWork.length ? { createdWork } : {}),
+    ...(contextQuestions.length ? { contextQuestions } : {}),
+    ...(contextRequestId ? { contextRequestId } : {}),
+  };
+}
+
+function conversationViewModel(input: unknown): ConversationViewModel {
+  if (!isPlainRecord(input)) throw new Error("Manager conversation returned an invalid thread.");
+  const messages = Array.isArray(input.messages)
+    ? input.messages.map((message, index) => {
+        if (!isPlainRecord(message)) throw new Error("Manager conversation returned an invalid message.");
+        const speaker = message.speaker === "artist" ? "artist" : "manager";
+        const createdWork = normalizeCreatedWork(message.createdWork);
+        const contextQuestions = normalizeContextQuestions(message.contextQuestions);
+        const contextRequestId = readOptionalConversationString(message.contextRequestId);
+        return {
+          id: readConversationString(message.id, `message-${index}`),
+          speaker,
+          label: readConversationString(message.label, speaker === "artist" ? "You" : "Manager"),
+          body: readConversationString(message.body, ""),
+          ...(createdWork.length ? { createdWork } : {}),
+          ...(contextQuestions.length ? { contextQuestions } : {}),
+          ...(contextRequestId ? { contextRequestId } : {}),
+        };
+      })
+    : [];
+  const createdWork = normalizeCreatedWork(input.createdWork);
+
+  return {
+    id: readConversationString(input.id, ""),
+    topic: readConversationString(input.topic, "Manager conversation"),
+    status: readConversationString(input.status, "Manager responded"),
+    summary: readConversationString(input.summary, "Manager answered the directive."),
+    prompt: readConversationString(input.prompt, messages.find((message) => message.speaker === "artist")?.body ?? ""),
+    lastUpdate: typeof input.lastUpdate === "string" ? input.lastUpdate : undefined,
+    messages,
+    createdWork: createdWork.length ? createdWork : messages.flatMap((message) => message.createdWork ?? []),
+  };
+}
+
+function normalizeCreatedWork(value: unknown): ConversationViewModel["createdWork"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isPlainRecord)
+    .map((item) => ({
+      type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
+      title: readConversationString(item.title, ""),
+      body: readConversationString(item.body, ""),
+      id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : undefined,
+      parentMissionId: typeof item.parentMissionId === "string" && item.parentMissionId.trim() ? item.parentMissionId.trim() : undefined,
+      status: item.status === "created" || item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : undefined,
+    }))
+    .filter((item) => item.title && item.body);
+}
+
+function normalizeContextQuestions(value: unknown): NonNullable<ConversationViewModel["messages"][number]["contextQuestions"]> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isPlainRecord)
+    .map((item) => ({
+      key: readConversationString(item.key, ""),
+      question: readConversationString(item.question, ""),
+      reason: readConversationString(item.reason, ""),
+      answerKind: item.answerKind === "single_select" || item.answerKind === "multi_select" || item.answerKind === "money_range" ? item.answerKind : "short_text",
+      options: Array.isArray(item.options) ? item.options.filter((option): option is string => typeof option === "string" && Boolean(option.trim())).map((option) => option.trim()) : [],
+    }))
+    .filter((item) => item.key && item.question);
+}
+
+function readConversationString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function readOptionalConversationString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+async function resolveMissionGenesisResponse(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  data: unknown,
+): Promise<MissionGenesisResultViewModel> {
+  if (!isMissionGenesisProcessingResponse(data)) {
+    return missionGenesisViewModel(data);
+  }
+
+  return waitForMissionGenesisRun(client, workspace, data.runId);
+}
+
+function isMissionGenesisProcessingResponse(value: unknown): value is { status: "processing"; runId: string } {
+  return isPlainRecord(value) && value.status === "processing" && typeof value.runId === "string" && Boolean(value.runId.trim());
+}
+
+async function waitForMissionGenesisRun(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  runId: string,
+): Promise<MissionGenesisResultViewModel> {
+  for (let attempt = 0; attempt < MISSION_GENESIS_POLL_ATTEMPTS; attempt += 1) {
+    const { data: run, error: runError } = await client
+      .from("manager_synthesis_runs")
+      .select("id,status,error")
+      .eq("id", runId)
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .maybeSingle();
+
+    if (runError) throw runError;
+
+    const runRow = isPlainRecord(run) ? run : null;
+    if (runRow?.status === "failed") {
+      throw new Error(readConversationString(runRow.error, "Mission Genesis failed."));
+    }
+
+    const result = await loadPersistedMissionGenesisResult(client, runId);
+    if (result) return result;
+
+    await sleep(MISSION_GENESIS_POLL_INTERVAL_MS);
+  }
+
+  throw new Error("Mission Genesis is still processing. Try again in a moment.");
+}
+
+async function loadPersistedMissionGenesisResult(client: SupabaseClient, runId: string) {
+  const { data, error } = await client
+    .from("manager_run_actions")
+    .select("payload,result_payload")
+    .eq("manager_synthesis_run_id", runId)
+    .order("order_index", { ascending: true })
+    .limit(1);
+
+  if (error) throw error;
+  const action = Array.isArray(data) && isPlainRecord(data[0]) ? data[0] : null;
+  if (!action) return null;
+
+  return missionGenesisViewModel(missionGenesisViewModelFromAction(action.payload, action.result_payload));
+}
+
+function missionGenesisViewModelFromAction(payload: unknown, resultPayload: unknown) {
+  const output = isPlainRecord(payload) ? payload : {};
+  const result = isPlainRecord(resultPayload) ? resultPayload : {};
+  const outcome = readMissionGenesisOutcome(output.outcome ?? result.outcome);
+  const ids = normalizeMissionGenesisIds(outcome, result);
+
+  return {
+    outcome,
+    title: missionGenesisOutcomeTitle(outcome),
+    body: readConversationString(output.decisionSummary, "Mission Genesis completed."),
+    reasons: readStringArray(output.reasons),
+    questions: Array.isArray(result.questions) ? result.questions : Array.isArray(output.questions) ? output.questions : [],
+    evidenceNeeded: readStringArray(output.evidenceNeeded),
+    ...(ids.missionIds.length ? { missionIds: ids.missionIds } : {}),
+    ...(ids.candidateMissionIds.length ? { candidateMissionIds: ids.candidateMissionIds } : {}),
+    ...(ids.activatedMissionIds.length ? { activatedMissionIds: ids.activatedMissionIds } : {}),
+    ...(outcome === "candidate_needs_context" ? { candidateMissionId: ids.candidateMissionIds[0] ?? ids.primaryMissionId } : {}),
+    ...((outcome === "activate_mission" || outcome === "update_existing_mission")
+      ? { activatedMissionId: ids.activatedMissionIds[0] ?? ids.primaryMissionId }
+      : {}),
+  };
+}
+
+function normalizeMissionGenesisIds(outcome: MissionGenesisResultViewModel["outcome"], value: Record<string, unknown>) {
+  const missionIds = uniqueMissionGenesisStrings([
+    ...readStringArray(value.missionIds),
+    readOptionalString(value.missionId),
+    readOptionalString(value.primaryMissionId),
+  ]);
+  const explicitActivatedMissionIds = uniqueMissionGenesisStrings([
+    readOptionalString(value.activatedMissionId),
+    ...readStringArray(value.activatedMissionIds),
+  ]);
+  const activatedMissionIds = explicitActivatedMissionIds.length
+    ? explicitActivatedMissionIds
+    : outcome === "activate_mission" || outcome === "update_existing_mission"
+      ? missionIds
+      : [];
+  const candidateMissionIds = uniqueMissionGenesisStrings([
+    readOptionalString(value.candidateMissionId),
+    ...readStringArray(value.candidateMissionIds),
+    ...(outcome === "candidate_needs_context" ? missionIds : []),
+  ]);
+  return {
+    missionIds,
+    activatedMissionIds,
+    candidateMissionIds,
+    primaryMissionId: activatedMissionIds[0] ?? candidateMissionIds[0] ?? missionIds[0],
+  };
+}
+
+function readMissionGenesisOutcome(value: unknown): MissionGenesisResultViewModel["outcome"] {
+  const outcomes: MissionGenesisResultViewModel["outcome"][] = ["activate_mission", "candidate_needs_context", "request_evidence", "update_existing_mission", "no_mission"];
+  return outcomes.includes(value as MissionGenesisResultViewModel["outcome"]) ? value as MissionGenesisResultViewModel["outcome"] : "no_mission";
+}
+
+function missionGenesisOutcomeTitle(outcome: MissionGenesisResultViewModel["outcome"]) {
+  const titles: Record<MissionGenesisResultViewModel["outcome"], string> = {
+    activate_mission: "Mission activated",
+    candidate_needs_context: "The Manager needs context",
+    request_evidence: "Mission was not created",
+    update_existing_mission: "Existing mission should be updated",
+    no_mission: "Mission was not created",
+  };
+  return titles[outcome];
+}
+
+function readOptionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function uniqueMissionGenesisStrings(values: Array<string | undefined>) {
+  return [...new Set(values.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()))];
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function missionGenesisViewModel(input: unknown): MissionGenesisResultViewModel {
   if (!input || typeof input !== "object") throw new Error("Mission Genesis did not return a usable decision.");
+  const record = input as Record<string, unknown>;
   const result = input as MissionGenesisResultViewModel;
   const outcomes: MissionGenesisResultViewModel["outcome"][] = ["activate_mission", "candidate_needs_context", "request_evidence", "update_existing_mission", "no_mission"];
   if (!outcomes.includes(result.outcome) || !result.title?.trim() || !result.body?.trim()) {
     throw new Error("Mission Genesis returned an invalid decision contract.");
   }
+  const ids = normalizeMissionGenesisIds(result.outcome, record);
   return {
     ...result,
     reasons: Array.isArray(result.reasons) ? result.reasons : [],
@@ -1532,6 +1937,13 @@ function missionGenesisViewModel(input: unknown): MissionGenesisResultViewModel 
       answerKind: question.answerKind,
       options: question.options,
     })),
+    ...(ids.missionIds.length ? { missionIds: ids.missionIds } : {}),
+    ...(ids.candidateMissionIds.length ? { candidateMissionIds: ids.candidateMissionIds } : {}),
+    ...(ids.activatedMissionIds.length ? { activatedMissionIds: ids.activatedMissionIds } : {}),
+    ...(result.outcome === "candidate_needs_context" ? { candidateMissionId: ids.candidateMissionIds[0] ?? ids.primaryMissionId } : {}),
+    ...((result.outcome === "activate_mission" || result.outcome === "update_existing_mission")
+      ? { activatedMissionId: ids.activatedMissionIds[0] ?? ids.primaryMissionId }
+      : {}),
   };
 }
 
@@ -1854,6 +2266,7 @@ function mapMusicLibrary({
   splitRows,
   splitContributorRows,
   evidenceRows = [],
+  managerOutputRows = [],
 }: {
   itemRows: MusicItemRow[];
   projectRows: MusicProjectRow[];
@@ -1864,6 +2277,7 @@ function mapMusicLibrary({
   splitRows: MusicSplitRow[];
   splitContributorRows: MusicSplitContributorRow[];
   evidenceRows?: EvidenceRow[];
+  managerOutputRows?: ManagerOutputRow[];
 }): ProductionMusicLibrary {
   const identifiersByItem = groupIdentifiers(identifierRows, "music_item_id");
   const identifiersByProject = groupIdentifiers(identifierRows, "music_project_id");
@@ -1873,6 +2287,8 @@ function mapMusicLibrary({
   const splitsByItem = groupRows(splitRows, "music_item_id");
   const evidenceByItem = groupRows((evidenceRows ?? []).filter((row) => row.subject_type === "music_item"), "subject_id");
   const evidenceByProject = groupRows((evidenceRows ?? []).filter((row) => row.subject_type === "music_project"), "subject_id");
+  const generatedReadsByItem = managerReadOutputsBySubject(managerOutputRows, "music_item", "song_manager_read");
+  const generatedReadsByProject = managerReadOutputsBySubject(managerOutputRows, "music_project", "project_manager_read");
   const contributorsBySplit = groupRows(splitContributorRows, "music_split_id");
   const projectRowsById = new Map(projectRows.map((row) => [row.id, row]));
   const projectMetadataById = new Map(projectRows.map((row) => [row.id, readSpotifyMetadata(row.metadata)]));
@@ -1886,7 +2302,7 @@ function mapMusicLibrary({
     const identifiers = identifiersByItem.get(row.id);
     const spotify = readSpotifyMetadata(row.metadata);
     const manualDetails = readManualDetails(row.metadata);
-    const generatedManagerRead = readGeneratedManagerRead(row.metadata);
+    const generatedManagerRead = generatedReadsByItem.get(row.id) ?? readGeneratedManagerRead(row.metadata);
     const artists = readSpotifyArtists(spotify.artists);
     const assets = mapAssets(assetsByItem.get(row.id));
     const linkedProjectIds = projectIdsBySong.get(row.id) ?? [];
@@ -1958,7 +2374,7 @@ function mapMusicLibrary({
   const projects: ProductionMusicProject[] = projectRows.map((row) => {
     const identifiers = identifiersByProject.get(row.id);
     const spotify = readSpotifyMetadata(row.metadata);
-    const generatedManagerRead = readGeneratedManagerRead(row.metadata);
+    const generatedManagerRead = generatedReadsByProject.get(row.id) ?? readGeneratedManagerRead(row.metadata);
     const assetCover = mapAssets(assetsByProject.get(row.id)).find((asset) => asset.group === "Artwork");
     return {
       id: row.id,
@@ -2050,9 +2466,26 @@ function readManualDetails(metadata: unknown): Record<string, string> {
   }, {});
 }
 
+function managerReadOutputsBySubject(rows: ManagerOutputRow[], subjectType: string, outputType: string) {
+  const reads = new Map<string, ReturnType<typeof readGeneratedManagerReadPayload>>();
+  const sortedRows = [...rows].sort((a, b) => Date.parse(b.created_at ?? "") - Date.parse(a.created_at ?? ""));
+  for (const row of sortedRows) {
+    if (!row.subject_id || row.subject_type !== subjectType || row.output_type !== outputType || row.is_current === false) continue;
+    if (reads.has(row.subject_id)) continue;
+    const read = readGeneratedManagerReadPayload(row.render_json);
+    if (hasGeneratedManagerReadContent(read)) {
+      reads.set(row.subject_id, read);
+    }
+  }
+  return reads;
+}
+
 function readGeneratedManagerRead(metadata: unknown) {
   if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return {};
-  const managerRead = (metadata as { manager_read?: unknown }).manager_read;
+  return readGeneratedManagerReadPayload((metadata as { manager_read?: unknown }).manager_read);
+}
+
+function readGeneratedManagerReadPayload(managerRead: unknown) {
   if (!managerRead || typeof managerRead !== "object" || Array.isArray(managerRead)) return {};
   return {
     situationLine: readStringField((managerRead as Record<string, unknown>).situationLine),
@@ -2066,6 +2499,10 @@ function readGeneratedManagerRead(metadata: unknown) {
     confidence: readStringField((managerRead as Record<string, unknown>).confidence),
     sourceLine: readStringField((managerRead as Record<string, unknown>).sourceLine),
   };
+}
+
+function hasGeneratedManagerReadContent(read: ReturnType<typeof readGeneratedManagerReadPayload>) {
+  return Boolean(read.managerRead || read.nextMove || read.situationLine || read.watchNext || read.intelligenceSnapshot.length);
 }
 
 function readBriefClaimAudit(value: unknown) {
@@ -2524,6 +2961,21 @@ function todayBriefFromManagerRun(row?: ManagerSynthesisRunRow | null): TodayBri
   };
 }
 
+function todayBriefFromManagerOutput(row?: ManagerOutputRow | null): TodayBriefViewModel | undefined {
+  if (!row?.id || row.is_current === false || row.subject_type !== "artist") return undefined;
+  if (row.output_type !== "setup_first_manager_read" && row.output_type !== "recurring_todays_brief") return undefined;
+  const brief = todayBriefFromPayload(row.render_json);
+  if (!brief) return undefined;
+  return {
+    ...brief,
+    generatedAt: brief.generatedAt ?? row.created_at ?? undefined,
+    managerSynthesisRunId: brief.managerSynthesisRunId ?? row.created_from_run_id ?? undefined,
+    managerOutputId: row.id,
+    managerIntelligencePacketId: row.source_packet_id ?? undefined,
+    state: "fresh",
+  };
+}
+
 function todayBriefFromPayload(payload: unknown): TodayBriefViewModel | undefined {
   if (!isPlainRecord(payload)) return undefined;
   const intelligenceSnapshot = readBriefSnapshotGroups(payload.intelligenceSnapshot);
@@ -2538,10 +2990,13 @@ function todayBriefFromPayload(payload: unknown): TodayBriefViewModel | undefine
       snapshot[0]?.insight ||
       readRequiredBriefString(payload.artistSnapshot),
     managerRead,
+    managerEvidenceReads: readBriefManagerEvidenceReads(payload.managerEvidenceReads),
     sourceLine: readRequiredBriefString(payload.sourceLine),
     confidence: readTodayBriefConfidence(payload.confidence),
     generatedAt: readOptionalBriefString(payload.generatedAt),
     managerSynthesisRunId: readOptionalBriefString(payload.managerSynthesisRunId),
+    managerOutputId: readOptionalBriefString(payload.managerOutputId),
+    managerIntelligencePacketId: readOptionalBriefString(payload.managerIntelligencePacketId),
     state: "fresh",
   };
   if (!brief.headlineRead || !brief.managerRead || !brief.intelligenceSnapshot.length || !brief.snapshotSummary) return undefined;
@@ -2567,6 +3022,27 @@ function buildFallbackTodayBrief(workspace: ProductionWorkspace): TodayBriefView
     sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
     confidence: "limited",
     state: "fallback",
+  };
+}
+
+function readSetupMusicReadTargets(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isPlainRecord).flatMap((item) => {
+    const subjectType = item.subjectType === "music_item" || item.subjectType === "music_project" ? item.subjectType : undefined;
+    const subjectId = readOptionalBriefString(item.subjectId);
+    return subjectType && subjectId ? [{ subjectType, subjectId }] : [];
+  });
+}
+
+function readPublicContextRefreshResult(value: unknown) {
+  const payload = isPlainRecord(value) ? value : {};
+  const inserted = typeof payload.findingsInserted === "number" && Number.isFinite(payload.findingsInserted)
+    ? Math.max(0, Math.floor(payload.findingsInserted))
+    : 0;
+  return {
+    findingsInserted: inserted,
+    evidenceItemIds: readBriefStringArray(payload.evidenceItemIds),
+    summary: readOptionalBriefString(payload.summary),
   };
 }
 
@@ -2599,6 +3075,33 @@ function readBriefMetrics(value: unknown): TodayBriefViewModel["intelligenceSnap
     context: readOptionalBriefString(item.context),
     evidenceIds: readBriefStringArray(item.evidenceIds),
   })).filter((metric) => metric.label && metric.value && metric.evidenceIds.length);
+}
+
+function readBriefManagerEvidenceReads(value: unknown): NonNullable<TodayBriefViewModel["managerEvidenceReads"]> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isPlainRecord)
+    .map((item) => {
+      const label = readOptionalBriefString(item.label);
+      const read = readOptionalBriefString(item.read);
+      const evidenceIds = readBriefStringArray(item.evidenceIds);
+      if (!label || !read || !evidenceIds.length) return null;
+      return {
+        label,
+        value: readOptionalBriefString(item.value),
+        category: readBriefEvidenceReadCategory(item.category),
+        read,
+        evidenceIds,
+        confidence: readOptionalBriefString(item.confidence),
+      };
+    })
+    .filter((item): item is NonNullable<TodayBriefViewModel["managerEvidenceReads"]>[number] => Boolean(item));
+}
+
+function readBriefEvidenceReadCategory(value: unknown): NonNullable<TodayBriefViewModel["managerEvidenceReads"]>[number]["category"] {
+  return value === "kpi" || value === "signal" || value === "asset" || value === "market" || value === "management"
+    ? value
+    : undefined;
 }
 
 function readLegacyBriefSignals(value: unknown) {
@@ -3070,15 +3573,15 @@ function musicViewModelsFromLibrary(library: ProductionMusicLibrary): MusicObjec
       sourceLimit: song.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
       sourceSummary: buildSongSourceSummary(song),
       situationLine: acceptedGeneratedVisibleMusicText(generated?.situationLine) || buildSongSituationLine(song),
-      managerRead: generatedManagerRead ?? buildManagerRead(song),
-      watchNext: acceptedGeneratedVisibleMusicText(generated?.watchNext) || buildSongWatchNext(song),
+      managerRead: generatedManagerRead ?? pendingSongManagerRead(song),
+      watchNext: acceptedGeneratedVisibleMusicText(generated?.watchNext) || pendingSongWatchNext(song),
       managerReadState: generatedManagerRead
         ? generated?.generationState ?? ("fresh" as const)
-        : ("fallback" as const),
-      nextMove: generatedNextMove ?? buildNextMove(song),
+        : ("loading" as const),
+      nextMove: generatedNextMove ?? pendingSongNextMove(song),
       intelligenceSnapshot: generatedSnapshot ?? buildSongFallbackIntelligenceSnapshot(song),
       snapshotSummary: acceptedGeneratedVisibleMusicText(generated?.snapshotSummary) ?? buildSongFallbackSnapshotSummary(song),
-      confidence: generated?.confidence ?? "high",
+      confidence: generated?.confidence ?? "unknown",
       sourceLine: acceptedGeneratedVisibleMusicText(generated?.sourceLine) ?? "",
       rightsState: buildRightsState(song),
       assets: buildAssetLabels(song),
@@ -3124,15 +3627,15 @@ function musicViewModelsFromLibrary(library: ProductionMusicLibrary): MusicObjec
       sourceLimit: project.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
       sourceSummary: buildProjectSourceSummary(project),
       situationLine: acceptedGeneratedVisibleMusicText(generated?.situationLine) || buildProjectSituationLine(project),
-      managerRead: generatedManagerRead ?? buildProjectManagerRead(project),
-      watchNext: acceptedGeneratedVisibleMusicText(generated?.watchNext) || buildProjectWatchNext(project),
+      managerRead: generatedManagerRead ?? pendingProjectManagerRead(project),
+      watchNext: acceptedGeneratedVisibleMusicText(generated?.watchNext) || pendingProjectWatchNext(project),
       managerReadState: generatedManagerRead
         ? generated?.generationState ?? ("fresh" as const)
-        : ("fallback" as const),
-      nextMove: generatedNextMove ?? buildProjectNextMove(project),
+        : ("loading" as const),
+      nextMove: generatedNextMove ?? pendingProjectNextMove(project),
       intelligenceSnapshot: generatedSnapshot ?? buildProjectFallbackIntelligenceSnapshot(project),
       snapshotSummary: acceptedGeneratedVisibleMusicText(generated?.snapshotSummary) ?? buildProjectFallbackSnapshotSummary(project),
-      confidence: generated?.confidence ?? "high",
+      confidence: generated?.confidence ?? "unknown",
       sourceLine: acceptedGeneratedVisibleMusicText(generated?.sourceLine) ?? "",
       coverImageUrl: project.coverImageUrl,
       spotifyUrl: project.spotifyUrl,
@@ -3248,6 +3751,18 @@ function buildSongFallbackSnapshotSummary(song: ProductionMusicItem): string {
   return `${song.title} is in view, but the first useful record read needs one public or team signal.`;
 }
 
+function pendingSongManagerRead(song: ProductionMusicItem) {
+  return `The Manager's Read for ${song.title} is being prepared from the saved packet. The record details and audience facts below are available now, but the management judgment should wait for the generated read instead of using a local fallback.`;
+}
+
+function pendingSongNextMove(song: ProductionMusicItem) {
+  return `Wait for ${song.title}'s generated Manager Read, or regenerate it if the read does not appear shortly.`;
+}
+
+function pendingSongWatchNext(song: ProductionMusicItem) {
+  return `Watch this room for the generated Manager Read for ${song.title}.`;
+}
+
 function buildProjectFallbackIntelligenceSnapshot(project: ProductionMusicProject): TodayBriefViewModel["intelligenceSnapshot"] {
   const signals = buildProjectManagementSignals(project);
   const hasProjectSignals = signals.length > 0;
@@ -3281,6 +3796,18 @@ function buildProjectFallbackSnapshotSummary(project: ProductionMusicProject): s
       : `${project.title} is strongest around ${lead.context}; that is the first project behavior to inspect.`;
   }
   return `${project.title} has ${project.tracks.length || project.totalTracks || 0} mapped songs ready for a project-level read.`;
+}
+
+function pendingProjectManagerRead(project: ProductionMusicProject) {
+  return `The Manager's Read for ${project.title} is being prepared from the saved packet. The project details and tracklist facts below are available now, but the management judgment should wait for the generated read instead of using a local fallback.`;
+}
+
+function pendingProjectNextMove(project: ProductionMusicProject) {
+  return `Wait for ${project.title}'s generated Manager Read, or regenerate it if the read does not appear shortly.`;
+}
+
+function pendingProjectWatchNext(project: ProductionMusicProject) {
+  return `Watch this room for the generated Manager Read for ${project.title}.`;
 }
 
 function buildSongSourceSummary(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["sourceSummary"]> {

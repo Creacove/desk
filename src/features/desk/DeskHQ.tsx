@@ -1,4 +1,4 @@
-import { ArrowUpRight, BriefcaseBusiness, ChevronRight, ClipboardCheck, Library, ListChecks, RefreshCw, Upload, UsersRound } from "lucide-react";
+import { ArrowUpRight, BriefcaseBusiness, ChevronRight, ClipboardCheck, Globe2, Library, ListChecks, RefreshCw, Upload, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { ProductButton, WorkspaceHeader } from "../../design-system/components";
 import type {
@@ -29,6 +29,7 @@ export function DeskHQScreen({
   todayBrief,
   todayBriefPending,
   todayBriefError,
+  publicContextPending,
   attention,
   movement,
   agents,
@@ -37,6 +38,7 @@ export function DeskHQScreen({
   onNavigate,
   onManager,
   onGenerateTodaysBrief,
+  onRefreshPublicContext,
   onLockedAgent,
   onDrawer,
   onOpenMusicFocus,
@@ -45,6 +47,7 @@ export function DeskHQScreen({
   todayBrief: TodayBriefViewModel | null;
   todayBriefPending: boolean;
   todayBriefError: string | null;
+  publicContextPending: boolean;
   attention: AttentionItem[];
   movement: MovementItem[];
   agents: AgentViewModel[];
@@ -53,6 +56,7 @@ export function DeskHQScreen({
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
   onGenerateTodaysBrief: (mode?: TodayBriefGenerationMode) => void;
+  onRefreshPublicContext: () => void;
   onLockedAgent: (agent: AgentViewModel) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
@@ -80,9 +84,11 @@ export function DeskHQScreen({
         brief={todayBrief ?? buildVisibleFallbackBrief(profile)}
         pending={todayBriefPending}
         error={todayBriefError}
+        publicContextPending={publicContextPending}
         missions={missions}
         agents={agents}
         onGenerate={onGenerateTodaysBrief}
+        onRefreshPublicContext={onRefreshPublicContext}
         onDrawer={onDrawer}
         onNavigate={onNavigate}
         onManager={onManager}
@@ -126,6 +132,8 @@ export function DeskHQScreen({
             pending={todayBriefPending}
             error={todayBriefError}
             onGenerate={onGenerateTodaysBrief}
+            publicContextPending={publicContextPending}
+            onRefreshPublicContext={onRefreshPublicContext}
             onDrawer={onDrawer}
           />
 
@@ -226,8 +234,8 @@ export function DeskHQScreen({
           <section>
             <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88 mb-4">Recent Movement</p>
             <div className="space-y-6 pl-1">
-              {movement.length ? movement.slice(0, 5).map((item) => (
-                <div key={`${item.title}-${item.time}`} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
+              {movement.length ? movement.slice(0, 5).map((item, index) => (
+                <div key={`${item.title}-${item.time}-${index}`} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
                   <p className="text-[12px] font-semibold leading-tight text-foreground">{item.title}</p>
                   <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">
                     {item.label} / {item.time}
@@ -252,9 +260,11 @@ function MobileDeskHome({
   brief,
   pending,
   error,
+  publicContextPending,
   missions,
   agents,
   onGenerate,
+  onRefreshPublicContext,
   onDrawer,
   onNavigate,
   onManager,
@@ -264,9 +274,11 @@ function MobileDeskHome({
   brief: TodayBriefViewModel;
   pending: boolean;
   error: string | null;
+  publicContextPending: boolean;
   missions: MissionViewModel[];
   agents: AgentViewModel[];
   onGenerate: (mode?: TodayBriefGenerationMode) => void;
+  onRefreshPublicContext: () => void;
   onDrawer: (drawer: DrawerKind) => void;
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
@@ -298,16 +310,28 @@ function MobileDeskHome({
               <p className="truncate text-[13px] font-semibold text-foreground">{profile.name}</p>
             </div>
           </div>
-          <button
-            type="button"
-            data-testid="desk-mobile-generate-brief"
-            aria-label="Generate today's brief"
-            onClick={() => onGenerate("operating")}
-            disabled={pending}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-40"
-          >
-            <RefreshCw className={pending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              data-testid="desk-mobile-refresh-public-context"
+              aria-label="Refresh public context"
+              onClick={onRefreshPublicContext}
+              disabled={publicContextPending || pending}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-40"
+            >
+              <Globe2 className={publicContextPending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              data-testid="desk-mobile-generate-brief"
+              aria-label="Generate today's brief"
+              onClick={() => onGenerate("operating")}
+              disabled={pending || publicContextPending}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-40"
+            >
+              <RefreshCw className={pending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
+            </button>
+          </div>
         </div>
 
         <div className="px-4 py-4">
@@ -540,6 +564,8 @@ function TodayBrief({
   pending,
   error,
   onGenerate,
+  publicContextPending,
+  onRefreshPublicContext,
   onDrawer,
 }: {
   profile: ArtistProfileViewModel;
@@ -547,6 +573,8 @@ function TodayBrief({
   pending: boolean;
   error: string | null;
   onGenerate: (mode?: TodayBriefGenerationMode) => void;
+  publicContextPending: boolean;
+  onRefreshPublicContext: () => void;
   onDrawer: (drawer: DrawerKind) => void;
 }) {
   const compactIntelligenceMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
@@ -574,7 +602,7 @@ function TodayBrief({
             <p className="text-sm font-semibold">{profile.name} - Artist operating read</p>
           </div>
         </div>
-        <ProductButton onClick={() => onGenerate("operating")} disabled={pending}>
+        <ProductButton onClick={() => onGenerate("operating")} disabled={pending || publicContextPending}>
           <RefreshCw className={pending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
           {pending ? "Generating Brief" : "Generate Today's Brief"}
         </ProductButton>
@@ -628,9 +656,18 @@ function TodayBrief({
                 type="button"
                 className="text-sm font-semibold text-brand-accent disabled:opacity-40"
                 onClick={() => onGenerate("setup-map")}
-                disabled={pending}
+                disabled={pending || publicContextPending}
               >
                 Generate setup map
+              </button>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand-accent disabled:opacity-40"
+                onClick={onRefreshPublicContext}
+                disabled={publicContextPending || pending}
+              >
+                <Globe2 className={publicContextPending ? "h-4 w-4 animate-spin" : "h-4 w-4"} aria-hidden="true" />
+                {publicContextPending ? "Refreshing public context" : "Refresh public context"}
               </button>
             </div>
             <div className="text-left sm:text-right">

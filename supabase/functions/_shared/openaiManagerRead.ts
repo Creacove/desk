@@ -8,6 +8,10 @@ export type ManagerReadPacket = {
   artistProfile?: Record<string, unknown>;
   relatedRecords?: Array<Record<string, unknown>>;
   derivedInsights?: Array<Record<string, unknown>>;
+  latestManagerIntelligencePacket?: Record<string, unknown> | null;
+  packetAssetReads?: Array<Record<string, unknown>>;
+  packetSubjectRead?: Record<string, unknown> | null;
+  packetMissionSeed?: Record<string, unknown>;
   tracklist: Array<Record<string, unknown>>;
   limitations: string[];
   sourcePanelInstruction: string;
@@ -165,6 +169,7 @@ export function buildManagerReadInstructions(subjectType: ManagerReadSubjectType
     "Do not call the whole packet catalog-only, metadata-only, or only catalog metadata when evidence entries include third-party metrics, playlist counts, charts, or social/radio activity.",
     "When catalog details and public attention intelligence are both present, lead with the public attention shape and use catalog details only when they change the decision.",
     "When the packet has many evidence rows, synthesize the pattern. Rank by commercial usefulness: current/trailing streams, playlist reach and editorial support, social video scale, Shazam/radio, charts or territory ranks, then metadata.",
+    "When packetSubjectRead or packetAssetReads exists, use it as the Manager Intelligence Packet's current asset judgment. Do not ignore it or replace it with a separate generic record summary.",
     "Translate database metric names into plain manager language. Never expose raw names like provider_window, video_creates, playlist_total_reach, or spotify_trailing_28d_streams in the main read.",
     "Do not lead with missing data. Do not make the main read mainly about missing data when useful intelligence exists. The opportunity is the center; absent private documents and source limits are not the story.",
     "Do not mention private saves, repeat listeners, source-of-stream, conversion proof, private conversion data, or campaign ROI in visible output unless the user directly asks for those proof gaps.",

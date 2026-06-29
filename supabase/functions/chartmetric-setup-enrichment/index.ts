@@ -10,6 +10,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const SETUP_ENRICHMENT_DISPATCH_DELAY_MS = 1500;
+
 type SetupEnrichmentInput = {
   accountId: string;
   artistWorkspaceId: string;
@@ -87,7 +89,7 @@ Deno.serve(async (request) => {
       },
     });
 
-    dispatchEnrichmentWorkers(supabaseUrl, anonKey, authHeader, input, jobs);
+    dispatchEnrichmentWorkersSequentially(authClient, supabaseUrl, anonKey, authHeader, input, jobs);
 
     return json({
       status: "queued",
@@ -199,19 +201,70 @@ async function createEnrichmentJobs(
   return jobs as EnrichmentJobDraft[];
 }
 
-function dispatchEnrichmentWorkers(
+function dispatchEnrichmentWorkersSequentially(
+  supabase: any,
   supabaseUrl: string,
   anonKey: string,
   authHeader: string,
   input: SetupEnrichmentInput,
   jobs: EnrichmentJobDraft[],
 ) {
-  const work = Promise.all(jobs.map((job) => dispatchEnrichmentWorker(supabaseUrl, anonKey, authHeader, input, job))).catch((error) => {
+  const work = (async () => {
+    for (const [index, job] of jobs.entries()) {
+      if (index > 0) await delay(SETUP_ENRICHMENT_DISPATCH_DELAY_MS);
+      await dispatchEnrichmentWorker(supabaseUrl, anonKey, authHeader, input, job);
+    }
+  })().catch(async (error) => {
     console.warn("chartmetric setup enrichment worker dispatch failed", {
       message: error instanceof Error ? error.message : "Chartmetric setup enrichment worker dispatch failed.",
     });
+    await markSetupDispatchFailed(supabase, input, jobs, error);
   });
   EdgeRuntime.waitUntil(work);
+}
+
+async function markSetupDispatchFailed(
+  supabase: any,
+  input: SetupEnrichmentInput,
+  jobs: EnrichmentJobDraft[],
+  error: unknown,
+) {
+  if (!jobs.length) return;
+  const message = error instanceof Error && error.message.trim()
+    ? error.message.trim()
+    : "Chartmetric setup enrichment worker dispatch failed.";
+
+  const { error: updateError } = await supabase
+    .from("source_sync_jobs")
+    .update({
+      status: "failed",
+      completed_at: new Date().toISOString(),
+      error: `dispatch_failure: ${message}`,
+    })
+    .in("id", jobs.map((job) => job.id))
+    .eq("status", "queued");
+
+  if (updateError) {
+    console.warn("chartmetric setup enrichment job failure update failed", {
+      message: updateError instanceof Error ? updateError.message : "Unable to mark setup enrichment jobs failed.",
+    });
+  }
+
+  await writeOperatingEvent(supabase, input, {
+    eventType: "chartmetric_setup_enrichment_dispatch_failed",
+    targetType: "artist_workspace",
+    targetId: input.artistWorkspaceId,
+    summary: "Chartmetric setup enrichment jobs were queued but worker dispatch failed before completion.",
+    payload: {
+      dispatch_failure: message,
+      job_ids: jobs.map((job) => job.id),
+      job_types: jobs.map((job) => job.job_type),
+    },
+  });
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function dispatchEnrichmentWorker(
