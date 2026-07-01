@@ -358,8 +358,14 @@ export function ConversationWorkspace({
 
   return (
     <WorkspaceShell eyebrow="Direct message" title={conversation.topic} onBack={onBack}>
-      {/* Full-width message column — no max-w constraint on the outer wrapper */}
-      <div className="pb-40">
+      {/*
+        ChatGPT layout pattern:
+        — A centered, width-constrained reading column gives the breathing room.
+        — Manager text fills the column naturally (no bubble border).
+        — User message is a right-aligned soft pill within the same column.
+        — Side whitespace is the product of the column constraint, not padding hacks.
+      */}
+      <div className="mx-auto max-w-[680px] pb-44">
         <div className="flex flex-col gap-8">
           {conversation.messages.map((message) => (
             <MessageRow
@@ -407,7 +413,7 @@ export function ConversationWorkspace({
               <div>
                 <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Decision package</p>
                 <h3 className="mt-2 text-[16px] font-semibold leading-tight text-foreground">{conversation.decisionPackage.title}</h3>
-                <p className="mt-2 max-w-2xl text-[13px] font-semibold leading-relaxed text-muted-foreground/86">{conversation.decisionPackage.summary}</p>
+                <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/86">{conversation.decisionPackage.summary}</p>
               </div>
               {onOpenDecisionPackage ? (
                 <button
@@ -427,13 +433,18 @@ export function ConversationWorkspace({
       {/* ------------------------------------------------------------------ */}
       {/* Floating input bar                                                   */}
       {/* ------------------------------------------------------------------ */}
+      {/*
+        Input bar: pinned to the same 680px column as the messages.
+        On mobile it spans full width with 16px gutter; on desktop it
+        aligns exactly with the reading column for visual harmony.
+      */}
       <div
-        className="fixed bottom-24 left-0 right-0 z-40 px-3 lg:bottom-8 lg:px-4"
+        className="fixed bottom-20 left-0 right-0 z-40 px-4 lg:bottom-6"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="mx-auto max-w-3xl">
-          <div className="rounded-[24px] border border-foreground/10 bg-background/92 shadow-2xl shadow-foreground/5 backdrop-blur-xl lg:rounded-[28px]">
-            <div className="relative flex items-end gap-3 p-2">
+        <div className="mx-auto max-w-[680px]">
+          <div className="overflow-hidden rounded-[20px] border border-foreground/10 bg-background/95 shadow-[0_8px_40px_rgba(0,0,0,0.1)] backdrop-blur-2xl">
+            <div className="flex items-end gap-2 px-4 py-2">
               <textarea
                 ref={textareaRef}
                 value={draft}
@@ -446,7 +457,7 @@ export function ConversationWorkspace({
                 }}
                 placeholder="Message the Manager…"
                 rows={1}
-                className="min-h-[44px] w-full resize-none bg-transparent px-4 py-3 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
+                className="min-h-[44px] w-full resize-none bg-transparent py-3 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
                 style={{ maxHeight: "200px", overflowY: "auto" }}
               />
               <button
@@ -454,16 +465,16 @@ export function ConversationWorkspace({
                 onClick={handleSend}
                 disabled={!draft.trim() || sendPending}
                 aria-label="Send Manager message"
-                className="mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow transition-all hover:scale-105 hover:bg-foreground/90 disabled:opacity-20 disabled:hover:scale-100"
+                className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-all hover:bg-foreground/85 disabled:opacity-20"
               >
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                <ArrowRight className="h-[14px] w-[14px]" aria-hidden="true" />
               </button>
             </div>
             {sendError && !hasFailedManagerMessage ? (
-              <p role="alert" className="px-5 pb-3 text-[12px] font-semibold text-red-600">{sendError}</p>
+              <p role="alert" className="px-4 pb-2 text-[11px] font-medium text-red-600">{sendError}</p>
             ) : null}
           </div>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground/40">Manager can make mistakes. Verify important decisions.</p>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground/35">Manager can make mistakes. Verify important decisions.</p>
         </div>
       </div>
     </WorkspaceShell>
