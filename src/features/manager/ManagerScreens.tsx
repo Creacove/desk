@@ -1,8 +1,66 @@
-import { ArrowRight, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
+import { ArrowRight, ChevronRight, ClipboardCheck, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel } from "../../types/cleanProduction";
 import { useEffect, useRef, useState } from "react";
 
+// ---------------------------------------------------------------------------
+// ChatGPT-style typewriter hook
+// Drips characters from `target` into display at a capped speed (~28ms/char).
+// When streaming stops it snaps immediately to full text.
+// ---------------------------------------------------------------------------
+function useTypewriter(target: string, streaming: boolean): string {
+  const [displayed, setDisplayed] = useState(target);
+  const frameRef = useRef<number | null>(null);
+  const lastTickRef = useRef<number>(0);
+  const displayedRef = useRef<string>(target);
+
+  useEffect(() => {
+    if (!streaming) {
+      // Snap to full text when streaming ends
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+      displayedRef.current = target;
+      setDisplayed(target);
+      return;
+    }
+
+    const CHAR_INTERVAL_MS = 18; // ~55 chars/sec — feels like fast human typing
+
+    const tick = (now: number) => {
+      const elapsed = now - lastTickRef.current;
+      if (elapsed >= CHAR_INTERVAL_MS) {
+        const currentLen = displayedRef.current.length;
+        if (currentLen < target.length) {
+          // Advance by however many chars fit in elapsed time (burst catch-up)
+          const charsToAdd = Math.max(1, Math.floor(elapsed / CHAR_INTERVAL_MS));
+          const next = target.slice(0, currentLen + charsToAdd);
+          displayedRef.current = next;
+          setDisplayed(next);
+          lastTickRef.current = now;
+        }
+      }
+      frameRef.current = requestAnimationFrame(tick);
+    };
+
+    frameRef.current = requestAnimationFrame(tick);
+    return () => {
+      if (frameRef.current !== null) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [target, streaming]);
+
+  // If the target shrank (shouldn't happen) or we're ahead, clamp
+  if (!streaming) return target;
+  return displayed.length <= target.length ? displayed : target;
+}
+
+// ---------------------------------------------------------------------------
+// ManagerOfficeScreen
+// ---------------------------------------------------------------------------
 export function ManagerOfficeScreen({
   conversations,
   missionGenesisResult,
@@ -231,6 +289,9 @@ function MissionGenesisManagerPanel({
   );
 }
 
+// ---------------------------------------------------------------------------
+// ConversationWorkspace — the main chat view
+// ---------------------------------------------------------------------------
 export function ConversationWorkspace({
   conversation,
   onBack,
@@ -259,6 +320,7 @@ export function ConversationWorkspace({
 }) {
   const [draft, setDraft] = useState("");
   const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageCreatedWork = conversation.messages.flatMap((message) => message.createdWork ?? []);
   const allCreatedWork = conversation.createdWork.length
     ? conversation.createdWork
@@ -266,88 +328,67 @@ export function ConversationWorkspace({
   const shouldShowCreatedWorkSummary = allCreatedWork.length > 0 && messageCreatedWork.length === 0;
   const activeRun = conversation.activeRun;
   const isManagerThinking = sendPending || activeRun?.status === "running";
+  const hasStreamingMessage = conversation.messages.some((message) => message.status === "streaming");
   const hasFailedManagerMessage = conversation.messages.some((message) => message.speaker === "manager" && message.status === "failed");
 
+  // Auto-scroll on new content
   useEffect(() => {
     if (typeof scrollAnchorRef.current?.scrollIntoView === "function") {
-      scrollAnchorRef.current.scrollIntoView({ block: "end" });
+      scrollAnchorRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
     }
   }, [conversation.messages.length, activeRun?.streamedText, activeRun?.steps.length]);
 
+  // Auto-resize textarea
+  const handleDraftChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setDraft(event.target.value);
+    const el = event.target;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  };
+
+  const handleSend = () => {
+    const body = draft.trim();
+    if (!body || sendPending) return;
+    onSendMessage(body, conversation.id);
+    setDraft("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
+  };
+
   return (
     <WorkspaceShell eyebrow="Direct message" title={conversation.topic} onBack={onBack}>
-      <div className="mx-auto max-w-4xl pb-32">
-        <section className="flex flex-col gap-7">
+      {/* Full-width message column — no max-w constraint on the outer wrapper */}
+      <div className="pb-40">
+        <div className="flex flex-col gap-8">
           {conversation.messages.map((message) => (
-            <div key={message.id} className={`flex flex-col gap-4 ${message.speaker === "artist" ? "items-end" : ""}`}>
-              <div className={`flex items-center gap-3 ${message.speaker === "artist" ? "flex-row-reverse" : ""}`}>
-                <span className={`flex h-8 w-8 items-center justify-center rounded-lg shadow-sm ${message.speaker === "artist" ? "bg-foreground/[0.08] text-foreground" : "bg-foreground text-background"}`}>
-                  {message.speaker === "artist" ? <UsersRound className="h-4 w-4" aria-hidden="true" /> : <Sparkles className="h-4 w-4" aria-hidden="true" />}
-                </span>
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">
-                  {message.label}
-                  {message.status === "streaming" ? <span className="ml-2 normal-case tracking-normal text-brand-accent">streaming</span> : null}
-                </p>
-              </div>
-              <div className={`max-w-2xl rounded-2xl border p-5 shadow-sm ${message.speaker === "artist" ? "rounded-tr-none border-foreground/10 bg-foreground text-background" : "rounded-tl-none border-foreground/8 bg-background text-foreground"}`}>
-                <RichMessageBody body={message.body} streaming={message.status === "streaming"} failed={message.status === "failed"} />
-                {message.status === "streaming" && activeRun?.steps.length ? <ManagerActivityDisclosure run={activeRun} /> : null}
-                {message.status === "failed" && onRetryLastMessage ? (
-                  <button
-                    type="button"
-                    onClick={onRetryLastMessage}
-                    className="mt-4 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.04em] text-foreground/75 transition-colors hover:bg-foreground/[0.045]"
-                  >
-                    Retry Manager message
-                  </button>
-                ) : null}
-                {message.contextQuestions?.length ? (
-                  <ManagerContextQuestionForm
-                    questions={message.contextQuestions}
-                    disabled={sendPending}
-                    onSubmit={(answers) =>
-                      onSendContextAnswers(
-                        "Context answers for Manager mission decision.",
-                        conversation.id,
-                        message.contextRequestId ?? message.id,
-                        answers,
-                      )
-                    }
-                  />
-                ) : null}
-                {message.createdWork?.length ? (
-                  <div className="mt-6 grid gap-3">
-                    {message.createdWork.map((work) => (
-                      <CreatedWorkCard key={`${work.type}-${work.id ?? work.title}`} work={work} onOpenCreatedWork={onOpenCreatedWork} />
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            </div>
+            <MessageRow
+              key={message.id}
+              message={message}
+              activeRun={activeRun}
+              onRetryLastMessage={onRetryLastMessage}
+              sendPending={sendPending}
+              onSendContextAnswers={(answers) =>
+                onSendContextAnswers(
+                  "Context answers for Manager mission decision.",
+                  conversation.id,
+                  message.contextRequestId ?? message.id,
+                  answers,
+                )
+              }
+              onOpenCreatedWork={onOpenCreatedWork}
+            />
           ))}
-          {isManagerThinking && !conversation.messages.some((message) => message.status === "streaming") ? (
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-foreground text-background shadow-sm">
-                  <Sparkles className="h-4 w-4" aria-hidden="true" />
-                </span>
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground/88">Manager</p>
-              </div>
-              <div className="max-w-2xl rounded-2xl rounded-tl-none border border-foreground/8 bg-background p-5 text-foreground shadow-sm">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-4 w-4 animate-spin text-brand-accent" aria-hidden="true" />
-                  <div>
-                    <p className="text-[15px] font-semibold leading-[1.55] text-foreground">Manager is thinking</p>
-                    <p className="text-[12px] font-semibold leading-[1.55] text-muted-foreground">Manager is writing a reply.</p>
-                  </div>
-                </div>
-                {activeRun?.steps.length ? <ManagerActivityDisclosure run={activeRun} /> : null}
-              </div>
-            </div>
-          ) : null}
-          <div ref={scrollAnchorRef} />
-        </section>
 
+          {/* Thinking indicator — only shown when no streaming message exists yet */}
+          {isManagerThinking && !hasStreamingMessage ? (
+            <ThinkingIndicator activeRun={activeRun} />
+          ) : null}
+
+          <div ref={scrollAnchorRef} />
+        </div>
+
+        {/* Created work summary */}
         {shouldShowCreatedWorkSummary ? (
           <aside className="mt-10 rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Work created</p>
@@ -359,6 +400,7 @@ export function ConversationWorkspace({
           </aside>
         ) : null}
 
+        {/* Decision package */}
         {conversation.decisionPackage ? (
           <aside className="mt-6 rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -380,47 +422,334 @@ export function ConversationWorkspace({
             </div>
           </aside>
         ) : null}
+      </div>
 
-        <div className="fixed bottom-24 left-0 right-0 z-40 px-3 lg:bottom-12 lg:px-4" style={{ paddingBottom: "env(safe-area-inset-bottom)" }}>
-          <div className="mx-auto max-w-3xl rounded-[24px] border border-foreground/10 bg-background/90 p-2 shadow-2xl backdrop-blur-xl lg:rounded-[28px]">
-            <div className="relative flex items-center gap-3">
+      {/* ------------------------------------------------------------------ */}
+      {/* Floating input bar                                                   */}
+      {/* ------------------------------------------------------------------ */}
+      <div
+        className="fixed bottom-24 left-0 right-0 z-40 px-3 lg:bottom-8 lg:px-4"
+        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      >
+        <div className="mx-auto max-w-3xl">
+          <div className="rounded-[24px] border border-foreground/10 bg-background/92 shadow-2xl shadow-foreground/5 backdrop-blur-xl lg:rounded-[28px]">
+            <div className="relative flex items-end gap-3 p-2">
               <textarea
+                ref={textareaRef}
                 value={draft}
-                onChange={(event) => setDraft(event.target.value)}
+                onChange={handleDraftChange}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    const body = draft.trim();
-                    if (!body || sendPending) return;
-                    onSendMessage(body, conversation.id);
-                    setDraft("");
+                    handleSend();
                   }
                 }}
-                placeholder="Type a message to the Manager..."
-                className="min-h-[56px] w-full resize-none bg-transparent px-5 py-4 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/60"
+                placeholder="Message the Manager…"
+                rows={1}
+                className="min-h-[44px] w-full resize-none bg-transparent px-4 py-3 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
+                style={{ maxHeight: "200px", overflowY: "auto" }}
               />
               <button
                 type="button"
-                onClick={() => {
-                  if (!draft.trim()) return;
-                  onSendMessage(draft.trim(), conversation.id);
-                  setDraft("");
-                }}
+                onClick={handleSend}
                 disabled={!draft.trim() || sendPending}
                 aria-label="Send Manager message"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-brand-accent text-primary-foreground shadow-lg transition-transform hover:scale-105 disabled:opacity-25"
+                className="mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background shadow transition-all hover:scale-105 hover:bg-foreground/90 disabled:opacity-20 disabled:hover:scale-100"
               >
-                <ArrowRight className="h-5 w-5" aria-hidden="true" />
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
             </div>
-            {sendError && !hasFailedManagerMessage ? <p role="alert" className="px-5 pb-3 text-[12px] font-semibold text-red-700">{sendError}</p> : null}
+            {sendError && !hasFailedManagerMessage ? (
+              <p role="alert" className="px-5 pb-3 text-[12px] font-semibold text-red-600">{sendError}</p>
+            ) : null}
           </div>
+          <p className="mt-2 text-center text-[11px] text-muted-foreground/40">Manager can make mistakes. Verify important decisions.</p>
         </div>
       </div>
     </WorkspaceShell>
   );
 }
 
+// ---------------------------------------------------------------------------
+// Individual message row
+// ---------------------------------------------------------------------------
+function MessageRow({
+  message,
+  activeRun,
+  onRetryLastMessage,
+  sendPending,
+  onSendContextAnswers,
+  onOpenCreatedWork,
+}: {
+  message: ConversationViewModel["messages"][number];
+  activeRun: ConversationViewModel["activeRun"];
+  onRetryLastMessage?: () => void;
+  sendPending: boolean;
+  onSendContextAnswers: (answers: ManagerConversationContextAnswer[]) => void;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+}) {
+  const isArtist = message.speaker === "artist";
+  const isStreaming = message.status === "streaming";
+
+  return (
+    <div className={`flex flex-col ${isArtist ? "items-end" : "items-start"}`}>
+      {/* Speaker label row */}
+      <div className={`mb-2 flex items-center gap-2 ${isArtist ? "flex-row-reverse" : ""}`}>
+        <span
+          className={`flex h-6 w-6 items-center justify-center rounded-md ${
+            isArtist
+              ? "bg-foreground/[0.06] text-foreground/70"
+              : "bg-foreground text-background"
+          }`}
+        >
+          {isArtist ? (
+            <UsersRound className="h-3.5 w-3.5" aria-hidden="true" />
+          ) : (
+            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          )}
+        </span>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
+          {message.label}
+        </p>
+      </div>
+
+      {/* Message body */}
+      {isArtist ? (
+        // User message — subtle pill, no dark fill
+        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-foreground/[0.055] px-5 py-3.5 text-foreground">
+          <p className="text-[15px] leading-[1.65]">{message.body}</p>
+        </div>
+      ) : (
+        // Manager message — full width, no card border
+        <div className="w-full">
+          <RichMessageBody body={message.body} streaming={isStreaming} failed={message.status === "failed"} />
+
+          {/* Inline activity status during streaming */}
+          {isStreaming && activeRun?.steps.length ? (
+            <ManagerActivityStatus run={activeRun} />
+          ) : null}
+
+          {/* Retry button on failed */}
+          {message.status === "failed" && onRetryLastMessage ? (
+            <button
+              type="button"
+              onClick={onRetryLastMessage}
+              className="mt-4 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.04em] text-foreground/75 transition-colors hover:bg-foreground/[0.045]"
+            >
+              Retry Manager message
+            </button>
+          ) : null}
+
+          {/* Context questions */}
+          {message.contextQuestions?.length ? (
+            <ManagerContextQuestionForm
+              questions={message.contextQuestions}
+              disabled={sendPending}
+              onSubmit={onSendContextAnswers}
+            />
+          ) : null}
+
+          {/* Created work cards */}
+          {message.createdWork?.length ? (
+            <div className="mt-6 grid gap-3">
+              {message.createdWork.map((work) => (
+                <CreatedWorkCard key={`${work.type}-${work.id ?? work.title}`} work={work} onOpenCreatedWork={onOpenCreatedWork} />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Thinking indicator — replaces the old dual-line card
+// ---------------------------------------------------------------------------
+const THINKING_PHRASES = [
+  "Analysing workspace…",
+  "Reading context…",
+  "Cross-referencing data…",
+  "Shaping a response…",
+  "Consulting the packet…",
+  "Considering options…",
+];
+
+function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["activeRun"] }) {
+  const [phraseIndex, setPhraseIndex] = useState(0);
+
+  // Rotate generic phrase every 1.8 s
+  useEffect(() => {
+    const id = setInterval(() => {
+      setPhraseIndex((i) => (i + 1) % THINKING_PHRASES.length);
+    }, 1800);
+    return () => clearInterval(id);
+  }, []);
+
+  // Prefer the live activity label if we have one
+  const latestStep = activeRun?.steps.length
+    ? [...activeRun.steps].reverse().find((s) => s.status === "running") ?? activeRun.steps.at(-1)
+    : null;
+  const label = latestStep ? activityStatusLine(latestStep.label, latestStep.status) : THINKING_PHRASES[phraseIndex];
+
+  return (
+    <div className="flex items-start gap-3">
+      {/* Manager avatar */}
+      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
+        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <div className="flex flex-col gap-1 pt-0.5">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">Manager</p>
+        {/* Three-dot pulse + rotating label */}
+        <div className="flex items-center gap-2.5">
+          <span className="flex gap-1" aria-hidden="true">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" style={{ animationDelay: "0ms" }} />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" style={{ animationDelay: "150ms" }} />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" style={{ animationDelay: "300ms" }} />
+          </span>
+          <p
+            key={label}
+            className="animate-in fade-in slide-in-from-bottom-1 duration-300 text-[13px] text-muted-foreground"
+          >
+            {label}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Manager activity status — always-visible inline line during streaming
+// ---------------------------------------------------------------------------
+function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel["activeRun"]> }) {
+  const [expanded, setExpanded] = useState(false);
+  const latestStep = [...run.steps].reverse().find((s) => s.status === "running") ?? run.steps.at(-1);
+  const statusText = latestStep ? activityStatusLine(latestStep.label, latestStep.status) : "Manager is preparing the answer.";
+
+  return (
+    <div className="mt-4 border-t border-foreground/6 pt-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Always-visible activity line */}
+        <p
+          key={statusText}
+          className="animate-in fade-in duration-300 text-[12px] font-medium text-muted-foreground/80"
+        >
+          {statusText}
+        </p>
+        <button
+          type="button"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((v) => !v)}
+          className="text-[11px] font-semibold text-brand-accent/70 transition-colors hover:text-brand-accent"
+        >
+          {expanded ? "Hide details" : "Details"}
+        </button>
+      </div>
+      {expanded ? (
+        <div className="mt-3 grid gap-1.5">
+          {run.steps.map((step) => (
+            <div key={step.id} className="flex min-w-0 items-start gap-2.5 rounded-[8px] bg-foreground/[0.025] px-3 py-2">
+              <span
+                className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                  step.status === "failed"
+                    ? "bg-red-500"
+                    : step.status === "completed"
+                    ? "bg-success"
+                    : step.status === "running"
+                    ? "bg-brand-accent"
+                    : "bg-foreground/20"
+                }`}
+                aria-hidden="true"
+              />
+              <span className="min-w-0">
+                <span className="block text-[12px] font-semibold text-foreground">{step.label}</span>
+                {step.detail ? <span className="mt-0.5 block text-[11px] text-muted-foreground/80">{step.detail}</span> : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function activityStatusLine(label: string, status: NonNullable<ConversationViewModel["activeRun"]>["steps"][number]["status"]) {
+  if (status === "completed") return "Manager has the workspace context and is shaping the reply.";
+  if (status === "failed") return "Manager hit a problem while preparing the reply.";
+  return `${label.replace(/\.$/, "")}…`;
+}
+
+// ---------------------------------------------------------------------------
+// RichMessageBody — ChatGPT-style typewriter during streaming
+// ---------------------------------------------------------------------------
+function RichMessageBody({ body, streaming, failed }: { body: string; streaming?: boolean; failed?: boolean }) {
+  const displayed = useTypewriter(body, !!streaming);
+
+  const blocks = displayed.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+
+  if (!blocks.length) {
+    return (
+      <p className="text-[15px] leading-[1.65] text-current">
+        {streaming ? <BlinkingCursor /> : displayed}
+      </p>
+    );
+  }
+
+  return (
+    <div className={`space-y-4 text-[15px] leading-[1.65] text-foreground ${failed ? "text-red-700" : ""}`}>
+      {blocks.map((block, blockIndex) => {
+        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+        const isList = lines.length > 1 && lines.every((line) => /^([-*]|\d+\.)\s+/.test(line));
+
+        // Heading detection (markdown ##)
+        const isHeading = block.startsWith("## ") || block.startsWith("# ");
+        if (isHeading) {
+          const text = block.replace(/^#{1,3}\s+/, "");
+          return (
+            <p key={`h-${blockIndex}`} className="text-[16px] font-semibold text-foreground">
+              {text}
+              {streaming && blockIndex === blocks.length - 1 ? <BlinkingCursor /> : null}
+            </p>
+          );
+        }
+
+        if (isList) {
+          return (
+            <ul key={`list-${blockIndex}`} className="list-disc space-y-1.5 pl-5">
+              {lines.map((line, lineIndex) => (
+                <li key={`${line}-${lineIndex}`} className="text-foreground/90">
+                  {line.replace(/^([-*]|\d+\.)\s+/, "")}
+                  {streaming && blockIndex === blocks.length - 1 && lineIndex === lines.length - 1 ? <BlinkingCursor /> : null}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        return (
+          <p key={`p-${blockIndex}`} className="text-foreground/90">
+            {block}
+            {streaming && blockIndex === blocks.length - 1 ? <BlinkingCursor /> : null}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function BlinkingCursor() {
+  return (
+    <span
+      className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[2px] animate-pulse rounded-sm bg-foreground/60"
+      aria-hidden="true"
+    />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context question form
+// ---------------------------------------------------------------------------
 function ManagerContextQuestionForm({
   questions,
   disabled,
@@ -483,76 +812,9 @@ function ManagerContextQuestionForm({
   );
 }
 
-function ManagerActivityDisclosure({ run }: { run: NonNullable<ConversationViewModel["activeRun"]> }) {
-  const [open, setOpen] = useState(false);
-  const latestRunningStep = [...run.steps].reverse().find((step) => step.status === "running") ?? run.steps.at(-1);
-  return (
-    <div className="mt-4 border-t border-foreground/8 pt-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-[12px] font-semibold leading-relaxed text-muted-foreground">
-          {latestRunningStep ? activityStatusLine(latestRunningStep.label, latestRunningStep.status) : "Manager is preparing the answer."}
-        </p>
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setOpen((current) => !current)}
-          className="text-[11px] font-bold uppercase tracking-[0.06em] text-brand-accent transition-colors hover:text-foreground"
-        >
-          {open ? "Hide Manager activity" : "View Manager activity"}
-        </button>
-      </div>
-      {open ? (
-        <div className="mt-3 grid gap-2">
-          {run.steps.map((step) => (
-            <div key={step.id} className="flex min-w-0 items-start gap-3 rounded-[10px] border border-foreground/8 bg-foreground/[0.02] px-3 py-2.5">
-              <span className={`mt-1.5 h-1.5 w-1.5 rounded-full ${step.status === "failed" ? "bg-red-600" : step.status === "completed" ? "bg-success" : step.status === "running" ? "bg-brand-accent" : "bg-foreground/20"}`} aria-hidden="true" />
-              <span className="min-w-0">
-                <span className="block text-[12px] font-bold text-foreground">{step.label}</span>
-                {step.detail ? <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground">{step.detail}</span> : null}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function activityStatusLine(label: string, status: NonNullable<ConversationViewModel["activeRun"]>["steps"][number]["status"]) {
-  if (status === "completed") return "Manager has the workspace context and is shaping the reply.";
-  if (status === "failed") return "Manager hit a problem while preparing the reply.";
-  return `${label.replace(/\.$/, "")}...`;
-}
-
-function RichMessageBody({ body, streaming, failed }: { body: string; streaming?: boolean; failed?: boolean }) {
-  const blocks = body.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
-  if (!blocks.length) {
-    return <p className="text-[15px] font-normal leading-[1.6] text-current">{streaming ? " " : body}</p>;
-  }
-
-  return (
-    <div className={`space-y-3 text-[15px] font-normal leading-[1.65] text-current ${failed ? "text-red-950" : ""}`}>
-      {blocks.map((block, index) => {
-        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-        const isList = lines.length > 1 && lines.every((line) => /^([-*]|\d+\.)\s+/.test(line));
-        if (isList) {
-          return (
-            <ul key={`${block}-${index}`} className="list-disc space-y-1 pl-5">
-              {lines.map((line) => <li key={line}>{line.replace(/^([-*]|\d+\.)\s+/, "")}</li>)}
-            </ul>
-          );
-        }
-        return (
-          <p key={`${block}-${index}`}>
-            {block}
-            {streaming && index === blocks.length - 1 ? <span className="ml-1 inline-block h-4 w-1 translate-y-0.5 animate-pulse rounded-full bg-brand-accent" aria-hidden="true" /> : null}
-          </p>
-        );
-      })}
-    </div>
-  );
-}
-
+// ---------------------------------------------------------------------------
+// Created work card
+// ---------------------------------------------------------------------------
 function CreatedWorkCard({
   work,
   onOpenCreatedWork,
@@ -587,6 +849,9 @@ function CreatedWorkCard({
   );
 }
 
+// ---------------------------------------------------------------------------
+// InvestigationScreen
+// ---------------------------------------------------------------------------
 export function InvestigationScreen({ onBack, onDecision }: { onBack: () => void; onDecision: () => void }) {
   return (
     <WorkspaceShell eyebrow="Manager run" title="Investigation" onBack={onBack}>
@@ -609,6 +874,9 @@ export function InvestigationScreen({ onBack, onDecision }: { onBack: () => void
   );
 }
 
+// ---------------------------------------------------------------------------
+// DecisionPackageScreen
+// ---------------------------------------------------------------------------
 export function DecisionPackageScreen({
   onBack,
   onNavigate,
