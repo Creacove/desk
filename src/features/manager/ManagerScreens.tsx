@@ -396,13 +396,8 @@ export function ConversationWorkspace({
 
         {/* Created work summary */}
         {shouldShowCreatedWorkSummary ? (
-          <aside className="mt-10 rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Work created</p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {allCreatedWork.map((work) => (
-                <CreatedWorkCard key={`${work.type}-${work.id ?? work.title}-aside`} work={work} onOpenCreatedWork={onOpenCreatedWork} />
-              ))}
-            </div>
+          <aside className="mt-10">
+            <WorkArtifactGroup items={allCreatedWork} onOpenCreatedWork={onOpenCreatedWork} />
           </aside>
         ) : null}
 
@@ -560,13 +555,9 @@ function MessageRow({
             />
           ) : null}
 
-          {/* Created work cards */}
+          {/* Created work — rendered as hierarchical artifact, not a flat list */}
           {message.createdWork?.length ? (
-            <div className="mt-6 grid gap-3">
-              {message.createdWork.map((work) => (
-                <CreatedWorkCard key={`${work.type}-${work.id ?? work.title}`} work={work} onOpenCreatedWork={onOpenCreatedWork} />
-              ))}
-            </div>
+            <WorkArtifactGroup items={message.createdWork} onOpenCreatedWork={onOpenCreatedWork} />
           ) : null}
         </div>
       )}
@@ -824,37 +815,224 @@ function ManagerContextQuestionForm({
 }
 
 // ---------------------------------------------------------------------------
-// Created work card
+// WorkArtifactGroup — the Claude/GPT "artifact" pattern
+// Groups missions + tasks into a single hierarchical document card.
+// Standalone task batches get their own grouped card.
+// Music items get a compact inline card.
 // ---------------------------------------------------------------------------
-function CreatedWorkCard({
-  work,
+type WorkItem = ConversationViewModel["createdWork"][number];
+
+function WorkArtifactGroup({
+  items,
   onOpenCreatedWork,
 }: {
-  work: ConversationViewModel["createdWork"][number];
+  items: WorkItem[];
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
 }) {
-  const WorkIcon = work.type === "music_item" ? Music2 : work.type === "mission" ? Route : ClipboardCheck;
-  const artifactLabel = work.type === "music_item" ? "music item" : work.type;
-  const statusLabel = work.status ? work.status.replace(/_/g, " ") : "created";
-  const buttonLabel = work.type === "task" ? `Open created ${artifactLabel}: ${work.title}` : `Open created ${artifactLabel}`;
+  const mission = items.find((w) => w.type === "mission");
+  const tasks = items.filter((w) => w.type === "task");
+  const musicItems = items.filter((w) => w.type === "music_item");
+
   return (
-    <div className="rounded-xl border border-foreground/10 bg-background p-4 text-foreground shadow-sm">
-      <div className="mb-3 flex items-center gap-3">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground">
-          <WorkIcon className="h-3.5 w-3.5" aria-hidden="true" />
+    <div className="mt-6 flex flex-col gap-3">
+      {/* Mission artifact — tasks nested inside */}
+      {mission ? (
+        <MissionArtifactCard mission={mission} tasks={tasks} onOpenCreatedWork={onOpenCreatedWork} />
+      ) : tasks.length ? (
+        /* Standalone task batch — no parent mission */
+        <TaskGroupCard tasks={tasks} onOpenCreatedWork={onOpenCreatedWork} />
+      ) : null}
+
+      {/* Music items — simple compact cards */}
+      {musicItems.map((item) => (
+        <MusicItemArtifactCard key={`music-${item.id ?? item.title}`} item={item} onOpenCreatedWork={onOpenCreatedWork} />
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MissionArtifactCard — the main artifact: mission header + nested tasks
+// ---------------------------------------------------------------------------
+function MissionArtifactCard({
+  mission,
+  tasks,
+  onOpenCreatedWork,
+}: {
+  mission: WorkItem;
+  tasks: WorkItem[];
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+}) {
+  const statusLabel = mission.status ? mission.status.replace(/_/g, " ") : "created";
+  const isUpdate = mission.status === "updated";
+
+  return (
+    <div className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background shadow-sm">
+      {/* Artifact header bar */}
+      <div className="flex items-center gap-2.5 border-b border-foreground/8 bg-foreground/[0.02] px-4 py-2.5">
+        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-brand-accent/10 text-brand-accent">
+          <Route className="h-3 w-3" aria-hidden="true" />
         </span>
-        <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/85">{artifactLabel} {statusLabel}</p>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">
+          Mission {statusLabel}
+        </p>
+        {tasks.length ? (
+          <span className="ml-auto rounded-full bg-foreground/[0.06] px-2 py-0.5 font-ui text-[10px] font-semibold text-muted-foreground">
+            {tasks.length} {tasks.length === 1 ? "task" : "tasks"}
+          </span>
+        ) : null}
       </div>
-      <h3 className="text-[14px] font-semibold text-foreground">{work.title}</h3>
-      <p className="mt-1.5 text-[12px] leading-[1.5] text-muted-foreground/88">{work.body}</p>
+
+      {/* Mission body */}
+      <div className="px-4 pt-4 pb-3">
+        <h3 className="text-[15px] font-semibold leading-snug text-foreground">{mission.title}</h3>
+        {mission.body ? (
+          <p className="mt-1.5 text-[13px] leading-[1.55] text-muted-foreground/80">{mission.body}</p>
+        ) : null}
+      </div>
+
+      {/* Nested tasks — tree pattern */}
+      {tasks.length ? (
+        <div className="mx-4 mb-3 overflow-hidden rounded-[10px] border border-foreground/8 bg-foreground/[0.018]">
+          {tasks.map((task, index) => (
+            <div
+              key={`task-${task.id ?? task.title}-${index}`}
+              className={`flex items-start gap-3 px-3.5 py-3 ${
+                index < tasks.length - 1 ? "border-b border-foreground/8" : ""
+              }`}
+            >
+              {/* Task status dot */}
+              <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-foreground/12 bg-background">
+                <ClipboardCheck className="h-2.5 w-2.5 text-muted-foreground/50" aria-hidden="true" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold leading-snug text-foreground">{task.title}</p>
+                {task.body ? (
+                  <p className="mt-0.5 text-[11.5px] leading-[1.5] text-muted-foreground/70">{task.body}</p>
+                ) : null}
+              </div>
+              {/* Open individual task */}
+              <button
+                type="button"
+                onClick={() => void onOpenCreatedWork(task.type, task.id)}
+                aria-label={`Open task: ${task.title}`}
+                className="mt-0.5 shrink-0 text-[11px] font-semibold text-brand-accent/70 transition-colors hover:text-brand-accent"
+              >
+                Open
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Primary CTA */}
+      <div className="border-t border-foreground/8 px-4 py-3">
+        <button
+          type="button"
+          onClick={() => void onOpenCreatedWork(mission.type, mission.id)}
+          aria-label={`Open ${isUpdate ? "updated" : "created"} mission`}
+          className="flex w-full items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2 text-[12px] font-semibold text-background transition-colors hover:bg-foreground/88"
+        >
+          Open {isUpdate ? "mission" : "created mission"}
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// TaskGroupCard — standalone tasks with no parent mission
+// ---------------------------------------------------------------------------
+function TaskGroupCard({
+  tasks,
+  onOpenCreatedWork,
+}: {
+  tasks: WorkItem[];
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+}) {
+  // Determine if any are updates vs new
+  const hasUpdates = tasks.some((t) => t.status === "updated");
+  const label = hasUpdates ? "Tasks updated" : tasks.length === 1 ? "Task created" : "Tasks created";
+
+  return (
+    <div className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background shadow-sm">
+      {/* Header */}
+      <div className="flex items-center gap-2.5 border-b border-foreground/8 bg-foreground/[0.02] px-4 py-2.5">
+        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-foreground/8 text-foreground/60">
+          <ClipboardCheck className="h-3 w-3" aria-hidden="true" />
+        </span>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+          {label}
+        </p>
+        {tasks.length > 1 ? (
+          <span className="ml-auto rounded-full bg-foreground/[0.06] px-2 py-0.5 font-ui text-[10px] font-semibold text-muted-foreground">
+            {tasks.length}
+          </span>
+        ) : null}
+      </div>
+
+      {/* Task list */}
+      <div>
+        {tasks.map((task, index) => (
+          <div
+            key={`standalone-task-${task.id ?? task.title}-${index}`}
+            className={`flex items-start gap-3 px-4 py-3.5 ${
+              index < tasks.length - 1 ? "border-b border-foreground/8" : ""
+            }`}
+          >
+            <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-[4px] border border-foreground/12 bg-foreground/[0.02]">
+              <ClipboardCheck className="h-2.5 w-2.5 text-muted-foreground/40" aria-hidden="true" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[14px] font-semibold leading-snug text-foreground">{task.title}</p>
+              {task.body ? (
+                <p className="mt-1 text-[12px] leading-[1.5] text-muted-foreground/75">{task.body}</p>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              onClick={() => void onOpenCreatedWork(task.type, task.id)}
+              aria-label={`Open task: ${task.title}`}
+              className="mt-0.5 shrink-0 rounded-md bg-foreground/[0.045] px-2.5 py-1 text-[11px] font-semibold text-foreground/70 transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
+            >
+              Open
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// MusicItemArtifactCard — compact inline card for music items
+// ---------------------------------------------------------------------------
+function MusicItemArtifactCard({
+  item,
+  onOpenCreatedWork,
+}: {
+  item: WorkItem;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+}) {
+  const statusLabel = item.status ? item.status.replace(/_/g, " ") : "created";
+  return (
+    <div className="flex items-center gap-3 rounded-[14px] border border-foreground/10 bg-background px-4 py-3.5 shadow-sm">
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-foreground/[0.06] text-foreground/70">
+        <Music2 className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-ui text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">Music item {statusLabel}</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+      </div>
       <button
         type="button"
-        onClick={() => void onOpenCreatedWork(work.type, work.id)}
-        aria-label={buttonLabel}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-foreground/[0.035] py-2 text-[11px] font-semibold uppercase tracking-[0.04em] text-foreground/80 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+        onClick={() => void onOpenCreatedWork(item.type, item.id)}
+        aria-label={`Open music item: ${item.title}`}
+        className="flex shrink-0 items-center gap-1.5 rounded-lg bg-foreground/[0.045] px-3 py-1.5 text-[11px] font-semibold text-foreground/75 transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
       >
-        Open created {artifactLabel}
-        <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+        Open
+        <ChevronRight className="h-3 w-3" aria-hidden="true" />
       </button>
     </div>
   );
