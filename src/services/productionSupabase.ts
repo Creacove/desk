@@ -1157,11 +1157,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           client
             .from("checkpoints")
             .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
-            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .order("created_at", { ascending: true }),
           client
             .from("tasks")
             .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,risk_if_late")
-            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .order("created_at", { ascending: true }),
           client
             .from("task_steps")
             .select("task_id,body,order_index")

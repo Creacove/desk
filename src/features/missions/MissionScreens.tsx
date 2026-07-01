@@ -634,48 +634,62 @@ function TasksPanel({
                             </button>
                             {detailsOpen ? <TaskDetails task={task} /> : null}
                             {completionBlocked ? (
-                              <p className="mt-3 rounded-[12px] border border-[#f97316]/20 bg-[#f97316]/10 p-3 text-[12px] font-semibold leading-snug text-[#c2410c]">
+            <p className="mt-3 rounded-[12px] border border-[#f97316]/20 bg-[#f97316]/10 p-3 text-[12px] font-semibold leading-snug text-[#c2410c]">
                                 Approval is required before this task can be marked done.
                               </p>
                             ) : null}
                             {isConfirmingCompletion ? (
-                              <div className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
-                                <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">
-                                  {completionNote.status === "blocked" ? "Why is this task blocked?" : "What did you do? What was the result?"}
-                                </p>
-                                <p className="text-[12px] font-semibold leading-relaxed text-foreground/80">
-                                  Record a specific outcome note. The Manager uses this to update checkpoints and shape the next recommendation.
-                                </p>
-                                <textarea
-                                  id={`task-note-${task.id}`}
-                                  rows={3}
-                                  value={completionNote.note}
-                                  onChange={(e) => setCompletionNote((current) => current ? { ...current, note: e.target.value } : null)}
-                                  placeholder={completionNote.status === "blocked" ? "e.g. The distributor rejected the submission — missing ISRC codes. Waiting on the label admin team." : "e.g. Submitted the Spotify editorial pitch for 'Night Drive' with genre context, release story, and target playlist. Confirmation received."}
-                                  className="w-full resize-none rounded-[10px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:border-brand-accent/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-                                />
-                                {completionError ? (
-                                  <p role="alert" className="text-[12px] font-semibold text-red-600">{completionError}</p>
-                                ) : null}
-                                <div className="flex gap-2">
-                                  <button
-                                    type="button"
-                                    disabled={completionPending}
-                                    onClick={confirmCompletion}
-                                    className="rounded-[10px] bg-foreground px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-40"
-                                  >
-                                    {completionPending ? "Saving…" : completionNote.status === "blocked" ? "Mark blocked" : "Confirm done"}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={completionPending}
-                                    onClick={() => { setCompletionNote(null); setCompletionError(null); }}
-                                    className="rounded-[10px] border border-foreground/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5"
-                                  >
-                                    Cancel
-                                  </button>
+                              completionPending ? (
+                                <div className="mt-4 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-5 flex flex-col items-center justify-center text-center gap-3">
+                                  <div className="flex gap-1.5" aria-hidden="true">
+                                    <span className="h-2 w-2 animate-bounce rounded-full bg-brand-accent" style={{ animationDelay: "0ms" }} />
+                                    <span className="h-2 w-2 animate-bounce rounded-full bg-brand-accent" style={{ animationDelay: "150ms" }} />
+                                    <span className="h-2 w-2 animate-bounce rounded-full bg-brand-accent" style={{ animationDelay: "300ms" }} />
+                                  </div>
+                                  <div>
+                                    <p className="text-[13px] font-bold text-foreground">Manager is reviewing task results</p>
+                                    <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
+                                      Analyzing outcome notes, updating checkpoint states, and re-routing active directives.
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
+                              ) : (
+                                <div className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
+                                  <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">
+                                    {completionNote.status === "blocked" ? "Why is this task blocked?" : "What did you do? What was the result?"}
+                                  </p>
+                                  <p className="text-[12px] font-semibold leading-relaxed text-foreground/80">
+                                    Record a specific outcome note. The Manager uses this to update checkpoints and shape the next recommendation.
+                                  </p>
+                                  <textarea
+                                    id={`task-note-${task.id}`}
+                                    rows={3}
+                                    value={completionNote.note}
+                                    onChange={(e) => setCompletionNote((current) => current ? { ...current, note: e.target.value } : null)}
+                                    placeholder={completionNote.status === "blocked" ? "e.g. The distributor rejected the submission — missing ISRC codes. Waiting on the label admin team." : "e.g. Submitted the Spotify editorial pitch for 'Night Drive' with genre context, release story, and target playlist. Confirmation received."}
+                                    className="w-full resize-none rounded-[10px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:border-brand-accent/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+                                  />
+                                  {completionError ? (
+                                    <p role="alert" className="text-[12px] font-semibold text-red-600">{completionError}</p>
+                                  ) : null}
+                                  <div className="flex gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={confirmCompletion}
+                                      className="rounded-[10px] bg-foreground px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90"
+                                    >
+                                      {completionNote.status === "blocked" ? "Mark blocked" : "Confirm done"}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { setCompletionNote(null); setCompletionError(null); }}
+                                      className="rounded-[10px] border border-foreground/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              )
                             ) : null}
                           </div>
                           <div className="flex min-w-0 flex-col items-start justify-start gap-2 lg:items-end">
