@@ -238,12 +238,14 @@ export function ConversationWorkspace({
   onSendMessage,
   onSendContextAnswers,
   onRetryLastMessage,
+  onOpenDecisionPackage,
   sendPending,
   sendError,
 }: {
   conversation: ConversationViewModel;
   onBack: () => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenDecisionPackage?: () => void;
   onSendMessage: (body: string, conversationId: string) => void;
   onSendContextAnswers: (
     body: string,
@@ -353,6 +355,28 @@ export function ConversationWorkspace({
               {allCreatedWork.map((work) => (
                 <CreatedWorkCard key={`${work.type}-${work.id ?? work.title}-aside`} work={work} onOpenCreatedWork={onOpenCreatedWork} />
               ))}
+            </div>
+          </aside>
+        ) : null}
+
+        {conversation.decisionPackage ? (
+          <aside className="mt-6 rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Decision package</p>
+                <h3 className="mt-2 text-[16px] font-semibold leading-tight text-foreground">{conversation.decisionPackage.title}</h3>
+                <p className="mt-2 max-w-2xl text-[13px] font-semibold leading-relaxed text-muted-foreground/86">{conversation.decisionPackage.summary}</p>
+              </div>
+              {onOpenDecisionPackage ? (
+                <button
+                  type="button"
+                  onClick={onOpenDecisionPackage}
+                  className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-foreground/[0.045] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.04em] text-foreground/80 transition-colors hover:bg-foreground/[0.07]"
+                >
+                  Open package
+                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+              ) : null}
             </div>
           </aside>
         ) : null}
@@ -588,28 +612,61 @@ export function InvestigationScreen({ onBack, onDecision }: { onBack: () => void
 export function DecisionPackageScreen({
   onBack,
   onNavigate,
+  conversation,
 }: {
   onBack: () => void;
   onNavigate: (view: CleanProductionView) => void;
+  conversation?: ConversationViewModel | null;
 }) {
+  const decisionPackage = conversation?.decisionPackage;
+
+  if (!decisionPackage) {
+    return (
+      <WorkspaceShell eyebrow="Decision package" title="No saved package" onBack={onBack}>
+        <section className="rounded-xl border border-foreground/10 bg-background p-6 shadow-sm">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Persisted Manager output</p>
+          <h2 className="mt-3 font-display text-[1.85rem] font-semibold leading-none text-foreground sm:text-[2.15rem]">No decision package has been saved for the active conversation.</h2>
+          <p className="mt-4 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
+            Ask the Manager for a decision that requires a durable package, then return here from that conversation.
+          </p>
+          <div className="mt-6">
+            <ProductButton variant="secondary" onClick={() => onNavigate("conversationWorkspace")}>Continue thread</ProductButton>
+          </div>
+        </section>
+      </WorkspaceShell>
+    );
+  }
+
   return (
-    <WorkspaceShell eyebrow="Decision package" title="Budget call" onBack={onBack}>
+    <WorkspaceShell eyebrow="Decision package" title={decisionPackage.title} onBack={onBack}>
       <section className="rounded-xl border border-foreground/10 bg-background shadow-sm p-6">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Recommendation</p>
-        <h2 className="font-display text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem] mt-3">Use a capped validation test before approving scale spend.</h2>
-        <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-4">
-          Hold back flexible budget until source-backed signal review is available. Do not fund a full video or full paid-media push yet.
-        </p>
+        <h2 className="font-display text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem] mt-3">{decisionPackage.title}</h2>
+        <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-4">{decisionPackage.recommendation || decisionPackage.summary}</p>
         <div className="grid gap-4 md:grid-cols-2 mt-6">
           <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Why this call</p>
-            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">Momentum is credible, but private saves, source-of-stream, and rights proof are still incomplete.</p>
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Package basis</p>
+            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">{decisionPackage.summary}</p>
+            <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Confidence: {decisionPackage.confidence}</p>
           </div>
           <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Work created</p>
-            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">Mission: validate the active opportunity before scale spend. Task: approve capped campaign test budget.</p>
+            <p className="text-[13px] font-semibold leading-relaxed text-foreground/90 mt-3">
+              {decisionPackage.createdWork.length
+                ? decisionPackage.createdWork.map((work) => `${work.type.replace("_", " ")}: ${work.title}`).join(" | ")
+                : "No mission or task artifact was created by this package."}
+            </p>
           </div>
         </div>
+        {decisionPackage.limitations.length || decisionPackage.evidenceIds.length ? (
+          <div className="mt-5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
+            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Evidence and limits</p>
+            <p className="mt-3 text-[13px] font-semibold leading-relaxed text-foreground/90">
+              {decisionPackage.evidenceIds.length ? `Evidence: ${decisionPackage.evidenceIds.join(", ")}` : "No evidence ids were attached."}
+            </p>
+            {decisionPackage.limitations.length ? <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/82">{decisionPackage.limitations.join(" ")}</p> : null}
+          </div>
+        ) : null}
         <div className="mt-6 flex flex-wrap gap-3">
           <ProductButton onClick={() => onNavigate("missionsWorkspace")}>Open created mission</ProductButton>
           <ProductButton variant="secondary" onClick={() => onNavigate("conversationWorkspace")}>Continue thread</ProductButton>

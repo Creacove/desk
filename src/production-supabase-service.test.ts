@@ -2346,7 +2346,8 @@ describe("production Supabase services", () => {
     });
   });
 
-  it("records completed mission tasks as checkpoint evidence and refreshes mission state", async () => {
+  it("reviews completed mission tasks through the Manager review Edge Function", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
     const tables: Record<string, Array<Record<string, unknown>>> = {
       missions: [
         {
@@ -2394,45 +2395,99 @@ describe("production Supabase services", () => {
       memory_entries: [],
       operating_events: [],
     };
-    const client = createMutableSupabaseClient(tables);
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async (name, options) => {
+        calls.push({ name, body: options.body });
+        if (name !== "manager-review-task-result") {
+          return { data: null, error: new Error(`Unexpected function: ${name}`) };
+        }
+
+        tables.tasks[0].status = "completed";
+        tables.checkpoints[0].status = "ready_for_manager_check";
+        tables.checkpoints[0].recommendation = "Manager reviewed the task result and recommends continuing the London validation path.";
+        tables.missions[0].progress = 100;
+        tables.missions[0].review_point = "Market signal quality";
+        tables.missions[0].current_recommendation = "Continue the mission after Manager review.";
+        tables.task_results.push({
+          id: "task-result-1",
+          task_id: "task-1",
+          mission_id: "mission-active",
+          checkpoint_id: "checkpoint-1",
+          status: "completed",
+          user_note: "London listener concentration is real across Spotify city data and repeated short-form saves.",
+          manager_interpretation: "Manager reviewed the completed task against the checkpoint decision rule.",
+          mission_effect: "Checkpoint is ready for the next mission decision.",
+          recommended_follow_up: "Continue with the next validation task.",
+        });
+        tables.memory_entries.push({
+          id: "memory-1",
+          mission_id: "mission-active",
+          task_id: "task-1",
+          kind: "task_result_review",
+          source_type: "manager_review_task_result",
+        });
+        tables.operating_events.push({
+          id: "event-1",
+          event_type: "task_completed",
+          target_type: "task",
+          target_id: "task-1",
+        });
+
+        return {
+          data: {
+            mission: {
+              id: "mission-active",
+              title: "Validate London market signal",
+              status: "active",
+              progress: 100,
+              review_point: "Market signal quality",
+              summary: "Market signal deserves focused operating attention.",
+              current_recommendation: "Continue the mission after Manager review.",
+              pattern_name: "city_live_market_validation",
+            },
+          },
+          error: null,
+        };
+      },
+    });
 
     const mission = await createSupabaseProductionRepositories(client, workspace).missions.completeTask("task-1", {
       status: "completed",
       note: "London listener concentration is real across Spotify city data and repeated short-form saves.",
     });
 
-    expect(tables.tasks[0]).toMatchObject({
-      id: "task-1",
-      status: "completed",
-    });
-    expect(tables.task_state_events[0]).toMatchObject({
-      task_id: "task-1",
-      mission_id: "mission-active",
-      checkpoint_id: "checkpoint-1",
-      from_status: "approved",
-      to_status: "completed",
-    });
+    expect(calls).toEqual([{
+      name: "manager-review-task-result",
+      body: {
+        accountId: workspace.accountId,
+        artistWorkspaceId: workspace.artistWorkspaceId,
+        artistId: workspace.artistId,
+        taskId: "task-1",
+        status: "completed",
+        note: "London listener concentration is real across Spotify city data and repeated short-form saves.",
+      },
+    }]);
     expect(tables.task_results[0]).toMatchObject({
       task_id: "task-1",
       mission_id: "mission-active",
       status: "completed",
       user_note: expect.stringContaining("London listener concentration"),
-      manager_interpretation: expect.stringContaining("Task completed"),
+      manager_interpretation: expect.stringContaining("Manager reviewed"),
     });
     expect(tables.checkpoints[0]).toMatchObject({
       status: "ready_for_manager_check",
-      recommendation: expect.stringContaining("ready for Manager review"),
+      recommendation: expect.stringContaining("Manager reviewed"),
     });
     expect(tables.missions[0]).toMatchObject({
       progress: 100,
       review_point: "Market signal quality",
-      current_recommendation: expect.stringContaining("ready for Manager review"),
+      current_recommendation: expect.stringContaining("Continue the mission"),
     });
     expect(tables.memory_entries[0]).toMatchObject({
       mission_id: "mission-active",
       task_id: "task-1",
-      kind: "task_result",
-      source_type: "task_result",
+      kind: "task_result_review",
+      source_type: "manager_review_task_result",
     });
     expect(tables.operating_events[0]).toMatchObject({
       event_type: "task_completed",

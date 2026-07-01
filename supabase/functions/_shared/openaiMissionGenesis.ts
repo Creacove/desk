@@ -666,6 +666,8 @@ function validateMissionJudgeSurface(
     }
   }
 
+  validateSourceCompletenessMission(mission, checkpoints, tasks, label);
+
   for (const checkpoint of checkpoints) {
     if (!/(if|only if|continue|stop|pause|change|reframe|approve|reject|pass|fail|otherwise|whether)/i.test(checkpoint.decisionRule)) {
       throw new Error(`${label} checkpoint is not a decision branch: ${checkpoint.title}`);
@@ -673,6 +675,37 @@ function validateMissionJudgeSurface(
   }
   if (/build a stronger audience foundation|create a repeatable process for audience growth/i.test(lower)) {
     throw new Error(`${label} returned a generic mission that could apply to 100 artists and is missing artist-specific anchors.`);
+  }
+}
+
+function validateSourceCompletenessMission(
+  mission: MissionGenesisMission,
+  checkpoints: MissionGenesisCheckpoint[],
+  tasks: MissionGenesisTask[],
+  label: string,
+) {
+  const missionText = [
+    mission.title,
+    mission.objective,
+    mission.reason,
+    mission.summary,
+    mission.patternName,
+    mission.currentRecommendation,
+  ].join("\n");
+  const reviewText = [
+    missionText,
+    ...checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.decisionRule, ...checkpoint.requiredEvidence, ...checkpoint.missingEvidence]),
+    ...tasks.flatMap((task) => [task.title, task.purpose, ...task.steps, ...task.evidenceNeeded, task.completionExpectation]),
+  ].join("\n");
+
+  const isSourceCompletenessMission =
+    /(source[- ]completeness|data \/ source completeness|source connection|source upload|upload (spotify|private|analytics)|private analytics|spotify for artists and smart[- ]link data)/i.test(missionText);
+  if (!isSourceCompletenessMission) return;
+
+  const namesBlockedDecision =
+    /\b(so the team can decide|decide whether|approval decision|approve|reject|revise|greenlight|release date|rights|clearance|budget|spend|submission|pitch|external outreach|\$[0-9])/i.test(reviewText);
+  if (!namesBlockedDecision) {
+    throw new Error(`${label} returned a source-completeness mission without a specific blocked decision.`);
   }
 }
 

@@ -10,6 +10,14 @@ import {
   getMissionPatternRegistry,
   selectMissionPatternsForPacket,
 } from "../_shared/mission-patterns/missionPatternRegistry.ts";
+import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
+import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
+import {
+  managerConversationTools,
+  runManagerAgentLoop,
+  type ManagerAgentToolTrace,
+} from "../_shared/manager-conversation/agentLoop.ts";
+import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,7 +101,23 @@ Deno.serve(async (request) => {
         usageId = await createUsageEvent(db, input, runId);
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "running" });
 
-        const { output, usage } = await callOpenAIManagerConversation(managerConversationModelContext(input, packet));
+        const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
+        const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(
+          db,
+          input,
+          managerConversationModelContext(input, packet),
+          previousResponseId,
+          (event) => {
+            emit({
+              type: event.status === "started" ? "tool.started" : "tool.completed",
+              runId: runId ?? undefined,
+              tool: event.tool,
+              label: managerToolLabel(event.tool),
+              status: event.status === "failed" ? "failed" : event.status === "completed" ? "completed" : "running",
+              detail: event.summary,
+            });
+          },
+        );
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "completed" });
         emit({ type: "tool.started", runId, tool: "manager-router", label: "Preparing Manager answer", status: "running" });
 
@@ -113,6 +137,7 @@ Deno.serve(async (request) => {
 
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
+        const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
         const managerMessage = await insertConversationMessage(db, input, conversationId, {
           speaker: "manager",
           label: "Manager",
@@ -120,6 +145,7 @@ Deno.serve(async (request) => {
           manager_synthesis_run_id: runId,
           metadata: {
             classification: output.classification,
+            actionPolicy: output.actionPolicy,
             confidence: output.confidence,
             evidenceIds: output.evidenceIds,
             limitations: output.limitations,
@@ -127,6 +153,9 @@ Deno.serve(async (request) => {
             contextQuestions: output.contextQuestions,
             contextRequestId: output.contextQuestions.length ? `manager-context-${runId}` : "",
             proposedActions: output.proposedActions,
+            decisionPackageId: decisionPackage?.id ?? "",
+            openaiResponseId: responseId,
+            toolTraceSummary: safeToolTraceSummary(toolTrace),
           },
         });
         for (const work of persistedWork) {
@@ -224,16 +253,16 @@ async function ensureConversation(db: any, input: ManagerConversationInput) {
 async function buildManagerConversationPacket(db: any, input: ManagerConversationInput, conversationId: string, messageId: string) {
   const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, conversations, messages, managerPackets] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context,social_handles", input, 1),
-    selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 240),
-    selectMany(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 120),
-    selectMany(db, "music_projects", "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 80),
-    selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 160),
-    selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 40),
-    selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 80),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, 160),
-    selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 30),
-    selectMany(db, "conversation_messages", "id,conversation_id,speaker,label,body,metadata,created_at", input, 120),
-    selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,signal_snapshot_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,created_at", input, 1),
+    selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 12),
+    selectMany(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 16),
+    selectMany(db, "music_projects", "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 12),
+    selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 12),
+    selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 8),
+    selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 12),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, 20),
+    selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 12),
+    selectMany(db, "conversation_messages", "id,conversation_id,speaker,label,body,metadata,created_at", input, 16),
+    selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,signal_snapshot_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,internal_only_json,created_at", input, 1),
   ]);
   const latestManagerIntelligencePacket = managerPackets[0] ?? null;
   return {
@@ -276,6 +305,7 @@ async function buildManagerConversationPacket(db: any, input: ManagerConversatio
     managerIntelligenceMissionSeed: latestManagerIntelligencePacket?.mission_seed_json ?? {},
     managerIntelligenceAssetReads: latestManagerIntelligencePacket?.asset_reads_json ?? [],
     managerIntelligenceMarketReads: latestManagerIntelligencePacket?.market_reads_json ?? [],
+    activePlaybookKeys: readActivePlaybookKeys(latestManagerIntelligencePacket?.internal_only_json),
     missionPatternRegistry: getMissionPatternRegistry(),
     recommendedMissionPatterns: selectMissionPatternsForPacket({
       artist: {
@@ -336,25 +366,47 @@ async function selectConversationMessages(db: any, input: ManagerConversationInp
   return data ?? [];
 }
 
-async function callOpenAIManagerConversation(context: unknown) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      instructions: buildManagerConversationInstructions(),
-      input: JSON.stringify(context),
-      text: { format: { type: "json_schema", ...managerConversationJsonSchema } },
-    }),
+async function loadPreviousOpenAIResponseId(db: any, input: ManagerConversationInput, conversationId: string) {
+  const { data, error } = await db
+    .from("conversation_messages")
+    .select("metadata")
+    .eq("conversation_id", conversationId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("speaker", "manager")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (error) throw error;
+  const metadata = isRecord(data?.[0]?.metadata) ? data[0].metadata : {};
+  return typeof metadata.openaiResponseId === "string" ? metadata.openaiResponseId : "";
+}
+
+async function callOpenAIManagerConversation(
+  db: any,
+  input: ManagerConversationInput,
+  context: unknown,
+  previousResponseId: string,
+  onToolEvent: (event: ManagerAgentToolTrace) => void,
+) {
+  const playbookInstructions = getPlaybooksInstructions(managerConversationPlaybookKeys(context));
+  const result = await runManagerAgentLoop({
+    endpoint: "https://api.openai.com/v1/responses",
+    apiKey: requireEnv("OPENAI_API_KEY"),
+    model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+    instructions: buildManagerConversationInstructions(playbookInstructions),
+    context,
+    previousResponseId,
+    tools: managerConversationTools,
+    jsonSchema: managerConversationJsonSchema,
+    executeTool: (name, args) => executeManagerConversationTool(db, input, name, args),
+    onToolEvent,
   });
-  if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Manager conversation request failed with status ${response.status}: ${body.slice(0, 500)}`);
-  }
-  const payload = await response.json();
   return {
-    output: parseManagerConversationOutput(readOutputText(payload)),
-    usage: isRecord(payload.usage) ? payload.usage : {},
+    output: parseManagerConversationOutput(result.outputText),
+    usage: result.usage,
+    responseId: result.responseId,
+    toolTrace: result.toolTrace,
   };
 }
 
@@ -418,6 +470,57 @@ async function persistMemory(db: any, input: ManagerConversationInput, conversat
     });
     if (error) throw error;
   }
+}
+
+async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {
+  if (output.actionPolicy !== "create_decision_package") return null;
+
+  const { error: staleError } = await db
+    .from("manager_outputs")
+    .update({ is_current: false })
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("output_type", "decision_package")
+    .eq("subject_type", "conversation")
+    .eq("subject_id", conversationId)
+    .eq("is_current", true);
+  if (staleError) throw staleError;
+
+  const { data, error } = await db
+    .from("manager_outputs")
+    .insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      output_type: "decision_package",
+      subject_type: "conversation",
+      subject_id: conversationId,
+      summary: output.summary,
+      primary_recommendation_json: { recommendation: output.responseBody },
+      confidence_json: { confidence: output.confidence },
+      supporting_evidence_json: output.evidenceIds.map((id) => ({ id })),
+      render_json: {
+        title: output.topic || "Manager decision package",
+        summary: output.summary,
+        recommendation: output.responseBody,
+        confidence: output.confidence,
+        classification: output.classification,
+        actionPolicy: output.actionPolicy,
+        evidenceIds: output.evidenceIds,
+        limitations: output.limitations,
+        createdWork: output.createdWork,
+        proposedActions: output.proposedActions,
+        contextQuestions: output.contextQuestions,
+        conversationId,
+      },
+      is_current: true,
+      created_from_run_id: runId,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data as { id: string };
 }
 
 async function updateConversation(db: any, input: ManagerConversationInput, conversationId: string, output: ManagerConversationOutput) {
@@ -550,11 +653,63 @@ function managerConversationModelContext(input: ManagerConversationInput, packet
   };
 }
 
+function managerConversationPlaybookKeys(context: unknown): PlaybookKey[] {
+  if (!isRecord(context) || !isRecord(context.packet)) return [];
+  const directKeys = readPlaybookKeyList(context.packet.activePlaybookKeys);
+  if (directKeys.length) return directKeys;
+  const latestPacket = isRecord(context.packet.latestManagerIntelligencePacket)
+    ? context.packet.latestManagerIntelligencePacket
+    : {};
+  return readActivePlaybookKeys(latestPacket.internal_only_json);
+}
+
+function readActivePlaybookKeys(value: unknown): PlaybookKey[] {
+  if (!isRecord(value)) return [];
+  return readPlaybookKeyList(value.playbooks_applied);
+}
+
+function readPlaybookKeyList(value: unknown): PlaybookKey[] {
+  if (!Array.isArray(value)) return [];
+  const allowed = new Set<PlaybookKey>([
+    "cultural_expansion",
+    "era_architecture",
+    "artist_as_business",
+    "prestige_positioning",
+    "artist_first_development",
+    "song_fan_trust",
+    "live_demand_community",
+    "authentic_growth",
+    "world_building",
+    "fan_psychology_ownership",
+    "ar_breakout",
+    "playlist_discovery",
+    "social_contagion",
+    "no_engine",
+  ]);
+  return value.filter((item): item is PlaybookKey => typeof item === "string" && allowed.has(item as PlaybookKey));
+}
+
 function managerArtistMessageMetadata(input: ManagerConversationInput) {
   return {
     contextRequestId: input.contextRequestId ?? "",
     contextAnswers: normalizeContextAnswers(input.contextAnswers),
   };
+}
+
+function safeToolTraceSummary(trace: ManagerAgentToolTrace[]) {
+  return trace
+    .filter((item) => item.status === "completed")
+    .map((item) => ({ tool: item.tool, summary: item.summary }))
+    .slice(0, 12);
+}
+
+function managerToolLabel(tool: string) {
+  if (tool === "query_evidence_items") return "Checking evidence";
+  if (tool === "query_active_missions") return "Reviewing mission state";
+  if (tool === "query_music_catalog") return "Checking catalog";
+  if (tool === "query_durable_memory") return "Reading Manager memory";
+  if (tool === "query_manager_outputs") return "Reviewing prior decisions";
+  return "Using Manager tool";
 }
 
 function normalizeCreatedWork(value: unknown) {

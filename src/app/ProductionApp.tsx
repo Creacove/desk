@@ -973,6 +973,7 @@ function CleanProductionWorkspace({
               conversation={activeConversation}
               onBack={() => navigate("managerOffice")}
               onOpenCreatedWork={openCreatedWork}
+              onOpenDecisionPackage={() => navigate("decisionPackage")}
               onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic)}
               onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
                 void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers })
@@ -988,7 +989,7 @@ function CleanProductionWorkspace({
             />
           ) : null}
           {view === "investigation" ? <InvestigationScreen onBack={() => navigate("managerOffice")} onDecision={() => navigate("decisionPackage")} /> : null}
-          {view === "decisionPackage" ? <DecisionPackageScreen onBack={() => navigate("managerOffice")} onNavigate={navigate} /> : null}
+          {view === "decisionPackage" ? <DecisionPackageScreen conversation={activeConversation} onBack={() => navigate("managerOffice")} onNavigate={navigate} /> : null}
           {view === "missionsWorkspace" ? (
             <MissionsWorkspace
               missions={missions}

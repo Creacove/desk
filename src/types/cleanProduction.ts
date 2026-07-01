@@ -360,6 +360,26 @@ export type ManagerRunViewModel = {
   error?: string;
 };
 
+export type DecisionPackageViewModel = {
+  id: string;
+  title: string;
+  summary: string;
+  recommendation: string;
+  confidence: string;
+  actionPolicy: string;
+  evidenceIds: string[];
+  limitations: string[];
+  createdWork: ConversationViewModel["createdWork"];
+  proposedActions: Array<{
+    title: string;
+    body: string;
+    actionType: string;
+    targetType: string;
+    approvalRequired: boolean;
+  }>;
+  createdAt?: string;
+};
+
 export type ConversationViewModel = {
   id: string;
   topic: string;
@@ -369,6 +389,7 @@ export type ConversationViewModel = {
   lastUpdate?: string;
   messages: ConversationMessageViewModel[];
   activeRun?: ManagerRunViewModel;
+  decisionPackage?: DecisionPackageViewModel;
   createdWork: Array<{
     type: "music_item" | "mission" | "task";
     title: string;

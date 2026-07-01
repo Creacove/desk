@@ -615,6 +615,56 @@ describe("OpenAI Mission Genesis", () => {
     expect(() => parseMissionGenesisOutput(output, packet, "initial")).toThrow(/system support/i);
   });
 
+  it("rejects source-completeness missions unless a specific decision is blocked by the missing source", () => {
+    const output = activeOutput();
+    output.mission.title = "Upload Nova Vale private analytics for After Midnight";
+    output.mission.objective = "Collect Spotify for Artists and smart-link data for After Midnight before the Manager makes any new recommendation.";
+    output.mission.reason = "Private analytics would improve confidence, but the output does not name a specific blocked decision.";
+    output.mission.summary = "A data-source completeness mission for Nova Vale and After Midnight.";
+    output.mission.patternName = "Data / Source Completeness";
+    output.mission.currentRecommendation = "Upload private analytics before the Manager decides anything else.";
+    output.mission.timeline = "1 week";
+    output.checkpoints = [
+      {
+        key: "private_source_uploaded",
+        title: "Private analytics uploaded",
+        question: "Are the private analytics available?",
+        decisionRule: "Pass if the source is uploaded; otherwise wait.",
+        requiredEvidence: ["Spotify for Artists export"],
+        missingEvidence: ["Spotify for Artists export"],
+        sourceRefs: ["evidence-london", "song-midnight"],
+      },
+    ];
+    output.tasks = [
+      {
+        title: "Upload Spotify for Artists export for After Midnight",
+        ownerRole: "Manager",
+        primaryCheckpointKey: "private_source_uploaded",
+        purpose: "Add private analytics to improve Manager confidence.",
+        steps: [
+          "Export Spotify for Artists data for After Midnight.",
+          "Upload the export to the workspace.",
+        ],
+        evidenceNeeded: ["Spotify for Artists export"],
+        completionExpectation: "The export is uploaded.",
+        riskIfLate: "Manager confidence remains limited.",
+        sourceRefs: ["evidence-london", "song-midnight"],
+      },
+    ];
+
+    expect(() => parseMissionGenesisOutput(output, packet, "initial")).toThrow(/source-completeness mission/i);
+
+    output.mission.objective = "Upload Spotify for Artists and smart-link proof for After Midnight so the team can decide whether to approve the $5,000 London validation spend.";
+    output.mission.reason = "The $5,000 London validation spend is blocked until the team can compare public London signal against private save or smart-link proof.";
+    output.mission.currentRecommendation = "Request the source upload only because the London spend approval decision is blocked by missing proof.";
+    output.checkpoints[0].question = "Is the missing source strong enough to approve or reject the $5,000 London validation spend?";
+    output.checkpoints[0].decisionRule = "Approve the spend only if the uploaded source confirms save, return, or smart-link proof; otherwise reject or revise the spend plan.";
+    output.tasks[0].purpose = "Produce the missing proof needed for the $5,000 London spend approval decision.";
+    output.tasks[0].completionExpectation = "The Manager can approve, reject, or revise the $5,000 London spend decision from the uploaded proof.";
+
+    expect(parseMissionGenesisOutput(output, packet, "initial").mission.title).toContain("After Midnight");
+  });
+
   it("accepts split Blaqbonez missions for positioning and Asake-feature leverage", () => {
     const positioning = blaqbonezMixedOutput();
     positioning.mission.title = "Define Blaqbonez's 90-day career position";

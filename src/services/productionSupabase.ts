@@ -1041,16 +1041,28 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           return [];
         }
 
-        const { data: messageData, error: messageError } = await client
-          .from("conversation_messages")
-          .select("id,conversation_id,speaker,label,body,metadata,created_at")
-          .eq("artist_workspace_id", workspace.artistWorkspaceId)
-          .in("conversation_id", rows.map((row) => row.id))
-          .order("created_at", { ascending: true });
+        const [
+          { data: messageData, error: messageError },
+          { data: outputData, error: outputError },
+        ] = await Promise.all([
+          client
+            .from("conversation_messages")
+            .select("id,conversation_id,speaker,label,body,metadata,created_at")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .in("conversation_id", rows.map((row) => row.id))
+            .order("created_at", { ascending: true }),
+          client
+            .from("manager_outputs")
+            .select("id,subject_id,summary,render_json,created_at")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("output_type", "decision_package")
+            .eq("subject_type", "conversation")
+            .eq("is_current", true)
+            .in("subject_id", rows.map((row) => row.id)),
+        ]);
 
-        if (messageError) {
-          throw messageError;
-        }
+        if (messageError) throw messageError;
+        if (outputError) throw outputError;
 
         const messagesByConversation = new Map<string, ConversationMessageRow[]>();
         for (const message of (messageData as ConversationMessageRow[] | null) ?? []) {
@@ -1058,8 +1070,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           bucket.push(message);
           messagesByConversation.set(message.conversation_id, bucket);
         }
+        const outputsByConversation = new Map<string, ManagerOutputRow>();
+        for (const output of (outputData as ManagerOutputRow[] | null) ?? []) {
+          if (output.subject_id) outputsByConversation.set(output.subject_id, output);
+        }
 
-        return rows.map((row) => conversationFromRows(row, messagesByConversation.get(row.id) ?? []));
+        return rows.map((row) => conversationFromRows(row, messagesByConversation.get(row.id) ?? [], outputsByConversation.get(row.id)));
       },
       async sendMessage(input) {
         const body = input.body.trim();
@@ -1153,8 +1169,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("order_index", { ascending: true }),
           client
             .from("task_results")
-            .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up")
-            .eq("artist_workspace_id", workspace.artistWorkspaceId),
+            .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up"),
         ]);
 
         if (checkpointError) throw checkpointError;
@@ -1185,179 +1200,29 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (error) throw error;
       },
       async completeTask(taskId, input) {
-        const { data: taskData, error: taskError } = await client
-          .from("tasks")
-          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,risk_if_late")
-          .eq("id", taskId)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId)
-          .maybeSingle();
-
-        if (taskError) throw taskError;
-        const task = taskData as TaskRow | null;
-        if (!task?.mission_id) {
-          throw new Error("Mission task was not found.");
-        }
-
-        const previousStatus = task.status;
-        const completedStatus = input.status;
-        const now = new Date().toISOString();
-        const { error: updateError } = await client
-          .from("tasks")
-          .update({
-            status: completedStatus,
-            completed_at: completedStatus === "completed" ? now : undefined,
-            blocked_at: completedStatus === "blocked" ? now : undefined,
-            latest_result_note: input.note,
-          })
-          .eq("id", task.id)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId);
-
-        if (updateError) throw updateError;
-
-        const interpretation = interpretTaskResult(task, input);
-        const checkpointId = task.primary_checkpoint_id ?? undefined;
-
-        const { error: eventError } = await client.from("task_state_events").insert({
-          account_id: workspace.accountId,
-          artist_workspace_id: workspace.artistWorkspaceId,
-          artist_id: workspace.artistId,
-          mission_id: task.mission_id,
-          task_id: task.id,
-          checkpoint_id: checkpointId,
-          from_status: previousStatus,
-          to_status: completedStatus,
-          actor_type: "user",
-          note: input.note,
-        });
-
-        if (eventError) throw eventError;
-
-        const { error: resultError } = await client.from("task_results").insert({
-          account_id: workspace.accountId,
-          artist_workspace_id: workspace.artistWorkspaceId,
-          artist_id: workspace.artistId,
-          mission_id: task.mission_id,
-          task_id: task.id,
-          checkpoint_id: checkpointId,
-          status: completedStatus,
-          user_note: input.note,
-          manager_interpretation: interpretation,
-        });
-
-        if (resultError) throw resultError;
-
-        const { data: missionTaskData, error: missionTaskError } = await client
-          .from("tasks")
-          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,risk_if_late")
-          .eq("mission_id", task.mission_id)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId);
-
-        if (missionTaskError) throw missionTaskError;
-        const missionTasks = ((missionTaskData as TaskRow[] | null) ?? []).map((missionTask) =>
-          missionTask.id === task.id ? { ...missionTask, status: completedStatus } : missionTask,
-        );
-
-        const [
-          { data: checkpointData, error: checkpointLoadError },
-          { data: stepData, error: stepLoadError },
-          { data: resultData, error: resultLoadError }
-        ] = await Promise.all([
-          client
-            .from("checkpoints")
-            .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
-            .eq("mission_id", task.mission_id)
-            .eq("artist_workspace_id", workspace.artistWorkspaceId),
-          client
-            .from("task_steps")
-            .select("task_id,body,order_index")
-            .eq("artist_workspace_id", workspace.artistWorkspaceId)
-            .order("order_index", { ascending: true }),
-          client
-            .from("task_results")
-            .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up")
-            .eq("artist_workspace_id", workspace.artistWorkspaceId),
-        ]);
-
-        if (checkpointLoadError) throw checkpointLoadError;
-        if (stepLoadError) throw stepLoadError;
-        if (resultLoadError) throw resultLoadError;
-
-        let checkpoints = (checkpointData as CheckpointRow[] | null) ?? [];
-        const checkpoint = checkpoints.find((item) => item.id === checkpointId);
-        const checkpointReview = buildCheckpointReview(checkpoint, task, missionTasks, input);
-
-        if (checkpointId) {
-          const { error: checkpointUpdateError } = await client
-            .from("checkpoints")
-            .update({
-              status: checkpointReview.status,
-              recommendation: checkpointReview.recommendation,
-            })
-            .eq("id", checkpointId)
-            .eq("artist_workspace_id", workspace.artistWorkspaceId);
-
-          if (checkpointUpdateError) throw checkpointUpdateError;
-          checkpoints = checkpoints.map((checkpoint) =>
-            checkpoint.id === checkpointId
-              ? { ...checkpoint, status: checkpointReview.status, recommendation: checkpointReview.recommendation }
-              : checkpoint,
-          );
-        }
-
-        const progress = deriveMissionProgress(missionTasks);
-        const missionRecommendation = checkpointReview.recommendation;
-        const { data: missionData, error: missionUpdateError } = await client
-          .from("missions")
-          .update({
-            progress,
-            review_point: checkpointReview.title,
-            current_recommendation: missionRecommendation,
-          })
-          .eq("id", task.mission_id)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId)
-          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
-          .single();
-
-        if (missionUpdateError) throw missionUpdateError;
-
-        const { error: memoryError } = await client.from("memory_entries").insert({
-          account_id: workspace.accountId,
-          artist_workspace_id: workspace.artistWorkspaceId,
-          artist_id: workspace.artistId,
-          mission_id: task.mission_id,
-          task_id: task.id,
-          checkpoint_id: checkpointId,
-          scope: "mission",
-          kind: "task_result",
-          content: input.note,
-          source_type: "task_result",
-          confidence: completedStatus === "completed" ? "medium" : "low",
-          reason: interpretation,
-        });
-
-        if (memoryError) throw memoryError;
-
-        await writeOperatingEvent(client, workspace, {
-          eventType: completedStatus === "blocked" ? "task_blocked" : "task_completed",
-          targetType: "task",
-          targetId: task.id,
-          sourceType: "task_result",
-          sourceId: task.id,
-          summary: interpretation,
-          payload: {
-            mission_id: task.mission_id,
-            checkpoint_id: checkpointId,
-            status: completedStatus,
+        const { data, error } = await client.functions.invoke("manager-review-task-result", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            taskId,
+            status: input.status,
+            note: input.note,
           },
         });
+        if (error) await throwFunctionInvokeError(error, "Manager task review failed.");
 
-        return missionFromRow(
-          missionData as MissionRow,
-          checkpoints,
-          missionTasks,
-          (stepData as TaskStepRow[] | null) ?? [],
-          (resultData as TaskResultRow[] | null) ?? [],
+        const missionId = isPlainRecord(data) && isPlainRecord(data.mission)
+          ? readConversationString(data.mission.id, "")
+          : "";
+        const missions = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+        const mission = missions.find((item) => item.id === missionId) ?? missions.find((item) =>
+          item.tasks.some((task) => task.id === taskId),
         );
+        if (!mission) {
+          throw new Error("Manager task review completed, but the reviewed mission could not be reloaded.");
+        }
+        return mission;
       },
     },
     missionGenesis: {
@@ -1597,6 +1462,14 @@ type ConversationMessageRow = {
   created_at?: string | null;
 };
 
+type ManagerOutputRow = {
+  id: string;
+  subject_id?: string | null;
+  summary?: string | null;
+  render_json?: unknown;
+  created_at?: string | null;
+};
+
 type MissionRow = {
   id: string;
   title: string;
@@ -1674,7 +1547,7 @@ type EvidenceRow = {
   limitation?: string | null;
 };
 
-function conversationFromRows(row: ConversationRow, messages: ConversationMessageRow[]): ConversationViewModel {
+function conversationFromRows(row: ConversationRow, messages: ConversationMessageRow[], output?: ManagerOutputRow): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
 
@@ -1686,7 +1559,25 @@ function conversationFromRows(row: ConversationRow, messages: ConversationMessag
     prompt,
     lastUpdate: row.last_update_at ?? row.created_at ?? undefined,
     messages: mappedMessages,
+    ...(output ? { decisionPackage: decisionPackageFromRow(output) } : {}),
     createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
+  };
+}
+
+function decisionPackageFromRow(row: ManagerOutputRow): ConversationViewModel["decisionPackage"] {
+  const render = isPlainRecord(row.render_json) ? row.render_json : {};
+  return {
+    id: row.id,
+    title: readConversationString(render.title, "Manager decision package"),
+    summary: readConversationString(render.summary, row.summary ?? "Manager saved a decision package."),
+    recommendation: readConversationString(render.recommendation, ""),
+    confidence: readConversationString(render.confidence, "unknown"),
+    actionPolicy: readConversationString(render.actionPolicy, "create_decision_package"),
+    evidenceIds: readStringList(render.evidenceIds),
+    limitations: readStringList(render.limitations),
+    createdWork: normalizeCreatedWork(render.createdWork),
+    proposedActions: normalizeProposedActions(render.proposedActions),
+    createdAt: row.created_at ?? undefined,
   };
 }
 
@@ -1768,6 +1659,24 @@ function normalizeContextQuestions(value: unknown): NonNullable<ConversationView
       options: Array.isArray(item.options) ? item.options.filter((option): option is string => typeof option === "string" && Boolean(option.trim())).map((option) => option.trim()) : [],
     }))
     .filter((item) => item.key && item.question);
+}
+
+function normalizeProposedActions(value: unknown): NonNullable<ConversationViewModel["decisionPackage"]>["proposedActions"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isPlainRecord)
+    .map((item) => ({
+      title: readConversationString(item.title, ""),
+      body: readConversationString(item.body, ""),
+      actionType: readConversationString(item.actionType, ""),
+      targetType: readConversationString(item.targetType, ""),
+      approvalRequired: Boolean(item.approvalRequired),
+    }))
+    .filter((item) => item.title && item.body);
+}
+
+function readStringList(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
 }
 
 function readConversationString(value: unknown, fallback: string) {

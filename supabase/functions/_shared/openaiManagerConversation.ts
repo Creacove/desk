@@ -42,6 +42,16 @@ export type ManagerConversationOutput = {
   status: string;
   confidence: "high" | "medium" | "low" | "unknown";
   classification: string;
+  actionPolicy:
+    | "answer_only"
+    | "save_memory"
+    | "create_decision_package"
+    | "create_mission"
+    | "update_mission"
+    | "update_task"
+    | "review_checkpoint"
+    | "request_permission"
+    | "request_evidence";
   responseBody: string;
   evidenceIds: string[];
   limitations: string[];
@@ -138,6 +148,7 @@ export const managerConversationJsonSchema = {
       "status",
       "confidence",
       "classification",
+      "actionPolicy",
       "responseBody",
       "evidenceIds",
       "limitations",
@@ -153,6 +164,20 @@ export const managerConversationJsonSchema = {
       status: { type: "string" },
       confidence: { type: "string", enum: ["high", "medium", "low", "unknown"] },
       classification: { type: "string" },
+      actionPolicy: {
+        type: "string",
+        enum: [
+          "answer_only",
+          "save_memory",
+          "create_decision_package",
+          "create_mission",
+          "update_mission",
+          "update_task",
+          "review_checkpoint",
+          "request_permission",
+          "request_evidence",
+        ],
+      },
       responseBody: { type: "string" },
       evidenceIds: stringArraySchema,
       limitations: stringArraySchema,
@@ -227,19 +252,24 @@ export const managerConversationJsonSchema = {
   },
 };
 
-export function buildManagerConversationInstructions() {
+export function buildManagerConversationInstructions(playbookInstructions = "") {
   return [
     "You are the Manager Conversation Router for the prototype-style manager office.",
     "Use the supplied Manager Intelligence packet, artist profile, evidence, music catalog, missions, tasks, memory, agent reports, and recent conversation history to answer the user's directive.",
-    "Write as the Manager. Be specific to this artist, this workspace, and the available evidence. If evidence is incomplete, say what decision can still be made and what must be verified.",
+    "Write as the Manager: direct, plain, senior, specific to this artist and this workspace. Do not use generic assistant greetings or filler.",
+    "For normal questions and follow-ups, write 1-3 natural paragraphs. Do not dump headings, task lists, or project-management fields into responseBody unless the user explicitly asks to draft, build, activate, or update work.",
+    "If evidence is incomplete, say what decision can still be made and what must be verified. Push back when the evidence does not justify the move.",
     "Do not create a separate evidence-read section. Evidence, H-score/H-strike style metrics, market concentration, ramp-versus-engagement, and packet signals must be synthesized into the Manager answer.",
     "Do not collapse every answer into promoting the strongest track. Use whichever management lenses fit: strategy, positioning, rights, release, market, team operations, reputation, finance, source completeness, or mission design.",
+    "Set actionPolicy before any durable write is applied: answer_only for simple conversation; save_memory only when durableMemory is the only write; create_decision_package for a durable recommendation package; create_mission or update_mission for missionGraphDecisions; update_task or review_checkpoint for task/checkpoint state changes; request_permission for external, expensive, legal, financial, public, or reputational actions; request_evidence when missing evidence blocks a specific decision.",
+    "When the user asks a conversational question, set actionPolicy to answer_only and do not generate missionGraphDecisions, createdWork, or proposedActions unless a concrete operational action is genuinely needed.",
     "Use missionGraphDecisions when mission, checkpoint, or task work should be written to the operating system. A missionGraphDecision must use the Mission Genesis contract: one durable mission objective, checkpoints as decision questions with rules, and tasks as concrete work that answers checkpoint questions.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan.",
     "If user-controlled context is missing, return contextQuestions and no missionGraphDecisions. Ask the full question batch before creating mission work.",
     "Return createdWork only for already-known concrete non-mission artifacts. For mission/task creates and updates, prefer missionGraphDecisions and let the server emit canonical createdWork after persistence. Use proposedActions for internal next steps that the app can later approve or execute.",
     "Never mention provider mechanics, model names, or internal prompt/source packaging in the user-facing responseBody.",
+    playbookInstructions,
   ].join("\n");
 }
 
@@ -248,12 +278,17 @@ export function parseManagerConversationOutput(raw: string): ManagerConversation
   if (Array.isArray(parsed.workOperations) && parsed.workOperations.length > 0) {
     throw new Error("Manager conversation output must use missionGraphDecisions instead of lightweight workOperations.");
   }
+  const actionPolicy = normalizeActionPolicy(parsed.actionPolicy);
+  if (!actionPolicy) {
+    throw new Error("Manager conversation output is missing required actionPolicy.");
+  }
   const output: ManagerConversationOutput = {
     topic: cleanString(parsed.topic, "Manager conversation").slice(0, 120),
     summary: cleanString(parsed.summary, "Manager answered the directive.").slice(0, 240),
     status: cleanString(parsed.status, "Manager responded").slice(0, 80),
     confidence: ["high", "medium", "low", "unknown"].includes(String(parsed.confidence)) ? parsed.confidence as ManagerConversationOutput["confidence"] : "unknown",
     classification: cleanString(parsed.classification, "manager_conversation").slice(0, 80),
+    actionPolicy,
     responseBody: cleanString(parsed.responseBody, "The Manager could not produce a grounded answer from the current packet."),
     evidenceIds: cleanStringArray(parsed.evidenceIds).slice(0, 24),
     limitations: cleanStringArray(parsed.limitations).slice(0, 12),
@@ -273,6 +308,21 @@ export function parseManagerConversationOutput(raw: string): ManagerConversation
   }
 
   return output;
+}
+
+function normalizeActionPolicy(value: unknown): ManagerConversationOutput["actionPolicy"] | null {
+  const allowed = [
+    "answer_only",
+    "save_memory",
+    "create_decision_package",
+    "create_mission",
+    "update_mission",
+    "update_task",
+    "review_checkpoint",
+    "request_permission",
+    "request_evidence",
+  ];
+  return allowed.includes(String(value)) ? value as ManagerConversationOutput["actionPolicy"] : null;
 }
 
 function normalizeCreatedWork(value: unknown): ManagerConversationCreatedWork | null {
@@ -416,5 +466,7 @@ function cleanString(value: unknown, fallback: string) {
 }
 
 function cleanStringArray(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim()).map((item) => item.trim()) : [];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
+    : [];
 }

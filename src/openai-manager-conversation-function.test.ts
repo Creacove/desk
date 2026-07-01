@@ -6,6 +6,7 @@ import {
   managerConversationJsonSchema,
   parseManagerConversationOutput,
 } from "../supabase/functions/_shared/openaiManagerConversation";
+import { getPlaybooksInstructions } from "../supabase/functions/_shared/manager-intelligence/playbooks/playbookDefinitions";
 
 const functionPath = join(process.cwd(), "supabase", "functions", "manager-conversation", "index.ts");
 const functionSource = existsSync(functionPath) ? readFileSync(functionPath, "utf8") : "";
@@ -67,6 +68,15 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(functionSource).not.toContain("insertManagerTask");
   });
 
+  it("persists durable decision packages as manager_outputs instead of static Manager Office UI", () => {
+    expect(functionSource).toContain("persistDecisionPackageOutput");
+    expect(streamFunctionSource).toContain("persistDecisionPackageOutput");
+    expect(functionSource).toContain('from("manager_outputs")');
+    expect(streamFunctionSource).toContain('from("manager_outputs")');
+    expect(functionSource).toContain('output_type: "decision_package"');
+    expect(streamFunctionSource).toContain('output_type: "decision_package"');
+  });
+
   it("loads the workspace context needed for a real Manager answer", () => {
     for (const table of [
       "artist_profiles",
@@ -120,10 +130,44 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).not.toContain("OpenAI");
   });
 
+  it("injects clean active playbook lenses into Manager chat instructions", () => {
+    const playbookInstructions = getPlaybooksInstructions(["cultural_expansion", "no_engine"]);
+    const instructions = buildManagerConversationInstructions(playbookInstructions);
+
+    expect(playbookInstructions).toContain("Cultural Expansion");
+    expect(playbookInstructions).toContain("No Engine");
+    expect(playbookInstructions).toContain("artist's cultural home base");
+    expect(playbookInstructions).not.toContain("â");
+    expect(instructions).toContain("ACTIVE MANAGEMENT LENSES");
+    expect(instructions).toContain("A useful manager says no.");
+  });
+
+  it("loads active playbooks from the latest Manager Intelligence packet in both chat functions", () => {
+    expect(functionSource).toContain("internal_only_json");
+    expect(streamFunctionSource).toContain("internal_only_json");
+    expect(functionSource).toContain("getPlaybooksInstructions");
+    expect(streamFunctionSource).toContain("getPlaybooksInstructions");
+    expect(functionSource).toContain("latestManagerIntelligencePacket?.internal_only_json");
+    expect(streamFunctionSource).toContain("latestManagerIntelligencePacket?.internal_only_json");
+  });
+
+  it("uses the shared stateful Manager agent loop instead of one stateless bulk-context model call", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain("runManagerAgentLoop");
+      expect(source).toContain("executeManagerConversationTool");
+      expect(source).toContain("loadPreviousOpenAIResponseId");
+      expect(source).toContain("openaiResponseId");
+      expect(source).not.toContain('selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 240)');
+      expect(source).not.toContain('selectMany(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 120)');
+      expect(source).not.toContain('selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, 160)');
+    }
+  });
+
   it("parses structured Manager conversation output and keeps created work normalized", () => {
     expect(managerConversationJsonSchema.name).toBe("manager_conversation_router_v1");
 
     const output = parseManagerConversationOutput(JSON.stringify({
+      actionPolicy: "answer_only",
       topic: "Budget validation",
       summary: "Manager recommends a capped proof loop.",
       status: "Manager responded",
@@ -159,10 +203,53 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(output.missionGraphDecisions).toEqual([]);
     expect(output.contextQuestions).toEqual([]);
     expect(output.responseBody).toContain("capped proof loop");
+    expect(output.actionPolicy).toBe("answer_only");
+  });
+
+  it("requires an explicit action policy before Manager conversation writes are applied", () => {
+    const schema = managerConversationJsonSchema.schema;
+    expect(schema.required).toContain("actionPolicy");
+    expect(schema.properties).toHaveProperty("actionPolicy");
+
+    const decisionOutput = parseManagerConversationOutput(JSON.stringify({
+      actionPolicy: "create_decision_package",
+      topic: "Spend decision",
+      summary: "Manager recommends a proof package before spend.",
+      status: "Manager responded",
+      confidence: "medium",
+      classification: "decision_request",
+      responseBody: "Create a decision package before approving scale spend.",
+      evidenceIds: ["evidence-1"],
+      limitations: ["Spend result proof is missing."],
+      createdWork: [],
+      missionGraphDecisions: [],
+      contextQuestions: [],
+      proposedActions: [],
+      durableMemory: ["Scale spend needs proof first."],
+    }));
+
+    expect(decisionOutput.actionPolicy).toBe("create_decision_package");
+
+    expect(() => parseManagerConversationOutput(JSON.stringify({
+      topic: "Spend decision",
+      summary: "Manager recommends a proof package before spend.",
+      status: "Manager responded",
+      confidence: "medium",
+      classification: "decision_request",
+      responseBody: "Create a decision package before approving scale spend.",
+      evidenceIds: ["evidence-1"],
+      limitations: [],
+      createdWork: [],
+      missionGraphDecisions: [],
+      contextQuestions: [],
+      proposedActions: [],
+      durableMemory: [],
+    }))).toThrow(/actionPolicy/i);
   });
 
   it("parses full mission graph decisions for Manager mission writes", () => {
     const output = parseManagerConversationOutput(JSON.stringify({
+      actionPolicy: "create_mission",
       topic: "Audience mission",
       summary: "Manager will create mission work.",
       status: "Manager responded",
@@ -234,6 +321,7 @@ describe("OpenAI Manager Conversation Router", () => {
 
   it("parses Manager context questions without creating mission graph work", () => {
     const output = parseManagerConversationOutput(JSON.stringify({
+      actionPolicy: "create_mission",
       topic: "Mission context",
       summary: "Manager needs user-controlled context before creating work.",
       status: "Manager needs context",
@@ -268,6 +356,7 @@ describe("OpenAI Manager Conversation Router", () => {
 
   it("rejects old lightweight Manager work operations for mission and task writes", () => {
     expect(() => parseManagerConversationOutput(JSON.stringify({
+      actionPolicy: "create_mission",
       topic: "Audience mission",
       summary: "Manager will create mission work.",
       status: "Manager responded",
