@@ -794,6 +794,9 @@ function CleanProductionWorkspace({
       setSetupActivityStep("setup-map");
       const setupGeneration = await generateTodaysBrief("setup-map");
       const setupBrief = briefFromGenerationResult(setupGeneration);
+      if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
+        throw new Error("Setup map needs a live Manager read. Retry to regenerate it.");
+      }
       setSetupActivityStep("music-reads");
       await refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
       setSetupActivityWorkspace(null);

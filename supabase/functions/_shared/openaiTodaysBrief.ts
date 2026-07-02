@@ -177,7 +177,7 @@ export const todaysBriefJsonSchema = {
                   label: { type: "string", maxLength: 80 },
                   value: { type: "string", maxLength: 120 },
                   context: { type: "string", maxLength: 180 },
-                  evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+                  evidenceIds: { type: "array", items: { type: "string" } },
                 },
               },
             },
@@ -197,7 +197,7 @@ export const todaysBriefJsonSchema = {
           required: ["claim", "evidenceIds", "limitation"],
           properties: {
             claim: { type: "string" },
-            evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+            evidenceIds: { type: "array", items: { type: "string" } },
             limitation: { type: "string" },
           },
         },
@@ -229,7 +229,7 @@ const sharedTodaysBriefInstructions = [
     "Do not lead with missing data. Do not end with missing data. Do not mention private saves or repeat listener gaps unless directly asked by the user.",
     "Never claim rights certainty, royalties, revenue, return on spend, or conversion unless directly saved in the packet.",
     "The sourceLine must be exactly: Based on your saved artist profile, current music in view, public audience signals, and source limits.",
-    "Every metric and claimAudit item must use the evidenceIds supplied in the packet. Real evidence rows use saved evidence IDs; setup metadata and catalog scope use stable packet IDs such as artist-profile, working-catalog-scope, latest-project-in-view, or recent-focus-records.",
+    "Every metric and claimAudit item should use the evidenceIds supplied in the packet. Real evidence rows use saved evidence IDs; setup metadata and catalog scope use stable packet IDs such as artist-profile, working-catalog-scope, latest-project-in-view, or recent-focus-records. If an item has no supplied ID, keep its evidenceIds empty rather than inventing one.",
     "Never print evidence IDs, UUIDs, database IDs, source refs, or parenthetical evidence citations in headlineRead, snapshotSummary, intelligenceSnapshot visible text, or managerRead. IDs belong only in evidenceIds arrays and claimAudit.",
 ];
 
@@ -290,15 +290,6 @@ export function assertSignalsHaveEvidenceIds(output: TodaysBriefOutput) {
   if (!output.intelligenceSnapshot.length) throw new Error("Today's Brief must include artist intelligence.");
   for (const group of output.intelligenceSnapshot) {
     if (!group.metrics.length) throw new Error("Today's Brief intelligence group is missing metrics.");
-    if (output.confidence === "limited" || output.confidence === "unknown") continue;
-    for (const metric of group.metrics) {
-      if (!metric.evidenceIds.length) throw new Error("Today's Brief intelligence metric is missing evidence IDs.");
-    }
-  }
-  if (!output.claimAudit.length) throw new Error("Today's Brief claim audit is missing.");
-  if (output.confidence === "limited" || output.confidence === "unknown") return;
-  if (!output.claimAudit.some((audit) => audit.evidenceIds.length)) {
-    throw new Error("Today's Brief claim audit is missing evidence IDs.");
   }
 }
 

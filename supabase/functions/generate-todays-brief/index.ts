@@ -126,18 +126,11 @@ Deno.serve(async (request) => {
     const managerPacketId = await persistManagerIntelligencePacket(authClient, managerIntelligencePacket, runId);
     await persistManagerPacketEvidenceLinks(authClient, input, runId, managerPacketId, managerIntelligencePacket);
     await persistManagerPacketMemorySeeds(authClient, input, runId, managerPacketId, managerIntelligencePacket);
-    let fallbackError: unknown = null;
-    let output: TodaysBriefOutput;
-    try {
-      const modelPacket = buildTodaysBriefModelPacket(packet, managerIntelligencePacket);
-      const appliedPlaybooks = readAppliedPlaybooks(managerIntelligencePacket);
-      const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
-      output = await callOpenAITodaysBriefWithRetry(modelPacket, generationMode, playbookLensText);
-      output = appendManagerEvidenceReads(output, managerIntelligencePacket);
-    } catch (error) {
-      fallbackError = error;
-      output = fallbackBriefFromManagerPacket(packet, managerIntelligencePacket, runId, error);
-    }
+    const modelPacket = buildTodaysBriefModelPacket(packet, managerIntelligencePacket);
+    const appliedPlaybooks = readAppliedPlaybooks(managerIntelligencePacket);
+    const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
+    let output = await callOpenAITodaysBriefWithRetry(modelPacket, generationMode, playbookLensText);
+    output = appendManagerEvidenceReads(output, managerIntelligencePacket);
     const completed = {
       ...output,
       generatedAt: new Date().toISOString(),
@@ -145,23 +138,13 @@ Deno.serve(async (request) => {
     };
     assertSignalsHaveEvidenceIds(completed);
     await completeManagerSynthesisRun(authClient, runId, packet, sourceAudit, completed, generationMode);
-    const managerOutputId = fallbackError
-      ? await persistFallbackManagerOutput(authClient, input, runId, managerPacketId, completed)
-      : await persistManagerOutput(authClient, input, runId, managerPacketId, completed);
-    if (fallbackError) {
-      await markUsageFailedSafe(usageId, fallbackError);
-    } else {
-      await completeUsageEvent(authClient, usageId, completed);
-    }
+    const managerOutputId = await persistManagerOutput(authClient, input, runId, managerPacketId, completed);
+    await completeUsageEvent(authClient, usageId, completed);
     await writeOperatingEventSafe(authClient, input, {
-      eventType: fallbackError
-        ? "setup_todays_brief_fallback_generated"
-        : input.trigger === "setup"
-          ? "setup_todays_brief_generated"
-          : "setup_todays_brief_refreshed",
-      summary: fallbackError
-        ? `Prepared packet-backed Today's Brief for ${packet.profile.artistName}.`
-        : `Generated Today's Brief for ${packet.profile.artistName}.`,
+      eventType: input.trigger === "setup"
+        ? "setup_todays_brief_generated"
+        : "setup_todays_brief_refreshed",
+      summary: `Generated Today's Brief for ${packet.profile.artistName}.`,
       payload: {
         manager_synthesis_run_id: runId,
         manager_intelligence_packet_id: managerPacketId,
@@ -170,7 +153,6 @@ Deno.serve(async (request) => {
         intelligence_group_count: completed.intelligenceSnapshot.length,
         generationMode,
         claimAudit: completed.claimAudit,
-        fallback_reason: fallbackError ? describeError(fallbackError, "Provider generation failed.") : undefined,
       },
     });
 
@@ -179,7 +161,7 @@ Deno.serve(async (request) => {
     }
 
     return json({
-      status: fallbackError ? "completed_with_fallback" : "completed",
+      status: "completed",
       managerSynthesisRunId: runId,
       brief: completed,
       setupMusicReadTargets: generationMode === "setup-map" ? setupMusicReadTargets : [],
@@ -404,71 +386,6 @@ async function callOpenAITodaysBrief(
 
   const payload = await response.json();
   return parseTodaysBriefOutput(readOutputText(payload));
-}
-
-function fallbackBriefFromManagerPacket(
-  packet: ArtistBriefPacket,
-  managerIntelligencePacket: Record<string, unknown>,
-  runId: string,
-  error: unknown,
-): TodaysBriefOutput {
-  const artistName = packet.profile.artistName;
-  const packetEvidenceIds = readPacketEvidenceIds(managerIntelligencePacket);
-  const metricEvidenceIds = packet.intelligenceSnapshotInputs.flatMap((group) => group.metrics.flatMap((metric) => metric.evidenceIds));
-  const evidenceIds = uniqueStrings([...packetEvidenceIds, ...metricEvidenceIds]).slice(0, 12);
-  const groups = ensureTodaysBriefSnapshotGroups(packet.intelligenceSnapshotInputs.map((group) => ({
-    title: group.title,
-    insight: group.suggestedInsight ?? `${group.title} gives the Manager a concrete read from saved evidence.`,
-    metrics: group.metrics.slice(0, 6).map((metric) => ({
-      label: metric.label,
-      value: metric.value,
-      context: metric.context ?? metric.subjectLabel ?? "saved signal",
-      evidenceIds: metric.evidenceIds.length ? metric.evidenceIds : evidenceIds.slice(0, 1),
-    })),
-  })), evidenceIds);
-  const catalog = packet.workingCatalog.focusSongTitles.length
-    ? packet.workingCatalog.focusSongTitles.slice(0, 3).join(", ")
-    : packet.workingCatalog.latestProjectTitles.slice(0, 2).join(", ") || "the current music in view";
-  const topGroup = groups[0];
-  const firstMetric = topGroup.metrics[0];
-  const sourceLine = "Based on your saved artist profile, current music in view, public audience signals, and source limits.";
-  const limitation = `Prepared from the stored Manager Intelligence Packet after live prose generation could not complete: ${describeError(error, "rate limited")}`;
-
-  return appendManagerEvidenceReads({
-    headlineRead: `${artistName}'s management read is ready from saved evidence, with ${catalog} as the first focus.`,
-    intelligenceSnapshot: groups,
-    snapshotSummary: `${topGroup.title} is the first useful read: ${topGroup.insight}`,
-    managerRead: `${artistName} already has enough saved intelligence for a focused first management read. The useful move is not to spread attention across every possible lane; it is to start from ${catalog} and the strongest public audience facts already in view.\n\nThe first marker I would use is ${firstMetric.label}: ${firstMetric.value}${firstMetric.context ? ` (${firstMetric.context})` : ""}. That gives the team a concrete anchor for the next operating decision instead of a generic profile summary.\n\nI would keep this read narrow until more proof is connected: choose the record or project that best matches the saved audience evidence, then build the next work from that center.`,
-    sourceLine,
-    confidence: evidenceIds.length >= 4 ? "medium" : "limited",
-    generationState: "fallback",
-    managerSynthesisRunId: runId,
-    claimAudit: [{
-      claim: `${artistName}'s fallback management read was prepared from the stored packet and saved evidence.`,
-      evidenceIds: evidenceIds.slice(0, 8),
-      limitation,
-    }],
-  }, managerIntelligencePacket);
-}
-
-function ensureTodaysBriefSnapshotGroups(
-  groups: TodaysBriefOutput["intelligenceSnapshot"],
-  evidenceIds: string[],
-): TodaysBriefOutput["intelligenceSnapshot"] {
-  const usable = groups.filter((group) => group.metrics.length).slice(0, 5);
-  while (usable.length < 2) {
-    usable.push({
-      title: usable.length ? "Current Music In View" : "Artist Intelligence",
-      insight: "The saved setup gives the Manager a practical starting point.",
-      metrics: [{
-        label: usable.length ? "Working catalog" : "Artist profile",
-        value: usable.length ? "In view" : "Saved",
-        context: "setup context",
-        evidenceIds: evidenceIds.slice(0, 1),
-      }],
-    });
-  }
-  return usable;
 }
 
 async function loadArtistProfile(supabase: any, input: GenerateTodaysBriefInput) {
@@ -894,16 +811,6 @@ async function persistManagerOutput(
     .single();
   if (error) throw error;
   return data.id as string;
-}
-
-async function persistFallbackManagerOutput(
-  supabase: any,
-  input: GenerateTodaysBriefInput,
-  runId: string,
-  managerPacketId: string,
-  output: TodaysBriefOutput,
-) {
-  return persistManagerOutput(supabase, input, runId, managerPacketId, output);
 }
 
 async function retireCurrentManagerOutput(

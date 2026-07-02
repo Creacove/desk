@@ -739,7 +739,7 @@ describe("OpenAI Mission Genesis", () => {
     ];
 
     const parsed = parseMissionGenesisOutput({
-      ...positioning,
+      ...blaqbonezMixedOutput(),
       missionCandidates: [
         {
           key: "blaqbonez_positioning",

@@ -44,8 +44,8 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("assertSignalsHaveEvidenceIds");
   });
 
-  it("requires evidence IDs in structured output for generated metrics and claim audit", () => {
-    expect(promptSource).toContain("evidenceIds: { type: \"array\", minItems: 1");
+  it("keeps OpenAI output usable instead of hard-failing missing audit evidence IDs", () => {
+    expect(promptSource).not.toContain("evidenceIds: { type: \"array\", minItems: 1");
     expect(promptSource).toContain("use the evidenceIds supplied in the packet");
     expect(promptSource).not.toContain("leave evidenceIds empty");
   });
@@ -54,8 +54,8 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("buildManagerIntelligencePacket");
     expect(functionSource).toContain("persistManagerIntelligencePacket");
     expect(functionSource).toContain("persistManagerOutput");
-    expect(functionSource).toContain("fallbackBriefFromManagerPacket");
-    expect(functionSource).toContain("persistFallbackManagerOutput");
+    expect(functionSource).not.toContain("fallbackBriefFromManagerPacket");
+    expect(functionSource).not.toContain("persistFallbackManagerOutput");
     expect(functionSource).toContain("persistManagerPacketEvidenceLinks");
     expect(functionSource).toContain("persistManagerPacketMemorySeeds");
     expect(functionSource).toContain('from("manager_intelligence_packets")');
@@ -76,12 +76,13 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("is_current: false");
   });
 
-  it("retries OpenAI rate limits before falling back to packet-backed output", () => {
+  it("retries OpenAI rate limits without creating a local packet fallback", () => {
     expect(functionSource).toContain("callOpenAITodaysBriefWithRetry");
     expect(functionSource).toContain("isRetryableOpenAIError");
     expect(functionSource).toContain("await delay(openAiRetryDelayMs(attempt))");
     expect(functionSource).toContain("OpenAI Today's Brief request failed with status 429");
-    expect(functionSource).toContain("fallbackBriefFromManagerPacket");
+    expect(functionSource).not.toContain("fallbackBriefFromManagerPacket");
+    expect(functionSource).not.toContain("completed_with_fallback");
   });
 
   it("selects separate setup-map and operating prompt modes", () => {
@@ -240,6 +241,36 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(output.managerRead).toContain("Formation");
     expect(output.claimAudit).toHaveLength(2);
     expect(output.claimAudit[1].evidenceIds).toEqual([]);
+  });
+
+  it("keeps a strong OpenAI brief when one metric omits evidence IDs", () => {
+    const output = parseTodaysBriefOutput({
+      headlineRead: "BEEJAY should manage from Cough (Odo) before widening spend.",
+      intelligenceSnapshot: [
+        {
+          title: "Current Music",
+          insight: "Cough (Odo) is the active record to manage first.",
+          metrics: [
+            { label: "Working catalog", value: "Latest project + 11 songs", context: "setup focus", evidenceIds: [] },
+          ],
+        },
+        {
+          title: "Market Heat",
+          insight: "Lagos is the first market lane to test.",
+          metrics: [
+            { label: "Lagos listeners", value: "221", context: "lead city", evidenceIds: ["ev-lagos"] },
+          ],
+        },
+      ],
+      snapshotSummary: "Cough (Odo) is the first management lever.",
+      managerRead: "BEEJAY has enough signal around Cough (Odo) to start with a focused management read instead of broad activity.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      claimAudit: [{ claim: "Lagos is the first market lane.", evidenceIds: ["ev-lagos"], limitation: "Public signal only." }],
+    });
+
+    expect(output.managerRead).toContain("Cough (Odo)");
+    expect(output.intelligenceSnapshot[0].metrics[0].evidenceIds).toEqual([]);
   });
 
   it("treats broad artist goals as ambition context, not the object of today's work", () => {

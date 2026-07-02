@@ -414,8 +414,9 @@ export function parseMissionGenesisOutput(payload: unknown, packet: unknown, mod
 }
 
 function normalizeTopLevelMissionFromCandidates(output: MissionGenesisOutput) {
-  if (!missionIdentityIsMissing(output.mission) || !output.missionCandidates.length) return;
   if (output.outcome !== "activate_mission" && output.outcome !== "candidate_needs_context" && output.outcome !== "update_existing_mission") return;
+  const shouldUseCandidateSurface = output.missionCandidates.length > 1 || missionIdentityIsMissing(output.mission);
+  if (!shouldUseCandidateSurface) return;
 
   const candidate =
     output.missionCandidates.find((item) => item.outcome === output.outcome) ??
@@ -424,10 +425,17 @@ function normalizeTopLevelMissionFromCandidates(output: MissionGenesisOutput) {
   if (!candidate) return;
 
   output.mission = candidate.mission;
-  if (!output.questions.length) output.questions = candidate.questions;
-  if (!output.checkpoints.length) output.checkpoints = candidate.checkpoints;
-  if (!output.tasks.length) output.tasks = candidate.tasks;
-  if (!output.permissionRequests.length) output.permissionRequests = candidate.permissionRequests;
+  if (shouldUseCandidateSurface) {
+    if (candidate.questions.length || !output.questions.length) output.questions = candidate.questions;
+    output.checkpoints = candidate.checkpoints;
+    output.tasks = candidate.tasks;
+    output.permissionRequests = candidate.permissionRequests;
+  } else {
+    if (!output.questions.length) output.questions = candidate.questions;
+    if (!output.checkpoints.length) output.checkpoints = candidate.checkpoints;
+    if (!output.tasks.length) output.tasks = candidate.tasks;
+    if (!output.permissionRequests.length) output.permissionRequests = candidate.permissionRequests;
+  }
   if (!output.evidenceNeeded.length) output.evidenceNeeded = candidate.evidenceNeeded;
   if (!output.reasons.length) output.reasons = candidate.reasons;
 }

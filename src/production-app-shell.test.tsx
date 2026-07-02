@@ -596,7 +596,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
 
-  it("opens Desk HQ with the packet-backed setup map when live setup map generation returns fallback", async () => {
+  it("keeps setup on a retry path when setup map generation returns fallback", async () => {
     const setupWorkspace = {
       ...workspace,
       status: "setup",
@@ -649,10 +649,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
-    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    expect(screen.getAllByText("Fallback packet read.").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Setup map returned a packet fallback instead of a live Manager read.")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Retry setup map" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Setup map needs a live Manager read. Retry to regenerate it.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry setup map" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
 
   it("lets a signed-in user sign out from setup and Desk HQ", async () => {
