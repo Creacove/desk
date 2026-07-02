@@ -85,14 +85,13 @@ export function MissionsWorkspace({
     return (
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
-        <MissionGenesisPanel
-          result={missionGenesisResult}
-          pending={missionGenesisPending}
-          error={missionGenesisError}
-          onRun={onRunMissionGenesis}
-          onOpenQuestions={onOpenMissionGenesisQuestions}
+        <EmptyMissionState
+          missionGenesisResult={missionGenesisResult}
+          missionGenesisError={missionGenesisError}
+          onRunMissionGenesis={onRunMissionGenesis}
+          onOpenMissionGenesisQuestions={onOpenMissionGenesisQuestions}
+          missionGenesisPending={missionGenesisPending}
         />
-        <EmptyMissionState onRunMissionGenesis={onRunMissionGenesis} missionGenesisPending={missionGenesisPending} />
       </section>
     );
   }
@@ -101,13 +100,11 @@ export function MissionsWorkspace({
     return (
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
-        <MissionGenesisPanel
-          result={missionGenesisResult}
-          pending={missionGenesisPending}
-          error={missionGenesisError}
-          onRun={onRunMissionGenesis}
-          onOpenQuestions={onOpenMissionGenesisQuestions}
-        />
+        <div className="mb-5 flex justify-end">
+          <ProductButton variant="secondary" onClick={onOpenMissionGenesisQuestions}>
+            Talk to Manager
+          </ProductButton>
+        </div>
         <div data-testid="missions-mobile-picker" className="space-y-8 lg:hidden">
           <MissionShortcutTabs mission={activeMissions[0] ?? localMissions[0]} onOpen={openMission} />
           <MissionList activeMissions={activeMissions} completedMissions={completedMissions} onOpen={openMission} />
@@ -133,64 +130,17 @@ export function MissionsWorkspace({
   );
 }
 
-function MissionGenesisPanel({
-  result,
-  pending,
-  error,
-  onRun,
-  onOpenQuestions,
-}: {
-  result: MissionGenesisResultViewModel | null;
-  pending: boolean;
-  error: string | null;
-  onRun: () => void;
-  onOpenQuestions: () => void;
-}) {
-  return (
-    <section className="mb-5 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission Genesis</p>
-          <h2 className="mt-2 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">
-            Create only the mission this artist actually needs
-          </h2>
-          <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">
-            The Manager checks artist stage, signals, memory, budget, source limits, and execution capacity before activating mission work.
-          </p>
-        </div>
-        <ProductButton variant="secondary" onClick={onRun} disabled={pending}>
-          {pending ? "Running Mission Genesis" : "Run Mission Genesis"}
-        </ProductButton>
-      </div>
-      {result ? (
-        <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{result.outcome.replace(/_/g, " ")}</p>
-          <h3 className="mt-2 text-sm font-semibold text-foreground">{result.title}</h3>
-          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{result.body}</p>
-          {result.questions.length ? (
-            <div className="mt-4">
-              <ProductButton variant="primary" onClick={onOpenQuestions}>
-                Answer in Manager Office
-              </ProductButton>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-      {error ? (
-        <div role="alert" className="mt-5 rounded-[16px] border border-red-500/20 bg-red-500/[0.055] p-4">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
-          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{error}</p>
-        </div>
-      ) : null}
-    </section>
-  );
-}
-
 function EmptyMissionState({
+  missionGenesisResult,
+  missionGenesisError,
   onRunMissionGenesis,
+  onOpenMissionGenesisQuestions,
   missionGenesisPending,
 }: {
+  missionGenesisResult: MissionGenesisResultViewModel | null;
+  missionGenesisError: string | null;
   onRunMissionGenesis: () => void;
+  onOpenMissionGenesisQuestions: () => void;
   missionGenesisPending: boolean;
 }) {
   return (
@@ -203,9 +153,29 @@ function EmptyMissionState({
         </p>
         <div className="mt-4">
           <ProductButton onClick={onRunMissionGenesis} disabled={missionGenesisPending}>
-            {missionGenesisPending ? "Running Mission Genesis" : "Run Mission Genesis for this artist"}
+            {missionGenesisPending ? "Getting first Manager plan" : "Get first Manager plan"}
           </ProductButton>
         </div>
+        {missionGenesisResult ? (
+          <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{missionGenesisResult.outcome.replace(/_/g, " ")}</p>
+            <h3 className="mt-2 text-sm font-semibold text-foreground">{missionGenesisResult.title}</h3>
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{missionGenesisResult.body}</p>
+            {missionGenesisResult.questions.length ? (
+              <div className="mt-4">
+                <ProductButton variant="primary" onClick={onOpenMissionGenesisQuestions}>
+                  Answer in Manager Office
+                </ProductButton>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {missionGenesisError ? (
+          <div role="alert" className="mt-5 rounded-[16px] border border-red-500/20 bg-red-500/[0.055] p-4">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{missionGenesisError}</p>
+          </div>
+        ) : null}
       </div>
     </section>
   );

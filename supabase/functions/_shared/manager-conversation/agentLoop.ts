@@ -19,7 +19,7 @@ type ManagerAgentLoopInput = ManagerAgentRequestInput & {
   fetchImpl?: typeof fetch;
   maxToolCalls?: number;
   executeTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
-  onToolEvent?: (event: ManagerAgentToolTrace) => void;
+  onToolEvent?: (event: ManagerAgentToolTrace) => void | Promise<void>;
 };
 
 type ManagerAgentLoopResult = {
@@ -159,7 +159,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
         status: "started" as const,
         summary: safeToolSummary(call.name, call.args),
       };
-      input.onToolEvent?.(started);
+      await input.onToolEvent?.(started);
 
       try {
         const result = await input.executeTool(call.name, call.args);
@@ -170,17 +170,17 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
           summary: summarizeToolResult(call.name, result),
         };
         toolTrace.push(completed);
-        input.onToolEvent?.(completed);
+        await input.onToolEvent?.(completed);
         outputs.push({ type: "function_call_output", call_id: call.callId, output: JSON.stringify(result) });
       } catch (error) {
         const failed = {
           tool: call.name,
           callId: call.callId,
           status: "failed" as const,
-          summary: error instanceof Error ? error.message : "Tool failed.",
+          summary: readErrorMessage(error),
         };
         toolTrace.push(failed);
-        input.onToolEvent?.(failed);
+        await input.onToolEvent?.(failed);
         outputs.push({ type: "function_call_output", call_id: call.callId, output: JSON.stringify({ error: failed.summary }) });
       }
     }
@@ -270,9 +270,38 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
 }
 
 function summarizeToolResult(name: string, value: unknown) {
+  if (isRecord(value)) {
+    const status = typeof value.status === "string" && value.status.trim() ? value.status.trim() : "";
+    const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
+      ? value.evidenceCount
+      : null;
+    const snapshotId = typeof value.snapshotId === "string" && value.snapshotId.trim() ? value.snapshotId.trim() : "";
+    const memoryId = typeof value.memoryId === "string" && value.memoryId.trim() ? value.memoryId.trim() : "";
+    const evidenceId = typeof value.evidenceId === "string" && value.evidenceId.trim() ? value.evidenceId.trim() : "";
+    if (status || evidenceCount !== null || snapshotId || memoryId || evidenceId) {
+      const parts = [`${name} ${status || "completed"}`];
+      if (evidenceCount !== null) parts.push(`${evidenceCount} evidence item${evidenceCount === 1 ? "" : "s"}`);
+      if (snapshotId) parts.push(`snapshot ${snapshotId}`);
+      if (memoryId) parts.push(`memory ${memoryId}`);
+      if (evidenceId) parts.push(`evidence ${evidenceId}`);
+      return `${parts.join("; ")}.`;
+    }
+  }
   const count = isRecord(value) && Array.isArray(value.items) ? value.items.length : null;
   const suffix = count == null ? "" : ` Found ${count} scoped item${count === 1 ? "" : "s"}.`;
   return `${safeToolSummary(name, {})}${suffix}`;
+}
+
+function readErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (isRecord(error) && typeof error.message === "string" && error.message.trim()) return error.message.trim();
+  if (typeof error === "string" && error.trim()) return error.trim();
+  try {
+    const serialized = JSON.stringify(error);
+    return serialized && serialized !== "{}" ? serialized : "Tool failed.";
+  } catch {
+    return "Tool failed.";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

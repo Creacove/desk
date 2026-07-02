@@ -84,6 +84,27 @@ const extractKpis = (rows: EvidenceRow[], profile: ProfileInput): ChartmetricKpi
       score: typeof row.metric_value === "number" ? row.metric_value : null,
       listenerCount: null,
     }));
+  const trackRows = rows.filter((row) => row.subject_type === "music_item" && row.subject_id);
+  const trackIds = [...new Set(trackRows.map((row) => row.subject_id).filter((id): id is string => Boolean(id)))];
+  const trackScores = trackIds.flatMap((musicItemId) => {
+    const scopedRows = trackRows.filter((row) => row.subject_id === musicItemId);
+    const chartmetricTrackScore = readNumberMetric(scopedRows, ["chartmetric_track_score", "track_score"]);
+    const spotifyPopularity = readNumberMetric(scopedRows, ["spotify_popularity", "spotify_popularity_latest"]);
+    if (chartmetricTrackScore === null && spotifyPopularity === null) return [];
+    const trackName = scopedRows.find((row) => row.subject_label)?.subject_label ?? musicItemId;
+    return [{
+      musicItemId,
+      trackName,
+      chartmetricTrackScore,
+      spotifyPopularity,
+      evidenceIds: scopedRows
+        .filter((row) => {
+          const metricName = (row.metric_name ?? "").toLowerCase();
+          return metricName.includes("track_score") || metricName.includes("spotify_popularity");
+        })
+        .map((row) => row.id),
+    }];
+  });
 
   return {
     artistScore: {
@@ -100,6 +121,7 @@ const extractKpis = (rows: EvidenceRow[], profile: ProfileInput): ChartmetricKpi
     engagementRank: readNumberMetric(rows, ["engagement_rank"]),
     cityAffinity,
     genreTags: profile.genres ?? [],
+    trackScores,
   };
 };
 
@@ -426,7 +448,7 @@ const buildDomainReads = ({
       checkpoint_hint: "A source request should unlock a specific blocked claim or decision.",
       permission_boundary: "Source connections and file uploads stay user-controlled.",
       confidence_level: "Low",
-      evidence_ids: [firstEvidenceId],
+      evidence_ids: firstEvidenceId ? [firstEvidenceId] : [],
     });
   }
 
@@ -473,7 +495,7 @@ const buildCareerConditionDiagnosis = ({
     if (conditionMap.has(condition.condition_key)) return;
     conditionMap.set(condition.condition_key, {
       ...condition,
-      evidence_ids: condition.evidence_ids.length ? condition.evidence_ids : [firstEvidenceId],
+      evidence_ids: condition.evidence_ids.length ? condition.evidence_ids : firstEvidenceId ? [firstEvidenceId] : [],
     });
   };
 
@@ -582,7 +604,7 @@ const buildCareerConditionDiagnosis = ({
       condition_key: "career_direction_unclear",
       label: "Career direction unclear",
       why_it_matters: `${artistName} needs a first management thesis before work is created from scattered evidence.`,
-      evidence_ids: [firstEvidenceId],
+      evidence_ids: firstEvidenceId ? [firstEvidenceId] : [],
       best_mission_families: ["Career Direction", "Artist Identity"],
       bad_mission_families: ["Generic Promotion", "Source Upload Busywork"],
       possible_missions: [`Define ${artistName}'s first career-management thesis`],
@@ -618,7 +640,7 @@ export const buildManagerIntelligencePacket = (input: BuildManagerIntelligencePa
     hasRightsOrDealRisk: classifiedSignals.some(({ classified }) => classified.signalType === "risk" || classified.signalType === "rights_business" || classified.signalType === "sync_deal"),
   });
 
-  const firstEvidenceId = input.evidenceRows[0]?.id ?? "available_evidence";
+  const firstEvidenceId = input.evidenceRows[0]?.id ?? "";
   const strongestAssetName = primaryAsset?.title ?? artistName;
   const attentionLed = signalTypes.includes("attention");
   const discoveryLed = signalTypes.includes("discovery");
@@ -740,7 +762,7 @@ export const buildManagerIntelligencePacket = (input: BuildManagerIntelligencePa
         recommended_next_move: primaryDomainRead?.next_move ?? "Connect stronger source data before making a high-confidence move.",
         avoid: primaryDomainRead?.avoid ?? "Do not scale broad spend or external commitments until evidence and readiness signals agree.",
         confidence_level: confidenceReason ? "Medium" : "Low",
-        evidence_ids: primaryDomainRead?.evidence_ids.length ? primaryDomainRead.evidence_ids : [firstEvidenceId],
+        evidence_ids: primaryDomainRead?.evidence_ids.length ? primaryDomainRead.evidence_ids : firstEvidenceId ? [firstEvidenceId] : [],
       },
     ],
     asset_reads_json: primaryAsset

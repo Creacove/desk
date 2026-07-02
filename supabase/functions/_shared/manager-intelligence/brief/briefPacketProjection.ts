@@ -15,10 +15,11 @@ export function buildTodaysBriefModelPacket(
   packet: ArtistBriefPacket,
   managerIntelligencePacket: ManagerPacketRecord,
 ) {
+  const compactPacket = compactArtistBriefPacket(packet);
   return {
-    ...packet,
+    ...compactPacket,
     managerIntelligence: projectManagerIntelligenceForBrief(managerIntelligencePacket),
-    managerEvidenceReads: buildManagerEvidenceReads(managerIntelligencePacket),
+    managerEvidenceReads: buildManagerEvidenceReads(managerIntelligencePacket).slice(0, 8),
   };
 }
 
@@ -38,6 +39,7 @@ export function buildManagerEvidenceReads(managerIntelligencePacket: ManagerPack
     ...signalEvidenceReads(managerIntelligencePacket.signal_map_json),
     ...assetEvidenceReads(managerIntelligencePacket.asset_reads_json),
     ...marketEvidenceReads(managerIntelligencePacket.market_reads_json),
+    ...publicContextEvidenceReads(managerIntelligencePacket.public_context_json),
     ...managementEvidenceReads(managerIntelligencePacket.management_insights_json),
   ]);
 
@@ -58,17 +60,34 @@ function projectManagerIntelligenceForBrief(managerIntelligencePacket: ManagerPa
     executiveRead: record(managerIntelligencePacket.executive_read_json),
     strategicDiagnosis: record(managerIntelligencePacket.strategic_diagnosis_json),
     kpiRead: record(managerIntelligencePacket.kpi_read_json),
-    signalMap: arrayValue(managerIntelligencePacket.signal_map_json),
-    assetReads: arrayValue(managerIntelligencePacket.asset_reads_json),
-    marketReads: arrayValue(managerIntelligencePacket.market_reads_json),
-    managementInsights: arrayValue(managerIntelligencePacket.management_insights_json),
-    domainReads: arrayValue(managerIntelligencePacket.domain_reads_json),
-    publicContext: arrayValue(managerIntelligencePacket.public_context_json),
-    openDecisions: arrayValue(managerIntelligencePacket.open_decisions_json),
-    doNotDo: arrayValue(managerIntelligencePacket.do_not_do_json),
+    signalMap: arrayValue(managerIntelligencePacket.signal_map_json).slice(0, 8),
+    assetReads: arrayValue(managerIntelligencePacket.asset_reads_json).slice(0, 6),
+    marketReads: arrayValue(managerIntelligencePacket.market_reads_json).slice(0, 5),
+    managementInsights: arrayValue(managerIntelligencePacket.management_insights_json).slice(0, 6),
+    domainReads: arrayValue(managerIntelligencePacket.domain_reads_json).slice(0, 8),
+    publicContext: arrayValue(managerIntelligencePacket.public_context_json).slice(0, 5),
+    openDecisions: arrayValue(managerIntelligencePacket.open_decisions_json).slice(0, 6),
+    doNotDo: arrayValue(managerIntelligencePacket.do_not_do_json).slice(0, 8),
     missionSeed: record(managerIntelligencePacket.mission_seed_json),
     sourceLimits: record(managerIntelligencePacket.data_freshness_json),
     internalPlaybooksApplied: stringArray(internalOnly.playbooks_applied),
+  };
+}
+
+function compactArtistBriefPacket(packet: ArtistBriefPacket): ArtistBriefPacket {
+  return {
+    ...packet,
+    workingCatalog: {
+      ...packet.workingCatalog,
+      latestProjectTitles: packet.workingCatalog.latestProjectTitles.slice(0, 3),
+      focusSongTitles: packet.workingCatalog.focusSongTitles.slice(0, 6),
+    },
+    intelligenceSnapshotInputs: packet.intelligenceSnapshotInputs.slice(0, 5).map((group) => ({
+      ...group,
+      metrics: group.metrics.slice(0, 6),
+    })),
+    derivedInsights: packet.derivedInsights.slice(0, 8),
+    sourceLimits: packet.sourceLimits.slice(0, 6),
   };
 }
 
@@ -128,7 +147,7 @@ function kpiEvidenceReads(value: unknown): ManagerEvidenceRead[] {
       value: valueLabel(item.chartmetricTrackScore),
       category: "signal",
       read: stringValue(item.read),
-      evidenceIds: [],
+      evidenceIds: stringArray(item.evidence_ids),
     });
   }
 
@@ -182,6 +201,23 @@ function managementEvidenceReads(value: unknown): ManagerEvidenceRead[] {
       read: stringValue(insight.why_it_matters) || stringValue(insight.insight),
       evidenceIds: stringArray(insight.evidence_ids),
       confidence: stringValue(insight.confidence_level),
+    };
+  });
+}
+
+function publicContextEvidenceReads(value: unknown): ManagerEvidenceRead[] {
+  return arrayValue(value).map((item) => {
+    const context = record(item);
+    const claim = stringValue(context.claim);
+    const managementUse = stringValue(context.management_use);
+    const title = stringValue(context.title);
+    const domain = stringValue(context.source_domain);
+    return {
+      label: title || domain || "Public context",
+      category: "management" as const,
+      read: [claim, managementUse].filter(Boolean).join(" Manager use: "),
+      evidenceIds: stringArray([context.evidence_id]),
+      confidence: stringValue(context.confidence),
     };
   });
 }

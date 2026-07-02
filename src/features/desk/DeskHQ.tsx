@@ -340,7 +340,7 @@ function MobileDeskHome({
               {brief.confidence === "limited" ? "Limited confidence" : `${brief.confidence} confidence`}
             </span>
             <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">
-              {brief.state === "fresh" ? "Fresh" : brief.state === "fallback" ? "First read" : "Limited"}
+              {brief.state === "fresh" ? "Fresh" : brief.state === "fallback" ? "Saved-packet read" : "Limited"}
             </span>
           </div>
           <h1 className="font-display text-[22px] font-semibold leading-[1.08] text-foreground">{brief.headlineRead}</h1>
@@ -613,7 +613,7 @@ function TodayBrief({
             {brief.confidence === "limited" ? "Limited confidence" : `${brief.confidence} confidence`}
           </span>
           <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {brief.state === "fresh" ? "Fresh" : brief.state === "fallback" ? "First read" : "Limited"}
+            {brief.state === "fresh" ? "Fresh" : brief.state === "fallback" ? "Saved-packet read" : "Limited"}
           </span>
         </div>
         <h2 className="mt-4 max-w-3xl font-display text-2xl font-bold tracking-tight text-foreground leading-tight">{brief.headlineRead}</h2>

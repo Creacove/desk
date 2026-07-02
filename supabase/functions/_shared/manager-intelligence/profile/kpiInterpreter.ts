@@ -1,4 +1,4 @@
-import type { ChartmetricKpiInput, Direction, EvidenceConfidence } from "../types";
+import type { ChartmetricKpiInput, Direction, EvidenceConfidence } from "../types.ts";
 
 type InterpretedStage = "Emerging" | "Developing" | "Mid-Level" | "Mainstream" | "Superstar" | "Legendary" | "Unknown";
 
@@ -151,7 +151,8 @@ export const interpretChartmetricKpis = (input: ChartmetricKpiInput) => {
       trackName: track.trackName,
       chartmetricTrackScore: track.chartmetricTrackScore ?? null,
       spotifyPopularity: track.spotifyPopularity ?? null,
-      read: `${track.trackName} has track-level playlist/exposure context; judge durability by retention and conversion, not score alone.`,
+      evidence_ids: track.evidenceIds ?? [],
+      read: `${track.trackName} has track-level playlist/exposure context${track.chartmetricTrackScore !== null && track.chartmetricTrackScore !== undefined ? ` with Track Score ${track.chartmetricTrackScore}` : ""}${track.spotifyPopularity !== null && track.spotifyPopularity !== undefined ? ` and Spotify popularity ${track.spotifyPopularity}` : ""}; judge durability by retention and conversion, not score alone.`,
       risk: "Track score can reflect playlist exposure without owned fandom.",
       watchMetric: "playlist retention, saves, follows, Shazams, and repeat listening",
     })),

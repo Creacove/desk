@@ -207,7 +207,7 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(checkSourceLine(output)).toBe(true);
   });
 
-  it("repairs empty Record Intelligence evidence IDs to the saved source packet instead of failing generation", () => {
+  it("keeps empty Record Intelligence evidence IDs honest instead of inventing a source packet", () => {
     const payload = {
       situationLine: "IMMORTAL is a released EP with the tracklist ready for a focus-track read.",
       headline: "IMMORTAL needs a focus-track decision.",
@@ -236,9 +236,10 @@ describe("OpenAI music Manager Read generation function", () => {
 
     const output = parseManagerReadOutput(payload);
 
-    expect(output.evidenceIdsUsed).toEqual(["source-packet"]);
-    expect(output.intelligenceSnapshot[0]?.metrics[0]?.evidenceIds).toEqual(["source-packet"]);
-    expect(output.claimAudit[0]?.evidenceIds).toEqual(["source-packet"]);
+    expect(output.evidenceIdsUsed).toEqual([]);
+    expect(output.intelligenceSnapshot[0]?.metrics[0]?.evidenceIds).toEqual([]);
+    expect(output.claimAudit[0]?.evidenceIds).toEqual([]);
+    expect(JSON.stringify(output)).not.toContain("source-packet");
   });
 
   it("requires the song brief source line to sound manager-owned instead of source-mechanical", () => {

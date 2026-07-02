@@ -100,11 +100,19 @@ describe("OpenAI Today's Brief generation function", () => {
   it("returns setup music read targets and dispatches their Manager Reads after the setup-map packet", () => {
     expect(functionSource).toContain("setupMusicReadTargets");
     expect(functionSource).toContain("selectSetupMusicReadTargets");
+    expect(functionSource).toContain("selectChartmetricEnrichedMusicItemIds");
+    expect(functionSource).not.toContain("musicItems.slice(0, 5).map((item)");
     expect(functionSource).toContain("dispatchSetupMusicReadsSequentially");
     expect(functionSource).toContain("EdgeRuntime.waitUntil");
     expect(functionSource).toContain("generate-music-summary");
     expect(functionSource).toContain('subjectType: "music_project"');
     expect(functionSource).toContain('subjectType: "music_item"');
+  });
+
+  it("does not fabricate evidence IDs when fallback setup output has limited evidence", () => {
+    expect(functionSource).not.toContain("working-catalog-scope");
+    expect(functionSource).not.toContain("latest-project-in-view");
+    expect(functionSource).not.toContain("available_evidence");
   });
 
   it("allows complete Today's Brief copy instead of forcing short character caps", () => {
@@ -189,6 +197,41 @@ describe("OpenAI Today's Brief generation function", () => {
 
     expect(visibleCopy).not.toContain(uuid);
     expect(output.claimAudit[0].evidenceIds).toEqual([uuid]);
+  });
+
+  it("keeps a strong brief when a profile-only claim audit item has no evidence IDs", () => {
+    const output = parseTodaysBriefOutput({
+      headlineRead: "Olamide's operating map starts with Lagos scale and Formation as the current release lever.",
+      intelligenceSnapshot: [
+        {
+          title: "Audience Map",
+          insight: "Lagos is the power center, while the release evidence points to Formation as the track to manage first.",
+          metrics: [
+            { label: "Lagos listeners", value: "1.3M", context: "lead city audience", evidenceIds: ["ev-lagos"] },
+          ],
+        },
+        {
+          title: "Current Music",
+          insight: "Formation carries the strongest current project signal.",
+          metrics: [
+            { label: "Playlist reach", value: "4M", context: "Formation discovery surface", evidenceIds: ["ev-formation"] },
+          ],
+        },
+      ],
+      snapshotSummary: "The map is Lagos-first, but Formation is the current release lever.",
+      managerRead:
+        "Olamide's first management read is not just scale; it is the combination of Lagos depth and a current record that can still move. Lagos gives the base, Formation gives the active handle, and the desk should manage from that center.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      claimAudit: [
+        { claim: "Lagos is the lead audience market.", evidenceIds: ["ev-lagos"], limitation: "Public audience signal only." },
+        { claim: "The artist profile identifies Olamide as the workspace artist.", evidenceIds: [], limitation: "Profile/setup context, not an evidence row." },
+      ],
+    });
+
+    expect(output.managerRead).toContain("Formation");
+    expect(output.claimAudit).toHaveLength(2);
+    expect(output.claimAudit[1].evidenceIds).toEqual([]);
   });
 
   it("treats broad artist goals as ambition context, not the object of today's work", () => {

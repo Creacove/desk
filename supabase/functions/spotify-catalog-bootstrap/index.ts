@@ -47,6 +47,7 @@ Deno.serve(async (request) => {
   try {
     input = (await request.json()) as BootstrapInput;
     validateInput(input);
+    const bootstrapInput = input;
 
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
@@ -82,20 +83,20 @@ Deno.serve(async (request) => {
     }
 
     const result = await bootstrapSpotifyCatalog({
-      input,
+      input: bootstrapInput,
       spotify: await createSpotifyCatalogClient(),
       repository: createSupabaseCatalogRepository(authClient, {
-        accountId: input.accountId,
-        artistWorkspaceId: input.artistWorkspaceId,
-        artistId: input.artistId,
+        accountId: bootstrapInput.accountId,
+        artistWorkspaceId: bootstrapInput.artistWorkspaceId,
+        artistId: bootstrapInput.artistId,
       }),
     });
 
-    await queueChartmetricSetupEnrichment(supabaseUrl, anonKey, authHeader, input, result).catch(async (error) => {
-      const message = errorMessage(error, "Chartmetric setup enrichment queue failed.");
-      console.warn("chartmetric setup enrichment queue failed", { message });
-      await recordChartmetricQueueFailure(authClient, input, message).catch(() => undefined);
-    });
+    scheduleBackgroundTask(dispatchManagerArtistDiscovery(supabaseUrl, anonKey, authHeader, bootstrapInput, result).catch(async (error) => {
+      const message = errorMessage(error, "Manager artist discovery dispatch failed.");
+      console.warn("manager artist discovery dispatch failed", { message });
+      await recordDiscoveryFailure(authClient, bootstrapInput, message).catch(() => undefined);
+    }));
 
     return json(result, result.status === "failed" ? 502 : 200);
   } catch (error) {
@@ -196,7 +197,7 @@ async function fetchWithTimeout(url: string, init: RequestInit) {
   }
 }
 
-async function queueChartmetricSetupEnrichment(
+async function dispatchManagerArtistDiscovery(
   supabaseUrl: string,
   anonKey: string,
   authHeader: string,
@@ -207,7 +208,7 @@ async function queueChartmetricSetupEnrichment(
     return;
   }
 
-  const response = await fetch(`${supabaseUrl}/functions/v1/chartmetric-setup-enrichment`, {
+  const response = await fetch(`${supabaseUrl}/functions/v1/manager-artist-discovery`, {
     method: "POST",
     headers: {
       Authorization: authHeader,
@@ -220,13 +221,21 @@ async function queueChartmetricSetupEnrichment(
       artistId: input.artistId,
       spotifyArtistId: input.selectedArtist.spotifyArtistId,
       artistName: input.selectedArtist.name,
-      maxStandaloneSongs: 5,
     }),
   });
 
   if (!response.ok) {
-    throw new Error(`Chartmetric setup enrichment queue failed with ${response.status}.`);
+    throw new Error(`Manager artist discovery dispatch failed with status ${response.status}.`);
   }
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>) {
+  const edgeRuntime = (globalThis as { EdgeRuntime?: { waitUntil?: (task: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof edgeRuntime?.waitUntil === "function") {
+    edgeRuntime.waitUntil(task);
+    return;
+  }
+  void task;
 }
 
 async function markExistingJobFailed(authClient: any, sourceSyncJobId: string, message: string) {
@@ -240,12 +249,12 @@ async function markExistingJobFailed(authClient: any, sourceSyncJobId: string, m
     .eq("id", sourceSyncJobId);
 }
 
-async function recordChartmetricQueueFailure(authClient: any, input: BootstrapInput, message: string) {
+async function recordDiscoveryFailure(authClient: any, input: BootstrapInput, message: string) {
   await authClient.from("operating_events").insert({
     account_id: input.accountId,
     artist_workspace_id: input.artistWorkspaceId,
     artist_id: input.artistId,
-    event_type: "chartmetric_setup_enrichment_queue_failed",
+    event_type: "manager_artist_discovery_dispatch_failed",
     actor_type: "integration",
     target_type: "artist_workspace",
     target_id: input.artistWorkspaceId,
@@ -259,7 +268,7 @@ async function recordChartmetricQueueFailure(authClient: any, input: BootstrapIn
   });
 }
 
-function validateInput(input: BootstrapInput) {
+function validateInput(input: BootstrapInput | null): asserts input is BootstrapInput {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.selectedArtist?.spotifyArtistId) {
     throw new Error("Missing required Spotify bootstrap input.");
   }

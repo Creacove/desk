@@ -551,12 +551,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           await throwFunctionInvokeError(error, "Today's Brief generation failed.");
         }
 
-        const payload = data as { brief?: unknown; setupMusicReadTargets?: unknown } | null;
+        const payload = data as { status?: unknown; brief?: unknown; setupMusicReadTargets?: unknown } | null;
         const brief = todayBriefFromPayload(payload?.brief);
         if (!brief) {
           throw new Error("Today's Brief generation did not return a usable brief.");
         }
-        const freshBrief = { ...brief, state: "fresh" as const };
+        const state = payload?.status === "completed_with_fallback" ? "fallback" as const : brief.state;
+        const freshBrief = { ...brief, state };
         return {
           ...freshBrief,
           brief: freshBrief,
@@ -602,6 +603,30 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       },
       async generateMusicSummary(subjectId, subjectType) {
         const subjectLabel = subjectType === "music_project" ? "Project" : "Song";
+        if (subjectType === "music_item") {
+          const libraryBeforeRead = await musicLibraryLoader.loadMusicLibrary(workspace);
+          const subject = libraryBeforeRead.songs.find((song) => song.id === subjectId);
+          if (subject && !hasChartmetricEvidence(subject.evidence)) {
+            const { data: enrichmentData, error: enrichmentError } = await client.functions.invoke("chartmetric-track-enrichment", {
+              body: {
+                accountId: workspace.accountId,
+                artistWorkspaceId: workspace.artistWorkspaceId,
+                artistId: workspace.artistId,
+                musicItemId: subjectId,
+              },
+            });
+
+            if (enrichmentError) {
+              await throwFunctionInvokeError(enrichmentError, "Song enrichment failed before Manager Read generation.");
+            }
+
+            const enrichmentStatus = readFunctionStatus(enrichmentData);
+            if (enrichmentStatus === "unresolved" || enrichmentStatus === "failed") {
+              throw new Error("Song enrichment could not resolve enough source evidence for a generated Manager Read.");
+            }
+          }
+        }
+
         const { data, error } = await client.functions.invoke("generate-music-summary", {
           body: {
             accountId: workspace.accountId,
@@ -616,6 +641,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           await throwFunctionInvokeError(error, `${subjectLabel} brief generation failed.`);
         }
 
+        const payload = data as { read?: unknown } | null;
+        const generatedRead = readGeneratedManagerReadPayload(payload?.read);
+
         // Reload the full library so the returned view model carries the fresh brief
         const library = await musicLibraryLoader.loadMusicLibrary(workspace);
         const models = musicViewModelsFromLibrary(library);
@@ -623,7 +651,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (!updated) {
           throw new Error(`${subjectLabel} brief was generated but the ${subjectType === "music_project" ? "project" : "track"} could not be reloaded.`);
         }
-        return updated;
+        return mergeGeneratedManagerReadIntoMusicObject(updated, generatedRead);
       },
       async createSong(input) {
         const { data, error } = await client
@@ -2416,6 +2444,34 @@ function hasGeneratedManagerReadContent(read: ReturnType<typeof readGeneratedMan
   return Boolean(read.managerRead || read.nextMove || read.situationLine || read.watchNext || read.intelligenceSnapshot.length);
 }
 
+function mergeGeneratedManagerReadIntoMusicObject(
+  model: MusicObjectViewModel,
+  generated: ReturnType<typeof readGeneratedManagerReadPayload>,
+): MusicObjectViewModel {
+  if (!hasGeneratedManagerReadContent(generated)) return model;
+
+  const managerRead = acceptedGeneratedManagerRead(generated, "managerRead");
+  const nextMove = acceptedGeneratedManagerRead(generated, "nextMove");
+  const situationLine = acceptedGeneratedVisibleMusicText(generated.situationLine);
+  const watchNext = acceptedGeneratedVisibleMusicText(generated.watchNext);
+  const intelligenceSnapshot = acceptedGeneratedIntelligenceSnapshot(generated.intelligenceSnapshot);
+  const snapshotSummary = acceptedGeneratedVisibleMusicText(generated.snapshotSummary);
+  const sourceLine = acceptedGeneratedVisibleMusicText(generated.sourceLine);
+
+  return {
+    ...model,
+    situationLine: situationLine ?? model.situationLine,
+    managerRead: managerRead ?? model.managerRead,
+    watchNext: watchNext ?? model.watchNext,
+    managerReadState: managerRead ? generated.generationState ?? "fresh" : model.managerReadState,
+    nextMove: nextMove ?? model.nextMove,
+    intelligenceSnapshot: intelligenceSnapshot ?? model.intelligenceSnapshot,
+    snapshotSummary: snapshotSummary ?? model.snapshotSummary,
+    confidence: generated.confidence || model.confidence,
+    sourceLine: sourceLine ?? model.sourceLine,
+  };
+}
+
 function readBriefClaimAudit(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.filter(isPlainRecord).map((item) => ({
@@ -2546,8 +2602,8 @@ function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function readManagerReadGenerationState(value: unknown): "fresh" | "limited" | undefined {
-  return value === "fresh" || value === "limited" ? value : undefined;
+function readManagerReadGenerationState(value: unknown): "fresh" | "limited" | "fallback" | "failed" | undefined {
+  return value === "fresh" || value === "limited" || value === "fallback" || value === "failed" ? value : undefined;
 }
 
 function normalizeManualDetailKey(label: string) {
@@ -2556,6 +2612,18 @@ function normalizeManualDetailKey(label: string) {
 
 function readStringField(value: unknown) {
   return typeof value === "string" && value ? value : undefined;
+}
+
+function readFunctionStatus(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  return readStringField((value as Record<string, unknown>).status);
+}
+
+function hasChartmetricEvidence(evidence: Array<{ source?: string | null; sourceKind?: string | null }>) {
+  return evidence.some((item) =>
+    item.source?.toLowerCase() === "chartmetric" ||
+    item.sourceKind?.toLowerCase() === "chartmetric"
+  );
 }
 
 function readNullableStringField(value: unknown) {
@@ -2789,10 +2857,7 @@ function normalizeGenres(value: string) {
 function isContextComplete(profile: WorkspaceProfileRow | null | undefined) {
   if (!profile) return false;
   return Boolean(
-    normalizeText(profile.stage ?? undefined) &&
-      normalizeText(profile.home_market ?? undefined) &&
-      (profile.genres?.length ?? 0) > 0 &&
-      normalizeText((profile.artist_direction ?? profile.current_goal) ?? undefined) &&
+    normalizeText((profile.artist_direction ?? profile.current_goal) ?? undefined) &&
       normalizeText(profile.budget_context ?? undefined),
   );
 }
@@ -2868,7 +2933,7 @@ function todayBriefFromManagerRun(row?: ManagerSynthesisRunRow | null): TodayBri
     ...brief,
     generatedAt: brief.generatedAt ?? row.completed_at ?? row.created_at ?? undefined,
     managerSynthesisRunId: brief.managerSynthesisRunId ?? row.id,
-    state: "fresh",
+    state: brief.state,
   };
 }
 
@@ -2883,7 +2948,7 @@ function todayBriefFromManagerOutput(row?: ManagerOutputRow | null): TodayBriefV
     managerSynthesisRunId: brief.managerSynthesisRunId ?? row.created_from_run_id ?? undefined,
     managerOutputId: row.id,
     managerIntelligencePacketId: row.source_packet_id ?? undefined,
-    state: "fresh",
+    state: brief.state,
   };
 }
 
@@ -2908,7 +2973,7 @@ function todayBriefFromPayload(payload: unknown): TodayBriefViewModel | undefine
     managerSynthesisRunId: readOptionalBriefString(payload.managerSynthesisRunId),
     managerOutputId: readOptionalBriefString(payload.managerOutputId),
     managerIntelligencePacketId: readOptionalBriefString(payload.managerIntelligencePacketId),
-    state: "fresh",
+    state: readTodayBriefState(payload.state) ?? readTodayBriefState(payload.generationState) ?? "fresh",
   };
   if (!brief.headlineRead || !brief.managerRead || !brief.intelligenceSnapshot.length || !brief.snapshotSummary) return undefined;
   return brief;
@@ -2959,6 +3024,10 @@ function readPublicContextRefreshResult(value: unknown) {
 
 function readRequiredBriefString(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readTodayBriefState(value: unknown): TodayBriefViewModel["state"] | undefined {
+  return value === "fresh" || value === "limited" || value === "fallback" || value === "failed" ? value : undefined;
 }
 
 function readOptionalBriefString(value: unknown) {
@@ -3746,7 +3815,6 @@ function buildSongSourceSummary(song: ProductionMusicItem): NonNullable<MusicObj
     limitations: uniqueStrings([
       song.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
       ...song.evidence.map((item) => item.limitation).filter((value): value is string => Boolean(value)),
-      "Private analytics are still missing: streams, saves, listeners, source-of-stream, revenue, conversion, and campaign ROI are not proven by these sources.",
     ]),
   };
 }
@@ -3787,7 +3855,6 @@ function buildProjectSourceSummary(project: ProductionMusicProject): NonNullable
     limitations: uniqueStrings([
       project.sourceLimit ?? PUBLIC_SPOTIFY_CATALOG_LIMITATION,
       ...project.evidence.map((item) => item.limitation).filter((value): value is string => Boolean(value)),
-      "Private analytics are still missing: saves, listeners, source-of-stream, revenue, conversion, and campaign ROI are not proven by these sources.",
     ]),
   };
 }
@@ -4604,12 +4671,6 @@ function buildDeskAttentionItems(latestSync: SourceSyncJobRow | undefined) {
       tone: "warning" as const,
     });
   }
-
-  items.push({
-    title: "Private analytics missing",
-    body: "Upload saves, source-of-stream, revenue, or conversion proof.",
-    tone: "accent" as const,
-  });
 
   return items;
 }

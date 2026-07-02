@@ -16,24 +16,25 @@ describe("Spotify catalog bootstrap edge function", () => {
     expect(functionSource).toContain('include_groups: options.includeGroup');
   });
 
-  it("queues Chartmetric setup enrichment after the Spotify catalog import without failing setup", () => {
+  it("dispatches manager artist discovery after the Spotify catalog import without failing setup", () => {
     const bootstrapIndex = functionSource.indexOf("const result = await bootstrapSpotifyCatalog");
-    const queueIndex = functionSource.indexOf("queueChartmetricSetupEnrichment");
+    const dispatchIndex = functionSource.indexOf("scheduleBackgroundTask(dispatchManagerArtistDiscovery");
     const returnIndex = functionSource.indexOf("return json(result");
 
-    expect(queueIndex).toBeGreaterThan(bootstrapIndex);
-    expect(returnIndex).toBeGreaterThan(queueIndex);
-    expect(functionSource).toContain("chartmetric-setup-enrichment");
+    expect(dispatchIndex).toBeGreaterThan(bootstrapIndex);
+    expect(returnIndex).toBeGreaterThan(dispatchIndex);
+    expect(functionSource).toContain("manager-artist-discovery");
     expect(functionSource).toContain("spotifyArtistId: input.selectedArtist.spotifyArtistId");
     expect(functionSource).toContain("artistName: input.selectedArtist.name");
-    expect(functionSource).toContain("maxStandaloneSongs: 5");
     expect(functionSource).toContain(".catch(async (error)");
-    expect(functionSource).toContain("chartmetric setup enrichment queue failed");
+    expect(functionSource).toContain("manager artist discovery dispatch failed");
+    expect(functionSource).toContain("EdgeRuntime");
+    expect(functionSource).not.toContain("await dispatchManagerArtistDiscovery");
   });
 
-  it("records Chartmetric queue failures as operating events so successful Spotify imports do not hide them", () => {
-    expect(functionSource).toContain("recordChartmetricQueueFailure");
-    expect(functionSource).toContain("chartmetric_setup_enrichment_queue_failed");
+  it("records discovery dispatch failures as operating events so successful Spotify imports do not hide them", () => {
+    expect(functionSource).toContain("recordDiscoveryFailure");
+    expect(functionSource).toContain("manager_artist_discovery_dispatch_failed");
     expect(functionSource).toContain('source_type: "source_sync_job"');
   });
 

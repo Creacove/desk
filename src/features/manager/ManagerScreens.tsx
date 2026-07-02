@@ -75,7 +75,6 @@ export function ManagerOfficeScreen({
   onAskManager,
   askManagerPending,
   askManagerError,
-  onInvestigation,
 }: {
   conversations: ConversationViewModel[];
   missionGenesisResult: MissionGenesisResultViewModel | null;
@@ -83,14 +82,13 @@ export function ManagerOfficeScreen({
   missionGenesisPending: boolean;
   missionGenesisError: string | null;
   onMissionGenesisAnswerChange: (key: string, value: string) => void;
-  onSubmitMissionGenesisAnswers: () => void;
+  onSubmitMissionGenesisAnswers: (candidateMissionId?: string) => void;
   onOpenCreatedMission: () => void;
   onBack: () => void;
   onConversation: (conversation: ConversationViewModel) => void;
   onAskManager: (body: string) => void;
   askManagerPending: boolean;
   askManagerError: string | null;
-  onInvestigation: () => void;
 }) {
   const [askText, setAskText] = useState("");
   const promptChips = [
@@ -112,9 +110,7 @@ export function ManagerOfficeScreen({
           onSubmit={onSubmitMissionGenesisAnswers}
           onOpenCreatedMission={onOpenCreatedMission}
         />
-        {!missionGenesisResult && (
-          <>
-            <section className="rounded-[18px] border border-foreground/10 bg-background p-6 shadow-sm sm:p-8">
+        <section className="rounded-[18px] border border-foreground/10 bg-background p-6 shadow-sm sm:p-8">
               <div className="max-w-2xl">
                 <div className="mb-4 flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-full bg-success" aria-hidden="true" />
@@ -159,9 +155,9 @@ export function ManagerOfficeScreen({
                 {askManagerError ? <p role="alert" className="mt-3 text-[12px] font-semibold text-red-700">{askManagerError}</p> : null}
                 {askManagerPending ? <p className="mt-3 text-[12px] font-semibold text-muted-foreground">Manager is reading the workspace packet.</p> : null}
               </div>
-            </section>
+        </section>
 
-            <section className="mt-8">
+        <section className="mt-8">
               <div className="mb-4 flex items-center justify-between border-b border-foreground/8 px-1 pb-4">
                 <div>
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/88">Conversation History</p>
@@ -193,9 +189,7 @@ export function ManagerOfficeScreen({
                   </button>
                 ))}
               </div>
-            </section>
-          </>
-        )}
+        </section>
       </div>
     </WorkspaceShell>
   );
@@ -215,14 +209,21 @@ function MissionGenesisManagerPanel({
   pending: boolean;
   error: string | null;
   onAnswerChange: (key: string, value: string) => void;
-  onSubmit: () => void;
+  onSubmit: (candidateMissionId?: string) => void;
   onOpenCreatedMission: () => void;
 }) {
-  if (!result && !error) {
-    return null;
-  }
+  const candidateMissionIds = result?.candidateMissionIds?.length
+    ? result.candidateMissionIds
+    : result?.candidateMissionId
+      ? [result.candidateMissionId]
+      : [];
+  const [selectedCandidateMissionId, setSelectedCandidateMissionId] = useState<string | undefined>(candidateMissionIds[0]);
 
-  if (result && result.outcome !== "candidate_needs_context" && result.outcome !== "activate_mission" && !error) {
+  useEffect(() => {
+    setSelectedCandidateMissionId(candidateMissionIds[0]);
+  }, [candidateMissionIds.join("|")]);
+
+  if (!result && !error) {
     return null;
   }
 
@@ -239,6 +240,28 @@ function MissionGenesisManagerPanel({
         <div role="alert" className="mt-4 rounded-[12px] border border-red-500/20 bg-red-500/[0.055] p-4">
           <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
           <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{error}</p>
+        </div>
+      ) : null}
+      {candidateMissionIds.length > 1 ? (
+        <div className="mt-4 rounded-[12px] border border-foreground/8 bg-foreground/[0.02] p-3">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Candidate mission lanes</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {candidateMissionIds.map((candidateMissionId, index) => (
+              <button
+                key={candidateMissionId}
+                type="button"
+                aria-pressed={selectedCandidateMissionId === candidateMissionId}
+                onClick={() => setSelectedCandidateMissionId(candidateMissionId)}
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                  selectedCandidateMissionId === candidateMissionId
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-foreground/10 bg-background text-foreground/72 hover:border-foreground/20"
+                }`}
+              >
+                Candidate {index + 1}
+              </button>
+            ))}
+          </div>
         </div>
       ) : null}
       {result?.questions.length ? (
@@ -270,13 +293,13 @@ function MissionGenesisManagerPanel({
             </label>
           ))}
           <div>
-            <ProductButton onClick={onSubmit} disabled={pending}>
+            <ProductButton onClick={() => onSubmit(selectedCandidateMissionId)} disabled={pending}>
               {pending ? "Continuing Mission Genesis" : "Continue Mission Genesis"}
             </ProductButton>
           </div>
         </div>
       ) : null}
-      {result?.activatedMissionId ? (
+      {result?.activatedMissionId || result?.activatedMissionIds?.length ? (
         <div className="mt-4 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4">
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Work created</p>
           <p className="mt-2 text-sm font-semibold text-foreground">Mission work is ready in Missions.</p>
@@ -829,18 +852,27 @@ function WorkArtifactGroup({
   items: WorkItem[];
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
 }) {
-  const mission = items.find((w) => w.type === "mission");
+  const missions = items.filter((w) => w.type === "mission");
   const tasks = items.filter((w) => w.type === "task");
   const musicItems = items.filter((w) => w.type === "music_item");
+  const missionIds = new Set(missions.map((mission) => mission.id).filter(Boolean));
+  const standaloneTasks = tasks.filter((task) => !task.parentMissionId || !missionIds.has(task.parentMissionId));
+  const missionCards = missions.map((mission) => (
+    <MissionArtifactCard
+      key={`mission-${mission.id ?? mission.title}`}
+      mission={mission}
+      tasks={tasks.filter((task) => task.parentMissionId && task.parentMissionId === mission.id)}
+      onOpenCreatedWork={onOpenCreatedWork}
+    />
+  ));
 
   return (
     <div className="mt-6 flex flex-col gap-3">
       {/* Mission artifact — tasks nested inside */}
-      {mission ? (
-        <MissionArtifactCard mission={mission} tasks={tasks} onOpenCreatedWork={onOpenCreatedWork} />
-      ) : tasks.length ? (
+      {missionCards}
+      {standaloneTasks.length ? (
         /* Standalone task batch — no parent mission */
-        <TaskGroupCard tasks={tasks} onOpenCreatedWork={onOpenCreatedWork} />
+        <TaskGroupCard tasks={standaloneTasks} onOpenCreatedWork={onOpenCreatedWork} />
       ) : null}
 
       {/* Music items — simple compact cards */}

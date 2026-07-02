@@ -163,6 +163,7 @@ export function SetupScreen({
   pending?: boolean;
   catalogSyncStatus?: "queued" | "running" | "needs_context" | "completed" | "completed_with_limits" | "failed" | "cancelled";
   onSignOut?: () => void;
+  discoverySteps?: string[];
 }) {
   const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
   const complete = hasRequiredContext(profile);
@@ -201,7 +202,7 @@ export function SetupScreen({
               </div>
               <p className="mt-4 font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Onboarding tips</p>
               <p className="mt-2.5 text-[13px] font-semibold leading-relaxed text-foreground/90">
-                Accurate stages, goals, and social handles prevent specialists from guessing.
+                Catalog, market, and stage reads come from enrichment. Add only the human constraints the sources cannot know.
               </p>
             </div>
           </div>
@@ -210,27 +211,19 @@ export function SetupScreen({
             <div className="grid gap-3 sm:grid-cols-2">
               <SetupInput label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
               <SetupInput label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} active />
-              <SetupInput label="Artist stage" value={profile.stage} onChange={(value) => update("stage", value)} />
-              <SetupInput label="Home market" value={profile.market} onChange={(value) => update("market", value)} />
-              <SetupInput label="Genre" value={profile.genre} onChange={(value) => update("genre", value)} />
               <ArtistDirectionField value={profile.goal} onChange={(value) => update("goal", value)} />
-              <SetupInput label="Active release" value={profile.release} onChange={(value) => update("release", value)} />
               <SetupInput label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
-              <SetupInput label="TikTok" value={profile.tiktok} onChange={(value) => update("tiktok", value)} />
-              <SetupInput label="Instagram" value={profile.instagram} onChange={(value) => update("instagram", value)} />
-              <SetupInput label="YouTube" value={profile.youtube} onChange={(value) => update("youtube", value)} />
-              <SetupInput label="X" value={profile.x} onChange={(value) => update("x", value)} />
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/5 pt-4">
               <div className="max-w-md">
-                <p className="text-[12px] font-bold text-[#c2410c] opacity-80">Private stats remain locked until handles are connected.</p>
+                <p className="text-[12px] font-bold text-[#c2410c] opacity-80">The desk will infer stage, market, genre, and current catalog shape from enrichment.</p>
                 {catalogMessage ? <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">{catalogMessage}</p> : null}
                 {!complete ? (
                   <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">
                     {hasRequiredContext(profile)
                       ? "Desk HQ can open while Spotify catalog import continues in the background."
-                      : "Complete artist stage, home market, genre, artist direction, and monthly budget to enter Desk HQ."}
+                      : "Add artist direction and monthly budget to enter Desk HQ."}
                   </p>
                 ) : null}
                 {pending ? (
@@ -365,7 +358,7 @@ function ArtistDirectionField({ value, onChange }: { value: string; onChange: (v
 }
 
 function hasRequiredContext(profile: ArtistProfileViewModel) {
-  return Boolean(profile.stage.trim() && profile.market.trim() && profile.genre.trim() && profile.goal.trim() && profile.budget.trim());
+  return Boolean(profile.goal.trim() && profile.budget.trim());
 }
 
 function getCatalogStatusMessage(status: "queued" | "running" | "needs_context" | "completed" | "completed_with_limits" | "failed" | "cancelled" | undefined) {

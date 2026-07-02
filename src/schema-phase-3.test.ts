@@ -16,6 +16,12 @@ const setupContextConflictMigrationPath = join(
   "migrations",
   "20260531000100_complete_artist_setup_context_conflict_resolution.sql",
 );
+const setupContextRelaxMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260702000100_relax_artist_setup_context_required_fields.sql",
+);
 
 describe("Phase 3 production workspace onboarding schema", () => {
   it("adds a security-definer RPC for the first authenticated workspace", () => {
@@ -46,5 +52,17 @@ describe("Phase 3 production workspace onboarding schema", () => {
     const conflictMigration = readFileSync(setupContextConflictMigrationPath, "utf8");
     expect(conflictMigration).toContain("create or replace function public.complete_artist_setup_context");
     expect(conflictMigration).toContain("#variable_conflict use_column");
+  });
+
+  it("lets setup require only human-owned manager context while preserving enrichment-derived fields", () => {
+    expect(existsSync(setupContextRelaxMigrationPath)).toBe(true);
+
+    const relaxMigration = readFileSync(setupContextRelaxMigrationPath, "utf8");
+    expect(relaxMigration).toContain("artist direction and budget are required");
+    expect(relaxMigration).toContain("stage = coalesce(nullif(trim(p_stage), ''), stage)");
+    expect(relaxMigration).toContain("home_market = coalesce(nullif(trim(p_home_market), ''), home_market)");
+    expect(relaxMigration).toContain("when coalesce(array_length(p_genres, 1), 0) > 0 then p_genres else genres end");
+    expect(relaxMigration).toContain("'required_fields', array['artist_direction','budget_context']");
+    expect(relaxMigration).toContain("'enrichment_derived_fields', array['stage','home_market','genres']");
   });
 });

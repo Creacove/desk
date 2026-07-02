@@ -510,6 +510,38 @@ describe("production Supabase services", () => {
     });
   });
 
+  it("marks generated Today's Brief responses as fallback when the function used packet fallback", async () => {
+    const fallbackBrief = {
+      headlineRead: "Nova Vale has a fallback packet read.",
+      intelligenceSnapshot: [
+        {
+          title: "Artist Intelligence",
+          insight: "The packet has evidence, but the live Manager read did not complete.",
+          metrics: [{ label: "London", value: "1.2M", context: "listeners", evidenceIds: ["ev-1"] }],
+        },
+      ],
+      snapshotSummary: "Fallback packet read.",
+      managerRead: "This is only a fallback packet read.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+    };
+    const client = createMutableSupabaseClient(
+      {
+        source_sync_jobs: [],
+        operating_events: [],
+        manager_synthesis_runs: [],
+      },
+      {
+        invoke: async () => ({ data: { status: "completed_with_fallback", brief: fallbackBrief }, error: null }),
+      },
+    );
+
+    const result = await createSupabaseProductionRepositories(client, workspace).desk.generateTodaysBrief("setup-map");
+
+    expect(result.state).toBe("fallback");
+    expect(result.brief.state).toBe("fallback");
+  });
+
   it("saves setup context through the atomic profile setup RPC", async () => {
     const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const client = {
@@ -538,9 +570,9 @@ describe("production Supabase services", () => {
     const result = await createSupabaseProfileSetupService(client).saveSetupContext(workspace, {
       name: " Nova Vale ",
       spotify: "Nova Vale - Spotify public catalog",
-      stage: " Emerging artist ",
-      market: " Lagos ",
-      genre: " Afro-fusion ",
+      stage: "",
+      market: "",
+      genre: "",
       goal: " Build from catalog proof. ",
       release: "Spotify catalog import",
       budget: " $3,000 ",
@@ -555,9 +587,9 @@ describe("production Supabase services", () => {
         name: "complete_artist_setup_context",
         args: {
           p_artist_workspace_id: "workspace-1",
-          p_stage: "Emerging artist",
-          p_home_market: "Lagos",
-          p_genres: ["Afro-fusion"],
+          p_stage: "",
+          p_home_market: "",
+          p_genres: [],
           p_artist_direction: "Build from catalog proof.",
           p_current_goal: "Build from catalog proof.",
           p_budget_context: "$3,000",
@@ -803,7 +835,6 @@ describe("production Supabase services", () => {
           ],
           limitations: expect.arrayContaining([
             "Spotify public catalog supports identity, catalog, and public metadata only.",
-            "Private analytics are still missing: streams, saves, listeners, source-of-stream, revenue, conversion, and campaign ROI are not proven by these sources.",
           ]),
         }),
       }),
@@ -1562,6 +1593,14 @@ describe("production Supabase services", () => {
     ).rejects.toThrow("Project brief generation failed.");
   });
 
+  it("merges the generated music summary response into the reloaded music model", () => {
+    const serviceSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
+
+    expect(serviceSource).toContain("const generatedRead = readGeneratedManagerReadPayload(payload?.read)");
+    expect(serviceSource).toContain("return mergeGeneratedManagerReadIntoMusicObject(updated, generatedRead)");
+    expect(serviceSource).toContain("function mergeGeneratedManagerReadIntoMusicObject");
+  });
+
   it("builds real production repositories from Supabase rows without fixture content", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-03T08:00:00.000Z"));
@@ -1630,8 +1669,7 @@ describe("production Supabase services", () => {
 
     expect(profile.name).toBe("Nova Vale");
     expect(desk.priority[0]?.value).toBe("Spotify catalog connected");
-    expect(desk.attention[0]?.title).toBe("Private analytics missing");
-    expect(desk.attention[0]?.body).toBe("Upload saves, source-of-stream, revenue, or conversion proof.");
+    expect(desk.attention).toEqual([]);
     expect(desk.movement[0]).toEqual({
       label: "Catalog",
       title: "Imported Spotify public catalog records.",

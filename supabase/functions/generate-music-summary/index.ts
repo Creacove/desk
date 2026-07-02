@@ -10,6 +10,8 @@ import {
   type ManagerReadPacket,
   type ManagerReadSubjectType,
 } from "../_shared/openaiManagerRead.ts";
+import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
+import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -79,10 +81,12 @@ Deno.serve(async (request) => {
     const packet = await buildManagerReadPacket(authClient, input);
     runId = await createManagerSynthesisRun(authClient, input, packet);
     usageId = await createUsageEvent(authClient, input, runId);
+    const appliedPlaybooks = readAppliedPlaybooks(packet.latestManagerIntelligencePacket);
+    const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
     let fallbackError: unknown = null;
     let output: ManagerReadOutput;
     try {
-      output = await callOpenAIManagerReadWithRetry(packet);
+      output = await callOpenAIManagerReadWithRetry(packet, playbookLensText);
     } catch (error) {
       fallbackError = error;
       output = fallbackManagerReadFromPacket(packet, error);
@@ -198,13 +202,16 @@ function selectPacketSubjectRead(assetReads: Array<Record<string, unknown>>, sub
  * After all retries: strip banned terms in-place and return — never hard-fail
  *                    the artist over a one-word style slip.
  */
-async function callOpenAIManagerReadWithRetry(packet: ManagerReadPacket): Promise<ManagerReadOutput> {
+async function callOpenAIManagerReadWithRetry(
+  packet: ManagerReadPacket,
+  playbookLensText?: string,
+): Promise<ManagerReadOutput> {
   const maxAttempts = 3;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await callOpenAIManagerRead(packet);
+      return await callOpenAIManagerRead(packet, playbookLensText);
     } catch (error) {
       lastError = error;
       if (!isRetryableOpenAIError(error) || attempt === maxAttempts - 1) throw error;
@@ -215,7 +222,10 @@ async function callOpenAIManagerReadWithRetry(packet: ManagerReadPacket): Promis
   throw lastError ?? new Error("OpenAI Manager Read request failed.");
 }
 
-async function callOpenAIManagerRead(packet: ManagerReadPacket): Promise<ManagerReadOutput> {
+async function callOpenAIManagerRead(
+  packet: ManagerReadPacket,
+  playbookLensText?: string,
+): Promise<ManagerReadOutput> {
   const MAX_RETRIES = 2;
   let lastOutput: ManagerReadOutput | null = null;
   let correctionNote = "";
@@ -223,7 +233,7 @@ async function callOpenAIManagerRead(packet: ManagerReadPacket): Promise<Manager
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const messages: Array<{ role: string; content: string }> = [
-      { role: "system", content: buildManagerReadInstructions(packet.subjectType) },
+      { role: "system", content: buildManagerReadInstructions(packet.subjectType, playbookLensText) },
       { role: "user", content: JSON.stringify(modelPacket) },
     ];
 
@@ -384,14 +394,14 @@ function fallbackManagerReadFromPacket(packet: ManagerReadPacket, error: unknown
   const title = readSubjectTitle(packet);
   const evidence = packet.evidence.filter(isRecord);
   const evidenceIds = uniqueStrings(evidence.map((item) => readString(item.id))).slice(0, 12);
-  const sourceIds = evidenceIds.length ? evidenceIds : ["source-packet"];
+  const sourceIds = evidenceIds;
   const topEvidence = evidence.slice(0, 6);
   const snapshotMetrics = topEvidence.length
     ? topEvidence.map((item) => ({
         label: metricLabel(readString(item.metric_name)),
         value: readString(item.formatted_value) ?? formatFallbackMetricValue(item.metric_value, item.metric_unit),
         context: readString(item.subject_label) ?? readString(item.freshness) ?? "saved audience detail",
-        evidenceIds: [readString(item.id) ?? "source-packet"],
+        evidenceIds: readString(item.id) ? [readString(item.id) as string] : [],
       }))
     : [{
         label: "Record profile",
@@ -1015,4 +1025,12 @@ function formatCompactNumber(value: number) {
     notation: "compact",
     maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
   }).format(value);
+}
+
+function readAppliedPlaybooks(managerIntelligencePacket: Record<string, unknown> | null | undefined): PlaybookKey[] {
+  if (!managerIntelligencePacket) return [];
+  const internalOnly = isRecord(managerIntelligencePacket.internal_only_json) ? managerIntelligencePacket.internal_only_json : {};
+  const applied = internalOnly.playbooks_applied;
+  if (!Array.isArray(applied)) return [];
+  return applied.filter((item): item is PlaybookKey => typeof item === "string" && Boolean(item.trim()));
 }

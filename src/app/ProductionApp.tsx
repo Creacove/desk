@@ -68,6 +68,20 @@ type ProductionAppProps = {
   fixtureMode?: boolean;
 };
 
+type DiscoveryPollingInput = {
+  fixtureRuntime: boolean;
+  view: CleanProductionView;
+  artistWorkspaceId?: string | null;
+};
+
+type SetupActivityStep = "setup-map" | "music-reads";
+
+const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export function shouldPollManagerDiscoveryEvents({ fixtureRuntime, view, artistWorkspaceId }: DiscoveryPollingInput) {
+  return !fixtureRuntime && view === "setup" && Boolean(artistWorkspaceId && SUPABASE_UUID_PATTERN.test(artistWorkspaceId));
+}
+
 export function ProductionApp({
   authAdapter,
   workspaceLoader,
@@ -282,6 +296,7 @@ export function ProductionApp({
       workspace={workspace}
       repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
+      fixtureRuntime={shouldUseFixtureRuntime}
       initialView={shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
       onWorkspaceChange={setWorkspace}
       onSignOut={handleSignOut}
@@ -293,6 +308,7 @@ function CleanProductionWorkspace({
   workspace,
   repositories,
   profileSetupService,
+  fixtureRuntime,
   initialView,
   onWorkspaceChange,
   onSignOut,
@@ -300,6 +316,7 @@ function CleanProductionWorkspace({
   workspace: ProductionWorkspace | null;
   repositories: CleanProductionRepositories;
   profileSetupService?: ProductionProfileSetupService;
+  fixtureRuntime: boolean;
   initialView: CleanProductionView;
   onWorkspaceChange?: (workspace: ProductionWorkspace) => void;
   onSignOut?: () => void;
@@ -327,6 +344,10 @@ function CleanProductionWorkspace({
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
   const [setupPending, setSetupPending] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
+  const [setupActivityPending, setSetupActivityPending] = useState(false);
+  const [setupActivityError, setSetupActivityError] = useState<string | null>(null);
+  const [setupActivityWorkspace, setSetupActivityWorkspace] = useState<ProductionWorkspace | null>(null);
+  const [setupActivityStep, setSetupActivityStep] = useState<SetupActivityStep>("setup-map");
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [publicContextPending, setPublicContextPending] = useState(false);
@@ -337,6 +358,50 @@ function CleanProductionWorkspace({
   const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
   const [managerSendPending, setManagerSendPending] = useState(false);
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
+  const [discoverySteps, setDiscoverySteps] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (!shouldPollManagerDiscoveryEvents({
+      fixtureRuntime,
+      view,
+      artistWorkspaceId: workspace?.artistWorkspaceId,
+    })) {
+      return;
+    }
+
+    const client = createBrowserSupabaseClient();
+    let timerId: number;
+
+    async function pollDiscoveryEvents() {
+      try {
+        const { data, error } = await client
+          .from("operating_events")
+          .select("summary,created_at")
+          .eq("artist_workspace_id", workspace!.artistWorkspaceId)
+          .like("event_type", "manager_discovery_%")
+          .order("created_at", { ascending: true });
+
+        if (error) {
+          console.warn("Error polling discovery events:", error);
+          return;
+        }
+
+        if (data) {
+          const steps = data.map((row: any) => row.summary);
+          setDiscoverySteps(steps);
+        }
+      } catch (e) {
+        console.warn("Failed to query discovery events:", e);
+      }
+    }
+
+    pollDiscoveryEvents();
+    timerId = window.setInterval(pollDiscoveryEvents, 2000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [fixtureRuntime, view, workspace]);
 
   useEffect(() => {
     let isMounted = true;
@@ -708,14 +773,38 @@ function CleanProductionWorkspace({
     const targetKeys = new Set(targets.map((target) => `${target.subjectType}:${target.subjectId}`));
     for (let attempt = 0; attempt < 6; attempt += 1) {
       const nextMusic = await reloadMusic();
-      const allTargetsResolved = nextMusic
+      const matchingTargets = nextMusic
         .filter((item) => {
           const subjectType = item.kind === "project" ? "music_project" : "music_item";
           return targetKeys.has(`${subjectType}:${item.id}`);
-        })
-        .every((item) => isResolvedManagerReadState(item.managerReadState));
+        });
+      const allTargetsResolved =
+        matchingTargets.length === targetKeys.size &&
+        matchingTargets.every((item) => isResolvedManagerReadState(item.managerReadState));
       if (allTargetsResolved) return;
       await delay(1200);
+    }
+  }
+
+  async function completeSetupActivity(nextWorkspace: ProductionWorkspace) {
+    try {
+      setSetupActivityWorkspace(nextWorkspace);
+      setSetupActivityPending(true);
+      setSetupActivityError(null);
+      setSetupActivityStep("setup-map");
+      const setupGeneration = await generateTodaysBrief("setup-map");
+      const setupBrief = briefFromGenerationResult(setupGeneration);
+      if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
+        throw new Error("Setup map returned a packet fallback instead of a live Manager read.");
+      }
+      setSetupActivityStep("music-reads");
+      await refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
+      setSetupActivityWorkspace(null);
+      setView("labelHQ");
+    } catch (error) {
+      setSetupActivityError(readErrorMessage(error, "Setup map could not be generated."));
+    } finally {
+      setSetupActivityPending(false);
     }
   }
 
@@ -745,13 +834,14 @@ function CleanProductionWorkspace({
     }
   }
 
-  async function submitMissionGenesisAnswers() {
-    if (!missionGenesisResult?.candidateMissionId) return;
+  async function submitMissionGenesisAnswers(candidateMissionId?: string) {
+    const targetCandidateMissionId = candidateMissionId ?? missionGenesisResult?.candidateMissionId ?? missionGenesisResult?.candidateMissionIds?.[0];
+    if (!targetCandidateMissionId) return;
     try {
       setMissionGenesisPending(true);
       setMissionGenesisError(null);
       const result = await repositories.missionGenesis.answerMissionGenesisContext({
-        candidateMissionId: missionGenesisResult.candidateMissionId,
+        candidateMissionId: targetCandidateMissionId,
         answers: missionGenesisResult.questions.map((question) => ({
           questionKey: question.key,
           answer: missionGenesisAnswers[question.key] ?? "",
@@ -846,6 +936,21 @@ function CleanProductionWorkspace({
   }
 
   if (view === "setup") {
+    if (setupActivityPending || setupActivityError) {
+      return (
+        <SetupManagerActivityScreen
+          artistName={profile.name}
+          discoverySteps={discoverySteps}
+          step={setupActivityStep}
+          pending={setupActivityPending}
+          error={setupActivityError}
+          onRetry={() => {
+            if (setupActivityWorkspace) void completeSetupActivity(setupActivityWorkspace);
+          }}
+        />
+      );
+    }
+
     return (
       <>
         <SetupScreen
@@ -855,6 +960,7 @@ function CleanProductionWorkspace({
           pending={setupPending}
           catalogSyncStatus={workspace?.latestCatalogSyncStatus}
           onSignOut={onSignOut}
+          discoverySteps={discoverySteps}
           onContinue={async (nextProfile) => {
             if (!workspace || !profileSetupService) {
               navigate("labelHQ");
@@ -868,9 +974,7 @@ function CleanProductionWorkspace({
               onWorkspaceChange?.(nextWorkspace);
               setDrawer(null);
               if (isWorkspaceReadyForDesk(nextWorkspace)) {
-                const setupGeneration = await generateTodaysBrief("setup-map");
-                setView("labelHQ");
-                void refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
+                await completeSetupActivity(nextWorkspace);
               } else {
                 setView("setup");
               }
@@ -965,7 +1069,6 @@ function CleanProductionWorkspace({
               onAskManager={(body) => void sendManagerMessage(body)}
               askManagerPending={managerSendPending}
               askManagerError={managerSendError}
-              onInvestigation={() => navigate("investigation")}
             />
           ) : null}
           {view === "conversationWorkspace" && activeConversation ? (
@@ -988,7 +1091,7 @@ function CleanProductionWorkspace({
               sendError={managerSendError}
             />
           ) : null}
-          {view === "investigation" ? <InvestigationScreen onBack={() => navigate("managerOffice")} onDecision={() => navigate("decisionPackage")} /> : null}
+          {view === "investigation" && activeConversation?.decisionPackage ? <InvestigationScreen onBack={() => navigate("managerOffice")} onDecision={() => navigate("decisionPackage")} /> : null}
           {view === "decisionPackage" ? <DecisionPackageScreen conversation={activeConversation} onBack={() => navigate("managerOffice")} onNavigate={navigate} /> : null}
           {view === "missionsWorkspace" ? (
             <MissionsWorkspace
@@ -1025,6 +1128,146 @@ function CleanProductionWorkspace({
       />
       <span className="sr-only">{workspace?.workspaceName ?? "Ordersounds workspace"}</span>
     </div>
+  );
+}
+
+function SetupManagerActivityScreen({
+  artistName,
+  discoverySteps,
+  step,
+  pending,
+  error,
+  onRetry,
+}: {
+  artistName: string;
+  discoverySteps: string[];
+  step: SetupActivityStep;
+  pending: boolean;
+  error: string | null;
+  onRetry: () => void;
+}) {
+  const latestDiscoveryStep = discoverySteps[discoverySteps.length - 1];
+  const currentStep = error
+    ? "Setup Operating Map needs attention."
+    : step === "music-reads"
+      ? "Refreshing the first song and project Manager Reads."
+      : "Generating the first Setup Operating Map brief.";
+  const supportLine = error
+    ? "The desk will stay here until the Manager read can be regenerated."
+    : step === "music-reads"
+      ? "The opening brief is ready; the Manager is updating the first music reads before opening the desk."
+      : latestDiscoveryStep
+        ? "Discovery is complete; the Manager is turning the saved packet into the opening read."
+        : `The Manager is turning ${artistName}'s saved setup packet into the opening read.`;
+  const [statusIndex, setStatusIndex] = useState(0);
+  const liveStatusMessages = step === "music-reads"
+    ? [
+        "Checking the queued project and song reads.",
+        "Waiting for generated music reads to land.",
+        "Reloading the music room before Desk HQ opens.",
+      ]
+    : [
+        "Reading the saved manager basics.",
+        "Selecting the strongest audience and catalog signals.",
+        "Compressing the source packet for the opening read.",
+        "Writing the Setup Operating Map for Desk HQ.",
+      ];
+  const activeProgressIndex = error ? 1 : step === "music-reads" ? 2 : 1;
+  const activitySteps = [
+    "Saved manager basics",
+    "Building operating map",
+    "Preparing music reads",
+    "Opening Desk HQ",
+  ];
+
+  useEffect(() => {
+    if (!pending || error) {
+      setStatusIndex(0);
+      return;
+    }
+    const timerId = window.setInterval(() => {
+      setStatusIndex((current) => current + 1);
+    }, 2400);
+    return () => window.clearInterval(timerId);
+  }, [pending, error, step]);
+
+  return (
+    <main className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.2] [background-image:linear-gradient(rgba(17,19,24,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.035)_1px,transparent_1px)] [background-size:44px_44px]" />
+      <section className="relative z-10 mx-auto grid min-h-[calc(100vh-40px)] w-full max-w-xl place-items-center">
+        <div className="w-full text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border border-foreground/10 bg-white shadow-[0_18px_45px_rgba(17,19,24,0.14)]">
+            <BrandMark size="md" className={pending ? "ordersounds-loader-logo" : undefined} />
+          </div>
+          <p className="mt-7 font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager Activity</p>
+          <h1 className="font-display mt-3 text-[34px] font-semibold leading-[1.04] tracking-tight text-foreground">Manager is preparing Desk HQ</h1>
+          <div className="mx-auto mt-6 max-w-lg rounded-[18px] border border-foreground/10 bg-white/88 px-5 py-4 text-left shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <span className="flex gap-1.5" aria-hidden="true">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "0ms" }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "150ms" }} />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "300ms" }} />
+              </span>
+              <p className="min-w-0 text-[13px] font-bold leading-relaxed text-foreground">{currentStep}</p>
+            </div>
+            <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">{supportLine}</p>
+            {pending && !error ? (
+              <p className="mt-2 min-h-5 text-[12px] font-semibold leading-relaxed text-foreground/78" aria-live="polite">
+                {liveStatusMessages[statusIndex % liveStatusMessages.length]}
+              </p>
+            ) : null}
+            <div data-testid="setup-activity-progress" className="mt-4 border-t border-foreground/8 pt-4">
+              <div className="relative h-1.5 overflow-hidden rounded-full bg-foreground/[0.06]">
+                <div
+                  className="h-full rounded-full bg-brand-accent transition-all duration-500"
+                  style={{ width: `${((activeProgressIndex + 1) / activitySteps.length) * 100}%` }}
+                />
+                {pending && !error ? (
+                  <div className="ordersounds-loader-rail absolute inset-y-0 left-0 w-1/3 rounded-full bg-white/70" />
+                ) : null}
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {activitySteps.map((label, index) => {
+                  const complete = index < activeProgressIndex;
+                  const active = index === activeProgressIndex;
+                  return (
+                    <div
+                      key={label}
+                      className={`rounded-[10px] border px-2.5 py-2 text-[10px] font-bold leading-tight ${
+                        active
+                          ? "border-brand-accent/30 bg-brand-accent/[0.08] text-brand-accent"
+                          : complete
+                            ? "border-foreground/10 bg-foreground/[0.035] text-foreground/76"
+                            : "border-foreground/8 bg-white/60 text-muted-foreground/72"
+                      }`}
+                    >
+                      {label}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {error ? (
+            <div className="mx-auto mt-5 max-w-lg rounded-[12px] border border-warning/20 bg-warning/5 p-4 text-left text-[12px] font-semibold leading-relaxed text-warning">
+              {error}
+            </div>
+          ) : null}
+
+          {error ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              disabled={pending}
+              className="mt-5 inline-flex h-10 items-center justify-center rounded-[10px] bg-foreground px-5 text-[12px] font-bold text-background transition-colors disabled:opacity-40"
+            >
+              Retry setup map
+            </button>
+          ) : null}
+        </div>
+      </section>
+    </main>
   );
 }
 

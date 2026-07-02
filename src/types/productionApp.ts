@@ -100,7 +100,7 @@ export type ProductionMusicItem = {
     managerRead?: string;
     nextMove?: string;
     watchNext?: string;
-    generationState?: "fresh" | "limited";
+    generationState?: "fresh" | "limited" | "fallback" | "failed";
     intelligenceSnapshot?: Array<{ title: string; insight: string; metrics: Array<{ label: string; value: string; context?: string; evidenceIds: string[] }> }>;
     snapshotSummary?: string;
     claimAudit?: Array<{ claim: string; evidenceIds: string[]; limitation: string }>;
@@ -155,7 +155,7 @@ export type ProductionMusicProject = {
     managerRead?: string;
     nextMove?: string;
     watchNext?: string;
-    generationState?: "fresh" | "limited";
+    generationState?: "fresh" | "limited" | "fallback" | "failed";
     intelligenceSnapshot?: Array<{ title: string; insight: string; metrics: Array<{ label: string; value: string; context?: string; evidenceIds: string[] }> }>;
     snapshotSummary?: string;
     claimAudit?: Array<{ claim: string; evidenceIds: string[]; limitation: string }>;

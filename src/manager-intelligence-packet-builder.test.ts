@@ -203,6 +203,168 @@ describe("Manager Intelligence packet builder", () => {
     expect(modelPacket.managerIntelligence.doNotDo).toEqual(expect.any(Array));
   });
 
+  it("caps the model-facing setup brief packet so OpenAI does not receive the full intelligence archive", () => {
+    const managerPacket = buildManagerIntelligencePacket({
+      accountId: "account-1",
+      artistWorkspaceId: "workspace-1",
+      artistId: "artist-1",
+      packetType: "setup",
+      profile: {
+        display_name: "Mavo",
+        stage: "Developing",
+        home_market: "Lagos",
+        genres: ["afrobeats"],
+      },
+      musicItems: Array.from({ length: 12 }, (_, index) => ({
+        id: `song-${index}`,
+        title: `Song ${index}`,
+        released_at: `2026-01-${String(index + 1).padStart(2, "0")}T00:00:00.000Z`,
+      })),
+      musicProjects: [],
+      evidenceRows: Array.from({ length: 36 }, (_, index) => ({
+        id: `ev-${index}`,
+        evidence_type: "public_social_metric",
+        subject_type: "music_item",
+        subject_id: `song-${index % 12}`,
+        subject_label: `Song ${index % 12}`,
+        metric_name: index % 2 === 0 ? "tiktok_track_posts" : "shazam_count",
+        metric_value: 1000 + index,
+        metric_unit: "count",
+        lens: "social_attention",
+      })),
+    });
+
+    const modelPacket = buildTodaysBriefModelPacket({
+      profile: {
+        artistName: "Mavo",
+        genres: ["afrobeats"],
+        socialHandles: {},
+      },
+      workingCatalog: {
+        scopeLabel: "working catalog in view",
+        projectCount: 0,
+        songCount: 12,
+        latestProjectTitles: [],
+        focusSongTitles: Array.from({ length: 12 }, (_, index) => `Song ${index}`),
+        note: "Current music in view.",
+      },
+      intelligenceSnapshotInputs: [],
+      derivedInsights: [],
+      sourceLimits: [],
+      generatedFor: "setup",
+    }, managerPacket);
+
+    expect(modelPacket.workingCatalog.focusSongTitles).toHaveLength(6);
+    expect(modelPacket.managerEvidenceReads.length).toBeLessThanOrEqual(8);
+    expect(modelPacket.managerIntelligence.signalMap.length).toBeLessThanOrEqual(8);
+    expect(modelPacket.managerIntelligence.assetReads.length).toBeLessThanOrEqual(6);
+    expect(JSON.stringify(modelPacket).length).toBeLessThan(JSON.stringify(managerPacket).length);
+  });
+
+  it("turns track score and popularity evidence into model-visible track score reads", () => {
+    const managerPacket = buildManagerIntelligencePacket({
+      accountId: "account-1",
+      artistWorkspaceId: "workspace-1",
+      artistId: "artist-1",
+      packetType: "setup",
+      profile: {
+        display_name: "Rema",
+        stage: "Mainstream",
+        home_market: "Lagos",
+        genres: ["afrobeats"],
+      },
+      musicItems: [{ id: "calm-down", title: "Calm Down", released_at: "2022-02-11T00:00:00.000Z" }],
+      musicProjects: [],
+      evidenceRows: [
+        {
+          id: "ev_track_score",
+          evidence_type: "platform_metric",
+          subject_type: "music_item",
+          subject_id: "calm-down",
+          subject_label: "Calm Down",
+          metric_name: "chartmetric_track_score",
+          metric_value: 96,
+          metric_unit: "score",
+        },
+        {
+          id: "ev_spotify_popularity",
+          evidence_type: "platform_metric",
+          subject_type: "music_item",
+          subject_id: "calm-down",
+          subject_label: "Calm Down",
+          metric_name: "spotify_popularity",
+          metric_value: 89,
+          metric_unit: "score",
+        },
+      ],
+    });
+
+    expect(managerPacket.kpi_read_json.trackScoreReads).toEqual([
+      expect.objectContaining({
+        trackName: "Calm Down",
+        chartmetricTrackScore: 96,
+        spotifyPopularity: 89,
+        read: expect.stringMatching(/Calm Down|96|89/),
+      }),
+    ]);
+    expect(buildManagerEvidenceReads(managerPacket)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: "Calm Down",
+          category: "signal",
+          evidenceIds: expect.arrayContaining(["ev_track_score", "ev_spotify_popularity"]),
+        }),
+      ]),
+    );
+  });
+
+  it("projects saved public web evidence into manager evidence reads for personalized setup briefs", () => {
+    const managerPacket = buildManagerIntelligencePacket({
+      accountId: "account-1",
+      artistWorkspaceId: "workspace-1",
+      artistId: "artist-1",
+      packetType: "setup",
+      profile: {
+        display_name: "Rema",
+        stage: "Mainstream",
+        home_market: "Lagos",
+        genres: ["afrobeats"],
+      },
+      musicItems: [],
+      musicProjects: [],
+      evidenceRows: [
+        {
+          id: "ev_public_interview",
+          source: "public_web",
+          source_kind: "public_web",
+          evidence_type: "public_career_context",
+          subject_type: "artist",
+          subject_id: "artist-1",
+          subject_label: "Recent interview described Rema's global Afrobeats positioning",
+          metric_name: "public_context",
+          metric_value: 1,
+          metric_unit: "instance",
+          lens: "public_context",
+          raw_ref: "https://example.com/rema-interview",
+          provenance: "example.com",
+          limitation: "Public context only.",
+        } as any,
+      ],
+    });
+
+    const reads = buildManagerEvidenceReads(managerPacket);
+    expect(reads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          label: expect.stringMatching(/interview|public/i),
+          category: "management",
+          read: expect.stringMatching(/Rema|global Afrobeats|public/i),
+          evidenceIds: ["ev_public_interview"],
+        }),
+      ]),
+    );
+  });
+
   it("builds an artist operating packet from career, rights, sync, team, reputation, and public web context without defaulting to private analytics", () => {
     const packet = buildManagerIntelligencePacket({
       accountId: "account-1",

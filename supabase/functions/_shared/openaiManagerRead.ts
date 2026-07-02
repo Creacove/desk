@@ -58,7 +58,6 @@ export type ManagerReadOutput = {
 };
 
 const MANAGER_READ_SOURCE_LINE = "Prepared from the record details and audience signals I can already see.";
-const MANAGER_READ_SOURCE_PACKET_ID = "source-packet";
 
 export const managerReadJsonSchema = {
   name: "music_manager_read",
@@ -120,7 +119,7 @@ export const managerReadJsonSchema = {
                   label: { type: "string", maxLength: 42 },
                   value: { type: "string", maxLength: 18 },
                   context: { type: "string", maxLength: 56 },
-                  evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+                  evidenceIds: { type: "array", items: { type: "string" } },
                 },
               },
             },
@@ -137,7 +136,7 @@ export const managerReadJsonSchema = {
           required: ["claim", "evidenceIds", "limitation"],
           properties: {
             claim: { type: "string" },
-            evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+            evidenceIds: { type: "array", items: { type: "string" } },
             limitation: { type: "string" },
           },
         },
@@ -147,9 +146,12 @@ export const managerReadJsonSchema = {
   },
 };
 
-export function buildManagerReadInstructions(subjectType: ManagerReadSubjectType) {
+export function buildManagerReadInstructions(
+  subjectType: ManagerReadSubjectType,
+  playbookLensText?: string,
+) {
   const subjectLabel = subjectType === "music_project" ? "project" : "track";
-  return [
+  const base = [
     "You are the artist's senior manager and elite music strategy analyst. The Manager is decisive, commercial, culturally aware, and highly specific.",
     "Write in basic English that an independent artist can understand without analytics training.",
     "Explain what happened, why it matters, and what to do next. Do not list numbers without explaining what they mean for the artist's strategy.",
@@ -199,16 +201,20 @@ export function buildManagerReadInstructions(subjectType: ManagerReadSubjectType
     "Each intelligenceSnapshot group metric value must contain ONLY the clean formatted number/string, and the unit/track name belongs in the context field (e.g. value: '5.2M', context: 'playlist reach').",
     "Record Intelligence metric values are table cells, not sentences. Keep value under 18 characters, keep context under 56 characters, and never use ellipses.",
     "Back up all claims in the Manager Read with corresponding evidenceIds using the claimAudit array.",
-    `If a fact comes from subject metadata, artist profile, tracklist, relatedRecords, or derivedInsights rather than an evidence row, use "${MANAGER_READ_SOURCE_PACKET_ID}" as its evidenceIds value. Never leave evidenceIds empty.`,
+    "Use real saved evidence IDs only when a fact comes from evidence rows. If a fact comes only from subject metadata, artist profile, tracklist, relatedRecords, or derivedInsights, leave evidenceIds empty and state the limitation in claimAudit.",
     `The sourceLine must be exactly: ${MANAGER_READ_SOURCE_LINE}`,
   ].join("\n");
+  if (playbookLensText?.trim()) {
+    return `${base}\n\n${playbookLensText.trim()}`;
+  }
+  return base;
 }
 
 export function parseManagerReadOutput(payload: unknown): ManagerReadOutput {
   const output = typeof payload === "string" ? JSON.parse(payload) : payload;
   if (!isRecord(output)) throw new Error("OpenAI manager read output was not an object.");
 
-  const parsed: ManagerReadOutput = repairMusicReadProvenance({
+  const parsed: ManagerReadOutput = {
     situationLine: readRequiredString(output.situationLine, "situationLine"),
     headline: readRequiredString(output.headline, "headline"),
     managerRead: readRequiredString(output.managerRead, "managerRead"),
@@ -227,7 +233,7 @@ export function parseManagerReadOutput(payload: unknown): ManagerReadOutput {
     snapshotSummary: readRequiredString(output.snapshotSummary, "snapshotSummary"),
     claimAudit: readClaimAudit(output.claimAudit),
     sourceLine: readRequiredString(output.sourceLine, "sourceLine"),
-  });
+  };
 
   assertMusicReadHasEvidenceIds(parsed);
   // Banned-term enforcement is handled by the caller via checkBannedVisibleMusicTerms.
@@ -319,28 +325,6 @@ function readClaimAudit(value: unknown): TodaysBriefClaimAudit[] {
     evidenceIds: readStringArray(item.evidenceIds),
     limitation: readRequiredString(item.limitation, "claimAudit.limitation"),
   }));
-}
-
-function repairMusicReadProvenance(output: ManagerReadOutput): ManagerReadOutput {
-  return {
-    ...output,
-    evidenceIdsUsed: withSourcePacketFallback(output.evidenceIdsUsed),
-    intelligenceSnapshot: output.intelligenceSnapshot.map((group) => ({
-      ...group,
-      metrics: group.metrics.map((metric) => ({
-        ...metric,
-        evidenceIds: withSourcePacketFallback(metric.evidenceIds),
-      })),
-    })),
-    claimAudit: output.claimAudit.map((audit) => ({
-      ...audit,
-      evidenceIds: withSourcePacketFallback(audit.evidenceIds),
-    })),
-  };
-}
-
-function withSourcePacketFallback(evidenceIds: string[]) {
-  return evidenceIds.length ? evidenceIds : [MANAGER_READ_SOURCE_PACKET_ID];
 }
 
 function readRequiredString(value: unknown, key: string) {
@@ -438,15 +422,8 @@ function assertMusicReadHasEvidenceIds(output: ManagerReadOutput) {
   if (!output.intelligenceSnapshot.length) throw new Error("OpenAI manager read output missing Record Intelligence.");
   for (const group of output.intelligenceSnapshot) {
     if (!group.metrics.length) throw new Error("OpenAI manager read Record Intelligence group missing metrics.");
-    for (const metric of group.metrics) {
-      if (!metric.evidenceIds.length) throw new Error("OpenAI manager read Record Intelligence metric missing evidence IDs.");
-    }
   }
   if (!output.claimAudit.length) throw new Error("OpenAI manager read output missing claim audit.");
-  for (const audit of output.claimAudit) {
-    if (!audit.evidenceIds.length) throw new Error("OpenAI manager read claim audit missing evidence IDs.");
-  }
-  if (!output.evidenceIdsUsed.length) throw new Error("OpenAI manager read output missing evidence IDs used.");
 }
 
 function buildVisibleText(output: ManagerReadOutput): string {

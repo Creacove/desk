@@ -28,6 +28,7 @@ export type EvidenceLike = {
   lens?: string | null;
   metric_value?: number | string | null;
   subject_type?: string | null;
+  subject_id?: string | null;
   subject_label?: string | null;
   provenance?: string | null;
   raw_ref?: string | null;
@@ -59,6 +60,7 @@ export type ChartmetricKpiInput = {
     trackName: string;
     chartmetricTrackScore?: number | null;
     spotifyPopularity?: number | null;
+    evidenceIds?: string[];
   }>;
 };
 

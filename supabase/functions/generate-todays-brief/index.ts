@@ -15,6 +15,8 @@ import {
   buildTodaysBriefModelPacket,
 } from "../_shared/manager-intelligence/brief/briefPacketProjection.ts";
 import { buildManagerIntelligencePacket } from "../_shared/manager-intelligence/packet/strategicIntelligencePacket.ts";
+import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
+import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -128,7 +130,9 @@ Deno.serve(async (request) => {
     let output: TodaysBriefOutput;
     try {
       const modelPacket = buildTodaysBriefModelPacket(packet, managerIntelligencePacket);
-      output = await callOpenAITodaysBriefWithRetry(modelPacket, generationMode);
+      const appliedPlaybooks = readAppliedPlaybooks(managerIntelligencePacket);
+      const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
+      output = await callOpenAITodaysBriefWithRetry(modelPacket, generationMode, playbookLensText);
       output = appendManagerEvidenceReads(output, managerIntelligencePacket);
     } catch (error) {
       fallbackError = error;
@@ -259,7 +263,7 @@ async function buildArtistBriefPacket(
   return {
     packet,
     managerIntelligencePacket,
-    setupMusicReadTargets: selectSetupMusicReadTargets(musicItems, musicProjects),
+    setupMusicReadTargets: selectSetupMusicReadTargets(musicItems, musicProjects, evidenceRows),
     sourceAudit: evidenceRows.map((row) => ({
       id: row.id,
       source: row.source,
@@ -274,11 +278,30 @@ async function buildArtistBriefPacket(
   };
 }
 
-function selectSetupMusicReadTargets(musicItems: MusicItemRow[], musicProjects: MusicProjectRow[]): SetupMusicReadTarget[] {
+function selectSetupMusicReadTargets(musicItems: MusicItemRow[], musicProjects: MusicProjectRow[], evidenceRows: EvidenceRow[]): SetupMusicReadTarget[] {
+  const musicItemIds = new Set(musicItems.map((item) => item.id).filter(Boolean));
+  const chartmetricEnrichedMusicItemIds = selectChartmetricEnrichedMusicItemIds(evidenceRows)
+    .filter((subjectId) => musicItemIds.has(subjectId))
+    .slice(0, 5);
   return [
     ...musicProjects.slice(0, 1).map((project) => ({ subjectType: "music_project" as const, subjectId: project.id })),
-    ...musicItems.slice(0, 5).map((item) => ({ subjectType: "music_item" as const, subjectId: item.id })),
+    ...chartmetricEnrichedMusicItemIds.map((subjectId) => ({ subjectType: "music_item" as const, subjectId })),
   ].filter((target) => Boolean(target.subjectId));
+}
+
+function selectChartmetricEnrichedMusicItemIds(evidenceRows: EvidenceRow[]): string[] {
+  const selected: string[] = [];
+  const seen = new Set<string>();
+  for (const row of evidenceRows) {
+    const subjectId = readString(row.subject_id);
+    const sourceKind = readString(row.source_kind)?.toLowerCase();
+    const source = readString(row.source)?.toLowerCase();
+    if (row.subject_type !== "music_item" || !subjectId || seen.has(subjectId)) continue;
+    if (sourceKind !== "chartmetric" && source !== "chartmetric") continue;
+    selected.push(subjectId);
+    seen.add(subjectId);
+  }
+  return selected;
 }
 
 function dispatchSetupMusicReadsSequentially(
@@ -332,13 +355,14 @@ async function dispatchSetupMusicRead(
 async function callOpenAITodaysBriefWithRetry(
   packet: unknown,
   generationMode: TodaysBriefPromptMode,
+  playbookLensText?: string,
 ): Promise<TodaysBriefOutput> {
   const maxAttempts = 3;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await callOpenAITodaysBrief(packet, generationMode);
+      return await callOpenAITodaysBrief(packet, generationMode, playbookLensText);
     } catch (error) {
       lastError = error;
       if (!isRetryableOpenAIError(error) || attempt === maxAttempts - 1) throw error;
@@ -349,7 +373,11 @@ async function callOpenAITodaysBriefWithRetry(
   throw lastError ?? new Error("OpenAI Today's Brief request failed.");
 }
 
-async function callOpenAITodaysBrief(packet: unknown, generationMode: TodaysBriefPromptMode): Promise<TodaysBriefOutput> {
+async function callOpenAITodaysBrief(
+  packet: unknown,
+  generationMode: TodaysBriefPromptMode,
+  playbookLensText?: string,
+): Promise<TodaysBriefOutput> {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -358,7 +386,7 @@ async function callOpenAITodaysBrief(packet: unknown, generationMode: TodaysBrie
     },
     body: JSON.stringify({
       model: Deno.env.get("OPENAI_TODAYS_BRIEF_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      instructions: buildTodaysBriefInstructions(generationMode),
+      instructions: buildTodaysBriefInstructions(generationMode, playbookLensText),
       input: JSON.stringify(packet),
       text: {
         format: {
@@ -370,7 +398,8 @@ async function callOpenAITodaysBrief(packet: unknown, generationMode: TodaysBrie
   });
 
   if (!response.ok) {
-    throw new Error(`OpenAI Today's Brief request failed with status ${response.status}.`);
+    const body = await response.text();
+    throw new Error(`OpenAI Today's Brief request failed with status ${response.status}: ${body.slice(0, 500)}`);
   }
 
   const payload = await response.json();
@@ -412,10 +441,11 @@ function fallbackBriefFromManagerPacket(
     managerRead: `${artistName} already has enough saved intelligence for a focused first management read. The useful move is not to spread attention across every possible lane; it is to start from ${catalog} and the strongest public audience facts already in view.\n\nThe first marker I would use is ${firstMetric.label}: ${firstMetric.value}${firstMetric.context ? ` (${firstMetric.context})` : ""}. That gives the team a concrete anchor for the next operating decision instead of a generic profile summary.\n\nI would keep this read narrow until more proof is connected: choose the record or project that best matches the saved audience evidence, then build the next work from that center.`,
     sourceLine,
     confidence: evidenceIds.length >= 4 ? "medium" : "limited",
+    generationState: "fallback",
     managerSynthesisRunId: runId,
     claimAudit: [{
       claim: `${artistName}'s fallback management read was prepared from the stored packet and saved evidence.`,
-      evidenceIds: evidenceIds.length ? evidenceIds.slice(0, 8) : ["working-catalog-scope"],
+      evidenceIds: evidenceIds.slice(0, 8),
       limitation,
     }],
   }, managerIntelligencePacket);
@@ -434,7 +464,7 @@ function ensureTodaysBriefSnapshotGroups(
         label: usable.length ? "Working catalog" : "Artist profile",
         value: usable.length ? "In view" : "Saved",
         context: "setup context",
-        evidenceIds: evidenceIds.length ? evidenceIds.slice(0, 1) : ["working-catalog-scope"],
+        evidenceIds: evidenceIds.slice(0, 1),
       }],
     });
   }
@@ -945,34 +975,34 @@ function currentMusicGroup(
     title: "Current Music In View",
     metrics: [
       {
-        id: "working-catalog-scope",
+        id: "current-music-context",
         category: "current_music",
         label: "Working catalog",
         value: workingCatalogValue(items.length, projects.length),
         context: connected ? "current focus" : "setup focus",
         confidence: "medium",
-        evidenceIds: ["working-catalog-scope"],
+        evidenceIds: [],
       },
       ...(latestProject
         ? [{
-            id: "latest-project-in-view",
+            id: "current-project-context",
             category: "current_music" as const,
             label: "Latest project",
             value: latestProject,
             context: "in view",
             confidence: "medium" as const,
-            evidenceIds: ["latest-project-in-view"],
+            evidenceIds: [],
           }]
         : []),
       ...(focusTitles.length
         ? [{
-            id: "recent-focus-records",
+          id: "recent-focus-records",
             category: "current_music" as const,
             label: "Recent records",
             value: `${focusTitles.length} in focus`,
             context: focusTitles.slice(0, 3).join(", "),
             confidence: "medium" as const,
-            evidenceIds: ["recent-focus-records"],
+            evidenceIds: [],
           }]
         : []),
     ],
@@ -1001,13 +1031,13 @@ function fallbackSnapshotInputs(artistName: string): ArtistBriefPacket["intellig
       title: "Current Music In View",
       metrics: [
         {
-          id: "working-catalog-scope",
+          id: "current-music-context",
           category: "current_music",
           label: "Working catalog",
           value: "In view",
           context: "current focus",
           confidence: "low",
-          evidenceIds: ["working-catalog-scope"],
+          evidenceIds: [],
         },
       ],
       suggestedInsight: "The first read should organize the workspace around one practical starting point.",
@@ -1302,7 +1332,7 @@ function describeError(error: unknown, fallback: string) {
 function isRetryableOpenAIError(error: unknown) {
   const message = describeError(error, "");
   const status = Number(message.match(/\bstatus\s+(\d{3})\b/i)?.[1]);
-  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504 || /too much compute/i.test(message);
 }
 
 function openAiRetryDelayMs(attempt: number) {
@@ -1317,6 +1347,13 @@ function requireEnv(key: string) {
   const value = Deno.env.get(key);
   if (!value) throw new Error(`Missing required environment variable: ${key}`);
   return value;
+}
+
+function readAppliedPlaybooks(managerIntelligencePacket: Record<string, unknown>): PlaybookKey[] {
+  const internalOnly = isRecord(managerIntelligencePacket?.internal_only_json) ? managerIntelligencePacket.internal_only_json : {};
+  const applied = internalOnly.playbooks_applied;
+  if (!Array.isArray(applied)) return [];
+  return applied.filter((item): item is PlaybookKey => typeof item === "string" && Boolean(item.trim()));
 }
 
 function json(body: unknown, status = 200) {

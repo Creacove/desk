@@ -4,9 +4,10 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ProductionApp } from "./app/ProductionApp";
+import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
+import { ConversationWorkspace } from "./features/manager/ManagerScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
-import type { ArtistProfileViewModel, CleanProductionRepositories, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
+import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
   ProductionProfileSetupService,
@@ -44,6 +45,14 @@ afterEach(() => {
 });
 
 describe("Clean production prototype-match shell", () => {
+  it("only polls manager discovery events for real Supabase workspace ids in setup", () => {
+    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "setup", artistWorkspaceId: "workspace-1" })).toBe(false);
+    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "setup", artistWorkspaceId: "fixture-workspace" })).toBe(false);
+    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: true, view: "setup", artistWorkspaceId: "11111111-1111-4111-8111-111111111111" })).toBe(false);
+    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "labelHQ", artistWorkspaceId: "11111111-1111-4111-8111-111111111111" })).toBe(false);
+    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "setup", artistWorkspaceId: "11111111-1111-4111-8111-111111111111" })).toBe(true);
+  });
+
   it("renders auth in the Ordersounds visual system without loading workspace data", async () => {
     const workspaceLoader = workspaceLoaderWith(workspace);
 
@@ -251,18 +260,19 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enter Desk HQ" })).toBeDisabled();
-    expect(screen.getByText("Complete artist stage, home market, genre, artist direction, and monthly budget to enter Desk HQ.")).toBeInTheDocument();
+    expect(screen.getByText("Add artist direction and monthly budget to enter Desk HQ.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to profile" })).toHaveClass("rounded-[10px]");
+    expect(screen.queryByLabelText("Artist stage")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Home market")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Genre")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manager Discovery")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Artist stage"), { target: { value: "Emerging artist with catalog traction" } });
-    fireEvent.change(screen.getByLabelText("Home market"), { target: { value: "Lagos" } });
-    fireEvent.change(screen.getByLabelText("Genre"), { target: { value: "Afro-fusion" } });
     fireEvent.change(screen.getByLabelText("Artist Direction"), { target: { value: "Build Nova Vale around precise catalog proof before scale spend." } });
     fireEvent.change(screen.getByLabelText("Monthly budget"), { target: { value: "$3,000" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
     await screen.findByRole("heading", { name: "Desk HQ" });
-    expect(saves).toEqual(["Emerging artist with catalog traction|Lagos|Afro-fusion|Build Nova Vale around precise catalog proof before scale spend.|$3,000"]);
+    expect(saves).toEqual(["|||Build Nova Vale around precise catalog proof before scale spend.|$3,000"]);
   }, 20000);
 
   it("saves artist context and enters Desk HQ while Spotify catalog import is still running", async () => {
@@ -308,6 +318,129 @@ describe("Clean production prototype-match shell", () => {
     expect(saves).toEqual([
       "Emerging artist with catalog traction|Lagos|Afro-fusion|Build the artist operating plan from public catalog context and user-supplied constraints.|$3,000",
     ]);
+  }, 20000);
+
+  it("shows Manager setup activity until the setup map and queued song/project reads are ready", async () => {
+    const setupWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      latestCatalogSyncStatus: "completed",
+    } satisfies ProductionWorkspace;
+    const activeWorkspace = {
+      ...setupWorkspace,
+      status: "active" as const,
+      contextComplete: true,
+    };
+    const setupMapBrief: TodayBriefViewModel = {
+      headlineRead: "Nova Vale's first setup map is ready from the full packet.",
+      intelligenceSnapshot: [
+        {
+          title: "Chartmetric KPI Read",
+          insight: "The KPI interpretation is part of the Manager read, not a side panel.",
+          metrics: [{ label: "Artist score", value: "92", context: "manager intelligence", evidenceIds: ["ev-kpi"] }],
+        },
+      ],
+      snapshotSummary: "Chartmetric KPI interpretation and current music are loaded together.",
+      managerRead: "Nova Vale's setup map waits for the important intelligence before calling the brief ready.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      generatedAt: "2026-06-26T08:00:00.000Z",
+      managerSynthesisRunId: "setup-map-run",
+      state: "fresh",
+    };
+    const generationModes: string[] = [];
+    let resolveGeneration: ((value: TodayBriefGenerationResponse) => void) | null = null;
+    let loadMusicCalls = 0;
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      ...repositories.desk,
+      generateTodaysBrief: async (mode = "operating") => {
+        generationModes.push(mode);
+        return new Promise<TodayBriefGenerationResponse>((resolve) => {
+          resolveGeneration = resolve;
+        });
+      },
+    };
+    repositories.music = {
+      ...repositories.music,
+      loadMusic: async () => {
+        loadMusicCalls += 1;
+        return [
+          {
+            id: "song-setup",
+            kind: "song" as const,
+            title: "Setup Song",
+            lifecycle: "Released",
+            lifecycleStage: "Released",
+            blocker: "No active blocker",
+            sourceKind: "spotify_public_catalog",
+            sourceLimit: "Public catalog connected.",
+            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
+            managerRead: loadMusicCalls > 1 ? "Setup Song has a generated Manager Read." : undefined,
+            nextMove: "Wait for setup intelligence.",
+            linkedMissionIds: [],
+            linkedTaskCount: 0,
+          },
+          {
+            id: "project-setup",
+            kind: "project" as const,
+            title: "Setup Project",
+            lifecycle: "Released",
+            lifecycleStage: "Released",
+            blocker: "No active blocker",
+            sourceKind: "spotify_public_catalog",
+            sourceLimit: "Public catalog connected.",
+            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
+            managerRead: loadMusicCalls > 1 ? "Setup Project has a generated Manager Read." : undefined,
+            nextMove: "Wait for setup intelligence.",
+            linkedMissionIds: [],
+            linkedTaskCount: 0,
+            songIds: ["song-setup"],
+          },
+        ];
+      },
+    };
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        return activeWorkspace;
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(setupWorkspace)}
+        profileSetupService={profileSetupService}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+
+    expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
+    expect(screen.getByText("Generating the first Setup Operating Map brief.")).toBeInTheDocument();
+    expect(screen.getByTestId("setup-activity-progress")).toBeInTheDocument();
+    expect(screen.getByText("Saved manager basics")).toBeInTheDocument();
+    expect(screen.getByText("Building operating map")).toBeInTheDocument();
+    expect(screen.getByText("Preparing music reads")).toBeInTheDocument();
+    expect(screen.getByText("Opening Desk HQ")).toBeInTheDocument();
+    expect(screen.queryByText("Refreshing the first song and project Manager Reads.")).not.toBeInTheDocument();
+    await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
+
+    resolveGeneration?.({
+      brief: setupMapBrief,
+      setupMusicReadTargets: [
+        { subjectType: "music_project", subjectId: "project-setup" },
+        { subjectType: "music_item", subjectId: "song-setup" },
+      ],
+    });
+
+    await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
+    await waitFor(() => expect(loadMusicCalls).toBeGreaterThan(1));
   }, 20000);
 
   it("automatically generates the setup map and refreshes queued song/project reads after setup is saved", async () => {
@@ -416,6 +549,109 @@ describe("Clean production prototype-match shell", () => {
     await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
     await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
     await waitFor(() => expect(loadMusicCalls).toBeGreaterThan(1));
+  }, 20000);
+
+  it("keeps the setup activity screen visible with a retry path when setup map generation fails", async () => {
+    const setupWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      latestCatalogSyncStatus: "completed",
+    } satisfies ProductionWorkspace;
+    const activeWorkspace = {
+      ...setupWorkspace,
+      status: "active" as const,
+      contextComplete: true,
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      ...repositories.desk,
+      generateTodaysBrief: async () => {
+        throw new Error("OpenAI setup map failed");
+      },
+    };
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        return activeWorkspace;
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(setupWorkspace)}
+        profileSetupService={profileSetupService}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+
+    expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
+    expect(await screen.findByText("OpenAI setup map failed")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry setup map" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
+  }, 20000);
+
+  it("keeps the setup activity screen visible when setup map generation returns fallback", async () => {
+    const setupWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      latestCatalogSyncStatus: "completed",
+    } satisfies ProductionWorkspace;
+    const activeWorkspace = {
+      ...setupWorkspace,
+      status: "active" as const,
+      contextComplete: true,
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk = {
+      ...repositories.desk,
+      generateTodaysBrief: async () => ({
+        brief: {
+          headlineRead: "Fallback setup read.",
+          intelligenceSnapshot: [
+            {
+              title: "Artist Intelligence",
+              insight: "Fallback packet read.",
+              metrics: [{ label: "Audience", value: "Saved", context: "fallback", evidenceIds: ["ev-1"] }],
+            },
+          ],
+          snapshotSummary: "Fallback packet read.",
+          managerRead: "Fallback packet read.",
+          sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+          confidence: "medium",
+          state: "fallback",
+        },
+        setupMusicReadTargets: [],
+      }),
+    };
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        return activeWorkspace;
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(setupWorkspace)}
+        profileSetupService={profileSetupService}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+
+    expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
+    expect(await screen.findByText("Setup map returned a packet fallback instead of a live Manager read.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry setup map" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
 
   it("lets a signed-in user sign out from setup and Desk HQ", async () => {
@@ -1065,12 +1301,12 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
 
-    const messageBox = await screen.findByPlaceholderText("Type a message to the Manager...");
+    const messageBox = await screen.findByPlaceholderText("Message the Manager…");
     fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
 
     expect(screen.getByText("What changed after the campaign result?")).toBeInTheDocument();
-    expect(screen.getByText("Manager is writing a reply.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send Manager message" })).toBeDisabled();
     expect(repositories.manager.sendMessage).toHaveBeenCalledWith({
       conversationId: "conv-1",
       body: "What changed after the campaign result?",
@@ -1095,7 +1331,7 @@ describe("Clean production prototype-match shell", () => {
     });
 
     expect(await screen.findByText("The result changes the workstream from release prep to audience ownership.")).toBeInTheDocument();
-    expect(screen.queryByText("Manager is writing a reply.")).not.toBeInTheDocument();
+    expect(repositories.manager.sendMessage).toHaveBeenCalledTimes(1);
   }, 20000);
 
   it("opens a new Manager conversation immediately and streams the reply in place", async () => {
@@ -1121,7 +1357,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
     expect(await screen.findByText("We have $5,000. What should we do this month?")).toBeInTheDocument();
-    expect(screen.getByText("Manager is thinking")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send Manager message" })).toBeDisabled();
     expect(screen.queryByText("Manager is reading the workspace packet.")).not.toBeInTheDocument();
     expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
       { body: "We have $5,000. What should we do this month?" },
@@ -1134,8 +1370,8 @@ describe("Clean production prototype-match shell", () => {
       handlers.onEvent({ type: "assistant.delta", conversationId: "conv-stream", delta: "Run a capped" });
     });
 
-    expect(screen.getByRole("button", { name: /View Manager activity/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /View Manager activity/i }));
+    expect(screen.getByRole("button", { name: /Details/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Details/i }));
     expect(screen.getByText("Reading workspace packet")).toBeInTheDocument();
     expect(screen.getByText(/Run a capped/)).toBeInTheDocument();
 
@@ -1162,7 +1398,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
     expect(screen.getByText("Run a capped proof loop.")).toBeInTheDocument();
-    expect(screen.queryByText("Manager is thinking")).not.toBeInTheDocument();
+    expect(screen.queryByText("The Manager is cross-referencing context, source limits, and mission risk.")).not.toBeInTheDocument();
   }, 20000);
 
   it("keeps a completed streamed Manager reply when the stream closes with a late error", async () => {
@@ -1315,7 +1551,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
 
-    const messageBox = await screen.findByPlaceholderText("Type a message to the Manager...");
+    const messageBox = await screen.findByPlaceholderText("Message the Manager…");
     fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
 
@@ -1465,7 +1701,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Canonical task routing" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open created task: Confirm task routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open task: Confirm task routing" }));
 
     expect(await screen.findByRole("heading", { name: "Build manager-created audience loop" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Tasks/i }).find((button) => button.getAttribute("aria-pressed") === "true")).toBeTruthy();
@@ -1497,14 +1733,15 @@ describe("Clean production prototype-match shell", () => {
       handlers.onEvent({ type: "conversation.started", conversation: { id: "conv-activity", topic: "Plan the next mission" }, run: { id: "run-activity", status: "running" } });
       handlers.onEvent({ type: "run.step", runId: "run-activity", label: "Reading workspace packet", status: "completed" });
       handlers.onEvent({ type: "run.step", runId: "run-activity", label: "Matching missions and evidence", status: "running" });
+      handlers.onEvent({ type: "assistant.delta", conversationId: "conv-activity", delta: "Draft the mission" });
     });
 
-    expect(screen.getByText("Manager is thinking")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /View Manager activity/i })).toBeInTheDocument();
+    expect(screen.getByText("Matching missions and evidence…")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Details/i })).toBeInTheDocument();
     expect(screen.queryByText("Manager activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Reading workspace packet")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /View Manager activity/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Details/i }));
     expect(screen.getByText("Reading workspace packet")).toBeInTheDocument();
     expect(screen.getByText("Matching missions and evidence")).toBeInTheDocument();
   }, 20000);
@@ -1542,7 +1779,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
     fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
-    const messageBox = await screen.findByPlaceholderText("Type a message to the Manager...");
+    const messageBox = await screen.findByPlaceholderText("Message the Manager…");
     fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
 
@@ -1656,9 +1893,79 @@ describe("Clean production prototype-match shell", () => {
     });
     expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
     expect(screen.getByText("Hold scale spend and run a capped proof loop tied to verified city response, rights clearance, and conversion proof.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open created task: Define capped spend proof loop" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open task: Define capped spend proof loop" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Investigation" })).not.toBeInTheDocument();
   }, 20000);
+
+  it("renders Manager-created work as separate mission artifacts instead of collapsing every task into one lane", () => {
+    const conversation: ConversationViewModel = {
+      id: "conv-multi-mission-artifacts",
+      topic: "Build two missions",
+      status: "Manager responded",
+      summary: "Manager created two mission lanes.",
+      prompt: "Create the plan.",
+      messages: [
+        { id: "msg-user", speaker: "artist", label: "You", body: "Create the plan." },
+        {
+          id: "msg-manager",
+          speaker: "manager",
+          label: "Manager",
+          body: "I created two mission lanes.",
+          createdWork: [
+            {
+              type: "mission",
+              id: "mission-a",
+              title: "Validate Lagos audience pull",
+              body: "Use public and saved signals to test the first audience lane.",
+              status: "created",
+            },
+            {
+              type: "task",
+              id: "task-a",
+              parentMissionId: "mission-a",
+              title: "Audit Lagos listener evidence",
+              body: "Confirm the audience signal before spend.",
+              status: "created",
+            },
+            {
+              type: "mission",
+              id: "mission-b",
+              title: "Tighten release rights readiness",
+              body: "Clear the operational blockers before campaign decisions.",
+              status: "created",
+            },
+            {
+              type: "task",
+              id: "task-b",
+              parentMissionId: "mission-b",
+              title: "Confirm split and master proof",
+              body: "Collect rights evidence before approving release activity.",
+              status: "created",
+            },
+          ],
+        },
+      ],
+      createdWork: [],
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    expect(screen.getByText("Validate Lagos audience pull")).toBeInTheDocument();
+    expect(screen.getByText("Tighten release rights readiness")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Open created mission" })).toHaveLength(2);
+    expect(screen.getAllByText("1 task")).toHaveLength(2);
+    expect(screen.queryByText("2 tasks")).not.toBeInTheDocument();
+  });
 
   it("shows Manager-created missions on the Missions page without a page reload", async () => {
     const repositories = repositoriesFor("Nova Vale");
@@ -1921,7 +2228,45 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("settings-desktop-profile-summary")).toHaveClass("hidden", "sm:flex");
   }, 20000);
 
-  it("runs Mission Genesis from the empty Missions page and routes context questions through Manager", async () => {
+  it("puts AI Manager first and presents locked team agents as coming-soon placeholders", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.staff = {
+      ...repositories.staff,
+      loadAgents: async () => [
+        productionFixtureData.agents.find((agent) => agent.id === "marketing")!,
+        productionFixtureData.agents.find((agent) => agent.id === "manager")!,
+        productionFixtureData.agents.find((agent) => agent.id === "finance")!,
+      ],
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="staffWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
+    const desktopList = screen.getByTestId("staff-desktop-list");
+    const desktopAgents = within(desktopList).getAllByRole("button");
+    expect(desktopAgents[0]).toHaveAccessibleName("AI Manager");
+    expect(desktopAgents[0]).toHaveTextContent("Available now");
+    expect(desktopAgents[1]).toHaveAccessibleName("Marketing Lead");
+    expect(desktopAgents[1]).toHaveTextContent("Coming soon");
+    expect(desktopAgents[2]).toHaveAccessibleName("Finance/Rights");
+    expect(desktopAgents[2]).toHaveTextContent("Coming soon");
+
+    fireEvent.click(desktopAgents[1]);
+    expect(screen.getByRole("heading", { name: "Marketing Lead is not live yet." })).toBeInTheDocument();
+    expect(screen.getByText("Coming soon")).toBeInTheDocument();
+    expect(screen.getByText("This specialist desk is locked while the first AI Manager experience is being tested.")).toBeInTheDocument();
+    expect(screen.queryByText("Campaign command board")).not.toBeInTheDocument();
+    expect(screen.queryByText("Source rail")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("runs the first Manager plan from the empty Missions page and keeps Manager chat available for context questions", async () => {
     const repositories = repositoriesFor("Nova Vale");
     let missions = [] as Awaited<ReturnType<CleanProductionRepositories["missions"]["loadMissions"]>>;
     let resolveRun: ((value: Awaited<ReturnType<CleanProductionRepositories["missionGenesis"]["runMissionGenesis"]>>) => void) | undefined;
@@ -2010,8 +2355,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getByText("No active missions yet")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Test mission page" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
-    expect(screen.getAllByText("Running Mission Genesis").length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("button", { name: "Get first Manager plan" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Get first Manager plan" }));
+    expect(screen.getByRole("button", { name: "Getting first Manager plan" })).toBeInTheDocument();
 
     resolveRun?.({
       outcome: "candidate_needs_context",
@@ -2039,6 +2385,8 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager Briefing." })).toBeInTheDocument();
     expect(screen.getByText("Mission candidate needs context")).toBeInTheDocument();
+    expect(screen.getByText("Manager Directive")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Mission Genesis needs context/i }));
@@ -2048,7 +2396,6 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?"), { target: { value: "$5,000" } });
     fireEvent.click(screen.getByRole("button", { name: /continue mission genesis/i }));
 
-    expect(await screen.findByText("Mission activated")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getAllByText("Validate whether a rising market deserves focused operating attention").length).toBeGreaterThan(0);
 
@@ -2077,6 +2424,64 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText("Market signal quality").length).toBeGreaterThan(0);
     expect(screen.getByText("Is this market signal real enough?")).toBeInTheDocument();
     expect(screen.getAllByText("Verify geography signal quality").length).toBeGreaterThan(0);
+  }, 20000);
+
+  it("submits Mission Genesis context answers for the selected candidate lane", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const answeredCandidates: string[] = [];
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => [],
+    };
+    repositories.missionGenesis = {
+      ...repositories.missionGenesis,
+      runMissionGenesis: async () => ({
+        outcome: "candidate_needs_context",
+        title: "Two candidate missions need context",
+        body: "The Manager needs you to choose which candidate lane to continue.",
+        reasons: ["Multiple lanes are viable."],
+        questions: [
+          {
+            key: "lane_priority",
+            question: "Which lane should continue?",
+            reason: "The continuation must target the selected candidate mission.",
+            answerKind: "short_text",
+          },
+        ],
+        evidenceNeeded: [],
+        candidateMissionId: "candidate-a",
+        candidateMissionIds: ["candidate-a", "candidate-b"],
+      }),
+      answerMissionGenesisContext: async (input) => {
+        answeredCandidates.push(input.candidateMissionId);
+        return {
+          outcome: "no_mission",
+          title: "No mission created",
+          body: "The selected lane was reviewed.",
+          reasons: ["No durable mission yet."],
+          questions: [],
+          evidenceNeeded: [],
+        };
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Get first Manager plan" }));
+    expect(await screen.findByText("Candidate mission lanes")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Candidate 2" }));
+    fireEvent.change(screen.getByLabelText("Which lane should continue?"), { target: { value: "Continue the second lane" } });
+    fireEvent.click(screen.getByRole("button", { name: /continue mission genesis/i }));
+
+    await waitFor(() => expect(answeredCandidates).toEqual(["candidate-b"]));
   }, 20000);
 
   it("renders a directly activated Mission Genesis workstream after the mission graph reloads", async () => {
@@ -2109,8 +2514,8 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getByText("No active missions yet")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
-    expect(screen.getAllByText("Running Mission Genesis").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "Get first Manager plan" }));
+    expect(screen.getByRole("button", { name: "Getting first Manager plan" })).toBeInTheDocument();
 
     missions = [
       {
@@ -2174,7 +2579,6 @@ describe("Clean production prototype-match shell", () => {
       activatedMissionIds: ["mission-feature-leverage"],
     });
 
-    expect(await screen.findByText("Mission activated")).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect((await screen.findAllByText("Turn the Asake feature into Blaqbonez-owned leverage")).length).toBeGreaterThan(0);
 
@@ -2317,9 +2721,8 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get first Manager plan" }));
 
-    expect(await screen.findByText("Missions activated")).toBeInTheDocument();
     expect((await screen.findAllByText("Define Blaqbonez's 90-day career position")).length).toBeGreaterThan(0);
     expect(screen.getAllByText("Turn the Asake feature into Blaqbonez-owned leverage").length).toBeGreaterThan(0);
 
@@ -2355,7 +2758,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Run Mission Genesis for this artist" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get first Manager plan" }));
 
     expect(await screen.findByText("Mission Genesis failed")).toBeInTheDocument();
     expect(screen.getByText("permission denied for table agent_reports")).toBeInTheDocument();
@@ -2481,7 +2884,21 @@ describe("Clean production prototype-match shell", () => {
       loadMusic: async () => music,
       generateMusicSummary: async (subjectId, subjectType) => {
         calls.push({ subjectId, subjectType });
-        return music.find((item) => item.id === subjectId)!;
+        return {
+          ...music.find((item) => item.id === subjectId)!,
+          situationLine: "Generated project read - Focus Track is now the release lever.",
+          managerRead: "Generated read: Brief Project should be managed around Focus Track because the project evidence now points to one clear lead record.",
+          nextMove: "Move the project plan around Focus Track before widening spend.",
+          managerReadState: "fresh",
+          snapshotSummary: "Generated project summary from the latest packet.",
+          intelligenceSnapshot: [
+            {
+              title: "Generated Project Read",
+              insight: "Focus Track is now the project's lead management lever.",
+              metrics: [{ label: "Lead track", value: "Focus Track", context: "generated read", evidenceIds: ["generated-ev"] }],
+            },
+          ],
+        };
       },
     };
 
@@ -2528,6 +2945,8 @@ describe("Clean production prototype-match shell", () => {
     await waitFor(() => {
       expect(calls).toEqual([{ subjectId: "project-brief-1", subjectType: "music_project" }]);
     });
+    expect(projectRoom).toHaveTextContent("Generated read: Brief Project should be managed around Focus Track");
+    expect(projectRoom).toHaveTextContent("Generated project summary from the latest packet.");
   }, 20000);
 
   it("exposes production Music create and upload actions in context", async () => {
@@ -2840,8 +3259,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
     expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Marketing Lead" }));
-    expect(screen.getAllByText("Campaign command board").length).toBeGreaterThan(0);
-    expect(screen.getByText("Source rail")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Marketing Lead is not live yet." })).toBeInTheDocument();
+    expect(screen.getByText("This specialist desk is locked while the first AI Manager experience is being tested.")).toBeInTheDocument();
+    expect(screen.queryByText("Source rail")).not.toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
@@ -2878,8 +3298,8 @@ describe("Clean production prototype-match shell", () => {
 
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
     expect(screen.getByText("No active missions yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run Mission Genesis" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Run Mission Genesis for this artist" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Get first Manager plan" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: /Run Mission Genesis/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Test mission page" })).not.toBeInTheDocument();
   }, 20000);
 

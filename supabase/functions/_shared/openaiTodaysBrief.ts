@@ -88,6 +88,7 @@ export type TodaysBriefOutput = {
   }>;
   sourceLine: string;
   confidence: "high" | "medium" | "low" | "limited" | "unknown";
+  generationState?: "fresh" | "fallback";
   generatedAt?: string;
   managerSynthesisRunId?: string;
   claimAudit: TodaysBriefClaimAudit[];
@@ -176,7 +177,7 @@ export const todaysBriefJsonSchema = {
                   label: { type: "string", maxLength: 80 },
                   value: { type: "string", maxLength: 120 },
                   context: { type: "string", maxLength: 180 },
-                  evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+                  evidenceIds: { type: "array", items: { type: "string" } },
                 },
               },
             },
@@ -196,7 +197,7 @@ export const todaysBriefJsonSchema = {
           required: ["claim", "evidenceIds", "limitation"],
           properties: {
             claim: { type: "string" },
-            evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
+            evidenceIds: { type: "array", items: { type: "string" } },
             limitation: { type: "string" },
           },
         },
@@ -228,7 +229,7 @@ const sharedTodaysBriefInstructions = [
     "Do not lead with missing data. Do not end with missing data. Do not mention private saves or repeat listener gaps unless directly asked by the user.",
     "Never claim rights certainty, royalties, revenue, return on spend, or conversion unless directly saved in the packet.",
     "The sourceLine must be exactly: Based on your saved artist profile, current music in view, public audience signals, and source limits.",
-    "Every metric in intelligenceSnapshot must include evidenceIds from the packet. Every claimAudit item must include evidenceIds that support it.",
+    "Every metric and claimAudit item must use real saved evidence IDs when they come from evidence rows. If a fact comes only from profile, tracklist, catalog, or setup metadata, leave evidenceIds empty and explain that limitation in claimAudit.",
     "Never print evidence IDs, UUIDs, database IDs, source refs, or parenthetical evidence citations in headlineRead, snapshotSummary, intelligenceSnapshot visible text, or managerRead. IDs belong only in evidenceIds arrays and claimAudit.",
 ];
 
@@ -250,11 +251,18 @@ const setupMapTodaysBriefInstructions = [
   "The first management focus should be the conclusion of the read, not the whole brief. Build toward it after explaining the artist's map.",
 ];
 
-export function buildTodaysBriefInstructions(mode: TodaysBriefPromptMode = "operating") {
-  return [
+export function buildTodaysBriefInstructions(
+  mode: TodaysBriefPromptMode = "operating",
+  playbookLensText?: string,
+) {
+  const base = [
     ...sharedTodaysBriefInstructions,
     ...(mode === "setup-map" ? setupMapTodaysBriefInstructions : operatingTodaysBriefInstructions),
   ].join("\n");
+  if (playbookLensText?.trim()) {
+    return `${base}\n\n${playbookLensText.trim()}`;
+  }
+  return base;
 }
 
 export function parseTodaysBriefOutput(payload: unknown): TodaysBriefOutput {
@@ -268,6 +276,7 @@ export function parseTodaysBriefOutput(payload: unknown): TodaysBriefOutput {
     managerRead: readRequiredString(output.managerRead, "managerRead"),
     sourceLine: readRequiredString(output.sourceLine, "sourceLine"),
     confidence: readConfidence(output.confidence),
+    generationState: output.generationState === "fallback" ? "fallback" : output.generationState === "fresh" ? "fresh" : undefined,
     generatedAt: readOptionalString(output.generatedAt),
     managerSynthesisRunId: readOptionalString(output.managerSynthesisRunId),
     claimAudit: readClaimAudit(output.claimAudit),
@@ -281,13 +290,15 @@ export function assertSignalsHaveEvidenceIds(output: TodaysBriefOutput) {
   if (!output.intelligenceSnapshot.length) throw new Error("Today's Brief must include artist intelligence.");
   for (const group of output.intelligenceSnapshot) {
     if (!group.metrics.length) throw new Error("Today's Brief intelligence group is missing metrics.");
+    if (output.confidence === "limited" || output.confidence === "unknown") continue;
     for (const metric of group.metrics) {
       if (!metric.evidenceIds.length) throw new Error("Today's Brief intelligence metric is missing evidence IDs.");
     }
   }
   if (!output.claimAudit.length) throw new Error("Today's Brief claim audit is missing.");
-  for (const audit of output.claimAudit) {
-    if (!audit.evidenceIds.length) throw new Error("Today's Brief claim audit is missing evidence IDs.");
+  if (output.confidence === "limited" || output.confidence === "unknown") return;
+  if (!output.claimAudit.some((audit) => audit.evidenceIds.length)) {
+    throw new Error("Today's Brief claim audit is missing evidence IDs.");
   }
 }
 

@@ -18,3 +18,4 @@ yarn-error.log*
 vite.log
 vite.*.log
 vite-*.log
+dev-server.log

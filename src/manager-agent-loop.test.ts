@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   buildManagerAgentRequest,
@@ -120,5 +120,179 @@ describe("Manager Agent Responses loop", () => {
         status: "completed",
       }),
     ]);
+  });
+
+  it("summarizes discovery tool results with operational status and saved evidence counts", async () => {
+    const events: Array<{ status: string; summary: string }> = [];
+    const finalJson = JSON.stringify({
+      actionPolicy: "answer_only",
+      topic: "Setup",
+      summary: "Done",
+      status: "Manager responded",
+      confidence: "medium",
+      classification: "evidence_check",
+      responseBody: "Done",
+      evidenceIds: ["ev-1"],
+      limitations: [],
+      createdWork: [],
+      missionGraphDecisions: [],
+      contextQuestions: [],
+      proposedActions: [],
+      durableMemory: [],
+    });
+
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify(body.previous_response_id
+        ? { id: "resp-final", output_text: finalJson, output: [{ type: "message", content: [{ type: "output_text", text: finalJson }] }] }
+        : {
+            id: "resp-tool",
+            output: [{
+              type: "function_call",
+              call_id: "call-track",
+              name: "chartmetric_track_enrich",
+              arguments: "{\"musicItemId\":\"track-1\"}",
+            }],
+          }), { status: 200 });
+    };
+
+    await runManagerAgentLoop({
+      endpoint: "https://api.openai.com/v1/responses",
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      instructions: "Run discovery.",
+      context: { artistName: "Rema" },
+      tools: [{ type: "function", name: "chartmetric_track_enrich", description: "Enrich", strict: false, parameters: {} }],
+      jsonSchema: managerConversationJsonSchema,
+      fetchImpl,
+      executeTool: async () => ({ status: "completed", snapshotId: "snap-1", evidenceCount: 7 }),
+      onToolEvent: (event) => events.push(event),
+    });
+
+    expect(events).toEqual([
+      expect.objectContaining({ status: "started", summary: "Running chartmetric_track_enrich." }),
+      expect.objectContaining({
+        status: "completed",
+        summary: expect.stringMatching(/chartmetric_track_enrich completed.*7 evidence.*snap-1/i),
+      }),
+    ]);
+  });
+
+  it("surfaces useful messages from non-Error tool failures", async () => {
+    const events: Array<{ status: string; summary: string }> = [];
+    const finalJson = JSON.stringify({
+      actionPolicy: "answer_only",
+      topic: "Setup",
+      summary: "Done",
+      status: "Manager responded",
+      confidence: "low",
+      classification: "evidence_check",
+      responseBody: "Done",
+      evidenceIds: [],
+      limitations: ["tool failed"],
+      createdWork: [],
+      missionGraphDecisions: [],
+      contextQuestions: [],
+      proposedActions: [],
+      durableMemory: [],
+    });
+
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify(body.previous_response_id
+        ? { id: "resp-final", output_text: finalJson, output: [{ type: "message", content: [{ type: "output_text", text: finalJson }] }] }
+        : {
+            id: "resp-tool",
+            output: [{
+              type: "function_call",
+              call_id: "call-memory",
+              name: "write_strategic_memory",
+              arguments: "{\"content\":\"Rema has secondary market demand.\"}",
+            }],
+          }), { status: 200 });
+    };
+
+    await runManagerAgentLoop({
+      endpoint: "https://api.openai.com/v1/responses",
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      instructions: "Run discovery.",
+      context: { artistName: "Rema" },
+      tools: [{ type: "function", name: "write_strategic_memory", description: "Write", strict: false, parameters: {} }],
+      jsonSchema: managerConversationJsonSchema,
+      fetchImpl,
+      executeTool: async () => {
+        throw { message: 'invalid input value for enum memory_scope: "strategic"' };
+      },
+      onToolEvent: (event) => events.push(event),
+    });
+
+    expect(events.find((event) => event.status === "failed")?.summary).toContain("invalid input value for enum memory_scope");
+    expect(events.find((event) => event.status === "failed")?.summary).not.toBe("Tool failed.");
+  });
+
+  it("awaits async tool event handlers before returning the final response", async () => {
+    const events: string[] = [];
+    let releaseCompletedEvent: (() => void) | undefined;
+    const completedEventWritten = new Promise<void>((resolve) => {
+      releaseCompletedEvent = resolve;
+    });
+    const finalJson = JSON.stringify({
+      actionPolicy: "answer_only",
+      topic: "Setup",
+      summary: "Done",
+      status: "Manager responded",
+      confidence: "medium",
+      classification: "evidence_check",
+      responseBody: "Done",
+      evidenceIds: [],
+      limitations: [],
+      createdWork: [],
+      missionGraphDecisions: [],
+      contextQuestions: [],
+      proposedActions: [],
+      durableMemory: [],
+    });
+
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify(body.previous_response_id
+        ? { id: "resp-final", output_text: finalJson }
+        : {
+            id: "resp-tool",
+            output: [{
+              type: "function_call",
+              call_id: "call-evidence",
+              name: "query_evidence_items",
+              arguments: "{}",
+            }],
+          }), { status: 200 });
+    };
+
+    const resultPromise = runManagerAgentLoop({
+      endpoint: "https://api.openai.com/v1/responses",
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      instructions: "Run discovery.",
+      context: { artistName: "Rema" },
+      tools: managerConversationTools,
+      jsonSchema: managerConversationJsonSchema,
+      fetchImpl,
+      executeTool: async () => ({ status: "completed" }),
+      onToolEvent: async (event) => {
+        if (event.status === "completed") {
+          await completedEventWritten;
+        }
+        events.push(event.status);
+      },
+    });
+
+    await vi.waitFor(() => expect(events).toEqual(["started"]));
+
+    releaseCompletedEvent?.();
+    const result = await resultPromise;
+
+    expect(result.outputText).toBe(finalJson);
+    expect(events).toEqual(["started", "completed"]);
   });
 });

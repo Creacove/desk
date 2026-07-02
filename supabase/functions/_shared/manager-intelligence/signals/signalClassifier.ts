@@ -1,4 +1,4 @@
-import type { EvidenceLike, ManagerSignalType, SignalEvidenceStrength } from "../types";
+import type { EvidenceLike, ManagerSignalType, SignalEvidenceStrength } from "../types.ts";
 
 export type ClassifiedSignal = {
   signalType: ManagerSignalType;

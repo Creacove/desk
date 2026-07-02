@@ -1,4 +1,4 @@
-import type { ManagerSignalType, PlaybookKey } from "../types";
+import type { ManagerSignalType, PlaybookKey } from "../types.ts";
 
 export type PlaybookRoutingInput = {
   careerStage?: string | null;

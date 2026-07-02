@@ -39,11 +39,13 @@ export function MusicWorkspace({
   const [actionPending, setActionPending] = useState(false);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
+  const [generatedReads, setGeneratedReads] = useState<Record<string, MusicObjectViewModel>>({});
   const modalActive = Boolean(createKind || uploadTarget || detailTarget);
 
-  const getMusicObject = (id: string) => music.find((object) => object.id === id);
-  const songs = music.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
-  const projects = music.filter((object) => object.kind === "project");
+  const displayedMusic = music.map((object) => generatedReads[object.id] ?? object);
+  const getMusicObject = (id: string) => generatedReads[id] ?? music.find((object) => object.id === id);
+  const songs = displayedMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
+  const projects = displayedMusic.filter((object) => object.kind === "project");
   const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
   const linkedMissions = (selected?.linkedMissionIds ?? []).map((id) => missions.find((mission) => mission.id === id)).filter(Boolean) as MissionViewModel[];
   const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
@@ -90,7 +92,8 @@ export function MusicWorkspace({
     try {
       setBriefError(null);
       setBriefPending(true);
-      await musicRepository.generateMusicSummary(subjectId, subjectType);
+      const generated = await musicRepository.generateMusicSummary(subjectId, subjectType);
+      setGeneratedReads((current) => ({ ...current, [generated.id]: generated }));
       await onMusicChanged();
     } catch (error) {
       setBriefError(readErrorMessage(error, "Brief could not be generated."));
@@ -566,7 +569,8 @@ function MusicSongDetail({
     "Record intelligence is focused on the usable numbers already in view.";
   const managerReadCopy =
     acceptedVisibleTrackReadText(song.managerRead) ??
-    buildVisibleSongManagerReadFallback(song, trackIntelligenceMetrics);
+    buildUnavailableSongManagerReadCopy(song);
+  const generateReadLabel = songManagerReadButtonLabel(song.managerReadState);
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -609,6 +613,7 @@ function MusicSongDetail({
                 </div>
                 <button
                   type="button"
+                  aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
                   onClick={onGenerateBrief}
                   disabled={briefPending}
                   className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
@@ -1005,25 +1010,30 @@ function MusicProjectBrief({
   );
 }
 
-function buildVisibleSongManagerReadFallback(song: MusicObjectViewModel, metrics: CompactTrackMetric[]) {
-  const leadMetric = metrics[0];
-  const secondMetric = metrics.find((metric) => metric.label !== leadMetric?.label || metric.value !== leadMetric?.value);
-  const metricRead = leadMetric
-    ? secondMetric
-      ? `${leadMetric.label.toLowerCase()} is ${leadMetric.value}${leadMetric.context ? ` (${leadMetric.context})` : ""}, with ${secondMetric.label.toLowerCase()} at ${secondMetric.value}${secondMetric.context ? ` (${secondMetric.context})` : ""}.`
-      : `${leadMetric.label.toLowerCase()} is ${leadMetric.value}${leadMetric.context ? ` (${leadMetric.context})` : ""}.`
-    : "the record is in view with enough saved context to choose the first useful inspection lane.";
-  const lifecycle = song.lifecycleStage ?? song.lifecycle;
-  return `${song.title} is a ${lifecycle.toLowerCase()} record with a usable first read. ${metricRead} I would make ${song.title} the first song to inspect, then decide which visible behavior should lead the next team action.`;
-}
-
 function managerReadStateLabel(state: MusicObjectViewModel["managerReadState"]) {
   if (state === "fresh") return "Fresh";
   if (state === "limited") return "Limited";
   if (state === "loading") return "Loading";
   if (state === "failed") return "Failed";
   if (state === "stale") return "Refresh needed";
-  return "First read";
+  if (state === "fallback") return "Saved-packet read";
+  return "Not generated";
+}
+
+function buildUnavailableSongManagerReadCopy(song: MusicObjectViewModel) {
+  if (song.managerReadState === "fallback") {
+    return `${song.title} has a saved-packet read, but no live generated Manager Read is saved for this song yet. Regenerate the read when source enrichment is available.`;
+  }
+  if (song.managerReadState === "failed") {
+    return `${song.title}'s last Manager Read generation failed. Regenerate it so the Manager can enrich the song first, then reason from the saved evidence.`;
+  }
+  return `${song.title} does not have a generated Manager Read saved yet. Use the action above to enrich this song first, then generate the Manager's read from the saved evidence.`;
+}
+
+function songManagerReadButtonLabel(state: MusicObjectViewModel["managerReadState"]) {
+  if (state === "fresh" || state === "limited") return "Regenerate brief";
+  if (state === "fallback") return "Regenerate live read";
+  return "Enrich and generate read";
 }
 
 function buildVisibleProjectManagerReadFallback(project: MusicObjectViewModel, metrics: CompactTrackMetric[], tracklist: MusicObjectViewModel[]) {
