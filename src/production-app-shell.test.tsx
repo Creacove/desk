@@ -424,10 +424,11 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
     expect(screen.getByText("Generating the first Setup Operating Map brief.")).toBeInTheDocument();
     expect(screen.getByTestId("setup-activity-progress")).toBeInTheDocument();
-    expect(screen.getByText("Saved manager basics")).toBeInTheDocument();
-    expect(screen.getByText("Building operating map")).toBeInTheDocument();
-    expect(screen.getByText("Preparing music reads")).toBeInTheDocument();
-    expect(screen.getByText("Opening Desk HQ")).toBeInTheDocument();
+    expect(screen.queryByText("Saved manager basics")).not.toBeInTheDocument();
+    expect(screen.queryByText("Building operating map")).not.toBeInTheDocument();
+    expect(screen.queryByText("Preparing music reads")).not.toBeInTheDocument();
+    expect(screen.queryByText("Opening Desk HQ")).not.toBeInTheDocument();
+    expect(screen.queryByText("Discovery is complete; the Manager is turning the saved packet into the opening read.")).not.toBeInTheDocument();
     expect(screen.queryByText("Refreshing the first song and project Manager Reads.")).not.toBeInTheDocument();
     await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
 
@@ -595,7 +596,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
 
-  it("keeps the setup activity screen visible when setup map generation returns fallback", async () => {
+  it("opens Desk HQ with the packet-backed setup map when live setup map generation returns fallback", async () => {
     const setupWorkspace = {
       ...workspace,
       status: "setup",
@@ -648,10 +649,10 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
-    expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
-    expect(await screen.findByText("Setup map returned a packet fallback instead of a live Manager read.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry setup map" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(screen.getAllByText("Fallback packet read.").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Setup map returned a packet fallback instead of a live Manager read.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry setup map" })).not.toBeInTheDocument();
   }, 20000);
 
   it("lets a signed-in user sign out from setup and Desk HQ", async () => {

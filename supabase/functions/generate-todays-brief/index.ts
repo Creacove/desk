@@ -981,7 +981,7 @@ function currentMusicGroup(
         value: workingCatalogValue(items.length, projects.length),
         context: connected ? "current focus" : "setup focus",
         confidence: "medium",
-        evidenceIds: [],
+        evidenceIds: ["working-catalog-scope"],
       },
       ...(latestProject
         ? [{
@@ -991,7 +991,7 @@ function currentMusicGroup(
             value: latestProject,
             context: "in view",
             confidence: "medium" as const,
-            evidenceIds: [],
+            evidenceIds: ["latest-project-in-view"],
           }]
         : []),
       ...(focusTitles.length
@@ -1002,7 +1002,7 @@ function currentMusicGroup(
             value: `${focusTitles.length} in focus`,
             context: focusTitles.slice(0, 3).join(", "),
             confidence: "medium" as const,
-            evidenceIds: [],
+            evidenceIds: ["recent-focus-records"],
           }]
         : []),
     ],

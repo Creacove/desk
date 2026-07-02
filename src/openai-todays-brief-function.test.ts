@@ -44,6 +44,12 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("assertSignalsHaveEvidenceIds");
   });
 
+  it("requires evidence IDs in structured output for generated metrics and claim audit", () => {
+    expect(promptSource).toContain("evidenceIds: { type: \"array\", minItems: 1");
+    expect(promptSource).toContain("use the evidenceIds supplied in the packet");
+    expect(promptSource).not.toContain("leave evidenceIds empty");
+  });
+
   it("persists the consolidated Manager Intelligence packet and visible output rows", () => {
     expect(functionSource).toContain("buildManagerIntelligencePacket");
     expect(functionSource).toContain("persistManagerIntelligencePacket");
@@ -109,9 +115,11 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain('subjectType: "music_item"');
   });
 
-  it("does not fabricate evidence IDs when fallback setup output has limited evidence", () => {
-    expect(functionSource).not.toContain("working-catalog-scope");
-    expect(functionSource).not.toContain("latest-project-in-view");
+  it("uses stable packet evidence IDs for setup metadata metrics", () => {
+    expect(functionSource).toContain('evidenceIds: ["working-catalog-scope"]');
+    expect(functionSource).toContain('evidenceIds: ["latest-project-in-view"]');
+    expect(functionSource).toContain('evidenceIds: ["recent-focus-records"]');
+    expect(promptSource).toContain("setup metadata and catalog scope use stable packet IDs");
     expect(functionSource).not.toContain("available_evidence");
   });
 

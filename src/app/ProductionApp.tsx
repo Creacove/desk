@@ -794,9 +794,6 @@ function CleanProductionWorkspace({
       setSetupActivityStep("setup-map");
       const setupGeneration = await generateTodaysBrief("setup-map");
       const setupBrief = briefFromGenerationResult(setupGeneration);
-      if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
-        throw new Error("Setup map returned a packet fallback instead of a live Manager read.");
-      }
       setSetupActivityStep("music-reads");
       await refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
       setSetupActivityWorkspace(null);
@@ -1146,42 +1143,28 @@ function SetupManagerActivityScreen({
   error: string | null;
   onRetry: () => void;
 }) {
-  const latestDiscoveryStep = discoverySteps[discoverySteps.length - 1];
-  const currentStep = error
-    ? "Setup Operating Map needs attention."
-    : step === "music-reads"
-      ? "Refreshing the first song and project Manager Reads."
-      : "Generating the first Setup Operating Map brief.";
-  const supportLine = error
-    ? "The desk will stay here until the Manager read can be regenerated."
-    : step === "music-reads"
-      ? "The opening brief is ready; the Manager is updating the first music reads before opening the desk."
-      : latestDiscoveryStep
-        ? "Discovery is complete; the Manager is turning the saved packet into the opening read."
-        : `The Manager is turning ${artistName}'s saved setup packet into the opening read.`;
   const [statusIndex, setStatusIndex] = useState(0);
-  const liveStatusMessages = step === "music-reads"
+  const liveStatusMessages = error
+    ? ["Setup Operating Map needs attention."]
+    : step === "music-reads"
     ? [
+        "Refreshing the first song and project Manager Reads.",
         "Checking the queued project and song reads.",
-        "Waiting for generated music reads to land.",
         "Reloading the music room before Desk HQ opens.",
       ]
     : [
+        "Generating the first Setup Operating Map brief.",
+        `Turning ${artistName}'s saved setup packet into the opening read.`,
         "Reading the saved manager basics.",
         "Selecting the strongest audience and catalog signals.",
         "Compressing the source packet for the opening read.",
         "Writing the Setup Operating Map for Desk HQ.",
       ];
-  const activeProgressIndex = error ? 1 : step === "music-reads" ? 2 : 1;
-  const activitySteps = [
-    "Saved manager basics",
-    "Building operating map",
-    "Preparing music reads",
-    "Opening Desk HQ",
-  ];
+  const statusText = liveStatusMessages[statusIndex % liveStatusMessages.length];
+  const progressWidth = error ? 68 : step === "music-reads" ? 86 : 48;
 
   useEffect(() => {
-    if (!pending || error) {
+    if (!pending) {
       setStatusIndex(0);
       return;
     }
@@ -1189,7 +1172,7 @@ function SetupManagerActivityScreen({
       setStatusIndex((current) => current + 1);
     }, 2400);
     return () => window.clearInterval(timerId);
-  }, [pending, error, step]);
+  }, [pending, step]);
 
   return (
     <main className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
@@ -1208,43 +1191,17 @@ function SetupManagerActivityScreen({
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "150ms" }} />
                 <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "300ms" }} />
               </span>
-              <p className="min-w-0 text-[13px] font-bold leading-relaxed text-foreground">{currentStep}</p>
+              <p className="min-w-0 text-[13px] font-bold leading-relaxed text-foreground" aria-live="polite">{statusText}</p>
             </div>
-            <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">{supportLine}</p>
-            {pending && !error ? (
-              <p className="mt-2 min-h-5 text-[12px] font-semibold leading-relaxed text-foreground/78" aria-live="polite">
-                {liveStatusMessages[statusIndex % liveStatusMessages.length]}
-              </p>
-            ) : null}
-            <div data-testid="setup-activity-progress" className="mt-4 border-t border-foreground/8 pt-4">
+            <div data-testid="setup-activity-progress" className="mt-4">
               <div className="relative h-1.5 overflow-hidden rounded-full bg-foreground/[0.06]">
                 <div
                   className="h-full rounded-full bg-brand-accent transition-all duration-500"
-                  style={{ width: `${((activeProgressIndex + 1) / activitySteps.length) * 100}%` }}
+                  style={{ width: `${progressWidth}%` }}
                 />
                 {pending && !error ? (
                   <div className="ordersounds-loader-rail absolute inset-y-0 left-0 w-1/3 rounded-full bg-white/70" />
                 ) : null}
-              </div>
-              <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {activitySteps.map((label, index) => {
-                  const complete = index < activeProgressIndex;
-                  const active = index === activeProgressIndex;
-                  return (
-                    <div
-                      key={label}
-                      className={`rounded-[10px] border px-2.5 py-2 text-[10px] font-bold leading-tight ${
-                        active
-                          ? "border-brand-accent/30 bg-brand-accent/[0.08] text-brand-accent"
-                          : complete
-                            ? "border-foreground/10 bg-foreground/[0.035] text-foreground/76"
-                            : "border-foreground/8 bg-white/60 text-muted-foreground/72"
-                      }`}
-                    >
-                      {label}
-                    </div>
-                  );
-                })}
               </div>
             </div>
           </div>
