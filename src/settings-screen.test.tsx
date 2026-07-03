@@ -1,12 +1,23 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { SettingsScreen } from "./features/settings/SettingsScreen";
 import type { ArtistProfileViewModel } from "./types/cleanProduction";
 
 describe("SettingsScreen", () => {
+  afterEach(() => cleanup());
+
   it("renders normalized Chartmetric artist intelligence when available", () => {
-    render(<SettingsScreen profile={profileWithArtistIntelligence()} onChange={vi.fn()} onBack={vi.fn()} />);
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        themeMode="system"
+        resolvedThemeMode="dark"
+        onThemeModeChange={vi.fn()}
+      />,
+    );
 
     expect(screen.getByText("Artist intelligence")).toBeTruthy();
     expect(screen.getByText("Chartmetric shows Burna Boy has strong verified artist context.")).toBeTruthy();
@@ -14,6 +25,29 @@ describe("SettingsScreen", () => {
     expect(screen.getByText("Spotify monthly listeners: 33,095,448 listeners")).toBeTruthy();
     expect(screen.getByText("TikTok track posts: 15,763,624 posts")).toBeTruthy();
     expect(screen.getByText("Attention signal, not conversion proof.")).toBeTruthy();
+  });
+
+  it("renders a premium appearance control that can override system mode", () => {
+    const onThemeModeChange = vi.fn();
+
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        themeMode="system"
+        resolvedThemeMode="dark"
+        onThemeModeChange={onThemeModeChange}
+      />,
+    );
+
+    expect(screen.getByText("Appearance")).toBeTruthy();
+    expect(screen.getByText("Following system: Dark")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Use system appearance" }).getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "Use dark appearance" }));
+
+    expect(onThemeModeChange).toHaveBeenCalledWith("dark");
   });
 });
 

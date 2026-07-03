@@ -28,7 +28,7 @@ export function ConnectArtistScreen({
   const searchMode = Boolean(onQueryChange && onSelectCandidate);
 
   return (
-    <main className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+    <main className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
       <div className="pointer-events-none absolute inset-0 opacity-[0.28] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 mx-auto w-full max-w-[1500px]">
         <ConnectHeader status={searchMode ? "Connect artist" : "Connect"} onSignOut={onSignOut} />
@@ -170,7 +170,7 @@ export function SetupScreen({
   const catalogMessage = getCatalogStatusMessage(catalogSyncStatus);
 
   return (
-    <main className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+    <main className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
       <div className="pointer-events-none absolute inset-0 opacity-[0.28] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 mx-auto w-full max-w-[1500px]">
         <ConnectHeader status="Setup" onSignOut={onSignOut} />

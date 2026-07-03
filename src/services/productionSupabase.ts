@@ -476,7 +476,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .select("id,event_type,summary,created_at")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: false })
-            .limit(5),
+            .limit(20),
           client
             .from("manager_outputs")
             .select("id,source_packet_id,created_from_run_id,output_type,subject_type,subject_id,is_current,render_json,hero_json,blocks_json,summary,confidence_json,supporting_evidence_json,created_at")

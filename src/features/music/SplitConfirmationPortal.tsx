@@ -50,7 +50,7 @@ export function SplitConfirmationPortal({
   }
 
   return (
-    <main className="app-light min-h-screen bg-background px-4 py-6 text-foreground sm:py-10">
+    <main className="app-theme min-h-screen bg-background px-4 py-6 text-foreground sm:py-10">
       <section className="mx-auto grid w-[min(100%,44rem)] gap-4">
         <div className="rounded-[22px] border border-foreground/10 bg-background p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] sm:p-6">
           <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Ordersounds split confirmation</p>

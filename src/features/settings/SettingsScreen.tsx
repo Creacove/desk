@@ -1,6 +1,8 @@
-import { Activity, Globe2, LogOut, RadioTower } from "lucide-react";
+import { Activity, Globe2, LogOut, Monitor, Moon, RadioTower, Sun } from "lucide-react";
 import type { ReactNode } from "react";
 import { Field, ProductButton, TextAreaField, WorkspaceShell } from "../../design-system/components";
+import { cn } from "../../lib/utils";
+import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
 
 export function SettingsScreen({
@@ -8,16 +10,23 @@ export function SettingsScreen({
   onChange,
   onBack,
   onSignOut,
+  themeMode = "system",
+  resolvedThemeMode = "light",
+  onThemeModeChange,
 }: {
   profile: ArtistProfileViewModel;
   onChange: (profile: ArtistProfileViewModel) => void;
   onBack: () => void;
   onSignOut?: () => void;
+  themeMode?: ThemeMode;
+  resolvedThemeMode?: ResolvedThemeMode;
+  onThemeModeChange?: (mode: ThemeMode) => void;
 }) {
   const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
 
   return (
     <WorkspaceShell eyebrow="Settings" title="Artist profile" onBack={onBack}>
+      <AppearanceControl mode={themeMode} resolvedMode={resolvedThemeMode} onChange={onThemeModeChange} />
       <section className="rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
         <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
           <div className="flex min-w-0 items-center gap-3">
@@ -104,6 +113,58 @@ export function SettingsScreen({
         </section>
       ) : null}
     </WorkspaceShell>
+  );
+}
+
+function AppearanceControl({
+  mode,
+  resolvedMode,
+  onChange,
+}: {
+  mode: ThemeMode;
+  resolvedMode: ResolvedThemeMode;
+  onChange?: (mode: ThemeMode) => void;
+}) {
+  const resolvedLabel = resolvedMode === "dark" ? "Dark" : "Light";
+  const status = mode === "system" ? `Following system: ${resolvedLabel}` : `Appearance locked to ${resolvedLabel}`;
+  const options: Array<{ mode: ThemeMode; label: string; ariaLabel: string; icon: ReactNode }> = [
+    { mode: "system", label: "System", ariaLabel: "Use system appearance", icon: <Monitor className="h-3.5 w-3.5" aria-hidden="true" /> },
+    { mode: "light", label: "Light", ariaLabel: "Use light appearance", icon: <Sun className="h-3.5 w-3.5" aria-hidden="true" /> },
+    { mode: "dark", label: "Dark", ariaLabel: "Use dark appearance", icon: <Moon className="h-3.5 w-3.5" aria-hidden="true" /> },
+  ];
+
+  return (
+    <section className="mb-4 rounded-xl border border-foreground/10 bg-background p-4 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Appearance</p>
+          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{status}</p>
+        </div>
+        <div className="grid grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
+          {options.map((option) => {
+            const active = option.mode === mode;
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                aria-label={option.ariaLabel}
+                aria-pressed={active}
+                onClick={() => onChange?.(option.mode)}
+                className={cn(
+                  "inline-flex h-9 min-w-[5.75rem] items-center justify-center gap-2 rounded-[9px] px-3 font-ui text-[12px] font-bold transition-all",
+                  active
+                    ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8"
+                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+                )}
+              >
+                {option.icon}
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }
 

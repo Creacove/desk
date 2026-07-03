@@ -1,6 +1,7 @@
-import { ArrowUpRight, BriefcaseBusiness, ChevronRight, ClipboardCheck, Globe2, Library, ListChecks, RefreshCw, Upload, UsersRound } from "lucide-react";
+import { ArrowUpRight, BriefcaseBusiness, ClipboardCheck, Globe2, Library, ListChecks, RefreshCw, Upload, UsersRound } from "lucide-react";
 import { useState } from "react";
 import { ProductButton, WorkspaceHeader } from "../../design-system/components";
+import { compactMovementTitle, movementKey, splitAttentionItems } from "./deskAttention";
 import type {
   AgentViewModel,
   ArtistProfileViewModel,
@@ -61,6 +62,8 @@ export function DeskHQScreen({
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
 }) {
+  const [activityHistoryOpen, setActivityHistoryOpen] = useState(false);
+  const { actionable, sourceContext } = splitAttentionItems(attention);
   const commandItems = buildDeskCommandItems({
     agents,
     music,
@@ -142,8 +145,7 @@ export function DeskHQScreen({
               <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Team Agents</p>
               <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{agents.length} specialist desks</p>
             </div>
-            <p className="mb-4 max-w-2xl text-[13px] font-semibold leading-relaxed text-muted-foreground/82">A compact operating team for decisions, rollout, rights, deals, and live work.</p>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
               {agents.map((agent) => {
                 const Icon = agent.icon;
                 const statusLabel = agent.status === "available" ? "Open now" : "Preview desk";
@@ -151,22 +153,19 @@ export function DeskHQScreen({
                   <button
                     key={agent.id}
                     type="button"
-                    className="group rounded-xl border border-foreground/10 bg-white p-4 text-left shadow-[0_1px_6px_rgba(17,19,24,0.055)] transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-accent/20 hover:bg-foreground/[0.015] hover:shadow-[0_10px_28px_rgba(17,19,24,0.08)] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+                    data-testid="desk-agent-card"
+                    className="group flex min-h-[104px] flex-col justify-between rounded-[14px] border border-foreground/10 bg-white p-3 text-left shadow-[0_1px_5px_rgba(17,19,24,0.045)] transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/18 hover:bg-foreground/[0.012] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
                     onClick={() => (agent.id === "manager" ? onManager() : onLockedAgent(agent))}
                   >
-                    <span className="flex items-start justify-between gap-3">
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-foreground text-background transition-all group-hover:ring-2 group-hover:ring-foreground/10">
-                        <Icon className="h-5 w-5" aria-hidden="true" />
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-foreground text-background transition-colors group-hover:bg-foreground/88">
+                        <Icon className="h-4 w-4" aria-hidden="true" />
                       </span>
-                      <span className="rounded-full bg-foreground/[0.045] px-2 py-1 font-ui text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-                        {statusLabel}
-                      </span>
+                      <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 font-ui text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{statusLabel}</span>
                     </span>
-                    <span className="mt-4 block text-sm font-bold leading-tight text-foreground">{agent.name.replace("AI ", "")}</span>
-                    <span className="mt-2 block min-h-9 text-[12px] font-semibold leading-snug text-muted-foreground/82">{getAgentCardRead(agent)}</span>
-                    <span className="mt-4 inline-flex items-center gap-1 text-[12px] font-bold text-muted-foreground transition-colors group-hover:text-brand-accent">
-                      Open desk
-                      <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    <span className="block min-w-0">
+                      <span className="block truncate text-[13px] font-bold leading-tight text-foreground">{agent.name.replace("AI ", "")}</span>
+                      <span className="mt-1 block truncate text-[11px] font-semibold leading-snug text-muted-foreground/76">{getAgentCardRead(agent)}</span>
                     </span>
                   </button>
                 );
@@ -181,19 +180,28 @@ export function DeskHQScreen({
                 View all
               </button>
             </div>
-            <div className="grid gap-3">
-              {missions.map((mission) => (
-                <button key={mission.id} type="button" className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-left" onClick={() => onNavigate("missionsWorkspace")}>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-brand-accent" />
-                    <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Mission</span>
-                    <span className="text-xs font-semibold text-[#c2410c]">Blocker</span>
-                  </div>
-                  <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-3">{mission.title}</p>
-                  <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mt-2">{mission.summary}</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <span className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Progress {mission.progress}%</span>
-                    <span className="text-sm font-semibold text-muted-foreground">Open mission</span>
+            <div className="grid gap-2">
+              {missions.slice(0, 4).map((mission) => (
+                <button
+                  key={mission.id}
+                  type="button"
+                  data-testid="desk-active-mission-card"
+                  className="group rounded-[14px] border border-foreground/10 bg-background px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/18 hover:bg-foreground/[0.014] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+                  onClick={() => onNavigate("missionsWorkspace")}
+                >
+                  <div className="flex min-w-0 items-start justify-between gap-4">
+                    <span className="min-w-0">
+                      <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                        {mission.status === "blocked" ? "Blocked" : "Active"}
+                      </span>
+                      <span className="mt-1 block truncate text-[15px] font-bold leading-tight text-foreground">{mission.title}</span>
+                    </span>
+                    <span className="w-[72px] shrink-0 pt-0.5 text-right">
+                      <span className="block text-[11px] font-bold text-foreground">{mission.progress}%</span>
+                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-foreground/8">
+                        <span className="block h-full rounded-full bg-foreground transition-all duration-500" style={{ width: `${mission.progress}%` }} />
+                      </span>
+                    </span>
                   </div>
                 </button>
               ))}
@@ -201,58 +209,162 @@ export function DeskHQScreen({
           </section>
         </div>
 
-        <aside data-testid="desk-desktop-attention-rail" className="hidden min-w-0 content-start gap-6 self-start pt-1 xl:sticky xl:top-8 xl:grid">
-          <section>
-            <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88 mb-4">Needs Attention</p>
-            <div className="grid gap-3">
-              {attention.length ? attention.slice(0, 3).map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  className="group rounded-xl border border-foreground/10 bg-background p-4 text-left shadow-sm transition-colors hover:border-brand-accent/20 hover:bg-foreground/[0.015]"
-                  onClick={() => (item.target ? onNavigate(item.target) : item.tone === "accent" ? onDrawer("evidence") : onNavigate("missionsWorkspace"))}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <span className={item.tone === "warning" ? "flex h-7 w-7 items-center justify-center rounded-lg bg-warning/10 text-warning" : "flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 text-brand-accent"}>
-                      {item.tone === "warning" ? (
-                        <ClipboardCheck className="h-4 w-4" aria-hidden="true" />
-                      ) : (
-                        <Upload className="h-4 w-4" aria-hidden="true" />
-                      )}
-                    </span>
-                    <p className="text-[13px] font-semibold leading-tight text-foreground">{item.title}</p>
-                  </div>
-                  <p className="mt-3 text-[12px] font-medium leading-relaxed text-muted-foreground/80">{item.body}</p>
-                </button>
-              )) : (
-                <div className="rounded-xl border border-foreground/10 bg-background p-4 text-[12px] font-medium leading-relaxed text-muted-foreground/80 shadow-sm">
-                  No urgent items right now.
-                </div>
-              )}
-            </div>
-          </section>
-          <section>
-            <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88 mb-4">Recent Movement</p>
-            <div className="space-y-6 pl-1">
-              {movement.length ? movement.slice(0, 5).map((item, index) => (
-                <div key={`${item.title}-${item.time}-${index}`} className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
-                  <p className="text-[12px] font-semibold leading-tight text-foreground">{item.title}</p>
-                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">
-                    {item.label} / {item.time}
-                  </p>
-                </div>
-              )) : (
-                <div className="relative flex flex-col gap-2 pl-6 before:absolute before:left-0 before:top-1 before:h-2 before:w-2 before:rounded-full before:bg-foreground/5">
-                  <p className="text-[12px] font-semibold leading-tight text-foreground">No new movement yet</p>
-                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">System / Waiting</p>
-                </div>
-              )}
-            </div>
-          </section>
+        <aside data-testid="desk-desktop-attention-rail" className="hidden min-w-0 content-start gap-5 self-start pt-1 xl:sticky xl:top-8 xl:grid">
+          <DeskAttentionPanel
+            actionable={actionable}
+            sourceContext={sourceContext}
+            movement={movement}
+            onNavigate={onNavigate}
+            onDrawer={onDrawer}
+            onOpenHistory={() => setActivityHistoryOpen(true)}
+          />
         </aside>
       </div>
+      <ActivityHistoryDialog open={activityHistoryOpen} movement={movement} onClose={() => setActivityHistoryOpen(false)} />
     </section>
   );
+}
+
+function DeskAttentionPanel({
+  actionable,
+  sourceContext,
+  movement,
+  onNavigate,
+  onDrawer,
+  onOpenHistory,
+}: {
+  actionable: AttentionItem[];
+  sourceContext: AttentionItem[];
+  movement: MovementItem[];
+  onNavigate: (view: CleanProductionView) => void;
+  onDrawer: (drawer: DrawerKind) => void;
+  onOpenHistory: () => void;
+}) {
+  const primary = actionable[0];
+  const secondary = actionable.slice(1, 3);
+
+  return (
+    <>
+      <section className="rounded-[18px] border border-foreground/8 bg-background/92 p-4 shadow-[0_10px_34px_rgba(17,19,24,0.06)]">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/88">Today's Attention</p>
+          <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{actionable.length}</span>
+        </div>
+
+        {primary ? (
+          <button
+            type="button"
+            className="mt-4 w-full rounded-[14px] border border-foreground/10 bg-foreground p-4 text-left text-background shadow-sm transition-transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
+            onClick={() => openAttentionItem(primary, onNavigate, onDrawer)}
+          >
+            <span className="flex items-center gap-2.5">
+              <span className={primary.tone === "warning" ? "flex h-8 w-8 items-center justify-center rounded-lg bg-warning text-background" : "flex h-8 w-8 items-center justify-center rounded-lg bg-brand-accent text-background"}>
+                {primary.tone === "warning" ? <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
+              </span>
+              <span className="min-w-0 text-[14px] font-bold leading-tight">{primary.title}</span>
+            </span>
+            <span className="mt-3 block text-[12px] font-semibold leading-relaxed text-background/76">{primary.body}</span>
+          </button>
+        ) : (
+          <div className="mt-4 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-4">
+            <p className="text-[13px] font-bold text-foreground">No action needed</p>
+            <p className="mt-1.5 text-[12px] font-semibold leading-relaxed text-muted-foreground/78">The desk has no decisions, approvals, or blockers waiting on you right now.</p>
+          </div>
+        )}
+
+        {secondary.length ? (
+          <div className="mt-3 grid gap-2">
+            {secondary.map((item) => (
+              <button
+                key={item.title}
+                type="button"
+                className="rounded-[12px] border border-foreground/8 bg-foreground/[0.02] px-3.5 py-3 text-left transition-colors hover:border-brand-accent/20 hover:bg-foreground/[0.04]"
+                onClick={() => openAttentionItem(item, onNavigate, onDrawer)}
+              >
+                <span className="block text-[12px] font-bold leading-tight text-foreground">{item.title}</span>
+                <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground/78">{item.body}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+
+        {sourceContext.length ? (
+          <div className="mt-4 border-t border-foreground/8 pt-3">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/68">Source context</p>
+            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-muted-foreground/72">{sourceContext[0].body}</p>
+          </div>
+        ) : null}
+      </section>
+
+      <section className="rounded-[18px] border border-foreground/8 bg-background/78 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/88">Activity log</p>
+          <button type="button" className="text-[11px] font-bold text-muted-foreground hover:text-foreground" onClick={onOpenHistory}>
+            View activity history
+          </button>
+        </div>
+        <div className="mt-4 space-y-4 pl-1">
+          {movement.length ? movement.slice(0, 3).map((item, index) => (
+            <div key={movementKey(item, index)} className="relative flex flex-col gap-1.5 pl-5 before:absolute before:left-0 before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-foreground/10">
+              <p className="text-[12px] font-semibold leading-snug text-foreground">{compactMovementTitle(item.title)}</p>
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/78">
+                {item.label} / {item.time}
+              </p>
+            </div>
+          )) : (
+            <div className="relative flex flex-col gap-1.5 pl-5 before:absolute before:left-0 before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-foreground/10">
+              <p className="text-[12px] font-semibold leading-snug text-foreground">No new activity yet</p>
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/78">System / Waiting</p>
+            </div>
+          )}
+        </div>
+      </section>
+    </>
+  );
+}
+
+function ActivityHistoryDialog({ open, movement, onClose }: { open: boolean; movement: MovementItem[]; onClose: () => void }) {
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-[75] grid place-items-center bg-foreground/25 px-4" role="presentation">
+      <section role="dialog" aria-modal="true" aria-label="Activity history" className="max-h-[78vh] w-full max-w-xl overflow-y-auto rounded-[22px] border border-foreground/10 bg-background p-5 shadow-[0_28px_90px_rgba(17,19,24,0.24)]">
+        <div className="flex items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Activity history</p>
+            <h2 className="mt-1 font-display text-[22px] font-semibold leading-tight text-foreground">Operating movement</h2>
+          </div>
+          <button type="button" className="h-8 rounded-lg border border-foreground/10 px-3 text-[12px] font-bold text-muted-foreground" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="grid gap-3 pt-4">
+          {movement.length ? movement.map((item, index) => (
+            <article key={movementKey(item, index)} className="rounded-[14px] border border-foreground/8 bg-foreground/[0.018] p-3.5">
+              <p className="text-[13px] font-semibold leading-relaxed text-foreground">{item.title}</p>
+              <p className="mt-2 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                {item.label} / {item.time}
+              </p>
+            </article>
+          )) : (
+            <p className="rounded-[14px] border border-foreground/8 bg-foreground/[0.018] p-3.5 text-[12px] font-semibold text-muted-foreground">No activity has been recorded yet.</p>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function openAttentionItem(item: AttentionItem, onNavigate: (view: CleanProductionView) => void, onDrawer: (drawer: DrawerKind) => void) {
+  if (item.target) {
+    onNavigate(item.target);
+    return;
+  }
+  if (item.tone === "accent") {
+    onDrawer("evidence");
+    return;
+  }
+  onNavigate("missionsWorkspace");
 }
 
 function MobileDeskHome({
@@ -378,7 +490,7 @@ function MobileDeskHome({
 
           <div
             data-testid="desk-mobile-manager-read-card"
-            className="mt-4 rounded-[14px] border-l-4 border-y border-r border-brand-accent/18 border-l-brand-accent bg-brand-accent/[0.035] p-3.5"
+            className="manager-read-card mt-4 rounded-[14px] p-3.5"
           >
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
             <div data-testid="desk-mobile-manager-read" className="mt-3 space-y-3 text-[13px] font-medium leading-relaxed text-foreground/86">
@@ -457,13 +569,19 @@ function MobileDeskHome({
           </button>
         </div>
         {activeMission ? (
-          <button type="button" className="w-full text-left" aria-label="Open mission on mobile" onClick={() => onNavigate("missionsWorkspace")}>
-            <span className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-brand-accent" />
-              <span className="text-[12px] font-semibold text-muted-foreground">Progress {activeMission.progress}%</span>
+          <button type="button" className="w-full rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left" aria-label="Open mission on mobile" onClick={() => onNavigate("missionsWorkspace")}>
+            <span className="flex items-start justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{activeMission.status === "blocked" ? "Blocked" : "Active"}</span>
+                <span className="mt-1 block text-[15px] font-semibold leading-tight text-foreground">{activeMission.title}</span>
+              </span>
+              <span className="w-[64px] shrink-0 text-right">
+                <span className="block text-[11px] font-bold text-foreground">{activeMission.progress}%</span>
+                <span className="mt-1 block h-1 overflow-hidden rounded-full bg-foreground/8">
+                  <span className="block h-full rounded-full bg-foreground" style={{ width: `${activeMission.progress}%` }} />
+                </span>
+              </span>
             </span>
-            <span className="mt-2 block text-[15px] font-semibold leading-tight text-foreground">{activeMission.title}</span>
-            <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{activeMission.nextTask}</span>
           </button>
         ) : (
           <button type="button" className="w-full rounded-[14px] border border-dashed border-foreground/12 bg-foreground/[0.02] p-3 text-left" onClick={() => onNavigate("missionsWorkspace")}>
@@ -544,15 +662,15 @@ function selectMusicFocus(music: MusicObjectViewModel[]) {
 function getAgentCardRead(agent: AgentViewModel) {
   switch (agent.id) {
     case "manager":
-      return "Turns briefs into decisions.";
+      return "Briefs into decisions.";
     case "marketing":
-      return "Shapes rollout and audience moves.";
+      return "Rollout and audience.";
     case "syncDeals":
-      return "Finds pitchable opportunities.";
+      return "Pitch opportunities.";
     case "touring":
-      return "Reads live demand and routing.";
+      return "Live demand and routing.";
     case "finance":
-      return "Checks money, splits, and risk.";
+      return "Money, splits, risk.";
     default:
       return agent.purpose.length > 68 ? `${agent.purpose.slice(0, 65).trimEnd()}...` : agent.purpose;
   }
@@ -621,7 +739,7 @@ function TodayBrief({
         <ArtistIntelligenceCard summary={brief.snapshotSummary} metrics={compactIntelligenceMetrics} />
 
         <div className="mt-6 border-t border-border pt-5">
-          <div className="rounded-[12px] border-l-4 border-y border-r border-brand-accent/18 border-l-brand-accent bg-brand-accent/[0.035] p-5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.015)]">
+          <div data-testid="desk-manager-read-card" className="manager-read-card rounded-[12px] p-5">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
             <div
               data-testid="desk-desktop-manager-read"

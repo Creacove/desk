@@ -95,59 +95,59 @@
 
   .dark {
     color-scheme: dark;
-    --background: 222 24% 7%;
-    --foreground: 220 20% 96%;
-    --card: 222 22% 10%;
-    --card-foreground: 220 20% 96%;
-    --popover: 222 22% 10%;
-    --popover-foreground: 220 20% 96%;
-    --primary: 220 20% 96%;
-    --primary-foreground: 222 24% 8%;
-    --secondary: 220 18% 14%;
-    --secondary-foreground: 220 20% 96%;
-    --muted: 220 18% 14%;
-    --muted-foreground: 220 10% 67%;
-    --accent: 263 68% 62%;
-    --accent-foreground: 222 24% 8%;
-    --destructive: 3 67% 58%;
+    --background: 220 9% 6%;
+    --foreground: 43 31% 93%;
+    --card: 230 11% 10%;
+    --card-foreground: 43 31% 93%;
+    --popover: 230 11% 10%;
+    --popover-foreground: 43 31% 93%;
+    --primary: 43 31% 93%;
+    --primary-foreground: 220 9% 6%;
+    --secondary: 227 12% 15%;
+    --secondary-foreground: 43 31% 93%;
+    --muted: 227 12% 15%;
+    --muted-foreground: 40 10% 70%;
+    --accent: 258 100% 71%;
+    --accent-foreground: 220 9% 6%;
+    --destructive: 5 79% 69%;
     --destructive-foreground: 0 0% 100%;
-    --success: 151 43% 44%;
-    --success-foreground: 222 24% 8%;
-    --warning: 38 92% 58%;
-    --warning-foreground: 222 24% 8%;
-    --border: 220 15% 22%;
-    --input: 220 15% 24%;
-    --ring: 263 68% 62%;
-    --brand-accent: 263 68% 62%;
-    --brand-accent-soft: 263 56% 68%;
-    --brand-accent-ghost: 263 36% 18%;
-    --tone-success: 151 43% 44%;
-    --tone-pending: 263 68% 62%;
-    --tone-info: 210 68% 62%;
-    --tone-warning: 38 92% 58%;
-    --tone-critical: 3 67% 62%;
-    --tone-archived: 220 10% 58%;
-    --ai-surface: 222 24% 7%;
-    --ai-elevated: 222 22% 10%;
-    --ai-border: 220 15% 22%;
-    --ai-accent: 263 68% 62%;
-    --ai-muted: 220 10% 67%;
-    --surface-canvas: 222 24% 7%;
-    --surface-panel: 222 22% 10%;
-    --surface-elevated: 222 20% 12%;
-    --surface-muted: 220 18% 14%;
-    --surface-intelligence: 263 36% 18%;
-    --surface-critical: 3 34% 17%;
-    --surface-line: 220 15% 22%;
+    --success: 148 43% 61%;
+    --success-foreground: 220 9% 6%;
+    --warning: 30 85% 65%;
+    --warning-foreground: 220 9% 6%;
+    --border: 43 31% 93% / 0.09;
+    --input: 43 31% 93% / 0.14;
+    --ring: 258 100% 71%;
+    --brand-accent: 258 100% 71%;
+    --brand-accent-soft: 258 88% 76%;
+    --brand-accent-ghost: 258 72% 20%;
+    --tone-success: 148 43% 61%;
+    --tone-pending: 258 100% 71%;
+    --tone-info: 210 68% 66%;
+    --tone-warning: 30 85% 65%;
+    --tone-critical: 5 79% 69%;
+    --tone-archived: 40 6% 51%;
+    --ai-surface: 220 9% 6%;
+    --ai-elevated: 230 11% 10%;
+    --ai-border: 43 31% 93% / 0.09;
+    --ai-accent: 258 100% 71%;
+    --ai-muted: 40 10% 70%;
+    --surface-canvas: 220 9% 6%;
+    --surface-panel: 230 11% 10%;
+    --surface-elevated: 224 12% 13%;
+    --surface-muted: 227 12% 15%;
+    --surface-intelligence: 258 58% 16%;
+    --surface-critical: 5 34% 15%;
+    --surface-line: 43 31% 93% / 0.09;
     --surface-shadow: 0 0% 0%;
-    --sidebar-background: 222 24% 8%;
-    --sidebar-foreground: 220 20% 96%;
-    --sidebar-primary: 220 20% 96%;
-    --sidebar-primary-foreground: 222 24% 8%;
-    --sidebar-accent: 220 18% 14%;
-    --sidebar-accent-foreground: 220 20% 96%;
-    --sidebar-border: 220 15% 22%;
-    --sidebar-ring: 263 68% 62%;
+    --sidebar-background: 230 13% 8%;
+    --sidebar-foreground: 43 31% 93%;
+    --sidebar-primary: 43 31% 93%;
+    --sidebar-primary-foreground: 220 9% 6%;
+    --sidebar-accent: 227 12% 15%;
+    --sidebar-accent-foreground: 43 31% 93%;
+    --sidebar-border: 43 31% 93% / 0.09;
+    --sidebar-ring: 258 100% 71%;
   }
 
   * {
@@ -307,19 +307,19 @@
   }
 
   .dark {
-    --os-bg: 222 24% 7%;
-    --os-foreground: 220 20% 96%;
-    --os-muted: 220 10% 67%;
-    --os-muted-soft: 220 9% 52%;
-    --os-panel: 222 22% 10%;
-    --os-panel-soft: 220 18% 14%;
-    --os-line: 220 15% 22%;
-    --os-accent: 263 68% 62%;
-    --os-success: 151 43% 44%;
-    --os-warning: 38 92% 58%;
-    --os-danger: 3 67% 62%;
-    --os-shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.16);
-    --os-shadow-panel: 0 18px 48px hsl(0 0% 0% / 0.22);
+    --os-bg: 220 9% 6%;
+    --os-foreground: 43 31% 93%;
+    --os-muted: 40 10% 70%;
+    --os-muted-soft: 40 6% 51%;
+    --os-panel: 230 11% 10%;
+    --os-panel-soft: 227 12% 15%;
+    --os-line: 43 31% 93% / 0.09;
+    --os-accent: 258 100% 71%;
+    --os-success: 148 43% 61%;
+    --os-warning: 30 85% 65%;
+    --os-danger: 5 79% 69%;
+    --os-shadow-soft: 0 1px 2px hsl(0 0% 0% / 0.22);
+    --os-shadow-panel: 0 18px 48px hsl(0 0% 0% / 0.28);
   }
 
   .os-app {
@@ -1137,6 +1137,218 @@
   .app-light [class~="shadow-xl"],
   .app-light [class~="shadow-2xl"] {
     box-shadow: 0 1px 2px rgba(17, 19, 24, 0.04) !important;
+  }
+
+  .app-theme {
+    font-size: 14px;
+    line-height: 1.45;
+    --os-text-primary: hsl(var(--foreground));
+    --os-text-secondary: hsl(var(--muted-foreground));
+    --os-text-tertiary: hsl(var(--muted-foreground) / 0.82);
+    --os-text-quieter: hsl(var(--muted-foreground) / 0.66);
+    --os-text-accent: hsl(var(--brand-accent));
+    --os-border-subtle: hsl(var(--border));
+    --os-surface-soft: hsl(var(--foreground) / 0.025);
+    --os-surface-selected: hsl(var(--foreground) / 0.055);
+  }
+
+  .app-theme h1,
+  .app-theme h2,
+  .app-theme h3,
+  .app-theme h4,
+  .app-theme h5,
+  .app-theme h6,
+  .app-theme .font-display,
+  .app-theme [class*="font-display"] {
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+    color: hsl(var(--foreground)) !important;
+    font-weight: 600 !important;
+  }
+
+  .app-theme h1 {
+    font-size: clamp(1.7rem, 1.35rem + 1.1vw, 2.5rem) !important;
+    line-height: 1.04 !important;
+  }
+
+  .app-theme h2 {
+    font-size: clamp(1.15rem, 1rem + 0.5vw, 1.55rem) !important;
+    line-height: 1.16 !important;
+  }
+
+  .app-theme h3 {
+    font-size: 1rem !important;
+    line-height: 1.25 !important;
+  }
+
+  .app-theme h4,
+  .app-theme h5,
+  .app-theme h6 {
+    font-size: 0.95rem !important;
+    line-height: 1.3 !important;
+  }
+
+  .app-theme p,
+  .app-theme li,
+  .app-theme label,
+  .app-theme textarea,
+  .app-theme input,
+  .app-theme select {
+    color: inherit;
+  }
+
+  .app-theme [class*="font-bold"],
+  .app-theme [class*="font-extrabold"],
+  .app-theme [class*="font-black"] {
+    font-weight: 600 !important;
+  }
+
+  .app-theme [class*="font-semibold"] {
+    font-weight: 500 !important;
+  }
+
+  .app-theme [class*="font-medium"] {
+    font-weight: 400 !important;
+  }
+
+  .app-theme button p,
+  .app-theme button span,
+  .app-theme [role="button"] p,
+  .app-theme [role="button"] span {
+    font-weight: inherit;
+  }
+
+  .app-theme strong,
+  .app-theme b {
+    font-weight: 600;
+  }
+
+  .app-theme [class*="uppercase"] {
+    letter-spacing: 0.04em !important;
+    font-weight: 600 !important;
+  }
+
+  .app-theme [class*="tracking-widest"],
+  .app-theme [class*="tracking-wide"],
+  .app-theme [class*="tracking-tight"],
+  .app-theme [class*="tracking-["] {
+    letter-spacing: 0.04em !important;
+  }
+
+  .app-theme h1[class*="tracking"],
+  .app-theme h2[class*="tracking"],
+  .app-theme h3[class*="tracking"],
+  .app-theme h4[class*="tracking"],
+  .app-theme .font-display[class*="tracking"] {
+    letter-spacing: 0 !important;
+  }
+
+  .app-theme .manager-read-card {
+    border: 1px solid hsl(var(--foreground) / 0.1);
+    border-left: 4px solid hsl(var(--foreground) / 0.18);
+    background: hsl(var(--foreground) / 0.024);
+    box-shadow: inset 0 1px 2px rgba(17, 19, 24, 0.012);
+  }
+
+  .app-theme-dark .app-theme .manager-read-card {
+    border-color: hsl(var(--brand-accent) / 0.18);
+    border-left-color: hsl(var(--brand-accent));
+    background: hsl(var(--brand-accent) / 0.055);
+  }
+
+  .app-theme-dark .app-theme {
+    background:
+      radial-gradient(circle at 22% -10%, hsl(var(--brand-accent) / 0.09), transparent 32rem),
+      hsl(var(--surface-canvas)) !important;
+    color: hsl(var(--foreground)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="bg-white"],
+  .app-theme-dark .app-theme [class*='bg-[#fafbfc]'],
+  .app-theme-dark .app-theme [class*='bg-[#f8f9fa]'],
+  .app-theme-dark .app-theme [class*='bg-[#f9fafb]'] {
+    background-color: hsl(var(--surface-elevated)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="bg-background"] {
+    background-color: hsl(var(--surface-panel)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="bg-foreground/["],
+  .app-theme-dark .app-theme [class*="bg-foreground\\/"] {
+    background-color: hsl(var(--foreground) / 0.055) !important;
+  }
+
+  .app-theme-dark .app-theme [class*='bg-[#fffbeb]'],
+  .app-theme-dark .app-theme [class*='bg-[#fff8f3]'],
+  .app-theme-dark .app-theme [class*='bg-[#f97316]/10'],
+  .app-theme-dark .app-theme [class*='bg-[#f97316]/12'] {
+    background-color: hsl(var(--warning) / 0.12) !important;
+  }
+
+  .app-theme-dark .app-theme [class*='text-[#92400e]'],
+  .app-theme-dark .app-theme [class*='text-[#9a3412]'],
+  .app-theme-dark .app-theme [class*='text-[#c2410c]'] {
+    color: hsl(var(--warning)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="text-black"] {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="text-muted-foreground"] {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="text-foreground/72"],
+  .app-theme-dark .app-theme [class*="text-foreground/80"],
+  .app-theme-dark .app-theme [class*="text-foreground/82"],
+  .app-theme-dark .app-theme [class*="text-foreground/84"],
+  .app-theme-dark .app-theme [class*="text-foreground/86"],
+  .app-theme-dark .app-theme [class*="text-foreground/88"],
+  .app-theme-dark .app-theme [class*="text-foreground/89"],
+  .app-theme-dark .app-theme [class*="text-foreground/90"] {
+    color: hsl(var(--foreground) / 0.86) !important;
+  }
+
+  .app-theme-dark .app-theme textarea,
+  .app-theme-dark .app-theme select {
+    background-color: hsl(var(--surface-elevated)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .app-theme-dark .app-theme input {
+    background-color: transparent !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .app-theme-dark .app-theme nav [class*="bg-foreground"][class*="text-background"] {
+    background-color: hsl(var(--brand-accent) / 0.16) !important;
+    color: hsl(var(--foreground)) !important;
+    box-shadow: inset 0 0 0 1px hsl(var(--brand-accent) / 0.22) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="border-foreground/10"],
+  .app-theme-dark .app-theme [class*="border-foreground/8"],
+  .app-theme-dark .app-theme [class*="border-foreground/5"] {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="shadow-[0_"],
+  .app-theme-dark .app-theme [class~="shadow-sm"],
+  .app-theme-dark .app-theme [class~="shadow-md"],
+  .app-theme-dark .app-theme [class~="shadow-lg"],
+  .app-theme-dark .app-theme [class~="shadow-xl"],
+  .app-theme-dark .app-theme [class~="shadow-2xl"] {
+    box-shadow: 0 18px 48px hsl(0 0% 0% / 0.28) !important;
+  }
+
+  .app-theme-dark .app-theme [class*="background-image"] {
+    background-image:
+      linear-gradient(hsl(var(--foreground) / 0.045) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.035) 1px, transparent 1px) !important;
   }
 
   .table-col-id {

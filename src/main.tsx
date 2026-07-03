@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { ProductionApp } from "./app/ProductionApp";
+import { ThemeProvider } from "./app/theme";
 import { SplitConfirmationPortal } from "./features/music/SplitConfirmationPortal";
 import { createBrowserSupabaseClient } from "./lib/supabaseClient";
 import AiLabelPrototype from "./prototype/AiLabelPrototype";
@@ -45,4 +46,4 @@ const app = splitConfirmationToken ? (
     <ProductionApp fixtureMode={fixtureMode} initialView={initialView} />
   );
 
-createRoot(document.getElementById("root")!).render(app);
+createRoot(document.getElementById("root")!).render(<ThemeProvider>{app}</ThemeProvider>);

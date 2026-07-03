@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
+import { compactMovementTitle, movementKey, splitAttentionItems } from "../features/desk/deskAttention";
 import { DeskHQScreen } from "../features/desk/DeskHQ";
 import { ProductionDrawers } from "../features/drawers/ProductionDrawers";
 import {
@@ -22,6 +23,7 @@ import {
   createSupabaseSpotifyArtistAdapter,
   createSupabaseWorkspaceLoader,
 } from "../services/productionSupabase";
+import { useTheme } from "./theme";
 import type {
   AgentViewModel,
   AttentionItem,
@@ -321,6 +323,7 @@ function CleanProductionWorkspace({
   onWorkspaceChange?: (workspace: ProductionWorkspace) => void;
   onSignOut?: () => void;
 }) {
+  const { mode: themeMode, resolvedMode: resolvedThemeMode, setMode: setThemeMode } = useTheme();
   const [view, setView] = useState<CleanProductionView>(initialView);
   const [profile, setProfile] = useState<ArtistProfileViewModel | null>(null);
   const [attention, setAttention] = useState<AttentionItem[]>([]);
@@ -455,6 +458,7 @@ function CleanProductionWorkspace({
 
   const activeSection = sectionForView(view);
   const mobileTitle = activeSection === "labelHQ" ? "Desk HQ" : activeSection === "staff" ? "Team Agents" : activeSection;
+  const mobileAttentionCount = splitAttentionItems(attention).actionable.length;
   const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0] ?? null;
   const activeAgent = selectedAgent ?? agents[1] ?? agents[0] ?? null;
   const activeConversation = selectedConversation ?? conversations[0] ?? null;
@@ -995,14 +999,14 @@ function CleanProductionWorkspace({
   }
 
   return (
-    <div className="app-light min-h-screen bg-background text-foreground selection:bg-brand-accent/15">
+    <div className="app-theme min-h-screen bg-background text-foreground selection:bg-brand-accent/15">
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
         <DeskRail active={activeSection} onNavigate={navigate} onSignOut={onSignOut} />
         <main className="min-w-0 py-0 lg:px-8 lg:py-7">
           <MobileChrome
             active={activeSection}
             title={mobileTitle}
-            notificationCount={attention.length + movement.length}
+            notificationCount={mobileAttentionCount + movement.length}
             onOpenNotifications={() => setMobileNotificationsOpen(true)}
             onNavigate={navigate}
           />
@@ -1113,7 +1117,15 @@ function CleanProductionWorkspace({
             />
           ) : null}
           {view === "artistProfileWorkspace" ? (
-            <SettingsScreen profile={profile} onChange={setProfile} onBack={() => navigate("labelHQ")} onSignOut={onSignOut} />
+            <SettingsScreen
+              profile={profile}
+              onChange={setProfile}
+              onBack={() => navigate("labelHQ")}
+              onSignOut={onSignOut}
+              themeMode={themeMode}
+              resolvedThemeMode={resolvedThemeMode}
+              onThemeModeChange={setThemeMode}
+            />
           ) : null}
         </main>
       </div>
@@ -1178,7 +1190,7 @@ function SetupManagerActivityScreen({
   }, [pending, step]);
 
   return (
-    <main className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+    <main className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
       <div className="pointer-events-none absolute inset-0 opacity-[0.2] [background-image:linear-gradient(rgba(17,19,24,0.045)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.035)_1px,transparent_1px)] [background-size:44px_44px]" />
       <section className="relative z-10 mx-auto grid min-h-[calc(100vh-40px)] w-full max-w-xl place-items-center">
         <div className="w-full text-center">
@@ -1246,6 +1258,9 @@ function MobileNotificationSheet({
   onDrawer: (drawer: DrawerKind) => void;
   onClose: () => void;
 }) {
+  const [activityHistoryOpen, setActivityHistoryOpen] = useState(false);
+  const { actionable, sourceContext } = splitAttentionItems(attention);
+
   if (!open) {
     return null;
   }
@@ -1261,7 +1276,7 @@ function MobileNotificationSheet({
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-foreground/8 bg-background px-4 py-3">
           <div>
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Desk notifications</p>
-            <h2 className="font-display mt-1 text-[18px] font-semibold leading-tight text-foreground">Attention and movement</h2>
+            <h2 className="font-display mt-1 text-[18px] font-semibold leading-tight text-foreground">Today's Attention</h2>
           </div>
           <button
             type="button"
@@ -1275,15 +1290,15 @@ function MobileNotificationSheet({
         <div className="grid gap-5 px-4 py-4">
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Needs Attention</p>
-              <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{attention.length}</span>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Today's Attention</p>
+              <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{actionable.length}</span>
             </div>
             <div className="grid gap-2">
-              {attention.length ? attention.slice(0, 4).map((item) => (
+              {actionable.length ? actionable.slice(0, 3).map((item) => (
                 <button
                   key={item.title}
                   type="button"
-                  className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-left"
+                  className="rounded-[14px] border border-foreground/8 bg-foreground px-3.5 py-3 text-left text-background"
                   onClick={() => {
                     onClose();
                     if (item.target) {
@@ -1295,33 +1310,44 @@ function MobileNotificationSheet({
                     }
                   }}
                 >
-                  <span className="block text-[13px] font-semibold text-foreground">{item.title}</span>
-                  <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-muted-foreground/82">{item.body}</span>
+                  <span className="block text-[13px] font-semibold">{item.title}</span>
+                  <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-background/76">{item.body}</span>
                 </button>
               )) : (
-                <p className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-[12px] font-medium text-muted-foreground">No urgent items right now.</p>
+                <div className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
+                  <p className="text-[13px] font-bold text-foreground">No action needed</p>
+                  <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground/82">No decisions, approvals, or blockers are waiting on you.</p>
+                </div>
               )}
             </div>
+            {sourceContext.length ? (
+              <div className="mt-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Source context</p>
+                <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{sourceContext[0].body}</p>
+              </div>
+            ) : null}
           </section>
 
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Recent Movement</p>
-              <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{movement.length}</span>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Activity log</p>
+              <button type="button" className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground" onClick={() => setActivityHistoryOpen((value) => !value)}>
+                {activityHistoryOpen ? "Hide history" : "View activity history"}
+              </button>
             </div>
             <div className="grid gap-2">
-              {movement.length ? movement.slice(0, 6).map((item, index) => (
-                <div key={`${item.title}-${item.time}-${index}`} className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
+              {movement.length ? (activityHistoryOpen ? movement : movement.slice(0, 3)).map((item, index) => (
+                <div key={movementKey(item, index)} className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
                   <span className="mt-1.5 h-2 w-2 rounded-full bg-foreground/20" aria-hidden="true" />
                   <span className="min-w-0">
-                    <span className="block text-[13px] font-semibold leading-tight text-foreground">{item.title}</span>
+                    <span className="block text-[13px] font-semibold leading-tight text-foreground">{activityHistoryOpen ? item.title : compactMovementTitle(item.title)}</span>
                     <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
                       {item.label} / {item.time}
                     </span>
                   </span>
                 </div>
               )) : (
-                <p className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-[12px] font-medium text-muted-foreground">No new movement yet.</p>
+                <p className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-[12px] font-medium text-muted-foreground">No new activity yet.</p>
               )}
             </div>
           </section>
@@ -1556,7 +1582,7 @@ function SpotifyIdentityGate({
 
 function AuthFrame({ children, logoTestId }: { children: ReactNode; logoTestId?: string }) {
   return (
-    <div data-testid="auth-shell" className="app-light relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+    <div data-testid="auth-shell" className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
       <div className="pointer-events-none absolute inset-0 opacity-[0.38] [background-image:linear-gradient(rgba(17,19,24,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.045)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 mx-auto grid min-h-[calc(100vh-2.5rem)] w-full max-w-6xl items-center gap-8 lg:grid-cols-[minmax(0,0.92fr)_minmax(22rem,0.72fr)]">
         <aside className="hidden max-w-xl lg:block">

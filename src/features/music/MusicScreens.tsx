@@ -1444,7 +1444,7 @@ function ArtworkFrame({
   }[size];
   const initials = title.split(" ").map((word) => word[0]).join("").slice(0, 2).toUpperCase();
   return (
-    <span className={cn("relative flex shrink-0 items-center justify-center overflow-hidden border border-foreground/8 bg-foreground text-background", classes)}>
+    <span className={cn("relative flex shrink-0 items-center justify-center overflow-hidden border border-foreground/8 bg-foreground/[0.07] text-muted-foreground", classes)}>
       {imageUrl ? (
         <>
           <img src={imageUrl} alt={`${title} cover artwork`} className="h-full w-full object-cover" />

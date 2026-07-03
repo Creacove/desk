@@ -368,7 +368,7 @@ function MissionRoom({
       </div>
 
       <div className="min-h-[400px]">
-        {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onDrawer={onDrawer} /> : null}
+        {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onTab={onTab} /> : null}
         {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} /> : null}
         {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
         {tab === "notes" ? <NotesPanel notes={notes} /> : null}
@@ -381,63 +381,56 @@ function MissionRoom({
 function MissionPulse({
   mission,
   checkpoints,
-  onDrawer,
+  onTab,
 }: {
   mission: MissionViewModel;
   checkpoints: MissionCheckpointViewModel[];
-  onDrawer: (drawer: DrawerKind) => void;
+  onTab: (tab: MissionRoomTab) => void;
 }) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
-  const changes = [
-    activeBlocker ? `${activeBlocker.title} is the active blocker.` : "No active blocker is recorded.",
-    mission.nextTask ? `Next task: ${mission.nextTask}.` : "No next task is recorded.",
-    mission.review ? `Next review: ${mission.review}.` : "Review point is not set.",
-  ];
+  const requiredActionTitle = activeBlocker?.nextAction || mission.nextTask;
+  const requiredActionReason = activeBlocker?.blockedReason || activeBlocker?.dependencyImpact;
 
   return (
-    <section className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <section data-testid="mission-pulse" className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="p-5 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission pulse</span>
             <span className="rounded-full border border-brand-accent/15 bg-brand-accent/[0.07] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">{mission.status}</span>
           </div>
           <h4 className="mt-3 font-display text-[24px] font-bold leading-tight tracking-tight text-foreground">{mission.review}</h4>
-          <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+          <div className="mt-5 rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-5">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Recommendation</p>
-            <p className="mt-2 text-[15px] font-semibold leading-relaxed text-foreground">{mission.recommendation}</p>
-            <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/86">{mission.summary}</p>
-          </div>
-          <div className="mt-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">What changed</p>
-            <div className="mt-2 grid gap-2">
-              {changes.map((change) => (
-                <div key={change} className="rounded-[12px] border border-foreground/6 bg-background/76 px-3.5 py-2.5 text-[12px] font-semibold leading-relaxed text-foreground/86">
-                  {change}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="mt-5 flex flex-wrap gap-3">
-            <ProductButton variant="secondary" onClick={() => onDrawer("missionRecord")}>Mission recap</ProductButton>
-            <ProductButton variant="secondary" onClick={() => onDrawer("evidence")}>View evidence</ProductButton>
+            <p className="mt-3 text-[17px] font-semibold leading-relaxed text-foreground">{mission.recommendation}</p>
+            <p className="mt-4 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{mission.summary}</p>
           </div>
         </div>
+
         <div className="border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Mission state</p>
-          <div className="mt-4 grid gap-3">
-            {[
-              { label: "Active blocker", value: activeBlocker?.title ?? "None" },
-              { label: "Next review", value: mission.review },
-              { label: "Next task", value: mission.nextTask },
-              { label: "Music subject", value: mission.musicSubject },
-            ].map((item) => (
-              <div key={item.label} className="rounded-[14px] border border-foreground/8 bg-foreground/[0.02] px-3.5 py-3">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/72">{item.label}</p>
-                <p className="mt-1 text-[12.5px] font-bold leading-relaxed text-foreground/82">{item.value}</p>
-              </div>
-            ))}
-          </div>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Next Required Action</p>
+          {requiredActionTitle ? (
+            <div className="mt-4 rounded-[18px] border border-foreground/8 bg-background p-4 shadow-sm">
+              <p className="text-[15px] font-bold leading-snug text-foreground">{requiredActionTitle}</p>
+              {requiredActionReason ? (
+                <p className="mt-3 text-[12.5px] font-semibold leading-relaxed text-muted-foreground/84">{requiredActionReason}</p>
+              ) : (
+                <p className="mt-3 text-[12.5px] font-semibold leading-relaxed text-muted-foreground/84">This is the next task that keeps the recommendation moving.</p>
+              )}
+              <button
+                type="button"
+                className="mt-4 inline-flex h-9 items-center justify-center rounded-[10px] bg-foreground px-3.5 text-[12px] font-bold text-background transition-transform hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
+                onClick={() => onTab("tasks")}
+              >
+                Open work queue
+              </button>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-[18px] border border-foreground/8 bg-background p-4 shadow-sm">
+              <p className="text-[15px] font-bold leading-snug text-foreground">No action required</p>
+              <p className="mt-3 text-[12.5px] font-semibold leading-relaxed text-muted-foreground/84">Next review: {mission.review}.</p>
+            </div>
+          )}
         </div>
       </div>
     </section>

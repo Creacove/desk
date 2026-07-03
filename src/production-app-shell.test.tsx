@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
 import { ConversationWorkspace } from "./features/manager/ManagerScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
-import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
+import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
   ProductionProfileSetupService,
@@ -709,8 +709,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Today's Brief")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Generate Today's Brief" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
-    expect(screen.getByText("Needs Attention")).toBeInTheDocument();
-    expect(screen.getByText("Recent Movement")).toBeInTheDocument();
+    expect(screen.getByText("Today's Attention")).toBeInTheDocument();
+    expect(screen.getByText("Activity log")).toBeInTheDocument();
+    expect(screen.getByText("No action needed")).toBeInTheDocument();
+    expect(screen.queryByText("Private analytics missing")).not.toBeInTheDocument();
     expect(screen.getByText("Source / Just now")).toBeInTheDocument();
     expect(screen.getAllByText("Team Agents").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i })).toBeInTheDocument();
@@ -891,6 +893,54 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
   }, 20000);
 
+  it("keeps Desk HQ artist-facing sections compact and low-overload", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.staff.loadAgents = async () => productionFixtureData.agents;
+    repositories.missions.loadMissions = async () => [1, 2, 3, 4, 5].map((index) => ({
+      id: `mission-density-${index}`,
+      title: `Mission Density ${index}`,
+      status: index === 2 ? "blocked" : "active",
+      progress: index * 12,
+      review: `Review ${index}`,
+      summary: `This long mission description ${index} should stay off Desk HQ so artists do not have to parse paragraph cards before deciding where to go.`,
+      recommendation: `Keep mission ${index} moving.`,
+      musicSubject: "Artist-wide",
+      nextTask: `Next action ${index}`,
+    }));
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+
+    const managerReadCard = screen.getByTestId("desk-manager-read-card");
+    expect(managerReadCard.className).toContain("manager-read-card");
+    expect(managerReadCard.className).not.toContain("border-l-brand-accent");
+
+    const agentCards = screen.getAllByTestId("desk-agent-card");
+    expect(agentCards).toHaveLength(5);
+    for (const card of agentCards) {
+      expect(card).toHaveTextContent(/Open|Preview/);
+      expect(card.textContent?.length ?? 0).toBeLessThan(95);
+    }
+    expect(screen.queryByText("A compact operating team for decisions, rollout, rights, deals, and live work.")).not.toBeInTheDocument();
+
+    const missionCards = screen.getAllByTestId("desk-active-mission-card");
+    expect(missionCards).toHaveLength(4);
+    expect(within(missionCards[0]).getByText("Mission Density 1")).toBeInTheDocument();
+    expect(within(missionCards[3]).getByText("Mission Density 4")).toBeInTheDocument();
+    expect(screen.queryByText("Mission Density 5")).not.toBeInTheDocument();
+    expect(screen.queryByText(/This long mission description/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Open mission")).not.toBeInTheDocument();
+    expect(within(missionCards[0]).getByText("12%")).toBeInTheDocument();
+  }, 20000);
+
   it("puts mobile Desk HQ attention and movement behind a notification sheet", async () => {
     render(
       <ProductionApp
@@ -909,10 +959,56 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
     const notificationSheet = await screen.findByRole("dialog", { name: "Desk notifications" });
-    expect(notificationSheet).toHaveTextContent("Needs Attention");
-    expect(notificationSheet).toHaveTextContent("Recent Movement");
-    expect(notificationSheet).toHaveTextContent("Private analytics missing");
+    expect(notificationSheet).toHaveTextContent("Today's Attention");
+    expect(notificationSheet).toHaveTextContent("Activity log");
+    expect(notificationSheet).toHaveTextContent("No action needed");
+    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");
     expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
+  }, 20000);
+
+  it("keeps Desk HQ movement compact and moves older activity into history", async () => {
+    const longMovement =
+      "The assignee reports the work is done, but there is no verifiable evidence in the mission folder or in the task payload, so the decision rule still requires private exports plus a Data Lead power check.";
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.desk.loadDesk = async () => ({
+      priority: [],
+      attention: [
+        {
+          title: "Commission Data Lead power check",
+          body: "The market proof mission cannot advance until the Data Lead validates export quality.",
+          tone: "warning",
+          target: "missionsWorkspace",
+        },
+      ],
+      movement: [
+        { label: "Task", title: longMovement, time: "2d ago" },
+        { label: "Music", title: "Generated Manager Read for GBESUNMO.", time: "3m ago" },
+        { label: "System", title: "Stored Chartmetric enrichment snapshot for GBESUNMO.", time: "5m ago" },
+        { label: "System", title: "Started Chartmetric enrichment for GBESUNMO.", time: "6m ago" },
+      ],
+      todayBrief: await repositoriesFor("Nova Vale").desk.loadDesk().then((desk) => desk.todayBrief),
+    });
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(screen.getByText("Today's Attention")).toBeInTheDocument();
+    expect(screen.getByText("Commission Data Lead power check")).toBeInTheDocument();
+    expect(screen.queryByText(longMovement)).not.toBeInTheDocument();
+    expect(screen.getByText(/The assignee reports the work is done, but there is no verifiable evidence/)).toBeInTheDocument();
+    expect(screen.queryByText("Started Chartmetric enrichment for GBESUNMO.")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View activity history" }));
+    const history = await screen.findByRole("dialog", { name: "Activity history" });
+    expect(history).toHaveTextContent(longMovement);
+    expect(history).toHaveTextContent("Started Chartmetric enrichment for GBESUNMO.");
   }, 20000);
 
   it("keeps duplicate Desk movement titles from producing React key warnings", async () => {
@@ -1017,8 +1113,8 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     const desk = screen.getByTestId("desk-mobile-home");
     expect(within(desk).queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
-    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("border-l-brand-accent");
-    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("border-l-foreground");
+    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("manager-read-card");
+    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("border-l-brand-accent");
     expect(within(desk).getByText("Manager's Read")).toBeInTheDocument();
     expect(within(desk).getByTestId("desk-mobile-manager-read")).toHaveTextContent(managerReadEnding);
     expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("EV-204");
@@ -3301,6 +3397,66 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByRole("button", { name: "Get first Manager plan" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /Run Mission Genesis/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Test mission page" })).not.toBeInTheDocument();
+  }, 20000);
+
+  it("reduces Mission Pulse to recommendation and next required action", async () => {
+    const mission: MissionViewModel = {
+      id: "mission-market-proof",
+      title: "Touring Plan - Market Selection & Low-Risk Live Test",
+      status: "blocked",
+      progress: 5,
+      review: "Nigeria Market Proof (Lagos + Abuja)",
+      summary: "Validate city-level demand before any promoter deposit is released.",
+      recommendation: "Keep mission active. Manager and Label Liaison must produce export confirmation before Touring Ops collects promoter quotes.",
+      musicSubject: "No linked music subject",
+      nextTask: "Commission Data Lead power check & smartlink mapping",
+      checkpoints: [
+        {
+          id: "checkpoint-market-proof",
+          phase: 1,
+          title: "Nigeria Market Proof (Lagos + Abuja)",
+          status: "Needs revision",
+          question: "Is city demand strong enough to unlock touring quotes?",
+          requiredTaskIds: ["task-power-check"],
+          dependsOnCheckpointIds: [],
+          unlocks: ["Promoter quote collection"],
+          blockedReason: "Private exports and Shazam heatmap snapshots are missing.",
+          dependencyImpact: "Touring Ops should not collect promoter quotes until this proof exists.",
+          watchedSignals: ["Spotify city export", "Shazam heatmap", "Smartlink geography"],
+          decisionRule: "Do not advance without verifiable geography evidence.",
+          recommendation: "Keep the checkpoint blocked until export proof exists.",
+          resultSummary: "The blocker is still open.",
+          nextAction: "Commission Data Lead power check & smartlink mapping",
+        },
+      ],
+      tasks: [],
+      notes: [],
+      events: [],
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.missions.loadMissions = async () => [mission];
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /Touring Plan - Market Selection/i })[0]);
+
+    const pulse = await screen.findByTestId("mission-pulse");
+    expect(pulse).toHaveTextContent("Recommendation");
+    expect(pulse).toHaveTextContent("Next Required Action");
+    expect(pulse).toHaveTextContent("Commission Data Lead power check & smartlink mapping");
+    expect(pulse).toHaveTextContent("Private exports and Shazam heatmap snapshots are missing.");
+    expect(pulse).not.toHaveTextContent("What changed");
+    expect(pulse).not.toHaveTextContent("Mission state");
+    expect(within(pulse).queryByRole("button", { name: "Mission recap" })).not.toBeInTheDocument();
+    expect(within(pulse).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
   }, 20000);
 
   it("keeps production code prototype-parity styled without independent os-* UI classes", () => {
