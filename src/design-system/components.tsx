@@ -201,7 +201,7 @@ export function WorkspaceShell({
 
 const navItems: Array<{ label: string; active: NavSection; view: CleanProductionView; icon: LucideIcon }> = [
   { label: "Desk HQ", active: "labelHQ", view: "labelHQ", icon: Gauge },
-  { label: "Music", active: "music", view: "musicWorkspace", icon: Library },
+  { label: "Catalog", active: "music", view: "musicWorkspace", icon: Library },
   { label: "Team Agents", active: "staff", view: "staffWorkspace", icon: UsersRound },
   { label: "Missions", active: "missions", view: "missionsWorkspace", icon: ClipboardCheck },
 ];
@@ -286,7 +286,7 @@ function NavButton({
   return (
     <button
       type="button"
-      aria-label={item.label === "Music" ? "Open Music workspace" : undefined}
+      aria-label={item.label === "Catalog" ? "Open Catalog workspace" : undefined}
       onClick={() => onNavigate(item.view)}
       className={cn(
         "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 font-ui text-[13px] font-semibold transition-colors duration-200",

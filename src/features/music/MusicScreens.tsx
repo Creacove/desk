@@ -47,8 +47,9 @@ export function MusicWorkspace({
   const songs = displayedMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
   const projects = displayedMusic.filter((object) => object.kind === "project");
   const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
-  const linkedMissions = (selected?.linkedMissionIds ?? []).map((id) => missions.find((mission) => mission.id === id)).filter(Boolean) as MissionViewModel[];
   const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
+  const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
+  const linkedTaskIds = mergeLinkedTaskIds(selected?.linkedTaskIds ?? [], linkedMissions);
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
@@ -173,13 +174,12 @@ export function MusicWorkspace({
       >
       {mode === "library" ? (
         <>
-          <WorkspaceHeader eyebrow="Artist objects" title="Music" />
+          <WorkspaceHeader eyebrow="Catalog" title="Catalog" />
           <section data-testid="music-library" className="grid gap-5">
             <div className="flex flex-col gap-4 border-b border-foreground/5 pb-5 lg:flex-row lg:items-end lg:justify-between">
               <div className="max-w-2xl">
-                <p className="font-display text-[18px] font-bold tracking-tight text-foreground mb-2">Recorded work under management</p>
                 <p className="text-[14px] font-semibold leading-relaxed text-muted-foreground/82">
-                  Songs stay atomic; projects collect songs without duplicating their state.
+                  Songs and projects connected to active work.
                 </p>
               </div>
               <div data-testid="music-mobile-controls" className="flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
@@ -245,6 +245,7 @@ export function MusicWorkspace({
         <MusicSongDetail
           song={selected}
           linkedMissions={linkedMissions}
+          linkedTaskIds={linkedTaskIds}
           activeTab={songRoomTab}
           onTabChange={setSongRoomTab}
           onUploadAsset={(asset) => {
@@ -270,6 +271,7 @@ export function MusicWorkspace({
           project={selected}
           tracklist={tracklist ?? []}
           linkedMissions={linkedMissions}
+          linkedTaskIds={linkedTaskIds}
           onBack={backToLibrary}
           onOpenSong={(song) => openObject(song, "projects")}
           onGenerateBrief={() => generateBrief(selected.id, "music_project")}
@@ -311,6 +313,65 @@ export function MusicWorkspace({
       ) : null}
     </section>
   );
+}
+
+function findCatalogLinkedMissions(
+  object: MusicObjectViewModel,
+  missions: MissionViewModel[],
+  tracklist: MusicObjectViewModel[] = [],
+) {
+  const candidates = object.kind === "project" ? [object, ...tracklist] : [object];
+  return uniqueMissions(missions.filter((mission) => candidates.some((candidate) => isMissionLinkedToCatalogObject(mission, candidate))));
+}
+
+function isMissionLinkedToCatalogObject(mission: MissionViewModel, object: MusicObjectViewModel) {
+  if ((object.linkedMissionIds ?? []).includes(mission.id)) return true;
+
+  const expectedSubjectType = object.kind === "project" ? "music_project" : "music_item";
+  if (mission.subjectType === expectedSubjectType && mission.subjectId === object.id) return true;
+
+  const objectTitle = normalizeCatalogLinkText(object.title);
+  if (!objectTitle) return false;
+
+  const missionSubject = normalizeCatalogLinkText(mission.musicSubject);
+  if (missionSubject && (missionSubject === objectTitle || missionSubject.includes(objectTitle))) return true;
+
+  return [
+    mission.title,
+    mission.summary,
+    mission.recommendation,
+    mission.nextTask,
+    ...(mission.checkpoints ?? []).flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.recommendation, checkpoint.resultSummary]),
+    ...(mission.tasks ?? []).flatMap((task) => [task.title, task.purpose]),
+  ]
+    .map(normalizeCatalogLinkText)
+    .some((text) => Boolean(text && text.includes(objectTitle)));
+}
+
+function uniqueMissions(missions: MissionViewModel[]) {
+  const seen = new Set<string>();
+  return missions.filter((mission) => {
+    if (seen.has(mission.id)) return false;
+    seen.add(mission.id);
+    return true;
+  });
+}
+
+function mergeLinkedTaskIds(explicitTaskIds: string[], linkedMissions: MissionViewModel[]) {
+  return [
+    ...new Set([
+      ...explicitTaskIds,
+      ...linkedMissions.flatMap((mission) => (mission.tasks ?? []).map((task) => task.id)),
+    ]),
+  ];
+}
+
+function normalizeCatalogLinkText(value: string | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
 }
 
 function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; index: number; onOpen: () => void }) {
@@ -508,6 +569,7 @@ function mobileDetailFieldTestId(label: string) {
 function MusicSongDetail({
   song,
   linkedMissions,
+  linkedTaskIds,
   activeTab,
   onTabChange,
   onUploadAsset,
@@ -525,6 +587,7 @@ function MusicSongDetail({
 }: {
   song: MusicObjectViewModel;
   linkedMissions: MissionViewModel[];
+  linkedTaskIds: string[];
   activeTab: SongRoomTab;
   onTabChange: (tab: SongRoomTab) => void;
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
@@ -656,7 +719,7 @@ function MusicSongDetail({
               <p data-testid="manager-read-copy" className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{managerReadCopy}</p>
             </div>
           </div>
-          <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={song.linkedTaskIds ?? []} onNavigate={onNavigate} />
+          <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={linkedTaskIds} onNavigate={onNavigate} />
         </div>
       ) : null}
 
@@ -829,6 +892,7 @@ function MusicProjectDetail({
   project,
   tracklist,
   linkedMissions,
+  linkedTaskIds,
   onBack,
   onOpenSong,
   onGenerateBrief,
@@ -840,6 +904,7 @@ function MusicProjectDetail({
   project: MusicObjectViewModel;
   tracklist: MusicObjectViewModel[];
   linkedMissions: MissionViewModel[];
+  linkedTaskIds: string[];
   onBack: () => void;
   onOpenSong: (song: MusicObjectViewModel) => void;
   onGenerateBrief: () => void;
@@ -924,7 +989,7 @@ function MusicProjectDetail({
           </div>
           <MusicProjectBrief project={project} tracklist={tracklist} onGenerateBrief={onGenerateBrief} briefPending={briefPending} briefError={briefError} />
         </div>
-        <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={project.linkedTaskIds ?? []} onNavigate={onNavigate} />
+        <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={linkedTaskIds} onNavigate={onNavigate} />
       </div>
     </section>
   );
@@ -1085,7 +1150,7 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
-            aria-label="Back to Music from mobile room"
+            aria-label="Back to Catalog from mobile room"
             onClick={onBack}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-muted-foreground"
           >
@@ -1125,7 +1190,7 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
       <div data-testid="music-detail-desktop-top" className="hidden rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:block">
         <button type="button" onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
-          Back to Music
+          Back to Catalog
         </button>
         <div className="grid gap-5 lg:grid-cols-[96px_minmax(0,1fr)_280px] lg:items-end">
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />

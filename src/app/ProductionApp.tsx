@@ -457,7 +457,12 @@ function CleanProductionWorkspace({
   }, [repositories]);
 
   const activeSection = sectionForView(view);
-  const mobileTitle = activeSection === "labelHQ" ? "Desk HQ" : activeSection === "staff" ? "Team Agents" : activeSection;
+  const mobileTitle =
+    activeSection === "labelHQ" ? "Desk HQ" :
+    activeSection === "music" ? "Catalog" :
+    activeSection === "staff" ? "Team Agents" :
+    activeSection === "missions" ? "Missions" :
+    "Settings";
   const mobileAttentionCount = splitAttentionItems(attention).actionable.length;
   const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0] ?? null;
   const activeAgent = selectedAgent ?? agents[1] ?? agents[0] ?? null;
@@ -1014,9 +1019,7 @@ function CleanProductionWorkspace({
             <DeskHQScreen
               profile={profile}
               todayBrief={todayBrief}
-              todayBriefPending={todayBriefPending}
               todayBriefError={todayBriefError}
-              publicContextPending={publicContextPending}
               attention={attention}
               movement={movement}
               agents={agents}
@@ -1024,8 +1027,6 @@ function CleanProductionWorkspace({
               music={music}
               onNavigate={navigate}
               onManager={openManager}
-              onGenerateTodaysBrief={generateTodaysBrief}
-              onRefreshPublicContext={refreshPublicContext}
               onLockedAgent={(agent) => {
                 setSelectedAgent(agent);
                 navigate("lockedAgentWorkspace");

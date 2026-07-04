@@ -155,6 +155,8 @@ export type MissionViewModel = {
   summary: string;
   recommendation: string;
   musicSubject: string;
+  subjectType?: "artist" | "music_item" | "music_project";
+  subjectId?: string;
   nextTask: string;
   tasks?: MissionTaskViewModel[];
   checkpoints?: MissionCheckpointViewModel[];
