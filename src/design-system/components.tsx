@@ -139,11 +139,10 @@ export function TextAreaField({ label, value, onChange }: { label: string; value
 }
 
 export function WorkspaceHeader({
-  eyebrow,
   title,
   action,
 }: {
-  eyebrow: string;
+  eyebrow?: string;
   title: string;
   action?: ReactNode;
 }) {
@@ -153,8 +152,7 @@ export function WorkspaceHeader({
       className="mb-4 hidden flex-col gap-3 lg:mb-5 lg:flex lg:flex-row lg:items-end lg:justify-between"
     >
       <div>
-        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
-        <h1 className="font-display mt-1.5 text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">{title}</h1>
+        <h1 className="font-display text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">{title}</h1>
       </div>
       {action}
     </div>

@@ -35,6 +35,7 @@ export function DeskHQScreen({
   music,
   onNavigate,
   onManager,
+  onOpenMission,
   onLockedAgent,
   onDrawer,
   onOpenMusicFocus,
@@ -49,6 +50,7 @@ export function DeskHQScreen({
   music: MusicObjectViewModel[];
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
+  onOpenMission: (missionId: string) => void;
   onLockedAgent: (agent: AgentViewModel) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
@@ -82,6 +84,7 @@ export function DeskHQScreen({
         onDrawer={onDrawer}
         onNavigate={onNavigate}
         onManager={onManager}
+        onOpenMission={onOpenMission}
         onLockedAgent={onLockedAgent}
       />
 
@@ -171,7 +174,7 @@ export function DeskHQScreen({
                   type="button"
                   data-testid="desk-active-mission-card"
                   className="group rounded-[14px] border border-foreground/10 bg-background px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/18 hover:bg-foreground/[0.014] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-                  onClick={() => onNavigate("missionsWorkspace")}
+                  onClick={() => onOpenMission(mission.id)}
                 >
                   <div className="flex min-w-0 items-start justify-between gap-4">
                     <span className="min-w-0">
@@ -360,6 +363,7 @@ function MobileDeskHome({
   onDrawer,
   onNavigate,
   onManager,
+  onOpenMission,
   onLockedAgent,
 }: {
   profile: ArtistProfileViewModel;
@@ -370,6 +374,7 @@ function MobileDeskHome({
   onDrawer: (drawer: DrawerKind) => void;
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
+  onOpenMission: (missionId: string) => void;
   onLockedAgent: (agent: AgentViewModel) => void;
 }) {
   const [metricsExpanded, setMetricsExpanded] = useState(false);
@@ -531,7 +536,7 @@ function MobileDeskHome({
           </button>
         </div>
         {activeMission ? (
-          <button type="button" className="w-full rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left" aria-label="Open mission on mobile" onClick={() => onNavigate("missionsWorkspace")}>
+          <button type="button" className="w-full rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left" aria-label="Open mission on mobile" onClick={() => onOpenMission(activeMission.id)}>
             <span className="flex items-start justify-between gap-3">
               <span className="min-w-0">
                 <span className="block text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{activeMission.status === "blocked" ? "Blocked" : "Active"}</span>

@@ -101,7 +101,7 @@ export function MissionsWorkspace({
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <div className="mb-5 flex justify-end">
-          <ProductButton variant="secondary" onClick={onOpenMissionGenesisQuestions}>
+          <ProductButton onClick={onOpenMissionGenesisQuestions}>
             Talk to Manager
           </ProductButton>
         </div>

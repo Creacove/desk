@@ -2,7 +2,7 @@ import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Pencil, Plus, 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { WorkspaceHeader } from "../../design-system/components";
 import { cn } from "../../lib/utils";
-import type { CleanProductionView, MissionViewModel, MusicObjectViewModel, MusicRepository } from "../../types/cleanProduction";
+import type { MissionViewModel, MusicObjectViewModel, MusicRepository } from "../../types/cleanProduction";
 
 type MusicTab = "songs" | "projects";
 type DetailMode = "library" | "songDetail" | "projectDetail";
@@ -16,7 +16,7 @@ export function MusicWorkspace({
   targetMusicObjectId,
   musicRepository,
   onMusicChanged,
-  onNavigate,
+  onOpenMission,
   onBack: _onBack,
 }: {
   music: MusicObjectViewModel[];
@@ -24,7 +24,7 @@ export function MusicWorkspace({
   targetMusicObjectId?: string | null;
   musicRepository: MusicRepository;
   onMusicChanged: () => Promise<void>;
-  onNavigate: (view: CleanProductionView) => void;
+  onOpenMission: (missionId: string) => void;
   onBack: () => void;
 }) {
   const [tab, setTab] = useState<MusicTab>("songs");
@@ -49,7 +49,6 @@ export function MusicWorkspace({
   const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
   const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
   const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
-  const linkedTaskIds = mergeLinkedTaskIds(selected?.linkedTaskIds ?? [], linkedMissions);
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
@@ -245,7 +244,6 @@ export function MusicWorkspace({
         <MusicSongDetail
           song={selected}
           linkedMissions={linkedMissions}
-          linkedTaskIds={linkedTaskIds}
           activeTab={songRoomTab}
           onTabChange={setSongRoomTab}
           onUploadAsset={(asset) => {
@@ -261,7 +259,7 @@ export function MusicWorkspace({
           briefPending={briefPending}
           briefError={briefError}
           onBack={backToLibrary}
-          onNavigate={onNavigate}
+          onOpenMission={onOpenMission}
           error={actionError}
         />
       ) : null}
@@ -271,13 +269,12 @@ export function MusicWorkspace({
           project={selected}
           tracklist={tracklist ?? []}
           linkedMissions={linkedMissions}
-          linkedTaskIds={linkedTaskIds}
           onBack={backToLibrary}
           onOpenSong={(song) => openObject(song, "projects")}
           onGenerateBrief={() => generateBrief(selected.id, "music_project")}
           briefPending={briefPending}
           briefError={briefError}
-          onNavigate={onNavigate}
+          onOpenMission={onOpenMission}
           error={actionError}
         />
       ) : null}
@@ -355,15 +352,6 @@ function uniqueMissions(missions: MissionViewModel[]) {
     seen.add(mission.id);
     return true;
   });
-}
-
-function mergeLinkedTaskIds(explicitTaskIds: string[], linkedMissions: MissionViewModel[]) {
-  return [
-    ...new Set([
-      ...explicitTaskIds,
-      ...linkedMissions.flatMap((mission) => (mission.tasks ?? []).map((task) => task.id)),
-    ]),
-  ];
 }
 
 function normalizeCatalogLinkText(value: string | undefined) {
@@ -569,7 +557,6 @@ function mobileDetailFieldTestId(label: string) {
 function MusicSongDetail({
   song,
   linkedMissions,
-  linkedTaskIds,
   activeTab,
   onTabChange,
   onUploadAsset,
@@ -582,12 +569,11 @@ function MusicSongDetail({
   briefPending,
   briefError,
   onBack,
-  onNavigate,
+  onOpenMission,
   error,
 }: {
   song: MusicObjectViewModel;
   linkedMissions: MissionViewModel[];
-  linkedTaskIds: string[];
   activeTab: SongRoomTab;
   onTabChange: (tab: SongRoomTab) => void;
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
@@ -600,7 +586,7 @@ function MusicSongDetail({
   briefPending: boolean;
   briefError: string | null;
   onBack: () => void;
-  onNavigate: (view: CleanProductionView) => void;
+  onOpenMission: (missionId: string) => void;
   error?: string | null;
 }) {
   const fileAssets = song.fileAssets ?? [];
@@ -630,10 +616,8 @@ function MusicSongDetail({
   const trackSnapshotSummary =
     acceptedVisibleTrackReadText(song.snapshotSummary) ??
     "Record intelligence is focused on the usable numbers already in view.";
-  const managerReadCopy =
-    acceptedVisibleTrackReadText(song.managerRead) ??
-    buildUnavailableSongManagerReadCopy(song);
-  const generateReadLabel = songManagerReadButtonLabel(song.managerReadState);
+  const managerReadCopy = acceptedVisibleTrackReadText(song.managerRead);
+  const generateReadLabel = songManagerReadButtonLabel(song.managerReadState, Boolean(managerReadCopy));
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -682,7 +666,7 @@ function MusicSongDetail({
                   className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
-                  {briefPending ? "Generating brief…" : "Regenerate brief"}
+                  {briefPending ? "Asking Manager..." : generateReadLabel}
                 </button>
               </div>
               {briefError ? (
@@ -716,10 +700,17 @@ function MusicSongDetail({
 
             <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-5">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
-              <p data-testid="manager-read-copy" className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{managerReadCopy}</p>
+              {managerReadCopy ? (
+                <p data-testid="manager-read-copy" className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{managerReadCopy}</p>
+              ) : (
+                <div data-testid="manager-read-copy" className="mt-4">
+                  <p className="text-[15px] font-semibold text-foreground">No Manager read yet</p>
+                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Ask Manager for a plain-English view of this song before making a move.</p>
+                </div>
+              )}
             </div>
           </div>
-          <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={linkedTaskIds} onNavigate={onNavigate} />
+          <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
         </div>
       ) : null}
 
@@ -892,25 +883,23 @@ function MusicProjectDetail({
   project,
   tracklist,
   linkedMissions,
-  linkedTaskIds,
   onBack,
   onOpenSong,
   onGenerateBrief,
   briefPending,
   briefError,
-  onNavigate,
+  onOpenMission,
   error,
 }: {
   project: MusicObjectViewModel;
   tracklist: MusicObjectViewModel[];
   linkedMissions: MissionViewModel[];
-  linkedTaskIds: string[];
   onBack: () => void;
   onOpenSong: (song: MusicObjectViewModel) => void;
   onGenerateBrief: () => void;
   briefPending: boolean;
   briefError: string | null;
-  onNavigate: (view: CleanProductionView) => void;
+  onOpenMission: (missionId: string) => void;
   error?: string | null;
 }) {
   const blockedTracks = tracklist.filter(isMusicBlocked);
@@ -989,7 +978,7 @@ function MusicProjectDetail({
           </div>
           <MusicProjectBrief project={project} tracklist={tracklist} onGenerateBrief={onGenerateBrief} briefPending={briefPending} briefError={briefError} />
         </div>
-        <MusicLinkedWork linkedMissions={linkedMissions} linkedTaskIds={linkedTaskIds} onNavigate={onNavigate} />
+        <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
       </div>
     </section>
   );
@@ -1012,9 +1001,8 @@ function MusicProjectBrief({
   const projectSnapshotSummary =
     acceptedVisibleTrackReadText(project.snapshotSummary) ??
     "Project intelligence is focused on the usable release and tracklist facts already in view.";
-  const managerReadCopy =
-    acceptedVisibleTrackReadText(project.managerRead) ??
-    buildVisibleProjectManagerReadFallback(project, projectIntelligenceMetrics, tracklist);
+  const managerReadCopy = acceptedVisibleTrackReadText(project.managerRead);
+  const generateReadLabel = projectManagerReadButtonLabel(project.managerReadState, Boolean(managerReadCopy));
 
   return (
     <div className="surface-elevated overflow-hidden rounded-[22px] p-5 shadow-sm sm:p-6">
@@ -1034,7 +1022,7 @@ function MusicProjectBrief({
           className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
-          {briefPending ? "Generating brief..." : "Regenerate brief"}
+          {briefPending ? "Asking Manager..." : generateReadLabel}
         </button>
       </div>
 
@@ -1069,7 +1057,14 @@ function MusicProjectBrief({
 
       <div className="mt-5 rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-5">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
-        <p data-testid="project-manager-read-copy" className="mt-4 whitespace-pre-line text-[14px] font-semibold leading-relaxed text-foreground/90">{managerReadCopy}</p>
+        {managerReadCopy ? (
+          <p data-testid="project-manager-read-copy" className="mt-4 whitespace-pre-line text-[14px] font-semibold leading-relaxed text-foreground/90">{managerReadCopy}</p>
+        ) : (
+          <div data-testid="project-manager-read-copy" className="mt-4">
+            <p className="text-[15px] font-semibold text-foreground">No Manager read yet</p>
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Ask Manager for a project-level view before turning this release into work.</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1085,40 +1080,16 @@ function managerReadStateLabel(state: MusicObjectViewModel["managerReadState"]) 
   return "Not generated";
 }
 
-function buildUnavailableSongManagerReadCopy(song: MusicObjectViewModel) {
-  if (song.managerReadState === "fallback") {
-    return `${song.title} has a saved-packet read, but no live generated Manager Read is saved for this song yet. Regenerate the read when source enrichment is available.`;
-  }
-  if (song.managerReadState === "failed") {
-    return `${song.title}'s last Manager Read generation failed. Regenerate it so the Manager can enrich the song first, then reason from the saved evidence.`;
-  }
-  return `${song.title} does not have a generated Manager Read saved yet. Use the action above to enrich this song first, then generate the Manager's read from the saved evidence.`;
+function songManagerReadButtonLabel(state: MusicObjectViewModel["managerReadState"], hasManagerRead: boolean) {
+  if (!hasManagerRead || state === "loading" || !state) return "Ask Manager for a read";
+  if (state === "failed") return "Retry Manager read";
+  return "Refresh Manager read";
 }
 
-function songManagerReadButtonLabel(state: MusicObjectViewModel["managerReadState"]) {
-  if (state === "fresh" || state === "limited") return "Regenerate brief";
-  if (state === "fallback") return "Regenerate live read";
-  return "Enrich and generate read";
-}
-
-function buildVisibleProjectManagerReadFallback(project: MusicObjectViewModel, metrics: CompactTrackMetric[], tracklist: MusicObjectViewModel[]) {
-  const trackCount = tracklist.length || project.songs?.length || project.songIds?.length || 0;
-  const countLabel = trackCount ? `${trackCount} mapped ${trackCount === 1 ? "track" : "tracks"}` : "a mapped project shape";
-  const focusTrack = tracklist[0]?.title ?? project.songs?.[0];
-  const metricRead = metrics.length
-    ? `The strongest visible facts are ${readableMetricList(metrics.slice(0, 3))}.`
-    : "The useful read should start with the release shape and the tracklist already in view.";
-  const focusRead = focusTrack
-    ? `${focusTrack} is the first song to inspect because it is the clearest mapped entry point for the project decision.`
-    : "The first action is to choose the song that should carry the project decision.";
-  return `${project.title} has ${countLabel}. ${metricRead} ${focusRead}`;
-}
-
-function readableMetricList(metrics: CompactTrackMetric[]) {
-  const values = metrics.map((metric) => `${metric.label.toLowerCase()} ${metric.value}${metric.context ? ` (${metric.context})` : ""}`);
-  if (values.length <= 1) return values[0] ?? "the visible project metrics";
-  if (values.length === 2) return `${values[0]} and ${values[1]}`;
-  return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
+function projectManagerReadButtonLabel(state: MusicObjectViewModel["managerReadState"], hasManagerRead: boolean) {
+  if (!hasManagerRead || state === "loading" || !state) return "Ask Manager for a project read";
+  if (state === "failed") return "Retry project read";
+  return "Refresh Manager read";
 }
 
 function isMusicBlocked(song: MusicObjectViewModel) {
@@ -1225,8 +1196,8 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
   );
 }
 
-function MusicLinkedWork({ linkedMissions, linkedTaskIds, onNavigate }: { linkedMissions: MissionViewModel[]; linkedTaskIds: string[]; onNavigate: (view: CleanProductionView) => void }) {
-  const hasLinkedWork = linkedMissions.length > 0 || linkedTaskIds.length > 0;
+function MusicLinkedWork({ linkedMissions, onOpenMission }: { linkedMissions: MissionViewModel[]; onOpenMission: (missionId: string) => void }) {
+  const hasLinkedWork = linkedMissions.length > 0;
 
   return (
     <aside data-testid="music-linked-work" className="surface-elevated self-start rounded-[22px] p-5 shadow-sm lg:sticky lg:top-8">
@@ -1235,11 +1206,6 @@ function MusicLinkedWork({ linkedMissions, linkedTaskIds, onNavigate }: { linked
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Linked work</p>
           <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground">Mission path</h4>
         </div>
-        {linkedTaskIds.length ? (
-          <span className="rounded-md border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-semibold text-foreground/78">
-            {linkedTaskIds.length} task{linkedTaskIds.length === 1 ? "" : "s"}
-          </span>
-        ) : null}
       </div>
 
       {hasLinkedWork ? (
@@ -1249,19 +1215,24 @@ function MusicLinkedWork({ linkedMissions, linkedTaskIds, onNavigate }: { linked
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Mission</p>
           </div>
           <div className="p-3">
-            {linkedMissions.length ? linkedMissions.map((mission) => (
-              <button key={mission.id} type="button" onClick={() => onNavigate("missionsWorkspace")} className="grid w-full gap-3 rounded-[12px] px-2 py-2 text-left transition-colors hover:bg-brand-accent/[0.04]">
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-medium leading-snug text-foreground">{mission.title}</span>
-                  <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground">{mission.review}</span>
-                </span>
-                <span className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-                    {linkedTaskIds.length} task{linkedTaskIds.length === 1 ? "" : "s"} attached
+            {linkedMissions.map((mission) => {
+              const taskCount = mission.tasks?.length ?? 0;
+              return (
+                <button key={mission.id} type="button" onClick={() => onOpenMission(mission.id)} className="grid w-full gap-3 rounded-[12px] px-2 py-2 text-left transition-colors hover:bg-brand-accent/[0.04]">
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium leading-snug text-foreground">{mission.title}</span>
+                    <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground">{mission.review}</span>
                   </span>
-                </span>
-              </button>
-            )) : null}
+                  {taskCount ? (
+                    <span className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                        {taskCount} task{taskCount === 1 ? "" : "s"} attached
+                      </span>
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </section>
       </div>

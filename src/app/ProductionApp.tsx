@@ -77,6 +77,7 @@ type DiscoveryPollingInput = {
 };
 
 type SetupActivityStep = "setup-map" | "music-reads";
+type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "notes" | "recap";
 
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -340,7 +341,7 @@ function CleanProductionWorkspace({
   const [selectedConversation, setSelectedConversation] = useState<ConversationViewModel | null>(null);
   const [selectedMissionId, setSelectedMissionId] = useState("");
   const [missionRoomOpenRequestKey, setMissionRoomOpenRequestKey] = useState(0);
-  const [missionRoomOpenTab, setMissionRoomOpenTab] = useState<"pulse" | "tasks" | "checkpoints" | "notes" | "recap">("pulse");
+  const [missionRoomOpenTab, setMissionRoomOpenTab] = useState<MissionRoomTab>("pulse");
   const [missionRoomOpenTaskId, setMissionRoomOpenTaskId] = useState<string | null>(null);
   const [missionListOpenRequestKey, setMissionListOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
@@ -727,6 +728,14 @@ function CleanProductionWorkspace({
     }
   }
 
+  function openMissionRoom(missionId: string, tab: MissionRoomTab = "pulse") {
+    setSelectedMissionId(missionId);
+    setMissionRoomOpenTab(tab);
+    setMissionRoomOpenTaskId(null);
+    setMissionRoomOpenRequestKey((current) => current + 1);
+    navigate("missionsWorkspace");
+  }
+
   async function reloadMusic() {
     const nextMusic = await repositories.music.loadMusic();
     setMusic(nextMusic);
@@ -1027,6 +1036,7 @@ function CleanProductionWorkspace({
               music={music}
               onNavigate={navigate}
               onManager={openManager}
+              onOpenMission={openMissionRoom}
               onLockedAgent={(agent) => {
                 setSelectedAgent(agent);
                 navigate("lockedAgentWorkspace");
@@ -1042,7 +1052,7 @@ function CleanProductionWorkspace({
               targetMusicObjectId={targetMusicObjectId}
               musicRepository={repositories.music}
               onMusicChanged={reloadMusic}
-              onNavigate={navigate}
+              onOpenMission={openMissionRoom}
               onBack={() => navigate("labelHQ")}
             />
           ) : null}
