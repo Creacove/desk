@@ -1,8 +1,16 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Pencil, Plus, RefreshCw, Trash2, Upload, UsersRound, X } from "lucide-react";
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { WorkspaceHeader } from "../../design-system/components";
 import { cn } from "../../lib/utils";
-import type { MissionViewModel, MusicObjectViewModel, MusicRepository } from "../../types/cleanProduction";
+import type {
+  MissionViewModel,
+  MusicObjectViewModel,
+  MusicRepository,
+  SpotifyCatalogSearchResult,
+  SpotifyImportResult,
+  SpotifyReleaseCandidate,
+  SpotifyTrackCandidate,
+} from "../../types/cleanProduction";
 
 type MusicTab = "songs" | "projects";
 type DetailMode = "library" | "songDetail" | "projectDetail";
@@ -33,6 +41,8 @@ export function MusicWorkspace({
   const [returnTab, setReturnTab] = useState<MusicTab>("songs");
   const [songRoomTab, setSongRoomTab] = useState<SongRoomTab>("overview");
   const [createKind, setCreateKind] = useState<MusicTab | null>(null);
+  const [addMenuKind, setAddMenuKind] = useState<MusicTab | null>(null);
+  const [importKind, setImportKind] = useState<MusicTab | null>(null);
   const [uploadTarget, setUploadTarget] = useState<{ song: MusicObjectViewModel; asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number] } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ song: MusicObjectViewModel; groupTitle: string; field: MusicDetailField } | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -40,7 +50,7 @@ export function MusicWorkspace({
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [generatedReads, setGeneratedReads] = useState<Record<string, MusicObjectViewModel>>({});
-  const modalActive = Boolean(createKind || uploadTarget || detailTarget);
+  const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
   const displayedMusic = music.map((object) => generatedReads[object.id] ?? object);
   const getMusicObject = (id: string) => generatedReads[id] ?? music.find((object) => object.id === id);
@@ -49,6 +59,23 @@ export function MusicWorkspace({
   const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
   const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
   const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
+
+  // Single source of truth for "active work" in the list: reuse the exact linkage
+  // logic the song/project rooms use, so the catalog list can never disagree with
+  // what you see after opening an item.
+  const linkedMissionCountById = useMemo(() => {
+    const resolve = (id: string) => generatedReads[id] ?? music.find((object) => object.id === id);
+    const map: Record<string, number> = {};
+    for (const object of music) {
+      const resolved = generatedReads[object.id] ?? object;
+      const objectTracklist =
+        resolved.kind === "project"
+          ? ((resolved.songIds?.map(resolve).filter(Boolean) as MusicObjectViewModel[] | undefined) ?? [])
+          : [];
+      map[resolved.id] = findCatalogLinkedMissions(resolved, missions, objectTracklist).length;
+    }
+    return map;
+  }, [music, generatedReads, missions]);
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
@@ -88,13 +115,18 @@ export function MusicWorkspace({
     }
   }
 
+  async function runGenerateBrief(subjectId: string, subjectType: "music_item" | "music_project") {
+    const generated = await musicRepository.generateMusicSummary(subjectId, subjectType);
+    setGeneratedReads((current) => ({ ...current, [generated.id]: generated }));
+    await onMusicChanged();
+    return generated;
+  }
+
   async function generateBrief(subjectId: string, subjectType: "music_item" | "music_project") {
     try {
       setBriefError(null);
       setBriefPending(true);
-      const generated = await musicRepository.generateMusicSummary(subjectId, subjectType);
-      setGeneratedReads((current) => ({ ...current, [generated.id]: generated }));
-      await onMusicChanged();
+      await runGenerateBrief(subjectId, subjectType);
     } catch (error) {
       setBriefError(readErrorMessage(error, "Brief could not be generated."));
     } finally {
@@ -118,6 +150,19 @@ export function MusicWorkspace({
       }
       setCreateKind(null);
     });
+  }
+
+  function openImportedRecord(result: SpotifyImportResult) {
+    setImportKind(null);
+    setSelectedId(result.subjectId);
+    if (result.subjectType === "music_project") {
+      setReturnTab("projects");
+      setMode("projectDetail");
+    } else {
+      setReturnTab("songs");
+      setSongRoomTab("overview");
+      setMode("songDetail");
+    }
   }
 
   async function saveMusicDetail(value: string) {
@@ -200,7 +245,7 @@ export function MusicWorkspace({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setCreateKind(tab)}
+                  onClick={() => setAddMenuKind(tab)}
                   aria-label={tab === "songs" ? "Add song" : "Add project"}
                   title={tab === "songs" ? "Add song" : "Add project"}
                   className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground shadow-sm transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
@@ -226,7 +271,7 @@ export function MusicWorkspace({
             {tab === "songs" ? (
               <div className="hidden gap-3 lg:grid">
                 {songs.map((song, index) => (
-                  <MusicSongRow key={song.id} song={song} index={index} onOpen={() => openObject(song, "songs")} />
+                  <MusicSongRow key={song.id} song={song} index={index} activeMissionCount={linkedMissionCountById[song.id] ?? 0} onOpen={() => openObject(song, "songs")} />
                 ))}
               </div>
             ) : (
@@ -280,12 +325,40 @@ export function MusicWorkspace({
       ) : null}
       </div>
 
+      {addMenuKind ? (
+        <MusicAddChooser
+          kind={addMenuKind}
+          onCancel={() => setAddMenuKind(null)}
+          onManual={() => {
+            const kind = addMenuKind;
+            setAddMenuKind(null);
+            setCreateKind(kind);
+          }}
+          onImport={() => {
+            const kind = addMenuKind;
+            setAddMenuKind(null);
+            setImportKind(kind);
+          }}
+        />
+      ) : null}
+
       {createKind ? (
         <MusicCreateDialog
           kind={createKind}
           pending={actionPending}
           onCancel={() => setCreateKind(null)}
           onSubmit={createMusicRecord}
+        />
+      ) : null}
+
+      {importKind ? (
+        <MusicImportDialog
+          kind={importKind}
+          onCancel={() => setImportKind(null)}
+          onSearch={(input) => musicRepository.searchSpotifyCatalog(input)}
+          onImportSelection={(input) => musicRepository.importSpotifySelection(input)}
+          onGenerateRead={(subjectId, subjectType) => runGenerateBrief(subjectId, subjectType)}
+          onDone={openImportedRecord}
         />
       ) : null}
 
@@ -363,7 +436,6 @@ function normalizeCatalogLinkText(value: string | undefined) {
 }
 
 function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; index: number; onOpen: () => void }) {
-  const readiness = getSongReadiness(song);
   const hasBlocker = song.blocker !== "No active blocker" && song.blocker !== "None";
 
   return (
@@ -372,31 +444,20 @@ function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewMode
       data-testid={`music-mobile-song-row-${song.title}`}
       aria-label={`Open mobile song ${song.title}`}
       onClick={onOpen}
-      className="group min-h-0 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+      className="group flex min-h-0 min-w-0 items-center gap-3 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
     >
-      <span className="flex min-w-0 gap-3">
-        <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
-        <span className="min-w-0 flex-1">
-          <span className="flex min-w-0 items-start justify-between gap-2">
-            <span className="min-w-0">
-              <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{song.title}</span>
-              <span className="mt-1 flex flex-wrap gap-1.5">
-                <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
-                  {song.lifecycleStage ?? song.lifecycle}
-                </span>
-                <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]", hasBlocker ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
-                  {hasBlocker ? song.blocker : "Clear"}
-                </span>
-              </span>
-            </span>
-            <span className="font-display shrink-0 text-[13px] font-semibold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+      <span className="font-display w-6 shrink-0 text-[13px] font-semibold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+      <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{song.title}</span>
+        <span className="mt-1 flex flex-wrap gap-1.5">
+          <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+            {song.lifecycleStage ?? song.lifecycle}
+          </span>
+          <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]", hasBlocker ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
+            {hasBlocker ? song.blocker : "Clear"}
           </span>
         </span>
-      </span>
-      <span data-testid="music-mobile-readiness-strip" className="mt-3 grid grid-cols-3 gap-1.5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-2.5">
-        <MusicLibrarySignal label="Files" value={readiness.files} />
-        <MusicLibrarySignal label="Details" value={readiness.details} />
-        <MusicLibrarySignal label="Rights" value={readiness.rights} tone={song.splits?.status === "Cleared" ? "good" : "warn"} />
       </span>
     </button>
   );
@@ -412,7 +473,6 @@ function MusicMobileProjectRow({
   getMusicObject: (id: string) => MusicObjectViewModel | undefined;
 }) {
   const readiness = getProjectReadiness(project, getMusicObject);
-  const blockerCount = readiness.blockers.length;
 
   return (
     <button
@@ -420,41 +480,31 @@ function MusicMobileProjectRow({
       data-testid={`music-mobile-project-row-${project.title}`}
       aria-label={`Open mobile project ${project.title}`}
       onClick={onOpen}
-      className="min-h-0 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+      className="flex min-h-0 min-w-0 items-center gap-3 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
     >
-      <span className="flex min-w-0 gap-3">
-        <ArtworkFrame title={project.title} imageUrl={project.coverImageUrl} spotifyUrl={project.spotifyUrl} kind="project" size="mini" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{project.title}</span>
-          <span className="mt-1 flex flex-wrap gap-1.5">
-            <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
-              {project.lifecycleStage ?? project.lifecycle}
-            </span>
-            <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]", blockerCount ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
-              {blockerCount ? `${blockerCount} blocker${blockerCount === 1 ? "" : "s"}` : "Clear"}
-            </span>
+      <ArtworkFrame title={project.title} imageUrl={project.coverImageUrl} spotifyUrl={project.spotifyUrl} kind="project" size="mini" />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{project.title}</span>
+        <span className="mt-1 flex flex-wrap items-center gap-1.5">
+          <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+            {project.lifecycleStage ?? project.lifecycle}
           </span>
+          <span className="text-[11px] font-semibold text-muted-foreground/80">{readiness.trackCount} track{readiness.trackCount === 1 ? "" : "s"}</span>
         </span>
-      </span>
-      <span className="mt-3 grid grid-cols-3 gap-1.5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-2.5">
-        <MusicLibrarySignal label="Tracks" value={`${readiness.trackCount}`} />
-        <MusicLibrarySignal label="Ready" value={`${readiness.lockedTracks}/${readiness.trackCount}`} />
-        <MusicLibrarySignal label="Issues" value={blockerCount ? `${blockerCount}` : "Clear"} tone={blockerCount ? "warn" : "good"} />
       </span>
     </button>
   );
 }
 
-function MusicSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; index: number; onOpen: () => void }) {
-  const readiness = getSongReadiness(song);
+function MusicSongRow({ song, index, activeMissionCount, onOpen }: { song: MusicObjectViewModel; index: number; activeMissionCount: number; onOpen: () => void }) {
   const hasBlocker = song.blocker !== "No active blocker" && song.blocker !== "None";
-  const recordRead = buildMusicListRead(song);
+  const inMission = activeMissionCount > 0;
   return (
     <button
       type="button"
       aria-label={`Open song ${song.title}`}
       onClick={onOpen}
-      className="group grid gap-4 rounded-[20px] border border-foreground/8 bg-background/84 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.03] lg:grid-cols-[44px_70px_minmax(0,1fr)_360px] lg:items-center"
+      className="group grid gap-4 rounded-[20px] border border-foreground/8 bg-background/84 p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-brand-accent/20 hover:shadow-xl hover:shadow-brand-accent/[0.03] lg:grid-cols-[44px_70px_minmax(0,1fr)_auto] lg:items-center"
     >
       <span className="font-display text-[18px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
       <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="row" />
@@ -466,14 +516,24 @@ function MusicSongRow({ song, index, onOpen }: { song: MusicObjectViewModel; ind
             {hasBlocker ? song.blocker : "Clear"}
           </span>
         </span>
-        <span className="mt-2 block max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">
-          <span className="font-bold text-foreground/70">Record read:</span> {recordRead}
-        </span>
       </span>
-      <span className="grid gap-2 rounded-[16px] border border-foreground/6 bg-foreground/[0.025] p-3 sm:grid-cols-3">
-        <MusicLibrarySignal label="Files" value={readiness.files} />
-        <MusicLibrarySignal label="Details" value={readiness.details} />
-        <MusicLibrarySignal label="Rights" value={readiness.rights} tone={song.splits?.status === "Cleared" ? "good" : "warn"} />
+      <span className="hidden items-center justify-end gap-3 pr-1 lg:flex">
+        <span className="text-right">
+          {inMission ? (
+            <>
+              <span className="flex items-center justify-end gap-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">
+                <span className="h-1.5 w-1.5 rounded-full bg-brand-accent" aria-hidden="true" />
+                In a mission
+              </span>
+              <span className="mt-1 block text-[11px] font-semibold text-muted-foreground/80">
+                {activeMissionCount} active mission{activeMissionCount === 1 ? "" : "s"}
+              </span>
+            </>
+          ) : (
+            <span className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">No active work</span>
+          )}
+        </span>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/35 transition-colors group-hover:text-brand-accent" aria-hidden="true" />
       </span>
     </button>
   );
@@ -489,9 +549,6 @@ function MusicProjectCard({
   getMusicObject: (id: string) => MusicObjectViewModel | undefined;
 }) {
   const readiness = getProjectReadiness(project, getMusicObject);
-  const primaryBlocker = readiness.blockers[0]?.blocker ?? project.blocker;
-  const blockerCount = readiness.blockers.length;
-  const projectRead = buildMusicListRead(project);
   return (
     <button
       type="button"
@@ -506,47 +563,14 @@ function MusicProjectCard({
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">{project.status ?? "Project"}</p>
             <h3 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">{project.title}</h3>
           </div>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-foreground/10 bg-background px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{project.lifecycleStage ?? project.lifecycle}</span>
-            <span className={cn("rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em]", blockerCount ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
-              {blockerCount ? `${blockerCount} inherited blocker${blockerCount > 1 ? "s" : ""}` : "No inherited blockers"}
-            </span>
+            <span className="text-[12px] font-semibold text-muted-foreground/80">{readiness.trackCount} track{readiness.trackCount === 1 ? "" : "s"}</span>
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-3 divide-x divide-foreground/5">
-        <MusicMiniStat label="Tracks" value={`${readiness.trackCount}`} />
-        <MusicMiniStat label="Ready tracks" value={`${readiness.lockedTracks}/${readiness.trackCount}`} />
-        <MusicMiniStat label="First issue" value={primaryBlocker} />
-      </div>
-      <p className="border-t border-foreground/5 px-5 py-4 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">
-        <span className="font-bold text-foreground/70">Project read:</span> {projectRead}
-      </p>
     </button>
   );
-}
-
-function buildMusicListRead(item: MusicObjectViewModel) {
-  const snapshotSummary = item.snapshotSummary?.trim();
-  if (snapshotSummary) return trimListRead(snapshotSummary);
-
-  const managerRead = item.managerRead?.trim();
-  if (managerRead) return trimListRead(firstSentence(managerRead));
-
-  const situationLine = item.situationLine?.trim();
-  if (situationLine) return trimListRead(situationLine);
-
-  return item.kind === "project" ? "Project context is ready for a deeper read." : "Record context is ready for a deeper read.";
-}
-
-function firstSentence(value: string) {
-  const match = value.match(/^.+?[.!?](?=\s|$)/);
-  return (match?.[0] ?? value).trim();
-}
-
-function trimListRead(value: string) {
-  const compact = value.replace(/\s+/g, " ").trim();
-  return compact.length > 180 ? `${compact.slice(0, 177).trimEnd()}...` : compact;
 }
 
 function mobileDetailFieldTestId(label: string) {
@@ -1502,15 +1526,6 @@ function MusicDetailBlock({ label, value, accent = false }: { label: string; val
   );
 }
 
-function MusicLibrarySignal({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "neutral" | "good" | "warn" }) {
-  return (
-    <span className="min-w-0">
-      <span className="block text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">{label}</span>
-      <span className={cn("mt-1 block truncate text-[12px] font-bold", tone === "good" ? "text-success" : tone === "warn" ? "text-warning" : "text-foreground/86")}>{value}</span>
-    </span>
-  );
-}
-
 function MusicMiniStat({ label, value }: { label: string; value: string }) {
   return (
     <span className="min-w-0 px-4 py-3">
@@ -1591,6 +1606,426 @@ function MusicCreateDialog({
       </form>
     </div>
   );
+}
+
+function MusicAddChooser({
+  kind,
+  onCancel,
+  onManual,
+  onImport,
+}: {
+  kind: MusicTab;
+  onCancel: () => void;
+  onManual: () => void;
+  onImport: () => void;
+}) {
+  const noun = kind === "songs" ? "song" : "project";
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Add ${noun} to catalogue`}
+        className="w-[min(100%,36rem)] overflow-hidden rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)] ring-1 ring-foreground/5"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Add to catalogue</p>
+            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">Add {noun}</h3>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="grid gap-3 px-5 py-5 sm:grid-cols-2">
+          <button
+            type="button"
+            onClick={onImport}
+            aria-label="Import from Spotify"
+            className="group flex flex-col gap-3 rounded-[18px] border border-foreground/10 bg-background p-4 text-left transition-colors hover:border-brand-accent/40 hover:bg-brand-accent/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+          >
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-accent/10 text-brand-accent">
+              <Sparkles className="h-5 w-5" />
+            </span>
+            <span className="font-display text-[16px] font-bold text-foreground">Import from Spotify</span>
+            <span className="text-[12px] font-semibold normal-case leading-relaxed text-muted-foreground/82">
+              Pull a released {noun} from the artist&rsquo;s catalogue. We fetch the metrics and write the manager&rsquo;s read for you.
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={onManual}
+            aria-label="Create manually"
+            className="group flex flex-col gap-3 rounded-[18px] border border-foreground/10 bg-background p-4 text-left transition-colors hover:border-foreground/25 hover:bg-foreground/[0.03] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+          >
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-foreground/8 text-foreground">
+              <Pencil className="h-5 w-5" />
+            </span>
+            <span className="font-display text-[16px] font-bold text-foreground">Create manually</span>
+            <span className="text-[12px] font-semibold normal-case leading-relaxed text-muted-foreground/82">
+              Start a blank record for an unreleased {noun}. Add files, credits, and details yourself.
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+type ImportPhase = "import" | "read" | "done";
+
+function MusicImportDialog({
+  kind,
+  onCancel,
+  onSearch,
+  onImportSelection,
+  onGenerateRead,
+  onDone,
+}: {
+  kind: MusicTab;
+  onCancel: () => void;
+  onSearch: (input: { kind: "song" | "project"; albumId?: string }) => Promise<SpotifyCatalogSearchResult>;
+  onImportSelection: (input: { kind: "song" | "project"; albumId: string; trackId?: string }) => Promise<SpotifyImportResult>;
+  onGenerateRead: (subjectId: string, subjectType: "music_item" | "music_project") => Promise<unknown>;
+  onDone: (result: SpotifyImportResult) => void;
+}) {
+  const searchKind = kind === "songs" ? "song" : "project";
+  const noun = kind === "songs" ? "song" : "project";
+  const [releases, setReleases] = useState<SpotifyReleaseCandidate[] | null>(null);
+  const [loadingReleases, setLoadingReleases] = useState(true);
+  const [filter, setFilter] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [drill, setDrill] = useState<{ album: { albumId: string; name: string; coverImageUrl?: string }; tracks: SpotifyTrackCandidate[] } | null>(null);
+  const [loadingTracks, setLoadingTracks] = useState(false);
+  const [phase, setPhase] = useState<ImportPhase | null>(null);
+  const [workingTitle, setWorkingTitle] = useState("");
+  const active = useRef(true);
+
+  useEffect(() => {
+    active.current = true;
+    setLoadingReleases(true);
+    setError(null);
+    onSearch({ kind: searchKind })
+      .then((result) => {
+        if (!active.current) return;
+        if (result.mode === "releases") setReleases(result.releases);
+      })
+      .catch((err) => {
+        if (active.current) setError(readErrorMessage(err, "Could not load the Spotify catalogue."));
+      })
+      .finally(() => {
+        if (active.current) setLoadingReleases(false);
+      });
+    return () => {
+      active.current = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const filteredReleases = (releases ?? []).filter((release) =>
+    release.name.toLowerCase().includes(filter.trim().toLowerCase()),
+  );
+
+  async function openReleaseTracks(release: SpotifyReleaseCandidate) {
+    setLoadingTracks(true);
+    setError(null);
+    try {
+      const result = await onSearch({ kind: "song", albumId: release.albumId });
+      if (result.mode === "tracks") setDrill({ album: result.album, tracks: result.tracks });
+    } catch (err) {
+      setError(readErrorMessage(err, "Could not load tracks for this release."));
+    } finally {
+      setLoadingTracks(false);
+    }
+  }
+
+  async function commit(selection: { albumId: string; trackId?: string }, title: string) {
+    setError(null);
+    setWorkingTitle(title);
+    try {
+      setPhase("import");
+      const result = await onImportSelection({ kind: searchKind, albumId: selection.albumId, trackId: selection.trackId });
+      setPhase("read");
+      await onGenerateRead(result.subjectId, result.subjectType);
+      setPhase("done");
+      onDone(result);
+    } catch (err) {
+      setError(readErrorMessage(err, "Import failed."));
+      setPhase(null);
+    }
+  }
+
+  const busy = phase !== null;
+
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Import ${noun} from Spotify`}
+        className="flex max-h-[min(90vh,44rem)] w-[min(100%,40rem)] flex-col overflow-hidden rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)] ring-1 ring-foreground/5"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
+          <div className="flex items-start gap-3">
+            {drill && !busy ? (
+              <button
+                type="button"
+                onClick={() => setDrill(null)}
+                aria-label="Back to releases"
+                className="mt-1 rounded-lg p-1.5 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
+              >
+                <ArrowLeft className="h-4 w-4" />
+              </button>
+            ) : null}
+            <div>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Import from Spotify</p>
+              <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">
+                {busy ? `Importing ${workingTitle || noun}` : drill ? drill.album.name : `Choose a ${noun}`}
+              </h3>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            aria-label="Close"
+            className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {busy ? (
+          <MusicImportProgress phase={phase} kind={searchKind} />
+        ) : (
+          <>
+            {!drill ? (
+              <div className="border-b border-foreground/8 px-5 py-3">
+                <div className="flex items-center gap-2 rounded-[12px] border border-foreground/10 bg-background px-3 py-2 focus-within:border-foreground">
+                  <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  <input
+                    value={filter}
+                    onChange={(event) => setFilter(event.target.value)}
+                    placeholder={`Filter ${searchKind === "song" ? "releases" : "projects"} by name`}
+                    aria-label="Filter releases"
+                    className="w-full bg-transparent text-[13px] font-semibold text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+                  />
+                </div>
+                {searchKind === "song" ? (
+                  <p className="mt-2 text-[11px] font-semibold normal-case leading-relaxed text-muted-foreground/75">
+                    Pick a release, then choose the track to import as a song.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              {error ? (
+                <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                  {error}
+                </p>
+              ) : null}
+
+              {drill ? (
+                loadingTracks ? (
+                  <ImportLoadingRows label="Loading tracks" />
+                ) : (
+                  <ul className="grid gap-1.5">
+                    {drill.tracks.map((track) => (
+                      <li key={track.trackId}>
+                        <ImportRow
+                          coverImageUrl={drill.album.coverImageUrl}
+                          fallbackIcon="track"
+                          title={track.name}
+                          meta={[
+                            track.trackNumber ? `Track ${track.trackNumber}` : null,
+                            formatDuration(track.durationMs),
+                          ]}
+                          alreadyImported={track.alreadyImported}
+                          actionLabel="Import"
+                          onAction={() => commit({ albumId: drill.album.albumId, trackId: track.trackId }, track.name)}
+                        />
+                      </li>
+                    ))}
+                    {drill.tracks.length === 0 ? <ImportEmpty label="This release has no importable tracks." /> : null}
+                  </ul>
+                )
+              ) : loadingReleases ? (
+                <ImportLoadingRows label="Loading catalogue" />
+              ) : (
+                <ul className="grid gap-1.5">
+                  {filteredReleases.map((release) => (
+                    <li key={release.albumId}>
+                      <ImportRow
+                        coverImageUrl={release.coverImageUrl}
+                        fallbackIcon="album"
+                        title={release.name}
+                        meta={[titleCaseStatus(release.albumType), formatReleaseYear(release.releaseDate), release.totalTracks ? `${release.totalTracks} ${release.totalTracks === 1 ? "track" : "tracks"}` : null]}
+                        alreadyImported={searchKind === "project" ? release.alreadyImported : false}
+                        actionLabel={searchKind === "song" ? "Choose" : "Import"}
+                        actionIcon={searchKind === "song" ? "chevron" : undefined}
+                        onAction={() =>
+                          searchKind === "song"
+                            ? openReleaseTracks(release)
+                            : commit({ albumId: release.albumId }, release.name)
+                        }
+                      />
+                    </li>
+                  ))}
+                  {filteredReleases.length === 0 ? (
+                    <ImportEmpty label={releases && releases.length > 0 ? "No releases match your filter." : "No Spotify releases found for this artist."} />
+                  ) : null}
+                </ul>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
+              <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">
+                Cancel
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song" | "project" }) {
+  const order: ImportPhase[] = ["import", "read"];
+  const currentIndex = phase === "done" ? order.length : order.indexOf(phase);
+  const steps = [
+    { key: "import" as const, label: "Importing from Spotify" },
+    {
+      key: "read" as const,
+      label: kind === "song" ? "Fetching chart metrics & manager’s read" : "Fetching project metrics & manager’s read",
+    },
+  ];
+  return (
+    <div className="grid gap-3 px-6 py-8">
+      {steps.map((step, index) => {
+        const stepIndex = order.indexOf(step.key);
+        const done = stepIndex < currentIndex;
+        const activeStep = stepIndex === currentIndex && phase !== "done";
+        return (
+          <div key={step.key} className="flex items-center gap-3">
+            <span
+              className={cn(
+                "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
+                done
+                  ? "border-brand-accent/30 bg-brand-accent/10 text-brand-accent"
+                  : activeStep
+                    ? "border-brand-accent/30 bg-brand-accent/10 text-brand-accent"
+                    : "border-foreground/10 bg-background text-muted-foreground/60",
+              )}
+            >
+              {done ? <Check className="h-4 w-4" /> : activeStep ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="text-[12px] font-bold">{index + 1}</span>}
+            </span>
+            <span className={cn("text-[13px] font-semibold", done || activeStep ? "text-foreground" : "text-muted-foreground/70")}>{step.label}</span>
+          </div>
+        );
+      })}
+      <p className="mt-2 text-[11px] font-semibold normal-case leading-relaxed text-muted-foreground/75">
+        This runs the same pipeline as setup — hang tight, it only takes a moment.
+      </p>
+    </div>
+  );
+}
+
+function ImportRow({
+  coverImageUrl,
+  fallbackIcon,
+  title,
+  meta,
+  alreadyImported,
+  actionLabel,
+  actionIcon,
+  onAction,
+}: {
+  coverImageUrl?: string;
+  fallbackIcon: "album" | "track";
+  title: string;
+  meta: Array<string | null | undefined>;
+  alreadyImported: boolean;
+  actionLabel: string;
+  actionIcon?: "chevron";
+  onAction: () => void;
+}) {
+  const metaLine = meta.filter(Boolean).join(" · ");
+  return (
+    <button
+      type="button"
+      onClick={onAction}
+      disabled={alreadyImported}
+      className={cn(
+        "group flex w-full items-center gap-3 rounded-[14px] border border-foreground/8 bg-background px-3 py-2.5 text-left transition-colors",
+        alreadyImported ? "opacity-60" : "hover:border-foreground/20 hover:bg-foreground/[0.03] focus:outline-none focus:ring-2 focus:ring-brand-accent/25",
+      )}
+    >
+      <span className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-[10px] bg-foreground/6 text-muted-foreground/70">
+        {coverImageUrl ? (
+          <img src={coverImageUrl} alt="" className="h-full w-full object-cover" />
+        ) : fallbackIcon === "album" ? (
+          <Disc3 className="h-5 w-5" />
+        ) : (
+          <ListMusic className="h-5 w-5" />
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-display text-[14px] font-bold text-foreground">{title}</span>
+        {metaLine ? <span className="mt-0.5 block truncate text-[11px] font-semibold normal-case text-muted-foreground/78">{metaLine}</span> : null}
+      </span>
+      {alreadyImported ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-foreground/6 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          <Check className="h-3 w-3" /> Imported
+        </span>
+      ) : actionIcon === "chevron" ? (
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
+      ) : (
+        <span className="inline-flex shrink-0 items-center rounded-full bg-foreground px-3 py-1.5 text-[11px] font-bold text-background transition-opacity group-hover:opacity-90">
+          {actionLabel}
+        </span>
+      )}
+    </button>
+  );
+}
+
+function ImportLoadingRows({ label }: { label: string }) {
+  return (
+    <div className="grid gap-1.5" aria-live="polite">
+      <p className="mb-1 flex items-center gap-2 text-[12px] font-semibold text-muted-foreground/80">
+        <Loader2 className="h-4 w-4 animate-spin" /> {label}
+      </p>
+      {[0, 1, 2, 3].map((row) => (
+        <div key={row} className="flex items-center gap-3 rounded-[14px] border border-foreground/8 bg-background px-3 py-2.5">
+          <span className="h-11 w-11 shrink-0 animate-pulse rounded-[10px] bg-foreground/8" />
+          <span className="grid flex-1 gap-1.5">
+            <span className="h-3 w-1/2 animate-pulse rounded bg-foreground/8" />
+            <span className="h-2.5 w-1/3 animate-pulse rounded bg-foreground/6" />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ImportEmpty({ label }: { label: string }) {
+  return <p className="rounded-[14px] border border-dashed border-foreground/12 px-4 py-6 text-center text-[12px] font-semibold text-muted-foreground/75">{label}</p>;
+}
+
+function formatDuration(durationMs?: number) {
+  if (!durationMs || durationMs <= 0) return null;
+  const totalSeconds = Math.round(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+}
+
+function formatReleaseYear(releaseDate?: string) {
+  if (!releaseDate) return null;
+  const year = releaseDate.slice(0, 4);
+  return /^\d{4}$/.test(year) ? year : null;
 }
 
 function MusicUploadDialog({
@@ -1738,10 +2173,6 @@ function countCompleteMusicItems(items?: { status: string }[]) {
   return items?.filter((item) => ["Uploaded", "Confirmed", "Cleared"].includes(item.status)).length ?? 0;
 }
 
-function countMissingMusicItems(items?: { status: string }[]) {
-  return items?.filter((item) => item.status === "Missing").length ?? 0;
-}
-
 function sumContributorShares(values: string[]) {
   return Number(values.reduce((sum, value) => {
     const parsed = Number.parseFloat(value.replace("%", ""));
@@ -1771,26 +2202,10 @@ function titleCaseStatus(status: string) {
     .join(" ");
 }
 
-function getSongReadiness(song: MusicObjectViewModel) {
-  const filesTotal = song.fileAssets?.length ?? song.files?.length ?? 0;
-  const filesReady = countCompleteMusicItems(song.fileAssets ?? song.files);
-  const detailItems = [...(song.metadataFields ?? []), ...(song.releaseFields ?? []), ...(song.credits ?? []), ...(song.identifiers ?? [])];
-  const detailMissing = countMissingMusicItems(detailItems);
-  return {
-    files: filesTotal ? `${filesReady}/${filesTotal} files` : "No files",
-    details: detailMissing ? `${detailMissing} details missing` : "Details ready",
-    rights: song.splits?.status ?? "Missing",
-  };
-}
-
 function getProjectReadiness(project: MusicObjectViewModel, getMusicObject: (id: string) => MusicObjectViewModel | undefined) {
   const tracks = project.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
-  const blockers = tracks?.filter((track) => track.blocker !== "No active blocker" && track.blocker !== "None") ?? [];
-  const lockedTracks = tracks?.filter((track) => ["Ready", "Scheduled", "Released", "Catalog"].includes(track.lifecycleStage ?? track.lifecycle)).length ?? 0;
   return {
     trackCount: tracks?.length ?? project.songs?.length ?? 0,
-    lockedTracks,
-    blockers,
   };
 }
 

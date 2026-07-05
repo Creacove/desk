@@ -15,6 +15,8 @@ import type {
   MissionGenesisResultViewModel,
   MissionViewModel,
   MusicObjectViewModel,
+  SpotifyCatalogSearchResult,
+  SpotifyImportResult,
   SplitConfirmationViewModel,
   SplitContributorInput,
   TodayBriefGenerationMode,
@@ -603,8 +605,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       },
       async generateMusicSummary(subjectId, subjectType) {
         const subjectLabel = subjectType === "music_project" ? "Project" : "Song";
+        const libraryBeforeRead = await musicLibraryLoader.loadMusicLibrary(workspace);
         if (subjectType === "music_item") {
-          const libraryBeforeRead = await musicLibraryLoader.loadMusicLibrary(workspace);
           const subject = libraryBeforeRead.songs.find((song) => song.id === subjectId);
           if (subject && !hasChartmetricEvidence(subject.evidence)) {
             const { data: enrichmentData, error: enrichmentError } = await client.functions.invoke("chartmetric-track-enrichment", {
@@ -624,6 +626,27 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             if (enrichmentStatus === "unresolved" || enrichmentStatus === "failed") {
               throw new Error("Song enrichment could not resolve enough source evidence for a generated Manager Read.");
             }
+          }
+        } else {
+          // Projects mirror the song path: self-enrich from Chartmetric before the read so
+          // an imported album — or a project whose manager-read button is clicked — has
+          // audience signals to reason over. Individual album tracks stay un-enriched.
+          const subject = libraryBeforeRead.projects.find((project) => project.id === subjectId);
+          if (subject && !hasChartmetricEvidence(subject.evidence)) {
+            const { error: enrichmentError } = await client.functions.invoke("chartmetric-project-enrichment", {
+              body: {
+                accountId: workspace.accountId,
+                artistWorkspaceId: workspace.artistWorkspaceId,
+                artistId: workspace.artistId,
+                musicProjectId: subjectId,
+              },
+            });
+
+            if (enrichmentError) {
+              await throwFunctionInvokeError(enrichmentError, "Project enrichment failed before Manager Read generation.");
+            }
+            // Unlike songs, an unresolved Chartmetric album is not fatal: the read function
+            // produces a grounded fallback from catalog metadata when audience signals are thin.
           }
         }
 
@@ -652,6 +675,43 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           throw new Error(`${subjectLabel} brief was generated but the ${subjectType === "music_project" ? "project" : "track"} could not be reloaded.`);
         }
         return mergeGeneratedManagerReadIntoMusicObject(updated, generatedRead);
+      },
+      async searchSpotifyCatalog(input) {
+        const { data, error } = await client.functions.invoke("spotify-catalog-search", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            kind: input.kind,
+            albumId: input.albumId,
+            market: "US",
+          },
+        });
+
+        if (error) {
+          await throwFunctionInvokeError(error, "Spotify catalog search failed.");
+        }
+
+        return data as SpotifyCatalogSearchResult;
+      },
+      async importSpotifySelection(input) {
+        const { data, error } = await client.functions.invoke("spotify-import-selection", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            kind: input.kind,
+            albumId: input.albumId,
+            trackId: input.trackId,
+            market: "US",
+          },
+        });
+
+        if (error) {
+          await throwFunctionInvokeError(error, "Spotify import failed.");
+        }
+
+        return data as SpotifyImportResult;
       },
       async createSong(input) {
         const { data, error } = await client

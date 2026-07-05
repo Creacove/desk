@@ -512,9 +512,42 @@ export type StaffRepository = {
   loadAgents(): Promise<AgentViewModel[]>;
 };
 
+export type SpotifyReleaseCandidate = {
+  albumId: string;
+  name: string;
+  albumType: string;
+  releaseDate?: string;
+  totalTracks?: number;
+  coverImageUrl?: string;
+  spotifyUrl?: string;
+  alreadyImported: boolean;
+};
+
+export type SpotifyTrackCandidate = {
+  trackId: string;
+  name: string;
+  trackNumber?: number;
+  durationMs?: number;
+  isrc?: string;
+  alreadyImported: boolean;
+};
+
+export type SpotifyCatalogSearchResult =
+  | { mode: "releases"; releases: SpotifyReleaseCandidate[] }
+  | { mode: "tracks"; album: { albumId: string; name: string; coverImageUrl?: string }; tracks: SpotifyTrackCandidate[] };
+
+export type SpotifyImportResult = {
+  subjectType: "music_item" | "music_project";
+  subjectId: string;
+  alreadyExisted: boolean;
+  importedTrackCount?: number;
+};
+
 export type MusicRepository = {
   loadMusic(): Promise<MusicObjectViewModel[]>;
   generateMusicSummary(subjectId: string, subjectType: "music_item" | "music_project"): Promise<MusicObjectViewModel>;
+  searchSpotifyCatalog(input: { kind: "song" | "project"; albumId?: string }): Promise<SpotifyCatalogSearchResult>;
+  importSpotifySelection(input: { kind: "song" | "project"; albumId: string; trackId?: string }): Promise<SpotifyImportResult>;
   createSong(input: { title: string; itemType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
   createProject(input: { title: string; projectType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
   updateLifecycleStage(musicItemId: string, lifecycleStage: string): Promise<void>;

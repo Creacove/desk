@@ -777,6 +777,13 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         if (!found) throw new Error("Fixture music item not found for brief generation.");
         return found;
       },
+      async searchSpotifyCatalog() {
+        // Fixture mode has no live Spotify connection.
+        return { mode: "releases", releases: [] };
+      },
+      async importSpotifySelection() {
+        throw new Error("Spotify import is not available in fixture mode.");
+      },
       async createSong(input) {
         const created = {
           id: `fixture-song-${Date.now()}`,

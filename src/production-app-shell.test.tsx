@@ -2232,10 +2232,9 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Songs" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Projects" })).toBeInTheDocument();
     expect(screen.getAllByText("01").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Files").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Details").length).toBeGreaterThan(0);
     expect(screen.getAllByAltText("Night Bus cover artwork").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Record read:/i).length).toBeGreaterThan(0);
+    // The catalog list is intentionally lean: no per-row readiness signals or manager read.
+    expect(screen.queryByText(/Record read:/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/Next:/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Night Bus" }));
@@ -2288,17 +2287,18 @@ describe("Clean production prototype-match shell", () => {
     expect(mobileLibrary).toHaveClass("lg:hidden");
     expect(mobileRow).toHaveClass("min-h-0");
     expect(mobileRow).not.toHaveClass("rounded-[20px]");
-    expect(within(mobileRow).getByTestId("music-mobile-readiness-strip")).toHaveClass("grid-cols-3");
-    expect(within(mobileRow).getByText("Files")).toBeInTheDocument();
-    expect(within(mobileRow).getByText("Details")).toBeInTheDocument();
-    expect(within(mobileRow).getByText("Rights")).toBeInTheDocument();
+    // The row is now just number + artwork + title + status, with no readiness signals.
+    expect(within(mobileRow).queryByTestId("music-mobile-readiness-strip")).not.toBeInTheDocument();
+    expect(within(mobileRow).queryByText("Files")).not.toBeInTheDocument();
+    expect(within(mobileRow).queryByText("Details")).not.toBeInTheDocument();
+    expect(within(mobileRow).queryByText("Rights")).not.toBeInTheDocument();
     expect(within(mobileRow).queryByText(/strongest current focus asset/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
     const mobileProjectRow = within(mobileLibrary).getByTestId("music-mobile-project-row-Glass Room EP");
-    expect(within(mobileProjectRow).getByText("Tracks")).toBeInTheDocument();
-    expect(within(mobileProjectRow).getByText("Ready")).toBeInTheDocument();
-    expect(within(mobileProjectRow).getByText("Issues")).toBeInTheDocument();
+    expect(within(mobileProjectRow).getByText(/\d+ tracks?/i)).toBeInTheDocument();
+    expect(within(mobileProjectRow).queryByText("Ready tracks")).not.toBeInTheDocument();
+    expect(within(mobileProjectRow).queryByText("Issues")).not.toBeInTheDocument();
     expect(within(mobileProjectRow).queryByText(/project context is ready|mapped track|project read/i)).not.toBeInTheDocument();
   }, 20000);
 
@@ -3310,6 +3310,12 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Add project" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add song" }));
+    // The Add action first offers a choice between manual creation and Spotify import.
+    expect(screen.getByRole("dialog", { name: "Add song to catalogue" })).toBeInTheDocument();
+    expect(screen.getByTestId("music-workspace-content")).toHaveClass("blur-[6px]");
+    expect(screen.getByRole("button", { name: "Import from Spotify" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
+
     expect(screen.getByRole("dialog", { name: "Add song" })).toBeInTheDocument();
     expect(screen.getByTestId("music-workspace-content")).toHaveClass("blur-[6px]");
     expect(screen.getByLabelText("Song title")).toBeInTheDocument();
@@ -3341,6 +3347,23 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Edit Genre" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit ISRC" })).toHaveTextContent("");
     expect(screen.getByRole("button", { name: "Edit Mix engineer" })).toHaveTextContent("");
+  }, 20000);
+
+  it("opens the Spotify import dialog from the Add chooser", async () => {
+    await enterDeskHq();
+
+    const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
+    fireEvent.click(within(rail).getByRole("button", { name: "Open Catalog workspace" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Add song" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import from Spotify" }));
+
+    // The import dialog mounts and loads the (fixture-empty) catalogue.
+    expect(await screen.findByRole("dialog", { name: "Import song from Spotify" })).toBeInTheDocument();
+    expect(await screen.findByText("No Spotify releases found for this artist.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Import song from Spotify" })).not.toBeInTheDocument();
   }, 20000);
 
   it("keeps upload failures visible inside the Catalog upload modal", async () => {

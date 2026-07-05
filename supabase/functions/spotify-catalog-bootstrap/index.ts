@@ -1,11 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  bootstrapSpotifyCatalog,
-  type SpotifyAudioFeaturesPayload,
-  type SpotifyAlbumPayload,
-  type SpotifyArtistAlbumsResponse,
-  type SpotifyArtistPayload,
-} from "../_shared/spotifyCatalogBootstrap.ts";
+import { bootstrapSpotifyCatalog } from "../_shared/spotifyCatalogBootstrap.ts";
+import { createSpotifyCatalogClient } from "../_shared/spotifyCatalogClient.ts";
 import { createSupabaseCatalogRepository } from "../_shared/supabaseCatalogRepository.ts";
 
 const corsHeaders = {
@@ -16,7 +11,6 @@ const corsHeaders = {
 
 const sourceSyncJobType = "spotify_catalog_bootstrap";
 const normalizedCatalogTables = ["source_snapshots", "music_items", "music_identifiers"];
-const spotifyTimeoutMs = 15000;
 
 type BootstrapInput = {
   accountId: string;
@@ -108,94 +102,6 @@ Deno.serve(async (request) => {
     return json({ error: message }, 500);
   }
 });
-
-async function createSpotifyCatalogClient() {
-  const clientId = requireEnv("SPOTIFY_CLIENT_ID");
-  const clientSecret = requireEnv("SPOTIFY_CLIENT_SECRET");
-  const credentials = btoa(`${clientId}:${clientSecret}`);
-  const token = await postSpotifyToken(credentials);
-
-  const callSpotify = async <T>(path: string, params: Record<string, string | number | undefined> = {}) => {
-    const url = new URL(`https://api.spotify.com/v1${path}`);
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined) {
-        url.searchParams.set(key, String(value));
-      }
-    }
-
-    return fetchSpotifyJson<T>(url.toString(), {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-  };
-
-  return {
-    getArtist: (artistId: string) => callSpotify<SpotifyArtistPayload>(`/artists/${encodeURIComponent(artistId)}`),
-    getArtistAlbums: (
-      artistId: string,
-      options: { market?: string; limit: number; includeGroup: "album" | "single" },
-    ) =>
-      callSpotify<SpotifyArtistAlbumsResponse>(`/artists/${encodeURIComponent(artistId)}/albums`, {
-        include_groups: options.includeGroup,
-        market: options.market,
-        limit: options.limit,
-      }),
-    getAlbum: (albumId: string, options: { market?: string }) =>
-      callSpotify<SpotifyAlbumPayload>(`/albums/${encodeURIComponent(albumId)}`, { market: options.market }),
-    getTrackAudioFeatures: (trackId: string) =>
-      callSpotify<SpotifyAudioFeaturesPayload>(`/audio-features/${encodeURIComponent(trackId)}`),
-  };
-}
-
-async function postSpotifyToken(credentials: string) {
-  const response = await fetchWithTimeout("https://accounts.spotify.com/api/token", {
-    method: "POST",
-    headers: {
-      Authorization: `Basic ${credentials}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({ grant_type: "client_credentials" }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`Spotify token request failed with ${response.status}.`);
-  }
-
-  const token = (await response.json()) as { access_token?: string };
-  if (!token.access_token) {
-    throw new Error("Spotify token response did not include an access token.");
-  }
-
-  return token.access_token;
-}
-
-async function fetchSpotifyJson<T>(url: string, init: RequestInit) {
-  const response = await fetchWithTimeout(url, init);
-
-  if (!response.ok) {
-    throw new Error(`Spotify ${new URL(url).pathname} failed with ${response.status}.`);
-  }
-
-  return (await response.json()) as T;
-}
-
-async function fetchWithTimeout(url: string, init: RequestInit) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), spotifyTimeoutMs);
-
-  try {
-    return await fetch(url, {
-      ...init,
-      signal: controller.signal,
-    });
-  } catch (error) {
-    if (error instanceof DOMException && error.name === "AbortError") {
-      throw new Error(`Spotify request timed out after ${spotifyTimeoutMs}ms.`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
 
 async function dispatchManagerArtistDiscovery(
   supabaseUrl: string,

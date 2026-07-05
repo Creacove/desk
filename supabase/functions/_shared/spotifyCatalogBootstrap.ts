@@ -234,7 +234,7 @@ export type SpotifyCatalogClient = {
   getArtist(artistId: string): Promise<SpotifyArtistPayload>;
   getArtistAlbums(
     artistId: string,
-    options: { market?: string; limit: number; includeGroup: "album" | "single" },
+    options: { market?: string; limit: number; includeGroup: "album" | "single"; offset?: number },
   ): Promise<SpotifyArtistAlbumsResponse>;
   getAlbum(albumId: string, options: { market?: string }): Promise<SpotifyAlbumPayload>;
   getTrackAudioFeatures?(trackId: string): Promise<SpotifyAudioFeaturesPayload>;
@@ -1007,4 +1007,138 @@ function releaseSortValue(releaseDate: string | undefined) {
 
 function normalize(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+// ---------------------------------------------------------------------------
+// Single-selection imports (catalogue "Import from Spotify")
+//
+// These reuse the exact normalizers the setup bootstrap uses (upsertProject,
+// upsertTrack, upsertIdentifier, dedup keys, audio features) so a manually
+// imported release/track is stored identically to a setup-imported one — same
+// identifiers, same dedup, same provenance snapshots. They do NOT enrich or
+// generate reads; the caller orchestrates that afterward.
+// ---------------------------------------------------------------------------
+
+export type SpotifySelectionImportArgs = {
+  input: SpotifyCatalogBootstrapInput;
+  spotify: SpotifyCatalogClient;
+  repository: SpotifyCatalogBootstrapRepository;
+  album: SpotifyAlbumPayload;
+};
+
+async function resolveImportSnapshotContext({
+  input,
+  repository,
+  album,
+}: {
+  input: SpotifyCatalogBootstrapInput;
+  repository: SpotifyCatalogBootstrapRepository;
+  album: SpotifyAlbumPayload;
+}) {
+  const providerId = await repository.getSpotifyProviderId();
+  const sourceConnectionId =
+    input.sourceConnectionId ??
+    (await repository.upsertSourceConnection({
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      providerId,
+      handleOrExternalRef: input.selectedArtist.spotifyArtistId,
+      status: "connected",
+      limitations: [PUBLIC_SPOTIFY_CATALOG_LIMITATION],
+      metadata: {
+        spotify_artist_id: input.selectedArtist.spotifyArtistId,
+        spotify_artist_url: input.selectedArtist.spotifyUrl,
+        spotify_artist_uri: input.selectedArtist.spotifyUri,
+      },
+    }));
+
+  const albumSnapshotId = await writeSnapshot({
+    input,
+    repository,
+    providerId,
+    sourceConnectionId,
+    snapshotType: "spotify_album",
+    rawRef: `spotify:album:${album.id}`,
+    rawPayload: album,
+  });
+  const albumTracksSnapshotId = await writeSnapshot({
+    input,
+    repository,
+    providerId,
+    sourceConnectionId,
+    snapshotType: "spotify_album_tracks",
+    rawRef: `spotify:album:${album.id}:tracks`,
+    rawPayload: {
+      album_id: album.id,
+      items: album.tracks?.items ?? [],
+    },
+  });
+
+  return { providerId, albumSnapshotId, albumTracksSnapshotId };
+}
+
+export async function importSpotifyAlbumAsProject({
+  input,
+  spotify,
+  repository,
+  album,
+}: SpotifySelectionImportArgs): Promise<{ musicProjectId: string; importedTrackCount: number; alreadyExisted: boolean }> {
+  const { providerId, albumSnapshotId, albumTracksSnapshotId } = await resolveImportSnapshotContext({ input, repository, album });
+
+  const alreadyExisted = Boolean(await repository.findMusicProjectByKeys(projectDedupeKeys(album)));
+  const musicProjectId = await upsertProject({ input, repository, providerId, sourceSnapshotId: albumSnapshotId, album });
+
+  const tracks = selectUniqueTracks(album.tracks?.items ?? []);
+  const audioFeaturesByTrackId = await fetchAudioFeaturesForTracks(spotify, tracks);
+
+  for (const track of tracks) {
+    const musicItemId = await upsertTrack({
+      input,
+      repository,
+      providerId,
+      sourceSnapshotId: albumTracksSnapshotId,
+      track,
+      album,
+      audioFeatures: audioFeaturesByTrackId[track.id],
+    });
+    await repository.upsertMusicProjectItem({
+      musicProjectId,
+      musicItemId,
+      orderIndex: track.track_number ?? 0,
+      discNumber: track.disc_number ?? 1,
+      displayTitle: track.name,
+    });
+  }
+
+  return { musicProjectId, importedTrackCount: tracks.length, alreadyExisted };
+}
+
+export async function importSpotifyTrackAsSong({
+  input,
+  spotify,
+  repository,
+  album,
+  trackId,
+}: SpotifySelectionImportArgs & { trackId: string }): Promise<{ musicItemId: string; alreadyExisted: boolean }> {
+  const track = (album.tracks?.items ?? []).find((item) => item.id === trackId);
+  if (!track) {
+    throw new Error(`Track ${trackId} was not found on Spotify album ${album.id}.`);
+  }
+
+  const { providerId, albumTracksSnapshotId } = await resolveImportSnapshotContext({ input, repository, album });
+
+  const alreadyExisted = Boolean(await repository.findMusicItemByKeys(trackDedupeKeys(track, input.selectedArtist.name)));
+  const audioFeaturesByTrackId = await fetchAudioFeaturesForTracks(spotify, [track]);
+  const musicItemId = await upsertTrack({
+    input,
+    repository,
+    providerId,
+    sourceSnapshotId: albumTracksSnapshotId,
+    track,
+    album,
+    audioFeatures: audioFeaturesByTrackId[track.id],
+  });
+
+  return { musicItemId, alreadyExisted };
 }

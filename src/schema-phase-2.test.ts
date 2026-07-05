@@ -24,9 +24,12 @@ describe("Phase 2 Spotify catalog bootstrap infrastructure", () => {
     expect(existsSync(functionPath)).toBe(true);
 
     const source = readFileSync(functionPath, "utf8");
+    const clientSource = readFileSync(join(root, "supabase", "functions", "_shared", "spotifyCatalogClient.ts"), "utf8");
 
-    expect(source).toContain("SPOTIFY_CLIENT_ID");
-    expect(source).toContain("SPOTIFY_CLIENT_SECRET");
+    // Client credentials are held server-side in the shared Spotify client the bootstrap uses.
+    expect(clientSource).toContain("SPOTIFY_CLIENT_ID");
+    expect(clientSource).toContain("SPOTIFY_CLIENT_SECRET");
+    expect(source).toContain("../_shared/spotifyCatalogClient.ts");
     expect(source).toContain("spotify_catalog_bootstrap");
     expect(source).toContain("source_snapshots");
     expect(source).toContain("music_items");

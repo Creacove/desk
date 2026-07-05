@@ -1601,6 +1601,85 @@ describe("production Supabase services", () => {
     expect(serviceSource).toContain("function mergeGeneratedManagerReadIntoMusicObject");
   });
 
+  it("self-enriches a project from Chartmetric before generating its Manager Read", async () => {
+    const invoked: string[] = [];
+    const client = createMutableSupabaseClient(
+      {
+        music_items: [],
+        music_projects: [
+          {
+            id: "project-import",
+            artist_workspace_id: "workspace-1",
+            status: "active",
+            title: "Night Bus",
+            project_type: "album",
+            lifecycle_stage: "released",
+            source_kind: "spotify_public_catalog",
+            source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
+            metadata: { spotify: { album_id: "spotify-album-1", total_tracks: 2 } },
+          },
+        ],
+        music_project_items: [],
+        music_identifiers: [{ artist_workspace_id: "workspace-1", music_project_id: "project-import", identifier_type: "spotify_album_id", identifier_value: "spotify-album-1" }],
+        music_assets: [],
+        music_credits: [],
+        music_splits: [],
+        evidence_items: [],
+      },
+      {
+        invoke: async (name: string) => {
+          invoked.push(name);
+          if (name === "chartmetric-project-enrichment") return { data: { status: "completed" }, error: null };
+          return { data: { read: { managerRead: "A grounded project read." } }, error: null };
+        },
+      },
+    );
+
+    await createSupabaseProductionRepositories(client, workspace).music.generateMusicSummary("project-import", "music_project");
+
+    // Project enrichment must run before the Manager Read call, mirroring the song path.
+    expect(invoked).toEqual(["chartmetric-project-enrichment", "generate-music-summary"]);
+  });
+
+  it("searches the connected artist's Spotify catalogue through the edge function", async () => {
+    const releases = [{ albumId: "album-1", name: "Night Bus", albumType: "album", alreadyImported: false }];
+    let capturedBody: unknown;
+    const client = createMutableSupabaseClient(
+      {},
+      {
+        invoke: async (name: string, options: { body: unknown }) => {
+          expect(name).toBe("spotify-catalog-search");
+          capturedBody = options.body;
+          return { data: { mode: "releases", releases }, error: null };
+        },
+      },
+    );
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.searchSpotifyCatalog({ kind: "project" });
+
+    expect(result).toEqual({ mode: "releases", releases });
+    expect(capturedBody).toMatchObject({ accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1", kind: "project" });
+  });
+
+  it("imports a Spotify selection through the edge function", async () => {
+    let capturedBody: unknown;
+    const client = createMutableSupabaseClient(
+      {},
+      {
+        invoke: async (name: string, options: { body: unknown }) => {
+          expect(name).toBe("spotify-import-selection");
+          capturedBody = options.body;
+          return { data: { subjectType: "music_item", subjectId: "song-9", alreadyExisted: false }, error: null };
+        },
+      },
+    );
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.importSpotifySelection({ kind: "song", albumId: "album-1", trackId: "track-3" });
+
+    expect(result).toMatchObject({ subjectType: "music_item", subjectId: "song-9", alreadyExisted: false });
+    expect(capturedBody).toMatchObject({ kind: "song", albumId: "album-1", trackId: "track-3" });
+  });
+
   it("builds real production repositories from Supabase rows without fixture content", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-03T08:00:00.000Z"));

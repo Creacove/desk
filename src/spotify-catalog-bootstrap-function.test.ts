@@ -5,15 +5,20 @@ import { describe, expect, it } from "vitest";
 import { createSupabaseCatalogRepository } from "../supabase/functions/_shared/supabaseCatalogRepository";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "spotify-catalog-bootstrap", "index.ts"), "utf8");
+const clientSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "spotifyCatalogClient.ts"), "utf8");
 
 describe("Spotify catalog bootstrap edge function", () => {
   it("uses the shared catalog importer and avoids deprecated top-tracks fallback", () => {
     expect(functionSource).toContain("../_shared/spotifyCatalogBootstrap.ts");
     expect(functionSource).toContain("bootstrapSpotifyCatalog");
     expect(functionSource).toContain("createSupabaseCatalogRepository");
+    expect(functionSource).toContain("../_shared/spotifyCatalogClient.ts");
     expect(functionSource).not.toContain("top-tracks");
     expect(functionSource).not.toContain("getArtistTopTracks");
-    expect(functionSource).toContain('include_groups: options.includeGroup');
+    // The Spotify client (identity/catalog access) now lives in the shared module so the
+    // catalogue import functions can reuse the exact same auth + endpoints.
+    expect(clientSource).toContain('include_groups: options.includeGroup');
+    expect(clientSource).not.toContain("top-tracks");
   });
 
   it("dispatches manager artist discovery after the Spotify catalog import without failing setup", () => {
