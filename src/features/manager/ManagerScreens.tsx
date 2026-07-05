@@ -59,6 +59,26 @@ function useTypewriter(target: string, streaming: boolean): string {
 }
 
 // ---------------------------------------------------------------------------
+// Conversation timestamp formatting
+// Backend values are ISO timestamps; fixtures/tests already pass
+// human-readable strings ("Just now", "14h ago") — parse fails gracefully.
+// ---------------------------------------------------------------------------
+function formatConversationTimestamp(value: string): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  const diffMs = Date.now() - parsed.getTime();
+  const diffMinutes = Math.round(diffMs / 60000);
+  if (diffMinutes < 1) return "Just now";
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.round(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.round(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+// ---------------------------------------------------------------------------
 // ManagerOfficeScreen
 // ---------------------------------------------------------------------------
 export function ManagerOfficeScreen({
@@ -91,15 +111,9 @@ export function ManagerOfficeScreen({
   askManagerError: string | null;
 }) {
   const [askText, setAskText] = useState("");
-  const promptChips = [
-    "Review the next strongest move from today's read.",
-    "What should we do with a $5,000 budget this month?",
-    "Which rights or source gaps block the current release?",
-    "Build the next mission from the strongest management lenses.",
-  ];
 
   return (
-    <WorkspaceShell eyebrow="Manager Office" title="Manager Briefing" onBack={onBack}>
+    <WorkspaceShell eyebrow="Manager" title="Manager's Office" onBack={onBack}>
       <div className="max-w-5xl">
         <MissionGenesisManagerPanel
           result={missionGenesisResult}
@@ -112,24 +126,7 @@ export function ManagerOfficeScreen({
         />
         <section className="rounded-[18px] border border-foreground/10 bg-background p-6 shadow-sm sm:p-8">
               <div className="max-w-2xl">
-                <div className="mb-4 flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full bg-success" aria-hidden="true" />
-                  <p className="font-ui text-[9px] font-bold uppercase tracking-[0.1em] text-success/70">Context synchronized</p>
-                </div>
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager Directive</p>
-                <h2 className="font-display mt-2 text-[20px] font-bold tracking-tight text-foreground">Ask the Manager to turn the current packet into a decision.</h2>
-                <div className="mt-6 flex flex-wrap gap-2">
-                  {promptChips.map((prompt) => (
-                    <button
-                      key={prompt}
-                      type="button"
-                      onClick={() => setAskText(prompt)}
-                      className="rounded-full border border-foreground/8 bg-foreground/[0.035] px-3.5 py-2 text-[11px] font-bold text-foreground/84 transition-colors hover:border-brand-accent/25 hover:bg-brand-accent/5 hover:text-brand-accent"
-                    >
-                      {prompt.split(" ").slice(0, 4).join(" ")}
-                    </button>
-                  ))}
-                </div>
+                <p className="text-[14px] font-semibold leading-relaxed text-muted-foreground/85">Ask your Manager anything — a decision, a plan, or a review of what's happening.</p>
                 <div className="relative mt-6">
                   <textarea
                     value={askText}
@@ -170,20 +167,15 @@ export function ManagerOfficeScreen({
                     key={conversation.id}
                     type="button"
                     aria-label={conversation.topic}
-                    className="group flex items-center justify-between gap-4 rounded-xl border border-transparent p-4 text-left transition-colors hover:border-foreground/8 hover:bg-foreground/[0.025]"
+                    className="group flex items-center gap-4 rounded-xl border border-transparent p-4 text-left transition-colors hover:border-foreground/8 hover:bg-foreground/[0.025]"
                     onClick={() => onConversation(conversation)}
                   >
-                    <div className="flex min-w-0 items-center gap-4">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-foreground/80 transition-colors group-hover:bg-brand-accent/10 group-hover:text-brand-accent">
-                        <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-[14px] font-bold text-foreground transition-colors group-hover:text-brand-accent">{conversation.topic}</p>
-                        <p className="mt-1 truncate text-[12px] text-muted-foreground/78">{conversation.status || conversation.summary}</p>
-                      </div>
-                    </div>
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-foreground/80 transition-colors group-hover:bg-brand-accent/10 group-hover:text-brand-accent">
+                      <MessageSquareText className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <p className="min-w-0 flex-1 truncate text-[14px] font-bold text-foreground transition-colors group-hover:text-brand-accent">{conversation.topic}</p>
                     <div className="flex shrink-0 items-center gap-4">
-                      {conversation.lastUpdate ? <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{conversation.lastUpdate}</span> : null}
+                      {conversation.lastUpdate ? <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{formatConversationTimestamp(conversation.lastUpdate)}</span> : null}
                       <ChevronRight className="h-4 w-4 text-foreground/20 transition-colors group-hover:text-brand-accent" aria-hidden="true" />
                     </div>
                   </button>

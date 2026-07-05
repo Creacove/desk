@@ -12,18 +12,11 @@ export function StaffWorkspace({
   onLockedAgent: (agent: AgentViewModel) => void;
 }) {
   const orderedAgents = orderTeamAgents(agents);
-  const activeCount = orderedAgents.filter((agent) => agent.status === "available").length;
-  const lockedCount = orderedAgents.length - activeCount;
 
   return (
     <section>
       <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
       <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mb-5">AI Manager is live for conversations and operating decisions. The specialist agents are visible now as the next desks coming online.</p>
-      <div className="mb-5 grid gap-3 md:grid-cols-3">
-        <Stat label="Team" value={String(agents.length)} />
-        <Stat label="Active" value={String(activeCount)} />
-        <Stat label="Waiting" value={String(lockedCount)} />
-      </div>
       <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">
         {orderedAgents.map((agent) => {
           const Icon = agent.icon;
@@ -117,13 +110,4 @@ function agentSortValue(agent: AgentViewModel) {
   if (agent.id === "manager") return 0;
   if (agent.status === "available") return 1;
   return 2;
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-foreground/8 bg-foreground/[0.025] p-4">
-      <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{label}</p>
-      <p className="font-display text-[18px] font-bold tracking-tight text-foreground mt-2">{value}</p>
-    </div>
-  );
 }

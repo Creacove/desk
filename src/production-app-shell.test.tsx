@@ -822,7 +822,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));
 
-    expect(await screen.findByText("Manager Office")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
     expect(generationModes).toEqual([]);
   }, 20000);
 
@@ -911,7 +911,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
-    expect(screen.getByText("Manager Office")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Desk HQ" }));
     fireEvent.click(screen.getByRole("button", { name: /Music Focus.*Jam.*Open record read/i }));
@@ -1174,10 +1174,8 @@ describe("Clean production prototype-match shell", () => {
     expect(within(mobileMetrics).getByText("Skip rate")).toBeInTheDocument();
 
     const teamAgents = within(desk).getByTestId("desk-mobile-team-agents");
-    expect(teamAgents).toHaveTextContent("Team Agents");
-    expect(teamAgents).toHaveTextContent("AI Manager");
-    expect(teamAgents).toHaveTextContent("Marketing Lead");
-    expect(within(teamAgents).getByRole("button", { name: "Open team" })).toBeInTheDocument();
+    expect(teamAgents).toHaveTextContent("Manager Agent");
+    expect(teamAgents).not.toHaveTextContent("Marketing Lead");
   }, 20000);
 
   it("renders saved Today's Brief copy instead of dropping it for style-policy terms", async () => {
@@ -1389,7 +1387,7 @@ describe("Clean production prototype-match shell", () => {
     await enterDeskHq();
 
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
-    expect(screen.getByText("Manager Office")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
     expect(screen.getByText("Conversation History")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Night Bus release planning" }));
@@ -2360,7 +2358,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
     fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
-    expect(screen.getByText("Manager Office")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");
@@ -2522,14 +2520,13 @@ describe("Clean production prototype-match shell", () => {
       candidateMissionId: "candidate-generated",
     });
 
-    expect(await screen.findByRole("heading", { name: "Manager Briefing." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
     expect(screen.getByText("Mission candidate needs context")).toBeInTheDocument();
-    expect(screen.getByText("Manager Directive")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Mission Genesis needs context/i }));
-    expect(await screen.findByRole("heading", { name: "Manager Briefing." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("What should the Manager optimize for over the next 90 days?"), { target: { value: "Market entry" } });
     fireEvent.change(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?"), { target: { value: "$5,000" } });

@@ -1,5 +1,5 @@
 import { ArrowLeft, Check, Lock } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ProductButton, WorkspaceHeader } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type {
@@ -295,7 +295,7 @@ function MissionRoom({
   const openTaskCount = tasks.filter((task) => task.result?.status !== "completed").length;
 
   return (
-    <section className="grid min-w-0 max-w-full gap-4 overflow-x-hidden lg:gap-6">
+    <section className="grid min-w-0 max-w-full gap-4 overflow-x-clip lg:gap-6">
       <h3 className="sr-only">Missions</h3>
       <div data-testid="mobile-mission-switcher" className="sr-only" />
       <div data-testid="mission-command-bar" className="rounded-[16px] border border-foreground/8 bg-background/88 p-3.5 shadow-sm sm:p-5">
@@ -313,10 +313,7 @@ function MissionRoom({
             <p className="mt-2 hidden max-w-3xl text-[14px] leading-relaxed text-muted-foreground/84 sm:block">{mission.summary}</p>
           </div>
           <div className="min-w-0">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[12px] font-semibold text-foreground">{mission.progress}% / {formatOpenTaskCount(openTaskCount)}</p>
-              <p className="hidden truncate text-[11px] font-semibold text-muted-foreground/82 lg:block">{mission.review}</p>
-            </div>
+            <p className="text-[12px] font-semibold text-foreground">{mission.progress}% / {formatOpenTaskCount(openTaskCount)}</p>
             <MissionProgressMeter status={mission.status} progress={mission.progress} className="mt-2" />
           </div>
         </div>
@@ -425,6 +422,15 @@ function TasksPanel({
     }
   }, [targetTask?.checkpointId]);
 
+  const didMountRef = useRef(false);
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true;
+      return;
+    }
+    document.getElementById(`task-group-${activeCheckpointId}`)?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+  }, [activeCheckpointId]);
+
   const toggleTaskDetails = (taskId: string) => {
     setExpandedTaskIds((current) => (current.includes(taskId) ? current.filter((id) => id !== taskId) : [...current, taskId]));
   };
@@ -457,8 +463,8 @@ function TasksPanel({
   return (
     <section className="surface-elevated rounded-[22px] p-4 shadow-sm sm:p-5">
       <h3 className="sr-only">Mission tasks</h3>
-      <div className="grid items-start gap-5 xl:grid-cols-[260px_minmax(0,1fr)] xl:gap-6">
-        <aside className="surface-elevated min-w-0 overflow-hidden rounded-[22px] p-4 shadow-sm lg:sticky lg:top-6 lg:self-start">
+      <div className="grid items-start gap-5 lg:grid-cols-[260px_minmax(0,1fr)] lg:gap-6">
+        <aside className="surface-elevated min-w-0 overflow-hidden rounded-[22px] p-4 shadow-sm lg:sticky lg:top-6 lg:max-h-[calc(100vh-48px)] lg:self-start lg:overflow-y-auto">
           <div className="border-b border-foreground/8 pb-3">
             <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission checkpoints</p>
           </div>
@@ -687,14 +693,18 @@ function CheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpoi
   const selectedCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId) ?? activeBlocker;
   const clearedCount = checkpoints.filter((checkpoint) => checkpoint.status === "Met" || checkpoint.status === "Ready for AI review").length;
 
+  useEffect(() => {
+    document.querySelector('[data-testid="checkpoint-inspector"]')?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
+  }, [selectedCheckpointId]);
+
   if (!selectedCheckpoint) return null;
 
   return (
     <section className="surface-elevated rounded-[22px] p-4 shadow-sm sm:p-5">
       <div className="space-y-5">
         <span className="sr-only">mission checkpoints</span>
-        <div data-testid="checkpoint-workspace-grid" className="grid gap-5 xl:h-[calc(100vh-300px)] xl:min-h-[600px] xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] xl:overflow-hidden">
-          <section data-testid="checkpoint-ledger-panel" className="min-w-0 overflow-hidden rounded-[24px] border border-foreground/8 bg-background/76 p-3 shadow-sm xl:flex xl:h-full xl:flex-col">
+        <div data-testid="checkpoint-workspace-grid" className="grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] xl:items-start">
+          <section data-testid="checkpoint-ledger-panel" className="min-w-0 overflow-hidden rounded-[24px] border border-foreground/8 bg-background/76 p-3 shadow-sm lg:sticky lg:top-6 lg:self-start">
             <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
               <div>
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission checkpoints</p>
@@ -705,7 +715,7 @@ function CheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpoi
                 <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker?.title ?? "None"}</span>
               </div>
             </div>
-            <div data-testid="checkpoint-scroll-region" className="scrollbar-soft min-h-0 space-y-4 pr-1 lg:overflow-y-auto lg:pr-2 xl:flex-1">
+            <div data-testid="checkpoint-scroll-region" className="scrollbar-soft space-y-4 pr-1 lg:max-h-[calc(100vh-160px)] lg:overflow-y-auto lg:pr-2">
               <div data-testid="mobile-checkpoint-list" className="sr-only">Mobile checkpoint list</div>
               {checkpoints.map((checkpoint) => {
                 const isSelected = selectedCheckpoint.id === checkpoint.id;
@@ -771,7 +781,7 @@ function CheckpointInspector({
   const decision = getCheckpointDecision(checkpoint, checkpoints);
 
   return (
-    <aside data-testid="checkpoint-inspector" className="scrollbar-soft min-w-0 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:sticky lg:top-6 lg:self-start xl:h-full xl:overflow-y-auto">
+    <aside data-testid="checkpoint-inspector" className="min-w-0 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager review</p>
@@ -969,7 +979,7 @@ function MissionTabRail({
           aria-pressed={tab === item.id}
           onClick={() => onTab(item.id)}
           className={cn(
-            "relative flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors",
+            "relative flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors",
             tab === item.id
               ? "border-foreground bg-foreground text-background"
               : "border-transparent bg-transparent text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
@@ -977,7 +987,7 @@ function MissionTabRail({
         >
           {item.label}
           {item.badge ? (
-            <span className={cn("rounded-md px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal", tab === item.id ? "bg-background/14 text-background" : "bg-foreground/[0.055] text-foreground/80")}>
+            <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal", tab === item.id ? "bg-background/14 text-background" : "bg-foreground/[0.055] text-foreground/80")}>
               {item.badge}
             </span>
           ) : null}
