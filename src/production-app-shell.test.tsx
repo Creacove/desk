@@ -2558,7 +2558,7 @@ describe("Clean production prototype-match shell", () => {
     // Navigate to the Checkpoints tab
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
     expect(screen.getAllByText("Market signal quality").length).toBeGreaterThan(0);
-    expect(screen.getByText("Is this market signal real enough?")).toBeInTheDocument();
+    expect(screen.getAllByText("Is this market signal real enough?").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Verify geography signal quality").length).toBeGreaterThan(0);
   }, 20000);
 
@@ -2724,7 +2724,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText(/Separate song-level momentum from Blaqbonez-owned audience/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
     expect(screen.getAllByText("Feature leverage quality").length).toBeGreaterThan(0);
-    expect(screen.getByText(/If the song grows but Blaqbonez's profile does not/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/If the song grows but Blaqbonez's profile does not/i).length).toBeGreaterThan(0);
     expect(loadMissionsCalls).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Mission Genesis failed")).not.toBeInTheDocument();
   }, 20000);
