@@ -414,7 +414,7 @@ function MobileDeskHome({
         </div>
 
         <div className="px-4 py-4">
-          <h1 className="font-display text-[18px] font-semibold leading-[1.15] text-foreground">{brief.headlineRead}</h1>
+          <p className="font-display text-[15px] font-semibold leading-snug text-foreground">{brief.headlineRead}</p>
           <p className="mt-3 text-[13px] font-medium leading-relaxed text-muted-foreground/82">{brief.snapshotSummary}</p>
 
           {compactMetrics.length ? (
@@ -481,17 +481,24 @@ function MobileDeskHome({
       </section>
 
       {managerAgent ? (
-        <section data-testid="desk-mobile-team-agents" className="rounded-[18px] border border-foreground/10 bg-white p-4 shadow-[0_1px_8px_rgba(17,19,24,0.05)]">
-          <button type="button" className="flex w-full min-w-0 items-center gap-3 text-left" onClick={onManager}>
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
-              <managerAgent.icon className="h-4 w-4" aria-hidden="true" />
+        <button
+          type="button"
+          data-testid="desk-mobile-team-agents"
+          aria-label="Talk to Manager"
+          className="group flex w-full min-w-0 items-center gap-3 rounded-[18px] border border-brand-accent/25 bg-brand-accent/[0.06] p-4 text-left shadow-[0_1px_8px_rgba(17,19,24,0.05)] transition-colors hover:bg-brand-accent/[0.1] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+          onClick={onManager}
+        >
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
+            <MessageSquareText className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[14px] font-bold text-foreground">Talk to Manager</span>
+            <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">
+              {displayAgentName(managerAgent)} - {getAgentCardRead(managerAgent)}
             </span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-[14px] font-semibold text-foreground">{displayAgentName(managerAgent)}</span>
-              <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">{getAgentCardRead(managerAgent)}</span>
-            </span>
-          </button>
-        </section>
+          </span>
+          <ArrowUpRight className="h-4 w-4 shrink-0 text-brand-accent transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
+        </button>
       ) : null}
 
       <section className="rounded-[18px] border border-foreground/10 bg-white p-4 shadow-[0_1px_8px_rgba(17,19,24,0.05)]">
