@@ -3715,6 +3715,206 @@ describe("Clean production prototype-match shell", () => {
     expect(within(pulse).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
   }, 20000);
 
+  it("renders mission cards as compact task-first entries", async () => {
+    const mission: MissionViewModel = {
+      id: "mission-compact-list",
+      title: "Define the first repeatable release lane",
+      status: "active",
+      progress: 35,
+      review: "Approve release lane before external pitching",
+      summary: "This long mission summary should not make the mission list feel like a dashboard card.",
+      recommendation: "Keep the lane active and finish owner-ready task setup.",
+      musicSubject: "Release lane",
+      nextTask: "Confirm the release owner",
+      checkpoints: [
+        {
+          id: "checkpoint-release-lane",
+          phase: 1,
+          title: "Release lane clarity",
+          status: "Waiting on tasks",
+          question: "Is the release lane clear enough to brief the team?",
+          requiredTaskIds: ["task-owner", "task-assets"],
+          dependsOnCheckpointIds: [],
+          unlocks: ["Pitch package"],
+          blockedReason: "",
+          dependencyImpact: "External pitching waits for owner clarity.",
+          watchedSignals: ["owner", "assets"],
+          decisionRule: "Advance only after owner and asset tasks are done.",
+          recommendation: "Finish the release lane tasks.",
+          resultSummary: "The lane still needs task results.",
+          nextAction: "Confirm the release owner",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-owner",
+          checkpointId: "checkpoint-release-lane",
+          title: "Confirm the release owner",
+          owner: "Manager",
+          deadline: "Today",
+          approvalState: "active",
+          purpose: "Make sure the lane has a single accountable owner.",
+          steps: ["Name owner"],
+          evidenceIds: [],
+          dependency: "Manager decision",
+          riskIfLate: "The lane remains unclear.",
+        },
+        {
+          id: "task-assets",
+          checkpointId: "checkpoint-release-lane",
+          title: "Collect release assets",
+          owner: "Creative Lead",
+          deadline: "Tomorrow",
+          approvalState: "active",
+          purpose: "Make sure pitching has usable assets.",
+          steps: ["Collect assets"],
+          evidenceIds: [],
+          dependency: "Owner clarity",
+          riskIfLate: "Pitching slips.",
+        },
+      ],
+      notes: [
+        {
+          id: "note-release-lane",
+          route: "Manager -> Creative Lead",
+          subject: "Release lane setup",
+          message: "Assets are needed.",
+          status: "active",
+          sourceBasis: "Manager review",
+          recommendedAction: "Collect assets",
+          resultingChange: "Created task",
+          briefType: "handoff",
+        },
+      ],
+      events: [],
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.missions.loadMissions = async () => [mission];
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    const missionCard = screen.getAllByRole("button", { name: /Define the first repeatable release lane/i })[0];
+
+    expect(within(missionCard).getByText("2 open tasks")).toBeInTheDocument();
+    expect(within(missionCard).getByText("35%")).toBeInTheDocument();
+    expect(within(missionCard).queryByText("Checkpoints")).not.toBeInTheDocument();
+    expect(within(missionCard).queryByText("Handoffs")).not.toBeInTheDocument();
+  }, 20000);
+
+  it("keeps the mission room mobile masthead and tabs compact", async () => {
+    const mission: MissionViewModel = {
+      id: "mission-mobile-compact",
+      title: "Build the compact mobile mission room",
+      status: "active",
+      progress: 40,
+      review: "Confirm mobile hierarchy",
+      summary: "This summary should live in Pulse, not in the compact mobile masthead.",
+      recommendation: "Keep the mobile room focused on the next action.",
+      musicSubject: "Mobile room",
+      nextTask: "Ship mobile hierarchy",
+      checkpoints: [
+        {
+          id: "checkpoint-mobile-one",
+          phase: 1,
+          title: "Mobile hierarchy",
+          status: "Waiting on tasks",
+          question: "Does mobile show useful work quickly?",
+          requiredTaskIds: ["task-mobile-one"],
+          dependsOnCheckpointIds: [],
+          unlocks: ["Review"],
+          blockedReason: "",
+          dependencyImpact: "The room stays heavy until this is fixed.",
+          watchedSignals: ["layout"],
+          decisionRule: "Pass when content is reachable without wrapped tabs.",
+          recommendation: "Compact the header.",
+          resultSummary: "Needs layout work.",
+          nextAction: "Ship mobile hierarchy",
+        },
+        {
+          id: "checkpoint-mobile-two",
+          phase: 2,
+          title: "Follow-up review",
+          status: "Waiting on tasks",
+          question: "Does the second checkpoint stay out of the mobile task dump?",
+          requiredTaskIds: ["task-mobile-two"],
+          dependsOnCheckpointIds: [],
+          unlocks: ["Done"],
+          blockedReason: "",
+          dependencyImpact: "Mobile should not show every task group at once.",
+          watchedSignals: ["task list"],
+          decisionRule: "Pass when inactive groups are hidden on mobile.",
+          recommendation: "Show one group on mobile.",
+          resultSummary: "Waiting.",
+          nextAction: "Review the second group",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-mobile-one",
+          checkpointId: "checkpoint-mobile-one",
+          title: "Ship mobile hierarchy",
+          owner: "Manager",
+          deadline: "Today",
+          approvalState: "active",
+          purpose: "Make the first task reachable.",
+          steps: ["Compact header"],
+          evidenceIds: [],
+          dependency: "Mission room",
+          riskIfLate: "Mobile remains hard to scan.",
+        },
+        {
+          id: "task-mobile-two",
+          checkpointId: "checkpoint-mobile-two",
+          title: "Review the second group",
+          owner: "Manager",
+          deadline: "Tomorrow",
+          approvalState: "active",
+          purpose: "Confirm the hidden group remains reachable through the stepper.",
+          steps: ["Open checkpoint"],
+          evidenceIds: [],
+          dependency: "Checkpoint one",
+          riskIfLate: "The task view stays cluttered.",
+        },
+      ],
+      notes: [],
+      events: [],
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.missions.loadMissions = async () => [mission];
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /Build the compact mobile mission room/i })[0]);
+
+    const commandBar = screen.getByTestId("mission-command-bar");
+    expect(commandBar).toHaveTextContent("40% / 2 open tasks");
+    expect(commandBar).toHaveTextContent("Build the compact mobile mission room");
+
+    const tabRail = screen.getByTestId("mobile-mission-tabs");
+    expect(tabRail).toHaveClass("overflow-x-auto");
+    expect(tabRail).not.toHaveClass("flex-wrap");
+
+    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
+    expect(screen.getByTestId("task-group-checkpoint-mobile-one")).not.toHaveClass("max-lg:hidden");
+    expect(screen.getByTestId("task-group-checkpoint-mobile-two")).toHaveClass("max-lg:hidden");
+  }, 20000);
+
   it("keeps production code prototype-parity styled without independent os-* UI classes", () => {
     const productionFiles = readProductionFiles();
 

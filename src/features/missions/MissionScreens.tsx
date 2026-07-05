@@ -241,36 +241,27 @@ function MissionList({
 }
 
 function MissionListCard({ mission, onOpen }: { mission: MissionViewModel; onOpen: () => void }) {
-  const metrics = missionMetrics(mission);
-  const statusColor = mission.status === "blocked" ? "bg-warning" : mission.status === "review" ? "bg-amber-500" : "bg-brand-accent";
+  const openTaskCount = getOpenTaskCount(mission);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group relative flex min-h-[250px] flex-col justify-between overflow-hidden rounded-[24px] border border-foreground/8 bg-background/85 p-6 text-left transition-all hover:-translate-y-0.5 hover:border-foreground/15 hover:shadow-md"
+      className="group grid min-w-0 gap-3 rounded-[14px] border border-foreground/8 bg-background/86 p-4 text-left shadow-sm transition-colors hover:border-foreground/16 hover:bg-foreground/[0.025] sm:grid-cols-[minmax(0,1fr)_132px] sm:items-center sm:p-4"
     >
-      <div>
-        <div className="flex items-center justify-between gap-3">
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className={cn("h-2 w-2 shrink-0 rounded-full", getMissionProgressClass(mission.status))} aria-hidden="true" />
           <StatusBadge status={mission.status} />
-          <span className="text-[10px] font-bold text-muted-foreground/60">{mission.progress}% complete</span>
+          <span className="text-[11px] font-semibold text-muted-foreground/82">{formatOpenTaskCount(openTaskCount)}</span>
         </div>
-        <h4 className="mt-4 font-display text-[20px] font-bold tracking-tight text-foreground transition-colors group-hover:text-brand-accent">{mission.title}</h4>
-        <p className="mt-2 line-clamp-2 text-[13px] font-medium leading-relaxed text-muted-foreground/85">{mission.summary}</p>
+        <h4 className="mt-2 line-clamp-2 font-display text-[16px] font-semibold leading-tight text-foreground transition-colors group-hover:text-foreground">{mission.title}</h4>
+        <p className="mt-1 hidden truncate text-[12px] leading-relaxed text-muted-foreground/82 sm:block">{mission.summary}</p>
       </div>
 
-      <div className="mt-6 w-full space-y-4">
-        <div className="h-1.5 w-full overflow-hidden rounded-full bg-foreground/5">
-          <div className={cn("h-full rounded-full transition-all duration-500", statusColor)} style={{ width: `${mission.progress}%` }} />
-        </div>
-        <div className="grid grid-cols-3 gap-2 border-t border-foreground/5 pt-4 text-center">
-          {metrics.map((metric) => (
-            <div key={metric.label}>
-              <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground/50">{metric.label}</p>
-              <p className="mt-1 text-[13px] font-bold text-foreground">{metric.value}</p>
-            </div>
-          ))}
-        </div>
+      <div className="grid min-w-0 gap-2 sm:justify-items-end">
+        <span className="text-[12px] font-semibold text-foreground">{mission.progress}%</span>
+        <MissionProgressMeter status={mission.status} progress={mission.progress} className="w-full sm:w-[112px]" />
       </div>
     </button>
   );
@@ -302,69 +293,37 @@ function MissionRoom({
   const events = missionEvents(mission);
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
   const openTaskCount = tasks.filter((task) => task.result?.status !== "completed").length;
-  const progressColor = mission.status === "blocked" ? "bg-warning" : mission.status === "review" ? "bg-amber-500" : mission.status === "complete" ? "bg-success" : "bg-foreground";
 
   return (
-    <section className="grid gap-6">
+    <section className="grid min-w-0 max-w-full gap-4 overflow-x-hidden lg:gap-6">
       <h3 className="sr-only">Missions</h3>
       <div data-testid="mobile-mission-switcher" className="sr-only" />
-      <div data-testid="mission-command-bar" className="rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
-        <button type="button" onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">
+      <div data-testid="mission-command-bar" className="rounded-[16px] border border-foreground/8 bg-background/88 p-3.5 shadow-sm sm:p-5">
+        <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground lg:mb-5">
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Missions
         </button>
-        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-end">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-end">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-brand-accent">What is happening</p>
               <StatusBadge status={mission.status} />
             </div>
-            <h2 className="mt-3 font-display text-[30px] font-bold leading-tight tracking-tight text-foreground lg:text-[38px]">{mission.title}</h2>
-            <p className="mt-2 max-w-3xl text-[14px] font-semibold leading-relaxed text-muted-foreground/84">{mission.summary}</p>
+            <h2 className="mt-2 font-display text-[21px] font-semibold leading-tight text-foreground sm:text-[30px] lg:text-[38px]">{mission.title}</h2>
+            <p className="mt-2 hidden max-w-3xl text-[14px] leading-relaxed text-muted-foreground/84 sm:block">{mission.summary}</p>
           </div>
-          <div className="rounded-lg border border-foreground/8 bg-foreground/[0.018] p-4">
+          <div className="min-w-0">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">Progress</p>
-              <p className="text-[12px] font-semibold text-foreground">{mission.progress}%</p>
+              <p className="text-[12px] font-semibold text-foreground">{mission.progress}% / {formatOpenTaskCount(openTaskCount)}</p>
+              <p className="hidden truncate text-[11px] font-semibold text-muted-foreground/82 lg:block">{mission.review}</p>
             </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/5">
-              <div className={cn("h-full rounded-full transition-all duration-1000", progressColor)} style={{ width: `${mission.progress}%` }} />
-            </div>
-            <p className="mt-3 text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/88">{mission.review}</p>
+            <MissionProgressMeter status={mission.status} progress={mission.progress} className="mt-2" />
           </div>
         </div>
       </div>
 
-      <div data-testid="mission-surface-rail">
-        <div data-testid="mobile-mission-tabs" className="flex flex-wrap gap-2 border-b border-foreground/5 pb-4">
-          {([
-            { id: "pulse", label: "Pulse", badge: mission.status === "blocked" ? "Action needed" : null },
-            { id: "tasks", label: "Tasks", badge: `${openTaskCount} Left` },
-            { id: "checkpoints", label: "Checkpoints", badge: activeBlocker ? "1 Blocked" : null },
-            { id: "notes", label: "Notes", badge: `${notes.length}` },
-            { id: "recap", label: "Mission recap", badge: null },
-          ] as const).map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={tab === item.id}
-              onClick={() => onTab(item.id)}
-              className={cn(
-                "relative flex items-center gap-1.5 rounded-full border px-4 py-2 text-[11px] font-bold uppercase tracking-[0.10em] transition-all",
-                tab === item.id
-                  ? "border-foreground bg-foreground text-background"
-                  : "border-foreground/10 bg-background text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {item.label}
-              {item.badge ? (
-                <span className={cn("rounded-full px-1.5 py-0.5 text-[8px] font-bold normal-case tracking-normal", tab === item.id ? "bg-background text-foreground" : "bg-foreground/5 text-foreground/80")}>
-                  {item.badge}
-                </span>
-              ) : null}
-            </button>
-          ))}
-        </div>
+      <div data-testid="mission-surface-rail" className="min-w-0 max-w-full">
+        <MissionTabRail tab={tab} onTab={onTab} openTaskCount={openTaskCount} noteCount={notes.length} blockedCheckpointCount={activeBlocker ? 1 : 0} missionBlocked={mission.status === "blocked"} />
       </div>
 
       <div className="min-h-[400px]">
@@ -392,22 +351,22 @@ function MissionPulse({
   const requiredActionReason = activeBlocker?.blockedReason || activeBlocker?.dependencyImpact;
 
   return (
-    <section data-testid="mission-pulse" className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="p-5 sm:p-6">
+    <section data-testid="mission-pulse" className="surface-elevated min-w-0 max-w-full overflow-hidden rounded-[22px] shadow-sm">
+      <div className="grid min-w-0 gap-0 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="min-w-0 p-5 sm:p-6">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission pulse</span>
             <span className="rounded-full border border-brand-accent/15 bg-brand-accent/[0.07] px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">{mission.status}</span>
           </div>
           <h4 className="mt-3 font-display text-[24px] font-bold leading-tight tracking-tight text-foreground">{mission.review}</h4>
-          <div className="mt-5 rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-5">
+          <div className="mt-5 min-w-0 rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-5">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Recommendation</p>
             <p className="mt-3 text-[17px] font-semibold leading-relaxed text-foreground">{mission.recommendation}</p>
             <p className="mt-4 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{mission.summary}</p>
           </div>
         </div>
 
-        <div className="border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
+        <div className="min-w-0 border-t border-foreground/8 bg-background/62 p-5 lg:border-l lg:border-t-0">
           <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Next Required Action</p>
           {requiredActionTitle ? (
             <div className="mt-4 rounded-[18px] border border-foreground/8 bg-background p-4 shadow-sm">
@@ -543,7 +502,7 @@ function TasksPanel({
                 id={`task-group-${checkpoint.id}`}
                 data-testid={`task-group-${checkpoint.id}`}
                 data-active={sectionActive ? "true" : "false"}
-                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border bg-background/85 shadow-sm transition-all lg:scroll-mt-6", sectionActive ? "border-brand-accent/35 shadow-lg shadow-brand-accent/5" : "border-foreground/8", isLocked && !sectionActive && "opacity-70")}
+                className={cn("scroll-mt-24 overflow-hidden rounded-[20px] border bg-background/85 shadow-sm transition-all lg:scroll-mt-6", sectionActive ? "border-brand-accent/35 shadow-lg shadow-brand-accent/5" : "border-foreground/8 max-lg:hidden", isLocked && !sectionActive && "opacity-70")}
               >
                 <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
                   <div className="flex items-center justify-between gap-3">
@@ -978,6 +937,72 @@ function MissionRecapPanel({ mission, recap, events }: { mission: MissionViewMod
   );
 }
 
+function MissionTabRail({
+  tab,
+  onTab,
+  openTaskCount,
+  noteCount,
+  blockedCheckpointCount,
+  missionBlocked,
+}: {
+  tab: MissionRoomTab;
+  onTab: (tab: MissionRoomTab) => void;
+  openTaskCount: number;
+  noteCount: number;
+  blockedCheckpointCount: number;
+  missionBlocked: boolean;
+}) {
+  const items = [
+    { id: "pulse", label: "Pulse", badge: missionBlocked ? "Action" : null },
+    { id: "tasks", label: "Tasks", badge: String(openTaskCount) },
+    { id: "checkpoints", label: "Checkpoints", badge: blockedCheckpointCount ? `${blockedCheckpointCount} blocked` : null },
+    { id: "notes", label: "Notes", badge: noteCount ? String(noteCount) : null },
+    { id: "recap", label: "Mission recap", badge: null },
+  ] as const;
+
+  return (
+    <div data-testid="mobile-mission-tabs" className="scrollbar-none flex w-full min-w-0 max-w-full gap-1 overflow-x-auto border-b border-foreground/8 pb-3 lg:overflow-visible">
+      {items.map((item) => (
+        <button
+          key={item.id}
+          type="button"
+          aria-pressed={tab === item.id}
+          onClick={() => onTab(item.id)}
+          className={cn(
+            "relative flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-3 text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors",
+            tab === item.id
+              ? "border-foreground bg-foreground text-background"
+              : "border-transparent bg-transparent text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
+          )}
+        >
+          {item.label}
+          {item.badge ? (
+            <span className={cn("rounded-md px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal", tab === item.id ? "bg-background/14 text-background" : "bg-foreground/[0.055] text-foreground/80")}>
+              {item.badge}
+            </span>
+          ) : null}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function MissionProgressMeter({
+  status,
+  progress,
+  className,
+}: {
+  status: MissionViewModel["status"];
+  progress: number;
+  className?: string;
+}) {
+  return (
+    <div className={cn("h-1 overflow-hidden rounded-full bg-foreground/8", className)}>
+      <div className={cn("h-full rounded-full transition-all duration-500", getMissionProgressClass(status))} style={{ width: `${progress}%` }} />
+    </div>
+  );
+}
+
 function StatusBadge({ status }: { status: MissionViewModel["status"] }) {
   return (
     <span className={cn(
@@ -1000,16 +1025,18 @@ function CheckpointStatusBadge({ status }: { status: MissionCheckpointViewModel[
   );
 }
 
-function missionMetrics(mission: MissionViewModel) {
-  const tasks = missionTasks(mission);
-  const checkpoints = missionCheckpoints(mission);
-  const notes = missionNotes(mission);
+function getMissionProgressClass(status: MissionViewModel["status"]) {
+  if (status === "blocked") return "bg-warning";
+  if (status === "complete") return "bg-success";
+  return "bg-foreground";
+}
 
-  return [
-    { label: "Tasks", value: String(tasks.filter((task) => task.result?.status !== "completed").length) },
-    { label: "Checkpoints", value: String(checkpoints.length) },
-    { label: "Handoffs", value: String(notes.length) },
-  ];
+function getOpenTaskCount(mission: MissionViewModel) {
+  return missionTasks(mission).filter((task) => task.result?.status !== "completed").length;
+}
+
+function formatOpenTaskCount(count: number) {
+  return `${count} open ${count === 1 ? "task" : "tasks"}`;
 }
 
 function missionTasks(mission: MissionViewModel): MissionTaskViewModel[] {
