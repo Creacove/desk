@@ -1238,6 +1238,7 @@ function humanizeDiscoveryStep(rawStep: string) {
   const step = rawStep.trim();
   if (!step) return "";
 
+  // Raw strings from edge functions (format written to operating_events)
   if (/^running\s+chartmetric_artist_enrich/i.test(step)) return "Building your artist profile…";
   if (/^running\s+chartmetric_track_enrich/i.test(step)) return "Searching through your track data…";
   if (/^running\s+chartmetric_project_enrich/i.test(step)) return "Scanning your projects…";
@@ -1254,6 +1255,20 @@ function humanizeDiscoveryStep(rawStep: string) {
   if (/autonomous onboarding discovery completed/i.test(step)) return "Putting your setup together…";
   if (/generating initial setup operating map brief/i.test(step)) return "Building your setup overview…";
   if (/initial setup operating map brief generated/i.test(step)) return "Finishing your setup overview…";
+
+  // Already-humanized strings written by agentLoop.ts (e.g. from older runs stored in DB)
+  if (/^enriching (the|a focus) artist profile/i.test(step)) return "Building your artist profile…";
+  if (/^enriching (a focus )?track/i.test(step)) return "Searching through your track data…";
+  if (/^enriching (a focus )?project/i.test(step)) return "Scanning your projects…";
+  if (/artist intelligence is (already up to date|ready)/i.test(step)) return "Finalising your artist profile…";
+  if (/music intelligence is (already up to date|ready)/i.test(step)) return "Finishing up your track data…";
+  if (/project intelligence is (already up to date|ready)/i.test(step)) return "Wrapping up your projects…";
+  if (/artist intelligence could not be matched/i.test(step)) return "Some of your music couldn't be matched yet…";
+  if (/music intelligence could not be matched/i.test(step)) return "Some of your music couldn't be matched yet…";
+  if (/saved? a (public context signal|public context)/i.test(step)) return "Gathering public information…";
+  if (/saved? (a )?manager memory/i.test(step)) return "Setting up your Manager's memory…";
+  if (/saving (a )?public context signal/i.test(step)) return "Gathering public information…";
+  if (/saving manager memory/i.test(step)) return "Setting up your Manager's memory…";
 
   return sanitizeDiscoveryStep(step);
 }

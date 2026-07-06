@@ -584,11 +584,14 @@ function MessageRow({
 // Thinking indicator — replaces the old dual-line card
 // ---------------------------------------------------------------------------
 function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["activeRun"] }) {
-  // Prefer the live activity label if we have one
-  const latestStep = activeRun?.steps.length
-    ? [...activeRun.steps].reverse().find((s) => s.status === "running") ?? activeRun.steps.at(-1)
-    : null;
-  const label = latestStep ? activityStatusLine(latestStep.label, latestStep.status) : "Reading your workspace…";
+  // Always show the most-recently-added step, regardless of its status.
+  // Tool events complete quickly so by the time React renders they may already
+  // be "completed" — we still want to show them rather than falling back to
+  // the long-running parent run step.
+  const latestStep = activeRun?.steps.length ? activeRun.steps.at(-1) : null;
+  // Force present-progressive rendering: the ThinkingIndicator is always a
+  // loading state so every step should read as "currently happening".
+  const label = latestStep ? activityStatusLine(latestStep.label) : "Reading your workspace…";
 
   return (
     <div className="flex flex-col items-start animate-in fade-in duration-300">
@@ -624,8 +627,9 @@ function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["ac
 // ---------------------------------------------------------------------------
 function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel["activeRun"]> }) {
   const [expanded, setExpanded] = useState(false);
-  const latestStep = [...run.steps].reverse().find((s) => s.status === "running") ?? run.steps.at(-1);
-  const statusText = latestStep ? activityStatusLine(latestStep.label, latestStep.status) : "Manager is preparing the answer.";
+  // Same logic as ThinkingIndicator: show the most recent step in present-progressive mode.
+  const latestStep = run.steps.at(-1);
+  const statusText = latestStep ? activityStatusLine(latestStep.label) : "Getting your answer ready…";
 
   return (
     <div className="mt-4 border-t border-foreground/6 pt-3">
@@ -674,29 +678,23 @@ function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel
   );
 }
 
-function activityStatusLine(label: string, status: NonNullable<ConversationViewModel["activeRun"]>["steps"][number]["status"]) {
+// Always returns a present-progressive string — status is no longer needed
+// since both ThinkingIndicator and ManagerActivityStatus show the most-recent
+// step in present-progressive mode regardless of actual run state.
+function activityStatusLine(label: string) {
   const cleanLabel = label.trim().toLowerCase();
 
-  if (status === "failed") {
-    return "Manager hit a problem preparing this reply.";
-  }
-
-  if (status === "completed") {
-    if (cleanLabel.includes("reading workspace packet")) return "Reviewing your context…";
-    if (cleanLabel.includes("matching missions and evidence")) return "Thinking through your situation…";
-    if (cleanLabel.includes("preparing manager answer")) return "Finishing up…";
-    return "Thinking through your situation…";
-  }
-
-  // running / fallback
   if (cleanLabel.includes("reading workspace packet")) return "Reading your workspace…";
-  if (cleanLabel.includes("matching missions and evidence")) return "Matching your missions and evidence…";
+  if (cleanLabel.includes("matching missions and evidence")) return "Thinking through your situation…";
+  if (cleanLabel.includes("preparing your answer")) return "Getting your answer ready…";
   if (cleanLabel.includes("checking evidence")) return "Checking your evidence…";
   if (cleanLabel.includes("reviewing mission state")) return "Reviewing your missions…";
   if (cleanLabel.includes("checking catalog")) return "Looking through your catalog…";
   if (cleanLabel.includes("reading manager memory")) return "Recalling past context…";
   if (cleanLabel.includes("reviewing prior decisions")) return "Reviewing past decisions…";
   if (cleanLabel.includes("preparing manager answer")) return "Writing the reply…";
+  if (cleanLabel.includes("searching the web")) return "Searching the web…";
+  if (cleanLabel.includes("using manager tool")) return "Working on it…";
 
   return `${label.replace(/\.+$/, "")}…`;
 }
