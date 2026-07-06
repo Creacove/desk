@@ -1915,7 +1915,7 @@ describe("Clean production prototype-match shell", () => {
       handlers.onEvent({ type: "assistant.delta", conversationId: "conv-activity", delta: "Draft the mission" });
     });
 
-    expect(screen.getByText("Thinking through your situation…")).toBeInTheDocument();
+    expect(screen.getByText("Planning next steps…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Details/i })).toBeInTheDocument();
     expect(screen.queryByText("Manager activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Reading workspace packet")).not.toBeInTheDocument();

@@ -387,6 +387,7 @@ export function ConversationWorkspace({
               key={message.id}
               message={message}
               activeRun={activeRun}
+              prompt={conversation.prompt}
               onRetryLastMessage={onRetryLastMessage}
               sendPending={sendPending}
               onSendContextAnswers={(answers) =>
@@ -403,7 +404,7 @@ export function ConversationWorkspace({
 
           {/* Thinking indicator — only shown when no streaming message exists yet */}
           {isManagerThinking && !hasStreamingMessage ? (
-            <ThinkingIndicator activeRun={activeRun} />
+            <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}
 
           <div ref={scrollAnchorRef} />
@@ -501,6 +502,7 @@ function MessageRow({
   sendPending,
   onSendContextAnswers,
   onOpenCreatedWork,
+  prompt,
 }: {
   message: ConversationViewModel["messages"][number];
   activeRun: ConversationViewModel["activeRun"];
@@ -508,6 +510,7 @@ function MessageRow({
   sendPending: boolean;
   onSendContextAnswers: (answers: ManagerConversationContextAnswer[]) => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  prompt?: string;
 }) {
   const isArtist = message.speaker === "artist";
   const isStreaming = message.status === "streaming";
@@ -547,7 +550,7 @@ function MessageRow({
 
           {/* Inline activity status during streaming */}
           {isStreaming && activeRun?.steps.length ? (
-            <ManagerActivityStatus run={activeRun} />
+            <ManagerActivityStatus run={activeRun} prompt={prompt} />
           ) : null}
 
           {/* Retry button on failed */}
@@ -583,7 +586,7 @@ function MessageRow({
 // ---------------------------------------------------------------------------
 // Thinking indicator — replaces the old dual-line card
 // ---------------------------------------------------------------------------
-function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["activeRun"] }) {
+function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewModel["activeRun"]; prompt?: string }) {
   // Always show the most-recently-added step, regardless of its status.
   // Tool events complete quickly so by the time React renders they may already
   // be "completed" — we still want to show them rather than falling back to
@@ -591,7 +594,7 @@ function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["ac
   const latestStep = activeRun?.steps.length ? activeRun.steps.at(-1) : null;
   // Force present-progressive rendering: the ThinkingIndicator is always a
   // loading state so every step should read as "currently happening".
-  const label = latestStep ? activityStatusLine(latestStep.label) : "Reading your workspace…";
+  const label = latestStep ? activityStatusLine(latestStep.label, prompt) : "Reading your workspace…";
 
   return (
     <div className="flex flex-col items-start animate-in fade-in duration-300">
@@ -625,11 +628,11 @@ function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["ac
 // ---------------------------------------------------------------------------
 // Manager activity status — always-visible inline line during streaming
 // ---------------------------------------------------------------------------
-function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel["activeRun"]> }) {
+function ManagerActivityStatus({ run, prompt }: { run: NonNullable<ConversationViewModel["activeRun"]>; prompt?: string }) {
   const [expanded, setExpanded] = useState(false);
   // Same logic as ThinkingIndicator: show the most recent step in present-progressive mode.
   const latestStep = run.steps.at(-1);
-  const statusText = latestStep ? activityStatusLine(latestStep.label) : "Getting your answer ready…";
+  const statusText = latestStep ? activityStatusLine(latestStep.label, prompt) : "Getting your answer ready…";
 
   return (
     <div className="mt-4 border-t border-foreground/6 pt-3">
@@ -681,18 +684,43 @@ function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel
 // Always returns a present-progressive string — status is no longer needed
 // since both ThinkingIndicator and ManagerActivityStatus show the most-recent
 // step in present-progressive mode regardless of actual run state.
-function activityStatusLine(label: string) {
+function activityStatusLine(label: string, prompt?: string) {
   const cleanLabel = label.trim().toLowerCase();
+  const query = prompt ? prompt.toLowerCase() : "";
+  const has = (...keys: string[]) => keys.some(key => query.includes(key));
 
-  if (cleanLabel.includes("reading workspace packet")) return "Reviewing workspace packet…";
-  if (cleanLabel.includes("matching missions and evidence")) return "Planning our next moves…";
-  if (cleanLabel.includes("preparing your answer")) return "Structuring thoughts…";
+  if (cleanLabel.includes("reading workspace packet")) {
+    if (has("budget", "cost", "spend", "financial", "money")) return "Reviewing budget context…";
+    if (has("market", "audience", "fan", "listener", "spotify", "chartmetric")) return "Analyzing audience signals…";
+    if (has("record", "song", "track", "release", "drop", "single")) return "Reviewing track catalog…";
+    if (has("mission", "task", "goal", "objective")) return "Reviewing active missions…";
+    return "Reviewing workspace context…";
+  }
+
+  if (cleanLabel.includes("matching missions and evidence")) {
+    if (has("feature", "artist", "singer", "vocalist", "collaboration", "collab")) return "Analyzing potential features…";
+    if (has("budget", "cost", "spend", "financial", "money")) return "Calculating budget options…";
+    if (has("market", "audience", "fan", "listener", "spotify", "chartmetric")) return "Reviewing market positioning…";
+    if (has("record", "song", "track", "release", "drop", "single")) return "Formulating release strategy…";
+    if (has("mission", "task", "goal", "objective")) return "Planning next steps…";
+    if (has("today", "hello", "hi ", "how are you", "doing today")) return "Formulating response…";
+
+    // Question check
+    const isQuestion = /^(who|what|where|why|how|should|can|is|are|do|does|think|will|would|could|may|whom|whose|which|if)\b/i.test(query) || query.endsWith("?");
+    if (isQuestion) return "Formulating recommendations…";
+
+    return "Planning next steps…";
+  }
+
+  if (cleanLabel.includes("preparing your answer") || cleanLabel.includes("preparing manager answer")) {
+    return "Structuring thoughts…";
+  }
+
   if (cleanLabel.includes("checking evidence")) return "Reviewing signals…";
   if (cleanLabel.includes("reviewing mission state")) return "Coordinating active missions…";
   if (cleanLabel.includes("checking catalog")) return "Looking through catalog…";
   if (cleanLabel.includes("reading manager memory")) return "Accessing memory…";
   if (cleanLabel.includes("reviewing prior decisions")) return "Reviewing past decisions…";
-  if (cleanLabel.includes("preparing manager answer")) return "Structuring thoughts…";
   if (cleanLabel.includes("searching the web")) return "Searching the web…";
   if (cleanLabel.includes("using manager tool")) return "Thinking…";
 
