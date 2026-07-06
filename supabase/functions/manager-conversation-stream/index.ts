@@ -704,6 +704,7 @@ function safeToolTraceSummary(trace: ManagerAgentToolTrace[]) {
 }
 
 function managerToolLabel(tool: string) {
+  if (tool === "web_search") return "Searching the web";
   if (tool === "query_evidence_items") return "Checking evidence";
   if (tool === "query_active_missions") return "Reviewing mission state";
   if (tool === "query_music_catalog") return "Checking catalog";

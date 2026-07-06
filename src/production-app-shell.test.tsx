@@ -16,6 +16,24 @@ import type {
   ProductionWorkspaceLoader,
 } from "./types/productionApp";
 
+const supabaseDiscoveryPoll = vi.hoisted(() => ({
+  responses: [] as Array<{ data: Array<{ summary: string; created_at: string }>; error: null }>,
+}));
+
+vi.mock("./lib/supabaseClient", () => ({
+  createBrowserSupabaseClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          like: () => ({
+            order: async () => supabaseDiscoveryPoll.responses[supabaseDiscoveryPoll.responses.length - 1] ?? { data: [], error: null },
+          }),
+        }),
+      }),
+    }),
+  }),
+}));
+
 const session = {
   user: {
     id: "user-1",
@@ -42,6 +60,7 @@ const workspace = {
 afterEach(() => {
   cleanup();
   vi.useRealTimers();
+  supabaseDiscoveryPoll.responses = [];
 });
 
 describe("Clean production prototype-match shell", () => {
@@ -323,6 +342,7 @@ describe("Clean production prototype-match shell", () => {
   it("shows Manager setup activity until the setup map and queued song/project reads are ready", async () => {
     const setupWorkspace = {
       ...workspace,
+      artistWorkspaceId: "11111111-1111-4111-8111-111111111111",
       status: "setup",
       contextComplete: false,
       latestCatalogSyncStatus: "completed",
@@ -406,6 +426,25 @@ describe("Clean production prototype-match shell", () => {
         return activeWorkspace;
       },
     };
+    supabaseDiscoveryPoll.responses = [
+      {
+        data: [
+          {
+            summary: "Running chartmetric_track_enrich.",
+            created_at: "2026-07-06T08:00:00.000Z",
+          },
+          {
+            summary: "save_public_evidence saved; evidence 3225fdc2-c4e7-4072-8593-9ab9586c4915.",
+            created_at: "2026-07-06T08:00:02.000Z",
+          },
+          {
+            summary: "chartmetric_track_enrich completed; 18 evidence items; snapshot ecc65292-152a-4a75-b6ec-01f035df7b11.",
+            created_at: "2026-07-06T08:00:04.000Z",
+          },
+        ],
+        error: null,
+      },
+    ];
 
     render(
       <ProductionApp
@@ -422,13 +461,18 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
-    expect(screen.getByText("Generating the first Setup Operating Map brief.")).toBeInTheDocument();
+    expect(await screen.findByText("Finishing up your track data…")).toBeInTheDocument();
     expect(screen.getByTestId("setup-activity-progress")).toBeInTheDocument();
+    expect(screen.queryByText(/earlier update/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/chartmetric/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/snapshot/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Saved manager basics")).not.toBeInTheDocument();
     expect(screen.queryByText("Building operating map")).not.toBeInTheDocument();
     expect(screen.queryByText("Preparing music reads")).not.toBeInTheDocument();
     expect(screen.queryByText("Opening Desk HQ")).not.toBeInTheDocument();
     expect(screen.queryByText("Discovery is complete; the Manager is turning the saved packet into the opening read.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Generating the first Setup Operating Map brief.")).not.toBeInTheDocument();
     expect(screen.queryByText("Refreshing the first song and project Manager Reads.")).not.toBeInTheDocument();
     await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
 
@@ -592,7 +636,8 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
     expect(await screen.findByText("OpenAI setup map failed")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry setup map" })).toBeInTheDocument();
+    expect(screen.getByText("Something interrupted setup. You can retry.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry setup" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
 
@@ -650,7 +695,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
     expect(await screen.findByText("Setup map needs a live Manager read. Retry to regenerate it.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry setup map" })).toBeInTheDocument();
+    expect(screen.getByText("Something interrupted setup. You can retry.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry setup" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
 
@@ -1869,7 +1915,7 @@ describe("Clean production prototype-match shell", () => {
       handlers.onEvent({ type: "assistant.delta", conversationId: "conv-activity", delta: "Draft the mission" });
     });
 
-    expect(screen.getByText("Matching missions and evidence…")).toBeInTheDocument();
+    expect(screen.getByText("Matching your missions and evidence…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Details/i })).toBeInTheDocument();
     expect(screen.queryByText("Manager activity")).not.toBeInTheDocument();
     expect(screen.queryByText("Reading workspace packet")).not.toBeInTheDocument();

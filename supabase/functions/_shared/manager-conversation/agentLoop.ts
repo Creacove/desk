@@ -261,12 +261,17 @@ function addUsage(target: Record<string, unknown>, value: unknown) {
 
 function safeToolSummary(name: string, args: Record<string, unknown>) {
   const query = typeof args.query === "string" && args.query.trim() ? ` for "${args.query.trim().slice(0, 80)}"` : "";
+  if (name === "chartmetric_artist_enrich") return "Enriching the artist profile.";
+  if (name === "chartmetric_track_enrich") return "Enriching a focus track.";
+  if (name === "chartmetric_project_enrich") return "Enriching a focus project.";
+  if (name === "save_public_evidence") return "Saving a public context signal.";
+  if (name === "write_strategic_memory") return "Saving Manager memory.";
   if (name === "query_evidence_items") return `Checking evidence${query}.`;
   if (name === "query_active_missions") return "Reviewing active mission state.";
   if (name === "query_music_catalog") return `Checking catalog${query}.`;
   if (name === "query_durable_memory") return "Reading durable Manager memory.";
   if (name === "query_manager_outputs") return "Reviewing prior Manager outputs.";
-  return `Running ${name}.`;
+  return "Manager is checking the workspace.";
 }
 
 function summarizeToolResult(name: string, value: unknown) {
@@ -278,18 +283,46 @@ function summarizeToolResult(name: string, value: unknown) {
     const snapshotId = typeof value.snapshotId === "string" && value.snapshotId.trim() ? value.snapshotId.trim() : "";
     const memoryId = typeof value.memoryId === "string" && value.memoryId.trim() ? value.memoryId.trim() : "";
     const evidenceId = typeof value.evidenceId === "string" && value.evidenceId.trim() ? value.evidenceId.trim() : "";
+    const discoverySummary = summarizeDiscoveryToolResult(name, status, evidenceCount);
+    if (discoverySummary) return discoverySummary;
+    if (memoryId) return "Saved a Manager memory.";
+    if (evidenceId) return "Saved a public context signal.";
     if (status || evidenceCount !== null || snapshotId || memoryId || evidenceId) {
-      const parts = [`${name} ${status || "completed"}`];
-      if (evidenceCount !== null) parts.push(`${evidenceCount} evidence item${evidenceCount === 1 ? "" : "s"}`);
-      if (snapshotId) parts.push(`snapshot ${snapshotId}`);
-      if (memoryId) parts.push(`memory ${memoryId}`);
-      if (evidenceId) parts.push(`evidence ${evidenceId}`);
-      return `${parts.join("; ")}.`;
+      const normalizedStatus = status || "completed";
+      const suffix = evidenceCount === null
+        ? ""
+        : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;
+      return `Manager tool ${normalizedStatus}${suffix}.`;
     }
   }
   const count = isRecord(value) && Array.isArray(value.items) ? value.items.length : null;
   const suffix = count == null ? "" : ` Found ${count} scoped item${count === 1 ? "" : "s"}.`;
   return `${safeToolSummary(name, {})}${suffix}`;
+}
+
+function summarizeDiscoveryToolResult(name: string, status: string, evidenceCount: number | null) {
+  const countText = evidenceCount === null
+    ? ""
+    : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;
+  const normalizedStatus = status.toLowerCase();
+  if (name === "chartmetric_artist_enrich") {
+    if (normalizedStatus === "cached") return `Artist intelligence is already up to date${countText}.`;
+    if (normalizedStatus === "unresolved") return "Artist intelligence could not be matched yet.";
+    return `Artist intelligence is ready${countText}.`;
+  }
+  if (name === "chartmetric_track_enrich") {
+    if (normalizedStatus === "cached") return `Music intelligence is already up to date${countText}.`;
+    if (normalizedStatus === "unresolved") return "Music intelligence could not be matched yet.";
+    return `Music intelligence is ready${countText}.`;
+  }
+  if (name === "chartmetric_project_enrich") {
+    if (normalizedStatus === "cached") return `Project intelligence is already up to date${countText}.`;
+    if (normalizedStatus === "unresolved") return "Project intelligence could not be matched yet.";
+    return `Project intelligence is ready${countText}.`;
+  }
+  if (name === "save_public_evidence") return "Saved a public context signal.";
+  if (name === "write_strategic_memory") return "Saved a Manager memory.";
+  return "";
 }
 
 function readErrorMessage(error: unknown) {

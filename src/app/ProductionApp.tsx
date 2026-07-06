@@ -1169,36 +1169,15 @@ function SetupManagerActivityScreen({
   error: string | null;
   onRetry: () => void;
 }) {
-  const [statusIndex, setStatusIndex] = useState(0);
-  const liveStatusMessages = error
-    ? ["Setup Operating Map needs attention."]
-    : step === "music-reads"
-    ? [
-        "Refreshing the first song and project Manager Reads.",
-        "Checking the queued project and song reads.",
-        "Reloading the music room before Desk HQ opens.",
-      ]
-    : [
-        "Generating the first Setup Operating Map brief.",
-        `Turning ${artistName}'s saved setup packet into the opening read.`,
-        "Reading the saved manager basics.",
-        "Selecting the strongest audience and catalog signals.",
-        "Compressing the source packet for the opening read.",
-        "Writing the Setup Operating Map for Desk HQ.",
-      ];
-  const statusText = liveStatusMessages[statusIndex % liveStatusMessages.length];
-  const progressWidth = error ? 68 : step === "music-reads" ? 86 : 48;
-
-  useEffect(() => {
-    if (!pending) {
-      setStatusIndex(0);
-      return;
-    }
-    const timerId = window.setInterval(() => {
-      setStatusIndex((current) => current + 1);
-    }, 2400);
-    return () => window.clearInterval(timerId);
-  }, [pending, step]);
+  const liveDiscoverySteps = normalizeDiscoverySteps(discoverySteps);
+  const latestDiscoveryStep = liveDiscoverySteps[liveDiscoverySteps.length - 1];
+  const waitingText =
+    step === "music-reads"
+      ? "Almost there — finishing up…"
+      : `Getting things started…`;
+  const statusText = error
+    ? "Something interrupted setup. You can retry."
+    : latestDiscoveryStep ?? waitingText;
 
   return (
     <main className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
@@ -1208,32 +1187,22 @@ function SetupManagerActivityScreen({
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border border-foreground/10 bg-white shadow-[0_18px_45px_rgba(17,19,24,0.14)]">
             <BrandMark size="md" className={pending ? "ordersounds-loader-logo" : undefined} />
           </div>
-          <p className="mt-7 font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager Activity</p>
-          <h1 className="font-display mt-3 text-[34px] font-semibold leading-[1.04] tracking-tight text-foreground">Manager is preparing Desk HQ</h1>
-          <div className="mx-auto mt-6 max-w-lg rounded-[18px] border border-foreground/10 bg-white/88 px-5 py-4 text-left shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl">
-            <div className="flex items-center gap-3">
-              <span className="flex gap-1.5" aria-hidden="true">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "0ms" }} />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "150ms" }} />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/45" style={{ animationDelay: "300ms" }} />
-              </span>
-              <p className="min-w-0 text-[13px] font-bold leading-relaxed text-foreground" aria-live="polite">{statusText}</p>
-            </div>
-            <div data-testid="setup-activity-progress" className="mt-4">
-              <div className="relative h-1.5 overflow-hidden rounded-full bg-foreground/[0.06]">
-                <div
-                  className="h-full rounded-full bg-brand-accent transition-all duration-500"
-                  style={{ width: `${progressWidth}%` }}
-                />
-                {pending && !error ? (
-                  <div className="ordersounds-loader-rail absolute inset-y-0 left-0 w-1/3 rounded-full bg-white/70" />
-                ) : null}
-              </div>
+          <h1 className="font-display mt-8 text-[34px] font-semibold leading-[1.04] tracking-tight text-foreground">Manager is preparing Desk HQ</h1>
+          <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground" aria-live="polite">
+            {statusText}
+          </p>
+          <div data-testid="setup-activity-progress" className="mx-auto mt-8 max-w-sm">
+            <div className="relative h-[3px] overflow-hidden rounded-full bg-foreground/[0.07]">
+              {pending && !error ? (
+                <div className="ordersounds-loader-shimmer absolute inset-y-0 left-0 w-full rounded-full" />
+              ) : (
+                <div className="h-full w-full rounded-full bg-warning/35" />
+              )}
             </div>
           </div>
 
           {error ? (
-            <div className="mx-auto mt-5 max-w-lg rounded-[12px] border border-warning/20 bg-warning/5 p-4 text-left text-[12px] font-semibold leading-relaxed text-warning">
+            <div className="mx-auto mt-8 max-w-sm rounded-[12px] border border-warning/20 bg-warning/5 p-4 text-left text-[12px] font-semibold leading-relaxed text-warning">
               {error}
             </div>
           ) : null}
@@ -1243,15 +1212,65 @@ function SetupManagerActivityScreen({
               type="button"
               onClick={onRetry}
               disabled={pending}
-              className="mt-5 inline-flex h-10 items-center justify-center rounded-[10px] bg-foreground px-5 text-[12px] font-bold text-background transition-colors disabled:opacity-40"
+              className="mt-4 inline-flex h-10 items-center justify-center rounded-[10px] bg-foreground px-5 text-[12px] font-bold text-background transition-colors disabled:opacity-40"
             >
-              Retry setup map
+              Retry setup
             </button>
           ) : null}
         </div>
       </section>
     </main>
   );
+}
+
+function normalizeDiscoverySteps(discoverySteps: string[]) {
+  const seen = new Set<string>();
+  return discoverySteps.reduce<string[]>((steps, rawStep) => {
+    const step = humanizeDiscoveryStep(rawStep);
+    if (!step || seen.has(step)) return steps;
+    seen.add(step);
+    steps.push(step);
+    return steps;
+  }, []);
+}
+
+function humanizeDiscoveryStep(rawStep: string) {
+  const step = rawStep.trim();
+  if (!step) return "";
+
+  if (/^running\s+chartmetric_artist_enrich/i.test(step)) return "Building your artist profile…";
+  if (/^running\s+chartmetric_track_enrich/i.test(step)) return "Searching through your track data…";
+  if (/^running\s+chartmetric_project_enrich/i.test(step)) return "Scanning your projects…";
+  if (/chartmetric_artist_enrich\s+cached/i.test(step)) return "Reviewing your artist profile…";
+  if (/chartmetric_track_enrich\s+cached/i.test(step)) return "Checking your track history…";
+  if (/chartmetric_project_enrich\s+cached/i.test(step)) return "Checking your project data…";
+  if (/chartmetric_artist_enrich\s+completed/i.test(step)) return "Finalising your artist profile…";
+  if (/chartmetric_track_enrich\s+completed/i.test(step)) return "Finishing up your track data…";
+  if (/chartmetric_project_enrich\s+completed/i.test(step)) return "Wrapping up your projects…";
+  if (/chartmetric_(?:artist|track|project)_enrich\s+unresolved/i.test(step)) return "Some of your music couldn't be matched yet…";
+  if (/^save_public_evidence\b/i.test(step)) return "Gathering public information…";
+  if (/^write_strategic_memory\b/i.test(step)) return "Setting up your Manager's memory…";
+  if (/started autonomous onboarding discovery loop/i.test(step)) return "Starting your discovery…";
+  if (/autonomous onboarding discovery completed/i.test(step)) return "Putting your setup together…";
+  if (/generating initial setup operating map brief/i.test(step)) return "Building your setup overview…";
+  if (/initial setup operating map brief generated/i.test(step)) return "Finishing your setup overview…";
+
+  return sanitizeDiscoveryStep(step);
+}
+
+function sanitizeDiscoveryStep(step: string) {
+  const sanitized = step
+    .replace(/\bchartmetric\b/gi, "source")
+    .replace(/\bchartmetric_(?:artist|track|project)_enrich\b/gi, "music intelligence")
+    .replace(/\bsave_public_evidence\b/gi, "public context")
+    .replace(/\bwrite_strategic_memory\b/gi, "Manager memory")
+    .replace(/\b(?:snapshot|evidence|memory)\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s*;\s*/g, ". ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  return sanitized || "Working on your setup…";
 }
 
 function MobileNotificationSheet({

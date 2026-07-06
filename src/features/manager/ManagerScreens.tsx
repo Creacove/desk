@@ -517,16 +517,16 @@ function MessageRow({
       {/* Speaker label row */}
       <div className={`mb-2 flex items-center gap-2 ${isArtist ? "flex-row-reverse" : ""}`}>
         <span
-          className={`flex h-6 w-6 items-center justify-center rounded-md ${
+          className={`flex items-center justify-center ${
             isArtist
-              ? "bg-foreground/[0.06] text-foreground/70"
-              : "bg-foreground text-background"
+              ? "h-6 w-6 rounded-md bg-foreground/[0.06] text-foreground/70"
+              : "h-7 w-7 rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent"
           }`}
         >
           {isArtist ? (
             <UsersRound className="h-3.5 w-3.5" aria-hidden="true" />
           ) : (
-            <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+            <Sparkles className="h-4 w-4" aria-hidden="true" />
           )}
         </span>
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
@@ -583,54 +583,37 @@ function MessageRow({
 // ---------------------------------------------------------------------------
 // Thinking indicator — replaces the old dual-line card
 // ---------------------------------------------------------------------------
-const THINKING_PHRASES = [
-  "Analysing workspace…",
-  "Reading context…",
-  "Cross-referencing data…",
-  "Shaping a response…",
-  "Consulting the packet…",
-  "Considering options…",
-];
-
 function ThinkingIndicator({ activeRun }: { activeRun: ConversationViewModel["activeRun"] }) {
-  const [phraseIndex, setPhraseIndex] = useState(0);
-
-  // Rotate generic phrase every 1.8 s
-  useEffect(() => {
-    const id = setInterval(() => {
-      setPhraseIndex((i) => (i + 1) % THINKING_PHRASES.length);
-    }, 1800);
-    return () => clearInterval(id);
-  }, []);
-
   // Prefer the live activity label if we have one
   const latestStep = activeRun?.steps.length
     ? [...activeRun.steps].reverse().find((s) => s.status === "running") ?? activeRun.steps.at(-1)
     : null;
-  const label = latestStep ? activityStatusLine(latestStep.label, latestStep.status) : THINKING_PHRASES[phraseIndex];
+  const label = latestStep ? activityStatusLine(latestStep.label, latestStep.status) : "Reading your workspace…";
 
   return (
-    <div className="flex items-start gap-3">
-      {/* Manager avatar */}
-      <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-foreground text-background">
-        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-      </span>
-      <div className="flex flex-col gap-1 pt-0.5">
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">Manager</p>
-        {/* Three-dot pulse + rotating label */}
-        <div className="flex items-center gap-2.5">
-          <span className="flex gap-1" aria-hidden="true">
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" style={{ animationDelay: "0ms" }} />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" style={{ animationDelay: "150ms" }} />
-            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-foreground/40" style={{ animationDelay: "300ms" }} />
-          </span>
-          <p
-            key={label}
-            className="animate-in fade-in slide-in-from-bottom-1 duration-300 text-[13px] text-muted-foreground"
-          >
-            {label}
-          </p>
+    <div className="flex flex-col items-start animate-in fade-in duration-300">
+      {/* Speaker label row */}
+      <div className="mb-2 flex items-center gap-2">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent">
+          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
+          Manager
+        </p>
+      </div>
+
+      <div className="w-full">
+        {/* Slim 3px shimmer progress bar */}
+        <div className="relative h-[3px] w-48 overflow-hidden rounded-full bg-foreground/[0.07]">
+          <div className="ordersounds-loader-shimmer absolute inset-y-0 left-0 w-full rounded-full" />
         </div>
+        {/* Status text */}
+        <p
+          key={label}
+          className="mt-3 animate-in fade-in slide-in-from-bottom-1 duration-300 text-[14px] text-muted-foreground"
+        >
+          {label}
+        </p>
       </div>
     </div>
   );
@@ -692,9 +675,30 @@ function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel
 }
 
 function activityStatusLine(label: string, status: NonNullable<ConversationViewModel["activeRun"]>["steps"][number]["status"]) {
-  if (status === "completed") return "Manager has the workspace context and is shaping the reply.";
-  if (status === "failed") return "Manager hit a problem while preparing the reply.";
-  return `${label.replace(/\.$/, "")}…`;
+  const cleanLabel = label.trim().toLowerCase();
+
+  if (status === "failed") {
+    return "Manager hit a problem preparing this reply.";
+  }
+
+  if (status === "completed") {
+    if (cleanLabel.includes("reading workspace packet")) return "Reviewing your context…";
+    if (cleanLabel.includes("matching missions and evidence")) return "Thinking through your situation…";
+    if (cleanLabel.includes("preparing manager answer")) return "Finishing up…";
+    return "Thinking through your situation…";
+  }
+
+  // running / fallback
+  if (cleanLabel.includes("reading workspace packet")) return "Reading your workspace…";
+  if (cleanLabel.includes("matching missions and evidence")) return "Matching your missions and evidence…";
+  if (cleanLabel.includes("checking evidence")) return "Checking your evidence…";
+  if (cleanLabel.includes("reviewing mission state")) return "Reviewing your missions…";
+  if (cleanLabel.includes("checking catalog")) return "Looking through your catalog…";
+  if (cleanLabel.includes("reading manager memory")) return "Recalling past context…";
+  if (cleanLabel.includes("reviewing prior decisions")) return "Reviewing past decisions…";
+  if (cleanLabel.includes("preparing manager answer")) return "Writing the reply…";
+
+  return `${label.replace(/\.+$/, "")}…`;
 }
 
 // ---------------------------------------------------------------------------

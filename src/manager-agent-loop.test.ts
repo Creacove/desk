@@ -170,12 +170,13 @@ describe("Manager Agent Responses loop", () => {
     });
 
     expect(events).toEqual([
-      expect.objectContaining({ status: "started", summary: "Running chartmetric_track_enrich." }),
+      expect.objectContaining({ status: "started", summary: "Enriching a focus track." }),
       expect.objectContaining({
         status: "completed",
-        summary: expect.stringMatching(/chartmetric_track_enrich completed.*7 evidence.*snap-1/i),
+        summary: "Music intelligence is ready with 7 supporting signals.",
       }),
     ]);
+    expect(JSON.stringify(events)).not.toMatch(/chartmetric|snapshot|snap-1|evidence item/i);
   });
 
   it("surfaces useful messages from non-Error tool failures", async () => {
