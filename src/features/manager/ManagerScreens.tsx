@@ -684,17 +684,17 @@ function ManagerActivityStatus({ run }: { run: NonNullable<ConversationViewModel
 function activityStatusLine(label: string) {
   const cleanLabel = label.trim().toLowerCase();
 
-  if (cleanLabel.includes("reading workspace packet")) return "Reading your workspace…";
-  if (cleanLabel.includes("matching missions and evidence")) return "Thinking through your situation…";
-  if (cleanLabel.includes("preparing your answer")) return "Getting your answer ready…";
-  if (cleanLabel.includes("checking evidence")) return "Checking your evidence…";
-  if (cleanLabel.includes("reviewing mission state")) return "Reviewing your missions…";
-  if (cleanLabel.includes("checking catalog")) return "Looking through your catalog…";
-  if (cleanLabel.includes("reading manager memory")) return "Recalling past context…";
+  if (cleanLabel.includes("reading workspace packet")) return "Reviewing workspace packet…";
+  if (cleanLabel.includes("matching missions and evidence")) return "Planning our next moves…";
+  if (cleanLabel.includes("preparing your answer")) return "Structuring thoughts…";
+  if (cleanLabel.includes("checking evidence")) return "Reviewing signals…";
+  if (cleanLabel.includes("reviewing mission state")) return "Coordinating active missions…";
+  if (cleanLabel.includes("checking catalog")) return "Looking through catalog…";
+  if (cleanLabel.includes("reading manager memory")) return "Accessing memory…";
   if (cleanLabel.includes("reviewing prior decisions")) return "Reviewing past decisions…";
-  if (cleanLabel.includes("preparing manager answer")) return "Writing the reply…";
+  if (cleanLabel.includes("preparing manager answer")) return "Structuring thoughts…";
   if (cleanLabel.includes("searching the web")) return "Searching the web…";
-  if (cleanLabel.includes("using manager tool")) return "Working on it…";
+  if (cleanLabel.includes("using manager tool")) return "Thinking…";
 
   return `${label.replace(/\.+$/, "")}…`;
 }
