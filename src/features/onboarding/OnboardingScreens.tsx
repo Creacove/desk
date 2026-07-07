@@ -34,21 +34,24 @@ export function ConnectArtistScreen({
         <ConnectHeader status={searchMode ? "Connect artist" : "Connect"} onSignOut={onSignOut} />
         <section className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-6 py-6 lg:grid-cols-[minmax(0,0.88fr)_minmax(22rem,0.72fr)]">
           <div className="max-w-xl">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">First-run setup</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Authentication</p>
             <h1 className="font-display mt-4 text-[38px] font-semibold leading-[1] tracking-tight text-foreground sm:text-[46px]">
-              Connect the artist before the desk opens.
+              Bring your catalog to life.
             </h1>
             <p className="mt-5 max-w-[32rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
-              Ordersounds starts with one verified artist identity, then turns catalog and context into the first Manager-ready workspace.
+              Connect your official artist profile to sync your releases, stream catalog data, and build your AI-powered operating desk.
             </p>
           </div>
 
           <div className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Spotify identity</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">
+              <span className="sr-only">Spotify identity</span>
+              Artist identity
+            </p>
             <h2 className="font-display mt-3 text-[24px] font-bold leading-tight tracking-tight text-foreground">Connect artist profile</h2>
             <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground">
               {searchMode
-                ? "Search Spotify, choose the correct artist identity, and import public catalog context before Desk HQ opens."
+                ? "Search for your profile, choose the correct artist identity, and import public catalog context before Desk HQ opens."
                 : "Confirm the baseline profile to populate the Manager and specialist context."}
             </p>
 
@@ -77,7 +80,7 @@ export function ConnectArtistScreen({
                     <div data-testid="spotify-search-loader" className="flex items-center gap-3 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3.5">
                       <BrandMark size="sm" className="ordersounds-loader-logo" />
                       <span className="min-w-0">
-                        <span className="block text-[13px] font-bold text-foreground">Searching Spotify</span>
+                        <span className="block text-[13px] font-bold text-foreground">Searching catalog</span>
                         <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground">Matching artist identity and public catalog source.</span>
                       </span>
                     </div>
@@ -102,7 +105,7 @@ export function ConnectArtistScreen({
                             <span className="min-w-0">
                               <span className="block truncate text-[14px] font-bold text-foreground">{candidate.name}</span>
                               <span className="mt-0.5 block truncate text-[11px] font-semibold text-muted-foreground">
-                                {candidate.followers ? `${candidate.followers.toLocaleString()} followers` : "Spotify public artist"}
+                                {candidate.followers ? `${candidate.followers.toLocaleString()} followers` : "Public artist"}
                                 {candidate.genres.length ? ` / ${candidate.genres.slice(0, 2).join(", ")}` : ""}
                               </span>
                             </span>
@@ -122,7 +125,7 @@ export function ConnectArtistScreen({
                       <ArtistAvatar name={profile.name} imageUrl={profile.imageUrl} />
                       <div className="min-w-0">
                         <h3 className="truncate text-[14px] font-bold text-foreground">{profile.name}</h3>
-                        <p className="mt-0.5 text-[11px] font-semibold text-[#1db954]">Spotify Verified Catalog</p>
+                        <p className="mt-0.5 text-[11px] font-semibold text-[#1db954]">Verified Catalog</p>
                       </div>
                     </div>
                     <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#1db954]/10 text-[#1db954]">

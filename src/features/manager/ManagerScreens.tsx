@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronRight, ClipboardCheck, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
+import { ArrowRight, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel } from "../../types/cleanProduction";
 import { useEffect, useRef, useState } from "react";
@@ -13,32 +13,43 @@ function useTypewriter(target: string, streaming: boolean): string {
   const frameRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
   const displayedRef = useRef<string>(target);
+  const hasStreamedRef = useRef(false);
+
+  if (streaming) {
+    hasStreamedRef.current = true;
+  }
 
   useEffect(() => {
-    if (!streaming) {
-      // Snap to full text when streaming ends
-      if (frameRef.current !== null) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
+    if (!hasStreamedRef.current) {
+      // Historical or non-streamed message - snap immediately
       displayedRef.current = target;
       setDisplayed(target);
       return;
     }
 
-    const CHAR_INTERVAL_MS = 18; // ~55 chars/sec — feels like fast human typing
+    const CHAR_INTERVAL_MS = 14; // ~71 chars/sec — smooth ChatGPT-style flow
+    const MAX_CHARS_PER_FRAME = 3;
 
     const tick = (now: number) => {
       const elapsed = now - lastTickRef.current;
       if (elapsed >= CHAR_INTERVAL_MS) {
         const currentLen = displayedRef.current.length;
         if (currentLen < target.length) {
-          // Advance by however many chars fit in elapsed time (burst catch-up)
-          const charsToAdd = Math.max(1, Math.floor(elapsed / CHAR_INTERVAL_MS));
+          const charsToAdd = Math.min(
+            MAX_CHARS_PER_FRAME,
+            Math.max(1, Math.floor(elapsed / CHAR_INTERVAL_MS)),
+          );
           const next = target.slice(0, currentLen + charsToAdd);
           displayedRef.current = next;
           setDisplayed(next);
           lastTickRef.current = now;
+        } else {
+          // Fully caught up to target, terminate animation frame loop
+          if (frameRef.current !== null) {
+            cancelAnimationFrame(frameRef.current);
+            frameRef.current = null;
+          }
+          return;
         }
       }
       frameRef.current = requestAnimationFrame(tick);
@@ -51,10 +62,18 @@ function useTypewriter(target: string, streaming: boolean): string {
         frameRef.current = null;
       }
     };
-  }, [target, streaming]);
+  }, [target]);
 
-  // If the target shrank (shouldn't happen) or we're ahead, clamp
-  if (!streaming) return target;
+  // Keep scroll pinned to bottom while typewriter is actively catching up
+  useEffect(() => {
+    if (hasStreamedRef.current && displayed.length < target.length) {
+      const anchor = document.getElementById("chat-scroll-anchor");
+      if (anchor) {
+        anchor.scrollIntoView({ block: "end", behavior: "auto" });
+      }
+    }
+  }, [displayed, target.length]);
+
   return displayed.length <= target.length ? displayed : target;
 }
 
@@ -407,7 +426,7 @@ export function ConversationWorkspace({
             <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}
 
-          <div ref={scrollAnchorRef} />
+          <div id="chat-scroll-anchor" ref={scrollAnchorRef} />
         </div>
 
         {/* Created work summary */}
@@ -450,7 +469,7 @@ export function ConversationWorkspace({
         aligns exactly with the reading column for visual harmony.
       */}
       <div
-        className="fixed bottom-20 left-0 right-0 z-40 px-4 lg:bottom-6"
+        className="fixed bottom-20 left-0 right-0 z-40 px-4 lg:bottom-6 lg:left-[216px]"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
         <div className="mx-auto max-w-[680px]">
@@ -600,7 +619,7 @@ function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewM
     <div className="flex flex-col items-start animate-in fade-in duration-300">
       {/* Speaker label row */}
       <div className="mb-2 flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent">
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent animate-pulse">
           <Sparkles className="h-4 w-4" aria-hidden="true" />
         </span>
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
@@ -608,18 +627,11 @@ function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewM
         </p>
       </div>
 
-      <div className="w-full">
-        {/* Slim 3px shimmer progress bar */}
-        <div className="relative h-[3px] w-48 overflow-hidden rounded-full bg-foreground/[0.07]">
-          <div className="ordersounds-loader-shimmer absolute inset-y-0 left-0 w-full rounded-full" />
-        </div>
-        {/* Status text */}
-        <p
-          key={label}
-          className="mt-3 animate-in fade-in slide-in-from-bottom-1 duration-300 text-[14px] text-muted-foreground"
-        >
+      <div className="mt-1 flex items-center gap-2.5 rounded-xl border border-foreground/8 bg-foreground/[0.012] px-3.5 py-2.5 text-[13px] font-bold text-foreground/80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-1 max-w-full w-fit">
+        <Loader2 className="h-4.5 w-4.5 animate-spin text-brand-accent shrink-0" />
+        <span key={label} className="truncate animate-in fade-in duration-300">
           {label}
-        </p>
+        </span>
       </div>
     </div>
   );
