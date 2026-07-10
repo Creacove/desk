@@ -1634,3 +1634,17 @@
     }
   }
 }
+
+@media (max-width: 767px) {
+  input,
+  textarea,
+  select,
+  .app-light input,
+  .app-light textarea,
+  .app-light select,
+  .app-theme input,
+  .app-theme textarea,
+  .app-theme select {
+    font-size: 16px !important;
+  }
+}
