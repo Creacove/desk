@@ -92,6 +92,7 @@ export function DeskHQScreen({
         onManager={onManager}
         onOpenMission={onOpenMission}
         onLockedAgent={onLockedAgent}
+        onAskManager={onAskManager}
       />
 
       <div className="hidden min-w-0 gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_320px]">
@@ -530,6 +531,7 @@ function MobileDeskHome({
   onManager,
   onOpenMission,
   onLockedAgent,
+  onAskManager,
 }: {
   profile: ArtistProfileViewModel;
   brief: TodayBriefViewModel;
@@ -541,118 +543,123 @@ function MobileDeskHome({
   onManager: () => void;
   onOpenMission: (missionId: string) => void;
   onLockedAgent: (agent: AgentViewModel) => void;
+  onAskManager: (body: string) => void;
 }) {
-  const [metricsExpanded, setMetricsExpanded] = useState(false);
-  const compactMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
-  const visibleMetrics = metricsExpanded ? compactMetrics : compactMetrics.slice(0, 4);
+  const compactMetrics = buildDeskMetricTiles(brief, profile);
   // Always exactly 4 segments — no expand needed
   const managerReadSegments = buildManagerReadSegments(brief);
   const visibleMissions = missions.slice(0, 3);
 
   return (
-    <div data-testid="desk-mobile-home" className="grid gap-4 pb-4 lg:hidden">
-      <section className="overflow-hidden rounded-[18px] border border-foreground/10 bg-white shadow-[0_1px_8px_rgba(17,19,24,0.055)]">
-        <div className="flex items-center justify-between gap-3 border-b border-foreground/8 px-4 py-3">
-          <div className="flex min-w-0 items-center gap-3">
+    <div data-testid="desk-mobile-home" className="grid gap-3 pb-4 lg:hidden">
+      <MobileManagerComposer onAskManager={onAskManager} />
+      <section
+        data-testid="desk-mobile-command-surface"
+        className="overflow-hidden rounded-[18px] border border-foreground/10 bg-background text-foreground shadow-[0_1px_10px_rgba(17,19,24,0.055)]"
+      >
+        <div className="flex items-center justify-between gap-3 border-b border-foreground/8 px-3.5 py-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             {profile.imageUrl ? (
-              <img className="h-10 w-10 shrink-0 rounded-[12px] object-cover" src={profile.imageUrl} alt={`${profile.name} artist image`} />
+              <img className="h-9 w-9 shrink-0 rounded-[11px] object-cover ring-1 ring-foreground/10" src={profile.imageUrl} alt={`${profile.name} artist image`} />
             ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-foreground/10 bg-foreground/[0.035] text-[12px] font-bold text-muted-foreground">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] border border-foreground/10 bg-foreground/[0.035] text-[12px] font-bold text-muted-foreground">
                 {profile.name.slice(0, 2).toUpperCase()}
               </div>
             )}
             <div className="min-w-0">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Today</p>
-              <p className="truncate text-[13px] font-semibold text-foreground">{profile.name}</p>
+              <p className="font-ui text-[9px] font-bold uppercase tracking-[0.04em] text-brand-accent">Today&apos;s Brief</p>
+              <p className="truncate text-[13px] font-semibold text-muted-foreground">{profile.name} operating read</p>
             </div>
           </div>
-          <button
-            type="button"
-            aria-label="Open Manager from brief"
-            onClick={onManager}
-            className="flex h-9 shrink-0 items-center gap-1.5 rounded-xl border border-foreground/10 bg-background px-3 text-[12px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.04]"
-          >
-            <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-            Talk to Manager
-          </button>
         </div>
 
-        <div className="px-4 py-4">
-          <p className="font-display text-[15px] font-semibold leading-snug text-foreground">{brief.headlineRead}</p>
-          <p className="mt-3 text-[13px] font-medium leading-relaxed text-muted-foreground/82">{brief.snapshotSummary}</p>
+        <div className="px-3.5 py-3.5">
+          <p className="font-display text-[18px] font-semibold leading-[1.12] text-foreground">{brief.headlineRead}</p>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <button type="button" className="text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
+              View supporting evidence
+            </button>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/72">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</span>
+          </div>
 
           {compactMetrics.length ? (
-            <div
-              data-testid="desk-mobile-metrics-grid"
-              className={`mt-4 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.02] ${visibleMetrics.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
-            >
-              {visibleMetrics.map((metric) => (
-                <ArtistMetricCell
-                  key={`${metric.groupTitle}-${metric.label}-${metric.value}`}
-                  metric={metric}
-                  className={`border-b border-foreground/8 px-3 py-2.5 ${visibleMetrics.length > 1 ? "border-r even:border-r-0" : ""}`}
-                  compact
-                />
-              ))}
+            <div data-testid="desk-mobile-signal-rail" className="mt-3">
+              <div
+                data-testid="desk-mobile-metrics-grid"
+                className="grid grid-cols-2 gap-2"
+              >
+                {compactMetrics.map((metric, index) => {
+                  const metricLabel = metric.label;
+                  const metricValue = metric.value;
+                  return (
+                    <article
+                      key={`${metricLabel}-${metricValue}-${index}`}
+                      data-testid="desk-mobile-metric-card"
+                      className={`min-h-[78px] rounded-[14px] border px-3 py-2.5 shadow-sm ${signalMetricTileClass(index)}`}
+                    >
+                      <p className="break-words text-[10px] font-semibold leading-tight text-muted-foreground">{metricLabel}</p>
+                      <p className="mt-1.5 break-words text-[19px] font-semibold leading-none tracking-normal text-foreground">{metricValue}</p>
+                    </article>
+                  );
+                })}
+              </div>
             </div>
-          ) : null}
-          {compactMetrics.length > 4 ? (
-            <button
-              type="button"
-              aria-expanded={metricsExpanded}
-              className="mt-2 text-[12px] font-semibold text-brand-accent"
-              onClick={() => setMetricsExpanded((v) => !v)}
-            >
-              {metricsExpanded ? "Show fewer metrics" : `See all ${compactMetrics.length} metrics`}
-            </button>
           ) : null}
 
           {/* Always 4 sections — no expand */}
-          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card mt-4 rounded-[14px] p-3.5">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
-            <div data-testid="desk-mobile-manager-read" className="mt-3 space-y-3">
+          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card mt-3 rounded-[14px] p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
+            </div>
+            <div data-testid="desk-mobile-manager-read" className="mt-3 divide-y divide-foreground/8">
               {managerReadSegments.map((segment, index) => (
-                <p key={`${segment.label}-${index}`} className="text-[12px] font-semibold leading-relaxed text-foreground/80">{segment.body}</p>
+                <article key={`${segment.label}-${index}`} data-testid="desk-mobile-manager-read-segment" className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2.5 py-3 first:pt-0 last:pb-0">
+                  <span className="font-mono text-[10px] font-bold leading-5 text-muted-foreground/70">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="min-w-0">
+                    <span className="block font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{segment.label}</span>
+                    <p className="mt-1 text-[12px] font-semibold leading-relaxed text-foreground/80">{segment.body}</p>
+                  </span>
+                </article>
               ))}
             </div>
           </div>
 
           {error ? <p className="mt-3 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold text-warning">{error}</p> : null}
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <button type="button" className="text-[12px] font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
-              Evidence
-            </button>
-            <p className="text-right text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{formatBriefGeneratedAt(brief.generatedAt)}</p>
-          </div>
         </div>
       </section>
 
-      <section className="rounded-[18px] border border-foreground/10 bg-white p-4 shadow-[0_1px_8px_rgba(17,19,24,0.05)]">
-        <div className="mb-3 flex items-center justify-between gap-3">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Current work</p>
+      <section data-testid="desk-mobile-current-work" className="rounded-[18px] border border-foreground/10 bg-background p-3.5 shadow-[0_1px_10px_rgba(17,19,24,0.045)]">
+        <div className="mb-2.5 flex items-center justify-between gap-3">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Current work</p>
+            <p className="mt-0.5 text-[12px] font-medium text-muted-foreground/78">{visibleMissions.length ? `${visibleMissions.length} active lanes` : "No active lane"}</p>
+          </div>
           <button type="button" className="text-[12px] font-semibold text-muted-foreground" onClick={() => onNavigate("missionsWorkspace")}>
             View all
           </button>
         </div>
         {visibleMissions.length ? (
-          <div className="grid gap-2">
+          <div className="divide-y divide-foreground/8">
             {visibleMissions.map((mission) => (
               <button
                 key={mission.id}
                 type="button"
-                className="w-full rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left"
-                aria-label="Open mission on mobile"
+                className="w-full py-3 text-left transition-colors first:pt-1 last:pb-1 hover:bg-foreground/[0.025]"
+                aria-label={`Open mission ${mission.title} on mobile`}
                 onClick={() => onOpenMission(mission.id)}
               >
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0">
-                    <span className="block text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{mission.status === "blocked" ? "Blocked" : "Active"}</span>
-                    <span className="mt-1 block text-[15px] font-semibold leading-tight text-foreground">{mission.title}</span>
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
+                      {mission.status === "blocked" ? "Needs you" : mission.status === "review" ? "In review" : "Active"}
+                    </span>
+                    <span className="mt-1 block text-[14px] font-semibold leading-tight text-foreground">{mission.title}</span>
+                    <span className="mt-1 block truncate text-[11px] font-medium text-muted-foreground">{mission.nextTask}</span>
                   </span>
-                  <span className="w-[64px] shrink-0 text-right">
+                  <span className="w-[58px] shrink-0 pt-0.5 text-right">
                     <span className="block text-[11px] font-bold text-foreground">{mission.progress}%</span>
                     <span className="mt-1 block h-1 overflow-hidden rounded-full bg-foreground/8">
-                      <span className="block h-full rounded-full bg-foreground" style={{ width: `${mission.progress}%` }} />
+                      <span className="block h-full rounded-full bg-brand-accent" style={{ width: `${mission.progress}%` }} />
                     </span>
                   </span>
                 </span>
@@ -667,6 +674,49 @@ function MobileDeskHome({
         )}
       </section>
     </div>
+  );
+}
+
+function MobileManagerComposer({ onAskManager }: { onAskManager: (body: string) => void }) {
+  const [draft, setDraft] = useState("");
+  const canSend = draft.trim().length > 0;
+
+  function submitManagerQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSend) return;
+    onAskManager(draft);
+    setDraft("");
+  }
+
+  return (
+    <form
+      aria-label="Ask your manager on mobile"
+      className="flex min-h-[42px] items-end gap-2 rounded-[14px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_1px_10px_rgba(17,19,24,0.045)]"
+      onSubmit={submitManagerQuestion}
+    >
+      <MessageSquareText className="mb-[7px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <textarea
+        value={draft}
+        rows={1}
+        onChange={(event) => setDraft(event.target.value)}
+        onInput={(event) => {
+          const el = event.currentTarget;
+          el.style.height = "auto";
+          el.style.height = `${Math.min(el.scrollHeight, 72)}px`;
+        }}
+        placeholder="Ask your manager..."
+        className="min-w-0 flex-1 resize-none bg-transparent py-[7px] text-[13px] font-semibold leading-[1.35] text-foreground outline-none placeholder:text-muted-foreground/66"
+        style={{ maxHeight: "72px", overflowY: "auto" }}
+      />
+      <button
+        type="submit"
+        aria-label="Send mobile manager question"
+        disabled={!canSend}
+        className="mb-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-brand-accent text-white transition-colors disabled:bg-brand-accent/20 disabled:text-brand-accent/40"
+      >
+        <SendHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </form>
   );
 }
 

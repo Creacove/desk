@@ -752,7 +752,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).toBeInTheDocument();
-    expect(screen.getByText("Today's Brief")).toBeInTheDocument();
+    expect(screen.getAllByText("Today's Brief").length).toBeGreaterThan(0);
     expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask your manager anything...")).toBeInTheDocument();
     expect(screen.getAllByTestId("desk-signal-metric-card")).toHaveLength(4);
@@ -862,7 +862,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText("1.21M").length).toBeGreaterThan(0);
     expect(screen.getAllByText("London").length).toBeGreaterThan(0);
     expect(screen.getAllByText("UK rank").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(initialBrief.snapshotSummary).length).toBeGreaterThan(0);
+    expect(screen.queryByText(initialBrief.snapshotSummary)).not.toBeInTheDocument();
     expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent("Momentum Peak");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(screen.queryByText("Artist Score is a broad strength input for the Manager read, not a separate visible section.")).not.toBeInTheDocument();
@@ -1044,9 +1044,15 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.getByTestId("desk-mobile-home")).toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-generate-brief")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open Manager from brief" })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Ask your manager on mobile" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask your manager...")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Open Manager from brief" })).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-app-topbar")).toHaveClass("backdrop-blur-xl");
+    expect(screen.getByTestId("mobile-tabbar")).toHaveClass("rounded-[18px]");
+    expect(screen.getByTestId("mobile-tab-label-HQ")).toHaveTextContent("HQ");
+    expect(screen.queryByTestId("mobile-tab-label-Settings")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
     const notificationSheet = await screen.findByRole("dialog", { name: "Activity Center" });
@@ -1206,6 +1212,11 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     const desk = screen.getByTestId("desk-mobile-home");
     expect(within(desk).queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
+    expect(within(desk).getByTestId("desk-mobile-command-surface")).toBeInTheDocument();
+    expect(within(desk).getByTestId("desk-mobile-signal-rail")).toBeInTheDocument();
+    expect(within(desk).getByTestId("desk-mobile-current-work")).toBeInTheDocument();
+    expect(within(desk).queryByText(richBrief.snapshotSummary)).not.toBeInTheDocument();
+    expect(within(desk).queryByText(/confidence/i)).not.toBeInTheDocument();
     expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("manager-read-card");
     expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("border-l-brand-accent");
     expect(within(desk).getByText("Manager's Read")).toBeInTheDocument();
@@ -1213,6 +1224,9 @@ describe("Clean production prototype-match shell", () => {
     expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("EV-204");
     expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("evidence-1");
     expect(within(desk).getByTestId("desk-mobile-manager-read").querySelectorAll("p")).toHaveLength(4);
+    expect(within(desk).getAllByTestId("desk-mobile-manager-read-segment")).toHaveLength(4);
+    expect(within(desk).getByText("01")).toBeInTheDocument();
+    expect(within(desk).getByText("04")).toBeInTheDocument();
 
     expect(screen.getAllByText("Manager's Read").length).toBeGreaterThan(0);
     expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent(managerReadEnding);
@@ -1223,12 +1237,14 @@ describe("Clean production prototype-match shell", () => {
 
     const mobileMetrics = within(desk).getByTestId("desk-mobile-metrics-grid");
     expect(mobileMetrics).toHaveTextContent("Monthly listeners");
+    expect(within(mobileMetrics).getAllByTestId("desk-mobile-metric-card")).toHaveLength(4);
+    expect(mobileMetrics).not.toHaveTextContent("Spotify");
+    expect(mobileMetrics).not.toHaveTextContent("city signal");
     expect(within(mobileMetrics).queryByText("Skip rate")).not.toBeInTheDocument();
-    fireEvent.click(within(desk).getByRole("button", { name: "See all 6 metrics" }));
-    expect(within(mobileMetrics).getByText("Skip rate")).toBeInTheDocument();
+    expect(within(desk).queryByRole("button", { name: "See all 6 metrics" })).not.toBeInTheDocument();
 
     expect(within(desk).queryByTestId("desk-mobile-team-agents")).not.toBeInTheDocument();
-    expect(within(desk).getByRole("button", { name: "Open Manager from brief" })).toBeInTheDocument();
+    expect(within(desk).getByRole("form", { name: "Ask your manager on mobile" })).toBeInTheDocument();
   }, 20000);
 
   it("renders saved Today's Brief copy instead of dropping it for style-policy terms", async () => {
@@ -1322,7 +1338,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.getAllByText(longBrief.headlineRead).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(longBrief.snapshotSummary).length).toBeGreaterThan(0);
+    expect(screen.queryByText(longBrief.snapshotSummary)).not.toBeInTheDocument();
     expect(screen.queryByText(finalParagraph)).not.toBeInTheDocument();
 
     expect(screen.queryByRole("button", { name: "See full Manager's Read" })).not.toBeInTheDocument();
@@ -4046,7 +4062,8 @@ async function enterDeskHq() {
 }
 
 function openManagerFromDesk() {
-  fireEvent.click(screen.getByRole("button", { name: "Open Manager from brief" }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Team Agents" }));
+  fireEvent.click(screen.getByRole("button", { name: "AI Manager" }));
 }
 
 function authWithSession(result: Awaited<ReturnType<ProductionAuthAdapter["getSession"]>>): ProductionAuthAdapter {
@@ -4215,7 +4232,7 @@ function repositoriesFor(
       generateTodaysBrief: async () => todayBrief("fresh"),
     },
     staff: {
-      loadAgents: async () => [],
+      loadAgents: async () => productionFixtureData.agents,
     },
     music: {
       loadMusic: async () => [],

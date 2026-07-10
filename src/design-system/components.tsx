@@ -314,10 +314,10 @@ export function MobileChrome({
     <>
       <header
         data-testid="mobile-app-topbar"
-        className="sticky top-0 z-40 -mx-3 mb-4 flex items-center justify-between border-b border-foreground/10 bg-background px-3 py-2.5 lg:hidden"
+        className="sticky top-0 z-40 -mx-3 mb-3 flex items-center justify-between border-b border-foreground/10 bg-background/90 px-3 py-2.5 shadow-[0_1px_0_rgba(17,19,24,0.02)] backdrop-blur-xl lg:hidden"
       >
         <div className="flex min-w-0 items-center gap-3">
-          <BrandMark size="sm" />
+          <BrandMark size="sm" className="rounded-[9px]" />
           <div className="min-w-0">
             <p className="font-display truncate text-[14px] font-semibold text-foreground">Ordersounds</p>
             <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/80">{title}</p>
@@ -330,11 +330,11 @@ export function MobileChrome({
               data-testid="mobile-notification-trigger"
               aria-label="Open desk notifications"
               onClick={onOpenNotifications}
-              className="relative flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+              className="relative flex h-8 w-8 items-center justify-center rounded-[10px] border border-foreground/10 bg-foreground/[0.035] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
             >
               <Bell className="h-3.5 w-3.5" aria-hidden="true" />
               {notificationCount ? (
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold leading-none text-background">
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-foreground px-1 text-[9px] font-bold leading-none text-background ring-2 ring-background">
                   {notificationCount > 9 ? "9+" : notificationCount}
                 </span>
               ) : null}
@@ -345,7 +345,7 @@ export function MobileChrome({
             aria-label="Open settings"
             onClick={() => onNavigate("artistProfileWorkspace")}
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
+              "flex h-8 w-8 items-center justify-center rounded-[10px] border border-foreground/10 bg-foreground/[0.035] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground",
               active === "settings" && "border-foreground/20 bg-foreground text-background",
             )}
           >
@@ -354,24 +354,29 @@ export function MobileChrome({
         </div>
       </header>
       <nav
+        data-testid="mobile-tabbar"
         aria-label="Mobile desk navigation"
-        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-xl border border-foreground/10 bg-background p-1.5 shadow-[0_8px_24px_rgba(17,19,24,0.08)] lg:hidden"
+        className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-[18px] border border-foreground/10 bg-background/95 p-1.5 shadow-[0_18px_46px_rgba(17,19,24,0.14)] backdrop-blur-xl lg:hidden"
         style={{ paddingBottom: "calc(0.375rem + env(safe-area-inset-bottom))" }}
       >
         {navItems.map((item) => {
           const Icon = item.icon;
+          const label = item.active === "labelHQ" ? "HQ" : item.label;
           return (
             <button
               key={item.label}
               type="button"
+              data-testid={`mobile-tab-${label}`}
               onClick={() => onNavigate(item.view)}
               className={cn(
-                "flex min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 py-2 text-[10px] font-semibold transition-colors",
-                active === item.active ? "bg-foreground text-background" : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
+                "flex min-w-0 flex-col items-center justify-center gap-1 rounded-[13px] px-1 py-2 text-[10px] font-semibold transition-colors",
+                active === item.active
+                  ? "bg-foreground text-background shadow-[0_8px_22px_rgba(17,19,24,0.12)]"
+                  : "text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
               )}
             >
               <Icon className={cn("h-[15px] w-[15px]", active === item.active ? "text-brand-accent" : "opacity-65")} aria-hidden="true" />
-              <span className="truncate">{item.active === "labelHQ" ? "HQ" : item.label}</span>
+              <span data-testid={`mobile-tab-label-${label}`} className="truncate">{label}</span>
             </button>
           );
         })}
