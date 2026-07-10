@@ -13,6 +13,7 @@ type ReviewInput = {
   taskId: string;
   status: "completed" | "blocked";
   note: string;
+  documentIds?: string[];
 };
 
 type ManagerTaskReview = {
@@ -80,6 +81,7 @@ function validateInput(input: ReviewInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.taskId) throw new Error("Manager task review input is incomplete.");
   if (input.status !== "completed" && input.status !== "blocked") throw new Error("Manager task review status must be completed or blocked.");
   if (!input.note?.trim()) throw new Error("Manager task review requires the task result note.");
+  if (input.documentIds && !Array.isArray(input.documentIds)) throw new Error("Manager task review document IDs must be an array.");
 }
 
 async function loadReviewContext(db: any, input: ReviewInput) {
@@ -103,7 +105,7 @@ async function loadReviewContext(db: any, input: ReviewInput) {
   if (taskError) throw taskError;
   if (!task?.mission_id) throw new Error("Manager task review task was not found.");
 
-  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets] = await Promise.all([
+  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
@@ -113,12 +115,18 @@ async function loadReviewContext(db: any, input: ReviewInput) {
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,mission_id,task_id,checkpoint_id,created_at", input, 120),
     selectMany(db, "operating_events", "id,event_type,target_type,target_id,mission_id,checkpoint_id,task_id,summary,payload,created_at", input, 80),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,created_at", input, 1),
+    loadSubmittedDocuments(db, input),
   ]);
+
+  const missingRequiredDeliverable = input.status === "completed" && taskRequiresDocument(task, taskSteps) && submittedDocuments.length === 0;
+  if (missingRequiredDeliverable) {
+    throw new Error("This task requires a submitted document before it can be marked complete.");
+  }
 
   return {
     packetVersion: "manager_task_result_review_v1",
     generatedAt: new Date().toISOString(),
-    input: { taskId: input.taskId, status: input.status, note: input.note.trim() },
+    input: { taskId: input.taskId, status: input.status, note: input.note.trim(), documentIds: input.documentIds ?? [] },
     profile: profile[0] ?? {},
     mission,
     checkpoint,
@@ -129,11 +137,14 @@ async function loadReviewContext(db: any, input: ReviewInput) {
     memory,
     recentOperatingEvents: events,
     latestManagerIntelligencePacket: managerPackets[0] ?? null,
+    submittedDocuments,
+    missingRequiredDeliverable,
     policy: {
       internalWorkspaceUpdatesAllowed: true,
       externalExpensiveLegalFinancialPublicActionsRequirePermission: true,
       reviewMustUpdateMissionState: true,
       memoryAfterMeaningfulResult: true,
+      requiredTaskDeliverablesMustBeSubmittedBeforeCompletion: true,
     },
   };
 }
@@ -147,6 +158,7 @@ async function callOpenAIManagerReview(context: unknown) {
       instructions: [
         "You are the AI Manager reviewing a completed or blocked mission task result.",
         "Decide what the task result means for the checkpoint and mission. Update internal workspace state only; permission-required external actions must be returned as permissionRequests.",
+        "When submittedDocuments are present, treat them as the user's task deliverables. If a required deliverable is missing, do not mark the checkpoint or mission complete.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
       ].join("\n"),
       input: JSON.stringify(context),
@@ -447,6 +459,72 @@ async function markUsageFailedSafe(usageId: string, message: string) {
   } catch {
     // Best effort only.
   }
+}
+
+async function loadSubmittedDocuments(db: any, input: ReviewInput) {
+  const submittedIds = Array.isArray(input.documentIds) ? input.documentIds.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim()) : [];
+  const { data: linkRows, error: linkError } = await db.from("artifact_links")
+    .select("source_id,target_id,relationship")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("source_type", "document")
+    .eq("target_type", "task")
+    .eq("target_id", input.taskId);
+  if (linkError) throw linkError;
+
+  const linkedIds = Array.isArray(linkRows)
+    ? linkRows.map((row) => isRecord(row) ? readString(row.source_id, "") : "").filter(Boolean)
+    : [];
+  const documentIds = [...new Set([...submittedIds, ...linkedIds])];
+  if (!documentIds.length) return [];
+
+  const [{ data: documentRows, error: documentError }, { data: versionRows, error: versionError }, { data: validationRows, error: validationError }] = await Promise.all([
+    db.from("documents")
+      .select("id,title,document_type,origin,status,summary,current_version_id,metadata,created_at")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .in("id", documentIds),
+    db.from("document_versions")
+      .select("id,document_id,version_number,uploaded_file_id,file_name,file_type,storage_bucket,storage_ref,extraction_status,extracted_text_ref,created_at")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .in("document_id", documentIds),
+    db.from("document_validation_results")
+      .select("id,document_id,document_version_id,verdict,missing_items,extracted_facts,manager_reasoning,confidence,created_at")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .in("document_id", documentIds),
+  ]);
+  if (documentError) throw documentError;
+  if (versionError) throw versionError;
+  if (validationError) throw validationError;
+
+  return ((documentRows ?? []) as Array<Record<string, unknown>>).map((document) => {
+    const versions = ((versionRows ?? []) as Array<Record<string, unknown>>).filter((version) => version.document_id === document.id);
+    const currentVersion = versions.find((version) => version.id === document.current_version_id) ?? versions[0] ?? null;
+    const latestValidation = ((validationRows ?? []) as Array<Record<string, unknown>>).find((validation) => validation.document_id === document.id) ?? null;
+    return {
+      ...document,
+      currentVersion,
+      latestValidation,
+    };
+  });
+}
+
+function taskRequiresDocument(task: Record<string, unknown>, steps: Array<Record<string, unknown>>) {
+  const text = [
+    task.title,
+    task.purpose,
+    task.completion_expectation,
+    task.risk_if_late,
+    ...(Array.isArray(task.evidence_needed) ? task.evidence_needed : []),
+    ...steps.filter((step) => step.task_id === task.id).map((step) => step.body),
+  ].filter((item): item is string => typeof item === "string").join(" ");
+  return /\b(thesis|document|copy|sign[- ]?off|approval|written|split sheet|report|epk|pitch|confirmation|memo|brief)\b/i.test(text);
 }
 
 async function selectMany(db: any, table: string, columns: string, input: ReviewInput, limit: number) {

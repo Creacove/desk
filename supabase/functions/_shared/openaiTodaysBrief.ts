@@ -221,9 +221,15 @@ const sharedTodaysBriefInstructions = [
     "Pick the most useful 8-16 facts from the packet. Do not dump every metric.",
     "derive ratios, contrasts, and ranking insights from the data: biggest city vs. second city, combined secondary markets, one social platform compared to the others, playlist reach compared to follower scale, current records with stronger evidence than others.",
     "Every snapshot group insight must say what the numbers mean, not merely repeat the numbers.",
-    "The Manager's Read must go deeper than the artist already knows. Explain the shape of the artist's business right now: power center, hidden second lane, cultural base, public leverage, current music focus, and where management should start.",
-    "Write the Manager's Read as 3-5 short paragraphs separated by blank lines. Use complete sentences. Do not stop mid-sentence.",
-    "Every Manager's Read paragraph must include at least one artist-specific fact, title, market, platform, comparison, or derived inference from the packet.",
+    "Write headlineRead as a very concise, punchy title for the day's brief (strictly under 120 characters). It must never contain long lists of tracks, numbers, or detailed context that would cause text clipping. Push all detailed numbers and context into snapshotSummary or managerRead.",
+    "Write snapshotSummary as a very rich, dense, and comprehensive synthesis (250-500 characters) explaining who the artist is, where their career/brand stands right now, and their general positioning or public context (news, social presence, or background). Rely on both the packet signals and your broad knowledge to explain who this artist is to a new member of the management team. This must focus on the artist themselves, not just their song metrics, and must satisfy the character length requirements to feel robust and highly utilized.",
+    "The Manager's Read is the desk's core output. It has exactly 4 sections — no more, no fewer. Separate each section with a blank line. Each section must start with its label in title case followed by a colon, then the section body. Format for every section: 'Label: Body text here.'",
+    "Use complete sentences throughout. Do not stop mid-sentence, and do not let any visible field read like clipped copy.",
+    "For long visible prose fields that are not otherwise constrained to the 4 labeled Manager's Read sections, write 3-5 short paragraphs separated by blank lines when that gives the artist a fuller read.",
+    "Section 1 is always labeled 'Artist Intelligence'. Write 2-4 sentences that synthesise what the strongest signals in this packet add up to about this artist's current position — scale, market pull, platform shape, catalog weight, or standout contrast. This replaces what used to appear as a subtitle below the headline. It must be grounded in specific numbers, titles, or markets from the packet.",
+    "Sections 2, 3, and 4 are determined by the Manager's own analysis of the packet. Before writing them, reason internally: identify the 3 most commercially important or strategically urgent themes that are not already covered by Artist Intelligence. These themes could be a power market, a catalog opportunity, a platform imbalance, a release angle, a cultural signal, a live indicator, a rights consideration, a discovery gap, a second-lane audience, or any pattern that a senior manager would act on. Label each theme precisely in 2-4 words (title case). Write 2-4 sentences of body per section. Every sentence must include a specific artist fact, title, market, number, or comparison from the packet — no generic observations.",
+    "Minimum body length per section: each section body must be at least 150 characters. Do not write stub sections. If a theme cannot be supported with at least 2 specific sentences from the packet, choose a different theme.",
+    "Every Manager's Read section must include at least one artist-specific fact, title, market, platform, comparison, or derived inference from the packet.",
     "If a sentence could be said to another artist, delete it.",
     "Do not write generic platform advice such as X drives conversation, Instagram controls image, or TikTok tests hooks unless the artist's actual numbers make that point non-obvious.",
     "Do not lead with missing data. Do not end with missing data. Do not mention private saves or repeat listener gaps unless directly asked by the user.",
@@ -234,21 +240,23 @@ const sharedTodaysBriefInstructions = [
 ];
 
 const operatingTodaysBriefInstructions = [
-  "Write the operating brief as the current desk read: action-oriented, immediate, and useful for deciding what the team should do next.",
-  "The Manager's Read should explain what is happening now, where attention should go, and what the workspace can turn into tasks or specialist work.",
-  "End the Manager's Read with one useful thing to do today: choose the first management focus, meaning the record, market, or story the workspace should organize around first.",
+    "Write the operating brief as the current desk read: action-oriented, immediate, and useful for deciding what the team should do next.",
+    "The Manager's Read has exactly 4 sections. Section 1 (Artist Intelligence) always comes first and is mandatory. Sections 2-4 are your three most strategically important reads on this artist's situation today — the themes the team can act on, observe, or plan around right now.",
+    "The final section (section 4) must end with one clear, concrete action the team can take today: a specific record, market, platform angle, or story to move on — not a general statement.",
+    "End the Manager's Read with one useful thing to do today.",
 ];
 
 const setupMapTodaysBriefInstructions = [
-  "Write the setup-map brief as an Artist Operating Map, not a normal daily brief.",
-  "This is the first setup brief after onboarding. The artist has not created missions, tasks, rollout plans, or campaigns yet.",
-  "The read must feel highly personal: like the Manager has studied this specific artist's career shape, strongest music, audience base, platform behavior, and current leverage before saying anything.",
-  "This is not a rigid template. Let the structure flex around the strongest actual pattern in the packet, whether that pattern is a record, city, catalog lane, audience geography, platform imbalance, discovery surface, cultural base, or unusual contrast.",
-  "The first sentence must be unique to the artist and must not sound reusable. It should immediately prove that the desk knows what is special, strange, or commercially important about this artist.",
-  "Interpret catalog, projects, tracks, audience geography, platform behavior, playlist discovery, public reach, and current music as one management map instead of separate facts.",
-  "The intelligenceSnapshot metrics must support the specific thesis of this artist. Select only the facts that make the operating map believable; do not fill the table with generic top metrics.",
-  "Show career-level understanding when the packet supports it: where the artist's audience lives, which records carry the brand, what the catalog is teaching us, which platforms are overpowered or underpowered, and what kind of management posture fits the evidence.",
-  "The first management focus should be the conclusion of the read, not the whole brief. Build toward it after explaining the artist's map.",
+    "Write the setup-map brief as an Artist Operating Map, not a normal daily brief.",
+    "This is the first setup brief after onboarding. The artist has not created missions, tasks, rollout plans, or campaigns yet.",
+    "The read must feel highly personal: like the Manager has studied this specific artist's career shape, strongest music, audience base, platform behavior, and current leverage before saying anything.",
+    "Treat the setup-map structure as a judgment frame, not a rigid template.",
+    "The Manager's Read has exactly 4 sections. Section 1 (Artist Intelligence) always comes first: synthesise the key signals into what this artist's current position actually means as a management starting point. Sections 2-4 are the 3 most important operating map themes you can identify from the packet — where the artist is strongest, where the hidden opportunity is, and what the first management focus should be, in that order of build-up.",
+    "The first sentence of Artist Intelligence must be unique to this artist and must not sound reusable. It should immediately prove that the desk knows what is special, strange, or commercially important about this specific person.",
+    "Interpret catalog, projects, tracks, audience geography, platform behavior, playlist discovery, public reach, and current music as one management map instead of separate facts.",
+    "The intelligenceSnapshot metrics must support the specific thesis of this artist. Select only the facts that make the operating map believable; do not fill the table with generic top metrics.",
+    "Show career-level understanding when the packet supports it: where the artist's audience lives, which records carry the brand, what the catalog is teaching us, which platforms are overpowered or underpowered, and what kind of management posture fits the evidence.",
+    "The fourth section must land on the single clearest management focus: the record, market, or story the workspace should organize around first.",
 ];
 
 export function buildTodaysBriefInstructions(

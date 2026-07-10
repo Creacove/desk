@@ -5,6 +5,7 @@ import { cn } from "../../lib/utils";
 import type {
   DrawerKind,
   MissionCheckpointViewModel,
+  MissionTaskDeliverableViewModel,
   MissionEventViewModel,
   MissionGenesisResultViewModel,
   MissionNoteViewModel,
@@ -27,6 +28,7 @@ export function MissionsWorkspace({
   onOpenMissionGenesisQuestions,
   onApproveTask,
   onCompleteTask,
+  onUploadTaskDeliverable,
   onDrawer,
   openRoomRequestKey = 0,
   openRoomTab,
@@ -42,7 +44,8 @@ export function MissionsWorkspace({
   onRunMissionGenesis: () => void;
   onOpenMissionGenesisQuestions: () => void;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
+  onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
   onDrawer: (drawer: DrawerKind) => void;
   openRoomRequestKey?: number;
   openRoomTab?: MissionRoomTab;
@@ -125,6 +128,7 @@ export function MissionsWorkspace({
       onDrawer={onDrawer}
       onApproveTask={onApproveTask}
       onCompleteTask={onCompleteTask}
+      onUploadTaskDeliverable={onUploadTaskDeliverable}
       targetTaskId={openTaskId ?? undefined}
     />
   );
@@ -275,6 +279,7 @@ function MissionRoom({
   onDrawer,
   onApproveTask,
   onCompleteTask,
+  onUploadTaskDeliverable,
   targetTaskId,
 }: {
   mission: MissionViewModel;
@@ -283,7 +288,8 @@ function MissionRoom({
   onBack: () => void;
   onDrawer: (drawer: DrawerKind) => void;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
+  onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
   targetTaskId?: string;
 }) {
   const checkpoints = missionCheckpoints(mission);
@@ -325,7 +331,7 @@ function MissionRoom({
 
       <div className="min-h-[400px] min-w-0 max-w-full">
         {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onTab={onTab} /> : null}
-        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} /> : null}
+        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} onUploadTaskDeliverable={onUploadTaskDeliverable} /> : null}
         {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
         {tab === "notes" ? <NotesPanel notes={notes} /> : null}
         {tab === "recap" ? <MissionRecapPanel mission={mission} recap={recap} events={events} /> : null}
@@ -399,12 +405,14 @@ function TasksPanel({
   targetTaskId,
   onApproveTask,
   onCompleteTask,
+  onUploadTaskDeliverable,
 }: {
   checkpoints: MissionCheckpointViewModel[];
   tasks: MissionTaskViewModel[];
   targetTaskId?: string;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
+  onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
 }) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
   const targetTask = targetTaskId ? tasks.find((task) => task.id === targetTaskId) : undefined;
@@ -413,6 +421,8 @@ function TasksPanel({
   const [approvedTaskIds, setApprovedTaskIds] = useState<string[]>([]);
   const [completedTaskIds, setCompletedTaskIds] = useState<string[]>([]);
   const [completionNote, setCompletionNote] = useState<{ taskId: string; status: "completed" | "blocked"; note: string } | null>(null);
+  const [taskDeliverables, setTaskDeliverables] = useState<Record<string, MissionTaskDeliverableViewModel[]>>({});
+  const [deliverableErrors, setDeliverableErrors] = useState<Record<string, string>>({});
   const [completionPending, setCompletionPending] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
 
@@ -447,16 +457,66 @@ function TasksPanel({
       setCompletionError("Please describe what you did or what happened before marking this task done.");
       return;
     }
+    const task = tasks.find((item) => item.id === completionNote.taskId);
+    const deliverables = task ? resolveTaskDeliverables(task, taskDeliverables[task.id]) : [];
+    const missingDeliverable = completionNote.status === "completed" && deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
+    if (missingDeliverable) {
+      setCompletionError("Add the required deliverable before submitting this task as done.");
+      return;
+    }
+    const documentIds = deliverables.map((deliverable) => deliverable.documentId).filter(Boolean) as string[];
     setCompletionPending(true);
     setCompletionError(null);
     try {
-      await onCompleteTask(completionNote.taskId, completionNote.status, note);
+      await onCompleteTask(completionNote.taskId, completionNote.status, note, documentIds);
       setCompletedTaskIds((current) => [...new Set([...current, completionNote.taskId])]);
       setCompletionNote(null);
     } catch (err) {
       setCompletionError(err instanceof Error ? err.message : "Task completion failed. Please try again.");
     } finally {
       setCompletionPending(false);
+    }
+  }
+
+  async function uploadDeliverable(task: MissionTaskViewModel, deliverable: MissionTaskDeliverableViewModel, file: File) {
+    setDeliverableErrors((current) => ({ ...current, [task.id]: "" }));
+    setTaskDeliverables((current) => ({
+      ...current,
+      [task.id]: replaceDeliverable(resolveTaskDeliverables(task, current[task.id]), {
+        ...deliverable,
+        status: "uploading",
+        fileName: file.name,
+      }),
+    }));
+
+    try {
+      const uploaded = onUploadTaskDeliverable
+        ? await onUploadTaskDeliverable(task.id, { title: deliverable.title, file })
+        : {
+            ...deliverable,
+            id: deliverable.id,
+            status: "uploaded" as const,
+            documentId: `local-${task.id}-${Date.now()}`,
+            fileName: file.name,
+            validationSummary: "Ready for Manager review.",
+          };
+      setTaskDeliverables((current) => ({
+        ...current,
+        [task.id]: replaceDeliverable(resolveTaskDeliverables(task, current[task.id]), { ...uploaded, id: deliverable.id }),
+      }));
+    } catch (error) {
+      setTaskDeliverables((current) => ({
+        ...current,
+        [task.id]: replaceDeliverable(resolveTaskDeliverables(task, current[task.id]), {
+          ...deliverable,
+          status: "failed",
+          fileName: file.name,
+        }),
+      }));
+      setDeliverableErrors((current) => ({
+        ...current,
+        [task.id]: error instanceof Error ? error.message : "Deliverable upload failed.",
+      }));
     }
   }
 
@@ -536,6 +596,8 @@ function TasksPanel({
                       const done = completedTaskIds.includes(task.id) || task.result?.status === "completed";
                       const blocked = task.approvalState === "blocked" || task.result?.status === "blocked";
                       const detailsOpen = expandedTaskIds.includes(task.id);
+                      const deliverables = resolveTaskDeliverables(task, taskDeliverables[task.id]);
+                      const hasBlockingDeliverable = deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
                       const completionBlocked = task.approvalState === "needs approval" && !approved;
                       const isConfirmingCompletion = completionNote?.taskId === task.id;
 
@@ -557,6 +619,14 @@ function TasksPanel({
                             </div>
                             <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/90">{task.owner} / {task.deadline}</p>
                             <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-foreground/89"><span className="font-bold text-foreground">Why it matters:</span> {task.purpose}</p>
+                            {deliverables.length ? (
+                              <TaskDeliverables
+                                task={task}
+                                deliverables={deliverables}
+                                error={deliverableErrors[task.id]}
+                                onUpload={uploadDeliverable}
+                              />
+                            ) : null}
                             <button type="button" onClick={() => toggleTaskDetails(task.id)} className="mt-3 text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent hover:underline">
                               {detailsOpen ? "Hide task details" : "Show task details"}
                             </button>
@@ -582,7 +652,7 @@ function TasksPanel({
                                   </div>
                                 </div>
                               ) : (
-                                <div className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
+                                <div data-testid={`task-completion-panel-${task.id}`} className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
                                   <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">
                                     {completionNote.status === "blocked" ? "Why is this task blocked?" : "What did you do? What was the result?"}
                                   </p>
@@ -591,6 +661,7 @@ function TasksPanel({
                                   </p>
                                   <textarea
                                     id={`task-note-${task.id}`}
+                                    aria-label="Task result note"
                                     rows={3}
                                     value={completionNote.note}
                                     onChange={(e) => setCompletionNote((current) => current ? { ...current, note: e.target.value } : null)}
@@ -638,12 +709,17 @@ function TasksPanel({
                             ) : null}
                             <button
                               type="button"
-                              disabled={done || completionBlocked || blocked || isConfirmingCompletion}
+                              disabled={done || completionBlocked || blocked || isConfirmingCompletion || hasBlockingDeliverable}
                               onClick={() => startCompletion(task.id, "completed")}
                               className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
                             >
                               Mark done
                             </button>
+                            {hasBlockingDeliverable ? (
+                              <p className="text-right text-[11px] font-semibold leading-snug text-muted-foreground/78 lg:max-w-[180px]">
+                                Add deliverable to submit.
+                              </p>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -656,6 +732,57 @@ function TasksPanel({
         </div>
       </div>
     </section>
+  );
+}
+
+function TaskDeliverables({
+  task,
+  deliverables,
+  error,
+  onUpload,
+}: {
+  task: MissionTaskViewModel;
+  deliverables: MissionTaskDeliverableViewModel[];
+  error?: string;
+  onUpload: (task: MissionTaskViewModel, deliverable: MissionTaskDeliverableViewModel, file: File) => void;
+}) {
+  return (
+    <div className="mt-3 grid gap-2 rounded-[12px] border border-foreground/8 bg-foreground/[0.022] p-3">
+      {deliverables.map((deliverable) => {
+        const inputId = `task-deliverable-${task.id}-${deliverable.id}`;
+        return (
+          <div key={deliverable.id} className="flex min-w-0 flex-wrap items-center gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/78">Deliverable</span>
+            <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">{deliverable.fileName ?? deliverable.title}</span>
+            <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", deliverableStatusClass(deliverable.status))}>
+              {deliverableStatusLabel(deliverable.status)}
+            </span>
+            <label
+              htmlFor={inputId}
+              className="cursor-pointer rounded-[8px] border border-foreground/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
+            >
+              {deliverable.status === "missing" || deliverable.status === "failed" ? "Upload" : "Replace"}
+            </label>
+            <input
+              id={inputId}
+              type="file"
+              className="sr-only"
+              aria-label={`Upload deliverable for ${task.title}`}
+              accept=".pdf,.doc,.docx,.txt,.md,.csv,application/pdf,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+              onChange={(event) => {
+                const file = event.currentTarget.files?.[0];
+                if (file) onUpload(task, deliverable, file);
+                event.currentTarget.value = "";
+              }}
+            />
+            {deliverable.validationSummary ? (
+              <span className="basis-full text-[11px] font-semibold leading-relaxed text-muted-foreground/80">{deliverable.validationSummary}</span>
+            ) : null}
+          </div>
+        );
+      })}
+      {error ? <p role="alert" className="text-[11px] font-semibold text-red-600">{error}</p> : null}
+    </div>
   );
 }
 
@@ -1248,6 +1375,75 @@ function getTaskStatusLabel(task: MissionTaskViewModel, approved: boolean, done:
   if (approved) return "Approved";
   if (task.approvalState === "not_required") return "No approval needed";
   return task.approvalState;
+}
+
+const deliverableLanguagePattern = /\b(thesis|document|copy|sign[- ]?off|approval|written|split sheet|report|epk|pitch|confirmation|memo|brief)\b/i;
+
+function resolveTaskDeliverables(task: MissionTaskViewModel, localDeliverables?: MissionTaskDeliverableViewModel[]) {
+  if (localDeliverables?.length) return localDeliverables;
+  if (task.deliverables?.length) return task.deliverables;
+  if (!taskNeedsDeliverable(task)) return [];
+
+  return [{
+    id: `${task.id}-deliverable`,
+    title: inferDeliverableTitle(task),
+    status: "missing" as const,
+  }];
+}
+
+function taskNeedsDeliverable(task: MissionTaskViewModel) {
+  const taskText = [
+    task.title,
+    task.purpose,
+    task.dependency,
+    task.riskIfLate,
+    ...task.steps,
+    ...task.evidenceIds,
+  ].join(" ");
+  return deliverableLanguagePattern.test(taskText);
+}
+
+function inferDeliverableTitle(task: MissionTaskViewModel) {
+  const explicitEvidence = task.evidenceIds.find((item) => !/^EV[-_]/i.test(item) && deliverableLanguagePattern.test(item));
+  if (explicitEvidence) return cleanDeliverableTitle(explicitEvidence);
+  const stepWithDeliverable = task.steps.find((step) => deliverableLanguagePattern.test(step));
+  if (stepWithDeliverable) return cleanDeliverableTitle(stepWithDeliverable);
+  return cleanDeliverableTitle(task.title);
+}
+
+function cleanDeliverableTitle(value: string) {
+  return value
+    .replace(/^(upload|submit|provide|prepare|confirm|write|create|send)\s+/i, "")
+    .replace(/\s+(for manager review|for manager approval|to manager|before review)$/i, "")
+    .trim() || "Required document";
+}
+
+function replaceDeliverable(deliverables: MissionTaskDeliverableViewModel[], next: MissionTaskDeliverableViewModel) {
+  if (!deliverables.some((deliverable) => deliverable.id === next.id)) {
+    return [...deliverables, next];
+  }
+  return deliverables.map((deliverable) => deliverable.id === next.id ? { ...deliverable, ...next } : deliverable);
+}
+
+function isDeliverableSubmittable(deliverable: MissionTaskDeliverableViewModel) {
+  return Boolean(deliverable.documentId) && ["uploaded", "checking", "accepted"].includes(deliverable.status);
+}
+
+function deliverableStatusLabel(status: MissionTaskDeliverableViewModel["status"]) {
+  if (status === "uploading") return "Uploading";
+  if (status === "uploaded") return "Uploaded";
+  if (status === "checking") return "Checking";
+  if (status === "accepted") return "Accepted";
+  if (status === "needs_revision") return "Needs revision";
+  if (status === "failed") return "Failed";
+  return "Missing";
+}
+
+function deliverableStatusClass(status: MissionTaskDeliverableViewModel["status"]) {
+  if (status === "uploaded" || status === "checking" || status === "accepted") return "bg-success/10 text-success";
+  if (status === "uploading") return "bg-brand-accent/10 text-brand-accent";
+  if (status === "failed" || status === "needs_revision") return "bg-warning/10 text-warning";
+  return "bg-foreground/[0.055] text-muted-foreground";
 }
 
 function getBlockingDependency(checkpoint: MissionCheckpointViewModel, checkpoints: MissionCheckpointViewModel[]) {

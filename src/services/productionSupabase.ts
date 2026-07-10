@@ -13,6 +13,7 @@ import type {
   ConversationViewModel,
   EvidenceItemViewModel,
   MissionGenesisResultViewModel,
+  MissionTaskDeliverableViewModel,
   MissionViewModel,
   MusicObjectViewModel,
   SpotifyCatalogSearchResult,
@@ -41,6 +42,7 @@ import type {
 const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
 const MUSIC_UPLOADS_BUCKET = "music-uploads";
+const WORKSPACE_DOCUMENTS_BUCKET = "workspace-documents";
 const RESUMABLE_UPLOAD_THRESHOLD_BYTES = 6 * 1024 * 1024;
 const MISSION_GENESIS_POLL_INTERVAL_MS = 1500;
 const MISSION_GENESIS_POLL_ATTEMPTS = 240;
@@ -1271,6 +1273,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const tasks = ((taskData as TaskRow[] | null) ?? []).filter((task) => task.mission_id && missionIds.has(task.mission_id));
         const steps = ((stepData as TaskStepRow[] | null) ?? []).filter((step) => tasks.some((t) => t.id === step.task_id));
         const results = ((resultData as TaskResultRow[] | null) ?? []).filter((res) => tasks.some((t) => t.id === res.task_id));
+        const deliverablesByTask = await loadTaskDocumentDeliverables(client, workspace, tasks.map((task) => task.id));
 
         return activeRows.map((mission) => missionFromRow(
           mission,
@@ -1278,6 +1281,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           tasks.filter((task) => task.mission_id === mission.id),
           steps,
           results,
+          deliverablesByTask,
         ));
       },
       async approveTask(taskId) {
@@ -1289,6 +1293,109 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         if (error) throw error;
       },
+      async uploadTaskDeliverable(taskId, input) {
+        const title = input.title.trim() || input.file.name;
+        const storagePath = buildTaskDocumentStoragePath(workspace, taskId, input.file.name);
+        const { data: uploadedFile, error: intentError } = await client
+          .from("uploaded_files")
+          .insert({
+            account_id: workspace.accountId,
+            artist_workspace_id: workspace.artistWorkspaceId,
+            artist_id: workspace.artistId,
+            file_name: input.file.name,
+            file_type: input.file.type || "application/octet-stream",
+            classification: "other",
+            storage_bucket: WORKSPACE_DOCUMENTS_BUCKET,
+            storage_ref: storagePath,
+            status: "processing",
+            metadata: { task_id: taskId, title, size: input.file.size },
+          })
+          .select("id,storage_ref")
+          .single();
+
+        if (intentError) throw intentError;
+
+        const uploadedFileRow = uploadedFile as { id: string; storage_ref: string };
+
+        try {
+          await uploadWorkspaceDocumentFile(client, input.file, storagePath);
+        } catch (uploadError) {
+          const uploadErrorMessage = readErrorMessage(uploadError, "Upload failed.");
+          await client.from("uploaded_files").update({ status: "failed", error: uploadErrorMessage }).eq("id", uploadedFileRow.id);
+          throw new Error(uploadErrorMessage);
+        }
+
+        await client.from("uploaded_files").update({ status: "uploaded" }).eq("id", uploadedFileRow.id);
+
+        const { data: documentRow, error: documentError } = await client
+          .from("documents")
+          .insert({
+            account_id: workspace.accountId,
+            artist_workspace_id: workspace.artistWorkspaceId,
+            artist_id: workspace.artistId,
+            title,
+            document_type: "task_deliverable",
+            origin: "user_uploaded",
+            status: "uploaded",
+            created_by_type: "user",
+            metadata: { task_id: taskId },
+          })
+          .select("id")
+          .single();
+
+        if (documentError) throw documentError;
+
+        const documentId = (documentRow as { id: string }).id;
+        const { data: versionRow, error: versionError } = await client
+          .from("document_versions")
+          .insert({
+            account_id: workspace.accountId,
+            artist_workspace_id: workspace.artistWorkspaceId,
+            artist_id: workspace.artistId,
+            document_id: documentId,
+            version_number: 1,
+            uploaded_file_id: uploadedFileRow.id,
+            file_name: input.file.name,
+            file_type: input.file.type || "application/octet-stream",
+            storage_bucket: WORKSPACE_DOCUMENTS_BUCKET,
+            storage_ref: storagePath,
+            extraction_status: "pending",
+          })
+          .select("id")
+          .single();
+
+        if (versionError) throw versionError;
+
+        await client.from("documents").update({ current_version_id: (versionRow as { id: string }).id }).eq("id", documentId);
+        await client.from("artifact_links").insert({
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          source_type: "document",
+          source_id: documentId,
+          target_type: "task",
+          target_id: taskId,
+          relationship: "response_to",
+        });
+        await writeOperatingEvent(client, workspace, {
+          eventType: "task_deliverable_uploaded",
+          targetType: "task",
+          targetId: taskId,
+          sourceType: "document",
+          sourceId: documentId,
+          summary: `Uploaded ${title}.`,
+          payload: { uploaded_file_id: uploadedFileRow.id, storage_ref: storagePath },
+        });
+
+        return {
+          id: documentId,
+          title,
+          status: "uploaded",
+          documentId,
+          fileName: input.file.name,
+          validationSummary: "Ready for Manager review.",
+        };
+      },
       async completeTask(taskId, input) {
         const { data, error } = await client.functions.invoke("manager-review-task-result", {
           body: {
@@ -1298,6 +1405,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             taskId,
             status: input.status,
             note: input.note,
+            documentIds: input.documentIds ?? [],
           },
         });
         if (error) await throwFunctionInvokeError(error, "Manager task review failed.");
@@ -1619,6 +1727,25 @@ type TaskResultRow = {
   manager_interpretation?: string | null;
   mission_effect?: string | null;
   recommended_follow_up?: string | null;
+};
+
+type ArtifactLinkRow = {
+  source_id: string;
+  target_id: string;
+  relationship?: string | null;
+};
+
+type DocumentRow = {
+  id: string;
+  title: string;
+  status?: MissionTaskDeliverableViewModel["status"] | null;
+  current_version_id?: string | null;
+};
+
+type DocumentVersionRow = {
+  id: string;
+  document_id: string;
+  file_name?: string | null;
 };
 
 type EvidenceRow = {
@@ -1987,6 +2114,67 @@ async function writeOperatingEvent(
   if (error) throw error;
 }
 
+async function loadTaskDocumentDeliverables(client: SupabaseClient, workspace: ProductionWorkspace, taskIds: string[]) {
+  const deliverablesByTask = new Map<string, MissionTaskDeliverableViewModel[]>();
+  if (!taskIds.length) return deliverablesByTask;
+
+  const { data: linkData, error: linkError } = await client
+    .from("artifact_links")
+    .select("source_id,target_id,relationship")
+    .eq("artist_workspace_id", workspace.artistWorkspaceId)
+    .eq("source_type", "document")
+    .eq("target_type", "task")
+    .in("target_id", taskIds);
+
+  if (linkError) throw linkError;
+
+  const links = ((linkData as ArtifactLinkRow[] | null) ?? []).filter((link) => link.source_id && link.target_id);
+  const documentIds = [...new Set(links.map((link) => link.source_id))];
+  if (!documentIds.length) return deliverablesByTask;
+
+  const [{ data: documentData, error: documentError }, { data: versionData, error: versionError }] = await Promise.all([
+    client
+      .from("documents")
+      .select("id,title,status,current_version_id")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .in("id", documentIds),
+    client
+      .from("document_versions")
+      .select("id,document_id,file_name")
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .in("document_id", documentIds),
+  ]);
+
+  if (documentError) throw documentError;
+  if (versionError) throw versionError;
+
+  const documents = ((documentData as DocumentRow[] | null) ?? []);
+  const versions = ((versionData as DocumentVersionRow[] | null) ?? []);
+
+  for (const link of links) {
+    const document = documents.find((item) => item.id === link.source_id);
+    if (!document) continue;
+    const version = versions.find((item) => item.id === document.current_version_id) ?? versions.find((item) => item.document_id === document.id);
+    const taskDeliverables = deliverablesByTask.get(link.target_id) ?? [];
+    taskDeliverables.push({
+      id: document.id,
+      title: document.title,
+      status: mapDocumentDeliverableStatus(document.status),
+      documentId: document.id,
+      fileName: version?.file_name ?? undefined,
+      validationSummary: "Ready for Manager review.",
+    });
+    deliverablesByTask.set(link.target_id, taskDeliverables);
+  }
+
+  return deliverablesByTask;
+}
+
+function mapDocumentDeliverableStatus(status: string | null | undefined): MissionTaskDeliverableViewModel["status"] {
+  if (status === "checking" || status === "accepted" || status === "needs_revision" || status === "failed" || status === "uploaded") return status;
+  return "uploaded";
+}
+
 async function loadMusicSplitForItem(client: SupabaseClient, workspace: ProductionWorkspace, musicItemId: string): Promise<MusicSplitRow | null> {
   const { data, error } = await client
     .from("music_splits")
@@ -2134,6 +2322,16 @@ function buildMusicStoragePath(workspace: ProductionWorkspace, musicItemId: stri
   ].join("/");
 }
 
+function buildTaskDocumentStoragePath(workspace: ProductionWorkspace, taskId: string, fileName: string) {
+  return [
+    workspace.accountId,
+    workspace.artistWorkspaceId,
+    "tasks",
+    taskId,
+    `${Date.now()}-${safeStorageFileName(fileName)}`,
+  ].join("/");
+}
+
 function safeStorageFileName(fileName: string) {
   const trimmed = fileName.trim().toLowerCase();
   const withoutUnsafe = trimmed.replace(/[^a-z0-9._-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
@@ -2175,6 +2373,20 @@ async function uploadMusicFile(client: SupabaseClient, file: File, storagePath: 
   }
 
   const { error } = await storage.from(MUSIC_UPLOADS_BUCKET).upload(storagePath, file, {
+    contentType: file.type || "application/octet-stream",
+    upsert: false,
+  });
+
+  if (error) throw error;
+}
+
+async function uploadWorkspaceDocumentFile(client: SupabaseClient, file: File, storagePath: string) {
+  const storage = (client as unknown as SupabaseStorageClient).storage;
+  if (!storage) {
+    throw new Error("Supabase Storage is not configured.");
+  }
+
+  const { error } = await storage.from(WORKSPACE_DOCUMENTS_BUCKET).upload(storagePath, file, {
     contentType: file.type || "application/octet-stream",
     upsert: false,
   });
@@ -4571,6 +4783,7 @@ function missionFromRow(
   tasks: TaskRow[] = [],
   steps: TaskStepRow[] = [],
   results: TaskResultRow[] = [],
+  deliverablesByTask: Map<string, MissionTaskDeliverableViewModel[]> = new Map(),
 ): MissionViewModel {
   const nextTask = tasks.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
 
@@ -4601,6 +4814,7 @@ function missionFromRow(
       purpose: task.purpose ?? "",
       steps: taskSteps,
       evidenceIds: task.evidence_needed ?? [],
+      deliverables: deliverablesByTask.get(task.id),
       dependency: task.dependency ?? "None",
       riskIfLate: task.risk_if_late ?? "None",
       result: resultViewModel,

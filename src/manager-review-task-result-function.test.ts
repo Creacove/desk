@@ -10,6 +10,12 @@ const serviceRoleGrantMigrationPath = join(
   "migrations",
   "20260628000100_manager_review_task_result_service_role_grants.sql",
 );
+const workspaceDocumentsMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260710000100_workspace_documents.sql",
+);
 
 describe("Manager task-result review function", () => {
   it("defines an authenticated Edge Function that reviews task results through Manager synthesis", () => {
@@ -27,9 +33,22 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain('output_type: "review_read"');
   });
 
+  it("loads submitted task documents before asking the Manager to review completion", () => {
+    expect(functionSource).toContain("documentIds?: string[]");
+    expect(functionSource).toContain('"documents"');
+    expect(functionSource).toContain('"document_versions"');
+    expect(functionSource).toContain('"artifact_links"');
+    expect(functionSource).toContain("submittedDocuments");
+    expect(functionSource).toContain("missingRequiredDeliverable");
+  });
+
   it("has service-role access to the mission graph and review write tables", () => {
     expect(existsSync(serviceRoleGrantMigrationPath)).toBe(true);
-    const migration = readFileSync(serviceRoleGrantMigrationPath, "utf8");
+    expect(existsSync(workspaceDocumentsMigrationPath)).toBe(true);
+    const migration = [
+      readFileSync(serviceRoleGrantMigrationPath, "utf8"),
+      readFileSync(workspaceDocumentsMigrationPath, "utf8"),
+    ].join("\n");
 
     for (const table of [
       "artist_workspaces",
@@ -44,6 +63,10 @@ describe("Manager task-result review function", () => {
       "operating_events",
     ]) {
       expect(migration).toMatch(new RegExp(`grant select on public\\.${table} to service_role`, "i"));
+    }
+
+    for (const table of ["documents", "document_versions", "document_validation_results", "artifact_links"]) {
+      expect(migration).toMatch(new RegExp(`grant select(?:, insert, update, delete)? on public\\.${table} to (?:authenticated, )?service_role`, "i"));
     }
 
     for (const table of [

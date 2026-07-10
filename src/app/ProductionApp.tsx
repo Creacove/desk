@@ -923,10 +923,22 @@ function CleanProductionWorkspace({
     setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
   }
 
-  async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string) {
+  async function uploadMissionTaskDeliverable(taskId: string, input: { title: string; file: File }) {
+    if (!repositories.missions.uploadTaskDeliverable) {
+      throw new Error("Document upload is not available for this workspace.");
+    }
+    const deliverable = await repositories.missions.uploadTaskDeliverable(taskId, input);
+    const nextMissions = await repositories.missions.loadMissions();
+    setMissions(nextMissions);
+    setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
+    return deliverable;
+  }
+
+  async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) {
     const updatedMission = await repositories.missions.completeTask(taskId, {
       status,
       note,
+      documentIds,
     });
     setMissions((current) => current.map((mission) => mission.id === updatedMission.id ? updatedMission : mission));
     setSelectedMissionId(updatedMission.id);
@@ -1045,6 +1057,7 @@ function CleanProductionWorkspace({
               }}
               onDrawer={setDrawer}
               onOpenMusicFocus={openMusicFocus}
+              onAskManager={(body) => void sendManagerMessage(body)}
             />
           ) : null}
           {view === "musicWorkspace" ? (
@@ -1122,6 +1135,7 @@ function CleanProductionWorkspace({
               onOpenMissionGenesisQuestions={() => navigate("managerOffice")}
               onApproveTask={approveMissionTask}
               onCompleteTask={completeMissionTask}
+              onUploadTaskDeliverable={uploadMissionTaskDeliverable}
               onDrawer={setDrawer}
               openRoomRequestKey={missionRoomOpenRequestKey}
               openRoomTab={missionRoomOpenTab}
@@ -1443,13 +1457,13 @@ function MobileNotificationSheet({
       <section
         role="dialog"
         aria-modal="true"
-        aria-label="Desk notifications"
+        aria-label="Activity Center"
         className="max-h-[82svh] w-full overflow-y-auto rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)]"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-foreground/8 bg-background px-4 py-3">
           <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Desk notifications</p>
-            <h2 className="font-display mt-1 text-[18px] font-semibold leading-tight text-foreground">Today's Attention</h2>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Activity Center</p>
+            <h2 className="font-display mt-1 text-[18px] font-semibold leading-tight text-foreground">What needs attention now</h2>
           </div>
           <button
             type="button"
@@ -1463,7 +1477,7 @@ function MobileNotificationSheet({
         <div className="grid gap-5 px-4 py-4">
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Today's Attention</p>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Needs You</p>
               <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{actionable.length}</span>
             </div>
             <div className="grid gap-2">
@@ -1503,7 +1517,7 @@ function MobileNotificationSheet({
 
           <section>
             <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Activity log</p>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Autopilot Log</p>
               <button type="button" className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground" onClick={() => setActivityHistoryOpen((value) => !value)}>
                 {activityHistoryOpen ? "Hide history" : "View activity history"}
               </button>

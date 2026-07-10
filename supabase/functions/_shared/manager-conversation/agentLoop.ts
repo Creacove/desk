@@ -159,7 +159,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
         status: "started" as const,
         summary: safeToolSummary(call.name, call.args),
       };
-      await input.onToolEvent?.(started);
+      await input.onToolEvent?.(publicToolEvent(started));
 
       try {
         const result = await input.executeTool(call.name, call.args);
@@ -170,7 +170,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
           summary: summarizeToolResult(call.name, result),
         };
         toolTrace.push(completed);
-        await input.onToolEvent?.(completed);
+        await input.onToolEvent?.(publicToolEvent(completed));
         outputs.push({ type: "function_call_output", call_id: call.callId, output: JSON.stringify(result) });
       } catch (error) {
         const failed = {
@@ -180,7 +180,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
           summary: readErrorMessage(error),
         };
         toolTrace.push(failed);
-        await input.onToolEvent?.(failed);
+        await input.onToolEvent?.(publicToolEvent(failed));
         outputs.push({ type: "function_call_output", call_id: call.callId, output: JSON.stringify({ error: failed.summary }) });
       }
     }
@@ -272,6 +272,22 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "query_durable_memory") return "Reading durable Manager memory.";
   if (name === "query_manager_outputs") return "Reviewing prior Manager outputs.";
   return "Manager is checking the workspace.";
+}
+
+function publicToolEvent(event: ManagerAgentToolTrace): ManagerAgentToolTrace {
+  return {
+    ...event,
+    tool: publicToolName(event.tool),
+  };
+}
+
+function publicToolName(name: string) {
+  if (name === "chartmetric_artist_enrich") return "artist-intelligence";
+  if (name === "chartmetric_track_enrich") return "music-intelligence";
+  if (name === "chartmetric_project_enrich") return "project-intelligence";
+  if (name === "save_public_evidence") return "public-context";
+  if (name === "write_strategic_memory") return "manager-memory";
+  return name;
 }
 
 function summarizeToolResult(name: string, value: unknown) {

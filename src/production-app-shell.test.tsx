@@ -753,24 +753,35 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).toBeInTheDocument();
     expect(screen.getByText("Today's Brief")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Talk to Manager" })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask your manager anything...")).toBeInTheDocument();
+    expect(screen.getAllByTestId("desk-signal-metric-card")).toHaveLength(4);
     expect(screen.queryByRole("button", { name: "Generate Today's Brief" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
-    expect(screen.getByText("Today's Attention")).toBeInTheDocument();
-    expect(screen.getByText("Activity log")).toBeInTheDocument();
-    expect(screen.getByText("No action needed")).toBeInTheDocument();
+    expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Manager Update");
+    expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Spotify public catalog connected");
+    expect(screen.getByRole("button", { name: /Open Activity Center/i })).toBeInTheDocument();
+    expect(screen.queryByText("Today's Attention")).not.toBeInTheDocument();
+    expect(screen.queryByText("Activity log")).not.toBeInTheDocument();
     expect(screen.queryByText("Private analytics missing")).not.toBeInTheDocument();
-    expect(screen.getByText("Source / Just now")).toBeInTheDocument();
-    expect(screen.getAllByText("Team Agents").length).toBeGreaterThan(0);
-    expect(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Music Focus.*Open music reads/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Mission Path.*Create first mission.*Turn read into work/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Team Agents.*0 specialist desks.*Open operating team/i })).toBeInTheDocument();
+    expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Source / Just now");
+    expect(screen.queryByTestId("desk-agent-card")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Music Focus.*Open music reads/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Mission Path.*Create first mission.*Turn read into work/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Team Agents.*0 specialist desks.*Open operating team/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Source.*Public catalog only/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/active AI units/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText("0 specialist desks").length).toBeGreaterThan(0);
+    expect(screen.queryByText("0 specialist desks")).not.toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Open Activity Center/i }));
+    const activityCenter = await screen.findByRole("dialog", { name: "Activity Center" });
+    expect(activityCenter).toHaveTextContent("Needs You");
+    expect(activityCenter).toHaveTextContent("Autopilot Log");
+    expect(activityCenter).toHaveTextContent("No action needed");
+    expect(activityCenter).toHaveTextContent("Spotify public catalog connected");
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Artist profile." })).toBeInTheDocument();
@@ -846,16 +857,17 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.getAllByText(initialBrief.headlineRead).length).toBeGreaterThan(0);
-    expect(screen.getByText("Artist Intelligence")).toBeInTheDocument();
+    expect(screen.getByTestId("desk-signal-metric-strip")).toBeInTheDocument();
+    expect(screen.getAllByTestId("desk-signal-metric-card")).toHaveLength(4);
     expect(screen.getAllByText("1.21M").length).toBeGreaterThan(0);
     expect(screen.getAllByText("London").length).toBeGreaterThan(0);
     expect(screen.getAllByText("UK rank").length).toBeGreaterThan(0);
     expect(screen.getAllByText(initialBrief.snapshotSummary).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(initialBrief.managerRead).length).toBeGreaterThan(0);
+    expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent("Momentum Peak");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(screen.queryByText("Artist Score is a broad strength input for the Manager read, not a separate visible section.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "View supporting evidence" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Talk to Manager" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "View supporting evidence" }).length).toBeGreaterThan(0);
+    expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Generate setup map" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh public context" })).not.toBeInTheDocument();
     expect(screen.queryByText(initialBrief.sourceLine)).not.toBeInTheDocument();
@@ -866,9 +878,12 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Still missing")).not.toBeInTheDocument();
     expect(screen.queryByText(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i)).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));
+    fireEvent.change(screen.getByPlaceholderText("Ask your manager anything..."), {
+      target: { value: "What should I do with the UK signal today?" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
 
-    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(await screen.findByText("What should I do with the UK signal today?")).toBeInTheDocument();
     expect(generationModes).toEqual([]);
   }, 20000);
 
@@ -901,15 +916,14 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    const attentionRail = screen.getByTestId("desk-desktop-attention-rail");
-    const primaryAttention = within(attentionRail).getByRole("button", { name: /Catalog import running/i });
-
-    expect(primaryAttention).not.toHaveClass("bg-foreground");
-    expect(primaryAttention).not.toHaveClass("text-background");
-    expect(primaryAttention).toHaveClass("bg-background");
+    expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
+    const focusLead = screen.getByTestId("desk-todays-focus-lead");
+    expect(focusLead).toHaveTextContent("Manager Update");
+    expect(focusLead).toHaveTextContent("Catalog import running");
+    expect(focusLead).not.toHaveTextContent("No action needed");
   }, 20000);
 
-  it("turns Desk HQ command strip clicks into Manager, Music, Missions, and Team destinations", async () => {
+  it("turns Desk HQ command brief clicks into Manager and mission destinations without exposing the old command strip", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.staff.loadAgents = async () => productionFixtureData.agents;
     repositories.music.loadMusic = async () => [
@@ -952,25 +966,21 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Music Focus.*Jam.*Open record read/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Mission Path.*1 active.*Turn read into work/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Music Focus.*Jam.*Open record read/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Mission Path.*1 active.*Turn read into work/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i })).not.toBeInTheDocument();
+    expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Top Focus");
+    expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Push Jam");
 
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
-    expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
-
-    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Desk HQ" }));
-    fireEvent.click(screen.getByRole("button", { name: /Music Focus.*Jam.*Open record read/i }));
-    expect(screen.getByRole("heading", { name: "Jam" })).toBeInTheDocument();
-
-    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Desk HQ" }));
-    fireEvent.click(screen.getByRole("button", { name: /Mission Path.*1 active.*Turn read into work/i }));
-    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Talk to Manager" })).toHaveClass("bg-foreground", "text-background");
+    fireEvent.change(screen.getByPlaceholderText("Ask your manager anything..."), {
+      target: { value: "Turn this into a manager conversation" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
+    expect(await screen.findByText("Turn this into a manager conversation")).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Desk HQ" }));
-    fireEvent.click(screen.getByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i }));
-    expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open focus mission Push Jam" }));
+    expect(await screen.findByRole("heading", { name: "Push Jam" })).toBeInTheDocument();
   }, 20000);
 
   it("keeps Desk HQ artist-facing sections compact and low-overload", async () => {
@@ -1003,18 +1013,14 @@ describe("Clean production prototype-match shell", () => {
     expect(managerReadCard.className).toContain("manager-read-card");
     expect(managerReadCard.className).not.toContain("border-l-brand-accent");
 
-    const agentCards = screen.getAllByTestId("desk-agent-card");
-    expect(agentCards).toHaveLength(5);
-    for (const card of agentCards) {
-      expect(card).toHaveTextContent(/Open|Preview/);
-      expect(card.textContent?.length ?? 0).toBeLessThan(95);
-    }
+    expect(screen.queryByTestId("desk-agent-card")).not.toBeInTheDocument();
     expect(screen.queryByText("A compact operating team for decisions, rollout, rights, deals, and live work.")).not.toBeInTheDocument();
 
-    const missionCards = screen.getAllByTestId("desk-active-mission-card");
-    expect(missionCards).toHaveLength(4);
+    const missionCards = screen.getAllByTestId("desk-focus-mission-card");
+    expect(missionCards).toHaveLength(3);
     expect(within(missionCards[0]).getByText("Mission Density 1")).toBeInTheDocument();
-    expect(within(missionCards[3]).getByText("Mission Density 4")).toBeInTheDocument();
+    expect(within(missionCards[2]).getByText("Mission Density 3")).toBeInTheDocument();
+    expect(screen.queryByText("Mission Density 4")).not.toBeInTheDocument();
     expect(screen.queryByText("Mission Density 5")).not.toBeInTheDocument();
     expect(screen.queryByText(/This long mission description/)).not.toBeInTheDocument();
     expect(screen.queryByText("Open mission")).not.toBeInTheDocument();
@@ -1040,12 +1046,12 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("desk-mobile-generate-brief")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Manager from brief" })).toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-desktop-attention-rail")).toHaveClass("hidden", "xl:grid");
+    expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
-    const notificationSheet = await screen.findByRole("dialog", { name: "Desk notifications" });
-    expect(notificationSheet).toHaveTextContent("Today's Attention");
-    expect(notificationSheet).toHaveTextContent("Activity log");
+    const notificationSheet = await screen.findByRole("dialog", { name: "Activity Center" });
+    expect(notificationSheet).toHaveTextContent("Needs You");
+    expect(notificationSheet).toHaveTextContent("Autopilot Log");
     expect(notificationSheet).toHaveTextContent("No action needed");
     expect(notificationSheet).not.toHaveTextContent("Private analytics missing");
     expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
@@ -1084,16 +1090,18 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    expect(screen.getByText("Today's Attention")).toBeInTheDocument();
-    expect(screen.getByText("Commission Data Lead power check")).toBeInTheDocument();
+    const focusLead = screen.getByTestId("desk-todays-focus-lead");
+    expect(focusLead).toHaveTextContent("Needs You");
+    expect(focusLead).toHaveTextContent("Commission Data Lead power check");
     expect(screen.queryByText(longMovement)).not.toBeInTheDocument();
-    expect(screen.getByText(/The assignee reports the work is done, but there is no verifiable evidence/)).toBeInTheDocument();
     expect(screen.queryByText("Started Chartmetric enrichment for GBESUNMO.")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "View activity history" }));
-    const history = await screen.findByRole("dialog", { name: "Activity history" });
-    expect(history).toHaveTextContent(longMovement);
-    expect(history).toHaveTextContent("Started Chartmetric enrichment for GBESUNMO.");
+    fireEvent.click(screen.getByRole("button", { name: /Open Activity Center/i }));
+    const activityCenter = await screen.findByRole("dialog", { name: "Activity Center" });
+    expect(activityCenter).toHaveTextContent("Needs You");
+    expect(activityCenter).toHaveTextContent("Autopilot Log");
+    expect(activityCenter).toHaveTextContent(longMovement);
+    expect(activityCenter).toHaveTextContent("Started Chartmetric enrichment for GBESUNMO.");
   }, 20000);
 
   it("keeps duplicate Desk movement titles from producing React key warnings", async () => {
@@ -1211,7 +1219,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("EV-204");
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("evidence-1");
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveClass("overflow-hidden");
-    expect(screen.getByTestId("desk-desktop-manager-read").querySelectorAll("p")).toHaveLength(4);
+    expect(screen.getAllByTestId("desk-manager-read-segment")).toHaveLength(4);
 
     const mobileMetrics = within(desk).getByTestId("desk-mobile-metrics-grid");
     expect(mobileMetrics).toHaveTextContent("Monthly listeners");
@@ -1219,9 +1227,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(desk).getByRole("button", { name: "See all 6 metrics" }));
     expect(within(mobileMetrics).getByText("Skip rate")).toBeInTheDocument();
 
-    const teamAgents = within(desk).getByTestId("desk-mobile-team-agents");
-    expect(teamAgents).toHaveTextContent("Manager Agent");
-    expect(teamAgents).not.toHaveTextContent("Marketing Lead");
+    expect(within(desk).queryByTestId("desk-mobile-team-agents")).not.toBeInTheDocument();
+    expect(within(desk).getByRole("button", { name: "Open Manager from brief" })).toBeInTheDocument();
   }, 20000);
 
   it("renders saved Today's Brief copy instead of dropping it for style-policy terms", async () => {
@@ -1318,12 +1325,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText(longBrief.snapshotSummary).length).toBeGreaterThan(0);
     expect(screen.queryByText(finalParagraph)).not.toBeInTheDocument();
 
-    const expandButtons = screen.getAllByRole("button", { name: "See full Manager's Read" });
-    expect(expandButtons).toHaveLength(2);
-    fireEvent.click(expandButtons[1]);
-
-    expect(screen.getByText(finalParagraph)).toBeInTheDocument();
-    expect(screen.getByTestId("desk-desktop-manager-read").querySelectorAll("p")).toHaveLength(5);
+    expect(screen.queryByRole("button", { name: "See full Manager's Read" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("desk-desktop-manager-read").querySelectorAll("p")).toHaveLength(4);
   }, 20000);
 
   it("keeps Artist Intelligence metric labels and values readable instead of truncating them", async () => {
@@ -1386,10 +1389,10 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    const intelligenceCard = screen.getByTestId("artist-intelligence-card");
-    expect(intelligenceCard).toHaveTextContent("Track score - Make Them Run");
-    expect(intelligenceCard).toHaveTextContent("Top TikTok video - Make Them Run");
-    expect(intelligenceCard).toHaveTextContent("1.3M views");
+    const intelligenceStrip = screen.getByTestId("desk-signal-metric-strip");
+    expect(intelligenceStrip).toHaveTextContent("Track score - Make Them Run");
+    expect(intelligenceStrip).toHaveTextContent("Top TikTok video - Make Them Run");
+    expect(intelligenceStrip).toHaveTextContent("1.3M views");
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.label}</p>");
@@ -1426,13 +1429,14 @@ describe("Clean production prototype-match shell", () => {
 
     expect(source).not.toContain("group-hover:bg-brand-accent");
     expect(source).not.toContain("group-hover:bg-brand-accent/10 group-hover:text-brand-accent");
-    expect(source).toContain("group-hover:bg-foreground group-hover:text-background");
+    expect(source).toContain("hover:bg-foreground/[0.04]");
+    expect(source).toContain("hover:text-foreground");
   });
 
   it("keeps Manager conversations persistent and links created work", async () => {
     await enterDeskHq();
 
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
     expect(screen.getByText("Conversation History")).toBeInTheDocument();
 
@@ -1477,7 +1481,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
 
     const messageBox = await screen.findByPlaceholderText("Message the Manager…");
@@ -1530,7 +1534,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
     fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
@@ -1614,7 +1618,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "what two songs should we focus on promoting as much as possible" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -1640,7 +1644,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Create the next mission." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -1727,7 +1731,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
 
     const messageBox = await screen.findByPlaceholderText("Message the Manager…");
@@ -1878,7 +1882,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.click(await screen.findByRole("button", { name: "Canonical task routing" }));
     fireEvent.click(screen.getByRole("button", { name: "Open task: Confirm task routing" }));
 
@@ -1904,7 +1908,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Plan the next mission." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -1956,7 +1960,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.click(await screen.findByRole("button", { name: "Night Bus release planning" }));
     const messageBox = await screen.findByPlaceholderText("Message the Manager…");
     fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
@@ -2003,7 +2007,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Should we move the release?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -2062,7 +2066,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
     fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
@@ -2250,7 +2254,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
     fireEvent.change(askBox, { target: { value: "Create the mission from this chat." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
@@ -2403,7 +2407,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("staff-desktop-list")).toHaveClass("hidden", "md:grid");
 
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
-    fireEvent.click(screen.getByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i }));
+    openManagerFromDesk();
     expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
@@ -4039,6 +4043,10 @@ async function enterDeskHq() {
   await screen.findByRole("heading", { name: "Connect artist profile" });
   fireEvent.click(screen.getByRole("button", { name: "Continue to artist context" }));
   fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+}
+
+function openManagerFromDesk() {
+  fireEvent.click(screen.getByRole("button", { name: "Open Manager from brief" }));
 }
 
 function authWithSession(result: Awaited<ReturnType<ProductionAuthAdapter["getSession"]>>): ProductionAuthAdapter {

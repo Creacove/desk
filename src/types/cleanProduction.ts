@@ -174,6 +174,15 @@ export type MissionTaskResultViewModel = {
   followUp: string;
 };
 
+export type MissionTaskDeliverableViewModel = {
+  id: string;
+  title: string;
+  status: "missing" | "uploading" | "uploaded" | "checking" | "accepted" | "needs_revision" | "failed";
+  documentId?: string;
+  fileName?: string;
+  validationSummary?: string;
+};
+
 export type MissionTaskViewModel = {
   id: string;
   checkpointId: string;
@@ -184,6 +193,7 @@ export type MissionTaskViewModel = {
   purpose: string;
   steps: string[];
   evidenceIds: string[];
+  deliverables?: MissionTaskDeliverableViewModel[];
   dependency: string;
   riskIfLate: string;
   result?: MissionTaskResultViewModel;
@@ -587,7 +597,11 @@ export type ManagerRepository = {
 export type MissionRepository = {
   loadMissions(): Promise<MissionViewModel[]>;
   approveTask(taskId: string): Promise<void>;
-  completeTask(taskId: string, input: { status: "completed" | "blocked"; note: string }): Promise<MissionViewModel>;
+  uploadTaskDeliverable?(
+    taskId: string,
+    input: { title: string; file: File },
+  ): Promise<MissionTaskDeliverableViewModel>;
+  completeTask(taskId: string, input: { status: "completed" | "blocked"; note: string; documentIds?: string[] }): Promise<MissionViewModel>;
 };
 
 export type MissionGenesisQuestionViewModel = {

@@ -1,7 +1,7 @@
 import { ArrowRight, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel } from "../../types/cleanProduction";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
@@ -223,16 +223,23 @@ function MissionGenesisManagerPanel({
   onSubmit: (candidateMissionId?: string) => void;
   onOpenCreatedMission: () => void;
 }) {
-  const candidateMissionIds = result?.candidateMissionIds?.length
-    ? result.candidateMissionIds
-    : result?.candidateMissionId
-      ? [result.candidateMissionId]
-      : [];
+  const candidateMissionIds = useMemo(() => (
+    result?.candidateMissionIds?.length
+      ? result.candidateMissionIds
+      : result?.candidateMissionId
+        ? [result.candidateMissionId]
+        : []
+  ), [result?.candidateMissionId, result?.candidateMissionIds?.join("|")]);
+  const candidateMissionKey = candidateMissionIds.join("|");
   const [selectedCandidateMissionId, setSelectedCandidateMissionId] = useState<string | undefined>(candidateMissionIds[0]);
 
   useEffect(() => {
-    setSelectedCandidateMissionId(candidateMissionIds[0]);
-  }, [candidateMissionIds.join("|")]);
+    setSelectedCandidateMissionId((current) => (
+      current && candidateMissionIds.includes(current)
+        ? current
+        : candidateMissionIds[0]
+    ));
+  }, [candidateMissionKey, candidateMissionIds]);
 
   if (!result && !error) {
     return null;

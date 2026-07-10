@@ -2582,6 +2582,7 @@ describe("production Supabase services", () => {
         taskId: "task-1",
         status: "completed",
         note: "London listener concentration is real across Spotify city data and repeated short-form saves.",
+        documentIds: [],
       },
     }]);
     expect(tables.task_results[0]).toMatchObject({
@@ -2614,6 +2615,74 @@ describe("production Supabase services", () => {
     expect(mission.progress).toBe(100);
     expect(mission.tasks?.[0]).toMatchObject({ id: "task-1", result: { status: "completed" } });
     expect(mission.checkpoints?.[0]).toMatchObject({ id: "checkpoint-1", status: "Ready for AI review" });
+  });
+
+  it("uploads task deliverables as linked workspace documents", async () => {
+    const uploadedFiles: Array<{ bucket: string; path: string; fileName: string; options: Record<string, unknown> }> = [];
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      uploaded_files: [],
+      documents: [],
+      document_versions: [],
+      artifact_links: [],
+      operating_events: [],
+    };
+    const client = createMutableSupabaseClient(tables, {
+      storage: {
+        from(bucket) {
+          return {
+            async upload(path, file, options) {
+              uploadedFiles.push({ bucket, path, fileName: file.name, options });
+              return { data: { path }, error: null };
+            },
+          };
+        },
+      },
+    });
+
+    const deliverable = await createSupabaseProductionRepositories(client, workspace).missions.uploadTaskDeliverable?.("task-1", {
+      title: "90-day thesis",
+      file: new File(["positioning thesis"], "thesis.pdf", { type: "application/pdf" }),
+    });
+
+    expect(uploadedFiles).toEqual([expect.objectContaining({
+      bucket: "workspace-documents",
+      fileName: "thesis.pdf",
+    })]);
+    expect(tables.uploaded_files[0]).toMatchObject({
+      account_id: workspace.accountId,
+      artist_workspace_id: workspace.artistWorkspaceId,
+      artist_id: workspace.artistId,
+      file_name: "thesis.pdf",
+      file_type: "application/pdf",
+      classification: "other",
+      storage_bucket: "workspace-documents",
+      status: "uploaded",
+    });
+    expect(tables.documents[0]).toMatchObject({
+      title: "90-day thesis",
+      document_type: "task_deliverable",
+      origin: "user_uploaded",
+      status: "uploaded",
+    });
+    expect(tables.document_versions[0]).toMatchObject({
+      document_id: tables.documents[0].id,
+      uploaded_file_id: tables.uploaded_files[0].id,
+      version_number: 1,
+      file_name: "thesis.pdf",
+    });
+    expect(tables.artifact_links[0]).toMatchObject({
+      source_type: "document",
+      source_id: tables.documents[0].id,
+      target_type: "task",
+      target_id: "task-1",
+      relationship: "response_to",
+    });
+    expect(deliverable).toMatchObject({
+      title: "90-day thesis",
+      status: "uploaded",
+      documentId: tables.documents[0].id,
+      fileName: "thesis.pdf",
+    });
   });
 
   it("updates music details and uploads assets through an intent/finalize flow", async () => {

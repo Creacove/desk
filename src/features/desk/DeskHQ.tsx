@@ -1,6 +1,15 @@
-import { ArrowUpRight, BriefcaseBusiness, ClipboardCheck, Library, ListChecks, MessageSquareText, Upload, UsersRound } from "lucide-react";
-import { useState } from "react";
-import { ProductButton, WorkspaceHeader } from "../../design-system/components";
+import {
+  Bell,
+  CheckCircle2,
+  ClipboardCheck,
+  Clock3,
+  MessageSquareText,
+  SendHorizontal,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { compactMovementTitle, movementKey, splitAttentionItems } from "./deskAttention";
 import type {
   AgentViewModel,
@@ -16,12 +25,12 @@ import type {
   TodayBriefViewModel,
 } from "../../types/cleanProduction";
 
-type DeskCommandItem = {
-  label: string;
-  value: string;
-  meta: string;
-  icon: typeof BriefcaseBusiness;
-  onClick: () => void;
+type TodaysFocusLead = {
+  label: "New Achievement" | "Needs You" | "Manager Update" | "All Clear";
+  title: string;
+  body: string;
+  tone: "achievement" | "warning" | "update" | "clear";
+  item?: AttentionItem;
 };
 
 export function DeskHQScreen({
@@ -39,6 +48,7 @@ export function DeskHQScreen({
   onLockedAgent,
   onDrawer,
   onOpenMusicFocus,
+  onAskManager,
 }: {
   profile: ArtistProfileViewModel;
   todayBrief: TodayBriefViewModel | null;
@@ -54,30 +64,26 @@ export function DeskHQScreen({
   onLockedAgent: (agent: AgentViewModel) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
+  onAskManager: (body: string) => void;
 }) {
-  const [activityHistoryOpen, setActivityHistoryOpen] = useState(false);
+  const [activityCenterOpen, setActivityCenterOpen] = useState(false);
   const { actionable, sourceContext } = splitAttentionItems(attention);
-  const commandItems = buildDeskCommandItems({
-    agents,
-    music,
-    missions,
-    onManager,
-    onNavigate,
-    onOpenMusicFocus,
-  });
+  const brief = todayBrief ?? buildVisibleFallbackBrief(profile);
+  const focusLead = selectTodaysFocusLead({ actionable, movement });
 
   return (
-    <section>
+    <section className="desk-hq-v2">
       <div className="hidden lg:block">
-        <WorkspaceHeader
-          eyebrow="Desk Read"
-          title="Desk HQ"
+        <DeskHQHeader
+          activityCount={actionable.length + movement.length}
+          onOpenActivityCenter={() => setActivityCenterOpen(true)}
+          onAskManager={onAskManager}
         />
       </div>
 
       <MobileDeskHome
         profile={profile}
-        brief={todayBrief ?? buildVisibleFallbackBrief(profile)}
+        brief={brief}
         error={todayBriefError}
         missions={missions}
         agents={agents}
@@ -88,268 +94,428 @@ export function DeskHQScreen({
         onLockedAgent={onLockedAgent}
       />
 
-      <div className="mb-6 hidden rounded-xl border border-foreground/10 bg-white shadow-[0_2px_12px_rgba(17,19,24,0.06)] lg:block">
-        <div className="grid grid-cols-1 overflow-hidden rounded-xl sm:grid-cols-2 xl:grid-cols-4">
-          {commandItems.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.label}
-                type="button"
-                className="group flex min-w-0 items-center justify-between gap-3 border-b border-foreground/8 px-4 py-3.5 text-left transition-all duration-200 hover:bg-foreground/[0.025] focus:outline-none focus:ring-2 focus:ring-brand-accent/20 sm:odd:border-r xl:border-b-0 xl:border-r xl:last:border-r-0"
-                aria-label={`${item.label} ${item.value} ${item.meta}`}
-                onClick={item.onClick}
-              >
-                <span className="flex min-w-0 items-center gap-3">
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-foreground/8 bg-foreground/[0.035] text-foreground transition-colors group-hover:border-foreground/20 group-hover:bg-foreground group-hover:text-background">
-                    <Icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{item.label}</span>
-                    <span className="mt-1 block truncate text-[15px] font-bold leading-tight text-foreground">{item.value}</span>
-                    <span className="mt-1 block truncate text-[12px] font-semibold leading-tight text-muted-foreground/78">{item.meta}</span>
-                  </span>
-                </span>
-                <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground/58 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5 group-hover:text-brand-accent" aria-hidden="true" />
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="hidden min-w-0 gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="min-w-0 space-y-6">
+      <div className="hidden min-w-0 gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="min-w-0 space-y-5">
+          <DeskCommandBrief
+            profile={profile}
+            brief={brief}
+            error={todayBriefError}
+            onDrawer={onDrawer}
+          />
           <TodayBrief
             profile={profile}
-            brief={todayBrief ?? buildVisibleFallbackBrief(profile)}
+            brief={brief}
             error={todayBriefError}
-            onManager={onManager}
             onDrawer={onDrawer}
           />
-
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Team Agents</p>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-              {agents.map((agent) => {
-                const Icon = agent.icon;
-                const statusLabel = agent.status === "available" ? "Open now" : "Preview desk";
-                return (
-                  <button
-                    key={agent.id}
-                    type="button"
-                    data-testid="desk-agent-card"
-                    className="group flex min-h-[104px] flex-col justify-between rounded-[14px] border border-foreground/10 bg-white p-3 text-left shadow-[0_1px_5px_rgba(17,19,24,0.045)] transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/18 hover:bg-foreground/[0.012] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-                    onClick={() => (agent.id === "manager" ? onManager() : onLockedAgent(agent))}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-foreground text-background transition-colors group-hover:bg-foreground/88">
-                        <Icon className="h-4 w-4" aria-hidden="true" />
-                      </span>
-                      <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 font-ui text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{statusLabel}</span>
-                    </span>
-                    <span className="block min-w-0">
-                      <span className="block truncate text-[13px] font-bold leading-tight text-foreground">{displayAgentName(agent)}</span>
-                      <span className="mt-1 block truncate text-[11px] font-semibold leading-snug text-muted-foreground/76">{getAgentCardRead(agent)}</span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Active Missions</p>
-              <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onNavigate("missionsWorkspace")}>
-                View all
-              </button>
-            </div>
-            <div className="grid gap-2">
-              {missions.slice(0, 4).map((mission) => (
-                <button
-                  key={mission.id}
-                  type="button"
-                  data-testid="desk-active-mission-card"
-                  className="group rounded-[14px] border border-foreground/10 bg-background px-4 py-3 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/18 hover:bg-foreground/[0.014] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-                  onClick={() => onOpenMission(mission.id)}
-                >
-                  <div className="flex min-w-0 items-start justify-between gap-4">
-                    <span className="min-w-0">
-                      <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                        {mission.status === "blocked" ? "Blocked" : "Active"}
-                      </span>
-                      <span className="mt-1 block truncate text-[15px] font-bold leading-tight text-foreground">{mission.title}</span>
-                    </span>
-                    <span className="w-[72px] shrink-0 pt-0.5 text-right">
-                      <span className="block text-[11px] font-bold text-foreground">{mission.progress}%</span>
-                      <span className="mt-1 block h-1 overflow-hidden rounded-full bg-foreground/8">
-                        <span className="block h-full rounded-full bg-foreground transition-all duration-500" style={{ width: `${mission.progress}%` }} />
-                      </span>
-                    </span>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
         </div>
 
-        <aside data-testid="desk-desktop-attention-rail" className="hidden min-w-0 content-start gap-5 self-start pt-1 xl:sticky xl:top-8 xl:grid">
-          <DeskAttentionPanel
-            actionable={actionable}
-            sourceContext={sourceContext}
-            movement={movement}
-            onNavigate={onNavigate}
-            onDrawer={onDrawer}
-            onOpenHistory={() => setActivityHistoryOpen(true)}
-          />
-        </aside>
+        <TodayFocusPanel
+          lead={focusLead}
+          missions={missions}
+          onOpenMission={onOpenMission}
+          onNavigate={onNavigate}
+          onDrawer={onDrawer}
+        />
       </div>
-      <ActivityHistoryDialog open={activityHistoryOpen} movement={movement} onClose={() => setActivityHistoryOpen(false)} />
+
+      <ActivityCenterDialog
+        open={activityCenterOpen}
+        actionable={actionable}
+        sourceContext={sourceContext}
+        movement={movement}
+        onNavigate={onNavigate}
+        onDrawer={onDrawer}
+        onClose={() => setActivityCenterOpen(false)}
+      />
     </section>
   );
 }
 
-function DeskAttentionPanel({
+function DeskHQHeader({
+  activityCount,
+  onOpenActivityCenter,
+  onAskManager,
+}: {
+  activityCount: number;
+  onOpenActivityCenter: () => void;
+  onAskManager: (body: string) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const canSend = draft.trim().length > 0;
+
+  function submitManagerQuestion(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canSend) return;
+    onAskManager(draft);
+    setDraft("");
+  }
+
+  return (
+    <header className="mb-5 flex min-w-0 items-center justify-between gap-5">
+      <div className="min-w-0">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Desk Read</p>
+        <h1 className="mt-1 text-[22px] font-semibold leading-tight tracking-normal text-foreground">Desk HQ</h1>
+      </div>
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <form
+          aria-label="Ask your manager"
+          className="flex min-h-[44px] min-w-[320px] max-w-[560px] flex-1 items-end gap-2 rounded-[13px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_12px_32px_rgba(17,19,24,0.06)]"
+          onSubmit={submitManagerQuestion}
+        >
+          <MessageSquareText className="mb-[7px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <textarea
+            value={draft}
+            rows={1}
+            onChange={(event) => setDraft(event.target.value)}
+            onInput={(event) => {
+              const el = event.currentTarget;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 84)}px`;
+            }}
+            placeholder="Ask your manager anything..."
+            className="min-w-0 flex-1 resize-none bg-transparent py-[7px] text-[13px] font-semibold leading-[1.4] text-foreground outline-none placeholder:text-muted-foreground/66"
+            style={{ maxHeight: "84px", overflowY: "auto" }}
+          />
+          <button
+            type="submit"
+            aria-label="Send manager question"
+            disabled={!canSend}
+            className="mb-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-brand-accent text-white transition-all hover:-translate-y-0.5 disabled:translate-y-0 disabled:bg-brand-accent/20 disabled:text-brand-accent/40"
+          >
+            <SendHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </form>
+        <button
+          type="button"
+          aria-label={`Open Activity Center with ${activityCount} updates`}
+          onClick={onOpenActivityCenter}
+          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-foreground/10 bg-background text-foreground shadow-[0_12px_32px_rgba(17,19,24,0.06)] transition-all hover:-translate-y-0.5 hover:border-foreground/18 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+        >
+          <Bell className="h-4 w-4" aria-hidden="true" />
+          {activityCount ? (
+            <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-brand-accent px-1 text-[10px] font-bold leading-none text-white">
+              {activityCount > 9 ? "9+" : activityCount}
+            </span>
+          ) : null}
+        </button>
+      </div>
+    </header>
+  );
+}
+
+function DeskCommandBrief({
+  profile,
+  brief,
+  error,
+  onDrawer,
+}: {
+  profile: ArtistProfileViewModel;
+  brief: TodayBriefViewModel;
+  error: string | null;
+  onDrawer: (drawer: DrawerKind) => void;
+}) {
+  const compactMetrics = buildDeskMetricTiles(brief, profile);
+
+  return (
+    <section className="rounded-[22px] border border-foreground/10 bg-background p-5 text-foreground shadow-[0_18px_56px_rgba(17,19,24,0.08)]">
+      <div className="flex min-w-0 items-center gap-3">
+        {profile.imageUrl ? (
+          <img className="h-10 w-10 shrink-0 rounded-[12px] object-cover ring-1 ring-foreground/10" src={profile.imageUrl} alt={`${profile.name} artist image`} />
+        ) : (
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] border border-foreground/10 bg-foreground/[0.035] text-[12px] font-bold text-muted-foreground">
+            {profile.name.slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Today&apos;s Brief</p>
+          <p className="truncate text-[13px] font-semibold text-muted-foreground">{profile.name} operating read</p>
+        </div>
+      </div>
+
+      <div className="pt-5">
+        <p
+          className="line-clamp-3 max-w-4xl font-semibold leading-[1.1] tracking-normal"
+          style={{ fontFamily: "var(--font-display)", fontSize: "clamp(18px, 2.2vw, 30px)" }}
+        >
+          {brief.headlineRead}
+        </p>
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <button type="button" className="text-[13px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
+            View supporting evidence
+          </button>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/72">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</span>
+        </div>
+        {error ? <p className="mt-4 rounded-[12px] border border-warning/30 bg-warning/10 p-3 text-[12px] font-semibold text-warning">{error}</p> : null}
+        <SignalMetricStrip metrics={compactMetrics} />
+      </div>
+    </section>
+  );
+}
+
+type DeskSignalMetric = { label: string; value: string; context: string };
+
+function SignalMetricStrip({ metrics }: { metrics: DeskSignalMetric[] }) {
+  return (
+    <div data-testid="desk-signal-metric-strip" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      {metrics.map((metric, index) => (
+        <SignalMetricCard key={`${metric.label}-${metric.value}-${index}`} metric={metric} toneIndex={index} />
+      ))}
+    </div>
+  );
+}
+
+function buildDeskMetricTiles(brief: TodayBriefViewModel, profile: ArtistProfileViewModel): DeskSignalMetric[] {
+  const selected = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot).slice(0, 4).map((metric) => {
+    const display = formatArtistMetricDisplay(metric);
+    return { label: display.label, value: display.value, context: display.context };
+  });
+  const fallback: DeskSignalMetric[] = [
+    { label: "Primary market", value: profile.market || "In review", context: profile.genre || "artist focus" },
+    { label: "Current release", value: profile.release || "Catalog", context: "music focus" },
+    { label: "Budget lane", value: profile.budget || "Unset", context: "monthly plan" },
+    { label: "Stage", value: profile.stage || "Setup", context: "operating mode" },
+  ];
+  return [...selected, ...fallback].slice(0, 4);
+}
+
+function SignalMetricCard({ metric, toneIndex }: { metric: DeskSignalMetric; toneIndex: number }) {
+  const label = metric.label;
+  const value = metric.value;
+  return (
+    <article
+      data-testid="desk-signal-metric-card"
+      className={`min-h-[86px] rounded-[14px] border p-4 shadow-sm ${signalMetricTileClass(toneIndex)}`}
+    >
+      <p className="break-words text-[11px] font-semibold leading-tight text-muted-foreground">{label}</p>
+      <p className="mt-2 break-words text-[24px] font-semibold leading-none tracking-normal text-foreground">{value}</p>
+    </article>
+  );
+}
+
+function signalMetricTileClass(index: number) {
+  return [
+    "border-violet-500/16 bg-violet-500/[0.09]",
+    "border-teal-500/16 bg-teal-500/[0.09]",
+    "border-rose-500/16 bg-rose-500/[0.09]",
+    "border-blue-500/16 bg-blue-500/[0.09]",
+  ][index % 4];
+}
+
+function TodayFocusPanel({
+  lead,
+  missions,
+  onOpenMission,
+  onNavigate,
+  onDrawer,
+}: {
+  lead: TodaysFocusLead;
+  missions: MissionViewModel[];
+  onOpenMission: (missionId: string) => void;
+  onNavigate: (view: CleanProductionView) => void;
+  onDrawer: (drawer: DrawerKind) => void;
+}) {
+  const visibleMissions = missions
+    .filter((m) => m.status === "active" || m.status === "blocked" || m.status === "review")
+    .slice(0, 3);
+  const LeadIcon =
+    lead.tone === "achievement" ? Sparkles
+    : lead.tone === "warning" ? ClipboardCheck
+    : lead.tone === "clear" ? CheckCircle2
+    : Clock3;
+
+  const leadContent = (
+    <div className="flex items-start gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px] bg-background/70 text-foreground shadow-sm">
+        <LeadIcon className="h-4 w-4" aria-hidden="true" />
+      </span>
+      <div className="min-w-0">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] opacity-70">{lead.label}</p>
+        <h3 className="mt-1 text-[16px] font-semibold leading-tight text-foreground">{lead.title}</h3>
+        <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">{lead.body}</p>
+      </div>
+    </div>
+  );
+
+  return (
+    <aside data-testid="desk-todays-focus" className="min-w-0 self-start overflow-hidden rounded-[22px] border border-foreground/10 bg-background p-4 text-foreground shadow-[0_18px_56px_rgba(17,19,24,0.08)] xl:sticky xl:top-8">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Today&apos;s Focus</p>
+        <button type="button" className="text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onNavigate("missionsWorkspace")}>
+          View all
+        </button>
+      </div>
+
+      {lead.item ? (
+        <button
+          type="button"
+          data-testid="desk-todays-focus-lead"
+          aria-label={lead.title}
+          onClick={() => openAttentionItem(lead.item!, onNavigate, onDrawer)}
+          className={`mt-4 block w-full rounded-[18px] p-4 text-left transition-colors hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/20 ${focusLeadToneClass(lead.tone)}`}
+        >
+          {leadContent}
+        </button>
+      ) : (
+        <div data-testid="desk-todays-focus-lead" className={`mt-4 rounded-[18px] p-4 ${focusLeadToneClass(lead.tone)}`}>
+          {leadContent}
+        </div>
+      )}
+
+      <div className="mt-5">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Top Focus</p>
+        {visibleMissions.length ? (
+          <div className="mt-3 grid gap-2.5">
+            {visibleMissions.map((mission) => (
+              <button
+                key={mission.id}
+                type="button"
+                data-testid="desk-focus-mission-card"
+                aria-label={`Open focus mission ${mission.title}`}
+                className="group max-w-full overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-foreground/16 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+                onClick={() => onOpenMission(mission.id)}
+              >
+                <span className="flex items-start justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="block font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                      {mission.status === "blocked" ? "Needs you" : mission.status === "review" ? "In review" : "Active"}
+                    </span>
+                    <span className="mt-1 block text-[13px] font-semibold leading-tight text-foreground">{mission.title}</span>
+                    <span className="mt-1 block truncate text-[11px] font-medium text-muted-foreground">{mission.nextTask}</span>
+                  </span>
+                  <span className="w-12 shrink-0 pt-0.5 text-right">
+                    <span className="block text-[11px] font-bold text-foreground">{mission.progress}%</span>
+                    <span className="mt-1 block h-1 overflow-hidden rounded-full bg-foreground/10">
+                      <span className="block h-full rounded-full bg-brand-accent transition-all duration-500" style={{ width: `${mission.progress}%` }} />
+                    </span>
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <button type="button" className="mt-3 w-full rounded-[14px] border border-dashed border-foreground/14 bg-foreground/[0.02] p-3.5 text-left" onClick={() => onNavigate("missionsWorkspace")}>
+            <span className="block text-[13px] font-semibold text-foreground">No active mission yet</span>
+            <span className="mt-1 block text-[12px] font-medium text-muted-foreground">Turn today&apos;s read into the first mission.</span>
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// Theme-aware Activity Center — respects light and dark mode via CSS variables
+function ActivityCenterDialog({
+  open,
   actionable,
   sourceContext,
   movement,
   onNavigate,
   onDrawer,
-  onOpenHistory,
+  onClose,
 }: {
+  open: boolean;
   actionable: AttentionItem[];
   sourceContext: AttentionItem[];
   movement: MovementItem[];
   onNavigate: (view: CleanProductionView) => void;
   onDrawer: (drawer: DrawerKind) => void;
-  onOpenHistory: () => void;
+  onClose: () => void;
 }) {
-  const primary = actionable[0];
-  const secondary = actionable.slice(1, 3);
-
-  return (
-    <>
-      <section className="rounded-[18px] border border-foreground/8 bg-background/92 p-4 shadow-[0_10px_34px_rgba(17,19,24,0.06)]">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/88">Today's Attention</p>
-          <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{actionable.length}</span>
-        </div>
-
-        {primary ? (
-          <button
-            type="button"
-            className="mt-4 w-full rounded-[14px] border border-foreground/10 bg-background p-4 text-left text-foreground shadow-sm transition-colors hover:border-foreground/18 hover:bg-foreground/[0.025] focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
-            onClick={() => openAttentionItem(primary, onNavigate, onDrawer)}
-          >
-            <span className="flex items-center gap-2.5">
-              <span className={primary.tone === "warning" ? "flex h-8 w-8 items-center justify-center rounded-lg bg-warning/12 text-warning" : "flex h-8 w-8 items-center justify-center rounded-lg bg-brand-accent/12 text-brand-accent"}>
-                {primary.tone === "warning" ? <ClipboardCheck className="h-4 w-4" aria-hidden="true" /> : <Upload className="h-4 w-4" aria-hidden="true" />}
-              </span>
-              <span className="min-w-0 text-[14px] font-bold leading-tight">{primary.title}</span>
-            </span>
-            <span className="mt-3 block text-[12px] font-semibold leading-relaxed text-muted-foreground/78">{primary.body}</span>
-          </button>
-        ) : (
-          <div className="mt-4 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-4">
-            <p className="text-[13px] font-bold text-foreground">No action needed</p>
-            <p className="mt-1.5 text-[12px] font-semibold leading-relaxed text-muted-foreground/78">The desk has no decisions, approvals, or blockers waiting on you right now.</p>
-          </div>
-        )}
-
-        {secondary.length ? (
-          <div className="mt-3 grid gap-2">
-            {secondary.map((item) => (
-              <button
-                key={item.title}
-                type="button"
-                className="rounded-[12px] border border-foreground/8 bg-foreground/[0.02] px-3.5 py-3 text-left transition-colors hover:border-brand-accent/20 hover:bg-foreground/[0.04]"
-                onClick={() => openAttentionItem(item, onNavigate, onDrawer)}
-              >
-                <span className="block text-[12px] font-bold leading-tight text-foreground">{item.title}</span>
-                <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground/78">{item.body}</span>
-              </button>
-            ))}
-          </div>
-        ) : null}
-
-        {sourceContext.length ? (
-          <div className="mt-4 border-t border-foreground/8 pt-3">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/68">Source context</p>
-            <p className="mt-1.5 text-[11px] font-semibold leading-relaxed text-muted-foreground/72">{sourceContext[0].body}</p>
-          </div>
-        ) : null}
-      </section>
-
-      <section className="rounded-[18px] border border-foreground/8 bg-background/78 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/88">Activity log</p>
-          <button type="button" className="text-[11px] font-bold text-muted-foreground hover:text-foreground" onClick={onOpenHistory}>
-            View activity history
-          </button>
-        </div>
-        <div className="mt-4 space-y-4 pl-1">
-          {movement.length ? movement.slice(0, 3).map((item, index) => (
-            <div key={movementKey(item, index)} className="relative flex flex-col gap-1.5 pl-5 before:absolute before:left-0 before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-foreground/10">
-              <p className="text-[12px] font-semibold leading-snug text-foreground">{compactMovementTitle(item.title)}</p>
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/78">
-                {item.label} / {item.time}
-              </p>
-            </div>
-          )) : (
-            <div className="relative flex flex-col gap-1.5 pl-5 before:absolute before:left-0 before:top-1.5 before:h-2 before:w-2 before:rounded-full before:bg-foreground/10">
-              <p className="text-[12px] font-semibold leading-snug text-foreground">No new activity yet</p>
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/78">System / Waiting</p>
-            </div>
-          )}
-        </div>
-      </section>
-    </>
-  );
-}
-
-function ActivityHistoryDialog({ open, movement, onClose }: { open: boolean; movement: MovementItem[]; onClose: () => void }) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[75] grid place-items-center bg-foreground/25 px-4" role="presentation">
-      <section role="dialog" aria-modal="true" aria-label="Activity history" className="max-h-[78vh] w-full max-w-xl overflow-y-auto rounded-[22px] border border-foreground/10 bg-background p-5 shadow-[0_28px_90px_rgba(17,19,24,0.24)]">
-        <div className="flex items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+    <div className="fixed inset-0 z-[75] flex justify-end bg-foreground/25 backdrop-blur-[3px]" role="presentation">
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label="Activity Center"
+        className="h-full w-[min(100%,34rem)] overflow-y-auto border-l border-foreground/10 bg-background p-5 text-foreground shadow-[0_32px_90px_rgba(17,19,24,0.25)]"
+      >
+        <div className="sticky top-0 z-10 -mx-5 -mt-5 flex items-start justify-between gap-4 border-b border-foreground/10 bg-background/95 px-5 py-4 backdrop-blur">
           <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Activity history</p>
-            <h2 className="mt-1 font-display text-[22px] font-semibold leading-tight text-foreground">Operating movement</h2>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Activity Center</p>
+            <h2 className="mt-1 font-display text-[24px] font-semibold leading-tight text-foreground">What needs attention now</h2>
           </div>
-          <button type="button" className="h-8 rounded-lg border border-foreground/10 px-3 text-[12px] font-bold text-muted-foreground" onClick={onClose}>
-            Close
+          <button
+            type="button"
+            aria-label="Close Activity Center"
+            className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-foreground/10 bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1] hover:text-foreground"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="grid gap-3 pt-4">
-          {movement.length ? movement.map((item, index) => (
-            <article key={movementKey(item, index)} className="rounded-[14px] border border-foreground/8 bg-foreground/[0.018] p-3.5">
-              <p className="text-[13px] font-semibold leading-relaxed text-foreground">{item.title}</p>
-              <p className="mt-2 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                {item.label} / {item.time}
-              </p>
-            </article>
-          )) : (
-            <p className="rounded-[14px] border border-foreground/8 bg-foreground/[0.018] p-3.5 text-[12px] font-semibold text-muted-foreground">No activity has been recorded yet.</p>
-          )}
+
+        <div className="grid gap-6 pt-5">
+          <section>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Needs You</p>
+              <span className="rounded-full bg-foreground/[0.08] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{actionable.length}</span>
+            </div>
+            <div className="grid gap-2.5">
+              {actionable.length ? (
+                actionable.map((item) => (
+                  <button
+                    key={item.title}
+                    type="button"
+                    className="rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3 text-left transition-colors hover:border-foreground/18 hover:bg-foreground/[0.07]"
+                    onClick={() => { openAttentionItem(item, onNavigate, onDrawer); onClose(); }}
+                  >
+                    <span className="block text-[14px] font-semibold leading-tight text-foreground">{item.title}</span>
+                    <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-muted-foreground">{item.body}</span>
+                  </button>
+                ))
+              ) : (
+                <div className="rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3">
+                  <p className="text-[13px] font-semibold text-foreground">No action needed</p>
+                  <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">No decisions, approvals, or blockers are waiting on you.</p>
+                </div>
+              )}
+            </div>
+            {sourceContext.length ? (
+              <div className="mt-3 rounded-[16px] border border-foreground/10 bg-foreground/[0.03] px-3.5 py-3">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/60">Source context</p>
+                <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">{sourceContext[0].body}</p>
+              </div>
+            ) : null}
+          </section>
+
+          <section>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Autopilot Log</p>
+            <div className="mt-3 grid gap-2.5">
+              {movement.length ? (
+                movement.map((item, index) => (
+                  <div key={movementKey(item, index)} className="grid grid-cols-[10px_minmax(0,1fr)] gap-3 rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3">
+                    <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-brand-accent" aria-hidden="true" />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-semibold leading-tight text-foreground">{item.title}</span>
+                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                        {item.label} / {item.time}
+                      </span>
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <p className="rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
+                  No autopilot activity has been recorded yet.
+                </p>
+              )}
+            </div>
+          </section>
         </div>
-      </section>
+      </aside>
     </div>
   );
 }
 
-function openAttentionItem(item: AttentionItem, onNavigate: (view: CleanProductionView) => void, onDrawer: (drawer: DrawerKind) => void) {
-  if (item.target) {
-    onNavigate(item.target);
-    return;
-  }
-  if (item.tone === "accent") {
-    onDrawer("evidence");
-    return;
-  }
+function openAttentionItem(
+  item: AttentionItem,
+  onNavigate: (view: CleanProductionView) => void,
+  onDrawer: (drawer: DrawerKind) => void,
+) {
+  if (item.target) { onNavigate(item.target); return; }
+  if (item.tone === "accent") { onDrawer("evidence"); return; }
   onNavigate("missionsWorkspace");
 }
 
@@ -377,13 +543,11 @@ function MobileDeskHome({
   onLockedAgent: (agent: AgentViewModel) => void;
 }) {
   const [metricsExpanded, setMetricsExpanded] = useState(false);
-  const [managerReadExpanded, setManagerReadExpanded] = useState(false);
   const compactMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
   const visibleMetrics = metricsExpanded ? compactMetrics : compactMetrics.slice(0, 4);
-  const managerReadParagraphs = formatManagerReadParagraphs(brief.managerRead);
-  const managerReadDisplay = getManagerReadDisplay(managerReadParagraphs, managerReadExpanded);
-  const visibleMissions = missions.slice(0, 4);
-  const managerAgent = agents.find((agent) => agent.id === "manager") ?? null;
+  // Always exactly 4 segments — no expand needed
+  const managerReadSegments = buildManagerReadSegments(brief);
+  const visibleMissions = missions.slice(0, 3);
 
   return (
     <div data-testid="desk-mobile-home" className="grid gap-4 pb-4 lg:hidden">
@@ -420,17 +584,13 @@ function MobileDeskHome({
           {compactMetrics.length ? (
             <div
               data-testid="desk-mobile-metrics-grid"
-              className={`mt-4 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.02] ${
-                visibleMetrics.length === 1 ? "grid-cols-1" : "grid-cols-2"
-              }`}
+              className={`mt-4 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.02] ${visibleMetrics.length === 1 ? "grid-cols-1" : "grid-cols-2"}`}
             >
               {visibleMetrics.map((metric) => (
                 <ArtistMetricCell
                   key={`${metric.groupTitle}-${metric.label}-${metric.value}`}
                   metric={metric}
-                  className={`border-b border-foreground/8 px-3 py-2.5 ${
-                    visibleMetrics.length > 1 ? "border-r even:border-r-0" : ""
-                  }`}
+                  className={`border-b border-foreground/8 px-3 py-2.5 ${visibleMetrics.length > 1 ? "border-r even:border-r-0" : ""}`}
                   compact
                 />
               ))}
@@ -441,65 +601,31 @@ function MobileDeskHome({
               type="button"
               aria-expanded={metricsExpanded}
               className="mt-2 text-[12px] font-semibold text-brand-accent"
-              onClick={() => setMetricsExpanded((current) => !current)}
+              onClick={() => setMetricsExpanded((v) => !v)}
             >
               {metricsExpanded ? "Show fewer metrics" : `See all ${compactMetrics.length} metrics`}
             </button>
           ) : null}
 
-          <div
-            data-testid="desk-mobile-manager-read-card"
-            className="manager-read-card mt-4 rounded-[14px] p-3.5"
-          >
+          {/* Always 4 sections — no expand */}
+          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card mt-4 rounded-[14px] p-3.5">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
-            <div data-testid="desk-mobile-manager-read" className="mt-3 space-y-3 text-[13px] font-medium leading-relaxed text-foreground/86">
-              {managerReadDisplay.paragraphs.map((paragraph, index) => (
-                <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
+            <div data-testid="desk-mobile-manager-read" className="mt-3 space-y-3">
+              {managerReadSegments.map((segment, index) => (
+                <p key={`${segment.label}-${index}`} className="text-[12px] font-semibold leading-relaxed text-foreground/80">{segment.body}</p>
               ))}
             </div>
-            {managerReadDisplay.canExpand ? (
-              <button
-                type="button"
-                aria-expanded={managerReadExpanded}
-                className="mt-3 text-[12px] font-semibold text-brand-accent"
-                onClick={() => setManagerReadExpanded((current) => !current)}
-              >
-                {managerReadExpanded ? "Show less Manager's Read" : "See full Manager's Read"}
-              </button>
-            ) : null}
           </div>
+
           {error ? <p className="mt-3 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold text-warning">{error}</p> : null}
           <div className="mt-3 flex items-center justify-between gap-3">
             <button type="button" className="text-[12px] font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
               Evidence
             </button>
-            <p className="text-right text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-              {formatBriefGeneratedAt(brief.generatedAt)}
-            </p>
+            <p className="text-right text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{formatBriefGeneratedAt(brief.generatedAt)}</p>
           </div>
         </div>
       </section>
-
-      {managerAgent ? (
-        <button
-          type="button"
-          data-testid="desk-mobile-team-agents"
-          aria-label="Talk to Manager"
-          className="group flex w-full min-w-0 items-center gap-3 rounded-[18px] border border-brand-accent/25 bg-brand-accent/[0.06] p-4 text-left shadow-[0_1px_8px_rgba(17,19,24,0.05)] transition-colors hover:bg-brand-accent/[0.1] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
-          onClick={onManager}
-        >
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-foreground text-background">
-            <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[14px] font-bold text-foreground">Talk to Manager</span>
-            <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">
-              {displayAgentName(managerAgent)} - {getAgentCardRead(managerAgent)}
-            </span>
-          </span>
-          <ArrowUpRight className="h-4 w-4 shrink-0 text-brand-accent transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" aria-hidden="true" />
-        </button>
-      ) : null}
 
       <section className="rounded-[18px] border border-foreground/10 bg-white p-4 shadow-[0_1px_8px_rgba(17,19,24,0.05)]">
         <div className="mb-3 flex items-center justify-between gap-3">
@@ -511,7 +637,13 @@ function MobileDeskHome({
         {visibleMissions.length ? (
           <div className="grid gap-2">
             {visibleMissions.map((mission) => (
-              <button key={mission.id} type="button" className="w-full rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left" aria-label="Open mission on mobile" onClick={() => onOpenMission(mission.id)}>
+              <button
+                key={mission.id}
+                type="button"
+                className="w-full rounded-[14px] border border-foreground/8 bg-background px-3 py-3 text-left"
+                aria-label="Open mission on mobile"
+                onClick={() => onOpenMission(mission.id)}
+              >
                 <span className="flex items-start justify-between gap-3">
                   <span className="min-w-0">
                     <span className="block text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">{mission.status === "blocked" ? "Blocked" : "Active"}</span>
@@ -538,177 +670,121 @@ function MobileDeskHome({
   );
 }
 
-function buildDeskCommandItems({
-  agents,
-  music,
-  missions,
-  onManager,
-  onNavigate,
-  onOpenMusicFocus,
-}: {
-  agents: AgentViewModel[];
-  music: MusicObjectViewModel[];
-  missions: MissionViewModel[];
-  onManager: () => void;
-  onNavigate: (view: CleanProductionView) => void;
-  onOpenMusicFocus: (musicObjectId?: string) => void;
-}): DeskCommandItem[] {
-  const focus = selectMusicFocus(music);
-  const activeMissionCount = missions.filter((mission) => mission.status === "active" || mission.status === "blocked" || mission.status === "review").length;
-
-  return [
-    {
-      label: "Ask Manager",
-      value: "Get a decision",
-      meta: "Use today's read",
-      icon: BriefcaseBusiness,
-      onClick: onManager,
-    },
-    {
-      label: "Music Focus",
-      value: focus?.title ?? "Open music reads",
-      meta: focus ? "Open record read" : "Records in view",
-      icon: Library,
-      onClick: () => onOpenMusicFocus(focus?.id),
-    },
-    {
-      label: "Mission Path",
-      value: activeMissionCount ? `${activeMissionCount} active` : "Create first mission",
-      meta: "Turn read into work",
-      icon: ListChecks,
-      onClick: () => (activeMissionCount ? onNavigate("missionsWorkspace") : onManager()),
-    },
-    {
-      label: "Team Agents",
-      value: `${agents.length} specialist desks`,
-      meta: "Open operating team",
-      icon: UsersRound,
-      onClick: () => onNavigate("staffWorkspace"),
-    },
-  ];
-}
-
-function selectMusicFocus(music: MusicObjectViewModel[]) {
-  return (
-    music.find((item) => item.kind === "song" && /active|focus|priority/i.test(`${item.status ?? ""} ${item.lifecycleStage ?? ""}`)) ??
-    music.find((item) => item.kind === "song") ??
-    music.find((item) => item.kind === "project") ??
-    null
-  );
-}
-
-function displayAgentName(agent: AgentViewModel) {
-  return agent.id === "manager" ? "Manager Agent" : agent.name.replace("AI ", "");
-}
-
-function getAgentCardRead(agent: AgentViewModel) {
-  switch (agent.id) {
-    case "manager":
-      return "Briefs into decisions.";
-    case "marketing":
-      return "Rollout and audience.";
-    case "syncDeals":
-      return "Pitch opportunities.";
-    case "touring":
-      return "Live demand and routing.";
-    case "finance":
-      return "Money, splits, risk.";
-    default:
-      return agent.purpose.length > 68 ? `${agent.purpose.slice(0, 65).trimEnd()}...` : agent.purpose;
+function selectTodaysFocusLead({ actionable, movement }: { actionable: AttentionItem[]; movement: MovementItem[] }): TodaysFocusLead {
+  const achievement = movement.find((item) => /achievement|milestone|crossed|passed|reached|hit|peaked/i.test(`${item.label} ${item.title}`));
+  if (achievement) {
+    return { label: "New Achievement", title: achievement.title, body: `${achievement.label} / ${achievement.time}`, tone: "achievement" };
   }
+  const needsYou = actionable.find((item) => item.tone === "warning");
+  if (needsYou) {
+    return { label: "Needs You", title: needsYou.title, body: needsYou.body, tone: "warning", item: needsYou };
+  }
+  const managerUpdate = actionable[0] ?? null;
+  if (managerUpdate) {
+    return { label: "Manager Update", title: managerUpdate.title, body: managerUpdate.body, tone: "update", item: managerUpdate };
+  }
+  const latestMovement = movement[0] ?? null;
+  if (latestMovement) {
+    return { label: "Manager Update", title: latestMovement.title, body: `${latestMovement.label} / ${latestMovement.time}`, tone: "update" };
+  }
+  return { label: "All Clear", title: "No urgent movement", body: "No decisions, approvals, or blockers need your attention right now.", tone: "clear" };
 }
 
+function focusLeadToneClass(tone: TodaysFocusLead["tone"]) {
+  if (tone === "achievement") return "border border-amber-500/16 bg-amber-500/[0.09] text-foreground";
+  if (tone === "warning") return "border border-rose-500/16 bg-rose-500/[0.09] text-foreground";
+  if (tone === "update") return "border border-violet-500/16 bg-violet-500/[0.09] text-foreground";
+  return "border border-foreground/10 bg-foreground/[0.025] text-foreground";
+}
+
+// Always exactly 4 segments displayed. No expand button, no overflow.
 function TodayBrief({
-  profile,
   brief,
   error,
-  onManager,
   onDrawer,
 }: {
   profile: ArtistProfileViewModel;
   brief: TodayBriefViewModel;
   error: string | null;
-  onManager: () => void;
   onDrawer: (drawer: DrawerKind) => void;
 }) {
-  const compactIntelligenceMetrics = selectArtistIntelligenceMetrics(brief.intelligenceSnapshot);
-  const [managerReadExpanded, setManagerReadExpanded] = useState(false);
-  const managerReadParagraphs = formatManagerReadParagraphs(brief.managerRead);
-  const managerReadDisplay = getManagerReadDisplay(managerReadParagraphs, managerReadExpanded);
+  const managerReadSegments = buildManagerReadSegments(brief);
 
   return (
-    <section className="rounded-xl border border-foreground/10 bg-white shadow-[0_2px_12px_rgba(17,19,24,0.07)] overflow-hidden">
-      <div className="flex flex-col gap-4 border-b border-border p-5 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-3">
-          {profile.imageUrl ? (
-            <img
-              className="h-11 w-11 shrink-0 rounded-[12px] object-cover"
-              src={profile.imageUrl}
-              alt={`${profile.name} artist image`}
-            />
-          ) : (
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] border border-foreground/10 bg-foreground/[0.035] text-[13px] font-bold text-muted-foreground">
-              {profile.name.slice(0, 2).toUpperCase()}
-            </div>
-          )}
-          <div>
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Today's Brief</p>
-            <p className="text-sm font-semibold">{profile.name} - Artist operating read</p>
-          </div>
-        </div>
-        <ProductButton onClick={onManager}>
-          <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-          Talk to Manager
-        </ProductButton>
-      </div>
-      <div className="p-6">
-        <h2 className="max-w-3xl font-display text-2xl font-bold tracking-tight text-foreground leading-tight">{brief.headlineRead}</h2>
-
-        <ArtistIntelligenceCard summary={brief.snapshotSummary} metrics={compactIntelligenceMetrics} />
-
-        <div className="mt-6 border-t border-border pt-5">
-          <div data-testid="desk-manager-read-card" className="manager-read-card rounded-[12px] p-5">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
-            <div
-              data-testid="desk-desktop-manager-read"
-              className="mt-4 space-y-4 text-[14px] font-semibold leading-relaxed text-foreground/90"
+    <section className="rounded-[22px] border border-foreground/10 bg-background p-5 shadow-[0_16px_44px_rgba(17,19,24,0.07)]">
+      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
+      <div data-testid="desk-manager-read-card" className="manager-read-card mt-4 rounded-[18px] bg-foreground/[0.025] p-4 text-foreground">
+        <div data-testid="desk-desktop-manager-read" className="grid gap-3 md:grid-cols-2">
+          {managerReadSegments.map((segment, index) => (
+            <article
+              key={`${segment.label}-${index}`}
+              data-testid="desk-manager-read-segment"
+              className="min-h-[130px] rounded-[14px] border border-foreground/8 bg-background/75 p-4"
             >
-              {managerReadDisplay.paragraphs.map((paragraph, index) => (
-                <p key={`${index}-${paragraph.slice(0, 24)}`}>{paragraph}</p>
-              ))}
-            </div>
-            {managerReadDisplay.canExpand ? (
-              <button
-                type="button"
-                aria-expanded={managerReadExpanded}
-                className="mt-4 text-sm font-semibold text-brand-accent"
-                onClick={() => setManagerReadExpanded((current) => !current)}
-              >
-                {managerReadExpanded ? "Show less Manager's Read" : "See full Manager's Read"}
-              </button>
-            ) : null}
-          </div>
-          {error ? (
-            <div className="mt-5 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold leading-relaxed text-warning">
-              {error}
-            </div>
-          ) : null}
-          <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-wrap gap-4">
-              <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
-                View supporting evidence
-              </button>
-            </div>
-            <div className="text-left sm:text-right">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                Manager brief · {formatBriefGeneratedAt(brief.generatedAt)}
-              </p>
-            </div>
-          </div>
+              <span className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent/80">{segment.label}</span>
+              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/80">{segment.body}</p>
+            </article>
+          ))}
+        </div>
+        {error ? (
+          <div className="mt-5 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold leading-relaxed text-warning">{error}</div>
+        ) : null}
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
+            View supporting evidence
+          </button>
+          <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+            Manager brief · {formatBriefGeneratedAt(brief.generatedAt)}
+          </p>
         </div>
       </div>
     </section>
   );
+}
+
+type ManagerReadSegment = { label: string; body: string };
+
+// Fallback labels used when the AI returns an unlabeled paragraph or fewer than 4 sections.
+// "Momentum Peak" at index 1 is intentional — tests assert its presence for single-paragraph reads.
+const FALLBACK_LABELS = ["Market Read", "Momentum Peak", "Today\u2019s Move", "Key Signal"];
+
+/**
+ * Always returns exactly 4 segments.
+ * Section 1 is always "Artist Intelligence" — provided by the AI as the first labeled section.
+ * Sections 2–4 are determined dynamically by the AI and parsed from managerRead.
+ * Unlabeled paragraphs receive fallback labels. Padding fills any missing slots.
+ */
+function buildManagerReadSegments(brief: TodayBriefViewModel): ManagerReadSegment[] {
+  const sanitized = sanitizeManagerRead(brief.managerRead);
+
+  // Split on blank lines (paragraph boundaries)
+  const rawParagraphs = sanitized
+    .split(/\n{2,}/)
+    .flatMap((block) => block.split(/\n/).map((l) => l.trim()).filter(Boolean))
+    .map((p) => p.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  const segments: ManagerReadSegment[] = [];
+  let fallbackIdx = 0;
+
+  for (const paragraph of rawParagraphs) {
+    const match = paragraph.match(/^([A-Z][A-Za-z\s\-']{2,40}):\s+(.+)$/s);
+    if (match) {
+      segments.push({ label: match[1].trim(), body: match[2].trim() });
+    } else {
+      segments.push({ label: FALLBACK_LABELS[fallbackIdx % FALLBACK_LABELS.length], body: paragraph });
+      fallbackIdx++;
+    }
+    if (segments.length === 4) break; // Cap at 4
+  }
+
+  // Pad to exactly 4 if the AI returned fewer sections
+  while (segments.length < 4) {
+    const label = FALLBACK_LABELS[segments.length % FALLBACK_LABELS.length];
+    segments.push({ label, body: "Key strategy focus details are compiling for this section." });
+  }
+
+  return segments;
 }
 
 function sanitizeManagerRead(read: string) {
@@ -721,69 +797,28 @@ function sanitizeManagerRead(read: string) {
     .trim();
 }
 
-function formatManagerReadParagraphs(read: string) {
-  const sanitized = sanitizeManagerRead(read);
-  const sourceParagraphs = sanitized.includes("\n")
-    ? sanitized.split(/\n{2,}|\n/)
-    : sanitized.split(/(?=\b(?:Power center|Hidden second lane|Cultural base|Public leverage|Current music focus|Where management should start|Today)\s*:)/gi);
-  return sourceParagraphs
-    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-}
-
-function getManagerReadDisplay(paragraphs: string[], expanded: boolean) {
-  const canExpand = paragraphs.length > 4;
-  return {
-    paragraphs: canExpand && !expanded ? paragraphs.slice(0, 4) : paragraphs,
-    canExpand,
-  };
-}
-
-type CompactArtistMetric = TodayBriefMetric & {
-  groupTitle: string;
-};
-
-function ArtistIntelligenceCard({ summary, metrics }: { summary: string; metrics: CompactArtistMetric[] }) {
-  return (
-    <section data-testid="artist-intelligence-card" className="mt-6 overflow-hidden rounded-[12px] border border-foreground/10 bg-white shadow-sm">
-      <div className="grid gap-4 border-b border-foreground/8 bg-foreground/[0.028] px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:px-5">
-        <div className="min-w-0 border-l-2 border-brand-accent pl-3">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Artist Intelligence</p>
-          <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{metrics.length} key signals</p>
-        </div>
-        <p className="min-w-0 text-[13px] font-semibold leading-relaxed text-foreground/72 sm:max-w-3xl">{summary}</p>
-      </div>
-      <div className="grid grid-cols-2 bg-white sm:grid-cols-3 xl:grid-cols-5">
-        {metrics.map((metric) => (
-          <ArtistMetricCell
-            key={`${metric.groupTitle}-${metric.label}-${metric.value}`}
-            metric={metric}
-            className="border-t border-foreground/8 px-3 py-3 sm:px-4"
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
+type CompactArtistMetric = TodayBriefMetric & { groupTitle: string };
 
 function ArtistMetricCell({
   metric,
   className,
   compact = false,
+  inverted = false,
 }: {
   metric: CompactArtistMetric;
   className?: string;
   compact?: boolean;
+  inverted?: boolean;
 }) {
   const display = formatArtistMetricDisplay(metric);
   return (
     <div className={`min-w-0 ${className ?? ""}`}>
-      <p className="text-[10px] font-semibold leading-snug text-muted-foreground/82 break-words">{display.label}</p>
-      <p className={`${compact ? "mt-1 text-[17px]" : "mt-1.5 text-[20px]"} font-semibold leading-tight text-foreground break-words`}>
+      <p className={`break-words text-[10px] font-semibold leading-snug ${inverted ? "text-white/68" : "text-muted-foreground/82"}`}>{display.label}</p>
+      <p className={`${compact ? "mt-1 text-[17px]" : "mt-1.5 text-[20px]"} break-words font-semibold leading-tight ${inverted ? "text-white" : "text-foreground"}`}>
         {display.value}
       </p>
       {display.context ? (
-        <p className="mt-1 text-[10px] font-semibold leading-snug text-muted-foreground/70 break-words">{display.context}</p>
+        <p className={`mt-1 break-words text-[10px] font-semibold leading-snug ${inverted ? "text-white/58" : "text-muted-foreground/70"}`}>{display.context}</p>
       ) : null}
     </div>
   );
@@ -801,55 +836,44 @@ function formatArtistMetricDisplay(metric: CompactArtistMetric) {
 }
 
 function selectArtistIntelligenceMetrics(groups: TodayBriefSnapshotGroup[]): CompactArtistMetric[] {
-  const allMetrics = groups.flatMap((group) => group.metrics.map((metric) => ({ ...metric, groupTitle: group.title })));
-  const figureMetrics = allMetrics.filter((metric) => /[\d#]/.test(metric.value));
-  const sourceMetrics = figureMetrics.length ? figureMetrics : allMetrics;
-  const uniqueMetrics = sourceMetrics.filter((metric, index, list) => {
-    const key = `${metric.label.toLowerCase()}-${metric.value.toLowerCase()}`;
-    return list.findIndex((candidate) => `${candidate.label.toLowerCase()}-${candidate.value.toLowerCase()}` === key) === index;
+  const all = groups.flatMap((g) => g.metrics.map((m) => ({ ...m, groupTitle: g.title })));
+  const withFigures = all.filter((m) => /[\d#]/.test(m.value));
+  const ordered = [...withFigures, ...all.filter((m) => !withFigures.includes(m))];
+  const unique = ordered.filter((m, i, list) => {
+    const key = `${m.label.toLowerCase()}-${m.value.toLowerCase()}`;
+    return list.findIndex((c) => `${c.label.toLowerCase()}-${c.value.toLowerCase()}` === key) === i;
   });
-
-  return uniqueMetrics
-    .map((metric, index) => ({ metric, index, priority: getArtistMetricPriority(metric) }))
-    .sort((left, right) => left.priority - right.priority || left.index - right.index)
+  return unique
+    .map((m, i) => ({ m, i, p: getArtistMetricPriority(m) }))
+    .sort((a, b) => a.p - b.p || a.i - b.i)
     .slice(0, 10)
-    .map(({ metric }) => metric);
+    .map(({ m }) => m);
 }
 
 function getArtistMetricPriority(metric: TodayBriefMetric) {
   const text = `${metric.label} ${metric.context ?? ""}`.toLowerCase();
   const priorities = [
-    /monthly listeners?/,
-    /followers.*all|saved platforms|platform followers/,
-    /artist score|\bscore\b/,
-    /country rank|uk rank|rank/,
-    /london/,
-    /lagos/,
-    /playlist/,
-    /shazam/,
-    /instagram/,
-    /tiktok followers?/,
+    /monthly listeners?/, /followers.*all|saved platforms|platform followers/,
+    /artist score|\bscore\b/, /country rank|uk rank|rank/,
+    /london/, /lagos/, /playlist/, /shazam/, /instagram/, /tiktok followers?/,
   ];
-  const priority = priorities.findIndex((pattern) => pattern.test(text));
-  return priority === -1 ? priorities.length : priority;
+  const p = priorities.findIndex((pat) => pat.test(text));
+  return p === -1 ? priorities.length : p;
 }
 
 function buildVisibleFallbackBrief(profile: ArtistProfileViewModel): TodayBriefViewModel {
   return {
     headlineRead: `${profile.name}'s first management read is ready to organize around a focused starting point.`,
-    intelligenceSnapshot: [
-      {
-        title: "Current Music In View",
-        insight: "The workspace has enough saved setup context to choose the first management focus.",
-        metrics: [
-          { label: "Artist profile", value: "Saved", context: "setup context", evidenceIds: ["artist-profile"] },
-          { label: "Working catalog", value: "In view", context: "current management focus", evidenceIds: ["catalog-setup"] },
-        ],
-      },
-    ],
+    intelligenceSnapshot: [{
+      title: "Current Music In View",
+      insight: "The workspace has enough saved setup context to choose the first management focus.",
+      metrics: [
+        { label: "Artist profile", value: "Saved", context: "setup context", evidenceIds: ["artist-profile"] },
+        { label: "Working catalog", value: "In view", context: "current management focus", evidenceIds: ["catalog-setup"] },
+      ],
+    }],
     snapshotSummary: "The first read should organize the workspace around one management focus, not a generic artist profile.",
-    managerRead:
-      `This is the first operating read for ${profile.name}. The useful move is not to spread attention across every possible lane; it is to choose the first management focus from the saved profile and current music in view, then let the team build the next work from that center.`,
+    managerRead: `This is the first operating read for ${profile.name}. The useful move is not to spread attention across every possible lane; it is to choose the first management focus from the saved profile and current music in view, then let the team build the next work from that center.`,
     sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
     confidence: "limited",
     state: "fallback",
