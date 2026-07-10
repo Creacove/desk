@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runManagerAgentLoop } from "../_shared/manager-conversation/agentLoop.ts";
 import type { ManagerAgentToolDefinition } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeDiscoveryTool } from "../_shared/manager-agent/discoveryTools.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -146,6 +147,7 @@ Deno.serve(async (request) => {
     if (!membership) return json({ error: "Forbidden." }, 403);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
+    await assertActiveWorkspaceEntitlement(db, input);
 
     // Write starting operating event
     await writeOperatingEvent(db, input, "manager_discovery_started", `Started autonomous onboarding discovery loop for ${input.artistName}.`);

@@ -26,6 +26,9 @@ import type {
 import { consumeManagerConversationEventStream } from "./managerConversationStream";
 import type {
   ProductionAuthAdapter,
+  ProductionBillingCheckoutPreview,
+  ProductionBillingService,
+  ProductionBillingStatus,
   ProductionMusicItem,
   ProductionMusicLibrary,
   ProductionMusicLibraryLoader,
@@ -157,6 +160,8 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artists(display_name, canonical_spotify_artist_id, canonical_spotify_url)",
             "artist_profiles(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs(status,created_at)",
+            "billing_subscriptions(status,current_period_end)",
+            "workspace_setup_runs(status,current_stage,updated_at)",
           ].join(", "),
         )
         .eq("account_id", accountId)
@@ -187,6 +192,10 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         spotifyImageUrl: readSpotifyIdentityImage(workspace.artist_profiles?.[0]?.spotify_identity),
         contextComplete: isContextComplete(workspace.artist_profiles?.[0]),
         latestCatalogSyncStatus: readLatestSyncStatus(workspace.source_sync_jobs),
+        entitlementActive: hasActiveEntitlement(workspace.billing_subscriptions),
+        subscriptionStatus: readLatestSubscriptionStatus(workspace.billing_subscriptions),
+        setupStatus: readLatestSetupStatus(workspace.workspace_setup_runs),
+        setupStage: readLatestSetupStage(workspace.workspace_setup_runs),
       } satisfies ProductionWorkspace;
     },
     async createInitialWorkspace(_user, draft) {
@@ -392,6 +401,58 @@ export function createSupabaseSpotifyArtistAdapter(client: SupabaseClient): Prod
       }
 
       return workspaceFromRpcRow(row);
+    },
+  };
+}
+
+export function createSupabaseBillingService(client: SupabaseClient): ProductionBillingService {
+  return {
+    async createCheckoutPreview({ candidate }) {
+      const { data, error } = await client.functions.invoke("paystack-initialize-checkout", {
+        body: {
+          selectedArtist: candidate,
+        },
+      });
+
+      if (error) {
+        await throwFunctionInvokeError(error, "Paystack checkout could not be initialized.");
+      }
+
+      return billingCheckoutPreviewFromPayload(data);
+    },
+    async loadLatestCheckoutPreview() {
+      const { data, error } = await client.functions.invoke("billing-status", {
+        body: { latestOpenCheckout: true },
+      });
+
+      if (error) {
+        await throwFunctionInvokeError(error, "Billing status could not be loaded.");
+      }
+
+      const payload = data as { preview?: unknown } | null;
+      return payload?.preview ? billingCheckoutPreviewFromPayload(payload.preview) : null;
+    },
+    async loadBillingStatus({ reference }) {
+      const { data, error } = await client.functions.invoke("billing-status", {
+        body: { reference },
+      });
+
+      if (error) {
+        await throwFunctionInvokeError(error, "Billing status could not be loaded.");
+      }
+
+      return billingStatusFromPayload(data);
+    },
+    async retrySetup({ checkoutSessionId }) {
+      const { data, error } = await client.functions.invoke("billing-status", {
+        body: { checkoutSessionId, retrySetup: true },
+      });
+
+      if (error) {
+        await throwFunctionInvokeError(error, "Desk setup could not be retried.");
+      }
+
+      return billingStatusFromPayload(data);
     },
   };
 }
@@ -1483,6 +1544,8 @@ type WorkspaceRow = {
   } | null;
   artist_profiles?: WorkspaceProfileRow[] | null;
   source_sync_jobs?: Array<{ status?: ProductionWorkspace["latestCatalogSyncStatus"] | null; created_at?: string | null }> | null;
+  billing_subscriptions?: Array<{ status?: ProductionWorkspace["subscriptionStatus"] | null; current_period_end?: string | null }> | null;
+  workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null }> | null;
 };
 
 type WorkspaceRpcRow = {
@@ -1499,6 +1562,10 @@ type WorkspaceRpcRow = {
   spotify_image_url?: string | null;
   context_complete?: boolean | null;
   latest_catalog_sync_status?: ProductionWorkspace["latestCatalogSyncStatus"] | null;
+  entitlement_active?: boolean | null;
+  subscription_status?: ProductionWorkspace["subscriptionStatus"] | null;
+  setup_status?: ProductionWorkspace["setupStatus"] | null;
+  setup_stage?: ProductionWorkspace["setupStage"] | null;
 };
 
 type MusicItemRow = {
@@ -2464,6 +2531,51 @@ function workspaceFromRpcRow(row: WorkspaceRpcRow): ProductionWorkspace {
     spotifyImageUrl: row.spotify_image_url ?? undefined,
     contextComplete: Boolean(row.context_complete),
     latestCatalogSyncStatus: row.latest_catalog_sync_status ?? undefined,
+    entitlementActive: row.entitlement_active ?? undefined,
+    subscriptionStatus: row.subscription_status ?? undefined,
+    setupStatus: row.setup_status ?? undefined,
+    setupStage: row.setup_stage ?? undefined,
+  };
+}
+
+function billingCheckoutPreviewFromPayload(payload: unknown): ProductionBillingCheckoutPreview {
+  const data = payload as Partial<ProductionBillingCheckoutPreview> | null;
+  if (!data?.checkoutSessionId || !data.reference || !data.artist?.spotifyArtistId) {
+    throw new Error("Billing checkout response did not include a valid preview.");
+  }
+
+  return {
+    checkoutSessionId: data.checkoutSessionId,
+    reference: data.reference,
+    status: data.status ?? "open",
+    artist: data.artist,
+    amount: Number(data.amount ?? 20),
+    amountMinor: Number(data.amountMinor ?? 2000),
+    currency: data.currency ?? "USD",
+    interval: data.interval ?? "monthly",
+    expiresAt: data.expiresAt,
+    authorizationUrl: data.authorizationUrl,
+    accessCode: data.accessCode,
+  };
+}
+
+function billingStatusFromPayload(payload: unknown): ProductionBillingStatus {
+  const data = payload as Partial<ProductionBillingStatus> | null;
+  if (!data) {
+    throw new Error("Billing status response was empty.");
+  }
+
+  return {
+    checkoutSessionId: data.checkoutSessionId,
+    checkoutStatus: data.checkoutStatus ?? "missing",
+    subscriptionStatus: data.subscriptionStatus ?? "none",
+    entitlementActive: Boolean(data.entitlementActive),
+    setupStatus: data.setupStatus ?? "not_started",
+    setupStage: data.setupStage,
+    workspace: data.workspace,
+    authorizationUrl: data.authorizationUrl,
+    accessCode: data.accessCode,
+    message: data.message,
   };
 }
 
@@ -3138,6 +3250,31 @@ function readLatestSyncStatus(rows: Array<{ status?: ProductionWorkspace["latest
   return [...(rows ?? [])]
     .sort((a, b) => (Date.parse(b.created_at ?? "") || 0) - (Date.parse(a.created_at ?? "") || 0))
     .find((row) => row.status)?.status ?? undefined;
+}
+
+function readLatestSubscriptionStatus(rows: WorkspaceRow["billing_subscriptions"]) {
+  return [...(rows ?? [])]
+    .sort((a, b) => (Date.parse(b.current_period_end ?? "") || 0) - (Date.parse(a.current_period_end ?? "") || 0))
+    .find((row) => row.status)?.status ?? "none";
+}
+
+function hasActiveEntitlement(rows: WorkspaceRow["billing_subscriptions"]) {
+  const now = Date.now();
+  return [...(rows ?? [])].some((row) => {
+    if (row.status !== "active" && row.status !== "non-renewing" && row.status !== "attention") {
+      return false;
+    }
+    const periodEnd = row.current_period_end ? Date.parse(row.current_period_end) : Number.NaN;
+    return !Number.isFinite(periodEnd) || periodEnd > now;
+  });
+}
+
+function readLatestSetupStatus(rows: WorkspaceRow["workspace_setup_runs"]) {
+  return [...(rows ?? [])].find((row) => row.status)?.status ?? "not_started";
+}
+
+function readLatestSetupStage(rows: WorkspaceRow["workspace_setup_runs"]) {
+  return [...(rows ?? [])].find((row) => row.current_stage)?.current_stage ?? undefined;
 }
 
 function readSpotifyIdentityName(value: unknown) {

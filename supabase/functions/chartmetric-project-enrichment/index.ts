@@ -6,6 +6,7 @@ import {
   mergeChartmetricProjectPayload,
   type ChartmetricProjectSupplementals,
 } from "../_shared/chartmetricProjectPayload.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -103,6 +104,8 @@ Deno.serve(async (request) => {
 
     if (membershipError) throw membershipError;
     if (!membership) return json({ error: "Forbidden." }, 403);
+
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const queuedJob = await loadQueuedJobContext(authClient, input);
     const musicProject = await loadMusicProject(authClient, input);

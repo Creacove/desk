@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { bootstrapSpotifyCatalog } from "../_shared/spotifyCatalogBootstrap.ts";
 import { createSpotifyCatalogClient } from "../_shared/spotifyCatalogClient.ts";
 import { createSupabaseCatalogRepository } from "../_shared/supabaseCatalogRepository.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -75,6 +76,8 @@ Deno.serve(async (request) => {
     if (!membership) {
       return json({ error: "Forbidden." }, 403);
     }
+
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const result = await bootstrapSpotifyCatalog({
       input: bootstrapInput,

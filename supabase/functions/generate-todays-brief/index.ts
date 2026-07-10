@@ -17,6 +17,7 @@ import {
 import { buildManagerIntelligencePacket } from "../_shared/manager-intelligence/packet/strategicIntelligencePacket.ts";
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -119,6 +120,8 @@ Deno.serve(async (request) => {
       if (membershipError) throw membershipError;
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
+
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const { packet, sourceAudit, managerIntelligencePacket, setupMusicReadTargets } = await buildArtistBriefPacket(authClient, input);
     runId = await createManagerSynthesisRun(authClient, input, packet, sourceAudit, generationMode);

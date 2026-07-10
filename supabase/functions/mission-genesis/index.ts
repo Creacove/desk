@@ -14,6 +14,7 @@ import {
   selectMissionPatternsForPacket,
 } from "../_shared/mission-patterns/missionPatternRegistry.ts";
 import { persistMissionGenesisGraphPlan } from "../_shared/missionGraphPersistence.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -78,6 +79,7 @@ Deno.serve(async (request) => {
     if (!membership) return json({ error: "Forbidden." }, 403);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
+    await assertActiveWorkspaceEntitlement(db, input);
     await assertWorkspace(db, input);
 
     if (input.mode === "initial") {

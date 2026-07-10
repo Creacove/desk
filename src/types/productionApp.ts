@@ -22,6 +22,10 @@ export type ProductionWorkspace = {
   spotifyImageUrl?: string;
   contextComplete: boolean;
   latestCatalogSyncStatus?: "queued" | "running" | "needs_context" | "completed" | "completed_with_limits" | "failed" | "cancelled";
+  entitlementActive?: boolean;
+  subscriptionStatus?: "none" | "open" | "active" | "non-renewing" | "attention" | "completed" | "cancelled" | "past_due" | "inactive";
+  setupStatus?: "not_started" | "queued" | "running" | "completed" | "failed";
+  setupStage?: "checkout" | "workspace_created" | "spotify_connected" | "catalog_bootstrap" | "manager_discovery" | "setup_brief" | "music_reads";
 };
 
 export type ProductionWorkspaceDraft = {
@@ -214,6 +218,43 @@ export type ProductionSpotifyArtistAdapter = {
     workspace: ProductionWorkspace,
     candidate: ProductionSpotifyArtistCandidate,
   ): Promise<ProductionSpotifyBootstrapResult>;
+};
+
+export type ProductionBillingCheckoutPreview = {
+  checkoutSessionId: string;
+  reference: string;
+  status: "open" | "initialized" | "paid" | "expired" | "failed" | "abandoned";
+  artist: ProductionSpotifyArtistCandidate;
+  amount: number;
+  amountMinor: number;
+  currency: string;
+  interval: "monthly";
+  expiresAt?: string;
+  authorizationUrl?: string;
+  accessCode?: string;
+};
+
+export type ProductionBillingStatus = {
+  checkoutSessionId?: string;
+  checkoutStatus: "open" | "initialized" | "paid" | "expired" | "failed" | "abandoned" | "missing";
+  subscriptionStatus: ProductionWorkspace["subscriptionStatus"];
+  entitlementActive: boolean;
+  setupStatus: NonNullable<ProductionWorkspace["setupStatus"]>;
+  setupStage?: ProductionWorkspace["setupStage"];
+  workspace?: ProductionWorkspace;
+  authorizationUrl?: string;
+  accessCode?: string;
+  message?: string;
+};
+
+export type ProductionBillingService = {
+  createCheckoutPreview(input: {
+    user: ProductionUser;
+    candidate: ProductionSpotifyArtistCandidate;
+  }): Promise<ProductionBillingCheckoutPreview>;
+  loadLatestCheckoutPreview?(): Promise<ProductionBillingCheckoutPreview | null>;
+  loadBillingStatus(input: { reference: string }): Promise<ProductionBillingStatus>;
+  retrySetup?(input: { checkoutSessionId: string }): Promise<ProductionBillingStatus>;
 };
 
 export type ProductionSetupProfile = {

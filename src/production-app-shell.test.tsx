@@ -10,6 +10,7 @@ import { productionFixtureData } from "./services/fixtureRepositories";
 import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
+  ProductionBillingService,
   ProductionProfileSetupService,
   ProductionSpotifyArtistAdapter,
   ProductionWorkspace,
@@ -59,6 +60,7 @@ const workspace = {
 
 afterEach(() => {
   cleanup();
+  window.history.replaceState({}, "", "/");
   vi.useRealTimers();
   supabaseDiscoveryPoll.responses = [];
 });
@@ -106,6 +108,47 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
     expect(screen.getByText("Loading Ordersounds")).toBeInTheDocument();
     expect(screen.getByText("Checking session and active artist workspace.")).toBeInTheDocument();
+  });
+
+  it("keeps Paystack returns isolated from any existing browser workspace session", async () => {
+    window.history.pushState({}, "", "/?reference=ors_paid_return&trxref=ors_paid_return");
+    const workspaceLoader = workspaceLoaderWith({
+      ...workspace,
+      artistName: "Wrong Browser Artist",
+      workspaceName: "Wrong Browser Desk",
+    });
+    const billingChecks: string[] = [];
+    const billingService = {
+      async createCheckoutPreview() {
+        throw new Error("Checkout preview should not be created on a payment return.");
+      },
+      async loadBillingStatus({ reference }) {
+        billingChecks.push(reference);
+        return {
+          checkoutStatus: "missing",
+          subscriptionStatus: "none",
+          entitlementActive: false,
+          setupStatus: "not_started",
+          message: "This payment is not linked to the signed-in session in this browser.",
+        };
+      },
+    } satisfies ProductionBillingService;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoader}
+        billingService={billingService}
+        repositories={repositoriesFor("Wrong Browser Artist")}
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Confirming payment" })).toBeInTheDocument();
+    expect(screen.getByText("This payment is not linked to the signed-in session in this browser.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Wrong Browser Desk")).not.toBeInTheDocument();
+    expect(workspaceLoader.calls).toBe(0);
+    expect(billingChecks).toEqual(["ors_paid_return"]);
   });
 
   it("uses the branded loader while preparing workspace view data", async () => {
@@ -177,9 +220,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Continue to artist context" })).toHaveClass("rounded-[10px]");
   });
 
-  it("searches Spotify, saves identity, and lets catalog import continue in the background", async () => {
+  it("searches Spotify and opens the paid Desk preview without creating workspace state", async () => {
     const createdWorkspaces: Array<{ artistName: string; workspaceName?: string }> = [];
     const connectedArtists: Array<{ workspace: ProductionWorkspace; artist: string }> = [];
+    const checkoutArtists: string[] = [];
     const workspaceLoader = {
       calls: 0,
       async loadActiveWorkspace() {
@@ -199,11 +243,37 @@ describe("Clean production prototype-match shell", () => {
       },
     } satisfies ProductionWorkspaceLoader & { calls: number };
     const spotifyArtistAdapter = spotifyAdapterWithAsyncConnect(connectedArtists);
+    const billingService = {
+      async createCheckoutPreview({ candidate }) {
+        checkoutArtists.push(candidate.name);
+        return {
+          checkoutSessionId: "checkout-1",
+          reference: "ors_test",
+          status: "initialized",
+          artist: candidate,
+          amount: 20,
+          amountMinor: 2000,
+          currency: "USD",
+          interval: "monthly",
+          authorizationUrl: "https://checkout.paystack.test/ors_test",
+        };
+      },
+      async loadBillingStatus() {
+        return {
+          checkoutSessionId: "checkout-1",
+          checkoutStatus: "initialized",
+          subscriptionStatus: "none",
+          entitlementActive: false,
+          setupStatus: "not_started",
+        };
+      },
+    } satisfies ProductionBillingService;
 
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
         workspaceLoader={workspaceLoader}
+        billingService={billingService}
         spotifyArtistAdapter={spotifyArtistAdapter}
         repositories={repositoriesFor("Nova Vale")}
         initialView="connectArtist"
@@ -219,11 +289,13 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("button", { name: "Select Spotify artist Nova Vale" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Spotify artist Nova Vale" }));
 
-    await screen.findByRole("heading", { name: "Manager Basics" });
-    expect(createdWorkspaces).toEqual([{ artistName: "Nova Vale", workspaceName: "Nova Vale Desk" }]);
-    expect(connectedArtists).toEqual([{ workspace: expect.objectContaining({ artistName: "Nova Vale" }), artist: "Nova Vale" }]);
-    expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
-    expect(screen.getByText(/spotify catalog import is running in the background/i)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /unlock the operating desk/i });
+    expect(checkoutArtists).toEqual(["Nova Vale"]);
+    expect(createdWorkspaces).toEqual([]);
+    expect(connectedArtists).toEqual([]);
+    expect(screen.getAllByAltText("Nova Vale artist image").length).toBeGreaterThan(0);
+    expect(screen.getByText("$20/month")).toBeInTheDocument();
+    expect(screen.getByText(/setup starts after payment is confirmed/i)).toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
   }, 20000);
@@ -337,6 +409,60 @@ describe("Clean production prototype-match shell", () => {
     expect(saves).toEqual([
       "Emerging artist with catalog traction|Lagos|Afro-fusion|Build the artist operating plan from public catalog context and user-supplied constraints.|$3,000",
     ]);
+  }, 20000);
+
+  it("starts Spotify catalog bootstrap from paid workspace identity before entering Desk HQ", async () => {
+    const paidSetupWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      entitlementActive: true,
+      subscriptionStatus: "active",
+      latestCatalogSyncStatus: "failed",
+    } satisfies ProductionWorkspace;
+    const bootstraps: string[] = [];
+    const spotifyArtistAdapter = {
+      async searchArtists() {
+        return [];
+      },
+      async connectArtist() {
+        throw new Error("Paid setup must not reconnect Spotify through the prepay path.");
+      },
+      async bootstrapCatalog(nextWorkspace, candidate) {
+        bootstraps.push(`${nextWorkspace.artistWorkspaceId}|${candidate.spotifyArtistId}|${candidate.name}`);
+        return {
+          status: "completed_with_limits",
+          sourceSyncJobId: "source-sync-paid-setup",
+        };
+      },
+    } satisfies ProductionSpotifyArtistAdapter;
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        return {
+          ...paidSetupWorkspace,
+          status: "active",
+          contextComplete: true,
+        };
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(paidSetupWorkspace)}
+        spotifyArtistAdapter={spotifyArtistAdapter}
+        profileSetupService={profileSetupService}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    expect(screen.queryByText(/spotify catalog import failed/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+
+    await screen.findByRole("heading", { name: "Desk HQ" });
+    expect(bootstraps).toEqual(["workspace-1|spotify-artist-1|Nova Vale"]);
   }, 20000);
 
   it("shows Manager setup activity until the setup map and queued song/project reads are ready", async () => {
@@ -2606,7 +2732,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(headings[0]);
 
     // Verify Pulse tab recommendation & summary
-    expect(screen.getByText("Use source-backed evidence before spend.")).toBeInTheDocument();
+    expect(await screen.findByText("Use source-backed evidence before spend.")).toBeInTheDocument();
     expect(screen.getAllByText("Use saved context, audience signal, and team capacity to test whether the rising market deserves focused work.").length).toBeGreaterThan(0);
 
     // Navigate to the Tasks tab

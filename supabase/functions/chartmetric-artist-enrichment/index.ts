@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createChartmetricClient } from "../_shared/chartmetricClient.ts";
 import { normalizeChartmetricArtistEvidence } from "../_shared/chartmetricEvidence.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,6 +78,8 @@ Deno.serve(async (request) => {
 
     if (membershipError) throw membershipError;
     if (!membership) return json({ error: "Forbidden." }, 403);
+
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const queuedJob = await loadQueuedJobContext(authClient, input);
     const artistProfile = await loadArtistProfile(authClient, input);

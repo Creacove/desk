@@ -144,6 +144,10 @@ describe("production Supabase services", () => {
       spotifyImageUrl: "https://i.scdn.co/image/nova",
       contextComplete: true,
       latestCatalogSyncStatus: "completed_with_limits",
+      entitlementActive: false,
+      subscriptionStatus: "none",
+      setupStatus: "not_started",
+      setupStage: undefined,
     });
   });
 

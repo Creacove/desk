@@ -18,6 +18,7 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -62,6 +63,7 @@ Deno.serve(async (request) => {
     if (!membership) return json({ error: "Forbidden." }, 403);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
+    await assertActiveWorkspaceEntitlement(db, input);
     await assertWorkspace(db, input);
     const conversationId = await ensureConversation(db, input);
     const artistMessage = await insertConversationMessage(db, input, conversationId, {

@@ -12,6 +12,7 @@ import {
 } from "../_shared/openaiManagerRead.ts";
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,6 +78,8 @@ Deno.serve(async (request) => {
       if (membershipError) throw membershipError;
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
+
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const packet = await buildManagerReadPacket(authClient, input);
     runId = await createManagerSynthesisRun(authClient, input, packet);

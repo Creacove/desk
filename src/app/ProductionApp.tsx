@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Check, Loader2, X } from "lucide-react";
+import { Check, CreditCard, Loader2, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
 import { compactMovementTitle, movementKey, splitAttentionItems } from "../features/desk/deskAttention";
@@ -13,13 +13,14 @@ import {
 } from "../features/manager/ManagerScreens";
 import { MissionsWorkspace } from "../features/missions/MissionScreens";
 import { MusicWorkspace } from "../features/music/MusicScreens";
-import { ConnectArtistScreen, SetupScreen } from "../features/onboarding/OnboardingScreens";
+import { ConnectArtistScreen, PaywallPreviewScreen, SetupScreen } from "../features/onboarding/OnboardingScreens";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { LockedAgentWorkspace, StaffWorkspace } from "../features/staff/StaffScreens";
 import { createBrowserSupabaseClient } from "../lib/supabaseClient";
 import { createFixtureProductionRuntime, createFixtureRepositories } from "../services/fixtureRepositories";
 import {
   createSupabaseAuthAdapter,
+  createSupabaseBillingService,
   createSupabaseProductionRepositories,
   createSupabaseProfileSetupService,
   createSupabaseSpotifyArtistAdapter,
@@ -51,6 +52,8 @@ import type {
 } from "../types/cleanProduction";
 import type {
   ProductionAuthAdapter,
+  ProductionBillingCheckoutPreview,
+  ProductionBillingService,
   ProductionMusicLibraryLoader,
   ProductionProfileSetupService,
   ProductionSession,
@@ -64,6 +67,7 @@ import type {
 type ProductionAppProps = {
   authAdapter?: ProductionAuthAdapter;
   workspaceLoader?: ProductionWorkspaceLoader;
+  billingService?: ProductionBillingService;
   musicLibraryLoader?: ProductionMusicLibraryLoader;
   spotifyArtistAdapter?: ProductionSpotifyArtistAdapter;
   profileSetupService?: ProductionProfileSetupService;
@@ -80,6 +84,11 @@ type DiscoveryPollingInput = {
 
 type SetupActivityStep = "setup-map" | "music-reads";
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "notes" | "recap";
+type PaymentReturnState = {
+  reference: string;
+  status: "checking" | "waiting" | "ready" | "mismatch" | "error";
+  message?: string;
+};
 
 const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -90,6 +99,7 @@ export function shouldPollManagerDiscoveryEvents({ fixtureRuntime, view, artistW
 export function ProductionApp({
   authAdapter,
   workspaceLoader,
+  billingService,
   spotifyArtistAdapter,
   profileSetupService,
   repositories,
@@ -97,6 +107,7 @@ export function ProductionApp({
   fixtureMode = false,
 }: ProductionAppProps) {
   const shouldUseFixtureRuntime = fixtureMode || import.meta.env.VITE_PRODUCTION_FIXTURES === "true";
+  const paymentReturnReference = useMemo(() => readPaymentReturnReference(), []);
 
   const runtime = useMemo(() => {
     if (shouldUseFixtureRuntime) {
@@ -111,6 +122,7 @@ export function ProductionApp({
 
       return {
         ...fixtureRuntime,
+        billingService,
         spotifyArtistAdapter,
         profileSetupService,
         repositoriesForWorkspace,
@@ -126,6 +138,7 @@ export function ProductionApp({
     return {
       authAdapter: authAdapter ?? createSupabaseAuthAdapter(getClient()),
       workspaceLoader: workspaceLoader ?? createSupabaseWorkspaceLoader(getClient()),
+      billingService: billingService ?? createSupabaseBillingService(getClient()),
       spotifyArtistAdapter:
         spotifyArtistAdapter ??
         ({
@@ -144,12 +157,15 @@ export function ProductionApp({
       repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) =>
         repositories ?? createSupabaseProductionRepositories(getClient(), nextWorkspace),
     };
-  }, [authAdapter, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, workspaceLoader]);
+  }, [authAdapter, billingService, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, workspaceLoader]);
 
-  const [status, setStatus] = useState<"loading" | "signed-out" | "missing-workspace" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error">("loading");
   const [session, setSession] = useState<ProductionSession | null>(null);
   const [workspace, setWorkspace] = useState<ProductionWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(
+    paymentReturnReference ? { reference: paymentReturnReference, status: "checking" } : null,
+  );
   const sessionUser = session?.user ?? null;
   const activeWorkspaceId = workspace?.artistWorkspaceId ?? null;
   const activeCatalogSyncStatus = workspace?.latestCatalogSyncStatus;
@@ -170,7 +186,24 @@ export function ProductionApp({
 
       if (!nextSession.user) {
         setWorkspace(null);
-        setStatus("signed-out");
+        if (paymentReturnReference) {
+          setPaymentReturn({
+            reference: paymentReturnReference,
+            status: "mismatch",
+            message: "Sign in with the account that started this subscription to confirm payment.",
+          });
+          setStatus("payment-return");
+        } else {
+          setStatus("signed-out");
+        }
+        return;
+      }
+
+      if (paymentReturnReference) {
+        setWorkspace(null);
+        setPaymentReturn({ reference: paymentReturnReference, status: "checking" });
+        setStatus("payment-return");
+        await refreshPaymentReturnStatus(paymentReturnReference, runtime.billingService, setPaymentReturn, setWorkspace, setStatus);
         return;
       }
 
@@ -187,7 +220,7 @@ export function ProductionApp({
       setError(readErrorMessage(loadError, "Production workspace could not load."));
       setStatus("error");
     }
-  }, [runtime]);
+  }, [paymentReturnReference, runtime]);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -205,6 +238,38 @@ export function ProductionApp({
   useEffect(() => {
     void loadProductionState();
   }, [loadProductionState]);
+
+  useEffect(() => {
+    if (status !== "payment-return" || !paymentReturn?.reference || !sessionUser || paymentReturn.status === "ready") {
+      return;
+    }
+
+    let cancelled = false;
+    const poll = async () => {
+      await refreshPaymentReturnStatus(
+        paymentReturn.reference,
+        runtime.billingService,
+        (next) => {
+          if (!cancelled) setPaymentReturn(next);
+        },
+        (nextWorkspace) => {
+          if (!cancelled) setWorkspace(nextWorkspace);
+        },
+        (nextStatus) => {
+          if (!cancelled) setStatus(nextStatus);
+        },
+      );
+    };
+
+    const handle = window.setInterval(() => {
+      void poll();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(handle);
+    };
+  }, [paymentReturn?.reference, paymentReturn?.status, runtime.billingService, sessionUser, status]);
 
   useEffect(() => {
     if (!sessionUser || !activeWorkspaceId || !isCatalogSyncPending(activeCatalogSyncStatus)) {
@@ -251,12 +316,17 @@ export function ProductionApp({
     return <AuthScreen authAdapter={runtime.authAdapter} onAuthenticated={loadProductionState} />;
   }
 
+  if (status === "payment-return" && paymentReturn) {
+    return <PaymentReturnScreen state={paymentReturn} onSignOut={sessionUser ? handleSignOut : undefined} />;
+  }
+
   if (status === "missing-workspace") {
     return (
       <SpotifyIdentityGate
         user={session?.user ?? null}
         workspace={null}
         workspaceLoader={runtime.workspaceLoader}
+        billingService={runtime.billingService}
         spotifyArtistAdapter={runtime.spotifyArtistAdapter}
         onSignOut={handleSignOut}
         onWorkspaceReady={(nextWorkspace) => {
@@ -286,6 +356,7 @@ export function ProductionApp({
         user={session?.user ?? null}
         workspace={workspace}
         workspaceLoader={runtime.workspaceLoader}
+        billingService={runtime.billingService}
         spotifyArtistAdapter={runtime.spotifyArtistAdapter}
         onSignOut={handleSignOut}
         onWorkspaceReady={(nextWorkspace) => {
@@ -301,6 +372,7 @@ export function ProductionApp({
       workspace={workspace}
       repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
+      spotifyArtistAdapter={runtime.spotifyArtistAdapter}
       fixtureRuntime={shouldUseFixtureRuntime}
       initialView={shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
       onWorkspaceChange={setWorkspace}
@@ -313,6 +385,7 @@ function CleanProductionWorkspace({
   workspace,
   repositories,
   profileSetupService,
+  spotifyArtistAdapter,
   fixtureRuntime,
   initialView,
   onWorkspaceChange,
@@ -321,6 +394,7 @@ function CleanProductionWorkspace({
   workspace: ProductionWorkspace | null;
   repositories: CleanProductionRepositories;
   profileSetupService?: ProductionProfileSetupService;
+  spotifyArtistAdapter?: ProductionSpotifyArtistAdapter;
   fixtureRuntime: boolean;
   initialView: CleanProductionView;
   onWorkspaceChange?: (workspace: ProductionWorkspace) => void;
@@ -934,6 +1008,30 @@ function CleanProductionWorkspace({
     return deliverable;
   }
 
+  async function ensurePaidCatalogBootstrap(nextWorkspace: ProductionWorkspace) {
+    if (!shouldBootstrapCatalogAfterPaidSetup(nextWorkspace) || !spotifyArtistAdapter) {
+      return nextWorkspace;
+    }
+
+    const candidate = spotifyCandidateFromWorkspace(nextWorkspace);
+    if (!candidate) {
+      return nextWorkspace;
+    }
+
+    try {
+      const result = await spotifyArtistAdapter.bootstrapCatalog(nextWorkspace, candidate);
+      return {
+        ...nextWorkspace,
+        latestCatalogSyncStatus: result.status === "failed" ? "queued" : result.status,
+      };
+    } catch {
+      return {
+        ...nextWorkspace,
+        latestCatalogSyncStatus: "queued" as const,
+      };
+    }
+  }
+
   async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) {
     const updatedMission = await repositories.missions.completeTask(taskId, {
       status,
@@ -1002,7 +1100,8 @@ function CleanProductionWorkspace({
             try {
               setSetupPending(true);
               setSetupError(null);
-              const nextWorkspace = await profileSetupService.saveSetupContext(workspace, nextProfile);
+              const savedWorkspace = await profileSetupService.saveSetupContext(workspace, nextProfile);
+              const nextWorkspace = await ensurePaidCatalogBootstrap(savedWorkspace);
               onWorkspaceChange?.(nextWorkspace);
               setDrawer(null);
               if (isWorkspaceReadyForDesk(nextWorkspace)) {
@@ -1657,10 +1756,58 @@ function AuthScreen({
   );
 }
 
+function PaymentReturnScreen({
+  state,
+  onSignOut,
+}: {
+  state: PaymentReturnState;
+  onSignOut?: () => void;
+}) {
+  const body =
+    state.message ??
+    (state.status === "checking"
+      ? "Checking Paystack confirmation for this checkout."
+      : state.status === "waiting"
+        ? "Waiting for Paystack webhook confirmation. Keep this tab open."
+        : state.status === "ready"
+          ? "Payment confirmed. Opening Desk HQ."
+          : "This payment could not be matched to the signed-in account.");
+
+  return (
+    <AuthFrame logoTestId="auth-brand-logo">
+      <section className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
+        <div className="inline-flex h-11 w-11 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] text-foreground">
+          {state.status === "ready" ? <Check className="h-5 w-5" aria-hidden="true" /> : <CreditCard className="h-5 w-5" aria-hidden="true" />}
+        </div>
+        <p className="font-ui mt-6 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Secure checkout</p>
+        <h1 className="font-display mt-3 text-[24px] font-bold tracking-tight text-foreground">Confirming payment</h1>
+        <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{body}</p>
+        <p className="mt-3 break-all rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-3 font-ui text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+          Reference {state.reference}
+        </p>
+        {state.status === "checking" || state.status === "waiting" ? (
+          <div className="mt-5 inline-flex items-center gap-2 text-[12px] font-bold text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Polling billing status
+          </div>
+        ) : null}
+        {onSignOut ? (
+          <div className="mt-5">
+            <ProductButton variant="secondary" onClick={onSignOut}>
+              Use another account
+            </ProductButton>
+          </div>
+        ) : null}
+      </section>
+    </AuthFrame>
+  );
+}
+
 function SpotifyIdentityGate({
   user,
   workspace,
   workspaceLoader,
+  billingService,
   spotifyArtistAdapter,
   onSignOut,
   onWorkspaceReady,
@@ -1668,15 +1815,41 @@ function SpotifyIdentityGate({
   user: ProductionUser | null;
   workspace: ProductionWorkspace | null;
   workspaceLoader: ProductionWorkspaceLoader;
+  billingService?: ProductionBillingService;
   spotifyArtistAdapter?: ProductionSpotifyArtistAdapter;
   onSignOut?: () => void;
   onWorkspaceReady: (workspace: ProductionWorkspace) => void;
 }) {
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<ProductionSpotifyArtistCandidate[]>([]);
+  const [checkoutPreview, setCheckoutPreview] = useState<ProductionBillingCheckoutPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
+
+  useEffect(() => {
+    if (!billingService?.loadLatestCheckoutPreview || checkoutPreview) {
+      return;
+    }
+
+    let cancelled = false;
+    billingService
+      .loadLatestCheckoutPreview()
+      .then((preview) => {
+        if (!cancelled && preview) {
+          setCheckoutPreview(preview);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCheckoutPreview(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [billingService, checkoutPreview]);
 
   useEffect(() => {
     const normalizedQuery = query.trim();
@@ -1717,38 +1890,72 @@ function SpotifyIdentityGate({
   }, [query, spotifyArtistAdapter]);
 
   async function selectCandidate(candidate: ProductionSpotifyArtistCandidate) {
-    if (!spotifyArtistAdapter) {
-      setMessage("Spotify search is not configured for this environment.");
+    if (!billingService) {
+      setMessage("Billing checkout is not configured for this environment.");
       return;
     }
 
-    if (!user && !workspace) {
-      setMessage("Sign in before connecting an artist.");
+    if (!user) {
+      setMessage("Sign in before subscribing to an artist desk.");
       return;
     }
 
     try {
       setSelectPending(true);
       setMessage(null);
-      const targetWorkspace =
-        workspace ??
-        (await workspaceLoader.createInitialWorkspace?.(user as ProductionUser, {
-          artistName: candidate.name,
-          workspaceName: `${candidate.name} Desk`,
-        }));
-
-      if (!targetWorkspace) {
-        setMessage("Workspace onboarding is not configured for this environment.");
-        return;
-      }
-
-      const connectedWorkspace = await spotifyArtistAdapter.connectArtist(targetWorkspace, candidate);
-      onWorkspaceReady(connectedWorkspace);
+      const preview = await billingService.createCheckoutPreview({ user, candidate });
+      setCheckoutPreview(preview);
     } catch (connectError) {
-      setMessage(readErrorMessage(connectError, "Spotify artist could not be connected."));
+      setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
     } finally {
       setSelectPending(false);
     }
+  }
+
+  async function subscribeToPreview() {
+    if (!checkoutPreview || !billingService) {
+      return;
+    }
+
+    if (checkoutPreview.authorizationUrl) {
+      window.location.assign(checkoutPreview.authorizationUrl);
+      return;
+    }
+
+    try {
+      setSelectPending(true);
+      setMessage(null);
+      const status = await billingService.loadBillingStatus({ reference: checkoutPreview.reference });
+      if (status.workspace) {
+        onWorkspaceReady(status.workspace);
+        return;
+      }
+      if (status.authorizationUrl) {
+        window.location.assign(status.authorizationUrl);
+        return;
+      }
+      setMessage(status.message ?? "Secure checkout is being prepared. Try again in a moment.");
+    } catch (statusError) {
+      setMessage(readErrorMessage(statusError, "Billing status could not be loaded."));
+    } finally {
+      setSelectPending(false);
+    }
+  }
+
+  if (checkoutPreview) {
+    return (
+      <PaywallPreviewScreen
+        preview={checkoutPreview}
+        pending={selectPending}
+        error={message}
+        onBack={() => {
+          setCheckoutPreview(null);
+          setMessage(null);
+        }}
+        onSubscribe={subscribeToPreview}
+        onSignOut={onSignOut}
+      />
+    );
   }
 
   return (
@@ -1756,7 +1963,7 @@ function SpotifyIdentityGate({
       query={query}
       candidates={candidates}
       pending={searchPending || selectPending}
-      message={selectPending ? "Connecting Spotify identity and starting catalog import." : message}
+      message={selectPending ? "Preparing secure subscription checkout." : message}
       onQueryChange={setQuery}
       onSelectCandidate={selectCandidate}
       onSignOut={onSignOut}
@@ -1893,6 +2100,94 @@ function AuthMessageCard({
       {action ? <div className="mt-5">{action}</div> : null}
     </section>
   );
+}
+
+function readPaymentReturnReference() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const params = new URLSearchParams(window.location.search);
+  const reference =
+    params.get("reference") ??
+    params.get("trxref") ??
+    params.get("checkout_ref") ??
+    params.get("paystack_reference");
+
+  const normalized = reference?.trim();
+  return normalized || null;
+}
+
+async function refreshPaymentReturnStatus(
+  reference: string,
+  billingService: ProductionBillingService | undefined,
+  setPaymentReturn: (state: PaymentReturnState | null) => void,
+  setWorkspace: (workspace: ProductionWorkspace | null) => void,
+  setStatus: (status: "loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error") => void,
+) {
+  if (!billingService) {
+    setPaymentReturn({
+      reference,
+      status: "error",
+      message: "Billing confirmation is not configured for this environment.",
+    });
+    return;
+  }
+
+  try {
+    const billingStatus = await billingService.loadBillingStatus({ reference });
+    if (billingStatus.workspace && billingStatus.entitlementActive) {
+      setWorkspace(billingStatus.workspace);
+      setPaymentReturn({
+        reference,
+        status: "ready",
+        message: "Payment confirmed. Opening Desk HQ.",
+      });
+      clearPaymentReturnUrl();
+      setStatus("ready");
+      return;
+    }
+
+    if (billingStatus.checkoutStatus === "missing") {
+      setPaymentReturn({
+        reference,
+        status: "mismatch",
+        message: billingStatus.message ?? "This payment is not linked to the signed-in session in this browser.",
+      });
+      return;
+    }
+
+    if (billingStatus.checkoutStatus === "failed" || billingStatus.checkoutStatus === "expired" || billingStatus.checkoutStatus === "abandoned") {
+      setPaymentReturn({
+        reference,
+        status: "error",
+        message: billingStatus.message ?? "This checkout is no longer payable. Return to artist search and start a new subscription.",
+      });
+      return;
+    }
+
+    setPaymentReturn({
+      reference,
+      status: "waiting",
+      message: billingStatus.message ?? "Waiting for Paystack confirmation. Desk access opens only after the verified webhook updates billing.",
+    });
+  } catch (statusError) {
+    setPaymentReturn({
+      reference,
+      status: "error",
+      message: readErrorMessage(statusError, "Payment confirmation could not be loaded."),
+    });
+  }
+}
+
+function clearPaymentReturnUrl() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  ["reference", "trxref", "checkout_ref", "paystack_reference"].forEach((param) => url.searchParams.delete(param));
+  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 function readErrorMessage(error: unknown, fallback: string) {
@@ -2232,6 +2527,28 @@ function resolveWorkspaceInitialView(workspace: ProductionWorkspace, initialView
 
 function isCatalogSyncPending(status: ProductionWorkspace["latestCatalogSyncStatus"]) {
   return status === "queued" || status === "running";
+}
+
+function shouldBootstrapCatalogAfterPaidSetup(workspace: ProductionWorkspace) {
+  if (workspace.entitlementActive !== true || !workspace.spotifyConnected || !workspace.spotifyArtistId || !workspace.spotifyArtistUrl) {
+    return false;
+  }
+
+  return !["queued", "running", "completed", "completed_with_limits"].includes(workspace.latestCatalogSyncStatus ?? "");
+}
+
+function spotifyCandidateFromWorkspace(workspace: ProductionWorkspace): ProductionSpotifyArtistCandidate | null {
+  if (!workspace.spotifyArtistId || !workspace.spotifyArtistUrl) {
+    return null;
+  }
+
+  return {
+    spotifyArtistId: workspace.spotifyArtistId,
+    name: workspace.spotifyArtistName ?? workspace.artistName,
+    spotifyUrl: workspace.spotifyArtistUrl,
+    genres: [],
+    imageUrl: workspace.spotifyImageUrl,
+  };
 }
 
 function areWorkspacesEquivalent(currentWorkspace: ProductionWorkspace, nextWorkspace: ProductionWorkspace) {

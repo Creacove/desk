@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSupabaseCatalogRepository } from "../_shared/supabaseCatalogRepository.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const publicCatalogLimit =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -75,6 +76,8 @@ Deno.serve(async (request) => {
     if (!membership) {
       return json({ error: "Forbidden." }, 403);
     }
+
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const repository = createSupabaseCatalogRepository(authClient, {
       accountId: input.accountId,
