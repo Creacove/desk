@@ -161,10 +161,10 @@ function DeskHQHeader({
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         <form
           aria-label="Ask your manager"
-          className="flex min-h-[44px] min-w-[320px] max-w-[560px] flex-1 items-end gap-2 rounded-[13px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_12px_32px_rgba(17,19,24,0.06)]"
+          className="flex min-h-[44px] min-w-[320px] max-w-[560px] flex-1 items-start gap-2 rounded-[13px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_12px_32px_rgba(17,19,24,0.06)]"
           onSubmit={submitManagerQuestion}
         >
-          <MessageSquareText className="mb-[7px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <MessageSquareText className="mt-[9px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <textarea
             value={draft}
             rows={1}
@@ -182,7 +182,7 @@ function DeskHQHeader({
             type="submit"
             aria-label="Send manager question"
             disabled={!canSend}
-            className="mb-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-brand-accent text-white transition-all hover:-translate-y-0.5 disabled:translate-y-0 disabled:bg-brand-accent/20 disabled:text-brand-accent/40"
+            className="mt-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-brand-accent text-white transition-all hover:-translate-y-0.5 disabled:translate-y-0 disabled:bg-brand-accent/20 disabled:text-brand-accent/40"
           >
             <SendHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -551,11 +551,11 @@ function MobileDeskHome({
   const visibleMissions = missions.slice(0, 3);
 
   return (
-    <div data-testid="desk-mobile-home" className="grid gap-3 pb-4 lg:hidden">
+    <div data-testid="desk-mobile-home" className="grid w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] min-w-0 justify-self-start gap-3 pb-4 lg:hidden">
       <MobileManagerComposer onAskManager={onAskManager} />
       <section
         data-testid="desk-mobile-command-surface"
-        className="overflow-hidden rounded-[18px] border border-foreground/10 bg-background text-foreground shadow-[0_1px_10px_rgba(17,19,24,0.055)]"
+        className="w-full min-w-0 max-w-full rounded-[18px] border border-foreground/10 bg-background text-foreground shadow-[0_1px_10px_rgba(17,19,24,0.055)]"
       >
         <div className="flex items-center justify-between gap-3 border-b border-foreground/8 px-3.5 py-3">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -573,20 +573,20 @@ function MobileDeskHome({
           </div>
         </div>
 
-        <div className="px-3.5 py-3.5">
-          <p className="font-display text-[18px] font-semibold leading-[1.12] text-foreground">{brief.headlineRead}</p>
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
-            <button type="button" className="text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
+        <div className="min-w-0 px-3.5 py-3.5">
+          <p className="max-w-full break-words font-display text-[18px] font-semibold leading-[1.12] text-foreground [overflow-wrap:anywhere]">{brief.headlineRead}</p>
+          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
+            <button type="button" className="min-w-0 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
               View supporting evidence
             </button>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/72">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</span>
+            <span className="min-w-0 break-words text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/72">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</span>
           </div>
 
           {compactMetrics.length ? (
-            <div data-testid="desk-mobile-signal-rail" className="mt-3">
+            <div data-testid="desk-mobile-signal-rail" className="mt-3 min-w-0 max-w-full">
               <div
                 data-testid="desk-mobile-metrics-grid"
-                className="grid grid-cols-2 gap-2"
+                className="grid min-w-0 max-w-full grid-cols-2 gap-2"
               >
                 {compactMetrics.map((metric, index) => {
                   const metricLabel = metric.label;
@@ -595,10 +595,10 @@ function MobileDeskHome({
                     <article
                       key={`${metricLabel}-${metricValue}-${index}`}
                       data-testid="desk-mobile-metric-card"
-                      className={`min-h-[78px] rounded-[14px] border px-3 py-2.5 shadow-sm ${signalMetricTileClass(index)}`}
+                      className={`min-h-[78px] min-w-0 max-w-full overflow-hidden rounded-[14px] border px-3 py-2.5 shadow-sm ${signalMetricTileClass(index)}`}
                     >
-                      <p className="break-words text-[10px] font-semibold leading-tight text-muted-foreground">{metricLabel}</p>
-                      <p className="mt-1.5 break-words text-[19px] font-semibold leading-none tracking-normal text-foreground">{metricValue}</p>
+                      <p className="max-w-full break-words text-[10px] font-semibold leading-tight text-muted-foreground [overflow-wrap:anywhere]">{metricLabel}</p>
+                      <p className="mt-1.5 max-w-full break-words text-[19px] font-semibold leading-none tracking-normal text-foreground [overflow-wrap:anywhere]">{metricValue}</p>
                     </article>
                   );
                 })}
@@ -607,17 +607,17 @@ function MobileDeskHome({
           ) : null}
 
           {/* Always 4 sections — no expand */}
-          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card mt-3 rounded-[14px] p-3.5">
-            <div className="flex items-center justify-between gap-3">
+          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card mt-3 w-full min-w-0 max-w-full rounded-[14px] p-3.5">
+            <div className="flex min-w-0 items-center justify-between gap-3">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
             </div>
-            <div data-testid="desk-mobile-manager-read" className="mt-3 divide-y divide-foreground/8">
+            <div data-testid="desk-mobile-manager-read" className="mt-3 min-w-0 max-w-full divide-y divide-foreground/8">
               {managerReadSegments.map((segment, index) => (
-                <article key={`${segment.label}-${index}`} data-testid="desk-mobile-manager-read-segment" className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2.5 py-3 first:pt-0 last:pb-0">
+                <article key={`${segment.label}-${index}`} data-testid="desk-mobile-manager-read-segment" className="grid min-w-0 max-w-full grid-cols-[2rem_minmax(0,1fr)] gap-2.5 py-3 first:pt-0 last:pb-0">
                   <span className="font-mono text-[10px] font-bold leading-5 text-muted-foreground/70">{String(index + 1).padStart(2, "0")}</span>
-                  <span className="min-w-0">
-                    <span className="block font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{segment.label}</span>
-                    <p className="mt-1 text-[12px] font-semibold leading-relaxed text-foreground/80">{segment.body}</p>
+                  <span className="min-w-0 max-w-full">
+                    <span className="block max-w-full break-words font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground [overflow-wrap:anywhere]">{segment.label}</span>
+                    <p className="mt-1 max-w-full break-words text-[12px] font-semibold leading-relaxed text-foreground/80 [overflow-wrap:anywhere]">{segment.body}</p>
                   </span>
                 </article>
               ))}
@@ -628,7 +628,7 @@ function MobileDeskHome({
         </div>
       </section>
 
-      <section data-testid="desk-mobile-current-work" className="rounded-[18px] border border-foreground/10 bg-background p-3.5 shadow-[0_1px_10px_rgba(17,19,24,0.045)]">
+      <section data-testid="desk-mobile-current-work" className="w-full min-w-0 max-w-full rounded-[18px] border border-foreground/10 bg-background p-3.5 shadow-[0_1px_10px_rgba(17,19,24,0.045)]">
         <div className="mb-2.5 flex items-center justify-between gap-3">
           <div>
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Current work</p>
@@ -644,7 +644,7 @@ function MobileDeskHome({
               <button
                 key={mission.id}
                 type="button"
-                className="w-full py-3 text-left transition-colors first:pt-1 last:pb-1 hover:bg-foreground/[0.025]"
+                className="min-w-0 max-w-full w-full py-3 text-left transition-colors first:pt-1 last:pb-1 hover:bg-foreground/[0.025]"
                 aria-label={`Open mission ${mission.title} on mobile`}
                 onClick={() => onOpenMission(mission.id)}
               >
@@ -691,10 +691,10 @@ function MobileManagerComposer({ onAskManager }: { onAskManager: (body: string) 
   return (
     <form
       aria-label="Ask your manager on mobile"
-      className="flex min-h-[42px] items-end gap-2 rounded-[14px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_1px_10px_rgba(17,19,24,0.045)]"
+      className="flex min-h-[42px] w-full min-w-0 max-w-full items-start gap-2 rounded-[14px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_1px_10px_rgba(17,19,24,0.045)]"
       onSubmit={submitManagerQuestion}
     >
-      <MessageSquareText className="mb-[7px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <MessageSquareText className="mt-[9px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
       <textarea
         value={draft}
         rows={1}
@@ -712,7 +712,7 @@ function MobileManagerComposer({ onAskManager }: { onAskManager: (body: string) 
         type="submit"
         aria-label="Send mobile manager question"
         disabled={!canSend}
-        className="mb-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-brand-accent text-white transition-colors disabled:bg-brand-accent/20 disabled:text-brand-accent/40"
+        className="mt-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-brand-accent text-white transition-colors disabled:bg-brand-accent/20 disabled:text-brand-accent/40"
       >
         <SendHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
       </button>

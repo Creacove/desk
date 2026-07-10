@@ -1636,6 +1636,19 @@
 }
 
 @media (max-width: 767px) {
+  html,
+  body,
+  #root,
+  .app-theme {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  .desk-hq-v2 {
+    min-width: 0;
+    width: 100%;
+  }
+
   input,
   textarea,
   select,
