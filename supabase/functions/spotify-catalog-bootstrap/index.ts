@@ -71,7 +71,9 @@ Deno.serve(async (request) => {
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
 
-    await assertActiveWorkspaceEntitlement(authClient, input);
+    if (!isServiceRoleInvocation) {
+      await assertActiveWorkspaceEntitlement(authClient, input);
+    }
 
     const result = await bootstrapSpotifyCatalog({
       input: bootstrapInput,
@@ -98,6 +100,9 @@ Deno.serve(async (request) => {
       const message = errorMessage(error, "Manager artist discovery dispatch failed.");
       console.warn("manager artist discovery dispatch failed", { message });
       await recordDiscoveryFailure(authClient, bootstrapInput, message).catch(() => undefined);
+      if (bootstrapInput.setupRunId) {
+        await markSetupRunDiscoveryFailed(authClient, bootstrapInput.setupRunId, message).catch(() => undefined);
+      }
     }));
 
     return json(result, result.status === "failed" ? 502 : 200);
@@ -212,6 +217,22 @@ async function recordDiscoveryFailure(authClient: any, input: BootstrapInput, me
       artist_name: input.selectedArtist.name,
     },
   });
+}
+
+async function markSetupRunDiscoveryFailed(authClient: any, setupRunId: string, message: string) {
+  const { data: run, error } = await authClient.from("workspace_setup_runs").select("stage_status,retry_count").eq("id", setupRunId).maybeSingle();
+  if (error) throw error;
+  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
+  await authClient.from("workspace_setup_runs").update({
+    status: "failed",
+    current_stage: "manager_discovery",
+    stage_status: {
+      ...stages,
+      manager_discovery: { status: "failed", error: message, failed_at: new Date().toISOString() },
+    },
+    last_error: message,
+    retry_count: Number(run?.retry_count ?? 0) + 1,
+  }).eq("id", setupRunId);
 }
 
 function validateInput(input: BootstrapInput | null): asserts input is BootstrapInput {

@@ -63,7 +63,12 @@ Deno.serve(async (request) => {
     setupRun = run;
 
     const workspace = await loadWorkspace(db, checkout.artist_workspace_id);
-    await assertActiveWorkspaceEntitlement(db, { artistWorkspaceId: workspace.id });
+    // Service-role invocations come from trusted internal paths (webhook, billing-status)
+    // that have already verified payment. Skip the entitlement query to avoid a race
+    // where the billing_subscriptions row isn't yet visible through RLS.
+    if (!isServiceRoleInvocation) {
+      await assertActiveWorkspaceEntitlement(db, { artistWorkspaceId: workspace.id });
+    }
 
     if (input.phase === "discovery") {
       return json(await runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }));
@@ -80,11 +85,26 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
   const stages = stageStatus(setupRun.stage_status);
   const existing = stageState(stages, "manager_discovery");
   const catalogState = stageState(stages, "catalog_bootstrap");
-  if (
-    setupRun.status === "running" && ["queued", "running", "completed", "completed_with_limits"].includes(existing) ||
-    ["running", "completed", "completed_with_limits"].includes(catalogState) ||
-    ["completed", "completed_with_limits"].includes(existing)
-  ) {
+
+  if (["completed", "completed_with_limits"].includes(existing)) {
+    return { status: existing, phase: "discovery" };
+  }
+
+  if (catalogState === "running") {
+    return { status: "running", phase: "discovery" };
+  }
+
+  if (catalogState === "completed" || catalogState === "completed_with_limits") {
+    const dispatchFailed = await hasDiscoveryDispatchFailure(db, workspace, stages);
+    if (existing === "running" && !dispatchFailed) {
+      return { status: "running", phase: "discovery" };
+    }
+
+    await dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages });
+    return { status: "running", phase: "discovery" };
+  }
+
+  if (setupRun.status === "running" && ["queued", "running"].includes(existing)) {
     return { status: existing, phase: "discovery" };
   }
 
@@ -124,7 +144,7 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
 async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspace, setupRun }: any) {
   const stages = stageStatus(setupRun.stage_status);
   const contextComplete = Boolean(workspace.profile?.artist_direction && workspace.profile?.budget_context);
-  const contextStages = {
+  let contextStages = {
     ...stages,
     context_received: {
       status: contextComplete ? "completed" : "waiting",
@@ -142,6 +162,15 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
 
   const discoveryState = stageState(contextStages, "manager_discovery");
   if (!["completed", "completed_with_limits"].includes(discoveryState)) {
+    const catalogState = stageState(contextStages, "catalog_bootstrap");
+    if (catalogState === "completed" || catalogState === "completed_with_limits") {
+      const checkout = await loadCheckoutForSetupRun(db, setupRun.checkout_session_id);
+      const dispatchFailed = await hasDiscoveryDispatchFailure(db, workspace, contextStages);
+      if (discoveryState !== "running" || dispatchFailed) {
+        contextStages = await dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages: contextStages });
+      }
+    }
+
     await updateSetupRun(db, setupRun.id, {
       status: "running",
       current_stage: "manager_discovery",
@@ -209,6 +238,96 @@ async function loadWorkspace(db: any, workspaceId: string) {
   const artist = Array.isArray(data.artists) ? data.artists[0] : data.artists;
   const profile = Array.isArray(data.artist_profiles) ? data.artist_profiles[0] : data.artist_profiles;
   return { ...data, artist, profile };
+}
+
+async function loadCheckoutForSetupRun(db: any, checkoutSessionId: string) {
+  const { data, error } = await db
+    .from("billing_checkout_sessions")
+    .select("*")
+    .eq("id", checkoutSessionId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("Checkout session was not found for setup run.");
+  return data;
+}
+
+async function dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages }: any) {
+  const startedAt = new Date().toISOString();
+  const nextStages = {
+    ...stages,
+    manager_discovery: { status: "running", started_at: startedAt },
+  };
+  await updateSetupRun(db, setupRun.id, {
+    status: "running",
+    current_stage: "manager_discovery",
+    stage_status: nextStages,
+    last_error: null,
+  });
+
+  scheduleBackgroundTask(invokeFunctionWithRetries({
+    supabaseUrl,
+    serviceRoleKey,
+    functionName: "manager-artist-discovery",
+    body: {
+      accountId: workspace.account_id,
+      artistWorkspaceId: workspace.id,
+      artistId: workspace.artist_id,
+      spotifyArtistId: checkout.selected_artist.spotifyArtistId,
+      artistName: checkout.selected_artist.name,
+      setupRunId: setupRun.id,
+      checkoutSessionId: checkout.id,
+    },
+  }).catch(async (error) => {
+    const message = error instanceof Error ? error.message : "Manager artist discovery dispatch failed.";
+    await recordDiscoveryDispatchFailure(db, checkout, workspace, message).catch(() => undefined);
+    await updateSetupRun(db, setupRun.id, {
+      status: "failed",
+      current_stage: "manager_discovery",
+      stage_status: {
+        ...stages,
+        manager_discovery: { status: "failed", error: message, failed_at: new Date().toISOString() },
+      },
+      last_error: message,
+      retry_count: Number(setupRun.retry_count ?? 0) + 1,
+    }).catch(() => undefined);
+  }));
+
+  return nextStages;
+}
+
+async function hasDiscoveryDispatchFailure(db: any, workspace: any, stages: StageStatus) {
+  const discoveryStage = stages.manager_discovery;
+  const startedAt = typeof discoveryStage === "object" && typeof discoveryStage.started_at === "string" ? discoveryStage.started_at : null;
+  let query = db
+    .from("operating_events")
+    .select("id")
+    .eq("artist_workspace_id", workspace.id)
+    .eq("event_type", "manager_artist_discovery_dispatch_failed")
+    .limit(1);
+  if (startedAt) {
+    query = query.gte("created_at", startedAt);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return Array.isArray(data) && data.length > 0;
+}
+
+async function recordDiscoveryDispatchFailure(db: any, checkout: any, workspace: any, message: string) {
+  await db.from("operating_events").insert({
+    account_id: workspace.account_id,
+    artist_workspace_id: workspace.id,
+    artist_id: workspace.artist_id,
+    event_type: "manager_artist_discovery_dispatch_failed",
+    actor_type: "integration",
+    target_type: "artist_workspace",
+    target_id: workspace.id,
+    summary: message,
+    payload: {
+      checkout_session_id: checkout.id,
+      spotify_artist_id: checkout.selected_artist.spotifyArtistId,
+      artist_name: checkout.selected_artist.name,
+    },
+  });
 }
 
 async function invokeFunctionWithRetries({ supabaseUrl, serviceRoleKey, functionName, body }: any) {
@@ -293,6 +412,15 @@ function readBearerJwtRole(authHeader: string) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>) {
+  const edgeRuntime = (globalThis as { EdgeRuntime?: { waitUntil?: (task: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof edgeRuntime?.waitUntil === "function") {
+    edgeRuntime.waitUntil(task);
+    return;
+  }
+  void task;
 }
 
 function requireEnv(key: string) {

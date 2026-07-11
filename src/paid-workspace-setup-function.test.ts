@@ -28,7 +28,16 @@ describe("paid workspace setup orchestration", () => {
       expect(text, functionName).toContain("isServiceRoleInvocation");
       expect(text, functionName).toContain("assertActiveWorkspaceEntitlement");
       expect(text, functionName).toContain("setupRunId");
+      expect(text, functionName).toMatch(/if \(!isServiceRoleInvocation\) \{\s*await assertActiveWorkspaceEntitlement/s);
     }
+  });
+
+  it("can redispatch manager discovery when paid setup has a completed catalog but no discovery completion", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+
+    expect(text).toContain("dispatchManagerDiscoveryPhase");
+    expect(text).toContain('"manager_artist_discovery_dispatch_failed"');
+    expect(text).toContain('catalogState === "completed" || catalogState === "completed_with_limits"');
   });
 
   it("dispatches paid setup only after the active subscription is stored", () => {

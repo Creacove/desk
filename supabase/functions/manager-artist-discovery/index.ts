@@ -151,7 +151,9 @@ Deno.serve(async (request) => {
     }
 
     const db = createClient(supabaseUrl, serviceRoleKey);
-    await assertActiveWorkspaceEntitlement(db, input);
+    if (!isServiceRoleInvocation) {
+      await assertActiveWorkspaceEntitlement(db, input);
+    }
 
     // Write starting operating event
     await writeOperatingEvent(db, input, "manager_discovery_started", `Started autonomous onboarding discovery loop for ${input.artistName}.`);

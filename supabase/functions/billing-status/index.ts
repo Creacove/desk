@@ -273,17 +273,25 @@ async function ensureActiveSubscriptionForCheckout({ serviceClient, checkout, su
     .maybeSingle();
   if (checkoutError) throw checkoutError;
 
-  await invokeSetupFunction({
-    supabaseUrl,
-    serviceRoleKey,
-    functionName: "paid-workspace-setup",
-    body: {
-      checkoutSessionId: checkout.id,
-      phase: "discovery",
-    },
-  });
+  // Dispatch setup as best-effort. The subscription and workspace are already active;
+  // a transient setup failure should not block the billing-status response.
+  let setupDispatched = false;
+  try {
+    await invokeSetupFunction({
+      supabaseUrl,
+      serviceRoleKey,
+      functionName: "paid-workspace-setup",
+      body: {
+        checkoutSessionId: checkout.id,
+        phase: "discovery",
+      },
+    });
+    setupDispatched = true;
+  } catch {
+    // Setup will be retried on the next billing-status poll or via retrySetup.
+  }
 
-  return { checkout: updatedCheckout ?? { ...checkout, artist_workspace_id: workspace.artist_workspace_id }, setupDispatched: true };
+  return { checkout: updatedCheckout ?? { ...checkout, artist_workspace_id: workspace.artist_workspace_id }, setupDispatched };
 }
 
 function validatePaystackAmount(checkout: any, data: Record<string, any>) {
