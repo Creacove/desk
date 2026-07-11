@@ -51,6 +51,14 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain('catalogState === "completed" || catalogState === "completed_with_limits"');
   });
 
+  it("reconciles a completed discovery event when the setup stage was left running", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+
+    expect(text).toContain("reconcileCompletedDiscoveryStage");
+    expect(text).toContain('event_type", "manager_discovery_completed"');
+    expect(text).toContain('manager_discovery: { status: "completed"');
+  });
+
   it("re-enters catalog bootstrap when contextual setup observes a failed or incomplete catalog", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
     const contextualize = text.slice(

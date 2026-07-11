@@ -913,7 +913,7 @@ function CleanProductionWorkspace({
       return generateTodaysBrief("setup-map");
     }
 
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (;;) {
       const result = await billingService.runSetupPhase({ checkoutSessionId, phase: "contextualize" });
       if (result.status === "completed" || result.status === "completed_with_limits") {
         if (!result.brief) {
@@ -928,7 +928,6 @@ function CleanProductionWorkspace({
       }
       await delay(2000);
     }
-    throw new Error("Discovery is still running. Retry to finish the context-aware setup read.");
   }
 
   async function runMissionGenesis() {

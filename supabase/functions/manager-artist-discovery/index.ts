@@ -225,30 +225,6 @@ Deno.serve(async (request) => {
     // Write completion operating event
     await writeOperatingEvent(db, input, "manager_discovery_completed", `Autonomous onboarding discovery completed for ${input.artistName}.`, discoveryOutput);
 
-    // Trigger Today's Brief (Setup Map Brief) Generation
-    await writeOperatingEvent(db, input, "manager_discovery_generating_brief", `Generating initial Setup Operating Map brief for ${input.artistName}.`);
-    const briefResponse = await fetch(`${supabaseUrl}/functions/v1/generate-todays-brief`, {
-      method: "POST",
-      headers: {
-        Authorization: scopedAuthHeader,
-        apikey: isServiceRoleInvocation ? serviceRoleKey : anonKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        accountId: input.accountId,
-        artistWorkspaceId: input.artistWorkspaceId,
-        artistId: input.artistId,
-        trigger: "setup",
-        dispatchMusicReads: false,
-      }),
-    });
-
-    if (!briefResponse.ok) {
-      throw new Error(`Failed to generate initial Today's Brief: ${briefResponse.status}`);
-    }
-
-    await writeOperatingEvent(db, input, "manager_discovery_brief_generated", `Initial Setup Operating Map brief generated for ${input.artistName}.`);
-
     if (input.setupRunId) {
       await completeDiscoverySetupStage(db, input.setupRunId, failedTools.length > 0);
     }

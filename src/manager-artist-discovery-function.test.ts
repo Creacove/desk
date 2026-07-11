@@ -90,25 +90,29 @@ describe("Manager artist discovery edge function", () => {
     expect(discoveryFunctionSource).toContain("maxToolCalls: MAX_DISCOVERY_TOOL_CALLS");
   });
 
-  it("continues to setup brief generation with logged limitations when a non-critical tool fails after useful work", () => {
+  it("continues to durable discovery completion with logged limitations when a non-critical tool fails after useful work", () => {
     expect(discoveryFunctionSource).toContain("manager_discovery_completed_with_limits");
     expect(discoveryFunctionSource).toContain("tool_failures");
     expect(discoveryFunctionSource).not.toContain("Manager discovery had failed tools");
 
     const failedToolsIndex = discoveryFunctionSource.indexOf("const failedTools = result.toolTrace.filter");
-    const briefIndex = discoveryFunctionSource.indexOf("generate-todays-brief");
+    const completionIndex = discoveryFunctionSource.indexOf("completeDiscoverySetupStage");
     expect(failedToolsIndex).toBeGreaterThan(-1);
-    expect(briefIndex).toBeGreaterThan(failedToolsIndex);
+    expect(completionIndex).toBeGreaterThan(failedToolsIndex);
   });
 
-  it("writes operating events for setup streaming and triggers the setup-map brief", () => {
+  it("persists discovery completion before dispatching the context-aware setup phase", () => {
     expect(discoveryFunctionSource).toContain("manager_discovery_started");
     expect(discoveryFunctionSource).toContain("manager_discovery_tool_");
     expect(discoveryFunctionSource).toContain("manager_discovery_completed");
-    expect(discoveryFunctionSource).toContain("manager_discovery_generating_brief");
-    expect(discoveryFunctionSource).toContain("manager_discovery_brief_generated");
-    expect(discoveryFunctionSource).toContain("generate-todays-brief");
-    expect(discoveryFunctionSource).toContain('trigger: "setup"');
+    expect(discoveryFunctionSource).not.toContain("manager_discovery_generating_brief");
+    expect(discoveryFunctionSource).not.toContain("manager_discovery_brief_generated");
+    expect(discoveryFunctionSource).not.toContain("generate-todays-brief");
+
+    const completionIndex = discoveryFunctionSource.indexOf("await completeDiscoverySetupStage");
+    const contextualizeIndex = discoveryFunctionSource.indexOf("scheduleBackgroundTask(dispatchContextualizePhase");
+    expect(completionIndex).toBeGreaterThan(-1);
+    expect(contextualizeIndex).toBeGreaterThan(completionIndex);
   });
 
   it("loads Spotify catalog context from the stored metadata shape before selecting focus assets", () => {

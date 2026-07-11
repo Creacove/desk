@@ -152,6 +152,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     return { status: "waiting_for_context", phase: "contextualize" };
   }
 
+  contextStages = await reconcileCompletedDiscoveryStage(db, workspace, contextStages);
   const discoveryState = stageState(contextStages, "manager_discovery");
   if (!["completed", "completed_with_limits"].includes(discoveryState)) {
     const catalogState = stageState(contextStages, "catalog_bootstrap");
@@ -236,6 +237,29 @@ async function recoverCatalogBeforeContextualize(args: any) {
     status: "waiting_for_catalog",
     phase: "contextualize",
   }));
+}
+
+async function reconcileCompletedDiscoveryStage(db: any, workspace: any, stages: StageStatus) {
+  if (stageState(stages, "manager_discovery") !== "running") return stages;
+  const discoveryStage = stages.manager_discovery;
+  const startedAt = typeof discoveryStage === "object" && typeof discoveryStage.started_at === "string"
+    ? discoveryStage.started_at
+    : null;
+  let query = db
+    .from("operating_events")
+    .select("created_at")
+    .eq("artist_workspace_id", workspace.id)
+    .eq("event_type", "manager_discovery_completed")
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (startedAt) query = query.gte("created_at", startedAt);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  if (!data?.created_at) return stages;
+  return {
+    ...stages,
+    manager_discovery: { status: "completed", completed_at: data.created_at },
+  };
 }
 
 async function loadCompletedSetupResult(db: any, workspace: any) {
