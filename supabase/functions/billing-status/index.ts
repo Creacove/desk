@@ -36,7 +36,7 @@ Deno.serve(async (request) => {
     if (userError || !user) return json({ error: "Unauthorized." }, 401);
 
     const input = (await request.json()) as BillingStatusInput;
-    const checkout = await findCheckout(serviceClient, input, user.id);
+    let checkout = await findCheckout(serviceClient, input, user.id);
     if (!checkout) {
       return json({
         checkoutStatus: "missing",
@@ -47,8 +47,33 @@ Deno.serve(async (request) => {
       });
     }
 
-    if (input.retrySetup && checkout.status === "paid") {
-      await serviceClient.rpc("activate_paid_artist_workspace", { p_checkout_session_id: checkout.id });
+    let setupDispatched = false;
+    if (input.reference && checkout.status !== "paid") {
+      const verified = await verifyPaystackTransaction(input.reference, requireEnv("PAYSTACK_SECRET_KEY"));
+      if (verified) {
+        const activated = await activateVerifiedPaystackCheckout({
+          serviceClient,
+          checkout,
+          transaction: verified,
+          supabaseUrl,
+          serviceRoleKey,
+          source: "billing_status_verify",
+        });
+        checkout = activated.checkout;
+        setupDispatched = setupDispatched || activated.setupDispatched;
+      }
+    }
+
+    if (checkout.status === "paid") {
+      const repaired = await ensureActiveSubscriptionForCheckout({
+        serviceClient,
+        checkout,
+        supabaseUrl,
+        serviceRoleKey,
+        source: "billing_status_repair",
+      });
+      checkout = repaired.checkout;
+      setupDispatched = setupDispatched || repaired.setupDispatched;
     }
 
     const [subscriptionResult, setupResult, workspaceResult] = await Promise.all([
@@ -100,7 +125,7 @@ Deno.serve(async (request) => {
       checkoutStatus: checkout.status,
       subscriptionStatus: subscription?.status ?? "none",
       entitlementActive,
-      setupStatus: retryDispatched ? "running" : setupResult.data?.status ?? (checkout.status === "paid" ? "queued" : "not_started"),
+      setupStatus: retryDispatched || setupDispatched ? "running" : setupResult.data?.status ?? (checkout.status === "paid" ? "queued" : "not_started"),
       setupStage: setupResult.data?.current_stage,
       workspace: workspaceResult,
       authorizationUrl: checkout.authorization_url,
@@ -134,6 +159,158 @@ async function invokeSetupFunction({ supabaseUrl, serviceRoleKey, functionName, 
     const payload = await response.text();
     throw new Error(payload || `Paid workspace setup retry failed with ${response.status}.`);
   }
+}
+
+async function verifyPaystackTransaction(reference: string, secretKey: string) {
+  const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json",
+    },
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    throw new Error(body || `Paystack verification failed with ${response.status}.`);
+  }
+  const payload = await response.json().catch(() => null) as { status?: boolean; data?: Record<string, any> } | null;
+  const data = payload?.data;
+  const status = String(data?.status ?? "").toLowerCase();
+  if (payload?.status !== true || !["success", "successful"].includes(status)) {
+    return null;
+  }
+  return data;
+}
+
+async function activateVerifiedPaystackCheckout({ serviceClient, checkout, transaction, supabaseUrl, serviceRoleKey, source }: {
+  serviceClient: any;
+  checkout: any;
+  transaction: Record<string, any>;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  source: string;
+}) {
+  validatePaystackAmount(checkout, transaction);
+  const providerSubscriptionCode = readSubscriptionCode(transaction) ?? checkout.provider_subscription_code ?? `paystack_charge_${checkout.provider_reference}`;
+  const providerCustomerCode = readCustomerCode(transaction) ?? checkout.provider_customer_code;
+  const { data: updatedCheckout, error: updateError } = await serviceClient
+    .from("billing_checkout_sessions")
+    .update({
+      status: "paid",
+      provider_customer_code: providerCustomerCode,
+      provider_subscription_code: providerSubscriptionCode,
+      paid_at: checkout.paid_at ?? new Date().toISOString(),
+    })
+    .eq("id", checkout.id)
+    .select("*")
+    .maybeSingle();
+  if (updateError) throw updateError;
+
+  return ensureActiveSubscriptionForCheckout({
+    serviceClient,
+    checkout: updatedCheckout ?? {
+      ...checkout,
+      status: "paid",
+      provider_customer_code: providerCustomerCode,
+      provider_subscription_code: providerSubscriptionCode,
+    },
+    supabaseUrl,
+    serviceRoleKey,
+    source,
+    transaction,
+  });
+}
+
+async function ensureActiveSubscriptionForCheckout({ serviceClient, checkout, supabaseUrl, serviceRoleKey, source, transaction }: {
+  serviceClient: any;
+  checkout: any;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  source: string;
+  transaction?: Record<string, any> | null;
+}) {
+  const { data: activated, error: activationError } = await serviceClient.rpc("activate_paid_artist_workspace", {
+    p_checkout_session_id: checkout.id,
+  });
+  if (activationError) throw activationError;
+  const workspace = Array.isArray(activated) ? activated[0] : activated;
+  if (!workspace?.account_id || !workspace?.artist_workspace_id) {
+    throw new Error("Paid workspace activation did not return a workspace.");
+  }
+
+  const providerSubscriptionCode =
+    readSubscriptionCode(transaction ?? {}) ??
+    checkout.provider_subscription_code ??
+    `paystack_charge_${checkout.provider_reference}`;
+  const providerCustomerCode = readCustomerCode(transaction ?? {}) ?? checkout.provider_customer_code ?? null;
+
+  const { error: subscriptionError } = await serviceClient.from("billing_subscriptions").upsert(
+    {
+      account_id: workspace.account_id,
+      artist_workspace_id: workspace.artist_workspace_id,
+      user_id: checkout.user_id,
+      checkout_session_id: checkout.id,
+      provider: "paystack",
+      provider_subscription_code: providerSubscriptionCode,
+      provider_customer_code: providerCustomerCode,
+      provider_plan_code: checkout.provider_plan_code,
+      amount_minor: checkout.amount_minor,
+      amount: checkout.amount,
+      currency: checkout.currency,
+      status: "active",
+      current_period_start: readPeriodStart(transaction ?? {}),
+      current_period_end: readPeriodEnd(transaction ?? {}),
+      metadata: { source },
+    },
+    { onConflict: "provider,provider_subscription_code" },
+  );
+  if (subscriptionError) throw subscriptionError;
+
+  const { data: updatedCheckout, error: checkoutError } = await serviceClient
+    .from("billing_checkout_sessions")
+    .select("*")
+    .eq("id", checkout.id)
+    .maybeSingle();
+  if (checkoutError) throw checkoutError;
+
+  await invokeSetupFunction({
+    supabaseUrl,
+    serviceRoleKey,
+    functionName: "paid-workspace-setup",
+    body: {
+      checkoutSessionId: checkout.id,
+      phase: "discovery",
+    },
+  });
+
+  return { checkout: updatedCheckout ?? { ...checkout, artist_workspace_id: workspace.artist_workspace_id }, setupDispatched: true };
+}
+
+function validatePaystackAmount(checkout: any, data: Record<string, any>) {
+  const paidAmount = Number(data.amount ?? checkout.amount_minor);
+  const paidCurrency = String(data.currency ?? checkout.currency).toUpperCase();
+  if (paidAmount !== Number(checkout.amount_minor)) {
+    throw new Error("Paystack amount did not match checkout session.");
+  }
+  if (paidCurrency !== String(checkout.currency).toUpperCase()) {
+    throw new Error("Paystack currency did not match checkout session.");
+  }
+}
+
+function readSubscriptionCode(data: Record<string, any>) {
+  return data.subscription_code ?? data.subscription?.subscription_code ?? data.subscription?.id ?? null;
+}
+
+function readCustomerCode(data: Record<string, any>) {
+  return data.customer_code ?? data.customer?.customer_code ?? null;
+}
+
+function readPeriodStart(data: Record<string, any>) {
+  return data.period_start ?? data.subscription?.current_period_start ?? null;
+}
+
+function readPeriodEnd(data: Record<string, any>) {
+  return data.period_end ?? data.subscription?.current_period_end ?? data.subscription?.next_payment_date ?? null;
 }
 
 async function findCheckout(serviceClient: any, input: BillingStatusInput, userId: string) {

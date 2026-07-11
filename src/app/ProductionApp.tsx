@@ -1766,9 +1766,9 @@ function PaymentReturnScreen({
   const body =
     state.message ??
     (state.status === "checking"
-      ? "Checking Paystack confirmation for this checkout."
+      ? "Checking secure checkout confirmation."
       : state.status === "waiting"
-        ? "Waiting for Paystack webhook confirmation. Keep this tab open."
+        ? "Waiting for secure payment confirmation. Keep this tab open."
         : state.status === "ready"
           ? "Payment confirmed. Opening Desk HQ."
           : "This payment could not be matched to the signed-in account.");
@@ -1986,7 +1986,7 @@ function SpotifyIdentityGate({
     return (
       <BrandedLoader
         title={`Preparing ${selectedArtistName} Desk`}
-        body="Reading Spotify catalog before checkout."
+        body="Reading public catalog before checkout."
         steps={["Artist identity", "Latest project", "Recent singles", "Secure checkout"]}
         logoTestId="auth-brand-logo"
       />
@@ -2204,7 +2204,7 @@ async function refreshPaymentReturnStatus(
     setPaymentReturn({
       reference,
       status: "waiting",
-      message: billingStatus.message ?? "Waiting for Paystack confirmation. Desk access opens only after the verified webhook updates billing.",
+      message: billingStatus.message ?? "Waiting for secure payment confirmation. Desk access opens only after billing is verified.",
     });
   } catch (statusError) {
     setPaymentReturn({

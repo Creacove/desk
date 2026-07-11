@@ -199,7 +199,7 @@ export function SetupScreen({
               <div className="flex items-center gap-3">
                 <ArtistAvatar name={profile.name} imageUrl={profile.imageUrl} />
                 <div className="min-w-0">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#16883f]">Spotify artist</p>
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#16883f]">Artist source</p>
                   <p className="mt-1 truncate text-[13px] font-bold text-foreground">{profile.name}</p>
                 </div>
               </div>
@@ -213,7 +213,7 @@ export function SetupScreen({
           <div className="rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl">
             <div className="grid gap-3 sm:grid-cols-2">
               <SetupInput label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
-              <SetupInput label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} active />
+              <SetupInput label="Artist identity" value={profile.spotify} onChange={(value) => update("spotify", value)} active />
               <ArtistDirectionField value={profile.goal} onChange={(value) => update("goal", value)} />
               <SetupInput label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
             </div>
@@ -225,7 +225,7 @@ export function SetupScreen({
                 {!complete ? (
                   <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">
                     {hasRequiredContext(profile)
-                      ? "Desk HQ can open while Spotify catalog import continues in the background."
+                      ? "Desk HQ can open while catalog import continues in the background."
                       : "Add artist direction and monthly budget to enter Desk HQ."}
                   </p>
                 ) : null}
@@ -307,13 +307,13 @@ export function PaywallPreviewScreen({
           Back to artist search
         </button>
 
-        <section className="relative mt-3 grid min-h-0 flex-1 overflow-hidden rounded-[14px] border border-foreground/10 bg-white/84 shadow-[0_24px_80px_rgba(17,19,24,0.14)] dark:border-white/10 dark:bg-[#11141a]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.34)] lg:grid-cols-[11.5rem_minmax(0,1fr)]">
-          <aside className="hidden border-r border-foreground/8 bg-foreground/[0.035] p-3 dark:border-white/10 dark:bg-white/[0.07] lg:block" aria-label="Locked Desk navigation preview">
+        <section className="relative mt-3 grid min-h-0 flex-1 overflow-hidden rounded-[14px] border border-foreground/10 bg-white/84 shadow-[0_24px_80px_rgba(17,19,24,0.14)] dark:border-white/10 dark:bg-[#11141a]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.34)] lg:grid-cols-[12rem_minmax(0,1fr)]">
+          <aside className="hidden border-r border-foreground/8 bg-foreground/[0.04] p-3 dark:border-white/10 dark:bg-white/[0.09] lg:block" aria-label="Locked Desk navigation preview">
             <div className="flex items-center gap-3">
               <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
               <div className="min-w-0">
                 <p className="truncate text-[13px] font-bold text-foreground">{artist.name} Desk</p>
-                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#16883f]">Spotify found</p>
+                <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#16883f]">Artist found</p>
               </div>
             </div>
             <div className="mt-5 grid gap-2">
@@ -329,40 +329,40 @@ export function PaywallPreviewScreen({
           <div className="relative min-h-0 overflow-hidden p-3 sm:p-4 lg:p-5">
             <div className="pointer-events-none absolute inset-0 blur-[4px]" aria-hidden="true">
               <div className="grid gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(17rem,0.75fr)]">
-                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.08]">
+                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.12]">
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Today's Brief</p>
                   <div className="mt-4 h-6 w-3/4 rounded bg-foreground/14 dark:bg-white/22" />
                   <div className="mt-3 h-3 w-full rounded bg-foreground/10 dark:bg-white/18" />
                   <div className="mt-2 h-3 w-5/6 rounded bg-foreground/10 dark:bg-white/18" />
                   <div className="mt-5 grid gap-2 sm:grid-cols-3">
                     {[0, 1, 2].map((index) => (
-                      <div key={index} className="rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.095]">
-                        <div className="h-3 w-16 rounded bg-foreground/12 dark:bg-white/22" />
-                        <div className="mt-4 h-7 rounded bg-foreground/10 dark:bg-white/18" />
+                      <div key={index} className="rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.14]">
+                        <div className="h-3 w-16 rounded bg-foreground/12 dark:bg-white/28" />
+                        <div className="mt-4 h-7 rounded bg-foreground/10 dark:bg-white/22" />
                       </div>
                     ))}
                   </div>
                 </div>
-                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.08]">
+                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.12]">
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Attention Queue</p>
                   {[0, 1, 2].map((index) => (
-                    <div key={index} className="mt-3 rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.095]">
-                      <div className="h-3 w-2/3 rounded bg-foreground/12 dark:bg-white/22" />
-                      <div className="mt-3 h-3 w-full rounded bg-foreground/10 dark:bg-white/18" />
+                    <div key={index} className="mt-3 rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.14]">
+                      <div className="h-3 w-2/3 rounded bg-foreground/12 dark:bg-white/28" />
+                      <div className="mt-3 h-3 w-full rounded bg-foreground/10 dark:bg-white/22" />
                     </div>
                   ))}
                 </div>
-                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.08] lg:col-span-2">
+                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.12] lg:col-span-2">
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Locked Agent Workspace</p>
                   <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                     {["Manager", "A&R", "Catalog", "Campaign"].map((label) => (
-                      <div key={label} className="rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.095]">
+                      <div key={label} className="rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.14]">
                         <div className="flex items-center justify-between">
                           <span className="text-[13px] font-bold text-foreground/70">{label}</span>
                           <Lock className="h-3.5 w-3.5 text-muted-foreground" />
                         </div>
-                        <div className="mt-5 h-3 rounded bg-foreground/10 dark:bg-white/18" />
-                        <div className="mt-2 h-3 w-2/3 rounded bg-foreground/10 dark:bg-white/18" />
+                        <div className="mt-5 h-3 rounded bg-foreground/10 dark:bg-white/22" />
+                        <div className="mt-2 h-3 w-2/3 rounded bg-foreground/10 dark:bg-white/22" />
                       </div>
                     ))}
                   </div>
@@ -370,8 +370,8 @@ export function PaywallPreviewScreen({
               </div>
             </div>
 
-            <div className="absolute inset-0 bg-background/50 dark:bg-[#0d0f13]/62" />
-            <div className="relative z-10 grid h-full min-h-0 items-center gap-4 overflow-y-auto py-3 lg:grid-cols-[minmax(0,1fr)_minmax(22rem,26rem)] lg:overflow-hidden lg:py-0">
+            <div className="absolute inset-0 bg-background/48 dark:bg-[#0d0f13]/58" />
+            <div className="relative z-10 grid h-full min-h-0 items-center gap-4 overflow-y-auto py-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(20rem,23rem)] lg:overflow-hidden lg:py-0">
               <div className="min-w-0 self-stretch" aria-label="Locked catalog preview">
                 <div className="grid h-full min-h-[23rem] gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(15rem,0.7fr)]">
                   <section className="relative overflow-hidden rounded-[14px] border border-foreground/10 bg-white/72 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.09]">
@@ -389,7 +389,7 @@ export function PaywallPreviewScreen({
                       )}
                     </div>
                     <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground">
-                      Spotify preview found the public release surface. The paid setup will refetch and persist evidence after checkout.
+                      We matched the public release surface. The private setup refetches and stores evidence after checkout.
                     </p>
                     <div className="mt-4 flex flex-wrap gap-1.5">
                       {visibleProjectTracks.length ? (
@@ -400,7 +400,7 @@ export function PaywallPreviewScreen({
                         ))
                       ) : (
                         <span className="rounded-md border border-foreground/8 bg-background/86 px-2 py-1 text-[10px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.11]">
-                          Spotify identity confirmed
+                          Artist identity confirmed
                         </span>
                       )}
                       {hiddenProjectTrackCount ? (
@@ -424,7 +424,7 @@ export function PaywallPreviewScreen({
                       ) : (
                         <div className="rounded-[10px] border border-foreground/8 bg-background/82 px-3 py-2 dark:border-white/10 dark:bg-white/[0.11]">
                           <p className="text-[12px] font-bold text-foreground">Recent singles will appear here</p>
-                          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Spotify preview</p>
+                          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Public preview</p>
                         </div>
                       )}
                     </div>
@@ -435,7 +435,7 @@ export function PaywallPreviewScreen({
                       <div>
                         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Behind the lock</p>
                         <p className="mt-2 max-w-[36rem] text-[13px] font-semibold leading-relaxed text-muted-foreground">
-                          Chartmetric enrichment, public research, Manager synthesis, and song/project reads start only after subscription activation.
+                          Audience intelligence, public research, Manager synthesis, and song/project reads start only after subscription activation.
                         </p>
                       </div>
                       <span className="hidden items-center gap-2 rounded-full border border-foreground/10 bg-background/80 px-3 py-1.5 text-[11px] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.11] md:inline-flex">
@@ -447,23 +447,23 @@ export function PaywallPreviewScreen({
                 </div>
               </div>
 
-              <section aria-label="Subscription checkout" className="w-full rounded-[16px] border border-foreground/10 bg-white/95 p-4 shadow-[0_24px_80px_rgba(17,19,24,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#171b22]/95 dark:shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-5">
+              <section aria-label="Subscription checkout" className="w-full rounded-[18px] border border-foreground/10 bg-white/96 p-4 shadow-[0_24px_80px_rgba(17,19,24,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#171b22]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-5">
                 <div className="flex items-center gap-3">
                   <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-bold text-foreground">{artist.name}</p>
-                    <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">Spotify catalog matched</p>
+                    <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">Catalog matched</p>
                   </div>
                 </div>
 
-                <h1 className="font-display mt-5 text-[23px] font-black leading-[1.04] tracking-tight text-foreground sm:text-[26px]">
+                <h1 className="font-display mt-5 text-[22px] font-black leading-[1.04] tracking-tight text-foreground sm:text-[25px]">
                   Unlock {artist.name} Desk
                 </h1>
                 <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground">
-                  Payment starts the private setup run: catalog import, Chartmetric enrichment, Manager brief, and music reads.
+                  Your desk opens with catalog import, audience intelligence, Manager brief, and music reads.
                 </p>
 
-                <div className="mt-5 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-4 dark:border-white/10 dark:bg-white/[0.065]">
+                <div className="mt-5 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-4 dark:border-white/10 dark:bg-white/[0.075]">
                   <p className="font-ui text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Subscription</p>
                   <div className="mt-2 flex items-end justify-between gap-4">
                     <p className="text-[28px] font-black leading-none text-foreground">{price}/month</p>
@@ -473,7 +473,7 @@ export function PaywallPreviewScreen({
                     </span>
                   </div>
                   <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground">
-                    Cancel anytime. Setup begins only after Paystack confirms the subscription.
+                    Cancel anytime. Setup begins only after secure checkout confirms the subscription.
                   </p>
                 </div>
 
@@ -496,7 +496,7 @@ export function PaywallPreviewScreen({
                   rel="noreferrer"
                   className="mt-4 block truncate text-center text-[12px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
                 >
-                  View Spotify source
+                  View artist source
                 </a>
               </section>
             </div>
@@ -620,11 +620,11 @@ function hasRequiredContext(profile: ArtistProfileViewModel) {
 
 function getCatalogStatusMessage(status: "queued" | "running" | "needs_context" | "completed" | "completed_with_limits" | "failed" | "cancelled" | undefined) {
   if (status === "queued" || status === "running") {
-    return "Spotify catalog import is running in the background.";
+    return "Catalog import is running in the background.";
   }
 
   if (status === "completed_with_limits") {
-    return "Spotify catalog import completed with public catalog limits.";
+    return "Catalog import completed with public catalog limits.";
   }
 
   return null;

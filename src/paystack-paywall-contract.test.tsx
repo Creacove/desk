@@ -116,7 +116,7 @@ describe("Paystack paywall contract", () => {
     expect(functionSource).not.toContain("genres: artist.genres");
   });
 
-  it("renders a locked Desk HQ preview with real Spotify identity and no fake generated insights", () => {
+  it("renders a locked Desk HQ preview with real artist identity and no fake generated insights", () => {
     const onSubscribe = vi.fn();
 
     render(
@@ -157,7 +157,8 @@ describe("Paystack paywall contract", () => {
     expect(within(subscriptionCard).queryByText("Open Window")).not.toBeInTheDocument();
 
     expect(screen.queryByText(/followers/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/payment starts the private setup run/i)).toBeInTheDocument();
+    expect(screen.getByText(/your desk opens with catalog import, audience intelligence, manager brief, and music reads/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Spotify|Chartmetric|Paystack|webhook|API|AI setup/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(/locked/i).length).toBeGreaterThan(2);
     expect(screen.queryByText(/London is the clearest pressure point/i)).not.toBeInTheDocument();
 

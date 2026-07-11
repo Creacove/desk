@@ -6,8 +6,6 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-declare const EdgeRuntime: { waitUntil?: (task: Promise<unknown>) => void } | undefined;
-
 type PaystackEvent = {
   event: string;
   data?: Record<string, any>;
@@ -61,12 +59,11 @@ Deno.serve(async (request) => {
   }
 
   if (storedEvent?.id) {
-    const task = processPaystackEvent(db, event, storedEvent.id)
-      .catch((error) => recordWebhookFailure(db, storedEvent.id, error));
-    if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime.waitUntil === "function") {
-      EdgeRuntime.waitUntil(task);
-    } else {
-      task.catch(() => undefined);
+    try {
+      await processPaystackEvent(db, event, storedEvent.id);
+    } catch (error) {
+      await recordWebhookFailure(db, storedEvent.id, error);
+      return json({ error: error instanceof Error ? error.message : "Webhook processing failed." }, 500);
     }
   }
 
@@ -163,7 +160,7 @@ async function activateSubscription(db: any, event: PaystackEvent) {
   );
   if (subscriptionError) throw subscriptionError;
 
-  scheduleBackgroundTask(dispatchPaidSetup(checkout.id));
+  await dispatchPaidSetup(checkout.id);
 }
 
 async function dispatchPaidSetup(checkoutSessionId: string) {
@@ -181,13 +178,6 @@ async function dispatchPaidSetup(checkoutSessionId: string) {
   if (!response.ok) {
     const body = await response.text();
     throw new Error(body || `Paid workspace setup dispatch failed with ${response.status}.`);
-  }
-}
-
-function scheduleBackgroundTask(task: Promise<unknown>) {
-  task.catch((error) => console.error("paid workspace setup dispatch failed", error));
-  if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime.waitUntil === "function") {
-    EdgeRuntime.waitUntil(task);
   }
 }
 
@@ -256,7 +246,7 @@ function eventKey(event: PaystackEvent) {
 }
 
 function readReference(event: PaystackEvent) {
-  return event.data?.reference ?? event.data?.transaction_reference ?? event.data?.metadata?.reference ?? null;
+  return event.data?.reference ?? event.data?.transaction_reference ?? event.data?.transaction?.reference ?? event.data?.metadata?.reference ?? null;
 }
 
 function readSubscriptionCode(event: PaystackEvent) {

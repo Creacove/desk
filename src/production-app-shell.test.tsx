@@ -316,7 +316,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("button", { name: "Select Spotify artist Nova Vale" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Spotify artist Nova Vale" }));
     expect(await screen.findByRole("heading", { name: "Preparing Nova Vale Desk" })).toBeInTheDocument();
-    expect(screen.getByText("Reading Spotify catalog before checkout.")).toBeInTheDocument();
+    expect(screen.getByText("Reading public catalog before checkout.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Connect artist profile" })).not.toBeInTheDocument();
 
     await act(async () => {
@@ -340,7 +340,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("$20/month")).toBeInTheDocument();
     expect(screen.getByText("Nova Season")).toBeInTheDocument();
     expect(screen.getByText("First Move")).toBeInTheDocument();
-    expect(screen.getByText(/payment starts the private setup run/i)).toBeInTheDocument();
+    expect(screen.getByText(/your desk opens with catalog import, audience intelligence, manager brief, and music reads/i)).toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
   }, 20000);
@@ -411,7 +411,7 @@ describe("Clean production prototype-match shell", () => {
     expect(saves).toEqual(["|||Build Nova Vale around precise catalog proof before scale spend.|$3,000"]);
   }, 20000);
 
-  it("saves artist context and enters Desk HQ while Spotify catalog import is still running", async () => {
+  it("saves artist context and enters Desk HQ while catalog import is still running", async () => {
     const setupWorkspace = {
       ...workspace,
       status: "setup",
@@ -440,7 +440,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    expect(screen.getByText(/spotify catalog import is running in the background/i)).toBeInTheDocument();
+    expect(screen.getByText(/catalog import is running in the background/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
     expect(screen.getByTestId("setup-save-loader")).toBeInTheDocument();
     resolveSave?.({

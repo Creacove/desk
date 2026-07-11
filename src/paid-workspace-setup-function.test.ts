@@ -39,7 +39,29 @@ describe("paid workspace setup orchestration", () => {
     expect(subscriptionWrite).toBeGreaterThan(-1);
     expect(setupDispatch).toBeGreaterThan(subscriptionWrite);
     expect(text).toContain('phase: "discovery"');
-    expect(text).toContain("EdgeRuntime.waitUntil");
+  });
+
+  it("does not acknowledge Paystack activation before processing subscription and setup dispatch", () => {
+    const text = source("supabase", "functions", "paystack-webhook", "index.ts");
+
+    expect(text).toContain("await processPaystackEvent(db, event, storedEvent.id)");
+    expect(text).not.toContain("EdgeRuntime.waitUntil(task)");
+    expect(text).not.toContain("task.catch(() => undefined)");
+  });
+
+  it("matches Paystack events that carry the transaction reference on the nested transaction object", () => {
+    const text = source("supabase", "functions", "paystack-webhook", "index.ts");
+
+    expect(text).toContain("event.data?.transaction?.reference");
+  });
+
+  it("verifies and repairs paid checkout activation from billing status when the webhook is delayed", () => {
+    const text = source("supabase", "functions", "billing-status", "index.ts");
+
+    expect(text).toContain("verifyPaystackTransaction");
+    expect(text).toContain("activateVerifiedPaystackCheckout");
+    expect(text).toContain("ensureActiveSubscriptionForCheckout");
+    expect(text).toContain('phase: "discovery"');
   });
 
   it("routes manual setup retries back through the paid setup orchestrator", () => {
