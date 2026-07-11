@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
-import { loadSpotifyCatalogPreview } from "../supabase/functions/_shared/spotifyCatalogPreview";
+import { loadSpotifyCatalogPreview, spotifyRetryDelayMs } from "../supabase/functions/_shared/spotifyCatalogPreview";
+import { parseSpotifyRetryAfterMs } from "../supabase/functions/_shared/spotifyCatalogClient";
 
 describe("Spotify catalog preview", () => {
   it("loads the latest project tracklist and up to five standalone singles without a repository", async () => {
@@ -76,6 +77,16 @@ describe("Spotify catalog preview", () => {
     expect(attempts).toBe(3);
     expect(preview.artist.name).toBe("Nova Vale");
     expect(preview.latestProject).toBeUndefined();
+  });
+
+  it("honors Spotify Retry-After instead of immediately repeating a rate-limited request", () => {
+    const rateLimitError = Object.assign(new Error("Spotify request failed with 429."), {
+      retryAfterMs: 12_000,
+    });
+
+    expect(spotifyRetryDelayMs(rateLimitError, 750)).toBe(12_000);
+    expect(spotifyRetryDelayMs(new Error("Spotify request failed with 503."), 750)).toBe(750);
+    expect(parseSpotifyRetryAfterMs("12", 0)).toBe(12_000);
   });
 
   it("exposes an authenticated preview function without database writes or entitlement checks", () => {

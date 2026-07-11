@@ -47,7 +47,7 @@ export async function loadSpotifyCatalogPreview({
   artistId,
   market = "US",
   spotify,
-  retryDelaysMs = [250, 750],
+  retryDelaysMs = [1000, 3000, 7000],
 }: {
   artistId: string;
   market?: string;
@@ -66,7 +66,7 @@ export async function loadSpotifyCatalogSelection({
   artistId,
   market = "US",
   spotify,
-  retryDelaysMs = [250, 750],
+  retryDelaysMs = [1000, 3000, 7000],
 }: {
   artistId: string;
   market?: string;
@@ -121,10 +121,18 @@ async function withRetries<T>(operation: () => Promise<T>, retryDelaysMs: number
     } catch (error) {
       lastError = error;
       if (attempt >= retryDelaysMs.length || !isTransientSpotifyError(error)) throw error;
-      await delay(retryDelaysMs[attempt]);
+      await delay(spotifyRetryDelayMs(error, retryDelaysMs[attempt]));
     }
   }
   throw lastError;
+}
+
+export function spotifyRetryDelayMs(error: unknown, fallbackMs: number) {
+  if (!error || typeof error !== "object" || !("retryAfterMs" in error)) return fallbackMs;
+  const retryAfterMs = Number((error as { retryAfterMs?: unknown }).retryAfterMs);
+  return Number.isFinite(retryAfterMs) && retryAfterMs > 0
+    ? Math.max(fallbackMs, retryAfterMs)
+    : fallbackMs;
 }
 
 function isTransientSpotifyError(error: unknown) {

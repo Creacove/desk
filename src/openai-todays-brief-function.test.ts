@@ -118,6 +118,23 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain('subjectType: "music_item"');
   });
 
+  it("dispatches one staggered music-read wave only when the caller enables it", () => {
+    expect(functionSource).toContain("dispatchMusicReads?: boolean");
+    expect(functionSource).toContain("input.dispatchMusicReads !== false");
+    expect(functionSource).toContain("index * 500");
+
+    const discoverySource = readFileSync(
+      join(process.cwd(), "supabase", "functions", "manager-artist-discovery", "index.ts"),
+      "utf8",
+    );
+    const setupSource = readFileSync(
+      join(process.cwd(), "supabase", "functions", "paid-workspace-setup", "index.ts"),
+      "utf8",
+    );
+    expect(discoverySource).toContain("dispatchMusicReads: false");
+    expect(setupSource).toContain("dispatchMusicReads: true");
+  });
+
   it("uses stable packet evidence IDs for setup metadata metrics", () => {
     expect(functionSource).toContain('evidenceIds: ["working-catalog-scope"]');
     expect(functionSource).toContain('evidenceIds: ["latest-project-in-view"]');

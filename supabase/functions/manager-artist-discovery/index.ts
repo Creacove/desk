@@ -239,6 +239,7 @@ Deno.serve(async (request) => {
         artistWorkspaceId: input.artistWorkspaceId,
         artistId: input.artistId,
         trigger: "setup",
+        dispatchMusicReads: false,
       }),
     });
 

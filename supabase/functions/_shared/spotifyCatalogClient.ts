@@ -7,6 +7,7 @@ import type {
 } from "./spotifyCatalogBootstrap.ts";
 
 const spotifyTimeoutMs = 15000;
+const maximumSpotifyRetryAfterMs = 30000;
 
 /**
  * Builds a Spotify Web API client using the Client Credentials flow. Shared by
@@ -77,10 +78,26 @@ async function fetchSpotifyJson<T>(url: string, init: RequestInit) {
   const response = await fetchWithTimeout(url, init);
 
   if (!response.ok) {
-    throw new Error(`Spotify ${new URL(url).pathname} failed with ${response.status}.`);
+    const error = new Error(`Spotify ${new URL(url).pathname} failed with ${response.status}.`);
+    if (response.status === 429) {
+      Object.assign(error, {
+        retryAfterMs: parseSpotifyRetryAfterMs(response.headers.get("Retry-After")),
+      });
+    }
+    throw error;
   }
 
   return (await response.json()) as T;
+}
+
+export function parseSpotifyRetryAfterMs(value: string | null, now = Date.now()) {
+  if (!value?.trim()) return 0;
+  const seconds = Number(value);
+  const parsedMs = Number.isFinite(seconds)
+    ? seconds * 1000
+    : Date.parse(value) - now;
+  if (!Number.isFinite(parsedMs) || parsedMs <= 0) return 0;
+  return Math.min(Math.ceil(parsedMs), maximumSpotifyRetryAfterMs);
 }
 
 async function fetchWithTimeout(url: string, init: RequestInit) {

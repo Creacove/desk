@@ -133,7 +133,7 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
   return { status: "running", phase: "discovery", catalog: result };
 }
 
-async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspace, setupRun }: any) {
+async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }: any) {
   const stages = stageStatus(setupRun.stage_status);
   const contextComplete = Boolean(workspace.profile?.artist_direction && workspace.profile?.budget_context);
   let contextStages = {
@@ -155,8 +155,17 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
   const discoveryState = stageState(contextStages, "manager_discovery");
   if (!["completed", "completed_with_limits"].includes(discoveryState)) {
     const catalogState = stageState(contextStages, "catalog_bootstrap");
+    if (!["completed", "completed_with_limits"].includes(catalogState)) {
+      return recoverCatalogBeforeContextualize({
+        db,
+        supabaseUrl,
+        serviceRoleKey,
+        checkout,
+        workspace,
+        setupRun,
+      });
+    }
     if (catalogState === "completed" || catalogState === "completed_with_limits") {
-      const checkout = await loadCheckoutForSetupRun(db, setupRun.checkout_session_id);
       const dispatchFailed = await hasDiscoveryDispatchFailure(db, workspace, contextStages);
       if (discoveryState !== "running" || dispatchFailed) {
         contextStages = await dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages: contextStages });
@@ -196,6 +205,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
       artistId: workspace.artist_id,
       trigger: "setup",
       generationMode: "setup-map",
+      dispatchMusicReads: true,
     },
   });
   if (result?.status !== "completed" || !result.brief) throw new Error("Contextual setup brief did not produce a live Manager read.");
@@ -218,6 +228,14 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
     last_error: null,
   });
   return { status: "completed", phase: "contextualize", ...result };
+}
+
+async function recoverCatalogBeforeContextualize(args: any) {
+  return runDiscoveryPhase(args).then((result) => ({
+    ...result,
+    status: "waiting_for_catalog",
+    phase: "contextualize",
+  }));
 }
 
 async function loadCompletedSetupResult(db: any, workspace: any) {

@@ -51,6 +51,21 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain('catalogState === "completed" || catalogState === "completed_with_limits"');
   });
 
+  it("re-enters catalog bootstrap when contextual setup observes a failed or incomplete catalog", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+    const contextualize = text.slice(
+      text.indexOf("async function runContextualizePhase"),
+      text.indexOf("async function loadCompletedSetupResult"),
+    );
+
+    expect(contextualize).toContain("recoverCatalogBeforeContextualize");
+    expect(contextualize).toContain('status: "waiting_for_catalog"');
+    expect(contextualize).toContain("return runDiscoveryPhase");
+    expect(contextualize.indexOf("recoverCatalogBeforeContextualize")).toBeLessThan(
+      contextualize.indexOf('current_stage: "manager_discovery"'),
+    );
+  });
+
   it("returns the persisted contextual brief and music targets when setup already completed", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
 

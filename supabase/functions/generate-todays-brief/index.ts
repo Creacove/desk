@@ -37,6 +37,7 @@ type GenerateTodaysBriefInput = {
   artistId: string;
   trigger: "setup" | "manual";
   generationMode?: "operating" | "setup-map";
+  dispatchMusicReads?: boolean;
 };
 
 type SetupMusicReadTarget = {
@@ -161,7 +162,7 @@ Deno.serve(async (request) => {
       },
     });
 
-    if (generationMode === "setup-map" && setupMusicReadTargets.length) {
+    if (generationMode === "setup-map" && input.dispatchMusicReads !== false && setupMusicReadTargets.length) {
       dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
     }
 
@@ -299,7 +300,10 @@ function dispatchSetupMusicReadsConcurrently(
   setupMusicReadTargets: SetupMusicReadTarget[],
 ) {
   const work = Promise.allSettled(
-    setupMusicReadTargets.map((target) => dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target)),
+    setupMusicReadTargets.map(async (target, index) => {
+      if (index > 0) await delay(index * 500);
+      return dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target);
+    }),
   ).then((results) => {
     results.forEach((result, index) => {
       if (result.status !== "rejected") return;
