@@ -288,193 +288,86 @@ export function PaywallPreviewScreen({
   const artist = preview.artist;
   const price = formatPaywallPrice(preview);
   const latestProject = catalogPreview?.latestProject ?? null;
-  const visibleProjectTracks = latestProject?.tracks.slice(0, 8) ?? [];
-  const hiddenProjectTrackCount = Math.max((latestProject?.tracks.length ?? 0) - visibleProjectTracks.length, 0);
+  const visibleProjectTracks = latestProject?.tracks.slice(0, 3) ?? [];
   const standaloneSingles = catalogPreview?.standaloneSingles.slice(0, 5) ?? [];
+  const backgroundArtwork = latestProject?.artworkUrl ?? standaloneSingles.find((single) => single.artworkUrl)?.artworkUrl ?? artist.imageUrl;
 
   return (
-    <main className="app-theme relative h-screen overflow-hidden bg-background px-4 py-3 text-foreground dark:bg-[#0d0f13] sm:px-5 lg:px-6">
-      <div className="pointer-events-none absolute inset-0 opacity-[0.2] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px] dark:opacity-[0.22] dark:[background-image:linear-gradient(rgba(255,255,255,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)]" />
-      <div className="relative z-10 mx-auto flex h-[calc(100vh-1.5rem)] w-full max-w-[1320px] flex-col">
-        <ConnectHeader status="Subscription" onSignOut={onSignOut} />
+    <main aria-label="Paywall viewport" className="app-theme relative h-dvh overflow-hidden bg-background px-2.5 py-2 text-foreground dark:bg-[#0d0f13] sm:px-4 sm:py-3 lg:px-6">
+      <div className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px] dark:[background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)]" />
+      <div className="relative z-10 mx-auto flex h-full w-full max-w-[1320px] min-h-0 flex-col">
+        <div className="hidden lg:block"><ConnectHeader status="Subscription" onSignOut={onSignOut} /></div>
 
         <button
           type="button"
           onClick={onBack}
-          className="mt-3 inline-flex w-fit items-center gap-2 rounded-[10px] border border-foreground/10 bg-white/76 px-3 py-1.5 text-[12px] font-bold text-muted-foreground shadow-sm transition-all hover:bg-foreground/5 hover:text-foreground dark:bg-white/5 dark:hover:bg-white/8"
+          className="inline-flex h-7 w-fit shrink-0 items-center gap-1.5 rounded-[8px] border border-foreground/10 bg-white/76 px-2.5 text-[10px] font-bold text-muted-foreground shadow-sm transition-all hover:bg-foreground/5 hover:text-foreground dark:bg-white/5 dark:hover:bg-white/8 lg:mt-3 lg:h-8 lg:px-3 lg:text-[11px]"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+          <ArrowLeft className="h-3 w-3" aria-hidden="true" />
           Back to artist search
         </button>
 
-        <section className="relative mt-3 grid min-h-0 flex-1 overflow-hidden rounded-[14px] border border-foreground/10 bg-white/84 shadow-[0_24px_80px_rgba(17,19,24,0.14)] dark:border-white/10 dark:bg-[#11141a]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.34)] lg:grid-cols-[12rem_minmax(0,1fr)]">
-          <aside className="hidden border-r border-foreground/8 bg-foreground/[0.04] p-3 dark:border-white/10 dark:bg-white/[0.09] lg:block" aria-label="Locked Desk navigation preview">
+        <section className="relative mt-2 grid min-h-0 flex-1 overflow-hidden rounded-[14px] border border-foreground/10 bg-white/84 shadow-[0_24px_80px_rgba(17,19,24,0.14)] dark:border-white/10 dark:bg-[#11141a]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.34)] lg:mt-3 lg:grid-cols-[12rem_minmax(0,1fr)]">
+          <aside className="hidden min-h-0 flex-col border-r border-foreground/8 bg-foreground/[0.035] p-3 dark:border-white/10 dark:bg-white/[0.06] lg:flex" aria-label="Locked Desk navigation preview">
             <div className="flex items-center gap-3">
               <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
               <div className="min-w-0">
-                <p className="truncate text-[13px] font-bold text-foreground">{artist.name} Desk</p>
+                <p className="truncate text-[12px] font-bold text-foreground">{artist.name} Desk</p>
                 <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.12em] text-[#16883f]">Artist found</p>
               </div>
             </div>
-            <div className="mt-5 grid gap-2">
+            <div className="mt-4 grid gap-1.5">
               {["Desk HQ", "Catalog", "Manager", "Agents", "Missions"].map((item) => (
-                <div key={item} className="flex items-center justify-between rounded-[10px] border border-foreground/8 bg-background/78 px-3 py-2 text-[12px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.09] dark:text-white/68">
+                <div key={item} className="flex items-center justify-between rounded-[9px] border border-foreground/8 bg-background/76 px-3 py-2 text-[11px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.08] dark:text-white/68">
                   <span>{item}</span>
-                  <Lock className="h-3.5 w-3.5" aria-label={`${item} locked`} />
+                  <Lock className="h-3 w-3" aria-label={`${item} locked`} />
                 </div>
               ))}
             </div>
           </aside>
 
-          <div className="relative min-h-0 overflow-hidden p-3 sm:p-4 lg:p-5">
-            <div className="pointer-events-none absolute inset-0 blur-[4px]" aria-hidden="true">
-              <div className="grid gap-3 lg:grid-cols-[minmax(0,1.05fr)_minmax(17rem,0.75fr)]">
-                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.12]">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Today's Brief</p>
-                  <div className="mt-4 h-6 w-3/4 rounded bg-foreground/14 dark:bg-white/22" />
-                  <div className="mt-3 h-3 w-full rounded bg-foreground/10 dark:bg-white/18" />
-                  <div className="mt-2 h-3 w-5/6 rounded bg-foreground/10 dark:bg-white/18" />
-                  <div className="mt-5 grid gap-2 sm:grid-cols-3">
-                    {[0, 1, 2].map((index) => (
-                      <div key={index} className="rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.14]">
-                        <div className="h-3 w-16 rounded bg-foreground/12 dark:bg-white/28" />
-                        <div className="mt-4 h-7 rounded bg-foreground/10 dark:bg-white/22" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.12]">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Attention Queue</p>
-                  {[0, 1, 2].map((index) => (
-                    <div key={index} className="mt-3 rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.14]">
-                      <div className="h-3 w-2/3 rounded bg-foreground/12 dark:bg-white/28" />
-                      <div className="mt-3 h-3 w-full rounded bg-foreground/10 dark:bg-white/22" />
-                    </div>
-                  ))}
-                </div>
-                <div className="rounded-[12px] border border-foreground/8 bg-background/82 p-4 dark:border-white/10 dark:bg-white/[0.12] lg:col-span-2">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Locked Agent Workspace</p>
-                  <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {["Manager", "A&R", "Catalog", "Campaign"].map((label) => (
-                      <div key={label} className="rounded-[10px] border border-foreground/8 bg-white/88 p-3 dark:border-white/10 dark:bg-white/[0.14]">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[13px] font-bold text-foreground/70">{label}</span>
-                          <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                        </div>
-                        <div className="mt-5 h-3 rounded bg-foreground/10 dark:bg-white/22" />
-                        <div className="mt-2 h-3 w-2/3 rounded bg-foreground/10 dark:bg-white/22" />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="absolute inset-0 bg-background/48 dark:bg-[#0d0f13]/58" />
-            <div className="relative z-10 grid h-full min-h-0 items-center gap-4 overflow-y-auto py-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(20rem,23rem)] lg:overflow-hidden lg:py-0">
-              <div className="min-w-0 self-stretch" aria-label="Locked catalog preview">
-                <div className="grid h-full min-h-[23rem] gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1.05fr)_minmax(15rem,0.7fr)]">
-                  <section className="relative overflow-hidden rounded-[14px] border border-foreground/10 bg-white/72 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.09]">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Catalog intake</p>
-                        <h2 className="mt-2 text-[18px] font-black leading-tight text-foreground">
-                          {latestProject ? latestProject.name : `${artist.name} catalog`}
-                        </h2>
-                      </div>
-                      {latestProject?.artworkUrl ? (
-                        <img className="h-14 w-14 shrink-0 rounded-[10px] object-cover shadow-sm" src={latestProject.artworkUrl} alt="" />
-                      ) : (
-                        <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
-                      )}
-                    </div>
-                    <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground">
-                      We matched the public release surface. The private setup refetches and stores evidence after checkout.
+          <div className="relative min-h-0 overflow-hidden p-2.5 sm:p-3 lg:p-5">
+            <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(19rem,0.72fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-5">
+              <div className="min-h-0 lg:self-center" aria-label="Locked catalog preview">
+                <p className="mb-1 font-ui text-[8px] font-bold uppercase tracking-[0.14em] text-muted-foreground lg:mb-2 lg:text-[9px]">Data glimpse</p>
+                <section className="flex h-[calc(100%-1rem)] min-h-0 items-center gap-3 overflow-hidden rounded-[12px] border border-foreground/10 bg-white/72 p-2.5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.08] lg:h-auto lg:min-h-[9.5rem] lg:p-4">
+                  <CatalogArtwork name={latestProject?.name ?? `${artist.name} catalog`} imageUrl={latestProject?.artworkUrl} className="h-full max-h-[72px] min-h-[52px] w-[72px] lg:h-28 lg:max-h-none lg:w-28" />
+                  <div className="min-w-0 flex-1">
+                    <p className="font-ui text-[8px] font-bold uppercase tracking-[0.14em] text-brand-accent lg:text-[9px]">Catalog intake</p>
+                    <h2 className="mt-1 truncate text-[14px] font-black leading-tight text-foreground lg:mt-2 lg:text-[19px]">{latestProject ? latestProject.name : `${artist.name} catalog`}</h2>
+                    <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-muted-foreground lg:text-[10px]">
+                      {latestProject?.releaseType ?? "Public catalog"}{latestProject?.releaseDate ? ` · ${latestProject.releaseDate.slice(0, 4)}` : ""}
                     </p>
-                    <div className="mt-4 flex flex-wrap gap-1.5">
-                      {visibleProjectTracks.length ? (
-                        visibleProjectTracks.map((track) => (
-                          <span key={track.spotifyTrackId} className="rounded-md border border-foreground/8 bg-background/86 px-2 py-1 text-[10px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.11] dark:text-white/72">
-                            {track.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="rounded-md border border-foreground/8 bg-background/86 px-2 py-1 text-[10px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.11]">
-                          Artist identity confirmed
-                        </span>
-                      )}
-                      {hiddenProjectTrackCount ? (
-                        <span className="rounded-md border border-foreground/8 bg-background/86 px-2 py-1 text-[10px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.11]">
-                          +{hiddenProjectTrackCount} more
-                        </span>
-                      ) : null}
-                    </div>
-                  </section>
-
-                  <section className="rounded-[14px] border border-foreground/10 bg-white/70 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.085]">
-                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Manager queue</p>
-                    <div className="mt-3 space-y-2">
-                      {standaloneSingles.length ? (
-                        standaloneSingles.map((single) => (
-                          <div key={single.spotifyAlbumId} className="rounded-[10px] border border-foreground/8 bg-background/82 px-3 py-2 dark:border-white/10 dark:bg-white/[0.11]">
-                            <p className="truncate text-[12px] font-bold text-foreground">{single.name}</p>
-                            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Recent single</p>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="rounded-[10px] border border-foreground/8 bg-background/82 px-3 py-2 dark:border-white/10 dark:bg-white/[0.11]">
-                          <p className="text-[12px] font-bold text-foreground">Recent singles will appear here</p>
-                          <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Public preview</p>
-                        </div>
-                      )}
-                    </div>
-                  </section>
-
-                  <section className="hidden rounded-[14px] border border-foreground/10 bg-white/64 p-4 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.08] sm:block lg:col-span-2">
-                    <div className="flex items-center justify-between gap-4">
-                      <div>
-                        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Behind the lock</p>
-                        <p className="mt-2 max-w-[36rem] text-[13px] font-semibold leading-relaxed text-muted-foreground">
-                          Audience intelligence, public research, Manager synthesis, and song/project reads start only after subscription activation.
-                        </p>
-                      </div>
-                      <span className="hidden items-center gap-2 rounded-full border border-foreground/10 bg-background/80 px-3 py-1.5 text-[11px] font-black text-muted-foreground dark:border-white/10 dark:bg-white/[0.11] md:inline-flex">
-                        <Lock className="h-3.5 w-3.5" />
-                        Locked setup
-                      </span>
-                    </div>
-                  </section>
-                </div>
+                    <p className="mt-1 hidden truncate text-[10px] font-semibold text-muted-foreground min-[380px]:block lg:mt-3 lg:text-[11px]">
+                      {visibleProjectTracks.length ? visibleProjectTracks.map((track) => track.name).join(" · ") : "Artist identity confirmed"}
+                    </p>
+                  </div>
+                  <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" aria-label="Catalog preview locked" />
+                </section>
               </div>
 
-              <section aria-label="Subscription checkout" className="w-full rounded-[18px] border border-foreground/10 bg-white/96 p-4 shadow-[0_24px_80px_rgba(17,19,24,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#171b22]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-5">
+              <section aria-label="Subscription checkout" className="relative row-start-2 min-h-0 w-full overflow-hidden rounded-[16px] border border-foreground/10 bg-white/94 p-3 shadow-[0_20px_60px_rgba(17,19,24,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#171b22]/94 dark:shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center lg:p-5">
+                {backgroundArtwork ? <img aria-label="Blurred catalog artwork background" src={backgroundArtwork} alt="" className="pointer-events-none absolute -right-8 -top-8 h-52 w-52 scale-125 object-cover opacity-[0.13] blur-xl dark:opacity-[0.18]" /> : null}
+                <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/35 via-transparent to-brand-ghost/30 dark:from-white/[0.03] dark:to-brand-accent/10" />
+                <div className="relative z-10">
                 <div className="flex items-center gap-3">
                   <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
                   <div className="min-w-0">
-                    <p className="truncate text-[15px] font-bold text-foreground">{artist.name}</p>
-                    <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">Catalog matched</p>
+                    <p className="truncate text-[12px] font-bold text-foreground lg:text-[14px]">{artist.name}</p>
+                    <p className="mt-0.5 text-[9px] font-semibold text-[#16883f] lg:text-[11px]">Catalog matched</p>
                   </div>
                 </div>
 
-                <h1 className="font-display mt-5 text-[22px] font-black leading-[1.04] tracking-tight text-foreground sm:text-[25px]">
+                <h1 className="font-display mt-2 text-[19px] font-black leading-[1.04] tracking-tight text-foreground lg:mt-5 lg:text-[27px]">
                   Unlock {artist.name} Desk
                 </h1>
-                <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground">
+                <p className="mt-1.5 text-[10px] font-semibold leading-snug text-muted-foreground lg:mt-3 lg:text-[12px] lg:leading-relaxed">
                   Your desk opens with catalog import, audience intelligence, Manager brief, and music reads.
                 </p>
 
-                <div className="mt-5 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-4 dark:border-white/10 dark:bg-white/[0.075]">
-                  <p className="font-ui text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Subscription</p>
-                  <div className="mt-2 flex items-end justify-between gap-4">
-                    <p className="text-[28px] font-black leading-none text-foreground">{price}/month</p>
-                    <span className="inline-flex items-center gap-1.5 rounded-[8px] border border-foreground/10 bg-background px-2.5 py-1 text-[11px] font-bold text-muted-foreground dark:border-white/10 dark:bg-white/[0.095]">
-                      <Lock className="h-3.5 w-3.5" />
-                      Locked
-                    </span>
-                  </div>
-                  <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground">
-                    Cancel anytime. Setup begins only after secure checkout confirms the subscription.
-                  </p>
+                <div className="mt-2 flex items-center justify-between gap-3 lg:mt-5">
+                  <p className="text-[20px] font-black leading-none text-foreground lg:text-[28px]">{price}/month</p>
+                  <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label="Subscription locked" />
                 </div>
 
                 {error ? <p className="mt-3 rounded-[12px] border border-[#ef4444]/20 bg-[#ef4444]/5 p-3 text-[12px] font-bold text-[#b91c1c]">{error}</p> : null}
@@ -483,7 +376,7 @@ export function PaywallPreviewScreen({
                   type="button"
                   onClick={() => void onSubscribe()}
                   disabled={pending}
-                  className="group mt-5 inline-flex h-12 w-full items-center justify-center gap-2 rounded-[10px] bg-foreground px-5 text-[13px] font-bold text-background shadow-md transition-all hover:bg-foreground/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+                  className="group mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-[9px] bg-foreground px-4 text-[10px] font-bold text-background shadow-md transition-all hover:bg-foreground/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 lg:mt-5 lg:h-11 lg:text-[12px]"
                 >
                   <CreditCard className="h-4 w-4" aria-hidden="true" />
                   {pending ? "Opening secure checkout" : `Subscribe ${price}/month`}
@@ -494,16 +387,49 @@ export function PaywallPreviewScreen({
                   href={artist.spotifyUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="mt-4 block truncate text-center text-[12px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+                  className="mt-1.5 block truncate text-center text-[9px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline lg:mt-4 lg:text-[11px]"
                 >
                   View artist source
                 </a>
+                </div>
+              </section>
+
+              <section className="min-h-0 lg:col-start-1" aria-label="Manager queue preview">
+                <p className="mb-1 font-ui text-[8px] font-bold uppercase tracking-[0.14em] text-muted-foreground lg:mb-2 lg:text-[9px]">Manager queue</p>
+                {standaloneSingles.length ? (
+                  <div className="grid min-h-0 grid-cols-5 gap-1.5 lg:gap-2.5">
+                    {standaloneSingles.map((single) => (
+                      <article key={single.spotifyAlbumId} className="min-w-0 overflow-hidden rounded-[10px] border border-foreground/10 bg-white/76 p-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.08] lg:p-2">
+                        <CatalogArtwork name={single.name} imageUrl={single.artworkUrl} className="aspect-square max-h-[72px] w-full lg:max-h-none" />
+                        <p className="mt-1 truncate text-[8px] font-bold text-foreground lg:mt-2 lg:text-[10px]">{single.name}</p>
+                        <p className="hidden truncate text-[8px] font-semibold text-muted-foreground lg:mt-0.5 lg:block">Recent release</p>
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex h-16 items-center rounded-[10px] border border-foreground/10 bg-white/70 px-3 text-[10px] font-semibold text-muted-foreground dark:border-white/10 dark:bg-white/[0.08]">Recent releases will appear here</div>
+                )}
               </section>
             </div>
           </div>
         </section>
       </div>
     </main>
+  );
+}
+
+function CatalogArtwork({ name, imageUrl, className }: { name: string; imageUrl?: string; className?: string }) {
+  return (
+    <div className={cn("relative shrink-0 overflow-hidden rounded-[8px] bg-brand-ghost", className)}>
+      {imageUrl ? (
+        <img src={imageUrl} alt={`${name} artwork preview`} className="h-full w-full scale-110 object-cover blur-[3px]" />
+      ) : (
+        <div aria-label={`${name} artwork unavailable`} className="flex h-full min-h-10 w-full items-center justify-center bg-[radial-gradient(circle_at_30%_20%,hsl(var(--brand-accent)/0.25),transparent_58%),linear-gradient(145deg,hsl(var(--surface-muted)),hsl(var(--brand-accent-ghost)))] text-brand-accent/70 blur-[1px]">
+          <BrandMark size="sm" />
+        </div>
+      )}
+      <div className="pointer-events-none absolute inset-0 ring-1 ring-inset ring-white/25" />
+    </div>
   );
 }
 

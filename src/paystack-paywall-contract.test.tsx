@@ -145,9 +145,8 @@ describe("Paystack paywall contract", () => {
 
     const lockedCatalog = screen.getByLabelText("Locked catalog preview");
     expect(within(lockedCatalog).getByText("Midnight Signals")).toBeInTheDocument();
-    expect(within(lockedCatalog).getByText("After Dark")).toBeInTheDocument();
-    expect(within(lockedCatalog).getByText("First Train")).toBeInTheDocument();
-    expect(within(lockedCatalog).getByText("Open Window")).toBeInTheDocument();
+    expect(within(lockedCatalog).getByText(/After Dark · First Train/)).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Manager queue preview")).getByText("Open Window")).toBeInTheDocument();
 
     const subscriptionCard = screen.getByLabelText("Subscription checkout");
     expect(within(subscriptionCard).getByText("$20/month")).toBeInTheDocument();
@@ -159,7 +158,7 @@ describe("Paystack paywall contract", () => {
     expect(screen.queryByText(/followers/i)).not.toBeInTheDocument();
     expect(screen.getByText(/your desk opens with catalog import, audience intelligence, manager brief, and music reads/i)).toBeInTheDocument();
     expect(screen.queryByText(/Spotify|Chartmetric|Paystack|webhook|API|AI setup/i)).not.toBeInTheDocument();
-    expect(screen.getAllByText(/locked/i).length).toBeGreaterThan(2);
+    expect(screen.getAllByLabelText(/locked/i).length).toBeGreaterThan(2);
     expect(screen.queryByText(/London is the clearest pressure point/i)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /subscribe/i }));
@@ -194,6 +193,54 @@ describe("Paystack paywall contract", () => {
     expect(classNames.join(" ")).toContain("dark:bg-");
     expect(classNames.some((className) => className.includes("min-h-[680px]"))).toBe(false);
     expect(classNames.some((className) => className.includes("min-h-[620px]"))).toBe(false);
+  });
+
+  it("renders a fixed-viewport, image-led catalog glimpse with blurred artwork", () => {
+    const sixSingles = Array.from({ length: 6 }, (_, index) => ({
+      spotifyAlbumId: `single-${index + 1}`,
+      name: `Queue release ${index + 1}`,
+      releaseType: "single",
+      releaseDate: `2026-0${Math.min(index + 1, 9)}-01`,
+      artworkUrl: index === 4 ? undefined : `https://i.scdn.co/image/single-${index + 1}`,
+      tracks: [{ spotifyTrackId: `queue-track-${index + 1}`, name: `Queue release ${index + 1}` }],
+    }));
+
+    const { container } = render(
+      <PaywallPreviewScreen
+        preview={{
+          checkoutSessionId: "checkout-1",
+          reference: "ors_123",
+          status: "open",
+          artist: candidate,
+          amount: 20,
+          amountMinor: 2000,
+          currency: "USD",
+          interval: "monthly",
+        }}
+        catalogPreview={{ ...catalogPreview, standaloneSingles: sixSingles }}
+        onSubscribe={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByLabelText("Paywall viewport")).toHaveClass("h-dvh", "overflow-hidden");
+    expect(screen.getByLabelText("Locked Desk navigation preview")).toHaveClass("hidden", "lg:flex");
+    expect(screen.queryByLabelText(/mobile.*navigation/i)).not.toBeInTheDocument();
+
+    const projectArtwork = screen.getByRole("img", { name: "Midnight Signals artwork preview" });
+    expect(projectArtwork).toHaveClass("blur-[3px]");
+    expect(screen.getByText("Midnight Signals")).toBeVisible();
+
+    const managerQueue = screen.getByLabelText("Manager queue preview");
+    expect(within(managerQueue).getAllByRole("article")).toHaveLength(5);
+    expect(within(managerQueue).queryByText("Queue release 6")).not.toBeInTheDocument();
+    expect(within(managerQueue).getByRole("img", { name: "Queue release 1 artwork preview" })).toHaveClass("blur-[3px]");
+    expect(within(managerQueue).getByLabelText("Queue release 5 artwork unavailable")).toBeInTheDocument();
+    expect(within(managerQueue).getByText("Queue release 1")).toBeVisible();
+
+    const checkout = screen.getByLabelText("Subscription checkout");
+    expect(within(checkout).getByLabelText("Blurred catalog artwork background")).toHaveClass("blur-xl");
+    expect(container.querySelector("[data-paywall-scroll-region]")).not.toBeInTheDocument();
   });
 
   it("defines durable billing tables, setup runs, RLS, and activation RPC in a migration", () => {
