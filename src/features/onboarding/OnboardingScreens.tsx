@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, Check, CreditCard, Lock, LogOut, Search } from "
 import { BrandMark } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
-import type { ProductionBillingCheckoutPreview, ProductionSpotifyArtistCandidate } from "../../types/productionApp";
+import type { ProductionBillingCheckoutPreview, ProductionSpotifyArtistCandidate, ProductionSpotifyCatalogPreview } from "../../types/productionApp";
 
 export function ConnectArtistScreen({
   profile,
@@ -270,6 +270,7 @@ export function SetupScreen({
 
 export function PaywallPreviewScreen({
   preview,
+  catalogPreview,
   pending = false,
   error,
   onSubscribe,
@@ -277,6 +278,7 @@ export function PaywallPreviewScreen({
   onSignOut,
 }: {
   preview: ProductionBillingCheckoutPreview;
+  catalogPreview?: ProductionSpotifyCatalogPreview | null;
   pending?: boolean;
   error?: string | null;
   onSubscribe: () => void | Promise<void>;
@@ -284,7 +286,6 @@ export function PaywallPreviewScreen({
   onSignOut?: () => void;
 }) {
   const artist = preview.artist;
-  const genreLine = artist.genres.slice(0, 2).join(" / ");
   const price = formatPaywallPrice(preview);
 
   return (
@@ -372,13 +373,35 @@ export function PaywallPreviewScreen({
                   <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
                   <div className="min-w-0">
                     <p className="truncate text-[15px] font-bold text-foreground">{artist.name}</p>
-                    <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">
-                      {artist.followers ? `${artist.followers.toLocaleString()} followers` : "Spotify artist"}
-                    </p>
+                    <p className="mt-0.5 text-[12px] font-semibold text-muted-foreground">Spotify catalog matched</p>
                   </div>
                 </div>
 
-                {genreLine ? <p className="mt-4 text-[12px] font-bold text-[#16883f]">{genreLine}</p> : null}
+                {catalogPreview?.latestProject ? (
+                  <div className="mt-4 rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-3 dark:border-white/10 dark:bg-white/[0.045]">
+                    <div className="flex items-center gap-3">
+                      {catalogPreview.latestProject.artworkUrl ? (
+                        <img className="h-12 w-12 rounded-[9px] object-cover" src={catalogPreview.latestProject.artworkUrl} alt="" />
+                      ) : null}
+                      <div className="min-w-0">
+                        <p className="font-ui text-[9px] font-bold uppercase tracking-[0.14em] text-[#16883f]">Latest project</p>
+                        <p className="mt-1 truncate text-[13px] font-bold text-foreground">{catalogPreview.latestProject.name}</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {catalogPreview.latestProject.tracks.map((track) => (
+                        <span key={track.spotifyTrackId} className="rounded-md bg-background px-2 py-1 text-[10px] font-bold text-muted-foreground">
+                          {track.name}
+                        </span>
+                      ))}
+                    </div>
+                    {catalogPreview.standaloneSingles.length ? (
+                      <p className="mt-3 text-[10px] font-semibold text-muted-foreground">
+                        Recent singles: {catalogPreview.standaloneSingles.map((single) => single.name).join(" · ")}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
                 <h1 className="font-display mt-4 text-[25px] font-semibold leading-[1.02] tracking-tight text-foreground sm:text-[28px]">
                   We found the artist. Unlock the operating desk before AI setup starts.
                 </h1>

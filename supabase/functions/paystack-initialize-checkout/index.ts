@@ -48,8 +48,8 @@ Deno.serve(async (request) => {
     if (userError || !user?.id || !user.email) return json({ error: "Unauthorized." }, 401);
 
     const input = (await request.json()) as CheckoutInput;
-    const selectedArtist = input.selectedArtist;
-    validateArtist(selectedArtist);
+    validateArtist(input.selectedArtist);
+    const selectedArtist = normalizeSelectedArtist(input.selectedArtist);
 
     const { error: userUpsertError } = await serviceClient.from("users").upsert({
       id: user.id,
@@ -140,6 +140,16 @@ function validateArtist(artist: CheckoutInput["selectedArtist"]): asserts artist
   }
 }
 
+function normalizeSelectedArtist(artist: NonNullable<CheckoutInput["selectedArtist"]>) {
+  return {
+    spotifyArtistId: artist.spotifyArtistId,
+    name: artist.name,
+    spotifyUrl: artist.spotifyUrl,
+    spotifyUri: artist.spotifyUri,
+    imageUrl: artist.imageUrl,
+  };
+}
+
 function toPreview(input: {
   id: string;
   reference: string;
@@ -156,7 +166,7 @@ function toPreview(input: {
     checkoutSessionId: input.id,
     reference: input.reference,
     status: input.status,
-    artist: input.selectedArtist,
+    artist: { ...input.selectedArtist, genres: [] },
     amount: input.amount,
     amountMinor: input.amountMinor,
     currency: input.currency,

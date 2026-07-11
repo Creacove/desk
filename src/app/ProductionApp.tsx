@@ -59,6 +59,7 @@ import type {
   ProductionSession,
   ProductionSpotifyArtistAdapter,
   ProductionSpotifyArtistCandidate,
+  ProductionSpotifyCatalogPreview,
   ProductionUser,
   ProductionWorkspace,
   ProductionWorkspaceLoader,
@@ -142,8 +143,9 @@ export function ProductionApp({
       spotifyArtistAdapter:
         spotifyArtistAdapter ??
         ({
-          searchArtists: (query) => createSupabaseSpotifyArtistAdapter(getClient()).searchArtists(query),
-          connectArtist: (nextWorkspace, candidate) =>
+            searchArtists: (query) => createSupabaseSpotifyArtistAdapter(getClient()).searchArtists(query),
+            previewCatalog: (candidate) => createSupabaseSpotifyArtistAdapter(getClient()).previewCatalog(candidate),
+            connectArtist: (nextWorkspace, candidate) =>
             createSupabaseSpotifyArtistAdapter(getClient()).connectArtist(nextWorkspace, candidate),
           bootstrapCatalog: (nextWorkspace, candidate) =>
             createSupabaseSpotifyArtistAdapter(getClient()).bootstrapCatalog(nextWorkspace, candidate),
@@ -372,6 +374,7 @@ export function ProductionApp({
       workspace={workspace}
       repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
+      billingService={runtime.billingService}
       spotifyArtistAdapter={runtime.spotifyArtistAdapter}
       fixtureRuntime={shouldUseFixtureRuntime}
       initialView={shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
@@ -385,6 +388,7 @@ function CleanProductionWorkspace({
   workspace,
   repositories,
   profileSetupService,
+  billingService,
   spotifyArtistAdapter,
   fixtureRuntime,
   initialView,
@@ -394,6 +398,7 @@ function CleanProductionWorkspace({
   workspace: ProductionWorkspace | null;
   repositories: CleanProductionRepositories;
   profileSetupService?: ProductionProfileSetupService;
+  billingService?: ProductionBillingService;
   spotifyArtistAdapter?: ProductionSpotifyArtistAdapter;
   fixtureRuntime: boolean;
   initialView: CleanProductionView;
@@ -886,7 +891,7 @@ function CleanProductionWorkspace({
       setSetupActivityPending(true);
       setSetupActivityError(null);
       setSetupActivityStep("setup-map");
-      const setupGeneration = await generateTodaysBrief("setup-map");
+      const setupGeneration = await generateContextualSetup(nextWorkspace);
       const setupBrief = briefFromGenerationResult(setupGeneration);
       if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
         throw new Error("Setup map needs a live Manager read. Retry to regenerate it.");
@@ -900,6 +905,25 @@ function CleanProductionWorkspace({
     } finally {
       setSetupActivityPending(false);
     }
+  }
+
+  async function generateContextualSetup(nextWorkspace: ProductionWorkspace): Promise<TodayBriefGenerationResponse> {
+    const checkoutSessionId = nextWorkspace.billingCheckoutSessionId;
+    if (!checkoutSessionId || !billingService?.runSetupPhase) {
+      return generateTodaysBrief("setup-map");
+    }
+
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      const result = await billingService.runSetupPhase({ checkoutSessionId, phase: "contextualize" });
+      if (result.status === "completed" || result.status === "completed_with_limits") {
+        if (!result.brief) throw new Error("Contextual setup completed without a live Manager brief.");
+        setTodayBrief(result.brief);
+        onWorkspaceChange?.({ ...nextWorkspace, setupStatus: "completed", setupStage: "music_reads" });
+        return { brief: result.brief, setupMusicReadTargets: result.setupMusicReadTargets ?? [] };
+      }
+      await delay(2000);
+    }
+    throw new Error("Discovery is still running. Retry to finish the context-aware setup read.");
   }
 
   async function runMissionGenesis() {
@@ -1008,30 +1032,6 @@ function CleanProductionWorkspace({
     return deliverable;
   }
 
-  async function ensurePaidCatalogBootstrap(nextWorkspace: ProductionWorkspace) {
-    if (!shouldBootstrapCatalogAfterPaidSetup(nextWorkspace) || !spotifyArtistAdapter) {
-      return nextWorkspace;
-    }
-
-    const candidate = spotifyCandidateFromWorkspace(nextWorkspace);
-    if (!candidate) {
-      return nextWorkspace;
-    }
-
-    try {
-      const result = await spotifyArtistAdapter.bootstrapCatalog(nextWorkspace, candidate);
-      return {
-        ...nextWorkspace,
-        latestCatalogSyncStatus: result.status === "failed" ? "queued" : result.status,
-      };
-    } catch {
-      return {
-        ...nextWorkspace,
-        latestCatalogSyncStatus: "queued" as const,
-      };
-    }
-  }
-
   async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) {
     const updatedMission = await repositories.missions.completeTask(taskId, {
       status,
@@ -1101,10 +1101,10 @@ function CleanProductionWorkspace({
               setSetupPending(true);
               setSetupError(null);
               const savedWorkspace = await profileSetupService.saveSetupContext(workspace, nextProfile);
-              const nextWorkspace = await ensurePaidCatalogBootstrap(savedWorkspace);
+              const nextWorkspace = { ...workspace, ...savedWorkspace };
               onWorkspaceChange?.(nextWorkspace);
               setDrawer(null);
-              if (isWorkspaceReadyForDesk(nextWorkspace)) {
+              if (nextWorkspace.contextComplete) {
                 await completeSetupActivity(nextWorkspace);
               } else {
                 setView("setup");
@@ -1823,6 +1823,7 @@ function SpotifyIdentityGate({
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState<ProductionSpotifyArtistCandidate[]>([]);
   const [checkoutPreview, setCheckoutPreview] = useState<ProductionBillingCheckoutPreview | null>(null);
+  const [catalogPreview, setCatalogPreview] = useState<ProductionSpotifyCatalogPreview | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
@@ -1838,6 +1839,11 @@ function SpotifyIdentityGate({
       .then((preview) => {
         if (!cancelled && preview) {
           setCheckoutPreview(preview);
+          if (spotifyArtistAdapter?.previewCatalog) {
+            void spotifyArtistAdapter.previewCatalog(preview.artist).then((catalog) => {
+              if (!cancelled) setCatalogPreview(catalog);
+            }).catch(() => undefined);
+          }
         }
       })
       .catch(() => {
@@ -1849,7 +1855,7 @@ function SpotifyIdentityGate({
     return () => {
       cancelled = true;
     };
-  }, [billingService, checkoutPreview]);
+  }, [billingService, checkoutPreview, spotifyArtistAdapter]);
 
   useEffect(() => {
     const normalizedQuery = query.trim();
@@ -1903,7 +1909,19 @@ function SpotifyIdentityGate({
     try {
       setSelectPending(true);
       setMessage(null);
+      const catalog = spotifyArtistAdapter?.previewCatalog
+        ? await spotifyArtistAdapter.previewCatalog(candidate).catch(() => ({
+            artist: {
+              spotifyArtistId: candidate.spotifyArtistId,
+              name: candidate.name,
+              spotifyUrl: candidate.spotifyUrl,
+              imageUrl: candidate.imageUrl,
+            },
+            standaloneSingles: [],
+          }))
+        : null;
       const preview = await billingService.createCheckoutPreview({ user, candidate });
+      setCatalogPreview(catalog);
       setCheckoutPreview(preview);
     } catch (connectError) {
       setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
@@ -1946,10 +1964,12 @@ function SpotifyIdentityGate({
     return (
       <PaywallPreviewScreen
         preview={checkoutPreview}
+        catalogPreview={catalogPreview}
         pending={selectPending}
         error={message}
         onBack={() => {
           setCheckoutPreview(null);
+          setCatalogPreview(null);
           setMessage(null);
         }}
         onSubscribe={subscribeToPreview}
@@ -2514,7 +2534,11 @@ function isResolvedManagerReadState(state: MusicObjectViewModel["managerReadStat
 }
 
 function isWorkspaceReadyForDesk(workspace: ProductionWorkspace) {
-  return workspace.contextComplete;
+  if (!workspace.contextComplete) return false;
+  if (workspace.entitlementActive === true && workspace.billingCheckoutSessionId) {
+    return workspace.setupStatus === "completed";
+  }
+  return true;
 }
 
 function resolveWorkspaceInitialView(workspace: ProductionWorkspace, initialView: CleanProductionView) {
@@ -2527,28 +2551,6 @@ function resolveWorkspaceInitialView(workspace: ProductionWorkspace, initialView
 
 function isCatalogSyncPending(status: ProductionWorkspace["latestCatalogSyncStatus"]) {
   return status === "queued" || status === "running";
-}
-
-function shouldBootstrapCatalogAfterPaidSetup(workspace: ProductionWorkspace) {
-  if (workspace.entitlementActive !== true || !workspace.spotifyConnected || !workspace.spotifyArtistId || !workspace.spotifyArtistUrl) {
-    return false;
-  }
-
-  return !["queued", "running", "completed", "completed_with_limits"].includes(workspace.latestCatalogSyncStatus ?? "");
-}
-
-function spotifyCandidateFromWorkspace(workspace: ProductionWorkspace): ProductionSpotifyArtistCandidate | null {
-  if (!workspace.spotifyArtistId || !workspace.spotifyArtistUrl) {
-    return null;
-  }
-
-  return {
-    spotifyArtistId: workspace.spotifyArtistId,
-    name: workspace.spotifyArtistName ?? workspace.artistName,
-    spotifyUrl: workspace.spotifyArtistUrl,
-    genres: [],
-    imageUrl: workspace.spotifyImageUrl,
-  };
 }
 
 function areWorkspacesEquivalent(currentWorkspace: ProductionWorkspace, nextWorkspace: ProductionWorkspace) {
@@ -2564,7 +2566,12 @@ function areWorkspacesEquivalent(currentWorkspace: ProductionWorkspace, nextWork
     currentWorkspace.spotifyArtistName === nextWorkspace.spotifyArtistName &&
     currentWorkspace.spotifyArtistUrl === nextWorkspace.spotifyArtistUrl &&
     currentWorkspace.spotifyImageUrl === nextWorkspace.spotifyImageUrl &&
-    currentWorkspace.contextComplete === nextWorkspace.contextComplete &&
-    currentWorkspace.latestCatalogSyncStatus === nextWorkspace.latestCatalogSyncStatus
-  );
+      currentWorkspace.contextComplete === nextWorkspace.contextComplete &&
+      currentWorkspace.latestCatalogSyncStatus === nextWorkspace.latestCatalogSyncStatus &&
+      currentWorkspace.entitlementActive === nextWorkspace.entitlementActive &&
+      currentWorkspace.subscriptionStatus === nextWorkspace.subscriptionStatus &&
+      currentWorkspace.setupStatus === nextWorkspace.setupStatus &&
+      currentWorkspace.setupStage === nextWorkspace.setupStage &&
+      currentWorkspace.billingCheckoutSessionId === nextWorkspace.billingCheckoutSessionId
+    );
 }

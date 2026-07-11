@@ -141,7 +141,7 @@ async function activateSubscription(db: any, event: PaystackEvent) {
     throw new Error("activate_paid_artist_workspace did not return a workspace.");
   }
 
-  await db.from("billing_subscriptions").upsert(
+  const { error: subscriptionError } = await db.from("billing_subscriptions").upsert(
     {
       account_id: workspace.account_id,
       artist_workspace_id: workspace.artist_workspace_id,
@@ -161,6 +161,34 @@ async function activateSubscription(db: any, event: PaystackEvent) {
     },
     { onConflict: "provider,provider_subscription_code" },
   );
+  if (subscriptionError) throw subscriptionError;
+
+  scheduleBackgroundTask(dispatchPaidSetup(checkout.id));
+}
+
+async function dispatchPaidSetup(checkoutSessionId: string) {
+  const supabaseUrl = requireEnv("SUPABASE_URL");
+  const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const response = await fetch(`${supabaseUrl}/functions/v1/paid-workspace-setup`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ checkoutSessionId, phase: "discovery" }),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(body || `Paid workspace setup dispatch failed with ${response.status}.`);
+  }
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>) {
+  task.catch((error) => console.error("paid workspace setup dispatch failed", error));
+  if (typeof EdgeRuntime !== "undefined" && typeof EdgeRuntime.waitUntil === "function") {
+    EdgeRuntime.waitUntil(task);
+  }
 }
 
 async function markInvoiceUpdate(db: any, event: PaystackEvent) {

@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   createSupabaseMusicLibraryLoader,
+  createSupabaseBillingService,
   createSupabaseProductionRepositories,
   createSupabaseProfileSetupService,
   createSupabaseSpotifyArtistAdapter,
@@ -35,6 +36,67 @@ const workspace: ProductionWorkspace = {
 const productionSupabaseSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
 
 describe("production Supabase services", () => {
+  it("loads an ephemeral Spotify catalog preview through the preview function", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const client = {
+      functions: {
+        invoke: async (name: string, options: { body: unknown }) => {
+          calls.push({ name, body: options.body });
+          return {
+            data: {
+              artist: { spotifyArtistId: "artist-1", name: "Nova Vale" },
+              standaloneSingles: [],
+            },
+            error: null,
+          };
+        },
+      },
+    } as unknown as SupabaseClient;
+
+    const preview = await createSupabaseSpotifyArtistAdapter(client).previewCatalog!({
+      spotifyArtistId: "artist-1",
+      name: "Nova Vale",
+      spotifyUrl: "https://open.spotify.com/artist/artist-1",
+      genres: [],
+    });
+
+    expect(preview.artist.name).toBe("Nova Vale");
+    expect(calls).toEqual([{
+      name: "spotify-catalog-preview",
+      body: {
+        selectedArtist: {
+          spotifyArtistId: "artist-1",
+          name: "Nova Vale",
+          spotifyUrl: "https://open.spotify.com/artist/artist-1",
+          genres: [],
+        },
+        market: "US",
+      },
+    }]);
+  });
+
+  it("starts the context-aware paid setup phase through the setup orchestrator", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const client = {
+      functions: {
+        invoke: async (name: string, options: { body: unknown }) => {
+          calls.push({ name, body: options.body });
+          return { data: { status: "completed", phase: "contextualize", setupMusicReadTargets: [] }, error: null };
+        },
+      },
+    } as unknown as SupabaseClient;
+
+    const result = await createSupabaseBillingService(client).runSetupPhase!({
+      checkoutSessionId: "checkout-1",
+      phase: "contextualize",
+    });
+
+    expect(result.status).toBe("completed");
+    expect(calls).toEqual([{
+      name: "paid-workspace-setup",
+      body: { checkoutSessionId: "checkout-1", phase: "contextualize" },
+    }]);
+  });
   it("does not discard saved Today's Brief records for copy style terms", () => {
     expect(productionSupabaseSource).not.toContain("TODAY_BRIEF_BANNED_VISIBLE_TERMS");
     expect(productionSupabaseSource).not.toContain("todayBriefHasBannedVisibleTerms");

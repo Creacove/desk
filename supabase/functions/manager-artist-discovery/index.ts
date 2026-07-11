@@ -18,6 +18,8 @@ type DiscoveryInput = {
   artistId: string;
   spotifyArtistId: string;
   artistName: string;
+  setupRunId?: string;
+  checkoutSessionId?: string;
 };
 
 const discoveryCompleteSchema = {
@@ -132,19 +134,21 @@ Deno.serve(async (request) => {
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-    // Authenticate caller
-    const authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+    const isServiceRoleInvocation =
+      authHeader === `Bearer ${serviceRoleKey}` || readBearerJwtRole(authHeader) === "service_role";
+    const scopedAuthHeader = isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader;
+    const authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
+      global: { headers: { Authorization: scopedAuthHeader } },
     });
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
-    if (userError || !user) return json({ error: "Unauthorized." }, 401);
-
-    // Verify account membership
-    const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
-      target_account_id: input.accountId,
-    });
-    if (membershipError) throw membershipError;
-    if (!membership) return json({ error: "Forbidden." }, 403);
+    if (!isServiceRoleInvocation) {
+      const { data: { user }, error: userError } = await authClient.auth.getUser();
+      if (userError || !user) return json({ error: "Unauthorized." }, 401);
+      const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
+        target_account_id: input.accountId,
+      });
+      if (membershipError) throw membershipError;
+      if (!membership) return json({ error: "Forbidden." }, 403);
+    }
 
     const db = createClient(supabaseUrl, serviceRoleKey);
     await assertActiveWorkspaceEntitlement(db, input);
@@ -224,8 +228,8 @@ Deno.serve(async (request) => {
     const briefResponse = await fetch(`${supabaseUrl}/functions/v1/generate-todays-brief`, {
       method: "POST",
       headers: {
-        Authorization: authHeader,
-        apikey: anonKey,
+        Authorization: scopedAuthHeader,
+        apikey: isServiceRoleInvocation ? serviceRoleKey : anonKey,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
@@ -241,6 +245,13 @@ Deno.serve(async (request) => {
     }
 
     await writeOperatingEvent(db, input, "manager_discovery_brief_generated", `Initial Setup Operating Map brief generated for ${input.artistName}.`);
+
+    if (input.setupRunId) {
+      await completeDiscoverySetupStage(db, input.setupRunId, failedTools.length > 0);
+    }
+    if (input.checkoutSessionId) {
+      scheduleBackgroundTask(dispatchContextualizePhase(supabaseUrl, serviceRoleKey, input.checkoutSessionId));
+    }
 
     return json({
       status: "completed",
@@ -258,6 +269,7 @@ Deno.serve(async (request) => {
         if (serviceRoleKey && supabaseUrl) {
           const failDb = createClient(supabaseUrl, serviceRoleKey);
           await writeOperatingEvent(failDb, input, "manager_discovery_failed", `Autonomous onboarding discovery failed: ${message}`);
+          if (input.setupRunId) await failDiscoverySetupStage(failDb, input.setupRunId, message);
         }
       } catch { /* best-effort logging */ }
     }
@@ -274,6 +286,64 @@ function validateInput(input: DiscoveryInput) {
     ["artistName", input.artistName],
   ]) {
     if (!value?.trim()) throw new Error(`Missing required field: ${key}.`);
+  }
+}
+
+async function completeDiscoverySetupStage(db: any, setupRunId: string, limited: boolean) {
+  const { data: run, error } = await db.from("workspace_setup_runs").select("stage_status").eq("id", setupRunId).maybeSingle();
+  if (error) throw error;
+  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
+  const now = new Date().toISOString();
+  const { error: updateError } = await db.from("workspace_setup_runs").update({
+    status: "running",
+    current_stage: "setup_brief",
+    stage_status: {
+      ...stages,
+      manager_discovery: { status: limited ? "completed_with_limits" : "completed", completed_at: now },
+      setup_brief: { status: "waiting_for_context" },
+    },
+    last_error: null,
+  }).eq("id", setupRunId);
+  if (updateError) throw updateError;
+}
+
+async function failDiscoverySetupStage(db: any, setupRunId: string, message: string) {
+  const { data: run } = await db.from("workspace_setup_runs").select("stage_status,retry_count").eq("id", setupRunId).maybeSingle();
+  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
+  await db.from("workspace_setup_runs").update({
+    status: "failed",
+    current_stage: "manager_discovery",
+    stage_status: { ...stages, manager_discovery: { status: "failed", error: message, failed_at: new Date().toISOString() } },
+    last_error: message,
+    retry_count: Number(run?.retry_count ?? 0) + 1,
+  }).eq("id", setupRunId);
+}
+
+async function dispatchContextualizePhase(supabaseUrl: string, serviceRoleKey: string, checkoutSessionId: string) {
+  const response = await fetch(`${supabaseUrl}/functions/v1/paid-workspace-setup`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ checkoutSessionId, phase: "contextualize" }),
+  });
+  if (!response.ok) throw new Error(`Contextual setup dispatch failed with ${response.status}.`);
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>) {
+  const edgeRuntime = (globalThis as { EdgeRuntime?: { waitUntil?: (task: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof edgeRuntime?.waitUntil === "function") edgeRuntime.waitUntil(task);
+  else void task;
+}
+
+function readBearerJwtRole(authHeader: string) {
+  try {
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.role;
+  } catch {
+    return undefined;
   }
 }
 

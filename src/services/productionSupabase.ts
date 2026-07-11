@@ -35,9 +35,11 @@ import type {
   ProductionMusicProject,
   ProductionProfileSetupService,
   ProductionSetupProfile,
+  ProductionSetupPhaseResult,
   ProductionSpotifyArtistAdapter,
   ProductionSpotifyArtistCandidate,
   ProductionSpotifyBootstrapResult,
+  ProductionSpotifyCatalogPreview,
   ProductionWorkspace,
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
@@ -161,7 +163,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artist_profiles(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs(status,created_at)",
             "billing_subscriptions(status,current_period_end)",
-            "workspace_setup_runs(status,current_stage,updated_at)",
+            "workspace_setup_runs(status,current_stage,checkout_session_id,updated_at)",
           ].join(", "),
         )
         .eq("account_id", accountId)
@@ -196,6 +198,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         subscriptionStatus: readLatestSubscriptionStatus(workspace.billing_subscriptions),
         setupStatus: readLatestSetupStatus(workspace.workspace_setup_runs),
         setupStage: readLatestSetupStage(workspace.workspace_setup_runs),
+        billingCheckoutSessionId: readLatestSetupCheckoutSessionId(workspace.workspace_setup_runs),
       } satisfies ProductionWorkspace;
     },
     async createInitialWorkspace(_user, draft) {
@@ -362,6 +365,15 @@ export function createSupabaseSpotifyArtistAdapter(client: SupabaseClient): Prod
       const artists = (data as { artists?: ProductionSpotifyArtistCandidate[] } | null)?.artists;
       return Array.isArray(artists) ? artists : [];
     },
+    async previewCatalog(candidate) {
+      const { data, error } = await client.functions.invoke("spotify-catalog-preview", {
+        body: { selectedArtist: candidate, market: "US" },
+      });
+      if (error) {
+        await throwFunctionInvokeError(error, "Spotify catalog preview failed.");
+      }
+      return spotifyCatalogPreviewFromPayload(data);
+    },
     async bootstrapCatalog(workspace, candidate) {
       const { data, error } = await client.functions.invoke("spotify-catalog-bootstrap", {
         body: {
@@ -403,6 +415,14 @@ export function createSupabaseSpotifyArtistAdapter(client: SupabaseClient): Prod
       return workspaceFromRpcRow(row);
     },
   };
+}
+
+function spotifyCatalogPreviewFromPayload(payload: unknown): ProductionSpotifyCatalogPreview {
+  const preview = payload as ProductionSpotifyCatalogPreview | null;
+  if (!preview?.artist?.spotifyArtistId || !preview.artist.name || !Array.isArray(preview.standaloneSingles)) {
+    throw new Error("Spotify catalog preview response was incomplete.");
+  }
+  return preview;
 }
 
 export function createSupabaseBillingService(client: SupabaseClient): ProductionBillingService {
@@ -454,6 +474,18 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
 
       return billingStatusFromPayload(data);
     },
+    async runSetupPhase({ checkoutSessionId, phase }) {
+      const { data, error } = await client.functions.invoke("paid-workspace-setup", {
+        body: { checkoutSessionId, phase },
+      });
+      if (error) await throwFunctionInvokeError(error, "Paid workspace setup could not continue.");
+      const payload = data as ProductionSetupPhaseResult & { brief?: unknown; setupMusicReadTargets?: unknown };
+      return {
+        ...payload,
+        brief: todayBriefFromPayload(payload.brief),
+        setupMusicReadTargets: readSetupMusicReadTargets(payload.setupMusicReadTargets),
+      };
+    },
   };
 }
 
@@ -485,7 +517,7 @@ export function createSupabaseProfileSetupService(client: SupabaseClient): Produ
         throw new Error("Setup context save did not return a workspace.");
       }
 
-      return workspaceFromRpcRow(row);
+      return { ...workspace, ...workspaceFromRpcRow(row) };
     },
   };
 }
@@ -1545,7 +1577,7 @@ type WorkspaceRow = {
   artist_profiles?: WorkspaceProfileRow[] | null;
   source_sync_jobs?: Array<{ status?: ProductionWorkspace["latestCatalogSyncStatus"] | null; created_at?: string | null }> | null;
   billing_subscriptions?: Array<{ status?: ProductionWorkspace["subscriptionStatus"] | null; current_period_end?: string | null }> | null;
-  workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null }> | null;
+  workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null; checkout_session_id?: string | null; updated_at?: string | null }> | null;
 };
 
 type WorkspaceRpcRow = {
@@ -2572,7 +2604,16 @@ function billingStatusFromPayload(payload: unknown): ProductionBillingStatus {
     entitlementActive: Boolean(data.entitlementActive),
     setupStatus: data.setupStatus ?? "not_started",
     setupStage: data.setupStage,
-    workspace: data.workspace,
+    workspace: data.workspace
+      ? {
+          ...data.workspace,
+          billingCheckoutSessionId: data.checkoutSessionId ?? data.workspace.billingCheckoutSessionId,
+          entitlementActive: Boolean(data.entitlementActive),
+          subscriptionStatus: data.subscriptionStatus ?? data.workspace.subscriptionStatus,
+          setupStatus: data.setupStatus ?? data.workspace.setupStatus,
+          setupStage: data.setupStage ?? data.workspace.setupStage,
+        }
+      : undefined,
     authorizationUrl: data.authorizationUrl,
     accessCode: data.accessCode,
     message: data.message,
@@ -3270,11 +3311,20 @@ function hasActiveEntitlement(rows: WorkspaceRow["billing_subscriptions"]) {
 }
 
 function readLatestSetupStatus(rows: WorkspaceRow["workspace_setup_runs"]) {
-  return [...(rows ?? [])].find((row) => row.status)?.status ?? "not_started";
+  return latestSetupRun(rows)?.status ?? "not_started";
 }
 
 function readLatestSetupStage(rows: WorkspaceRow["workspace_setup_runs"]) {
-  return [...(rows ?? [])].find((row) => row.current_stage)?.current_stage ?? undefined;
+  return latestSetupRun(rows)?.current_stage ?? undefined;
+}
+
+function readLatestSetupCheckoutSessionId(rows: WorkspaceRow["workspace_setup_runs"]) {
+  return latestSetupRun(rows)?.checkout_session_id ?? undefined;
+}
+
+function latestSetupRun(rows: WorkspaceRow["workspace_setup_runs"]) {
+  return [...(rows ?? [])]
+    .sort((left, right) => (Date.parse(right.updated_at ?? "") || 0) - (Date.parse(left.updated_at ?? "") || 0))[0];
 }
 
 function readSpotifyIdentityName(value: unknown) {

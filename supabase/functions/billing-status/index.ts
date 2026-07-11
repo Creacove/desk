@@ -74,6 +74,20 @@ Deno.serve(async (request) => {
     if (subscriptionResult.error) throw subscriptionResult.error;
     if (setupResult.error) throw setupResult.error;
 
+    let retryDispatched = false;
+    if (input.retrySetup && checkout.status === "paid" && checkout.artist_workspace_id) {
+      await invokeSetupFunction({
+        supabaseUrl,
+        serviceRoleKey,
+        functionName: "paid-workspace-setup",
+        body: {
+          checkoutSessionId: checkout.id,
+          phase: setupResult.data?.current_stage === "setup_brief" ? "contextualize" : "discovery",
+        },
+      });
+      retryDispatched = true;
+    }
+
     const subscription = subscriptionResult.data;
     const entitlementActive = Boolean(
       subscription &&
@@ -86,7 +100,7 @@ Deno.serve(async (request) => {
       checkoutStatus: checkout.status,
       subscriptionStatus: subscription?.status ?? "none",
       entitlementActive,
-      setupStatus: setupResult.data?.status ?? (checkout.status === "paid" ? "queued" : "not_started"),
+      setupStatus: retryDispatched ? "running" : setupResult.data?.status ?? (checkout.status === "paid" ? "queued" : "not_started"),
       setupStage: setupResult.data?.current_stage,
       workspace: workspaceResult,
       authorizationUrl: checkout.authorization_url,
@@ -100,6 +114,27 @@ Deno.serve(async (request) => {
     return json({ error: error instanceof Error ? error.message : "Billing status could not be loaded." }, 500);
   }
 });
+
+async function invokeSetupFunction({ supabaseUrl, serviceRoleKey, functionName, body }: {
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  functionName: "paid-workspace-setup";
+  body: Record<string, unknown>;
+}) {
+  const response = await fetch(`${supabaseUrl}/functions/v1/${functionName}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.text();
+    throw new Error(payload || `Paid workspace setup retry failed with ${response.status}.`);
+  }
+}
 
 async function findCheckout(serviceClient: any, input: BillingStatusInput, userId: string) {
   const baseQuery = serviceClient.from("billing_checkout_sessions").select("*").eq("user_id", userId);

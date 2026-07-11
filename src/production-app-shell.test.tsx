@@ -224,6 +224,7 @@ describe("Clean production prototype-match shell", () => {
     const createdWorkspaces: Array<{ artistName: string; workspaceName?: string }> = [];
     const connectedArtists: Array<{ workspace: ProductionWorkspace; artist: string }> = [];
     const checkoutArtists: string[] = [];
+    const selectionActions: string[] = [];
     const workspaceLoader = {
       calls: 0,
       async loadActiveWorkspace() {
@@ -242,9 +243,24 @@ describe("Clean production prototype-match shell", () => {
         };
       },
     } satisfies ProductionWorkspaceLoader & { calls: number };
-    const spotifyArtistAdapter = spotifyAdapterWithAsyncConnect(connectedArtists);
+    const spotifyArtistAdapter = {
+      ...spotifyAdapterWithAsyncConnect(connectedArtists),
+      async previewCatalog(candidate) {
+        selectionActions.push(`preview:${candidate.name}`);
+        return {
+          artist: { spotifyArtistId: candidate.spotifyArtistId, name: candidate.name },
+          latestProject: {
+            spotifyAlbumId: "album-1",
+            name: "Nova Season",
+            tracks: [{ spotifyTrackId: "track-1", name: "First Move" }],
+          },
+          standaloneSingles: [],
+        };
+      },
+    } satisfies ProductionSpotifyArtistAdapter;
     const billingService = {
       async createCheckoutPreview({ candidate }) {
+        selectionActions.push(`checkout:${candidate.name}`);
         checkoutArtists.push(candidate.name);
         return {
           checkoutSessionId: "checkout-1",
@@ -290,11 +306,14 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Select Spotify artist Nova Vale" }));
 
     await screen.findByRole("heading", { name: /unlock the operating desk/i });
+    expect(selectionActions).toEqual(["preview:Nova Vale", "checkout:Nova Vale"]);
     expect(checkoutArtists).toEqual(["Nova Vale"]);
     expect(createdWorkspaces).toEqual([]);
     expect(connectedArtists).toEqual([]);
     expect(screen.getAllByAltText("Nova Vale artist image").length).toBeGreaterThan(0);
     expect(screen.getByText("$20/month")).toBeInTheDocument();
+    expect(screen.getByText("Nova Season")).toBeInTheDocument();
+    expect(screen.getByText("First Move")).toBeInTheDocument();
     expect(screen.getByText(/setup starts after payment is confirmed/i)).toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
@@ -411,16 +430,20 @@ describe("Clean production prototype-match shell", () => {
     ]);
   }, 20000);
 
-  it("starts Spotify catalog bootstrap from paid workspace identity before entering Desk HQ", async () => {
+  it("runs contextual paid setup after saving Manager basics without restarting Spotify", async () => {
     const paidSetupWorkspace = {
       ...workspace,
       status: "setup",
       contextComplete: false,
       entitlementActive: true,
       subscriptionStatus: "active",
-      latestCatalogSyncStatus: "failed",
+      setupStatus: "running",
+      setupStage: "setup_brief",
+      billingCheckoutSessionId: "checkout-1",
+      latestCatalogSyncStatus: "completed",
     } satisfies ProductionWorkspace;
     const bootstraps: string[] = [];
+    const setupPhases: string[] = [];
     const spotifyArtistAdapter = {
       async searchArtists() {
         return [];
@@ -445,11 +468,34 @@ describe("Clean production prototype-match shell", () => {
         };
       },
     };
+    const billingService: ProductionBillingService = {
+      async createCheckoutPreview() { throw new Error("not used"); },
+      async loadBillingStatus() { throw new Error("not used"); },
+      async runSetupPhase(input) {
+        setupPhases.push(`${input.checkoutSessionId}:${input.phase}`);
+        return {
+          status: "completed",
+          phase: "contextualize",
+          setupMusicReadTargets: [],
+          brief: {
+            headlineRead: "Nova Vale has a context-aware opening read.",
+            intelligenceSnapshot: [],
+            snapshotSummary: "The opening setup packet is ready.",
+            managerRead: "The saved direction and budget now shape the opening management focus.",
+            sourceLine: "Based on saved setup context and discovery evidence.",
+            confidence: "medium",
+            generatedAt: "2026-07-10T12:00:00.000Z",
+            state: "fresh",
+          },
+        };
+      },
+    };
 
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
         workspaceLoader={workspaceLoaderWith(paidSetupWorkspace)}
+        billingService={billingService}
         spotifyArtistAdapter={spotifyArtistAdapter}
         profileSetupService={profileSetupService}
         repositories={repositoriesFor("Nova Vale")}
@@ -462,7 +508,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
     await screen.findByRole("heading", { name: "Desk HQ" });
-    expect(bootstraps).toEqual(["workspace-1|spotify-artist-1|Nova Vale"]);
+    expect(setupPhases).toEqual(["checkout-1:contextualize"]);
+    expect(bootstraps).toEqual([]);
   }, 20000);
 
   it("shows Manager setup activity until the setup map and queued song/project reads are ready", async () => {
@@ -1573,6 +1620,30 @@ describe("Clean production prototype-match shell", () => {
     expect(source).not.toContain("group-hover:bg-brand-accent/10 group-hover:text-brand-accent");
     expect(source).toContain("hover:bg-foreground/[0.04]");
     expect(source).toContain("hover:text-foreground");
+  });
+
+  it("keeps a paid workspace in setup until its contextual brief phase completes", async () => {
+    const waitingWorkspace = {
+      ...workspace,
+      contextComplete: true,
+      entitlementActive: true,
+      subscriptionStatus: "active",
+      setupStatus: "running",
+      setupStage: "setup_brief",
+      billingCheckoutSessionId: "checkout-1",
+    } satisfies ProductionWorkspace;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(waitingWorkspace)}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   });
 
   it("keeps Manager conversations persistent and links created work", async () => {
@@ -4268,6 +4339,17 @@ function spotifyAdapterWithAsyncConnect(connectedArtists: Array<{ workspace: Pro
           imageUrl: "https://i.scdn.co/image/nova",
         },
       ];
+    },
+    async previewCatalog(candidate) {
+      return {
+        artist: {
+          spotifyArtistId: candidate.spotifyArtistId,
+          name: candidate.name,
+          spotifyUrl: candidate.spotifyUrl,
+          imageUrl: candidate.imageUrl,
+        },
+        standaloneSingles: [],
+      };
     },
     async connectArtist(nextWorkspace, candidate) {
       connectedArtists.push({ workspace: nextWorkspace, artist: candidate.name });

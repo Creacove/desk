@@ -1,3 +1,5 @@
+import type { MusicReadTarget, TodayBriefViewModel } from "./cleanProduction";
+
 export type ProductionUser = {
   id: string;
   email?: string;
@@ -26,6 +28,7 @@ export type ProductionWorkspace = {
   subscriptionStatus?: "none" | "open" | "active" | "non-renewing" | "attention" | "completed" | "cancelled" | "past_due" | "inactive";
   setupStatus?: "not_started" | "queued" | "running" | "completed" | "failed";
   setupStage?: "checkout" | "workspace_created" | "spotify_connected" | "catalog_bootstrap" | "manager_discovery" | "setup_brief" | "music_reads";
+  billingCheckoutSessionId?: string;
 };
 
 export type ProductionWorkspaceDraft = {
@@ -208,8 +211,38 @@ export type ProductionSpotifyBootstrapResult = {
   error?: string;
 };
 
+export type ProductionSpotifyCatalogPreviewTrack = {
+  spotifyTrackId: string;
+  name: string;
+  durationMs?: number;
+  spotifyUrl?: string;
+  explicit?: boolean;
+};
+
+export type ProductionSpotifyCatalogPreviewRelease = {
+  spotifyAlbumId: string;
+  name: string;
+  releaseType?: string;
+  releaseDate?: string;
+  artworkUrl?: string;
+  spotifyUrl?: string;
+  tracks: ProductionSpotifyCatalogPreviewTrack[];
+};
+
+export type ProductionSpotifyCatalogPreview = {
+  artist: {
+    spotifyArtistId: string;
+    name: string;
+    spotifyUrl?: string;
+    imageUrl?: string;
+  };
+  latestProject?: ProductionSpotifyCatalogPreviewRelease;
+  standaloneSingles: ProductionSpotifyCatalogPreviewRelease[];
+};
+
 export type ProductionSpotifyArtistAdapter = {
   searchArtists(query: string): Promise<ProductionSpotifyArtistCandidate[]>;
+  previewCatalog?(candidate: ProductionSpotifyArtistCandidate): Promise<ProductionSpotifyCatalogPreview>;
   connectArtist(
     workspace: ProductionWorkspace,
     candidate: ProductionSpotifyArtistCandidate,
@@ -247,6 +280,13 @@ export type ProductionBillingStatus = {
   message?: string;
 };
 
+export type ProductionSetupPhaseResult = {
+  status: "queued" | "running" | "waiting_for_context" | "waiting_for_discovery" | "completed" | "completed_with_limits";
+  phase: "discovery" | "contextualize";
+  brief?: TodayBriefViewModel;
+  setupMusicReadTargets?: MusicReadTarget[];
+};
+
 export type ProductionBillingService = {
   createCheckoutPreview(input: {
     user: ProductionUser;
@@ -255,6 +295,10 @@ export type ProductionBillingService = {
   loadLatestCheckoutPreview?(): Promise<ProductionBillingCheckoutPreview | null>;
   loadBillingStatus(input: { reference: string }): Promise<ProductionBillingStatus>;
   retrySetup?(input: { checkoutSessionId: string }): Promise<ProductionBillingStatus>;
+  runSetupPhase?(input: {
+    checkoutSessionId: string;
+    phase: "discovery" | "contextualize";
+  }): Promise<ProductionSetupPhaseResult>;
 };
 
 export type ProductionSetupProfile = {

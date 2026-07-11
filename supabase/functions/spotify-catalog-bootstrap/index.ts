@@ -26,6 +26,8 @@ type BootstrapInput = {
   market?: string;
   sourceConnectionId?: string;
   sourceSyncJobId?: string;
+  setupRunId?: string;
+  checkoutSessionId?: string;
 };
 
 Deno.serve(async (request) => {
@@ -46,35 +48,27 @@ Deno.serve(async (request) => {
 
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
+    const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const authHeader = request.headers.get("Authorization");
 
     if (!authHeader) {
       return json({ error: "Missing Authorization header." }, 401);
     }
 
-    authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+    const isServiceRoleInvocation =
+      authHeader === `Bearer ${serviceRoleKey}` || readBearerJwtRole(authHeader) === "service_role";
+    authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
+      global: { headers: { Authorization: isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader } },
     });
 
-    const {
-      data: { user },
-      error: userError,
-    } = await authClient.auth.getUser();
-
-    if (userError || !user) {
-      return json({ error: "Unauthorized." }, 401);
-    }
-
-    const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
-      target_account_id: input.accountId,
-    });
-
-    if (membershipError) {
-      throw membershipError;
-    }
-
-    if (!membership) {
-      return json({ error: "Forbidden." }, 403);
+    if (!isServiceRoleInvocation) {
+      const { data: { user }, error: userError } = await authClient.auth.getUser();
+      if (userError || !user) return json({ error: "Unauthorized." }, 401);
+      const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
+        target_account_id: input.accountId,
+      });
+      if (membershipError) throw membershipError;
+      if (!membership) return json({ error: "Forbidden." }, 403);
     }
 
     await assertActiveWorkspaceEntitlement(authClient, input);
@@ -89,7 +83,18 @@ Deno.serve(async (request) => {
       }),
     });
 
-    scheduleBackgroundTask(dispatchManagerArtistDiscovery(supabaseUrl, anonKey, authHeader, bootstrapInput, result).catch(async (error) => {
+    if (bootstrapInput.setupRunId && result.status !== "failed") {
+      await updateSetupRunStage(authClient, bootstrapInput.setupRunId, {
+        status: "running",
+        currentStage: "manager_discovery",
+        completedStage: "catalog_bootstrap",
+        nextStage: "manager_discovery",
+        limitation: result.status === "completed_with_limits" ? "Spotify catalog completed with limits." : undefined,
+      });
+    }
+
+    const functionApiKey = isServiceRoleInvocation ? serviceRoleKey : anonKey;
+    scheduleBackgroundTask(dispatchManagerArtistDiscovery(supabaseUrl, functionApiKey, authHeader, bootstrapInput, result).catch(async (error) => {
       const message = errorMessage(error, "Manager artist discovery dispatch failed.");
       console.warn("manager artist discovery dispatch failed", { message });
       await recordDiscoveryFailure(authClient, bootstrapInput, message).catch(() => undefined);
@@ -130,11 +135,43 @@ async function dispatchManagerArtistDiscovery(
       artistId: input.artistId,
       spotifyArtistId: input.selectedArtist.spotifyArtistId,
       artistName: input.selectedArtist.name,
+      setupRunId: input.setupRunId,
+      checkoutSessionId: input.checkoutSessionId,
     }),
   });
 
   if (!response.ok) {
     throw new Error(`Manager artist discovery dispatch failed with status ${response.status}.`);
+  }
+}
+
+async function updateSetupRunStage(
+  client: any,
+  setupRunId: string,
+  input: { status: string; currentStage: string; completedStage: string; nextStage: string; limitation?: string },
+) {
+  const { data: run, error } = await client.from("workspace_setup_runs").select("stage_status").eq("id", setupRunId).maybeSingle();
+  if (error) throw error;
+  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
+  const now = new Date().toISOString();
+  const { error: updateError } = await client.from("workspace_setup_runs").update({
+    status: input.status,
+    current_stage: input.currentStage,
+    stage_status: {
+      ...stages,
+      [input.completedStage]: { status: input.limitation ? "completed_with_limits" : "completed", completed_at: now, limitation: input.limitation },
+      [input.nextStage]: { status: "running", started_at: now },
+    },
+  }).eq("id", setupRunId);
+  if (updateError) throw updateError;
+}
+
+function readBearerJwtRole(authHeader: string) {
+  try {
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.role;
+  } catch {
+    return undefined;
   }
 }
 

@@ -1,6 +1,6 @@
 export async function assertActiveWorkspaceEntitlement(
   client: {
-    rpc: (name: string, args: Record<string, unknown>) => Promise<{ data: unknown; error: unknown }>;
+    rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
   },
   input: { artistWorkspaceId?: string | null },
 ) {

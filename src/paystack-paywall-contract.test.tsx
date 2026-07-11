@@ -24,6 +24,34 @@ const user: ProductionUser = {
   email: "artist@example.com",
 };
 
+const catalogPreview = {
+  artist: {
+    spotifyArtistId: "spotify-artist-1",
+    name: "Sable Day",
+    spotifyUrl: "https://open.spotify.com/artist/spotify-artist-1",
+    imageUrl: "https://i.scdn.co/image/artist",
+  },
+  latestProject: {
+    spotifyAlbumId: "album-1",
+    name: "Midnight Signals",
+    releaseType: "album",
+    releaseDate: "2026-06-01",
+    artworkUrl: "https://i.scdn.co/image/album-1",
+    spotifyUrl: "https://open.spotify.com/album/album-1",
+    tracks: [
+      { spotifyTrackId: "track-1", name: "After Dark", durationMs: 180000 },
+      { spotifyTrackId: "track-2", name: "First Train", durationMs: 190000 },
+    ],
+  },
+  standaloneSingles: [{
+    spotifyAlbumId: "single-1",
+    name: "Open Window",
+    releaseType: "single",
+    releaseDate: "2026-05-01",
+    tracks: [{ spotifyTrackId: "track-3", name: "Open Window", durationMs: 175000 }],
+  }],
+};
+
 afterEach(() => {
   cleanup();
 });
@@ -76,6 +104,18 @@ describe("Paystack paywall contract", () => {
     expect(calls.map((call) => call.name)).not.toContain("spotify-catalog-bootstrap");
   });
 
+  it("stores only canonical artist identity in the checkout session", () => {
+    const functionSource = readFileSync(
+      join(process.cwd(), "supabase", "functions", "paystack-initialize-checkout", "index.ts"),
+      "utf8",
+    );
+    expect(functionSource).toContain("normalizeSelectedArtist(input.selectedArtist)");
+    expect(functionSource).toContain("spotifyArtistId: artist.spotifyArtistId");
+    expect(functionSource).toContain("imageUrl: artist.imageUrl");
+    expect(functionSource).not.toContain("followers: artist.followers");
+    expect(functionSource).not.toContain("genres: artist.genres");
+  });
+
   it("renders a locked Desk HQ preview with real Spotify identity and no fake generated insights", () => {
     const onSubscribe = vi.fn();
 
@@ -92,6 +132,7 @@ describe("Paystack paywall contract", () => {
           interval: "monthly",
           expiresAt: "2026-07-10T13:00:00.000Z",
         }}
+        catalogPreview={catalogPreview}
         pending={false}
         onSubscribe={onSubscribe}
         onBack={() => undefined}
@@ -101,8 +142,11 @@ describe("Paystack paywall contract", () => {
 
     expect(screen.getByRole("heading", { name: /unlock the operating desk/i })).toBeInTheDocument();
     expect(screen.getByText("Sable Day")).toBeInTheDocument();
-    expect(screen.getByText("25,000 followers")).toBeInTheDocument();
-    expect(screen.getByText("alt-pop / indie soul")).toBeInTheDocument();
+    expect(screen.getByText("Midnight Signals")).toBeInTheDocument();
+    expect(screen.getByText("After Dark")).toBeInTheDocument();
+    expect(screen.getByText("First Train")).toBeInTheDocument();
+    expect(screen.getByText(/Recent singles: Open Window/)).toBeInTheDocument();
+    expect(screen.queryByText(/followers/i)).not.toBeInTheDocument();
     expect(screen.getByText("$20/month")).toBeInTheDocument();
     expect(screen.getByText(/setup starts after payment is confirmed/i)).toBeInTheDocument();
     expect(screen.getAllByText(/locked/i).length).toBeGreaterThan(2);

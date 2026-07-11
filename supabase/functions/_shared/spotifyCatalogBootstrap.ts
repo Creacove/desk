@@ -1,3 +1,5 @@
+import { loadSpotifyCatalogSelection } from "./spotifyCatalogPreview.ts";
+
 export const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
 
@@ -446,7 +448,12 @@ async function fetchAndSnapshotSpotifyCatalog({
   providerId: string;
   sourceConnectionId: string;
 }) {
-  const artist = await spotify.getArtist(input.selectedArtist.spotifyArtistId);
+  const selection = await loadSpotifyCatalogSelection({
+    artistId: input.selectedArtist.spotifyArtistId,
+    market: input.market,
+    spotify,
+  });
+  const artist = selection.artist;
   await repository.saveArtistSpotifyIdentity(createArtistIdentity(input.selectedArtist, artist));
   const artistSnapshotId = await writeSnapshot({
     input,
@@ -458,22 +465,7 @@ async function fetchAndSnapshotSpotifyCatalog({
     rawPayload: artist,
   });
 
-  const [projectReleases, singleReleases] = await Promise.all([
-    spotify.getArtistAlbums(input.selectedArtist.spotifyArtistId, {
-      market: input.market,
-      limit: 10,
-      includeGroup: "album",
-    }),
-    spotify.getArtistAlbums(input.selectedArtist.spotifyArtistId, {
-      market: input.market,
-      limit: 10,
-      includeGroup: "single",
-    }),
-  ]);
-  const albumsResponse: SpotifyArtistAlbumsResponse = {
-    items: uniqueReleaseSummaries([...projectReleases.items, ...singleReleases.items]),
-    total: (projectReleases.total ?? projectReleases.items.length) + (singleReleases.total ?? singleReleases.items.length),
-  };
+  const albumsResponse: SpotifyArtistAlbumsResponse = selection.albumsResponse;
   const albumsSnapshotId = await writeSnapshot({
     input,
     repository,
@@ -484,85 +476,58 @@ async function fetchAndSnapshotSpotifyCatalog({
     rawPayload: albumsResponse,
   });
 
-  const latestAlbumSummary = selectLatestRelease(albumsResponse.items);
-  const standaloneSingleSummaries = selectStandaloneSingles(albumsResponse.items, latestAlbumSummary?.id, 5);
-  const limitations: string[] = [];
-  let album: SpotifyAlbumPayload | undefined;
+  const limitations = [...selection.limitations];
+  const album = selection.latestProject;
   let albumSnapshotId: string | undefined;
   let albumTracksSnapshotId: string | undefined;
   const standaloneAlbums: FetchedAlbumSnapshot[] = [];
-  let audioFeaturesByTrackId: Record<string, SpotifyAudioFeaturesPayload> = {};
-
-  if (!latestAlbumSummary) {
+  if (!album && !albumsResponse.items.length) {
     limitations.push("Spotify returned no public album or single releases for this artist.");
-  } else {
-    try {
-      album = await spotify.getAlbum(latestAlbumSummary.id, { market: input.market });
-      albumSnapshotId = await writeSnapshot({
-        input,
-        repository,
-        providerId,
-        sourceConnectionId,
-        snapshotType: "spotify_album",
-        rawRef: `spotify:album:${album.id}`,
-        rawPayload: album,
-      });
-      albumTracksSnapshotId = await writeSnapshot({
-        input,
-        repository,
-        providerId,
-        sourceConnectionId,
-        snapshotType: "spotify_album_tracks",
-        rawRef: `spotify:album:${album.id}:tracks`,
-        rawPayload: {
-          album_id: album.id,
-          items: album.tracks?.items ?? [],
-        },
-      });
-    } catch (error) {
-      limitations.push(error instanceof Error ? error.message : "Spotify album fetch returned partial data.");
-    }
+  }
+  if (album) {
+    albumSnapshotId = await writeSnapshot({
+      input,
+      repository,
+      providerId,
+      sourceConnectionId,
+      snapshotType: "spotify_album",
+      rawRef: `spotify:album:${album.id}`,
+      rawPayload: album,
+    });
+    albumTracksSnapshotId = await writeSnapshot({
+      input,
+      repository,
+      providerId,
+      sourceConnectionId,
+      snapshotType: "spotify_album_tracks",
+      rawRef: `spotify:album:${album.id}:tracks`,
+      rawPayload: { album_id: album.id, items: album.tracks?.items ?? [] },
+    });
   }
 
-  for (const singleSummary of standaloneSingleSummaries) {
-    try {
-      const singleAlbum = await spotify.getAlbum(singleSummary.id, { market: input.market });
-      const singleAlbumSnapshotId = await writeSnapshot({
-        input,
-        repository,
-        providerId,
-        sourceConnectionId,
-        snapshotType: "spotify_album",
-        rawRef: `spotify:album:${singleAlbum.id}`,
-        rawPayload: singleAlbum,
-      });
-      const singleAlbumTracksSnapshotId = await writeSnapshot({
-        input,
-        repository,
-        providerId,
-        sourceConnectionId,
-        snapshotType: "spotify_album_tracks",
-        rawRef: `spotify:album:${singleAlbum.id}:tracks`,
-        rawPayload: {
-          album_id: singleAlbum.id,
-          items: singleAlbum.tracks?.items ?? [],
-        },
-      });
-      standaloneAlbums.push({
-        album: singleAlbum,
-        albumSnapshotId: singleAlbumSnapshotId,
-        albumTracksSnapshotId: singleAlbumTracksSnapshotId,
-      });
-    } catch (error) {
-      limitations.push(
-        error instanceof Error
-          ? `Spotify standalone single ${singleSummary.id} fetch failed: ${error.message}`
-          : `Spotify standalone single ${singleSummary.id} fetch returned partial data.`,
-      );
-    }
+  for (const singleAlbum of selection.standaloneAlbums) {
+    const singleAlbumSnapshotId = await writeSnapshot({
+      input,
+      repository,
+      providerId,
+      sourceConnectionId,
+      snapshotType: "spotify_album",
+      rawRef: `spotify:album:${singleAlbum.id}`,
+      rawPayload: singleAlbum,
+    });
+    const singleAlbumTracksSnapshotId = await writeSnapshot({
+      input,
+      repository,
+      providerId,
+      sourceConnectionId,
+      snapshotType: "spotify_album_tracks",
+      rawRef: `spotify:album:${singleAlbum.id}:tracks`,
+      rawPayload: { album_id: singleAlbum.id, items: singleAlbum.tracks?.items ?? [] },
+    });
+    standaloneAlbums.push({ album: singleAlbum, albumSnapshotId: singleAlbumSnapshotId, albumTracksSnapshotId: singleAlbumTracksSnapshotId });
   }
 
-  audioFeaturesByTrackId = await fetchAudioFeaturesForTracks(spotify, [
+  const audioFeaturesByTrackId = await fetchAudioFeaturesForTracks(spotify, [
     ...selectUniqueTracks(album?.tracks?.items ?? []),
     ...selectUniqueStandaloneTracks(
       standaloneAlbums.flatMap((singleAlbum) => singleAlbum.album.tracks?.items ?? []),
@@ -922,26 +887,6 @@ function createArtistIdentity(
     genres: artist.genres ?? [],
     popularity: artist.popularity,
   };
-}
-
-function selectLatestRelease(albums: SpotifyAlbumSummary[]) {
-  const sorted = [...albums].sort((a, b) => releaseSortValue(b.release_date) - releaseSortValue(a.release_date));
-  return sorted.find(isProjectLikeRelease) ?? sorted[0];
-}
-
-function uniqueReleaseSummaries(albums: SpotifyAlbumSummary[]) {
-  return Array.from(new Map(albums.map((album) => [album.id, album])).values());
-}
-
-function selectStandaloneSingles(albums: SpotifyAlbumSummary[], selectedProjectId: string | undefined, limit: number) {
-  return [...albums]
-    .filter((album) => album.id !== selectedProjectId && album.album_type === "single" && (album.total_tracks ?? 0) === 1)
-    .sort((a, b) => releaseSortValue(b.release_date) - releaseSortValue(a.release_date))
-    .slice(0, limit);
-}
-
-function isProjectLikeRelease(album: SpotifyAlbumSummary) {
-  return album.album_type === "album" || album.album_type === "compilation" || (album.total_tracks ?? 0) > 1;
 }
 
 function selectImage(images: SpotifyImage[] | undefined) {
