@@ -916,7 +916,12 @@ function CleanProductionWorkspace({
     for (let attempt = 0; attempt < 30; attempt += 1) {
       const result = await billingService.runSetupPhase({ checkoutSessionId, phase: "contextualize" });
       if (result.status === "completed" || result.status === "completed_with_limits") {
-        if (!result.brief) throw new Error("Contextual setup completed without a live Manager brief.");
+        if (!result.brief) {
+          // A just-completed setup can race the persisted brief read during deploys or retries.
+          // Keep polling rather than surfacing a false failure that a manual retry would repair.
+          await delay(500);
+          continue;
+        }
         setTodayBrief(result.brief);
         onWorkspaceChange?.({ ...nextWorkspace, setupStatus: "completed", setupStage: "music_reads" });
         return { brief: result.brief, setupMusicReadTargets: result.setupMusicReadTargets ?? [] };

@@ -538,6 +538,69 @@ describe("Clean production prototype-match shell", () => {
     expect(bootstraps).toEqual([]);
   }, 20000);
 
+  it("keeps polling when setup reports completion before the live brief payload is available", async () => {
+    const paidSetupWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      entitlementActive: true,
+      subscriptionStatus: "active",
+      setupStatus: "running",
+      setupStage: "setup_brief",
+      billingCheckoutSessionId: "checkout-1",
+      latestCatalogSyncStatus: "completed",
+    } satisfies ProductionWorkspace;
+    let contextualizeCalls = 0;
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        return { ...paidSetupWorkspace, status: "active", contextComplete: true };
+      },
+    };
+    const billingService: ProductionBillingService = {
+      async createCheckoutPreview() { throw new Error("not used"); },
+      async loadBillingStatus() { throw new Error("not used"); },
+      async runSetupPhase() {
+        contextualizeCalls += 1;
+        if (contextualizeCalls === 1) {
+          return { status: "completed", phase: "contextualize", setupMusicReadTargets: [] };
+        }
+        return {
+          status: "completed",
+          phase: "contextualize",
+          setupMusicReadTargets: [],
+          brief: {
+            headlineRead: "Nova Vale has a context-aware opening read.",
+            intelligenceSnapshot: [],
+            snapshotSummary: "The opening setup packet is ready.",
+            managerRead: "The saved direction and budget now shape the opening management focus.",
+            sourceLine: "Based on saved setup context and discovery evidence.",
+            confidence: "medium",
+            generatedAt: "2026-07-10T12:00:00.000Z",
+            state: "fresh",
+          },
+        };
+      },
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(paidSetupWorkspace)}
+        billingService={billingService}
+        profileSetupService={profileSetupService}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+
+    await screen.findByRole("heading", { name: "Desk HQ" }, { timeout: 5000 });
+    expect(contextualizeCalls).toBe(2);
+    expect(screen.queryByRole("button", { name: "Retry setup" })).not.toBeInTheDocument();
+  }, 20000);
+
   it("shows Manager setup activity until the setup map and queued song/project reads are ready", async () => {
     const setupWorkspace = {
       ...workspace,
