@@ -243,19 +243,30 @@ describe("Clean production prototype-match shell", () => {
         };
       },
     } satisfies ProductionWorkspaceLoader & { calls: number };
+    let resolveCatalogPreview: ((value: {
+      artist: { spotifyArtistId: string; name: string };
+      latestProject: {
+        spotifyAlbumId: string;
+        name: string;
+        tracks: Array<{ spotifyTrackId: string; name: string }>;
+      };
+      standaloneSingles: [];
+    }) => void) | null = null;
     const spotifyArtistAdapter = {
       ...spotifyAdapterWithAsyncConnect(connectedArtists),
       async previewCatalog(candidate) {
         selectionActions.push(`preview:${candidate.name}`);
-        return {
-          artist: { spotifyArtistId: candidate.spotifyArtistId, name: candidate.name },
+        return new Promise<{
+          artist: { spotifyArtistId: string; name: string };
           latestProject: {
-            spotifyAlbumId: "album-1",
-            name: "Nova Season",
-            tracks: [{ spotifyTrackId: "track-1", name: "First Move" }],
-          },
-          standaloneSingles: [],
-        };
+            spotifyAlbumId: string;
+            name: string;
+            tracks: Array<{ spotifyTrackId: string; name: string }>;
+          };
+          standaloneSingles: [];
+        }>((resolve) => {
+          resolveCatalogPreview = resolve;
+        });
       },
     } satisfies ProductionSpotifyArtistAdapter;
     const billingService = {
@@ -304,8 +315,23 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("spotify-search-loader")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Select Spotify artist Nova Vale" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select Spotify artist Nova Vale" }));
+    expect(await screen.findByRole("heading", { name: "Preparing Nova Vale Desk" })).toBeInTheDocument();
+    expect(screen.getByText("Reading Spotify catalog before checkout.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Connect artist profile" })).not.toBeInTheDocument();
 
-    await screen.findByRole("heading", { name: /unlock the operating desk/i });
+    await act(async () => {
+      resolveCatalogPreview?.({
+        artist: { spotifyArtistId: "spotify-artist-1", name: "Nova Vale" },
+        latestProject: {
+          spotifyAlbumId: "album-1",
+          name: "Nova Season",
+          tracks: [{ spotifyTrackId: "track-1", name: "First Move" }],
+        },
+        standaloneSingles: [],
+      });
+    });
+
+    await screen.findByRole("heading", { name: "Unlock Nova Vale Desk" });
     expect(selectionActions).toEqual(["preview:Nova Vale", "checkout:Nova Vale"]);
     expect(checkoutArtists).toEqual(["Nova Vale"]);
     expect(createdWorkspaces).toEqual([]);
@@ -314,7 +340,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("$20/month")).toBeInTheDocument();
     expect(screen.getByText("Nova Season")).toBeInTheDocument();
     expect(screen.getByText("First Move")).toBeInTheDocument();
-    expect(screen.getByText(/setup starts after payment is confirmed/i)).toBeInTheDocument();
+    expect(screen.getByText(/payment starts the private setup run/i)).toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
   }, 20000);

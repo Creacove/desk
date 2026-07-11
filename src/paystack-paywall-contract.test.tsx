@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -140,15 +140,24 @@ describe("Paystack paywall contract", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: /unlock the operating desk/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Unlock Sable Day Desk" })).toBeInTheDocument();
     expect(screen.getByText("Sable Day")).toBeInTheDocument();
-    expect(screen.getByText("Midnight Signals")).toBeInTheDocument();
-    expect(screen.getByText("After Dark")).toBeInTheDocument();
-    expect(screen.getByText("First Train")).toBeInTheDocument();
-    expect(screen.getByText(/Recent singles: Open Window/)).toBeInTheDocument();
+
+    const lockedCatalog = screen.getByLabelText("Locked catalog preview");
+    expect(within(lockedCatalog).getByText("Midnight Signals")).toBeInTheDocument();
+    expect(within(lockedCatalog).getByText("After Dark")).toBeInTheDocument();
+    expect(within(lockedCatalog).getByText("First Train")).toBeInTheDocument();
+    expect(within(lockedCatalog).getByText("Open Window")).toBeInTheDocument();
+
+    const subscriptionCard = screen.getByLabelText("Subscription checkout");
+    expect(within(subscriptionCard).getByText("$20/month")).toBeInTheDocument();
+    expect(within(subscriptionCard).getByRole("button", { name: /subscribe/i })).toBeInTheDocument();
+    expect(within(subscriptionCard).queryByText("Midnight Signals")).not.toBeInTheDocument();
+    expect(within(subscriptionCard).queryByText("After Dark")).not.toBeInTheDocument();
+    expect(within(subscriptionCard).queryByText("Open Window")).not.toBeInTheDocument();
+
     expect(screen.queryByText(/followers/i)).not.toBeInTheDocument();
-    expect(screen.getByText("$20/month")).toBeInTheDocument();
-    expect(screen.getByText(/setup starts after payment is confirmed/i)).toBeInTheDocument();
+    expect(screen.getByText(/payment starts the private setup run/i)).toBeInTheDocument();
     expect(screen.getAllByText(/locked/i).length).toBeGreaterThan(2);
     expect(screen.queryByText(/London is the clearest pressure point/i)).not.toBeInTheDocument();
 

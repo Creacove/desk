@@ -1827,6 +1827,7 @@ function SpotifyIdentityGate({
   const [message, setMessage] = useState<string | null>(null);
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
+  const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
 
   useEffect(() => {
     if (!billingService?.loadLatestCheckoutPreview || checkoutPreview) {
@@ -1908,6 +1909,7 @@ function SpotifyIdentityGate({
 
     try {
       setSelectPending(true);
+      setSelectedArtistName(candidate.name);
       setMessage(null);
       const catalog = spotifyArtistAdapter?.previewCatalog
         ? await spotifyArtistAdapter.previewCatalog(candidate).catch(() => ({
@@ -1925,6 +1927,7 @@ function SpotifyIdentityGate({
       setCheckoutPreview(preview);
     } catch (connectError) {
       setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
+      setSelectedArtistName(null);
     } finally {
       setSelectPending(false);
     }
@@ -1971,9 +1974,21 @@ function SpotifyIdentityGate({
           setCheckoutPreview(null);
           setCatalogPreview(null);
           setMessage(null);
+          setSelectedArtistName(null);
         }}
         onSubscribe={subscribeToPreview}
         onSignOut={onSignOut}
+      />
+    );
+  }
+
+  if (selectPending && selectedArtistName) {
+    return (
+      <BrandedLoader
+        title={`Preparing ${selectedArtistName} Desk`}
+        body="Reading Spotify catalog before checkout."
+        steps={["Artist identity", "Latest project", "Recent singles", "Secure checkout"]}
+        logoTestId="auth-brand-logo"
       />
     );
   }
