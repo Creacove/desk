@@ -218,10 +218,12 @@ export function DeskRail({
   active,
   onNavigate,
   onSignOut,
+  activeMissionCount = 0,
 }: {
   active: NavSection;
   onNavigate: (view: CleanProductionView) => void;
   onSignOut?: () => void;
+  activeMissionCount?: number;
 }) {
   return (
     <nav
@@ -239,7 +241,7 @@ export function DeskRail({
         <div className="mx-2 h-px shrink-0 bg-foreground/8" />
         <div className="flex shrink-0 flex-col gap-0.5 py-1">
           {navItems.map((item) => (
-            <NavButton key={item.label} item={item} active={active === item.active} onNavigate={onNavigate} />
+            <NavButton key={item.label} item={item} active={active === item.active} onNavigate={onNavigate} activeMissionCount={activeMissionCount} />
           ))}
         </div>
       </div>
@@ -275,16 +277,18 @@ function NavButton({
   item,
   active,
   onNavigate,
+  activeMissionCount,
 }: {
   item: (typeof navItems)[number];
   active: boolean;
   onNavigate: (view: CleanProductionView) => void;
+  activeMissionCount: number;
 }) {
   const Icon = item.icon;
   return (
     <button
       type="button"
-      aria-label={item.label === "Catalog" ? "Open Catalog workspace" : undefined}
+      aria-label={item.label === "Catalog" ? "Open Catalog workspace" : item.label}
       onClick={() => onNavigate(item.view)}
       className={cn(
         "flex h-9 w-full items-center gap-2.5 rounded-lg px-2.5 font-ui text-[13px] font-semibold transition-colors duration-200",
@@ -292,7 +296,10 @@ function NavButton({
       )}
     >
       <Icon className={cn("h-[15px] w-[15px] shrink-0", active ? "text-brand-accent" : "text-current opacity-60")} aria-hidden="true" />
-      {item.label}
+      <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
+      {item.active === "missions" && activeMissionCount > 0 ? (
+        <span data-testid="desktop-mission-count" className={cn("ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold", active ? "bg-background/14 text-background" : "bg-foreground/[0.07] text-foreground")}>{formatNavigationCount(activeMissionCount)}</span>
+      ) : null}
     </button>
   );
 }
@@ -303,12 +310,14 @@ export function MobileChrome({
   onNavigate,
   notificationCount = 0,
   onOpenNotifications,
+  activeMissionCount = 0,
 }: {
   active: NavSection;
   title: string;
   onNavigate: (view: CleanProductionView) => void;
   notificationCount?: number;
   onOpenNotifications?: () => void;
+  activeMissionCount?: number;
 }) {
   return (
     <>
@@ -376,13 +385,22 @@ export function MobileChrome({
               )}
             >
               <Icon className={cn("h-[15px] w-[15px]", active === item.active ? "text-brand-accent" : "opacity-65")} aria-hidden="true" />
-              <span data-testid={`mobile-tab-label-${label}`} className="truncate">{label}</span>
+              <span className="relative">
+                <span data-testid={`mobile-tab-label-${label}`} className="truncate">{label}</span>
+                {item.active === "missions" && activeMissionCount > 0 ? (
+                  <span data-testid="mobile-mission-count" className={cn("absolute -right-4 -top-5 inline-flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold", active === item.active ? "bg-brand-accent text-foreground" : "bg-foreground text-background")}>{formatNavigationCount(activeMissionCount)}</span>
+                ) : null}
+              </span>
             </button>
           );
         })}
       </nav>
     </>
   );
+}
+
+function formatNavigationCount(count: number) {
+  return count > 9 ? "9+" : String(count);
 }
 
 export function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "success" | "warning" }) {

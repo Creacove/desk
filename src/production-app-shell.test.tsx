@@ -1817,7 +1817,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
     expect((await screen.findAllByText("Release Night Bus on June 12")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("Mission pulse")).toBeInTheDocument();
+    expect(await screen.findByText("Executive summary")).toBeInTheDocument();
   }, 20000);
 
   it("continues Manager chat messages in place with a pending manager reply", async () => {
@@ -2968,8 +2968,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Verify geography signal quality")).toBeInTheDocument();
     expect(screen.getByText(/Confirm the city metrics are correct/i)).toBeInTheDocument();
 
-    // Open task details and verify steps
-    fireEvent.click(screen.getByRole("button", { name: /Show task details/i }));
+    // The first task is expanded by default; verify its concise details.
+    expect(screen.getByRole("button", { name: /Collapse Verify geography signal quality/i })).toBeInTheDocument();
     expect(screen.getByText(/Open Spotify for Artists/i)).toBeInTheDocument();
     expect(screen.getByText(/Filter by London monthly listeners/i)).toBeInTheDocument();
     expect(screen.getByText(/Compare with historical baseline/i)).toBeInTheDocument();
@@ -2978,7 +2978,7 @@ describe("Clean production prototype-match shell", () => {
     // Navigate to the Checkpoints tab
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
     expect(screen.getAllByText("Market signal quality").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("Is this market signal real enough?").length).toBeGreaterThan(0);
+    expect(screen.getByText("Check Spotify listener count in London")).toBeInTheDocument();
     expect(screen.getAllByText("Verify geography signal quality").length).toBeGreaterThan(0);
   }, 20000);
 
@@ -3144,7 +3144,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText(/Separate song-level momentum from Blaqbonez-owned audience/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
     expect(screen.getAllByText("Feature leverage quality").length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/If the song grows but Blaqbonez's profile does not/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Continue only if Blaqbonez-owned attention rises with the feature/i)).toBeInTheDocument();
     expect(loadMissionsCalls).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Mission Genesis failed")).not.toBeInTheDocument();
   }, 20000);
@@ -4058,14 +4058,14 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /Release Night Bus on June 12/i })[0]);
-    expect(screen.getByText("What is happening")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Release Night Bus on June 12" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
     expect(screen.getAllByText("Tasks under this checkpoint").length).toBeGreaterThan(0);
     expect(screen.getByText("Confirm split sheet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
     expect(screen.getByTestId("checkpoint-inspector")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Mission recap" }));
-    expect(screen.getByText(/living recap of the mission/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Activity/ }));
+    expect(screen.getByTestId("mission-activity-feed")).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Artist profile." })).toBeInTheDocument();
@@ -4145,8 +4145,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Touring Plan - Market Selection/i })[0]);
 
     const pulse = await screen.findByTestId("mission-pulse");
-    expect(pulse).toHaveTextContent("Recommendation");
-    expect(pulse).toHaveTextContent("Next Required Action");
+    expect(pulse).toHaveTextContent("Executive summary");
+    expect(pulse).toHaveTextContent("Next required action");
     expect(pulse).toHaveTextContent("Commission Data Lead power check & smartlink mapping");
     expect(pulse).toHaveTextContent("Private exports and Shazam heatmap snapshots are missing.");
     expect(pulse).not.toHaveTextContent("What changed");
@@ -4343,7 +4343,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Build the compact mobile mission room/i })[0]);
 
     const commandBar = screen.getByTestId("mission-command-bar");
-    expect(commandBar).toHaveTextContent("40% / 2 open tasks");
+    expect(commandBar).toHaveTextContent("40%");
+    expect(commandBar).not.toHaveTextContent("open tasks");
     expect(commandBar).toHaveTextContent("Build the compact mobile mission room");
 
     const tabRail = screen.getByTestId("mobile-mission-tabs");
