@@ -51,6 +51,16 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain('catalogState === "completed" || catalogState === "completed_with_limits"');
   });
 
+  it("returns the persisted contextual brief and music targets when setup already completed", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+
+    expect(text).toContain("loadCompletedSetupResult");
+    expect(text).toContain('.from("manager_outputs")');
+    expect(text).toContain('select("render_json")');
+    expect(text).toContain("setupMusicReadTargets");
+    expect(text).not.toContain('return { status: "completed", phase: "contextualize" };');
+  });
+
   it("dispatches paid setup only after the active subscription is stored", () => {
     const text = source("supabase", "functions", "paystack-webhook", "index.ts");
     const subscriptionWrite = text.indexOf('.from("billing_subscriptions").upsert');

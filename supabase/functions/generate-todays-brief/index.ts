@@ -162,7 +162,7 @@ Deno.serve(async (request) => {
     });
 
     if (generationMode === "setup-map" && setupMusicReadTargets.length) {
-      dispatchSetupMusicReadsSequentially(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
+      dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
     }
 
     return json({
@@ -291,21 +291,22 @@ function selectChartmetricEnrichedMusicItemIds(evidenceRows: EvidenceRow[]): str
   return selected;
 }
 
-function dispatchSetupMusicReadsSequentially(
+function dispatchSetupMusicReadsConcurrently(
   supabaseUrl: string,
   anonKey: string,
   authHeader: string,
   input: GenerateTodaysBriefInput,
   setupMusicReadTargets: SetupMusicReadTarget[],
 ) {
-  const work = (async () => {
-    for (const [index, target] of setupMusicReadTargets.entries()) {
-      if (index > 0) await delay(1200);
-      await dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target);
-    }
-  })().catch((error) => {
-    console.warn("setup music Manager Read dispatch failed", {
-      message: describeError(error, "Setup music Manager Read dispatch failed."),
+  const work = Promise.allSettled(
+    setupMusicReadTargets.map((target) => dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target)),
+  ).then((results) => {
+    results.forEach((result, index) => {
+      if (result.status !== "rejected") return;
+      console.warn("setup music Manager Read dispatch failed", {
+        target: setupMusicReadTargets[index],
+        message: describeError(result.reason, "Setup music Manager Read dispatch failed."),
+      });
     });
   });
 

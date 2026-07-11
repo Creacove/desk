@@ -173,7 +173,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
 
   const setupBriefState = stageState(contextStages, "setup_brief");
   if (setupBriefState === "completed") {
-    return { status: "completed", phase: "contextualize" };
+    return loadCompletedSetupResult(db, workspace);
   }
   if (setupBriefState === "running") return { status: "running", phase: "contextualize" };
 
@@ -210,6 +210,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
       music_reads: {
         status: Array.isArray(result.setupMusicReadTargets) && result.setupMusicReadTargets.length ? "running" : "completed",
         target_count: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets.length : 0,
+        targets: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [],
         started_at: completedAt,
       },
     },
@@ -217,6 +218,77 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, workspac
     last_error: null,
   });
   return { status: "completed", phase: "contextualize", ...result };
+}
+
+async function loadCompletedSetupResult(db: any, workspace: any) {
+  const { data: output, error: outputError } = await db
+    .from("manager_outputs")
+    .select("render_json")
+    .eq("account_id", workspace.account_id)
+    .eq("artist_workspace_id", workspace.id)
+    .eq("artist_id", workspace.artist_id)
+    .eq("subject_type", "artist")
+    .eq("is_current", true)
+    .in("output_type", ["setup_first_manager_read", "recurring_todays_brief"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (outputError) throw outputError;
+  if (!output?.render_json) throw new Error("Completed contextual setup has no persisted Manager brief.");
+
+  return {
+    status: "completed",
+    phase: "contextualize",
+    brief: output.render_json,
+    setupMusicReadTargets: await loadSetupMusicReadTargets(db, workspace),
+  };
+}
+
+async function loadSetupMusicReadTargets(db: any, workspace: any) {
+  const [itemsResult, projectsResult, evidenceResult] = await Promise.all([
+    db.from("music_items")
+      .select("id")
+      .eq("account_id", workspace.account_id)
+      .eq("artist_workspace_id", workspace.id)
+      .eq("artist_id", workspace.artist_id)
+      .eq("status", "active")
+      .limit(80),
+    db.from("music_projects")
+      .select("id")
+      .eq("account_id", workspace.account_id)
+      .eq("artist_workspace_id", workspace.id)
+      .eq("artist_id", workspace.artist_id)
+      .eq("status", "active")
+      .order("released_at", { ascending: false })
+      .limit(1),
+    db.from("evidence_items")
+      .select("source,source_kind,subject_type,subject_id")
+      .eq("account_id", workspace.account_id)
+      .eq("artist_workspace_id", workspace.id)
+      .eq("artist_id", workspace.artist_id)
+      .eq("subject_type", "music_item")
+      .order("created_at", { ascending: false })
+      .limit(240),
+  ]);
+  if (itemsResult.error) throw itemsResult.error;
+  if (projectsResult.error) throw projectsResult.error;
+  if (evidenceResult.error) throw evidenceResult.error;
+
+  const itemIds = new Set((itemsResult.data ?? []).map((row: any) => row.id));
+  const selectedItemIds: string[] = [];
+  for (const row of evidenceResult.data ?? []) {
+    const source = String(row.source ?? "").toLowerCase();
+    const sourceKind = String(row.source_kind ?? "").toLowerCase();
+    if (!row.subject_id || !itemIds.has(row.subject_id) || selectedItemIds.includes(row.subject_id)) continue;
+    if (source !== "chartmetric" && sourceKind !== "chartmetric") continue;
+    selectedItemIds.push(row.subject_id);
+    if (selectedItemIds.length === 5) break;
+  }
+
+  return [
+    ...(projectsResult.data ?? []).map((row: any) => ({ subjectType: "music_project", subjectId: row.id })),
+    ...selectedItemIds.map((subjectId) => ({ subjectType: "music_item", subjectId })),
+  ];
 }
 
 async function loadWorkspace(db: any, workspaceId: string) {

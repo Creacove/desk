@@ -5,7 +5,6 @@ import {
   parseManagerReadOutput,
   checkBannedVisibleMusicTerms,
   checkSourceLine,
-  stripBannedVisibleMusicTerms,
   type ManagerReadOutput,
   type ManagerReadPacket,
   type ManagerReadSubjectType,
@@ -88,38 +87,22 @@ Deno.serve(async (request) => {
     usageId = await createUsageEvent(authClient, input, runId);
     const appliedPlaybooks = readAppliedPlaybooks(packet.latestManagerIntelligencePacket);
     const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
-    let fallbackError: unknown = null;
-    let output: ManagerReadOutput;
-    try {
-      output = await callOpenAIManagerReadWithRetry(packet, playbookLensText);
-    } catch (error) {
-      fallbackError = error;
-      output = fallbackManagerReadFromPacket(packet, error);
-    }
-    const managerOutputId = fallbackError
-      ? await persistFallbackGeneratedRead(authClient, input, output, runId)
-      : await persistGeneratedRead(authClient, input, output, runId);
+    const output = await callOpenAIManagerReadWithRetry(packet, playbookLensText);
+    const managerOutputId = await persistGeneratedRead(authClient, input, output, runId);
     await completeManagerSynthesisRun(authClient, runId, packet, output);
-    if (fallbackError) {
-      await markUsageFailedSafe(usageId, input, fallbackError);
-    } else {
-      await completeUsageEvent(authClient, usageId, output);
-    }
+    await completeUsageEvent(authClient, usageId, output);
     await writeOperatingEventSafe(authClient, input, {
-      eventType: fallbackError ? "music_manager_read_fallback_generated" : "music_manager_read_generated",
-      summary: fallbackError
-        ? `Prepared packet-backed Manager Read for ${readSubjectTitle(packet)}.`
-        : `Generated Manager Read for ${readSubjectTitle(packet)}.`,
+      eventType: "music_manager_read_generated",
+      summary: `Generated Manager Read for ${readSubjectTitle(packet)}.`,
       payload: {
         manager_synthesis_run_id: runId,
         manager_output_id: managerOutputId,
         confidence: output.confidence,
         evidence_ids_used: output.evidenceIdsUsed,
-        fallback_reason: fallbackError ? describeError(fallbackError, "Provider generation failed.") : undefined,
       },
     });
 
-    return json({ status: fallbackError ? "completed_with_fallback" : "completed", managerSynthesisRunId: runId, read: output });
+    return json({ status: "completed", managerSynthesisRunId: runId, read: output });
   } catch (error) {
     if (runId && input) await markRunFailedSafe(runId, input, error);
     if (usageId && input) await markUsageFailedSafe(usageId, input, error);
@@ -211,7 +194,7 @@ async function callOpenAIManagerReadWithRetry(
   packet: ManagerReadPacket,
   playbookLensText?: string,
 ): Promise<ManagerReadOutput> {
-  const maxAttempts = 3;
+  const maxAttempts = 4;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -232,8 +215,8 @@ async function callOpenAIManagerRead(
   playbookLensText?: string,
 ): Promise<ManagerReadOutput> {
   const MAX_RETRIES = 2;
-  let lastOutput: ManagerReadOutput | null = null;
   let correctionNote = "";
+  let lastViolations: string[] = [];
   const modelPacket = buildManagerReadModelPacket(packet);
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -271,12 +254,19 @@ async function callOpenAIManagerRead(
 
     const payload = await response.json();
     const output = parseManagerReadOutput(readOutputText(payload));
-    lastOutput = output;
-
     const bannedTerm = checkBannedVisibleMusicTerms(output);
     const badSourceLine = !checkSourceLine(output);
+    const requestedTitle = readSubjectTitle(packet);
+    const normalizedHeadline = output.headline.trim().toLowerCase();
+    const normalizedRequestedTitle = requestedTitle.trim().toLowerCase();
+    const subjectTitleMissing = !normalizedHeadline.includes(normalizedRequestedTitle);
+    const subjectHeadlineTooThin =
+      !subjectTitleMissing &&
+      (normalizedHeadline === normalizedRequestedTitle ||
+        output.headline.trim().length <= requestedTitle.trim().length + 8);
+    const unexpectedScriptCharacter = findUnexpectedScriptCharacter(output, modelPacket);
 
-    if (!bannedTerm && !badSourceLine) {
+    if (!bannedTerm && !badSourceLine && !subjectTitleMissing && !subjectHeadlineTooThin && !unexpectedScriptCharacter) {
       // Clean output — return immediately.
       return output;
     }
@@ -285,21 +275,28 @@ async function callOpenAIManagerRead(
     const violations: string[] = [];
     if (bannedTerm) violations.push(`the word "${bannedTerm}"`);
     if (badSourceLine) violations.push(`a sourceLine that does not match the required wording`);
+    if (subjectTitleMissing) violations.push(`a headline that does not name the exact requested subject "${requestedTitle}"`);
+    if (subjectHeadlineTooThin) {
+      violations.push(`a headline that names "${requestedTitle}" but does not include a specific management judgment`);
+    }
+    if (unexpectedScriptCharacter) {
+      violations.push(`an unrelated writing-system character "${unexpectedScriptCharacter}" that is absent from the source packet`);
+    }
+    lastViolations = violations;
     correctionNote =
       `Your previous response included ${violations.join(" and ")} in a visible field. ` +
+      `The headline must name the exact requested subject "${requestedTitle}", add a specific management judgment, and must not substitute a comparison track. ` +
       `Rewrite your response removing all instances. The sourceLine must be exactly: ` +
       `"Prepared from the record details and audience signals I can already see." ` +
       `All other content rules still apply.`;
 
     console.warn(
       `[generate-music-summary] Attempt ${attempt + 1}: violation detected — ${violations.join(", ")}. ` +
-      (attempt < MAX_RETRIES ? "Retrying with correction." : "Retries exhausted — stripping in-place.")
+      (attempt < MAX_RETRIES ? "Retrying with correction." : "Retries exhausted.")
     );
   }
 
-  // Retries exhausted: strip banned terms in-place rather than hard-failing.
-  // A one-word style slip should never block the artist from receiving their brief.
-  return stripBannedVisibleMusicTerms(lastOutput!);
+  throw new Error(`OpenAI manager read output failed validation: ${lastViolations.join(", ")}.`);
 }
 
 function buildManagerReadModelPacket(packet: ManagerReadPacket) {
@@ -395,64 +392,6 @@ function compactValue(value: unknown, depth: number): unknown {
   return Object.fromEntries(Object.entries(value).slice(0, 16).map(([key, item]) => [key, compactValue(item, depth - 1)]));
 }
 
-function fallbackManagerReadFromPacket(packet: ManagerReadPacket, error: unknown): ManagerReadOutput {
-  const title = readSubjectTitle(packet);
-  const evidence = packet.evidence.filter(isRecord);
-  const evidenceIds = uniqueStrings(evidence.map((item) => readString(item.id))).slice(0, 12);
-  const sourceIds = evidenceIds;
-  const topEvidence = evidence.slice(0, 6);
-  const snapshotMetrics = topEvidence.length
-    ? topEvidence.map((item) => ({
-        label: metricLabel(readString(item.metric_name)),
-        value: readString(item.formatted_value) ?? formatFallbackMetricValue(item.metric_value, item.metric_unit),
-        context: readString(item.subject_label) ?? readString(item.freshness) ?? "saved audience detail",
-        evidenceIds: readString(item.id) ? [readString(item.id) as string] : [],
-      }))
-    : [{
-        label: "Record profile",
-        value: "Saved",
-        context: packet.subjectType === "music_project" ? "project in view" : "record in view",
-        evidenceIds: sourceIds.slice(0, 1),
-      }];
-  const snapshotTitle = packet.subjectType === "music_project" ? "Project Intelligence" : "Record Intelligence";
-  const strongest = snapshotMetrics[0];
-  const comparison = Array.isArray(packet.derivedInsights) && isRecord(packet.derivedInsights[0])
-    ? readString(packet.derivedInsights[0].read)
-    : undefined;
-  const managerRead = [
-    `${title} has enough saved evidence for a first Manager Read. I would treat ${strongest.label} as the anchor: ${strongest.value}${strongest.context ? ` in ${strongest.context}` : ""}.`,
-    comparison ?? `The practical read is to keep the next decision centered on ${title}, then compare it against the other current records only where the saved evidence gives a reason to move.`,
-    `Today's move is to choose the clearest operating lane for ${title} from the saved audience facts before asking the team to widen the work.`,
-  ].join("\n\n");
-
-  return {
-    situationLine: `${title} has saved evidence ready for a focused read.`,
-    headline: `${title} has enough evidence for a first read.`,
-    managerRead,
-    nextMove: `Use ${title} as the first focus and decide which saved audience lane should lead the next team action.`,
-    watchNext: `Check the next saved audience update for ${title} and compare it against the current catalog.`,
-    generationState: "limited",
-    whatMatters: snapshotMetrics.slice(0, 3).map((metric) => `${metric.label}: ${metric.value}`),
-    doNotDoYet: ["Do not widen the plan before choosing the lead record lane."],
-    missingProof: packet.limitations.slice(0, 3),
-    confidence: evidenceIds.length >= 4 ? "medium" : "low",
-    evidenceIdsUsed: sourceIds,
-    sourcePanelNote: `Prepared from the saved Manager Read packet after live prose generation could not complete: ${describeError(error, "rate limited")}`,
-    intelligenceSnapshot: [{
-      title: snapshotTitle,
-      insight: `${title} should be read through ${strongest.label} first, then checked against the rest of the current music in view.`,
-      metrics: snapshotMetrics.slice(0, 6),
-    }],
-    snapshotSummary: `${title} has a usable first read from saved record evidence.`,
-    claimAudit: [{
-      claim: `${title} has a packet-backed Manager Read from saved evidence.`,
-      evidenceIds: sourceIds.slice(0, 8),
-      limitation: "Prepared from stored evidence because live prose generation could not complete.",
-    }],
-    sourceLine: "Prepared from the record details and audience signals I can already see.",
-  };
-}
-
 function readOutputText(payload: unknown) {
   const output = isRecord(payload) && Array.isArray(payload.output) ? payload.output : [];
   for (const item of output) {
@@ -520,15 +459,6 @@ async function persistGeneratedRead(supabase: any, input: GenerateMusicSummaryIn
     .single();
   if (error) throw error;
   return data.id as string;
-}
-
-async function persistFallbackGeneratedRead(
-  supabase: any,
-  input: GenerateMusicSummaryInput,
-  output: ManagerReadOutput,
-  runId: string,
-) {
-  return persistGeneratedRead(supabase, input, output, runId);
 }
 
 async function retireCurrentManagerOutput(
@@ -969,6 +899,14 @@ function readSubjectTitle(packet: ManagerReadPacket) {
   return readString(packet.subject.title) ?? "Music subject";
 }
 
+function findUnexpectedScriptCharacter(output: ManagerReadOutput, modelPacket: Record<string, unknown>) {
+  const sourceText = JSON.stringify(modelPacket);
+  const generatedText = JSON.stringify(output);
+  const scriptCharacters =
+    generatedText.match(/[\u0400-\u052f\u0600-\u06ff\u0900-\u097f\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/gu) ?? [];
+  return scriptCharacters.find((character) => !sourceText.includes(character));
+}
+
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -986,7 +924,8 @@ function describeError(error: unknown, fallback: string) {
 function isRetryableOpenAIError(error: unknown) {
   const message = describeError(error, "");
   const status = Number(message.match(/\bstatus\s+(\d{3})\b/i)?.[1]);
-  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504 ||
+    /too much compute|network|fetch|timed out|timeout|connection|OpenAI manager read output/i.test(message);
 }
 
 function openAiRetryDelayMs(attempt: number) {
@@ -999,11 +938,6 @@ function delay(ms: number) {
 
 function uniqueStrings(values: Array<string | undefined>) {
   return Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim()))));
-}
-
-function formatFallbackMetricValue(value: unknown, unit: unknown) {
-  if (typeof value === "number") return formatMetricValue(value, typeof unit === "string" ? unit : null);
-  return readString(value) ?? "Saved";
 }
 
 function requireEnv(key: string) {

@@ -78,11 +78,43 @@ describe("OpenAI music Manager Read generation function", () => {
     expect(functionSource).toContain("subject_type: input.subjectType");
     expect(functionSource).toContain("subject_id: input.subjectId");
     expect(functionSource).toContain("render_json: output");
-    expect(functionSource).toContain("fallbackManagerReadFromPacket");
-    expect(functionSource).toContain("persistFallbackGeneratedRead");
+    expect(functionSource).not.toContain("fallbackManagerReadFromPacket");
+    expect(functionSource).not.toContain("persistFallbackGeneratedRead");
+    expect(functionSource).not.toContain("completed_with_fallback");
+    expect(functionSource).not.toContain("music_manager_read_fallback_generated");
     expect(functionSource).toContain("retireCurrentManagerOutput");
     expect(functionSource).toContain("is_current: false");
     expect(functionSource).not.toContain("nextMetadata");
+  });
+
+  it("retries real OpenAI and network failures instead of completing with local prose", () => {
+    expect(functionSource).toContain("callOpenAIManagerReadWithRetry");
+    expect(functionSource).toContain("const maxAttempts = 4");
+    expect(functionSource).toContain("isRetryableOpenAIError");
+    expect(functionSource).toContain("too much compute");
+    expect(functionSource).toContain("network|fetch|timed out|timeout|connection");
+    expect(functionSource).toContain("OpenAI manager read output");
+    expect(functionSource).toContain("const output = await callOpenAIManagerReadWithRetry");
+  });
+
+  it("rejects a brief that substitutes a comparison track for the requested song", () => {
+    expect(functionSource).toContain("subjectTitleMissing");
+    expect(functionSource).toContain("does not name the exact requested subject");
+    expect(promptSource).toContain("name the exact requested song or project title");
+    expect(promptSource).toContain("Never substitute a comparison track");
+  });
+
+  it("rejects a headline that contains only the requested title", () => {
+    expect(functionSource).toContain("subjectHeadlineTooThin");
+    expect(functionSource).toContain("does not include a specific management judgment");
+    expect(promptSource).toContain("Do not return the title alone");
+  });
+
+  it("rejects unrelated writing-system characters that are absent from the source packet", () => {
+    expect(functionSource).toContain("unexpectedScriptCharacter");
+    expect(functionSource).toContain("findUnexpectedScriptCharacter");
+    expect(functionSource).toContain("an unrelated writing-system character");
+    expect(promptSource).toContain("Do not introduce characters from an unrelated writing system");
   });
 
   it("builds a compact OpenAI model packet instead of sending the full Manager Intelligence packet", () => {

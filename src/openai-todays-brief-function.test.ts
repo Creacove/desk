@@ -109,7 +109,9 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("selectSetupMusicReadTargets");
     expect(functionSource).toContain("selectChartmetricEnrichedMusicItemIds");
     expect(functionSource).not.toContain("musicItems.slice(0, 5).map((item)");
-    expect(functionSource).toContain("dispatchSetupMusicReadsSequentially");
+    expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently");
+    expect(functionSource).toContain("Promise.allSettled");
+    expect(functionSource).not.toContain("dispatchSetupMusicReadsSequentially");
     expect(functionSource).toContain("EdgeRuntime.waitUntil");
     expect(functionSource).toContain("generate-music-summary");
     expect(functionSource).toContain('subjectType: "music_project"');
