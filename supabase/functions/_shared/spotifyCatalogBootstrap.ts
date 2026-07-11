@@ -404,7 +404,7 @@ export async function bootstrapSpotifyCatalog({
           sourceSyncJobId,
         };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Spotify catalog bootstrap failed.";
+    const message = readErrorMessage(error, "Spotify catalog bootstrap failed.");
 
     await repository.updateSourceSyncJob(sourceSyncJobId, {
       status: "failed",
@@ -433,6 +433,15 @@ export async function bootstrapSpotifyCatalog({
       sourceSyncJobId,
     };
   }
+}
+
+function readErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message.trim()) return error.message.trim();
+  if (error && typeof error === "object" && "message" in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string" && message.trim()) return message.trim();
+  }
+  return fallback;
 }
 
 async function fetchAndSnapshotSpotifyCatalog({

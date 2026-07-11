@@ -1,5 +1,4 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -63,13 +62,6 @@ Deno.serve(async (request) => {
     setupRun = run;
 
     const workspace = await loadWorkspace(db, checkout.artist_workspace_id);
-    // Service-role invocations come from trusted internal paths (webhook, billing-status)
-    // that have already verified payment. Skip the entitlement query to avoid a race
-    // where the billing_subscriptions row isn't yet visible through RLS.
-    if (!isServiceRoleInvocation) {
-      await assertActiveWorkspaceEntitlement(db, { artistWorkspaceId: workspace.id });
-    }
-
     if (input.phase === "discovery") {
       return json(await runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }));
     }

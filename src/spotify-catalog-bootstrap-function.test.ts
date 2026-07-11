@@ -190,6 +190,35 @@ describe("Spotify catalog bootstrap edge function", () => {
       completed_at: expect.any(String),
     });
   });
+
+  it("scopes identifier deduplication to the active account and workspace", async () => {
+    const tables: Record<string, Array<Record<string, unknown>>> = {
+      music_identifiers: [
+        {
+          account_id: "another-account",
+          artist_workspace_id: "another-workspace",
+          identifier_type: "spotify_track_id",
+          identifier_value: "shared-track",
+          music_item_id: "wrong-item",
+        },
+        {
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          identifier_type: "spotify_track_id",
+          identifier_value: "shared-track",
+          music_item_id: "correct-item",
+        },
+      ],
+    };
+    const repository = createSupabaseCatalogRepository(createMutableClient(tables), {
+      accountId: "account-1",
+      artistWorkspaceId: "workspace-1",
+      artistId: "artist-1",
+    });
+
+    await expect(repository.findMusicItemByKeys(["spotify_track_id:shared-track"]))
+      .resolves.toBe("correct-item");
+  });
 });
 
 function createMutableClient(tables: Record<string, Array<Record<string, unknown>>>) {

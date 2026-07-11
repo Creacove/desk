@@ -79,7 +79,9 @@ Deno.serve(async (request) => {
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
 
-    await assertActiveWorkspaceEntitlement(authClient, input);
+    if (!isServiceRoleInvocation) {
+      await assertActiveWorkspaceEntitlement(authClient, input);
+    }
 
     const packet = await buildManagerReadPacket(authClient, input);
     runId = await createManagerSynthesisRun(authClient, input, packet);

@@ -89,7 +89,7 @@ export function createSupabaseCatalogRepository(
     },
 
     async findMusicProjectByKeys(keys) {
-      return findMusicProjectByKeys(supabase, keys);
+      return findMusicProjectByKeys(supabase, context, keys);
     },
 
     async createMusicProject(draft) {
@@ -104,7 +104,7 @@ export function createSupabaseCatalogRepository(
     },
 
     async findMusicItemByKeys(keys) {
-      return findMusicItemByKeys(supabase, keys);
+      return findMusicItemByKeys(supabase, context, keys);
     },
 
     async createMusicItem(draft) {
@@ -294,13 +294,19 @@ async function writeSourceSnapshot(supabase: SupabaseLike, draft: SourceSnapshot
   return retryData.id as string;
 }
 
-async function findMusicProjectByKeys(supabase: SupabaseLike, keys: string[]) {
+async function findMusicProjectByKeys(
+  supabase: SupabaseLike,
+  context: { accountId: string; artistWorkspaceId: string },
+  keys: string[],
+) {
   for (const key of keys) {
     const identifier = identifierFromDedupeKey(key);
     if (identifier && ["spotify_album_id", "upc"].includes(identifier.type)) {
       const { data, error } = await supabase
         .from("music_identifiers")
         .select("music_project_id")
+        .eq("account_id", context.accountId)
+        .eq("artist_workspace_id", context.artistWorkspaceId)
         .eq("identifier_type", identifier.type)
         .eq("identifier_value", identifier.value)
         .maybeSingle();
@@ -312,13 +318,19 @@ async function findMusicProjectByKeys(supabase: SupabaseLike, keys: string[]) {
   return null;
 }
 
-async function findMusicItemByKeys(supabase: SupabaseLike, keys: string[]) {
+async function findMusicItemByKeys(
+  supabase: SupabaseLike,
+  context: { accountId: string; artistWorkspaceId: string },
+  keys: string[],
+) {
   for (const key of keys) {
     const identifier = identifierFromDedupeKey(key);
     if (identifier && ["isrc", "spotify_track_id"].includes(identifier.type)) {
       const { data, error } = await supabase
         .from("music_identifiers")
         .select("music_item_id")
+        .eq("account_id", context.accountId)
+        .eq("artist_workspace_id", context.artistWorkspaceId)
         .eq("identifier_type", identifier.type)
         .eq("identifier_value", identifier.value)
         .maybeSingle();

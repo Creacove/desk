@@ -17,17 +17,28 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain('"spotify-catalog-bootstrap"');
     expect(text).toContain('"generate-todays-brief"');
     expect(text).toContain('generationMode: "setup-map"');
-    expect(text).toContain("assertActiveWorkspaceEntitlement");
     expect(text).toContain("service_role");
     expect(text).toContain("waiting_for_context");
   });
 
+  it("uses the verified paid checkout as the setup orchestrator authorization boundary", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+
+    expect(text).toContain('checkout.status !== "paid"');
+    expect(text).toContain("user.id !== checkout.user_id");
+    expect(text).not.toContain("assertActiveWorkspaceEntitlement");
+  });
+
   it("allows the paid discovery chain to run with a service-role caller while preserving entitlement checks", () => {
-    for (const functionName of ["spotify-catalog-bootstrap", "manager-artist-discovery"]) {
+    for (const functionName of [
+      "spotify-catalog-bootstrap",
+      "manager-artist-discovery",
+      "generate-todays-brief",
+      "generate-music-summary",
+    ]) {
       const text = source("supabase", "functions", functionName, "index.ts");
       expect(text, functionName).toContain("isServiceRoleInvocation");
       expect(text, functionName).toContain("assertActiveWorkspaceEntitlement");
-      expect(text, functionName).toContain("setupRunId");
       expect(text, functionName).toMatch(/if \(!isServiceRoleInvocation\) \{\s*await assertActiveWorkspaceEntitlement/s);
     }
   });

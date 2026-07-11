@@ -489,6 +489,22 @@ describe("Spotify catalog bootstrap", () => {
       eventType: "spotify_catalog_bootstrap_failed",
     });
   });
+
+  it("preserves structured provider and database error messages in failed setup runs", async () => {
+    const repo = new InMemorySpotifyBootstrapRepository();
+    const spotify = createSpotifyClient({
+      getArtistAlbums: async () => {
+        throw { message: "Spotify credentials were rejected." };
+      },
+    });
+
+    const result = await bootstrapSpotifyCatalog({ input: baseInput, spotify, repository: repo });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      error: "Spotify credentials were rejected.",
+    });
+  });
 });
 
 function createSpotifyClient(overrides: Partial<SpotifyCatalogClient> = {}): SpotifyCatalogClient {
