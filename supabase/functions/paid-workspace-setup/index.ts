@@ -9,6 +9,7 @@ const corsHeaders = {
 type SetupInput = {
   checkoutSessionId: string;
   phase: "discovery" | "contextualize";
+  explicitRetry?: boolean;
 };
 
 type StageStatus = Record<string, Record<string, unknown> | string>;
@@ -63,7 +64,7 @@ Deno.serve(async (request) => {
 
     const workspace = await loadWorkspace(db, checkout.artist_workspace_id);
     if (input.phase === "discovery") {
-      return json(await runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }));
+      return json(await runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, input }));
     }
     return json(await runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }));
   } catch (error) {
@@ -73,13 +74,17 @@ Deno.serve(async (request) => {
   }
 });
 
-async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }: any) {
+async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, input = {} }: any) {
   const stages = stageStatus(setupRun.stage_status);
   const existing = stageState(stages, "manager_discovery");
   const catalogState = stageState(stages, "catalog_bootstrap");
 
   if (["completed", "completed_with_limits"].includes(existing)) {
     return { status: existing, phase: "discovery" };
+  }
+
+  if (existing === "failed" && !input.explicitRetry) {
+    return { status: "failed", phase: "discovery", error: readDiscoveryStageError(stages) };
   }
 
   if (catalogState === "running") {
@@ -154,6 +159,9 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
 
   contextStages = await reconcileCompletedDiscoveryStage(db, workspace, contextStages);
   const discoveryState = stageState(contextStages, "manager_discovery");
+  if (discoveryState === "failed") {
+    throw new Error(readDiscoveryStageError(contextStages) || "Manager discovery failed. Retry setup after repairing the reported provider error.");
+  }
   if (!["completed", "completed_with_limits"].includes(discoveryState)) {
     const catalogState = stageState(contextStages, "catalog_bootstrap");
     if (!["completed", "completed_with_limits"].includes(catalogState)) {
@@ -219,10 +227,11 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
       ...contextStages,
       setup_brief: { status: "completed", started_at: startedAt, completed_at: completedAt },
       music_reads: {
-        status: Array.isArray(result.setupMusicReadTargets) && result.setupMusicReadTargets.length ? "running" : "completed",
+        status: "completed",
         target_count: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets.length : 0,
         targets: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [],
         started_at: completedAt,
+        completed_at: completedAt,
       },
     },
     completed_at: completedAt,
@@ -518,6 +527,11 @@ function readBearerJwtRole(authHeader: string) {
 
 function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function readDiscoveryStageError(stages: StageStatus) {
+  const stage = stages.manager_discovery;
+  return typeof stage === "object" && typeof stage.error === "string" ? stage.error : "";
 }
 
 function scheduleBackgroundTask(task: Promise<unknown>) {

@@ -184,6 +184,7 @@ Deno.serve(async (request) => {
     };
 
     // Run the agent loop
+    const discoveryToolResults: Array<{ name: string; result: unknown }> = [];
     const result = await runManagerAgentLoop({
       endpoint: "https://api.openai.com/v1/responses",
       apiKey: requireEnv("OPENAI_API_KEY"),
@@ -193,7 +194,11 @@ Deno.serve(async (request) => {
       tools: discoveryToolsList,
       jsonSchema: discoveryCompleteSchema,
       maxToolCalls: MAX_DISCOVERY_TOOL_CALLS,
-      executeTool: (name, args) => executeDiscoveryTool(db, input!, name, args),
+      executeTool: async (name, args) => {
+        const toolResult = await executeDiscoveryTool(db, input!, name, args);
+        discoveryToolResults.push({ name, result: toolResult });
+        return toolResult;
+      },
       onToolEvent: async (event) => {
         // Log tool execution as an operating event to allow streaming setup progress in UI
         await writeOperatingEvent(db, input!, `manager_discovery_tool_${event.status}`, event.summary, {
@@ -205,6 +210,7 @@ Deno.serve(async (request) => {
     });
 
     const failedTools = result.toolTrace.filter((event) => event.status === "failed");
+    assertRequiredDiscoveryCompleted(catalogContext, discoveryToolResults, failedTools);
     const discoveryOutput = parseDiscoveryOutput(result.outputText);
     if (failedTools.length) {
       await writeOperatingEvent(
@@ -265,6 +271,23 @@ function validateInput(input: DiscoveryInput) {
     ["artistName", input.artistName],
   ]) {
     if (!value?.trim()) throw new Error(`Missing required field: ${key}.`);
+  }
+}
+
+function assertRequiredDiscoveryCompleted(
+  catalog: { tracks: unknown[]; projects: unknown[] },
+  toolResults: Array<{ name: string; result: unknown }>,
+  failedTools: Array<{ tool: string; summary: string }>,
+) {
+  const artistResult = toolResults.find(({ name }) => name === "chartmetric_artist_enrich")?.result as Record<string, unknown> | undefined;
+  if (!artistResult || artistResult.status === "unresolved" || failedTools.some(({ tool }) => tool === "chartmetric_artist_enrich")) {
+    throw new Error("Required artist intelligence failed; discovery cannot complete without provider-backed artist enrichment.");
+  }
+
+  const assetResults = toolResults.filter(({ name }) => name === "chartmetric_track_enrich" || name === "chartmetric_project_enrich");
+  const catalogHasAssets = catalog.tracks.length > 0 || catalog.projects.length > 0;
+  if (catalogHasAssets && (!assetResults.length || assetResults.some(({ result }) => (result as Record<string, unknown>)?.status === "unresolved"))) {
+    throw new Error("Required focus-asset intelligence failed; discovery cannot complete with unmatched catalog assets.");
   }
 }
 

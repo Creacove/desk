@@ -163,7 +163,7 @@ Deno.serve(async (request) => {
     });
 
     if (generationMode === "setup-map" && input.dispatchMusicReads !== false && setupMusicReadTargets.length) {
-      dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
+      await dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
     }
 
     return json({
@@ -292,29 +292,19 @@ function selectChartmetricEnrichedMusicItemIds(evidenceRows: EvidenceRow[]): str
   return selected;
 }
 
-function dispatchSetupMusicReadsConcurrently(
+async function dispatchSetupMusicReadsConcurrently(
   supabaseUrl: string,
   anonKey: string,
   authHeader: string,
   input: GenerateTodaysBriefInput,
   setupMusicReadTargets: SetupMusicReadTarget[],
 ) {
-  const work = Promise.allSettled(
+  await Promise.all(
     setupMusicReadTargets.map(async (target, index) => {
       if (index > 0) await delay(index * 500);
       return dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target);
     }),
-  ).then((results) => {
-    results.forEach((result, index) => {
-      if (result.status !== "rejected") return;
-      console.warn("setup music Manager Read dispatch failed", {
-        target: setupMusicReadTargets[index],
-        message: describeError(result.reason, "Setup music Manager Read dispatch failed."),
-      });
-    });
-  });
-
-  EdgeRuntime.waitUntil(work);
+  );
 }
 
 async function dispatchSetupMusicRead(

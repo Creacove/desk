@@ -90,10 +90,12 @@ describe("Manager artist discovery edge function", () => {
     expect(discoveryFunctionSource).toContain("maxToolCalls: MAX_DISCOVERY_TOOL_CALLS");
   });
 
-  it("continues to durable discovery completion with logged limitations when a non-critical tool fails after useful work", () => {
+  it("fails required discovery when artist or focus-asset intelligence is incomplete", () => {
     expect(discoveryFunctionSource).toContain("manager_discovery_completed_with_limits");
     expect(discoveryFunctionSource).toContain("tool_failures");
-    expect(discoveryFunctionSource).not.toContain("Manager discovery had failed tools");
+    expect(discoveryFunctionSource).toContain("assertRequiredDiscoveryCompleted");
+    expect(discoveryFunctionSource).toContain('status === "unresolved"');
+    expect(discoveryFunctionSource).toContain("Required artist intelligence failed");
 
     const failedToolsIndex = discoveryFunctionSource.indexOf("const failedTools = result.toolTrace.filter");
     const completionIndex = discoveryFunctionSource.indexOf("completeDiscoverySetupStage");
@@ -179,6 +181,13 @@ describe("Manager discovery shared tools", () => {
     const clientIndex = discoveryToolsSource.indexOf("const chartmetric = createChartmetricClient");
     expect(cacheIndex).toBeGreaterThan(-1);
     expect(clientIndex).toBeGreaterThan(cacheIndex);
+  });
+
+  it("preserves Chartmetric provider errors instead of converting them into unresolved IDs", () => {
+    expect(discoveryToolsSource).not.toContain("get-ids`).catch(() => null)");
+    expect(discoveryToolsSource).toContain("Chartmetric artist ID lookup failed");
+    expect(discoveryToolsSource).toContain("Chartmetric track ID lookup failed");
+    expect(discoveryToolsSource).toContain("Chartmetric project ID lookup failed");
   });
 
   it("writes durable manager memory and public evidence through dedicated tools", () => {

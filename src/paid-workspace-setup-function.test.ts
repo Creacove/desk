@@ -51,6 +51,35 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain('catalogState === "completed" || catalogState === "completed_with_limits"');
   });
 
+  it("does not redispatch a terminal discovery failure during contextual polling", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+    const contextualize = text.slice(
+      text.indexOf("async function runContextualizePhase"),
+      text.indexOf("async function loadCompletedSetupResult"),
+    );
+
+    expect(contextualize).toContain('if (discoveryState === "failed")');
+    expect(contextualize).toContain("throw new Error(readDiscoveryStageError(contextStages)");
+  });
+
+  it("requires an explicit retry signal before restarting a failed discovery stage", () => {
+    const setupText = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+    const billingText = source("supabase", "functions", "billing-status", "index.ts");
+
+    expect(setupText).toContain("explicitRetry?: boolean");
+    expect(setupText).toContain('if (existing === "failed" && !input.explicitRetry)');
+    expect(billingText).toContain("explicitRetry: true");
+  });
+
+  it("awaits every setup music read before marking the setup run completed", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+    const briefText = source("supabase", "functions", "generate-todays-brief", "index.ts");
+
+    expect(briefText).toContain("await dispatchSetupMusicReadsConcurrently");
+    expect(briefText).toContain("await Promise.all(");
+    expect(text).toMatch(/music_reads:\s*\{\s*status: "completed"/);
+  });
+
   it("reconciles a completed discovery event when the setup stage was left running", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
 

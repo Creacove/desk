@@ -111,7 +111,9 @@ async function chartmetricArtistEnrich(db: any, input: DiscoveryToolInput, args:
     baseUrl: Deno.env.get("CHARTMETRIC_BASE_URL") ?? undefined,
   });
 
-  const cmId = await resolveArtistId(spotifyArtistId, chartmetric);
+  const cmId = await resolveArtistId(spotifyArtistId, chartmetric).catch((error) => {
+    throw new Error(`Chartmetric artist ID lookup failed: ${readErrorMessage(error)}`);
+  });
   if (!cmId) {
     throw new Error(`Could not resolve Chartmetric Artist ID from Spotify ID: ${spotifyArtistId}`);
   }
@@ -177,11 +179,15 @@ async function chartmetricTrackEnrich(db: any, input: DiscoveryToolInput, args: 
 
   let cmId: string | undefined;
   if (spotifyTrackId) {
-    const res = await chartmetric.requestJson<any>(`/api/track/spotify/${encodeURIComponent(spotifyTrackId)}/get-ids`).catch(() => null);
+    const res = await chartmetric.requestJson<any>(`/api/track/spotify/${encodeURIComponent(spotifyTrackId)}/get-ids`).catch((error) => {
+      throw new Error(`Chartmetric track ID lookup failed: ${readErrorMessage(error)}`);
+    });
     cmId = readChartmetricEntityId(res?.data);
   }
   if (!cmId && isrc) {
-    const res = await chartmetric.requestJson<any>(`/api/track/isrc/${encodeURIComponent(isrc)}/get-ids`).catch(() => null);
+    const res = await chartmetric.requestJson<any>(`/api/track/isrc/${encodeURIComponent(isrc)}/get-ids`).catch((error) => {
+      throw new Error(`Chartmetric track ID lookup failed: ${readErrorMessage(error)}`);
+    });
     cmId = readChartmetricEntityId(res?.data);
   }
 
@@ -252,11 +258,15 @@ async function chartmetricProjectEnrich(db: any, input: DiscoveryToolInput, args
 
   let cmId: string | undefined;
   if (spotifyAlbumId) {
-    const res = await chartmetric.requestJson<any>(`/api/album/spotify/${encodeURIComponent(spotifyAlbumId)}/get-ids`).catch(() => null);
+    const res = await chartmetric.requestJson<any>(`/api/album/spotify/${encodeURIComponent(spotifyAlbumId)}/get-ids`).catch((error) => {
+      throw new Error(`Chartmetric project ID lookup failed: ${readErrorMessage(error)}`);
+    });
     cmId = readChartmetricEntityId(res?.data);
   }
   if (!cmId && upc) {
-    const res = await chartmetric.requestJson<any>(`/api/album/upc/${encodeURIComponent(upc)}/get-ids`).catch(() => null);
+    const res = await chartmetric.requestJson<any>(`/api/album/upc/${encodeURIComponent(upc)}/get-ids`).catch((error) => {
+      throw new Error(`Chartmetric project ID lookup failed: ${readErrorMessage(error)}`);
+    });
     cmId = readChartmetricEntityId(res?.data);
   }
 
@@ -434,7 +444,7 @@ async function writeEvidenceItems(db: any, items: any[]) {
 }
 
 async function resolveArtistId(spotifyArtistId: string, chartmetric: any) {
-  const res = await chartmetric.requestJson(`/api/artist/spotify/${encodeURIComponent(spotifyArtistId)}/get-ids`).catch(() => null);
+  const res = await chartmetric.requestJson(`/api/artist/spotify/${encodeURIComponent(spotifyArtistId)}/get-ids`);
   return readChartmetricEntityId(res?.data);
 }
 

@@ -108,6 +108,7 @@ Deno.serve(async (request) => {
         body: {
           checkoutSessionId: checkout.id,
           phase: setupResult.data?.current_stage === "setup_brief" ? "contextualize" : "discovery",
+          explicitRetry: true,
         },
       });
       retryDispatched = true;
