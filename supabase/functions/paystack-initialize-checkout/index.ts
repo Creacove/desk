@@ -7,6 +7,7 @@ const corsHeaders = {
 };
 
 type CheckoutInput = {
+  existingArtistWorkspaceId?: string;
   selectedArtist?: {
     spotifyArtistId: string;
     name: string;
@@ -50,6 +51,28 @@ Deno.serve(async (request) => {
     const input = (await request.json()) as CheckoutInput;
     validateArtist(input.selectedArtist);
     const selectedArtist = normalizeSelectedArtist(input.selectedArtist);
+    let existingWorkspace: { id: string; account_id: string; artist_id: string; artists?: any } | null = null;
+    if (input.existingArtistWorkspaceId) {
+      const { data, error } = await serviceClient
+        .from("artist_workspaces")
+        .select("id,account_id,artist_id,artists(canonical_spotify_artist_id)")
+        .eq("id", input.existingArtistWorkspaceId)
+        .maybeSingle();
+      if (error) throw error;
+      const { data: membership, error: membershipError } = await serviceClient
+        .from("account_memberships")
+        .select("id")
+        .eq("account_id", data?.account_id ?? "00000000-0000-0000-0000-000000000000")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle();
+      if (membershipError) throw membershipError;
+      const artist = Array.isArray(data?.artists) ? data.artists[0] : data?.artists;
+      if (!data || !membership || artist?.canonical_spotify_artist_id !== selectedArtist.spotifyArtistId) {
+        return json({ error: "Existing artist workspace is not available for this checkout." }, 403);
+      }
+      existingWorkspace = data;
+    }
 
     const { error: userUpsertError } = await serviceClient.from("users").upsert({
       id: user.id,
@@ -66,6 +89,8 @@ Deno.serve(async (request) => {
       .from("billing_checkout_sessions")
       .insert({
         user_id: user.id,
+        account_id: existingWorkspace?.account_id ?? null,
+        artist_workspace_id: existingWorkspace?.id ?? null,
         provider: "paystack",
         provider_reference: reference,
         provider_plan_code: planCode,

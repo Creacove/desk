@@ -13,4 +13,9 @@ export default defineConfig({
     host: "127.0.0.1",
     port: 5175,
   },
+  build: {
+    // The main bundle is already reported by size; skipping duplicate gzip
+    // computation keeps Windows CI and low-memory developer machines stable.
+    reportCompressedSize: false,
+  },
 });

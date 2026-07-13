@@ -43,8 +43,8 @@ Deno.serve(async (request) => {
       .eq("id", input.checkoutSessionId)
       .maybeSingle();
     if (checkoutError) throw checkoutError;
-    if (!checkout?.artist_workspace_id || checkout.status !== "paid") {
-      return json({ error: "Paid checkout workspace was not found." }, 404);
+    if (!checkout?.artist_workspace_id || !(await isAuthorizedSetupCheckout(db, checkout))) {
+      return json({ error: "Authorized checkout workspace was not found." }, 404);
     }
 
     if (!isServiceRoleInvocation) {
@@ -73,6 +73,23 @@ Deno.serve(async (request) => {
     return json({ error: message }, 500);
   }
 });
+
+async function isAuthorizedSetupCheckout(db: any, checkout: any) {
+  if (checkout.status === "paid") return true;
+  const { data, error } = await db
+    .from("workspace_access_grants")
+    .select("id")
+    .eq("checkout_session_id", checkout.id)
+    .eq("artist_workspace_id", checkout.artist_workspace_id)
+    .eq("user_id", checkout.user_id)
+    .eq("access_type", "private_beta")
+    .eq("status", "active")
+    .lte("starts_at", new Date().toISOString())
+    .gt("ends_at", new Date().toISOString())
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data);
+}
 
 async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, input = {} }: any) {
   const stages = stageStatus(setupRun.stage_status);
@@ -141,7 +158,7 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
 async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }: any) {
   const stages = stageStatus(setupRun.stage_status);
   const contextComplete = Boolean(workspace.profile?.artist_direction && workspace.profile?.budget_context);
-  let contextStages = {
+  let contextStages: StageStatus = {
     ...stages,
     context_received: {
       status: contextComplete ? "completed" : "waiting",

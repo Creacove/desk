@@ -172,6 +172,7 @@ export function ProductionApp({
   const [session, setSession] = useState<ProductionSession | null>(null);
   const [workspace, setWorkspace] = useState<ProductionWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [successNotice, setSuccessNotice] = useState<string | null>(null);
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(
     paymentReturnReference ? { reference: paymentReturnReference, status: "checking" } : null,
   );
@@ -212,7 +213,7 @@ export function ProductionApp({
         setWorkspace(null);
         setPaymentReturn({ reference: paymentReturnReference, status: "checking" });
         setStatus("payment-return");
-        await refreshPaymentReturnStatus(paymentReturnReference, runtime.billingService, setPaymentReturn, setWorkspace, setStatus);
+        await refreshPaymentReturnStatus(paymentReturnReference, runtime.billingService, setPaymentReturn, setWorkspace, setStatus, setSuccessNotice);
         return;
       }
 
@@ -331,6 +332,10 @@ export function ProductionApp({
     };
   }, [runtime.workspaceLoader, sessionUser, activeWorkspaceId, activeCatalogSyncStatus]);
 
+  if (typeof window !== "undefined" && window.location.pathname === "/update-password") {
+    return <UpdatePasswordScreen authAdapter={runtime.authAdapter} onComplete={() => { window.history.replaceState({}, "", "/"); void loadProductionState(); }} />;
+  }
+
   if (status === "loading") {
     return (
       <BrandedLoader
@@ -362,6 +367,9 @@ export function ProductionApp({
         onWorkspaceReady={(nextWorkspace) => {
           setWorkspace(nextWorkspace);
           setStatus("ready");
+          if (nextWorkspace.accessType === "private_beta") {
+            setSuccessNotice(`Code accepted — private-beta access is active until ${formatAccessDate(nextWorkspace.accessEndsAt)}.`);
+          }
         }}
       />
     );
@@ -380,7 +388,7 @@ export function ProductionApp({
     );
   }
 
-  if (workspace && !workspace.spotifyConnected) {
+  if (workspace && (!workspace.spotifyConnected || workspace.entitlementActive !== true)) {
     return (
       <SpotifyIdentityGate
         user={session?.user ?? null}
@@ -398,8 +406,11 @@ export function ProductionApp({
   }
 
   return (
+    <>
+    {successNotice ? <SuccessToast message={successNotice} onClose={() => setSuccessNotice(null)} /> : null}
     <CleanProductionWorkspace
       analyticsUser={sessionUser as ProductionUser}
+      authAdapter={runtime.authAdapter}
       workspace={workspace}
       repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
@@ -410,11 +421,13 @@ export function ProductionApp({
       onWorkspaceChange={setWorkspace}
       onSignOut={handleSignOut}
     />
+    </>
   );
 }
 
 function CleanProductionWorkspace({
   analyticsUser,
+  authAdapter,
   workspace,
   repositories,
   profileSetupService,
@@ -426,6 +439,7 @@ function CleanProductionWorkspace({
   onSignOut,
 }: {
   analyticsUser: ProductionUser;
+  authAdapter: ProductionAuthAdapter;
   workspace: ProductionWorkspace | null;
   repositories: CleanProductionRepositories;
   profileSetupService?: ProductionProfileSetupService;
@@ -1354,6 +1368,8 @@ function CleanProductionWorkspace({
               onChange={setProfile}
               onBack={() => navigate("labelHQ")}
               onSignOut={onSignOut}
+              workspace={workspace ?? undefined}
+              onUpdatePassword={authAdapter.updatePassword}
               themeMode={themeMode}
               resolvedThemeMode={resolvedThemeMode}
               onThemeModeChange={setThemeMode}
@@ -1756,12 +1772,30 @@ function AuthScreen({
   authAdapter: ProductionAuthAdapter;
   onAuthenticated: () => Promise<void>;
 }) {
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">("sign-in");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const isSignUp = mode === "sign-up";
+
+  async function handleForgotPassword(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!authAdapter.requestPasswordReset) {
+      setMessage("Password recovery is not configured.");
+      return;
+    }
+    try {
+      setPending(true);
+      setMessage(null);
+      await authAdapter.requestPasswordReset({ email: email.trim(), redirectTo: `${window.location.origin}/update-password` });
+      setMessage("If that email belongs to an account, a recovery link is on its way.");
+    } catch (recoveryError) {
+      setMessage(readErrorMessage(recoveryError, "Password recovery could not be started."));
+    } finally {
+      setPending(false);
+    }
+  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1807,6 +1841,18 @@ function AuthScreen({
         {/* Kept in DOM for test query and screen reader accessibility */}
         <h1 className="sr-only">Sign in to Ordersounds</h1>
 
+        {mode === "forgot" ? (
+          <form className="mt-6 space-y-4" onSubmit={handleForgotPassword}>
+            <div>
+              <p className="font-display text-[22px] font-bold text-foreground">Reset your password</p>
+              <p className="mt-2 text-[12px] font-semibold text-muted-foreground">We will send a secure recovery link to your email.</p>
+            </div>
+            <Field label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" required disabled={pending} />
+            {message ? <p className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] p-3 text-sm font-semibold text-muted-foreground">{message}</p> : null}
+            <ProductButton type="submit" disabled={pending}>{pending ? "Sending recovery link" : "Send recovery link"}</ProductButton>
+            <ProductButton variant="secondary" onClick={() => { setMode("sign-in"); setMessage(null); }}>Back to sign in</ProductButton>
+          </form>
+        ) : <>
         <div data-testid="auth-mode-switch" className="mt-6 grid grid-cols-2 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
           <button
             type="button"
@@ -1862,8 +1908,14 @@ function AuthScreen({
             >
               {isSignUp ? "Use existing account" : "Create account"}
             </ProductButton>
+            {!isSignUp ? (
+              <button type="button" onClick={() => { setMode("forgot"); setMessage(null); }} className="text-[12px] font-bold text-muted-foreground underline underline-offset-4 hover:text-foreground">
+                Forgot password?
+              </button>
+            ) : null}
           </div>
         </form>
+        </>}
       </section>
     </AuthFrame>
   );
@@ -1950,13 +2002,29 @@ function SpotifyIdentityGate({
     let cancelled = false;
     billingService
       .loadLatestCheckoutPreview()
-      .then((preview) => {
+      .then(async (preview) => {
         if (!cancelled && preview) {
           setCheckoutPreview(preview);
           if (spotifyArtistAdapter?.previewCatalog) {
             void spotifyArtistAdapter.previewCatalog(preview.artist).then((catalog) => {
               if (!cancelled) setCatalogPreview(catalog);
             }).catch(() => undefined);
+          }
+        } else if (!cancelled && workspace?.spotifyArtistId && workspace.spotifyArtistUrl && user) {
+          const candidate: ProductionSpotifyArtistCandidate = {
+            spotifyArtistId: workspace.spotifyArtistId,
+            name: workspace.artistName,
+            spotifyUrl: workspace.spotifyArtistUrl,
+            imageUrl: workspace.spotifyImageUrl,
+            genres: [],
+          };
+          const [renewalPreview, catalog] = await Promise.all([
+            billingService.createCheckoutPreview({ user, candidate, existingWorkspace: workspace }),
+            spotifyArtistAdapter?.previewCatalog?.(candidate).catch(() => null) ?? Promise.resolve(null),
+          ]);
+          if (!cancelled) {
+            setCheckoutPreview(renewalPreview);
+            setCatalogPreview(catalog);
           }
         }
       })
@@ -1969,7 +2037,7 @@ function SpotifyIdentityGate({
     return () => {
       cancelled = true;
     };
-  }, [billingService, checkoutPreview, spotifyArtistAdapter]);
+  }, [billingService, checkoutPreview, spotifyArtistAdapter, user, workspace]);
 
   useEffect(() => {
     const normalizedQuery = query.trim();
@@ -2081,6 +2149,26 @@ function SpotifyIdentityGate({
     }
   }
 
+  async function redeemPrivateBetaCode(code: string) {
+    if (!checkoutPreview || !billingService?.redeemPrivateBetaCode) return;
+    try {
+      setSelectPending(true);
+      setMessage(null);
+      trackEvent("beta code submitted", { is_test_user: isTestUserEmail(user?.email) });
+      const result = await billingService.redeemPrivateBetaCode({ checkoutSessionId: checkoutPreview.checkoutSessionId, code });
+      trackEvent("beta invitation activated", {
+        artist_workspace_id: result.workspace.artistWorkspaceId,
+        access_source: "private_beta",
+        is_test_user: isTestUserEmail(user?.email),
+      });
+      onWorkspaceReady(result.workspace);
+    } catch (redemptionError) {
+      setMessage(readErrorMessage(redemptionError, "Private-beta access could not be activated."));
+    } finally {
+      setSelectPending(false);
+    }
+  }
+
   if (checkoutPreview) {
     return (
       <PaywallPreviewScreen
@@ -2095,6 +2183,8 @@ function SpotifyIdentityGate({
           setSelectedArtistName(null);
         }}
         onSubscribe={subscribeToPreview}
+        privateBetaEnabled={import.meta.env.VITE_PRIVATE_BETA_ENABLED === "true"}
+        onRedeemPrivateBeta={redeemPrivateBetaCode}
         onSignOut={onSignOut}
       />
     );
@@ -2277,6 +2367,7 @@ async function refreshPaymentReturnStatus(
   setPaymentReturn: (state: PaymentReturnState | null) => void,
   setWorkspace: (workspace: ProductionWorkspace | null) => void,
   setStatus: (status: "loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error") => void,
+  setSuccessNotice: (message: string | null) => void,
 ) {
   if (!billingService) {
     setPaymentReturn({
@@ -2297,6 +2388,7 @@ async function refreshPaymentReturnStatus(
         message: "Payment confirmed. Opening Desk HQ.",
       });
       clearPaymentReturnUrl();
+      setSuccessNotice(`Payment successful — ${billingStatus.workspace.artistName}'s Desk is unlocked.`);
       setStatus("ready");
       return;
     }
@@ -2331,6 +2423,64 @@ async function refreshPaymentReturnStatus(
       message: readErrorMessage(statusError, "Payment confirmation could not be loaded."),
     });
   }
+}
+
+function UpdatePasswordScreen({ authAdapter, onComplete }: { authAdapter: ProductionAuthAdapter; onComplete: () => void }) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (password.length < 8) return setMessage("Use at least eight characters.");
+    if (password !== confirmation) return setMessage("The passwords do not match.");
+    if (!authAdapter.updatePassword) return setMessage("Password updates are not configured.");
+    try {
+      setPending(true);
+      setMessage(null);
+      await authAdapter.updatePassword({ password });
+      setMessage("Password updated. Returning to OrderSounds.");
+      window.setTimeout(onComplete, 800);
+    } catch (updateError) {
+      setMessage(readErrorMessage(updateError, "This recovery link is invalid or expired."));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <AuthFrame logoTestId="auth-brand-logo">
+      <section className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-6 shadow-xl">
+        <h1 className="font-display text-[24px] font-bold">Choose a new password</h1>
+        <form className="mt-6 space-y-4" onSubmit={submit}>
+          <Field label="New password" value={password} onChange={setPassword} type="password" autoComplete="new-password" required disabled={pending} />
+          <Field label="Confirm new password" value={confirmation} onChange={setConfirmation} type="password" autoComplete="new-password" required disabled={pending} />
+          {message ? <p className="rounded-[12px] bg-foreground/[0.04] p-3 text-[12px] font-semibold text-muted-foreground">{message}</p> : null}
+          <ProductButton type="submit" disabled={pending}>{pending ? "Updating password" : "Update password"}</ProductButton>
+        </form>
+      </section>
+    </AuthFrame>
+  );
+}
+
+function SuccessToast({ message, onClose }: { message: string; onClose: () => void }) {
+  useEffect(() => {
+    const timeout = window.setTimeout(onClose, 6000);
+    return () => window.clearTimeout(timeout);
+  }, [onClose]);
+  return (
+    <div role="status" aria-live="polite" className="fixed right-4 top-4 z-[100] flex max-w-md items-start gap-3 rounded-[14px] border border-emerald-500/20 bg-[#102018] px-4 py-3 text-white shadow-2xl">
+      <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
+      <p className="text-[12px] font-bold leading-relaxed">{message}</p>
+      <button type="button" aria-label="Close notification" onClick={onClose} className="ml-1 rounded p-0.5 text-white/70 hover:text-white"><X className="h-4 w-4" /></button>
+    </div>
+  );
+}
+
+function formatAccessDate(value?: string) {
+  if (!value) return "the stated expiry date";
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
 }
 
 function clearPaymentReturnUrl() {

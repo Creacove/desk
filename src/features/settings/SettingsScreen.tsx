@@ -1,9 +1,10 @@
 import { Activity, Globe2, LogOut, Monitor, Moon, RadioTower, Sun } from "lucide-react";
-import type { ReactNode } from "react";
+import { useState, type FormEvent, type ReactNode } from "react";
 import { Field, ProductButton, TextAreaField, WorkspaceShell } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
+import type { ProductionWorkspace } from "../../types/productionApp";
 
 export function SettingsScreen({
   profile,
@@ -13,6 +14,8 @@ export function SettingsScreen({
   themeMode = "system",
   resolvedThemeMode = "light",
   onThemeModeChange,
+  workspace,
+  onUpdatePassword,
 }: {
   profile: ArtistProfileViewModel;
   onChange: (profile: ArtistProfileViewModel) => void;
@@ -21,6 +24,8 @@ export function SettingsScreen({
   themeMode?: ThemeMode;
   resolvedThemeMode?: ResolvedThemeMode;
   onThemeModeChange?: (mode: ThemeMode) => void;
+  workspace?: ProductionWorkspace;
+  onUpdatePassword?: (input: { password: string }) => Promise<void>;
 }) {
   const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
 
@@ -98,6 +103,8 @@ export function SettingsScreen({
           ) : null}
         </section>
       ) : null}
+      {workspace ? <AccessSummary workspace={workspace} /> : null}
+      {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
         <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -114,6 +121,50 @@ export function SettingsScreen({
       ) : null}
     </WorkspaceShell>
   );
+}
+
+function AccessSummary({ workspace }: { workspace: ProductionWorkspace }) {
+  const paid = workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
+  return (
+    <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
+      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Access</p>
+      <dl className="mt-4 grid gap-3 text-[13px] sm:grid-cols-2">
+        <div><dt className="font-bold text-muted-foreground">Access type</dt><dd className="mt-1 font-semibold text-foreground">{paid ? "Paid subscription" : workspace.accessType === "private_beta" ? "Private beta" : "No active access"}</dd></div>
+        <div><dt className="font-bold text-muted-foreground">Status</dt><dd className="mt-1 font-semibold capitalize text-foreground">{workspace.accessStatus ?? (workspace.entitlementActive ? "active" : "inactive")}</dd></div>
+        {workspace.accessStartsAt ? <div><dt className="font-bold text-muted-foreground">Started</dt><dd className="mt-1 font-semibold text-foreground">{formatDate(workspace.accessStartsAt)}</dd></div> : null}
+        {paid && workspace.renewalAt ? <div><dt className="font-bold text-muted-foreground">Renews</dt><dd className="mt-1 font-semibold text-foreground">{formatDate(workspace.renewalAt)}</dd></div> : null}
+        {!paid && workspace.accessEndsAt ? <div><dt className="font-bold text-muted-foreground">Expires</dt><dd className="mt-1 font-semibold text-foreground">{formatDate(workspace.accessEndsAt)}</dd></div> : null}
+      </dl>
+    </section>
+  );
+}
+
+function PasswordSettings({ onUpdatePassword }: { onUpdatePassword: (input: { password: string }) => Promise<void> }) {
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (password.length < 8) return setMessage("Use at least eight characters.");
+    if (password !== confirmation) return setMessage("The passwords do not match.");
+    try {
+      setPending(true);
+      await onUpdatePassword({ password });
+      setPassword("");
+      setConfirmation("");
+      setMessage("Password updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Password could not be updated.");
+    } finally {
+      setPending(false);
+    }
+  }
+  return <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm"><p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Password</p><form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={submit}><Field label="New password" value={password} onChange={setPassword} type="password" /><Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" />{message ? <p className="text-[12px] font-semibold text-muted-foreground sm:col-span-2">{message}</p> : null}<div className="sm:col-span-2"><ProductButton type="submit" disabled={pending}>{pending ? "Updating password" : "Change password"}</ProductButton></div></form></section>;
+}
+
+function formatDate(value: string) {
+  return new Intl.DateTimeFormat("en", { dateStyle: "medium" }).format(new Date(value));
 }
 
 function AppearanceControl({

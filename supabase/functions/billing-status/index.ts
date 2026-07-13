@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -266,6 +267,14 @@ async function ensureActiveSubscriptionForCheckout({ serviceClient, checkout, su
     { onConflict: "provider,provider_subscription_code" },
   );
   if (subscriptionError) throw subscriptionError;
+
+  await sendPaidSubscriptionActivatedEmail({
+    db: serviceClient,
+    checkout,
+    workspace,
+    periodStart: readPeriodStart(transaction ?? {}),
+    periodEnd: readPeriodEnd(transaction ?? {}),
+  }).catch(() => undefined);
 
   const { data: updatedCheckout, error: checkoutError } = await serviceClient
     .from("billing_checkout_sessions")

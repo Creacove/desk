@@ -210,6 +210,12 @@ describe("production Supabase services", () => {
       subscriptionStatus: "none",
       setupStatus: "not_started",
       setupStage: undefined,
+      billingCheckoutSessionId: undefined,
+      accessType: "none",
+      accessStatus: "inactive",
+      accessStartsAt: undefined,
+      accessEndsAt: undefined,
+      renewalAt: undefined,
     });
   });
 
