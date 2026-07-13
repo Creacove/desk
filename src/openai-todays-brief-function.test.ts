@@ -110,12 +110,20 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("selectChartmetricEnrichedMusicItemIds");
     expect(functionSource).not.toContain("musicItems.slice(0, 5).map((item)");
     expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently");
-    expect(functionSource).toContain("await Promise.all(");
+    expect(functionSource).toContain("Promise.allSettled");
     expect(functionSource).not.toContain("dispatchSetupMusicReadsSequentially");
-    expect(functionSource).toContain("await dispatchSetupMusicReadsConcurrently");
+    expect(functionSource).toContain("EdgeRuntime.waitUntil");
+    expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, serviceRoleKey");
+    expect(functionSource).not.toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey");
+    expect(functionSource).toContain("finalizeSetupMusicReadWave");
+    expect(functionSource).toContain('status: failures.length ? "completed_with_limits" : "completed"');
     expect(functionSource).toContain("generate-music-summary");
     expect(functionSource).toContain('subjectType: "music_project"');
     expect(functionSource).toContain('subjectType: "music_item"');
+  });
+
+  it("uses low reasoning effort for the latency-sensitive setup brief", () => {
+    expect(functionSource).toContain('reasoning: { effort: "low" }');
   });
 
   it("dispatches one staggered music-read wave only from the context-aware setup phase", () => {

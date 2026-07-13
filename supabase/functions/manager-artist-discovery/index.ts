@@ -169,7 +169,7 @@ Deno.serve(async (request) => {
       "Follow this sequence of steps carefully:",
       "1. Enrich the artist profile using `chartmetric_artist_enrich`.",
       "2. Search the web using `web_search` for recent news, press, interviews, or reviews to discover their narrative/positioning. Save 1-2 key links using `save_public_evidence`.",
-      "3. Look at the catalog context provided. Select up to 5 focus tracks and 1 project, starting with the most popular/relevant. For tracks, call `chartmetric_track_enrich` with `musicItemId` copied exactly from `catalog.tracks[].id`. For projects, call `chartmetric_project_enrich` with `musicProjectId` copied exactly from `catalog.projects[].id`. Never call these tools without the internal ID.",
+      "3. Look at the catalog context provided. Select up to 5 focus tracks and 1 project, starting with the most popular/relevant. Issue the focus-asset enrichment calls together in one turn so they can execute concurrently. For tracks, call `chartmetric_track_enrich` with `musicItemId` copied exactly from `catalog.tracks[].id`. For projects, call `chartmetric_project_enrich` with `musicProjectId` copied exactly from `catalog.projects[].id`. Never call these tools without the internal ID.",
       "4. Write 2-3 strategic memories using `write_strategic_memory`. Always include scope, kind, content, and confidence. Use scope `artist` unless the memory is about one specific music item or project. Detail home market vs secondary lanes, narrative posture, and specific avoid/guardrail rules.",
       "5. Finally, output the completion schema summarizing your discoveries.",
       "",
@@ -194,6 +194,8 @@ Deno.serve(async (request) => {
       tools: discoveryToolsList,
       jsonSchema: discoveryCompleteSchema,
       maxToolCalls: MAX_DISCOVERY_TOOL_CALLS,
+      parallelToolCalls: true,
+      reasoningEffort: "low",
       executeTool: async (name, args) => {
         const toolResult = await executeDiscoveryTool(db, input!, name, args);
         discoveryToolResults.push({ name, result: toolResult });

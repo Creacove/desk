@@ -179,6 +179,49 @@ describe("Manager Agent Responses loop", () => {
     expect(JSON.stringify(events)).not.toMatch(/chartmetric|snapshot|snap-1|evidence item/i);
   });
 
+  it("can execute independent discovery tool calls concurrently when explicitly enabled", async () => {
+    const releases: Array<() => void> = [];
+    let active = 0;
+    let peakActive = 0;
+    const finalJson = JSON.stringify({ summary: "done" });
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      return new Response(JSON.stringify(body.previous_response_id
+        ? { id: "resp-final", output_text: finalJson }
+        : {
+            id: "resp-tools",
+            output: [
+              { type: "function_call", call_id: "call-1", name: "enrich", arguments: "{}" },
+              { type: "function_call", call_id: "call-2", name: "enrich", arguments: "{}" },
+            ],
+          }), { status: 200 });
+    };
+
+    const resultPromise = runManagerAgentLoop({
+      endpoint: "https://api.openai.com/v1/responses",
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      instructions: "Run discovery.",
+      context: {},
+      tools: [{ type: "function", name: "enrich", description: "Enrich", strict: false, parameters: {} }],
+      jsonSchema: managerConversationJsonSchema,
+      fetchImpl,
+      parallelToolCalls: true,
+      executeTool: async () => {
+        active += 1;
+        peakActive = Math.max(peakActive, active);
+        await new Promise<void>((resolve) => releases.push(resolve));
+        active -= 1;
+        return { status: "completed" };
+      },
+    });
+
+    await vi.waitFor(() => expect(releases).toHaveLength(2));
+    releases.forEach((release) => release());
+    await expect(resultPromise).resolves.toMatchObject({ outputText: finalJson });
+    expect(peakActive).toBe(2);
+  });
+
   it("surfaces useful messages from non-Error tool failures", async () => {
     const events: Array<{ status: string; summary: string }> = [];
     const finalJson = JSON.stringify({

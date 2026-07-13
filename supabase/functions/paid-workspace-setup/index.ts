@@ -206,6 +206,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     return { status: "waiting_for_discovery", phase: "contextualize" };
   }
 
+  contextStages = await reconcileCompletedSetupBrief(db, workspace, setupRun, contextStages);
   const setupBriefState = stageState(contextStages, "setup_brief");
   if (setupBriefState === "completed") {
     return loadCompletedSetupResult(db, workspace);
@@ -232,11 +233,13 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
       trigger: "setup",
       generationMode: "setup-map",
       dispatchMusicReads: true,
+      setupRunId: setupRun.id,
     },
   });
   if (result?.status !== "completed" || !result.brief) throw new Error("Contextual setup brief did not produce a live Manager read.");
 
   const completedAt = new Date().toISOString();
+  const hasMusicReadTargets = Array.isArray(result.setupMusicReadTargets) && result.setupMusicReadTargets.length > 0;
   await updateSetupRun(db, setupRun.id, {
     status: "completed",
     current_stage: "music_reads",
@@ -244,17 +247,59 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
       ...contextStages,
       setup_brief: { status: "completed", started_at: startedAt, completed_at: completedAt },
       music_reads: {
-        status: "completed",
+        status: hasMusicReadTargets ? "running" : "completed",
         target_count: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets.length : 0,
         targets: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [],
         started_at: completedAt,
-        completed_at: completedAt,
+        ...(hasMusicReadTargets ? {} : { completed_at: completedAt }),
       },
     },
     completed_at: completedAt,
     last_error: null,
   });
   return { status: "completed", phase: "contextualize", ...result };
+}
+
+async function reconcileCompletedSetupBrief(db: any, workspace: any, setupRun: any, stages: StageStatus) {
+  if (stageState(stages, "setup_brief") !== "running") return stages;
+  const setupBrief = stages.setup_brief;
+  const startedAt = typeof setupBrief === "object" && typeof setupBrief.started_at === "string"
+    ? setupBrief.started_at
+    : null;
+  let query = db.from("manager_outputs")
+    .select("created_at")
+    .eq("account_id", workspace.account_id)
+    .eq("artist_workspace_id", workspace.id)
+    .eq("artist_id", workspace.artist_id)
+    .eq("output_type", "setup_first_manager_read")
+    .eq("is_current", true)
+    .order("created_at", { ascending: false })
+    .limit(1);
+  if (startedAt) query = query.gte("created_at", startedAt);
+  const { data, error } = await query.maybeSingle();
+  if (error) throw error;
+  if (!data?.created_at) return stages;
+
+  const targets = await loadSetupMusicReadTargets(db, workspace);
+  const completedStages = {
+    ...stages,
+    setup_brief: { status: "completed", started_at: startedAt, completed_at: data.created_at },
+    music_reads: {
+      status: targets.length ? "running" : "completed",
+      target_count: targets.length,
+      targets,
+      started_at: data.created_at,
+      ...(targets.length ? {} : { completed_at: data.created_at }),
+    },
+  };
+  await updateSetupRun(db, setupRun.id, {
+    status: "completed",
+    current_stage: "music_reads",
+    stage_status: completedStages,
+    completed_at: data.created_at,
+    last_error: null,
+  });
+  return completedStages;
 }
 
 async function recoverCatalogBeforeContextualize(args: any) {

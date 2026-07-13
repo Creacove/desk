@@ -11,6 +11,8 @@ type ManagerAgentRequestInput = {
   tools: ManagerAgentToolDefinition[];
   jsonSchema: JsonSchemaFormat;
   previousResponseId?: string;
+  parallelToolCalls?: boolean;
+  reasoningEffort?: "minimal" | "low" | "medium" | "high";
 };
 
 type ManagerAgentLoopInput = ManagerAgentRequestInput & {
@@ -119,7 +121,8 @@ export function buildManagerAgentRequest(input: ManagerAgentRequestInput) {
     store: true,
     tools: input.tools,
     tool_choice: "auto",
-    parallel_tool_calls: false,
+    parallel_tool_calls: input.parallelToolCalls ?? false,
+    ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
     text: { format: { type: "json_schema", ...input.jsonSchema } },
   };
 }
@@ -147,12 +150,12 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
       throw new Error("Manager agent response did not include final output text or executable tool calls.");
     }
 
-    const outputs = [];
-    for (const call of calls) {
-      toolCallsUsed += 1;
-      if (toolCallsUsed > (input.maxToolCalls ?? 8)) {
-        throw new Error("Manager agent exceeded the local tool-call limit.");
-      }
+    if (toolCallsUsed + calls.length > (input.maxToolCalls ?? 8)) {
+      throw new Error("Manager agent exceeded the local tool-call limit.");
+    }
+    toolCallsUsed += calls.length;
+
+    const executeCall = async (call: FunctionCall) => {
       const started = {
         tool: call.name,
         callId: call.callId,
@@ -171,7 +174,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
         };
         toolTrace.push(completed);
         await input.onToolEvent?.(publicToolEvent(completed));
-        outputs.push({ type: "function_call_output", call_id: call.callId, output: JSON.stringify(result) });
+        return { type: "function_call_output", call_id: call.callId, output: JSON.stringify(result) };
       } catch (error) {
         const failed = {
           tool: call.name,
@@ -181,9 +184,12 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
         };
         toolTrace.push(failed);
         await input.onToolEvent?.(publicToolEvent(failed));
-        outputs.push({ type: "function_call_output", call_id: call.callId, output: JSON.stringify({ error: failed.summary }) });
+        return { type: "function_call_output", call_id: call.callId, output: JSON.stringify({ error: failed.summary }) };
       }
-    }
+    };
+    const outputs = input.parallelToolCalls
+      ? await Promise.all(calls.map(executeCall))
+      : await executeSequentially(calls, executeCall);
 
     requestBody = {
       model: input.model,
@@ -193,7 +199,8 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
       store: true,
       tools: input.tools,
       tool_choice: "auto",
-      parallel_tool_calls: false,
+      parallel_tool_calls: input.parallelToolCalls ?? false,
+      ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
       text: { format: { type: "json_schema", ...input.jsonSchema } },
     };
   }
@@ -272,6 +279,12 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "query_durable_memory") return "Reading durable Manager memory.";
   if (name === "query_manager_outputs") return "Reviewing prior Manager outputs.";
   return "Manager is checking the workspace.";
+}
+
+async function executeSequentially<T, R>(items: T[], execute: (item: T) => Promise<R>) {
+  const results: R[] = [];
+  for (const item of items) results.push(await execute(item));
+  return results;
 }
 
 function publicToolEvent(event: ManagerAgentToolTrace): ManagerAgentToolTrace {

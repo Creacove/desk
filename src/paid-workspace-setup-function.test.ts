@@ -73,13 +73,23 @@ describe("paid workspace setup orchestration", () => {
     expect(billingText).toContain("explicitRetry: true");
   });
 
-  it("awaits every setup music read before marking the setup run completed", () => {
+  it("opens Desk HQ after the brief while music reads continue in the background", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
     const briefText = source("supabase", "functions", "generate-todays-brief", "index.ts");
 
-    expect(briefText).toContain("await dispatchSetupMusicReadsConcurrently");
-    expect(briefText).toContain("await Promise.all(");
-    expect(text).toMatch(/music_reads:\s*\{\s*status: "completed"/);
+    expect(briefText).toContain("EdgeRuntime.waitUntil");
+    expect(briefText).toContain("Promise.allSettled");
+    expect(text).toMatch(/music_reads:\s*\{\s*status: hasMusicReadTargets \? "running" : "completed"/);
+    expect(text).toContain('status: "completed"');
+    expect(text).toContain("setupRunId: setupRun.id");
+  });
+
+  it("reconciles a stuck running brief from its persisted Manager output", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+
+    expect(text).toContain("reconcileCompletedSetupBrief");
+    expect(text).toContain('output_type", "setup_first_manager_read"');
+    expect(text).toContain('setup_brief: { status: "completed"');
   });
 
   it("reconciles a completed discovery event when the setup stage was left running", () => {

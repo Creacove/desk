@@ -38,6 +38,7 @@ type GenerateTodaysBriefInput = {
   trigger: "setup" | "manual";
   generationMode?: "operating" | "setup-map";
   dispatchMusicReads?: boolean;
+  setupRunId?: string;
 };
 
 type SetupMusicReadTarget = {
@@ -163,7 +164,7 @@ Deno.serve(async (request) => {
     });
 
     if (generationMode === "setup-map" && input.dispatchMusicReads !== false && setupMusicReadTargets.length) {
-      await dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey, authHeader, input, setupMusicReadTargets);
+      EdgeRuntime.waitUntil(finalizeSetupMusicReadWave(authClient, supabaseUrl, serviceRoleKey, input, setupMusicReadTargets));
     }
 
     return json({
@@ -294,31 +295,68 @@ function selectChartmetricEnrichedMusicItemIds(evidenceRows: EvidenceRow[]): str
 
 async function dispatchSetupMusicReadsConcurrently(
   supabaseUrl: string,
-  anonKey: string,
-  authHeader: string,
+  serviceRoleKey: string,
   input: GenerateTodaysBriefInput,
   setupMusicReadTargets: SetupMusicReadTarget[],
 ) {
-  await Promise.all(
+  const results = await Promise.allSettled(
     setupMusicReadTargets.map(async (target, index) => {
       if (index > 0) await delay(index * 500);
-      return dispatchSetupMusicRead(supabaseUrl, anonKey, authHeader, input, target);
+      return dispatchSetupMusicRead(supabaseUrl, serviceRoleKey, input, target);
     }),
   );
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") return;
+    console.warn("setup music Manager Read dispatch failed", {
+      target: setupMusicReadTargets[index],
+      message: describeError(result.reason, "Setup music Manager Read dispatch failed."),
+    });
+  });
+  return results;
+}
+
+async function finalizeSetupMusicReadWave(
+  db: any,
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  input: GenerateTodaysBriefInput,
+  targets: SetupMusicReadTarget[],
+) {
+  const results = await dispatchSetupMusicReadsConcurrently(supabaseUrl, serviceRoleKey, input, targets);
+  if (!input.setupRunId) return;
+  const failures = results.flatMap((result, index) => result.status === "rejected"
+    ? [{ target: targets[index], error: describeError(result.reason, "Music Manager Read failed.") }]
+    : []);
+  const { data: run, error: runError } = await db.from("workspace_setup_runs")
+    .select("stage_status")
+    .eq("id", input.setupRunId)
+    .maybeSingle();
+  if (runError || !run) return;
+  const stages = isRecord(run.stage_status) ? run.stage_status : {};
+  await db.from("workspace_setup_runs").update({
+    stage_status: {
+      ...stages,
+      music_reads: {
+        ...((isRecord(stages.music_reads) ? stages.music_reads : {}) as Record<string, unknown>),
+        status: failures.length ? "completed_with_limits" : "completed",
+        completed_at: new Date().toISOString(),
+        failures,
+      },
+    },
+  }).eq("id", input.setupRunId);
 }
 
 async function dispatchSetupMusicRead(
   supabaseUrl: string,
-  anonKey: string,
-  authHeader: string,
+  serviceRoleKey: string,
   input: GenerateTodaysBriefInput,
   target: SetupMusicReadTarget,
 ) {
   const response = await fetch(`${supabaseUrl}/functions/v1/generate-music-summary`, {
     method: "POST",
     headers: {
-      Authorization: authHeader,
-      apikey: anonKey,
+      Authorization: `Bearer ${serviceRoleKey}`,
+      apikey: serviceRoleKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -368,6 +406,7 @@ async function callOpenAITodaysBrief(
     },
     body: JSON.stringify({
       model: Deno.env.get("OPENAI_TODAYS_BRIEF_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+      reasoning: { effort: "low" },
       instructions: buildTodaysBriefInstructions(generationMode, playbookLensText),
       input: JSON.stringify(packet),
       text: {

@@ -103,6 +103,12 @@ describe("Manager artist discovery edge function", () => {
     expect(completionIndex).toBeGreaterThan(failedToolsIndex);
   });
 
+  it("parallelizes independent enrichment calls with low reasoning latency", () => {
+    expect(discoveryFunctionSource).toContain("parallelToolCalls: true");
+    expect(discoveryFunctionSource).toContain('reasoningEffort: "low"');
+    expect(discoveryFunctionSource).toContain("Issue the focus-asset enrichment calls together");
+  });
+
   it("persists discovery completion before dispatching the context-aware setup phase", () => {
     expect(discoveryFunctionSource).toContain("manager_discovery_started");
     expect(discoveryFunctionSource).toContain("manager_discovery_tool_");
