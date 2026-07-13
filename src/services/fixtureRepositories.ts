@@ -1170,6 +1170,7 @@ export function createFixtureProductionRuntime(): {
     workspaceName: `${productionFixtureData.profile.name} Desk`,
     status: "active",
     spotifyConnected: true,
+    entitlementActive: true,
     spotifyArtistId: "fixture-spotify-artist",
     spotifyArtistName: productionFixtureData.profile.name,
     spotifyArtistUrl: "https://open.spotify.com/artist/fixture-spotify-artist",

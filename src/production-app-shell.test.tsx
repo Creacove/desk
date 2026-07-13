@@ -61,6 +61,7 @@ const workspace = {
   workspaceName: "Nova Vale Desk",
   status: "active" as const,
   spotifyConnected: true,
+  entitlementActive: true,
   spotifyArtistId: "spotify-artist-1",
   spotifyArtistName: "Nova Vale",
   spotifyArtistUrl: "https://open.spotify.com/artist/spotify-artist-1",

@@ -87,7 +87,7 @@ function ProfileSettings({ profile, update }: { profile: ArtistProfileViewModel;
       <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
         <ArtistSummary profile={profile} compact />
       </div>
-      <div data-testid="settings-desktop-profile-summary" className="mb-6 hidden border-b border-foreground/8 pb-5 sm:block">
+      <div data-testid="settings-desktop-profile-summary" className="mb-6 hidden border-b border-foreground/8 pb-5 sm:flex">
         <ArtistSummary profile={profile} />
       </div>
 
