@@ -68,6 +68,13 @@ describe("private-beta access backend contract", () => {
     expect(batch).not.toContain("raw_code:");
   });
 
+  it("makes pgcrypto digest available to the beta activation RPC", () => {
+    const migration = source("supabase", "migrations", "20260713000200_private_beta_digest_search_path.sql");
+
+    expect(migration).toContain("activate_beta_artist_workspace");
+    expect(migration).toContain("public, extensions");
+  });
+
   it("deduplicates transactional Resend sends and never exposes secrets client-side", () => {
     const email = source("supabase", "functions", "_shared", "transactionalEmail.ts");
     const env = source(".env.example");

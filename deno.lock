@@ -23,6 +23,7 @@
         "npm:jsdom@^20.0.3",
         "npm:lucide-react@0.462",
         "npm:postcss@^8.5.6",
+        "npm:posthog-js@^1.399.2",
         "npm:react-dom@^18.3.1",
         "npm:react@^18.3.1",
         "npm:tailwind-merge@^2.6.0",
