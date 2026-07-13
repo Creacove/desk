@@ -29,12 +29,20 @@ export function ConnectArtistScreen({
   const searchMode = Boolean(onQueryChange && onSelectCandidate);
 
   return (
-    <main className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+    <main className="app-theme relative min-h-screen overflow-x-hidden bg-background px-4 py-4 text-foreground sm:px-7 sm:py-5 lg:px-9">
       <div className="pointer-events-none absolute inset-0 opacity-[0.28] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 mx-auto w-full max-w-[1500px]">
         <ConnectHeader status={searchMode ? "Connect artist" : "Connect"} onSignOut={onSignOut} />
-        <section className="mx-auto grid min-h-[calc(100vh-5rem)] max-w-6xl items-center gap-6 py-6 lg:grid-cols-[minmax(0,0.88fr)_minmax(22rem,0.72fr)]">
-          <div className="max-w-xl">
+        <section className="mx-auto max-w-6xl py-7 lg:grid lg:min-h-[calc(100vh-5rem)] lg:grid-cols-[minmax(0,0.88fr)_minmax(22rem,0.72fr)] lg:items-center lg:gap-6 lg:py-6">
+          <div data-testid="connect-mobile-intro" className="mb-5 lg:hidden">
+            <h1 className="font-display text-[32px] font-semibold leading-[1.02] tracking-tight text-foreground">
+              {searchMode ? "Choose your artist" : "Artist selected"}
+            </h1>
+            <p className="mt-2 max-w-sm text-[13px] font-semibold leading-relaxed text-muted-foreground">
+              {searchMode ? "Search Spotify and select the right profile." : "Confirm this is the artist desk you want to open."}
+            </p>
+          </div>
+          <div data-testid="connect-desktop-intro" className="hidden max-w-xl lg:block">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Authentication</p>
             <h1 className="font-display mt-4 text-[38px] font-semibold leading-[1] tracking-tight text-foreground sm:text-[46px]">
               Bring your catalog to life.
@@ -44,20 +52,20 @@ export function ConnectArtistScreen({
             </p>
           </div>
 
-          <div className="w-full rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">
+          <div className="w-full min-w-0 overflow-hidden rounded-[18px] border border-foreground/10 bg-white/88 p-4 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
+            <p className="hidden font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent lg:block">
               <span className="sr-only">Spotify identity</span>
               Artist identity
             </p>
-            <h2 className="font-display mt-3 text-[24px] font-bold leading-tight tracking-tight text-foreground">Connect artist profile</h2>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground">
+            <h2 className="mt-3 hidden font-display text-[24px] font-bold leading-tight tracking-tight text-foreground lg:block">Connect artist profile</h2>
+            <p className="mt-2 hidden text-[13px] font-semibold leading-relaxed text-muted-foreground lg:block">
               {searchMode
                 ? "Search for your profile, choose the correct artist identity, and import public catalog context before Desk HQ opens."
                 : "Confirm the baseline profile to populate the Manager and specialist context."}
             </p>
 
             {searchMode ? (
-              <div className="mt-6 flex flex-col items-stretch text-left">
+              <div className="flex flex-col items-stretch text-left lg:mt-6">
                 <label htmlFor="spotify-artist-search">
                   <span className="relative mt-2 block">
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
@@ -91,7 +99,7 @@ export function ConnectArtistScreen({
                         <button
                           key={candidate.spotifyArtistId}
                           type="button"
-                          className="group flex w-full items-center justify-between gap-3 rounded-[14px] border border-foreground/5 bg-foreground/[0.025] p-3.5 text-left shadow-inner transition-all hover:border-brand-accent/20 hover:bg-foreground/[0.04]"
+                          className="group flex min-w-0 w-full items-center justify-between gap-3 overflow-hidden rounded-[14px] border border-foreground/5 bg-foreground/[0.025] p-3.5 text-left shadow-inner transition-all hover:border-brand-accent/20 hover:bg-foreground/[0.04]"
                           aria-label={`Select Spotify artist ${candidate.name}`}
                           onClick={() => onSelectCandidate?.(candidate)}
                         >
@@ -119,7 +127,7 @@ export function ConnectArtistScreen({
               </div>
             ) : profile ? (
               <>
-                <div className="mt-6 flex flex-col items-stretch text-left">
+                <div className="flex flex-col items-stretch text-left lg:mt-6">
                   <p className="font-ui text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/78">Verified Artist Identity</p>
                   <div className="mt-2 flex items-center justify-between rounded-[14px] border border-foreground/5 bg-foreground/[0.025] p-3.5 shadow-inner">
                     <div className="flex min-w-0 items-center gap-3">
@@ -174,29 +182,36 @@ export function SetupScreen({
   const catalogMessage = getCatalogStatusMessage(catalogSyncStatus);
 
   return (
-    <main className="app-theme relative min-h-screen overflow-hidden bg-background px-5 py-5 text-foreground sm:px-7 lg:px-9">
+    <main className="app-theme relative min-h-screen overflow-x-hidden bg-background px-4 py-4 text-foreground sm:px-7 sm:py-5 lg:px-9">
       <div className="pointer-events-none absolute inset-0 opacity-[0.28] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px]" />
       <div className="relative z-10 mx-auto w-full max-w-[1500px]">
         <ConnectHeader status="Setup" onSignOut={onSignOut} />
-        <section className="mx-auto max-w-6xl px-0 py-6">
+        <section className="mx-auto max-w-6xl px-0 py-2 lg:py-6">
         <button
           type="button"
           onClick={onBack}
-          className="group inline-flex items-center gap-2 rounded-[10px] border border-foreground/10 bg-white/76 px-3.5 py-2 text-[12px] font-bold text-muted-foreground shadow-sm transition-all hover:bg-foreground/5 hover:text-foreground"
+          className="group inline-flex items-center gap-2 rounded-[10px] border border-foreground/10 bg-white/76 px-3 py-2 text-[11px] font-bold text-muted-foreground shadow-sm transition-all hover:bg-foreground/5 hover:text-foreground lg:px-3.5 lg:text-[12px]"
         >
           <ArrowLeft className="h-3.5 w-3.5 transition-transform group-hover:-translate-x-0.5" aria-hidden="true" />
           Back to profile
         </button>
 
-        <div className="mt-5 grid gap-6 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
+        <div className="mt-4 grid gap-4 lg:mt-5 lg:grid-cols-[minmax(0,0.72fr)_minmax(0,1fr)] lg:items-start lg:gap-8">
           <div className="lg:sticky lg:top-12">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Artist Context</p>
-            <h1 className="font-display mt-4 text-[38px] font-semibold leading-[1] tracking-tight text-foreground lg:text-[46px]">Manager Basics</h1>
-            <p className="mt-5 max-w-[28rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
-              Give the Manager enough operational context to target release strategy, team constraints, and source limits.
+            <div data-testid="setup-mobile-identity" className="mb-5 flex min-w-0 items-center gap-3 lg:hidden">
+              <ArtistAvatar name={profile.name} imageUrl={profile.imageUrl} />
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-[#16883f]">Artist connected</p>
+                <p className="mt-1 truncate text-[13px] font-bold text-foreground">{profile.name}</p>
+              </div>
+            </div>
+            <p className="hidden font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent lg:block">Artist Context</p>
+            <h1 className="font-display text-[32px] font-semibold leading-[1] tracking-tight text-foreground lg:mt-4 lg:text-[46px]">Manager Basics</h1>
+            <p className="mt-5 hidden max-w-[28rem] text-[15px] font-semibold leading-relaxed text-foreground/72 lg:block">
+              Add the two human inputs your catalog cannot provide.
             </p>
 
-            <div className="mt-6 rounded-[16px] border border-foreground/8 bg-white/72 p-5 shadow-sm">
+            <div data-testid="setup-onboarding-tips" className="mt-6 hidden rounded-[16px] border border-foreground/8 bg-white/72 p-5 shadow-sm lg:block">
               <div className="flex items-center gap-3">
                 <ArtistAvatar name={profile.name} imageUrl={profile.imageUrl} />
                 <div className="min-w-0">
@@ -213,15 +228,17 @@ export function SetupScreen({
 
           <div className="rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl">
             <div className="grid gap-3 sm:grid-cols-2">
-              <SetupInput label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
-              <SetupInput label="Artist identity" value={profile.spotify} onChange={(value) => update("spotify", value)} active />
+              <div data-testid="setup-identity-fields" className="hidden gap-3 lg:col-span-2 lg:grid lg:grid-cols-2">
+                <SetupInput label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
+                <SetupInput label="Artist identity" value={profile.spotify} onChange={(value) => update("spotify", value)} active />
+              </div>
               <ArtistDirectionField value={profile.goal} onChange={(value) => update("goal", value)} />
               <SetupInput label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
             </div>
 
             <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/5 pt-4">
               <div className="max-w-md">
-                <p className="text-[12px] font-bold text-[#c2410c] opacity-80">The desk will infer stage, market, genre, and current catalog shape from enrichment.</p>
+                <p className="hidden text-[12px] font-bold text-[#c2410c] opacity-80 lg:block">The desk will infer stage, market, genre, and current catalog shape from enrichment.</p>
                 {catalogMessage ? <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">{catalogMessage}</p> : null}
                 {!complete ? (
                   <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">
@@ -246,7 +263,7 @@ export function SetupScreen({
                   type="button"
                   onClick={() => onContinue(profile)}
                   disabled={!complete || pending}
-                  className="inline-flex h-10 items-center justify-center rounded-[10px] border border-foreground/10 bg-background px-6 text-[12px] font-bold text-foreground transition-all hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-40"
+                  className="hidden h-10 items-center justify-center rounded-[10px] border border-foreground/10 bg-background px-6 text-[12px] font-bold text-foreground transition-all hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-40 sm:inline-flex"
                 >
                   Skip
                 </button>
@@ -254,7 +271,7 @@ export function SetupScreen({
                   type="button"
                   onClick={() => onContinue(profile)}
                   disabled={!complete || pending}
-                  className="group inline-flex h-10 items-center justify-center gap-2 rounded-[10px] bg-foreground px-6 text-[12px] font-bold text-background shadow-sm transition-all hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+                  className="group inline-flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-foreground px-6 text-[12px] font-bold text-background shadow-sm transition-all hover:opacity-90 disabled:pointer-events-none disabled:opacity-40 sm:h-10 sm:w-auto"
                 >
                   {pending ? "Preparing Desk HQ" : "Enter Desk HQ"}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
@@ -512,13 +529,13 @@ function ConnectHeader({ status, onSignOut }: { status: string; onSignOut?: () =
     <header className="flex items-center justify-between">
       <div className="flex items-center gap-3 text-left">
         <BrandMark size="sm" />
-        <div>
+        <div className="hidden lg:block">
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.2em] text-foreground/74">Ordersounds</p>
           <h1 className="font-display text-2xl font-bold leading-none tracking-tight">Desk</h1>
         </div>
       </div>
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center gap-1 rounded-md border border-foreground/10 bg-background px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground transition-colors duration-200">
+        <span className="hidden items-center gap-1 rounded-md border border-foreground/10 bg-background px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground transition-colors duration-200 lg:inline-flex">
           {status}
         </span>
         {onSignOut ? (
