@@ -1,3 +1,4 @@
+import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -7,11 +8,12 @@ import type { ArtistProfileViewModel } from "./types/cleanProduction";
 describe("SettingsScreen", () => {
   afterEach(() => cleanup());
 
-  it("renders normalized Chartmetric artist intelligence when available", () => {
+  it("defaults to Profile and removes artist intelligence from settings", () => {
+    const onChange = vi.fn();
     render(
       <SettingsScreen
         profile={profileWithArtistIntelligence()}
-        onChange={vi.fn()}
+        onChange={onChange}
         onBack={vi.fn()}
         themeMode="system"
         resolvedThemeMode="dark"
@@ -19,15 +21,18 @@ describe("SettingsScreen", () => {
       />,
     );
 
-    expect(screen.getByText("Artist intelligence")).toBeTruthy();
-    expect(screen.getByText("Chartmetric shows Burna Boy has strong verified artist context.")).toBeTruthy();
-    expect(screen.getByText("Country rank Nigeria: #1; Lagos: 1,344,811 listeners")).toBeTruthy();
-    expect(screen.getByText("Spotify monthly listeners: 33,095,448 listeners")).toBeTruthy();
-    expect(screen.getByText("TikTok track posts: 15,763,624 posts")).toBeTruthy();
-    expect(screen.getByText("Attention signal, not conversion proof.")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByLabelText("Artist name")).toBeInTheDocument();
+    expect(screen.queryByText("Artist intelligence")).not.toBeInTheDocument();
+    expect(screen.queryByText("Chartmetric shows Burna Boy has strong verified artist context.")).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Artist name"), { target: { value: "Burna" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Burna", market: "Lagos", budget: "$50,000" }));
   });
 
-  it("renders a premium appearance control that can override system mode", () => {
+  it("isolates appearance in Account and can override system mode", () => {
     const onThemeModeChange = vi.fn();
 
     render(
@@ -41,6 +46,8 @@ describe("SettingsScreen", () => {
       />,
     );
 
+    expect(screen.queryByText("Appearance")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
     expect(screen.getByText("Appearance")).toBeTruthy();
     expect(screen.getByText("Following system: Dark")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Use system appearance" }).getAttribute("aria-pressed")).toBe("true");
@@ -50,8 +57,9 @@ describe("SettingsScreen", () => {
     expect(onThemeModeChange).toHaveBeenCalledWith("dark");
   });
 
-  it("shows private-beta expiry and updates the account password", async () => {
+  it("separates access details from account security", async () => {
     const onUpdatePassword = vi.fn().mockResolvedValue(undefined);
+    const onSignOut = vi.fn();
     render(
       <SettingsScreen
         profile={profileWithArtistIntelligence()}
@@ -73,16 +81,25 @@ describe("SettingsScreen", () => {
           accessEndsAt: "2026-08-12T00:00:00.000Z",
         }}
         onUpdatePassword={onUpdatePassword}
+        onSignOut={onSignOut}
       />,
     );
 
+    expect(screen.queryByText("Private beta")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
     expect(screen.getByText("Private beta")).toBeTruthy();
     expect(screen.getByText("Aug 12, 2026")).toBeTruthy();
+    expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
+    expect(screen.queryByText("Private beta")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("New password"), { target: { value: "new-password-123" } });
     fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "new-password-123" } });
     fireEvent.click(screen.getByRole("button", { name: "Change password" }));
 
     await vi.waitFor(() => expect(onUpdatePassword).toHaveBeenCalledWith({ password: "new-password-123" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 });
 

@@ -1,4 +1,4 @@
-import { Activity, Globe2, LogOut, Monitor, Moon, RadioTower, Sun } from "lucide-react";
+import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
 import { Field, ProductButton, TextAreaField, WorkspaceShell } from "../../design-system/components";
 import { cn } from "../../lib/utils";
@@ -28,89 +28,174 @@ export function SettingsScreen({
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
 }) {
   const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+  const tabs: Array<{ id: SettingsTab; label: string }> = [
+    { id: "profile", label: "Profile" },
+    { id: "access", label: "Access" },
+    { id: "account", label: "Account" },
+  ];
 
   return (
     <WorkspaceShell eyebrow="Settings" title="Artist profile" onBack={onBack}>
-      <AppearanceControl mode={themeMode} resolvedMode={resolvedThemeMode} onChange={onThemeModeChange} />
-      <section className="rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
-        <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
-          <div className="flex min-w-0 items-center gap-3">
-            {profile.imageUrl ? (
-              <img className="h-12 w-12 shrink-0 rounded-[14px] object-cover" src={profile.imageUrl} alt="" />
-            ) : (
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] text-[16px] font-bold text-muted-foreground">
-                {profile.name.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Artist profile</p>
-              <p className="mt-1 truncate font-display text-[18px] font-semibold tracking-tight text-foreground">{profile.name}</p>
-              <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground">{profile.market} / {profile.genre}</p>
-            </div>
-          </div>
+      <div className="sticky top-[109px] z-20 -mx-3 mb-4 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
+        <div role="tablist" aria-label="Settings sections" className="grid grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1 lg:max-w-md">
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`settings-tab-${tab.id}`}
+                type="button"
+                role="tab"
+                aria-selected={selected}
+                aria-controls={`settings-panel-${tab.id}`}
+                onClick={() => setActiveTab(tab.id)}
+                className={cn(
+                  "h-10 rounded-[9px] px-3 text-[12px] font-bold transition-all focus:outline-none focus:ring-2 focus:ring-brand-accent/30",
+                  selected ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
         </div>
-        <div data-testid="settings-desktop-profile-summary" className="mb-5 hidden flex-col gap-4 border-b border-foreground/8 pb-5 sm:flex sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center gap-3">
-            {profile.imageUrl ? (
-              <img className="h-14 w-14 shrink-0 rounded-[14px] object-cover" src={profile.imageUrl} alt={`${profile.name} artist image`} />
-            ) : (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] text-[18px] font-bold text-muted-foreground">
-                {profile.name.slice(0, 2).toUpperCase()}
-              </div>
-            )}
-            <div className="min-w-0">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Spotify artist profile</p>
-              <p className="mt-1 truncate font-display text-[20px] font-bold tracking-tight text-foreground">{profile.name}</p>
-            </div>
-          </div>
-          <p className="max-w-xl text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Edit the active artist operating profile, connected channels, current goal, budget context, and known limitations.</p>
+      </div>
+
+      <div id={`settings-panel-${activeTab}`} role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {activeTab === "profile" ? <ProfileSettings profile={profile} update={update} /> : null}
+        {activeTab === "access" ? (workspace ? <AccessSummary workspace={workspace} /> : <AccessEmptyState />) : null}
+        {activeTab === "account" ? (
+          <AccountSettings
+            mode={themeMode}
+            resolvedMode={resolvedThemeMode}
+            onThemeModeChange={onThemeModeChange}
+            onUpdatePassword={onUpdatePassword}
+            onSignOut={onSignOut}
+          />
+        ) : null}
+      </div>
+    </WorkspaceShell>
+  );
+}
+
+type SettingsTab = "profile" | "access" | "account";
+
+function ProfileSettings({ profile, update }: { profile: ArtistProfileViewModel; update: (key: keyof ArtistProfileViewModel, value: string) => void }) {
+  return (
+    <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm sm:p-5">
+      <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
+        <ArtistSummary profile={profile} compact />
+      </div>
+      <div data-testid="settings-desktop-profile-summary" className="mb-6 hidden border-b border-foreground/8 pb-5 sm:block">
+        <ArtistSummary profile={profile} />
+      </div>
+
+      <SettingsGroup title="Identity">
+        <Field label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
+        <Field label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} />
+      </SettingsGroup>
+      <SettingsGroup title="Career context">
+        <Field label="Artist stage" value={profile.stage} onChange={(value) => update("stage", value)} />
+        <Field label="Home market" value={profile.market} onChange={(value) => update("market", value)} />
+        <Field label="Genre" value={profile.genre} onChange={(value) => update("genre", value)} />
+        <Field label="Active release" value={profile.release} onChange={(value) => update("release", value)} />
+      </SettingsGroup>
+      <SettingsGroup title="Operating context">
+        <TextAreaField label="Artist Direction" value={profile.goal} onChange={(value) => update("goal", value)} />
+        <Field label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
+      </SettingsGroup>
+      <SettingsGroup title="Channels" last>
+        <Field label="TikTok" value={profile.tiktok} onChange={(value) => update("tiktok", value)} />
+        <Field label="Instagram" value={profile.instagram} onChange={(value) => update("instagram", value)} />
+        <Field label="YouTube" value={profile.youtube} onChange={(value) => update("youtube", value)} />
+        <Field label="X" value={profile.x} onChange={(value) => update("x", value)} />
+      </SettingsGroup>
+    </section>
+  );
+}
+
+function ArtistSummary({ profile, compact = false }: { profile: ArtistProfileViewModel; compact?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-3">
+      {profile.imageUrl ? (
+        <img className={cn("shrink-0 rounded-[14px] object-cover", compact ? "h-12 w-12" : "h-14 w-14")} src={profile.imageUrl} alt={compact ? "" : `${profile.name} artist image`} />
+      ) : (
+        <div className={cn("flex shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] font-bold text-muted-foreground", compact ? "h-12 w-12 text-[16px]" : "h-14 w-14 text-[18px]")}>
+          {profile.name.slice(0, 2).toUpperCase()}
         </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
-          <Field label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} />
-          <Field label="Artist stage" value={profile.stage} onChange={(value) => update("stage", value)} />
-          <Field label="Home market" value={profile.market} onChange={(value) => update("market", value)} />
-          <Field label="Genre" value={profile.genre} onChange={(value) => update("genre", value)} />
-          <Field label="Active release" value={profile.release} onChange={(value) => update("release", value)} />
-          <Field label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
-          <Field label="TikTok" value={profile.tiktok} onChange={(value) => update("tiktok", value)} />
-          <Field label="Instagram" value={profile.instagram} onChange={(value) => update("instagram", value)} />
-          <Field label="YouTube" value={profile.youtube} onChange={(value) => update("youtube", value)} />
-          <Field label="X" value={profile.x} onChange={(value) => update("x", value)} />
-          <TextAreaField label="Artist Direction" value={profile.goal} onChange={(value) => update("goal", value)} />
-        </div>
-      </section>
-      {profile.artistIntelligence ? (
-        <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
-          <div className="mb-5 border-b border-foreground/8 pb-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Artist intelligence</p>
-            <p className="mt-2 max-w-3xl text-[14px] font-semibold leading-relaxed text-foreground">{profile.artistIntelligence.headline}</p>
-          </div>
-          <div className="grid gap-3 lg:grid-cols-3">
-            <IntelligenceRead icon={<Globe2 className="h-4 w-4" aria-hidden="true" />} label="Markets" value={profile.artistIntelligence.marketRead} />
-            <IntelligenceRead icon={<Activity className="h-4 w-4" aria-hidden="true" />} label="Platforms" value={profile.artistIntelligence.platformRead} />
-            <IntelligenceRead icon={<RadioTower className="h-4 w-4" aria-hidden="true" />} label="Social" value={profile.artistIntelligence.socialRead} />
-          </div>
-          {profile.artistIntelligence.limitations.length ? (
-            <div className="mt-4 border-t border-foreground/8 pt-4">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Source limits</p>
-              <div className="mt-2 grid gap-2">
-                {profile.artistIntelligence.limitations.map((limitation) => (
-                  <p key={limitation} className="text-[12px] font-semibold leading-relaxed text-muted-foreground/82">{limitation}</p>
-                ))}
-              </div>
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-      {workspace ? <AccessSummary workspace={workspace} /> : null}
+      )}
+      <div className="min-w-0">
+        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Active artist</p>
+        <p className={cn("mt-1 truncate font-display font-bold tracking-tight text-foreground", compact ? "text-[18px]" : "text-[20px]")}>{profile.name}</p>
+        <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground">{[profile.market, profile.genre].filter(Boolean).join(" / ")}</p>
+      </div>
+    </div>
+  );
+}
+
+function SettingsGroup({ title, children, last = false }: { title: string; children: ReactNode; last?: boolean }) {
+  return (
+    <div className={cn("py-5 first:pt-0", !last && "border-b border-foreground/8")}>
+      <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{title}</h2>
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </div>
+  );
+}
+
+function AccessSummary({ workspace }: { workspace: ProductionWorkspace }) {
+  const paid = workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
+  return (
+    <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Workspace access</p>
+      <h2 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">{paid ? "Paid subscription" : workspace.accessType === "private_beta" ? "Private beta" : "No active access"}</h2>
+      <dl className="mt-6 divide-y divide-foreground/8 border-y border-foreground/8 text-[13px]">
+        <AccessRow label="Status" value={workspace.accessStatus ?? (workspace.entitlementActive ? "Active" : "Inactive")} />
+        {workspace.accessStartsAt ? <AccessRow label="Started" value={formatDate(workspace.accessStartsAt)} /> : null}
+        {paid && workspace.renewalAt ? <AccessRow label="Renews" value={formatDate(workspace.renewalAt)} /> : null}
+        {!paid && workspace.accessEndsAt ? <AccessRow label="Expires" value={formatDate(workspace.accessEndsAt)} /> : null}
+      </dl>
+    </section>
+  );
+}
+
+function AccessRow({ label, value }: { label: string; value: string }) {
+  return <div className="flex items-center justify-between gap-4 py-4"><dt className="font-semibold text-muted-foreground">{label}</dt><dd className="text-right font-bold capitalize text-foreground">{value}</dd></div>;
+}
+
+function AccessEmptyState() {
+  return (
+    <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Workspace access</p>
+      <h2 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">Access details unavailable</h2>
+      <p className="mt-3 max-w-lg text-[13px] font-semibold leading-relaxed text-muted-foreground">Your plan details will appear here when this workspace finishes loading.</p>
+    </section>
+  );
+}
+
+function AccountSettings({
+  mode,
+  resolvedMode,
+  onThemeModeChange,
+  onUpdatePassword,
+  onSignOut,
+}: {
+  mode: ThemeMode;
+  resolvedMode: ResolvedThemeMode;
+  onThemeModeChange?: (mode: ThemeMode) => void;
+  onUpdatePassword?: (input: { password: string }) => Promise<void>;
+  onSignOut?: () => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
-        <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
+        <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Account</p>
-              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">End this session and return to sign in.</p>
+              <p className="text-[11px] font-bold text-foreground">Sign out</p>
+              <p className="mt-1 text-[12px] font-semibold text-muted-foreground">Return to the sign-in screen on this device.</p>
             </div>
             <ProductButton variant="secondary" onClick={onSignOut}>
               <LogOut className="h-4 w-4" aria-hidden="true" />
@@ -119,23 +204,7 @@ export function SettingsScreen({
           </div>
         </section>
       ) : null}
-    </WorkspaceShell>
-  );
-}
-
-function AccessSummary({ workspace }: { workspace: ProductionWorkspace }) {
-  const paid = workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
-  return (
-    <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm">
-      <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Access</p>
-      <dl className="mt-4 grid gap-3 text-[13px] sm:grid-cols-2">
-        <div><dt className="font-bold text-muted-foreground">Access type</dt><dd className="mt-1 font-semibold text-foreground">{paid ? "Paid subscription" : workspace.accessType === "private_beta" ? "Private beta" : "No active access"}</dd></div>
-        <div><dt className="font-bold text-muted-foreground">Status</dt><dd className="mt-1 font-semibold capitalize text-foreground">{workspace.accessStatus ?? (workspace.entitlementActive ? "active" : "inactive")}</dd></div>
-        {workspace.accessStartsAt ? <div><dt className="font-bold text-muted-foreground">Started</dt><dd className="mt-1 font-semibold text-foreground">{formatDate(workspace.accessStartsAt)}</dd></div> : null}
-        {paid && workspace.renewalAt ? <div><dt className="font-bold text-muted-foreground">Renews</dt><dd className="mt-1 font-semibold text-foreground">{formatDate(workspace.renewalAt)}</dd></div> : null}
-        {!paid && workspace.accessEndsAt ? <div><dt className="font-bold text-muted-foreground">Expires</dt><dd className="mt-1 font-semibold text-foreground">{formatDate(workspace.accessEndsAt)}</dd></div> : null}
-      </dl>
-    </section>
+    </div>
   );
 }
 
@@ -160,7 +229,7 @@ function PasswordSettings({ onUpdatePassword }: { onUpdatePassword: (input: { pa
       setPending(false);
     }
   }
-  return <section className="mt-4 rounded-xl border border-foreground/10 bg-background p-5 shadow-sm"><p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Password</p><form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={submit}><Field label="New password" value={password} onChange={setPassword} type="password" /><Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" />{message ? <p className="text-[12px] font-semibold text-muted-foreground sm:col-span-2">{message}</p> : null}<div className="sm:col-span-2"><ProductButton type="submit" disabled={pending}>{pending ? "Updating password" : "Change password"}</ProductButton></div></form></section>;
+  return <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm"><p className="text-[11px] font-bold text-foreground">Password</p><form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={submit}><Field label="New password" value={password} onChange={setPassword} type="password" /><Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" />{message ? <p className="text-[12px] font-semibold text-muted-foreground sm:col-span-2">{message}</p> : null}<div className="sm:col-span-2"><ProductButton type="submit" disabled={pending}>{pending ? "Updating password" : "Change password"}</ProductButton></div></form></section>;
 }
 
 function formatDate(value: string) {
@@ -185,13 +254,13 @@ function AppearanceControl({
   ];
 
   return (
-    <section className="mb-4 rounded-xl border border-foreground/10 bg-background p-4 shadow-sm">
+    <section className="rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Appearance</p>
           <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{status}</p>
         </div>
-        <div className="grid grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
+        <div className="grid min-w-0 grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
           {options.map((option) => {
             const active = option.mode === mode;
             return (
@@ -202,7 +271,7 @@ function AppearanceControl({
                 aria-pressed={active}
                 onClick={() => onChange?.(option.mode)}
                 className={cn(
-                  "inline-flex h-9 min-w-[5.75rem] items-center justify-center gap-2 rounded-[9px] px-3 font-ui text-[12px] font-bold transition-all",
+                  "inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-[9px] px-2 font-ui text-[11px] font-bold transition-all sm:gap-2 sm:px-3 sm:text-[12px]",
                   active
                     ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8"
                     : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
@@ -219,14 +288,3 @@ function AppearanceControl({
   );
 }
 
-function IntelligenceRead({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-foreground/8 bg-foreground/[0.025] p-3">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        {icon}
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em]">{label}</p>
-      </div>
-      <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground">{value}</p>
-    </div>
-  );
-}
