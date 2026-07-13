@@ -243,6 +243,47 @@ describe("Paystack paywall contract", () => {
     expect(container.querySelector("[data-paywall-scroll-region]")).not.toBeInTheDocument();
   });
 
+  it("contains unusually long artist and catalog names inside the viewport", () => {
+    const longName = "LONGTITLEWITHOUTBREAKS".repeat(18);
+    render(
+      <PaywallPreviewScreen
+        preview={{
+          checkoutSessionId: "checkout-long",
+          reference: "ors_long",
+          status: "open",
+          artist: { ...candidate, name: longName },
+          amount: 20,
+          amountMinor: 2000,
+          currency: "USD",
+          interval: "monthly",
+        }}
+        catalogPreview={{
+          ...catalogPreview,
+          latestProject: catalogPreview.latestProject ? {
+            ...catalogPreview.latestProject,
+            name: longName,
+            tracks: [{ spotifyTrackId: "track-long", name: longName }],
+          } : null,
+          standaloneSingles: [{
+            spotifyAlbumId: "single-long",
+            name: longName,
+            releaseType: "single",
+            releaseDate: "2026-05-01",
+            tracks: [{ spotifyTrackId: "single-track-long", name: longName }],
+          }],
+        }}
+        onSubscribe={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByLabelText("Paywall viewport")).toHaveClass("max-w-full", "overflow-x-hidden");
+    expect(screen.getByTestId("paywall-content-grid")).toHaveClass("min-w-0", "max-w-full", "overflow-hidden");
+    expect(screen.getByTestId("paywall-checkout-title")).toHaveClass("break-words");
+    expect(screen.getByTestId("paywall-project-title")).toHaveClass("truncate");
+    expect(screen.getByTestId("paywall-queue-title")).toHaveClass("truncate");
+  });
+
   it("defines durable billing tables, setup runs, RLS, and activation RPC in a migration", () => {
     const migrationPath = join(process.cwd(), "supabase", "migrations", "20260710000200_paystack_billing_paywall.sql");
     expect(existsSync(migrationPath)).toBe(true);

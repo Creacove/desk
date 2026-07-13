@@ -317,9 +317,9 @@ export function PaywallPreviewScreen({
   const backgroundArtwork = latestProject?.artworkUrl ?? standaloneSingles.find((single) => single.artworkUrl)?.artworkUrl ?? artist.imageUrl;
 
   return (
-    <main aria-label="Paywall viewport" className="app-theme relative h-dvh overflow-hidden bg-background px-2.5 py-2 text-foreground dark:bg-[#0d0f13] sm:px-4 sm:py-3 lg:px-6">
+    <main aria-label="Paywall viewport" className="app-theme relative h-dvh max-w-full overflow-hidden overflow-x-hidden bg-background px-2.5 py-2 text-foreground dark:bg-[#0d0f13] sm:px-4 sm:py-3 lg:px-6">
       <div className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(rgba(17,19,24,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(17,19,24,0.04)_1px,transparent_1px)] [background-size:44px_44px] dark:[background-image:linear-gradient(rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)]" />
-      <div className="relative z-10 mx-auto flex h-full w-full max-w-[1320px] min-h-0 flex-col">
+      <div className="relative z-10 mx-auto flex h-full min-h-0 w-full min-w-0 max-w-[1320px] flex-col overflow-hidden">
         <div className="hidden lg:block"><ConnectHeader status="Subscription" onSignOut={onSignOut} /></div>
 
         <button
@@ -331,8 +331,8 @@ export function PaywallPreviewScreen({
           Back to artist search
         </button>
 
-        <section className="relative mt-2 grid min-h-0 flex-1 overflow-hidden rounded-[14px] border border-foreground/10 bg-white/84 shadow-[0_24px_80px_rgba(17,19,24,0.14)] dark:border-white/10 dark:bg-[#11141a]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.34)] lg:mt-3 lg:grid-cols-[12rem_minmax(0,1fr)]">
-          <aside className="hidden min-h-0 flex-col border-r border-foreground/8 bg-foreground/[0.035] p-3 dark:border-white/10 dark:bg-white/[0.06] lg:flex" aria-label="Locked Desk navigation preview">
+        <section className="relative mt-2 grid min-h-0 min-w-0 max-w-full flex-1 overflow-hidden rounded-[14px] border border-foreground/10 bg-white/84 shadow-[0_24px_80px_rgba(17,19,24,0.14)] dark:border-white/10 dark:bg-[#11141a]/96 dark:shadow-[0_24px_80px_rgba(0,0,0,0.34)] lg:mt-3 lg:grid-cols-[12rem_minmax(0,1fr)]">
+          <aside className="hidden min-h-0 min-w-0 flex-col overflow-hidden border-r border-foreground/8 bg-foreground/[0.035] p-3 dark:border-white/10 dark:bg-white/[0.06] lg:flex" aria-label="Locked Desk navigation preview">
             <div className="flex items-center gap-3">
               <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} />
               <div className="min-w-0">
@@ -350,15 +350,15 @@ export function PaywallPreviewScreen({
             </div>
           </aside>
 
-          <div className="relative min-h-0 overflow-hidden p-2.5 sm:p-3 lg:p-5">
-            <div className="grid h-full min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] gap-2 lg:grid-cols-[minmax(0,1fr)_minmax(19rem,0.72fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-5">
+          <div className="relative min-h-0 min-w-0 max-w-full overflow-hidden p-2.5 sm:p-3 lg:p-5">
+            <div data-testid="paywall-content-grid" className="grid h-full min-h-0 min-w-0 max-w-full grid-rows-[auto_auto_minmax(0,1fr)] gap-2 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(19rem,0.72fr)] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-5">
               <div className="min-h-0 lg:self-center" aria-label="Locked catalog preview">
                 <p className="mb-1 font-ui text-[8px] font-bold uppercase tracking-[0.14em] text-muted-foreground lg:mb-2 lg:text-[9px]">Data glimpse</p>
                 <section className="flex h-[calc(100%-1rem)] min-h-0 items-center gap-3 overflow-hidden rounded-[12px] border border-foreground/10 bg-white/72 p-2.5 shadow-sm backdrop-blur-md dark:border-white/10 dark:bg-white/[0.08] lg:h-auto lg:min-h-[9.5rem] lg:p-4">
                   <CatalogArtwork name={latestProject?.name ?? `${artist.name} catalog`} imageUrl={latestProject?.artworkUrl} className="h-full max-h-[72px] min-h-[52px] w-[72px] lg:h-28 lg:max-h-none lg:w-28" />
                   <div className="min-w-0 flex-1">
                     <p className="font-ui text-[8px] font-bold uppercase tracking-[0.14em] text-brand-accent lg:text-[9px]">Catalog intake</p>
-                    <h2 className="mt-1 truncate text-[14px] font-black leading-tight text-foreground lg:mt-2 lg:text-[19px]">{latestProject ? latestProject.name : `${artist.name} catalog`}</h2>
+                    <h2 data-testid="paywall-project-title" className="mt-1 truncate text-[14px] font-black leading-tight text-foreground lg:mt-2 lg:text-[19px]">{latestProject ? latestProject.name : `${artist.name} catalog`}</h2>
                     <p className="mt-1 text-[9px] font-semibold uppercase tracking-[0.06em] text-muted-foreground lg:text-[10px]">
                       {latestProject?.releaseType ?? "Public catalog"}{latestProject?.releaseDate ? ` · ${latestProject.releaseDate.slice(0, 4)}` : ""}
                     </p>
@@ -370,7 +370,7 @@ export function PaywallPreviewScreen({
                 </section>
               </div>
 
-              <section aria-label="Subscription checkout" className="relative row-start-2 min-h-0 w-full overflow-hidden rounded-[16px] border border-foreground/10 bg-white/94 p-3 shadow-[0_20px_60px_rgba(17,19,24,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#171b22]/94 dark:shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center lg:p-5">
+              <section aria-label="Subscription checkout" className="relative row-start-2 min-h-0 min-w-0 w-full max-w-full overflow-hidden rounded-[16px] border border-foreground/10 bg-white/94 p-3 shadow-[0_20px_60px_rgba(17,19,24,0.2)] backdrop-blur-xl dark:border-white/10 dark:bg-[#171b22]/94 dark:shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:p-4 lg:col-start-2 lg:row-span-2 lg:row-start-1 lg:self-center lg:p-5">
                 {backgroundArtwork ? <img aria-label="Blurred catalog artwork background" src={backgroundArtwork} alt="" className="pointer-events-none absolute -right-8 -top-8 h-52 w-52 scale-125 object-cover opacity-[0.13] blur-xl dark:opacity-[0.18]" /> : null}
                 <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/35 via-transparent to-brand-ghost/30 dark:from-white/[0.03] dark:to-brand-accent/10" />
                 <div className="relative z-10">
@@ -382,7 +382,7 @@ export function PaywallPreviewScreen({
                   </div>
                 </div>
 
-                <h1 className="font-display mt-2 text-[19px] font-black leading-[1.04] tracking-tight text-foreground lg:mt-5 lg:text-[27px]">
+                <h1 data-testid="paywall-checkout-title" className="mt-2 max-w-full break-words font-display text-[19px] font-black leading-[1.04] tracking-tight text-foreground [overflow-wrap:anywhere] lg:mt-5 lg:text-[27px]">
                   Unlock {artist.name} Desk
                 </h1>
                 <p className="mt-1.5 text-[10px] font-semibold leading-snug text-muted-foreground lg:mt-3 lg:text-[12px] lg:leading-relaxed">
@@ -467,7 +467,7 @@ export function PaywallPreviewScreen({
                     {standaloneSingles.map((single) => (
                       <article key={single.spotifyAlbumId} className="min-w-0 overflow-hidden rounded-[10px] border border-foreground/10 bg-white/76 p-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.08] lg:p-2">
                         <CatalogArtwork name={single.name} imageUrl={single.artworkUrl} className="aspect-square max-h-[72px] w-full lg:max-h-none" />
-                        <p className="mt-1 truncate text-[8px] font-bold text-foreground lg:mt-2 lg:text-[10px]">{single.name}</p>
+                        <p data-testid="paywall-queue-title" className="mt-1 truncate text-[8px] font-bold text-foreground lg:mt-2 lg:text-[10px]">{single.name}</p>
                         <p className="hidden truncate text-[8px] font-semibold text-muted-foreground lg:mt-0.5 lg:block">Recent release</p>
                       </article>
                     ))}
