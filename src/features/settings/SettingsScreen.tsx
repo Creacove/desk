@@ -36,7 +36,7 @@ export function SettingsScreen({
   ];
 
   return (
-    <WorkspaceShell eyebrow="Settings" title="Artist profile" onBack={onBack}>
+    <WorkspaceShell eyebrow="Workspace" title="Settings" onBack={onBack}>
       <div className="sticky top-[109px] z-20 -mx-3 mb-4 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
         <div role="tablist" aria-label="Settings sections" className="grid grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1 lg:max-w-md">
           {tabs.map((tab) => {
@@ -145,10 +145,17 @@ function SettingsGroup({ title, children, last = false }: { title: string; child
 
 function AccessSummary({ workspace }: { workspace: ProductionWorkspace }) {
   const paid = workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
+  const accessLabel = paid
+    ? "Paid subscription"
+    : workspace.accessType === "private_beta"
+      ? "Private beta"
+      : workspace.entitlementActive
+        ? "Active workspace access"
+        : "No active access";
   return (
     <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
       <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Workspace access</p>
-      <h2 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">{paid ? "Paid subscription" : workspace.accessType === "private_beta" ? "Private beta" : "No active access"}</h2>
+      <h2 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">{accessLabel}</h2>
       <dl className="mt-6 divide-y divide-foreground/8 border-y border-foreground/8 text-[13px]">
         <AccessRow label="Status" value={workspace.accessStatus ?? (workspace.entitlementActive ? "Active" : "Inactive")} />
         {workspace.accessStartsAt ? <AccessRow label="Started" value={formatDate(workspace.accessStartsAt)} /> : null}

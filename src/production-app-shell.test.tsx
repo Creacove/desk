@@ -1193,7 +1193,7 @@ describe("Clean production prototype-match shell", () => {
     expect(activityCenter).toHaveTextContent("Spotify public catalog connected");
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("heading", { name: "Artist profile." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
   }, 20000);
 
@@ -1845,7 +1845,7 @@ describe("Clean production prototype-match shell", () => {
     expect(within(mobileNav).queryByText("Settings")).not.toBeInTheDocument();
 
     fireEvent.click(within(topbar).getByRole("button", { name: "Open settings" }));
-    expect(screen.getByRole("heading", { name: "Artist profile." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0);
   }, 20000);
 
@@ -4228,7 +4228,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("mission-activity-feed")).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("heading", { name: "Artist profile." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
   }, 20000);
 
   it("opens Missions from the sidebar when no missions exist yet", async () => {

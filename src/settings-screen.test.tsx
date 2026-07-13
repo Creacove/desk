@@ -21,6 +21,8 @@ describe("SettingsScreen", () => {
       />,
     );
 
+    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Artist profile." })).not.toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "false");
@@ -100,6 +102,31 @@ describe("SettingsScreen", () => {
     await vi.waitFor(() => expect(onUpdatePassword).toHaveBeenCalledWith({ password: "new-password-123" }));
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(onSignOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels an entitled workspace without billing metadata as active access", () => {
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        workspace={{
+          accountId: "account-1",
+          artistWorkspaceId: "workspace-1",
+          artistId: "artist-1",
+          artistName: "Burna Boy",
+          workspaceName: "Burna Boy Desk",
+          status: "active",
+          spotifyConnected: true,
+          contextComplete: true,
+          entitlementActive: true,
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    expect(screen.getByRole("heading", { name: "Active workspace access" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "No active access" })).not.toBeInTheDocument();
   });
 });
 
