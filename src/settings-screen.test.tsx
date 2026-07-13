@@ -49,6 +49,41 @@ describe("SettingsScreen", () => {
 
     expect(onThemeModeChange).toHaveBeenCalledWith("dark");
   });
+
+  it("shows private-beta expiry and updates the account password", async () => {
+    const onUpdatePassword = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        workspace={{
+          accountId: "account-1",
+          artistWorkspaceId: "workspace-1",
+          artistId: "artist-1",
+          artistName: "Burna Boy",
+          workspaceName: "Burna Boy Desk",
+          status: "active",
+          spotifyConnected: true,
+          contextComplete: true,
+          entitlementActive: true,
+          accessType: "private_beta",
+          accessStatus: "active",
+          accessStartsAt: "2026-07-13T00:00:00.000Z",
+          accessEndsAt: "2026-08-12T00:00:00.000Z",
+        }}
+        onUpdatePassword={onUpdatePassword}
+      />,
+    );
+
+    expect(screen.getByText("Private beta")).toBeTruthy();
+    expect(screen.getByText("Aug 12, 2026")).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "new-password-123" } });
+    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "new-password-123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Change password" }));
+
+    await vi.waitFor(() => expect(onUpdatePassword).toHaveBeenCalledWith({ password: "new-password-123" }));
+  });
 });
 
 function profileWithArtistIntelligence(): ArtistProfileViewModel {

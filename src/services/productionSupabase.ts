@@ -112,6 +112,10 @@ export function createSupabaseAuthAdapter(client: SupabaseClient): ProductionAut
         throw error;
       }
 
+      if (data.session && data.user) {
+        void client.functions.invoke("send-account-welcome").catch(() => undefined);
+      }
+
       return {
         user: data.user
           ? {
@@ -122,6 +126,14 @@ export function createSupabaseAuthAdapter(client: SupabaseClient): ProductionAut
           : null,
         message: data.session ? "Account created." : "Check your email to confirm the account.",
       };
+    },
+    async requestPasswordReset({ email, redirectTo }) {
+      const { error } = await client.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) throw error;
+    },
+    async updatePassword({ password }) {
+      const { error } = await client.auth.updateUser({ password });
+      if (error) throw error;
     },
     async signOut() {
       const { error } = await client.auth.signOut();
@@ -163,6 +175,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artist_profiles(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs(status,created_at)",
             "billing_subscriptions(status,current_period_end)",
+            "workspace_access_grants(access_type,status,starts_at,ends_at)",
             "workspace_setup_runs(status,current_stage,checkout_session_id,updated_at)",
           ].join(", "),
         )
@@ -194,8 +207,17 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         spotifyImageUrl: readSpotifyIdentityImage(workspace.artist_profiles?.[0]?.spotify_identity),
         contextComplete: isContextComplete(workspace.artist_profiles?.[0]),
         latestCatalogSyncStatus: readLatestSyncStatus(workspace.source_sync_jobs),
-        entitlementActive: hasActiveEntitlement(workspace.billing_subscriptions),
+        entitlementActive: hasActiveEntitlement(workspace.billing_subscriptions) || hasActiveBetaGrant(workspace.workspace_access_grants),
         subscriptionStatus: readLatestSubscriptionStatus(workspace.billing_subscriptions),
+        accessType: hasActiveEntitlement(workspace.billing_subscriptions)
+          ? "paid_subscription"
+          : hasActiveBetaGrant(workspace.workspace_access_grants) ? "private_beta" : "none",
+        accessStatus: hasActiveEntitlement(workspace.billing_subscriptions) || hasActiveBetaGrant(workspace.workspace_access_grants)
+          ? "active"
+          : hasExpiredBetaGrant(workspace.workspace_access_grants) ? "expired" : "inactive",
+        accessStartsAt: latestBetaGrant(workspace.workspace_access_grants)?.starts_at ?? undefined,
+        accessEndsAt: latestBetaGrant(workspace.workspace_access_grants)?.ends_at ?? undefined,
+        renewalAt: latestPaidSubscription(workspace.billing_subscriptions)?.current_period_end ?? undefined,
         setupStatus: readLatestSetupStatus(workspace.workspace_setup_runs),
         setupStage: readLatestSetupStage(workspace.workspace_setup_runs),
         billingCheckoutSessionId: readLatestSetupCheckoutSessionId(workspace.workspace_setup_runs),
@@ -427,10 +449,11 @@ function spotifyCatalogPreviewFromPayload(payload: unknown): ProductionSpotifyCa
 
 export function createSupabaseBillingService(client: SupabaseClient): ProductionBillingService {
   return {
-    async createCheckoutPreview({ candidate }) {
+    async createCheckoutPreview({ candidate, existingWorkspace }) {
       const { data, error } = await client.functions.invoke("paystack-initialize-checkout", {
         body: {
           selectedArtist: candidate,
+          ...(existingWorkspace ? { existingArtistWorkspaceId: existingWorkspace.artistWorkspaceId } : {}),
         },
       });
 
@@ -484,6 +507,27 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         ...payload,
         brief: todayBriefFromPayload(payload.brief),
         setupMusicReadTargets: readSetupMusicReadTargets(payload.setupMusicReadTargets),
+      };
+    },
+    async redeemPrivateBetaCode({ checkoutSessionId, code }) {
+      const { data, error } = await client.functions.invoke("redeem-private-beta-code", {
+        body: { checkoutSessionId, code },
+      });
+      if (error) await throwFunctionInvokeError(error, "Private-beta access could not be activated.");
+      const payload = data as {
+        workspace?: ProductionWorkspace;
+        setupStatus?: "queued" | "running" | "failed";
+        accessEndsAt?: string;
+        message?: string;
+      } | null;
+      if (!payload?.workspace || !payload.accessEndsAt || !payload.setupStatus) {
+        throw new Error("Private-beta activation returned an incomplete response.");
+      }
+      return {
+        workspace: payload.workspace,
+        setupStatus: payload.setupStatus,
+        accessEndsAt: payload.accessEndsAt,
+        message: payload.message,
       };
     },
   };
@@ -1577,6 +1621,7 @@ type WorkspaceRow = {
   artist_profiles?: WorkspaceProfileRow[] | null;
   source_sync_jobs?: Array<{ status?: ProductionWorkspace["latestCatalogSyncStatus"] | null; created_at?: string | null }> | null;
   billing_subscriptions?: Array<{ status?: ProductionWorkspace["subscriptionStatus"] | null; current_period_end?: string | null }> | null;
+  workspace_access_grants?: Array<{ access_type?: string | null; status?: string | null; starts_at?: string | null; ends_at?: string | null }> | null;
   workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null; checkout_session_id?: string | null; updated_at?: string | null }> | null;
 };
 
@@ -1598,6 +1643,10 @@ type WorkspaceRpcRow = {
   subscription_status?: ProductionWorkspace["subscriptionStatus"] | null;
   setup_status?: ProductionWorkspace["setupStatus"] | null;
   setup_stage?: ProductionWorkspace["setupStage"] | null;
+  access_type?: ProductionWorkspace["accessType"] | null;
+  access_status?: ProductionWorkspace["accessStatus"] | null;
+  access_starts_at?: string | null;
+  access_ends_at?: string | null;
 };
 
 type MusicItemRow = {
@@ -2567,6 +2616,10 @@ function workspaceFromRpcRow(row: WorkspaceRpcRow): ProductionWorkspace {
     subscriptionStatus: row.subscription_status ?? undefined,
     setupStatus: row.setup_status ?? undefined,
     setupStage: row.setup_stage ?? undefined,
+    accessType: row.access_type ?? undefined,
+    accessStatus: row.access_status ?? undefined,
+    accessStartsAt: row.access_starts_at ?? undefined,
+    accessEndsAt: row.access_ends_at ?? undefined,
   };
 }
 
@@ -3308,6 +3361,24 @@ function hasActiveEntitlement(rows: WorkspaceRow["billing_subscriptions"]) {
     const periodEnd = row.current_period_end ? Date.parse(row.current_period_end) : Number.NaN;
     return !Number.isFinite(periodEnd) || periodEnd > now;
   });
+}
+
+function latestPaidSubscription(rows: WorkspaceRow["billing_subscriptions"]) {
+  return [...(rows ?? [])].sort((a, b) => (Date.parse(b.current_period_end ?? "") || 0) - (Date.parse(a.current_period_end ?? "") || 0))[0];
+}
+
+function latestBetaGrant(rows: WorkspaceRow["workspace_access_grants"]) {
+  return [...(rows ?? [])].sort((a, b) => (Date.parse(b.starts_at ?? "") || 0) - (Date.parse(a.starts_at ?? "") || 0))[0];
+}
+
+function hasActiveBetaGrant(rows: WorkspaceRow["workspace_access_grants"]) {
+  const now = Date.now();
+  return [...(rows ?? [])].some((row) => row.access_type === "private_beta" && row.status === "active" && Date.parse(row.ends_at ?? "") > now);
+}
+
+function hasExpiredBetaGrant(rows: WorkspaceRow["workspace_access_grants"]) {
+  const now = Date.now();
+  return [...(rows ?? [])].some((row) => row.access_type === "private_beta" && (row.status === "expired" || Date.parse(row.ends_at ?? "") <= now));
 }
 
 function readLatestSetupStatus(rows: WorkspaceRow["workspace_setup_runs"]) {

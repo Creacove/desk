@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -161,6 +162,13 @@ async function activateSubscription(db: any, event: PaystackEvent) {
   if (subscriptionError) throw subscriptionError;
 
   await dispatchPaidSetup(checkout.id);
+  await sendPaidSubscriptionActivatedEmail({
+    db,
+    checkout: { ...checkout, paid_at: new Date().toISOString() },
+    workspace,
+    periodStart,
+    periodEnd,
+  }).catch(() => undefined);
 }
 
 async function dispatchPaidSetup(checkoutSessionId: string) {

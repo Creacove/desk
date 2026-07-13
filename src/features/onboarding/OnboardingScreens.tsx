@@ -1,4 +1,5 @@
 import { ArrowLeft, ArrowRight, Check, CreditCard, Lock, LogOut, Search } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { BrandMark } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
@@ -274,6 +275,8 @@ export function PaywallPreviewScreen({
   pending = false,
   error,
   onSubscribe,
+  onRedeemPrivateBeta,
+  privateBetaEnabled = false,
   onBack,
   onSignOut,
 }: {
@@ -282,9 +285,13 @@ export function PaywallPreviewScreen({
   pending?: boolean;
   error?: string | null;
   onSubscribe: () => void | Promise<void>;
+  onRedeemPrivateBeta?: (code: string) => void | Promise<void>;
+  privateBetaEnabled?: boolean;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
+  const [showBetaCode, setShowBetaCode] = useState(false);
+  const [betaCode, setBetaCode] = useState("");
   const artist = preview.artist;
   const price = formatPaywallPrice(preview);
   const latestProject = catalogPreview?.latestProject ?? null;
@@ -382,6 +389,46 @@ export function PaywallPreviewScreen({
                   {pending ? "Opening secure checkout" : `Subscribe ${price}/month`}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                 </button>
+
+                {privateBetaEnabled && onRedeemPrivateBeta ? (
+                  <div className="mt-3 border-t border-foreground/8 pt-3">
+                    {!showBetaCode ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowBetaCode(true)}
+                        className="w-full text-center text-[10px] font-bold text-muted-foreground underline decoration-foreground/20 underline-offset-4 transition-colors hover:text-foreground lg:text-[11px]"
+                      >
+                        Have a private-beta code?
+                      </button>
+                    ) : (
+                      <form
+                        className="rounded-[12px] border border-foreground/10 bg-foreground/[0.025] p-3"
+                        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                          event.preventDefault();
+                          const normalized = betaCode.trim().toUpperCase();
+                          if (normalized) void onRedeemPrivateBeta(normalized);
+                        }}
+                      >
+                        <p className="text-[11px] font-black text-foreground">Private-beta access</p>
+                        <p className="mt-1 text-[9px] font-semibold leading-relaxed text-muted-foreground">Enter one of the codes included in your invitation.</p>
+                        <label className="mt-3 block text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground" htmlFor="private-beta-code">Private-beta access code</label>
+                        <input
+                          id="private-beta-code"
+                          value={betaCode}
+                          onChange={(event) => setBetaCode(event.target.value)}
+                          disabled={pending}
+                          autoComplete="off"
+                          spellCheck={false}
+                          className="mt-1.5 h-9 w-full rounded-[9px] border border-foreground/12 bg-background px-3 font-mono text-[11px] font-bold uppercase text-foreground outline-none ring-brand-accent/30 focus:ring-2"
+                        />
+                        <button type="submit" disabled={pending || !betaCode.trim()} className="mt-2 inline-flex h-9 w-full items-center justify-center rounded-[9px] border border-foreground/12 bg-background text-[10px] font-bold text-foreground transition-colors hover:bg-foreground/5 disabled:opacity-50">
+                          {pending ? "Activating your Desk…" : "Activate beta access"}
+                        </button>
+                        <p className="mt-2 text-[9px] font-semibold leading-relaxed text-muted-foreground">A valid invitation provides 30 days of complimentary access. No card is required, and you will not be charged automatically.</p>
+                      </form>
+                    )}
+                  </div>
+                ) : null}
 
                 <a
                   href={artist.spotifyUrl}

@@ -29,6 +29,11 @@ export type ProductionWorkspace = {
   setupStatus?: "not_started" | "queued" | "running" | "completed" | "failed";
   setupStage?: "checkout" | "workspace_created" | "spotify_connected" | "catalog_bootstrap" | "manager_discovery" | "setup_brief" | "music_reads";
   billingCheckoutSessionId?: string;
+  accessType?: "paid_subscription" | "private_beta" | "none";
+  accessStatus?: "active" | "expired" | "inactive";
+  accessStartsAt?: string;
+  accessEndsAt?: string;
+  renewalAt?: string;
 };
 
 export type ProductionWorkspaceDraft = {
@@ -55,6 +60,8 @@ export type ProductionAuthAdapter = {
   getSession(): Promise<ProductionSession>;
   signInWithPassword?(credentials: ProductionAuthCredentials): Promise<ProductionAuthResult>;
   signUpWithPassword?(credentials: ProductionAuthCredentials): Promise<ProductionAuthResult>;
+  requestPasswordReset?(input: { email: string; redirectTo: string }): Promise<void>;
+  updatePassword?(input: { password: string }): Promise<void>;
   signOut?(): Promise<void>;
 };
 
@@ -291,6 +298,7 @@ export type ProductionBillingService = {
   createCheckoutPreview(input: {
     user: ProductionUser;
     candidate: ProductionSpotifyArtistCandidate;
+    existingWorkspace?: ProductionWorkspace;
   }): Promise<ProductionBillingCheckoutPreview>;
   loadLatestCheckoutPreview?(): Promise<ProductionBillingCheckoutPreview | null>;
   loadBillingStatus(input: { reference: string }): Promise<ProductionBillingStatus>;
@@ -299,6 +307,15 @@ export type ProductionBillingService = {
     checkoutSessionId: string;
     phase: "discovery" | "contextualize";
   }): Promise<ProductionSetupPhaseResult>;
+  redeemPrivateBetaCode?(input: {
+    checkoutSessionId: string;
+    code: string;
+  }): Promise<{
+    workspace: ProductionWorkspace;
+    setupStatus: "queued" | "running" | "failed";
+    accessEndsAt: string;
+    message?: string;
+  }>;
 };
 
 export type ProductionSetupProfile = {

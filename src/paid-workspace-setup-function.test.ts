@@ -21,10 +21,12 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain("waiting_for_context");
   });
 
-  it("uses the verified paid checkout as the setup orchestrator authorization boundary", () => {
+  it("uses verified paid checkout or a matching active beta grant as the setup authorization boundary", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
 
-    expect(text).toContain('checkout.status !== "paid"');
+    expect(text).toContain('checkout.status === "paid"');
+    expect(text).toContain('isAuthorizedSetupCheckout');
+    expect(text).toContain('.from("workspace_access_grants")');
     expect(text).toContain("user.id !== checkout.user_id");
     expect(text).not.toContain("assertActiveWorkspaceEntitlement");
   });
