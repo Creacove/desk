@@ -14,7 +14,9 @@ Deno.serve(async (request) => {
   try {
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const authHeader = request.headers.get("Authorization") ?? "";
-    if (authHeader !== `Bearer ${serviceRoleKey}`) {
+    const isServiceRoleInvocation =
+      authHeader === `Bearer ${serviceRoleKey}` || readBearerJwtRole(authHeader) === "service_role";
+    if (!isServiceRoleInvocation) {
       return json({ error: "Forbidden." }, 403);
     }
 
@@ -100,6 +102,15 @@ function requireEnv(name: string) {
   const value = Deno.env.get(name);
   if (!value) throw new Error(`${name} is not configured.`);
   return value;
+}
+
+function readBearerJwtRole(authHeader: string) {
+  try {
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.role;
+  } catch {
+    return undefined;
+  }
 }
 
 function json(body: unknown, status = 200) {

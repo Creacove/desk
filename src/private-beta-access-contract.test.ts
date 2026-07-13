@@ -61,6 +61,7 @@ describe("private-beta access backend contract", () => {
     const batch = readFileSync(functionPath, "utf8");
 
     expect(batch).toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(batch).toContain('readBearerJwtRole(authHeader) === "service_role"');
     expect(batch).toContain("crypto.getRandomValues");
     expect(batch).toContain("code_hash");
     expect(batch).toContain("code_hint");
