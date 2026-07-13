@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -56,6 +57,7 @@ Deno.serve(async (request) => {
     const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", { target_account_id: input.accountId });
     if (membershipError) throw membershipError;
     if (!membership) return json({ error: "Forbidden." }, 403);
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
     const context = await loadReviewContext(db, input);

@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import {
   importSpotifyAlbumAsProject,
   importSpotifyTrackAsSong,
@@ -61,6 +62,7 @@ Deno.serve(async (request) => {
     if (!membership) {
       return json({ error: "Forbidden." }, 403);
     }
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const selectedArtist = await resolveSelectedArtist(authClient, input);
     if (!selectedArtist) {

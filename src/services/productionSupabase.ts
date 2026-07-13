@@ -561,7 +561,19 @@ export function createSupabaseProfileSetupService(client: SupabaseClient): Produ
         throw new Error("Setup context save did not return a workspace.");
       }
 
-      return { ...workspace, ...workspaceFromRpcRow(row) };
+      const updatedWorkspace = workspaceFromRpcRow(row);
+      return {
+        ...workspace,
+        ...updatedWorkspace,
+        entitlementActive: updatedWorkspace.entitlementActive ?? workspace.entitlementActive,
+        subscriptionStatus: updatedWorkspace.subscriptionStatus ?? workspace.subscriptionStatus,
+        accessType: updatedWorkspace.accessType ?? workspace.accessType,
+        accessStatus: updatedWorkspace.accessStatus ?? workspace.accessStatus,
+        accessStartsAt: updatedWorkspace.accessStartsAt ?? workspace.accessStartsAt,
+        accessEndsAt: updatedWorkspace.accessEndsAt ?? workspace.accessEndsAt,
+        setupStatus: updatedWorkspace.setupStatus ?? workspace.setupStatus,
+        setupStage: updatedWorkspace.setupStage ?? workspace.setupStage,
+      };
     },
   };
 }

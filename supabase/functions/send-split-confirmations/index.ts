@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +37,7 @@ Deno.serve(async (request) => {
     });
     if (membershipError) throw membershipError;
     if (!membership) return json({ error: "Forbidden." }, 403);
+    await assertActiveWorkspaceEntitlement(client, input);
 
     const { data: split, error: splitError } = await client
       .from("music_splits")
@@ -160,7 +162,7 @@ function readNestedTitle(split: any) {
 }
 
 function sumShares(values: Array<number | string>) {
-  return Number(values.reduce((sum, value) => sum + parseShare(value), 0).toFixed(2));
+  return Number(values.reduce<number>((sum, value) => sum + parseShare(value), 0).toFixed(2));
 }
 
 function parseShare(value: number | string) {

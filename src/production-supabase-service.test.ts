@@ -639,7 +639,22 @@ describe("production Supabase services", () => {
       },
     } as unknown as SupabaseClient;
 
-    const result = await createSupabaseProfileSetupService(client).saveSetupContext(workspace, {
+    const betaWorkspace: ProductionWorkspace = {
+      ...workspace,
+      status: "setup",
+      contextComplete: false,
+      entitlementActive: true,
+      subscriptionStatus: "none",
+      accessType: "private_beta",
+      accessStatus: "active",
+      accessStartsAt: "2026-07-13T20:31:06.556Z",
+      accessEndsAt: "2026-08-12T20:31:06.556Z",
+      setupStatus: "running",
+      setupStage: "manager_discovery",
+      billingCheckoutSessionId: "checkout-beta-1",
+    };
+
+    const result = await createSupabaseProfileSetupService(client).saveSetupContext(betaWorkspace, {
       name: " Nova Vale ",
       spotify: "Nova Vale - Spotify public catalog",
       stage: "",
@@ -676,6 +691,12 @@ describe("production Supabase services", () => {
     ]);
     expect(result.contextComplete).toBe(true);
     expect(result.status).toBe("active");
+    expect(result.entitlementActive).toBe(true);
+    expect(result.accessType).toBe("private_beta");
+    expect(result.accessStatus).toBe("active");
+    expect(result.accessStartsAt).toBe(betaWorkspace.accessStartsAt);
+    expect(result.accessEndsAt).toBe(betaWorkspace.accessEndsAt);
+    expect(result.billingCheckoutSessionId).toBe("checkout-beta-1");
   });
 
   it("maps Supabase Music rows into songs, projects, tracklists, and Spotify links", async () => {

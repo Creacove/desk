@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import {
   buildPublicWebContextRequest,
   normalizePublicWebContextOutput,
@@ -44,6 +45,7 @@ Deno.serve(async (request) => {
     });
     if (membershipError) throw membershipError;
     if (!membership) return json({ error: "Forbidden." }, 403);
+    await assertActiveWorkspaceEntitlement(authClient, input);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
     const profile = await loadArtistProfile(db, input);

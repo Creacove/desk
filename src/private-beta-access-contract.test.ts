@@ -42,6 +42,23 @@ describe("private-beta access backend contract", () => {
     expect(setup).toContain('.eq("artist_workspace_id", checkout.artist_workspace_id)');
   });
 
+  it("uses the shared paid-or-beta entitlement guard on every user-triggered protected Edge Function", () => {
+    const protectedFunctions = [
+      "chartmetric-resolve-artist",
+      "manager-review-task-result",
+      "refresh-public-context",
+      "send-split-confirmations",
+      "spotify-catalog-search",
+      "spotify-import-selection",
+    ];
+
+    for (const functionName of protectedFunctions) {
+      const functionSource = source("supabase", "functions", functionName, "index.ts");
+      expect(functionSource, functionName).toContain('import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts"');
+      expect(functionSource, functionName).toContain("await assertActiveWorkspaceEntitlement");
+    }
+  });
+
   it("redeems beta codes through an authenticated edge function and dispatches the existing discovery phase", () => {
     const functionPath = join(process.cwd(), "supabase", "functions", "redeem-private-beta-code", "index.ts");
     expect(existsSync(functionPath)).toBe(true);

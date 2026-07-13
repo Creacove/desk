@@ -120,7 +120,7 @@ export function normalizePublicWebContextOutput(input: NormalizePublicWebContext
 }
 
 function stringArray(value: unknown) {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim()).map((item) => item.trim()).slice(0, 8) : [];
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()).slice(0, 8) : [];
 }
 
 function normalizeDate(value?: string) {
