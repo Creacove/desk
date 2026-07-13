@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import "./lib/posthog";
 import { ProductionApp } from "./app/ProductionApp";
 import { ThemeProvider } from "./app/theme";
 import { SplitConfirmationPortal } from "./features/music/SplitConfirmationPortal";

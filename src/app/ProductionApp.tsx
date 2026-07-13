@@ -16,6 +16,13 @@ import { MusicWorkspace } from "../features/music/MusicScreens";
 import { ConnectArtistScreen, PaywallPreviewScreen, SetupScreen } from "../features/onboarding/OnboardingScreens";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { LockedAgentWorkspace, StaffWorkspace } from "../features/staff/StaffScreens";
+import {
+  identifyAnalyticsUser,
+  isTestUserEmail,
+  resetAnalyticsUser,
+  trackEvent,
+  trackEventOnce,
+} from "../lib/analytics";
 import { createBrowserSupabaseClient } from "../lib/supabaseClient";
 import { createFixtureProductionRuntime, createFixtureRepositories } from "../services/fixtureRepositories";
 import {
@@ -231,6 +238,7 @@ export function ProductionApp({
       setSession({ user: null });
       setWorkspace(null);
       setStatus("signed-out");
+      resetAnalyticsUser();
     } catch (signOutError) {
       setError(readErrorMessage(signOutError, "Could not sign out."));
       setStatus("error");
@@ -240,6 +248,26 @@ export function ProductionApp({
   useEffect(() => {
     void loadProductionState();
   }, [loadProductionState]);
+
+  useEffect(() => {
+    if (sessionUser) {
+      identifyAnalyticsUser(sessionUser);
+    }
+  }, [sessionUser?.id]);
+
+  useEffect(() => {
+    if (!sessionUser || !workspace?.artistWorkspaceId || workspace.entitlementActive !== true) return;
+
+    trackEventOnce(
+      "workspace activated",
+      {
+        artist_workspace_id: workspace.artistWorkspaceId,
+        activation_source: paymentReturnReference ? "subscription" : "existing",
+        is_test_user: isTestUserEmail(sessionUser.email),
+      },
+      `${sessionUser.id}:${workspace.artistWorkspaceId}`,
+    );
+  }, [paymentReturnReference, sessionUser?.id, workspace?.artistWorkspaceId, workspace?.entitlementActive]);
 
   useEffect(() => {
     if (status !== "payment-return" || !paymentReturn?.reference || !sessionUser || paymentReturn.status === "ready") {
@@ -371,6 +399,7 @@ export function ProductionApp({
 
   return (
     <CleanProductionWorkspace
+      analyticsUser={sessionUser as ProductionUser}
       workspace={workspace}
       repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
@@ -385,6 +414,7 @@ export function ProductionApp({
 }
 
 function CleanProductionWorkspace({
+  analyticsUser,
   workspace,
   repositories,
   profileSetupService,
@@ -395,6 +425,7 @@ function CleanProductionWorkspace({
   onWorkspaceChange,
   onSignOut,
 }: {
+  analyticsUser: ProductionUser;
   workspace: ProductionWorkspace | null;
   repositories: CleanProductionRepositories;
   profileSetupService?: ProductionProfileSetupService;
@@ -405,6 +436,7 @@ function CleanProductionWorkspace({
   onWorkspaceChange?: (workspace: ProductionWorkspace) => void;
   onSignOut?: () => void;
 }) {
+  const isTestUser = isTestUserEmail(analyticsUser.email);
   const { mode: themeMode, resolvedMode: resolvedThemeMode, setMode: setThemeMode } = useTheme();
   const [view, setView] = useState<CleanProductionView>(initialView);
   const [profile, setProfile] = useState<ArtistProfileViewModel | null>(null);
@@ -538,6 +570,21 @@ function CleanProductionWorkspace({
     };
   }, [repositories]);
 
+  useEffect(() => {
+    if (view !== "labelHQ" || !todayBrief || !workspace) return;
+
+    const briefId = briefAnalyticsId(todayBrief, workspace.artistWorkspaceId);
+    trackEventOnce(
+      "first brief viewed",
+      {
+        brief_id: briefId,
+        artist_id: workspace.artistId,
+        is_test_user: isTestUser,
+      },
+      `${analyticsUser.id}:${workspace.artistWorkspaceId}:${briefId}`,
+    );
+  }, [analyticsUser.id, isTestUser, todayBrief, view, workspace?.artistId, workspace?.artistWorkspaceId]);
+
   const activeSection = sectionForView(view);
   const mobileTitle =
     activeSection === "labelHQ" ? "Desk HQ" :
@@ -636,6 +683,7 @@ function CleanProductionWorkspace({
       const mergedConversation = lockedTopic ? { ...conversation, topic: lockedTopic } : conversation;
       setConversations((current) => [mergedConversation, ...current.filter((item) => item.id !== mergedConversation.id && item.id !== optimisticId)]);
       setSelectedConversation(mergedConversation);
+      trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       if (conversationHasMissionWork(conversation)) {
         const nextMissions = await repositories.missions.loadMissions();
         setMissions(nextMissions);
@@ -704,6 +752,7 @@ function CleanProductionWorkspace({
     if (event.type === "conversation.completed") {
       const completedConversation = context.lockedTopic ? { ...event.conversation, topic: context.lockedTopic } : event.conversation;
       updateCompletedManagerConversation(context.optimisticId, completedConversation, Boolean(context.lockedTopic));
+      trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       void refreshFromManagerHint(event.refresh ?? { missions: conversationHasMissionWork(completedConversation) });
       return;
     }
@@ -830,6 +879,7 @@ function CleanProductionWorkspace({
       const result = await repositories.desk.generateTodaysBrief(mode);
       const nextBrief = briefFromGenerationResult(result);
       setTodayBrief(nextBrief);
+      trackBriefGenerated(nextBrief, mode);
       return result;
     } catch (error) {
       setTodayBriefError(readErrorMessage(error, "Today's Brief could not be generated."));
@@ -886,6 +936,7 @@ function CleanProductionWorkspace({
   }
 
   async function completeSetupActivity(nextWorkspace: ProductionWorkspace) {
+    const generationStartedAt = Date.now();
     try {
       setSetupActivityWorkspace(nextWorkspace);
       setSetupActivityPending(true);
@@ -896,8 +947,23 @@ function CleanProductionWorkspace({
       if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
         throw new Error("Setup map needs a live Manager read. Retry to regenerate it.");
       }
+      const setupBriefId = briefAnalyticsId(setupBrief, nextWorkspace.artistWorkspaceId);
+      trackEventOnce(
+        "manager memory generated",
+        {
+          artist_id: nextWorkspace.artistId,
+          generation_time_seconds: Math.max(0, (Date.now() - generationStartedAt) / 1000),
+          is_test_user: isTestUser,
+        },
+        `${analyticsUser.id}:${nextWorkspace.artistWorkspaceId}:${setupBriefId}`,
+      );
       setSetupActivityStep("music-reads");
       await refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
+      trackEventOnce(
+        "onboarding completed",
+        { artist_id: nextWorkspace.artistId, setup_mode: "setup-map", is_test_user: isTestUser },
+        `${analyticsUser.id}:${nextWorkspace.artistWorkspaceId}`,
+      );
       setSetupActivityWorkspace(null);
       setView("labelHQ");
     } catch (error) {
@@ -923,6 +989,7 @@ function CleanProductionWorkspace({
           continue;
         }
         setTodayBrief(result.brief);
+        trackBriefGenerated(result.brief, "setup-map");
         onWorkspaceChange?.({ ...nextWorkspace, setupStatus: "completed", setupStage: "music_reads" });
         return { brief: result.brief, setupMusicReadTargets: result.setupMusicReadTargets ?? [] };
       }
@@ -944,6 +1011,7 @@ function CleanProductionWorkspace({
       if (shouldOpenMissionGenesisMissions(result)) {
         clearMissionGenesisAttention();
         const nextMissions = await repositories.missions.loadMissions();
+        trackCreatedMissions(result, nextMissions);
         setMissions(nextMissions);
         setSelectedMissionId(selectMissionGenesisMissionId(result, nextMissions));
         setMissionListOpenRequestKey((current) => current + 1);
@@ -971,6 +1039,7 @@ function CleanProductionWorkspace({
       });
       setMissionGenesisResult(result);
       const nextMissions = await repositories.missions.loadMissions();
+      trackCreatedMissions(result, nextMissions);
       setMissions(nextMissions);
       const selectedMissionId = selectMissionGenesisMissionId(result, nextMissions);
       setSelectedMissionId(selectedMissionId);
@@ -1044,6 +1113,38 @@ function CleanProductionWorkspace({
     });
     setMissions((current) => current.map((mission) => mission.id === updatedMission.id ? updatedMission : mission));
     setSelectedMissionId(updatedMission.id);
+    if (status === "completed") {
+      trackEventOnce(
+        "mission task completed",
+        { mission_id: updatedMission.id, task_id: taskId, is_test_user: isTestUser },
+        `${analyticsUser.id}:${updatedMission.id}:${taskId}`,
+      );
+    }
+  }
+
+  function trackBriefGenerated(brief: TodayBriefViewModel, mode: TodayBriefGenerationMode) {
+    if (!workspace) return;
+    trackEvent("brief generated", {
+      brief_id: briefAnalyticsId(brief, workspace.artistWorkspaceId),
+      artist_id: workspace.artistId,
+      generation_mode: mode,
+      state: brief.state,
+      confidence: brief.confidence,
+      is_test_user: isTestUser,
+    });
+  }
+
+  function trackCreatedMissions(result: MissionGenesisResultViewModel, persistedMissions: MissionViewModel[]) {
+    if (result.outcome !== "activate_mission") return;
+
+    const persistedIds = new Set(persistedMissions.map((mission) => mission.id));
+    for (const missionId of activatedMissionGenesisIds(result).filter((id) => persistedIds.has(id))) {
+      trackEventOnce(
+        "mission created",
+        { mission_id: missionId, mission_type: "mission_genesis", is_test_user: isTestUser },
+        `${analyticsUser.id}:${missionId}`,
+      );
+    }
   }
 
   if (viewModelError) {
@@ -1677,6 +1778,13 @@ function AuthScreen({
       const result = await handler({ email: email.trim(), password });
       setMessage(result.message ?? (isSignUp ? "Account created." : "Signed in."));
       if (result.user) {
+        if (isSignUp) {
+          identifyAnalyticsUser(result.user);
+          trackEvent("user signed up", {
+            signup_method: "email",
+            is_test_user: isTestUserEmail(result.user.email),
+          });
+        }
         await onAuthenticated();
       }
     } catch (authError) {
@@ -1928,6 +2036,11 @@ function SpotifyIdentityGate({
           }))
         : null;
       const preview = await billingService.createCheckoutPreview({ user, candidate });
+      trackEvent("artist selected", {
+        artist_id: candidate.spotifyArtistId,
+        selection_source: "spotify search",
+        is_test_user: isTestUserEmail(user.email),
+      });
       setCatalogPreview(catalog);
       setCheckoutPreview(preview);
     } catch (connectError) {
@@ -2528,12 +2641,24 @@ function missionGenesisMissionIds(result: MissionGenesisResultViewModel) {
   ]);
 }
 
+function activatedMissionGenesisIds(result: MissionGenesisResultViewModel) {
+  return uniqueMissionGenesisIds([
+    result.activatedMissionId,
+    ...(result.activatedMissionIds ?? []),
+    ...(result.outcome === "activate_mission" ? result.missionIds ?? [] : []),
+  ]);
+}
+
 function uniqueMissionGenesisIds(values: Array<string | undefined>) {
   return [...new Set(values.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim()))];
 }
 
 function briefFromGenerationResult(result: TodayBriefGenerationResponse): TodayBriefViewModel {
   return isTodayBriefGenerationResult(result) ? result.brief : result;
+}
+
+function briefAnalyticsId(brief: TodayBriefViewModel, artistWorkspaceId: string) {
+  return brief.managerOutputId ?? brief.managerSynthesisRunId ?? brief.generatedAt ?? `${artistWorkspaceId}:brief`;
 }
 
 function setupMusicReadTargetsFromGenerationResult(result: TodayBriefGenerationResponse): MusicReadTarget[] {

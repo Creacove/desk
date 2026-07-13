@@ -21,6 +21,16 @@ const supabaseDiscoveryPoll = vi.hoisted(() => ({
   responses: [] as Array<{ data: Array<{ summary: string; created_at: string }>; error: null }>,
 }));
 
+const analyticsMock = vi.hoisted(() => ({
+  identifyAnalyticsUser: vi.fn(),
+  isTestUserEmail: vi.fn((email?: string) => email?.toLowerCase().includes("+test") ?? false),
+  resetAnalyticsUser: vi.fn(),
+  trackEvent: vi.fn(),
+  trackEventOnce: vi.fn(),
+}));
+
+vi.mock("./lib/analytics", () => analyticsMock);
+
 vi.mock("./lib/supabaseClient", () => ({
   createBrowserSupabaseClient: () => ({
     from: () => ({
@@ -63,6 +73,7 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
   vi.useRealTimers();
   supabaseDiscoveryPoll.responses = [];
+  vi.clearAllMocks();
 });
 
 describe("Clean production prototype-match shell", () => {
@@ -206,6 +217,34 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: /signing in/i })).toBeDisabled();
   });
 
+  it("identifies and records a successful plus-test email signup", async () => {
+    const testUser = { id: "user-test-1", email: "artist+test@example.com", displayName: "Test Artist" };
+    let signedUp = false;
+    const authAdapter: ProductionAuthAdapter = {
+      async getSession() {
+        return { user: signedUp ? testUser : null };
+      },
+      async signUpWithPassword() {
+        signedUp = true;
+        return { user: testUser, message: "Account created." };
+      },
+    };
+
+    render(<ProductionApp authAdapter={authAdapter} workspaceLoader={workspaceLoaderWith(null)} />);
+
+    expect(await screen.findByRole("heading", { name: "Sign in to Ordersounds" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: testUser.email } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "safe-test-password" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => expect(analyticsMock.identifyAnalyticsUser).toHaveBeenCalledWith(testUser));
+    expect(analyticsMock.trackEvent).toHaveBeenCalledWith("user signed up", {
+      signup_method: "email",
+      is_test_user: true,
+    });
+  });
+
   it("keeps a fixture runtime available for demo and parity verification", async () => {
     render(<ProductionApp fixtureMode initialView="connectArtist" />);
 
@@ -334,6 +373,11 @@ describe("Clean production prototype-match shell", () => {
     await screen.findByRole("heading", { name: "Unlock Nova Vale Desk" });
     expect(selectionActions).toEqual(["preview:Nova Vale", "checkout:Nova Vale"]);
     expect(checkoutArtists).toEqual(["Nova Vale"]);
+    expect(analyticsMock.trackEvent).toHaveBeenCalledWith("artist selected", {
+      artist_id: "spotify-artist-1",
+      selection_source: "spotify search",
+      is_test_user: false,
+    });
     expect(createdWorkspaces).toEqual([]);
     expect(connectedArtists).toEqual([]);
     expect(screen.getAllByAltText("Nova Vale artist image").length).toBeGreaterThan(0);
@@ -536,6 +580,31 @@ describe("Clean production prototype-match shell", () => {
     await screen.findByRole("heading", { name: "Desk HQ" });
     expect(setupPhases).toEqual(["checkout-1:contextualize"]);
     expect(bootstraps).toEqual([]);
+    expect(analyticsMock.identifyAnalyticsUser).toHaveBeenCalledWith(session.user);
+    expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
+      "workspace activated",
+      {
+        artist_workspace_id: "workspace-1",
+        activation_source: "existing",
+        is_test_user: false,
+      },
+      "user-1:workspace-1",
+    );
+    expect(analyticsMock.trackEvent).toHaveBeenCalledWith("brief generated", expect.objectContaining({
+      artist_id: "artist-1",
+      generation_mode: "setup-map",
+      is_test_user: false,
+    }));
+    expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
+      "manager memory generated",
+      expect.objectContaining({ artist_id: "artist-1", is_test_user: false }),
+      expect.stringContaining("workspace-1"),
+    );
+    expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
+      "onboarding completed",
+      { artist_id: "artist-1", setup_mode: "setup-map", is_test_user: false },
+      expect.stringContaining("workspace-1"),
+    );
   }, 20000);
 
   it("keeps polling when setup reports completion before the live brief payload is available", async () => {
@@ -816,6 +885,11 @@ describe("Clean production prototype-match shell", () => {
 
     await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
     await waitFor(() => expect(loadMusicCalls).toBeGreaterThan(1));
+    expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
+      "first brief viewed",
+      { brief_id: "setup-map-run", artist_id: "artist-1", is_test_user: false },
+      expect.stringContaining("setup-map-run"),
+    );
   }, 20000);
 
   it("automatically generates the setup map and refreshes queued song/project reads after setup is saved", async () => {
@@ -969,6 +1043,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Something interrupted setup. You can retry.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry setup" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
+    expect(analyticsMock.trackEventOnce.mock.calls.some(([name]) => name === "manager memory generated")).toBe(false);
+    expect(analyticsMock.trackEventOnce.mock.calls.some(([name]) => name === "onboarding completed")).toBe(false);
   }, 20000);
 
   it("keeps setup on a retry path when setup map generation returns fallback", async () => {
@@ -1051,6 +1127,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     await screen.findByRole("heading", { name: "Sign in to Ordersounds" });
     expect(signOutFromSetup).toHaveBeenCalledTimes(1);
+    expect(analyticsMock.resetAnalyticsUser).toHaveBeenCalledTimes(1);
 
     unmount();
 
@@ -1068,6 +1145,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Sign out" })[0]);
     await screen.findByRole("heading", { name: "Sign in to Ordersounds" });
     expect(signOutFromDesk).toHaveBeenCalledTimes(1);
+    expect(analyticsMock.resetAnalyticsUser).toHaveBeenCalledTimes(2);
   }, 20000);
 
   it("opens Desk HQ from real repositories without Sable Day or Night Bus fallback copy", async () => {
@@ -1952,6 +2030,10 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
     expect(screen.getByText("Run a capped proof loop.")).toBeInTheDocument();
     expect(screen.queryByText("The Manager is cross-referencing context, source limits, and mission risk.")).not.toBeInTheDocument();
+    expect(analyticsMock.trackEvent).toHaveBeenCalledWith("chat message sent", {
+      agent_type: "manager",
+      is_test_user: false,
+    });
   }, 20000);
 
   it("keeps a completed streamed Manager reply when the stream closes with a late error", async () => {
@@ -2387,6 +2469,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("Manager conversation failed.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry Manager message" })).toBeInTheDocument();
+    expect(analyticsMock.trackEvent.mock.calls.some(([name]) => name === "chat message sent")).toBe(false);
   }, 20000);
 
   it("starts a persisted Manager conversation from the prototype-style directive composer", async () => {
@@ -3147,6 +3230,81 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText(/Continue only if Blaqbonez-owned attention rises with the feature/i)).toBeInTheDocument();
     expect(loadMissionsCalls).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Mission Genesis failed")).not.toBeInTheDocument();
+    expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
+      "mission created",
+      { mission_id: "mission-feature-leverage", mission_type: "mission_genesis", is_test_user: false },
+      expect.stringContaining("mission-feature-leverage"),
+    );
+  }, 20000);
+
+  it("records a mission task only after the completed result is persisted", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const mission: MissionViewModel = {
+      id: "mission-case-study",
+      title: "Build the case study evidence pack",
+      status: "active",
+      progress: 0,
+      review: "Evidence quality",
+      summary: "Collect a durable product outcome.",
+      recommendation: "Finish the evidence task.",
+      musicSubject: "Artist-wide",
+      nextTask: "Complete evidence task",
+      checkpoints: [{
+        id: "checkpoint-case-study",
+        phase: 1,
+        title: "Evidence quality",
+        status: "Watching signal",
+        question: "Is the outcome documented?",
+        requiredTaskIds: ["task-case-study"],
+        dependsOnCheckpointIds: [],
+        unlocks: [],
+        blockedReason: "",
+        dependencyImpact: "The case study waits for evidence.",
+        watchedSignals: ["task-result"],
+        decisionRule: "Complete only after the result is persisted.",
+        recommendation: "Finish the evidence task.",
+        resultSummary: "",
+        nextAction: "Complete evidence task.",
+      }],
+      tasks: [{
+        id: "task-case-study",
+        checkpointId: "checkpoint-case-study",
+        title: "Complete evidence task",
+        owner: "Artist",
+        deadline: "Today",
+        approvalState: "not_required",
+        purpose: "Create a durable outcome.",
+        steps: ["Record the outcome"],
+        evidenceIds: [],
+        dependency: "None",
+        riskIfLate: "The case study has no outcome evidence.",
+      }],
+    };
+    repositories.missions.loadMissions = async () => [mission];
+    repositories.missions.completeTask = vi.fn(async () => ({ ...mission, progress: 100 }));
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("heading", { name: mission.title })[0]);
+    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    fireEvent.change(screen.getByLabelText("Task result note"), { target: { value: "Outcome captured without private content." } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm done" }));
+
+    await waitFor(() => expect(repositories.missions.completeTask).toHaveBeenCalled());
+    expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
+      "mission task completed",
+      { mission_id: "mission-case-study", task_id: "task-case-study", is_test_user: false },
+      expect.stringContaining("task-case-study"),
+    );
   }, 20000);
 
   it("renders split Mission Genesis missions when the result only returns missionIds", async () => {
@@ -3318,6 +3476,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("Mission Genesis failed")).toBeInTheDocument();
     expect(screen.getByText("permission denied for table agent_reports")).toBeInTheDocument();
+    expect(analyticsMock.trackEventOnce.mock.calls.some(([name]) => name === "mission created")).toBe(false);
   }, 20000);
 
   it("keeps unlinked Music projects quiet instead of explaining mission absence", async () => {
