@@ -39,6 +39,7 @@ describe("private-beta product flow", () => {
     );
 
     expect(screen.getByRole("button", { name: /subscribe \$20\/month/i })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /view artist source/i })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Private-beta access code")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /have a private-beta code/i }));
     fireEvent.change(screen.getByLabelText("Private-beta access code"), { target: { value: "beta-abcd-1234" } });
@@ -47,6 +48,19 @@ describe("private-beta product flow", () => {
     await waitFor(() => expect(onRedeemPrivateBeta).toHaveBeenCalledWith("BETA-ABCD-1234"));
     expect(onSubscribe).not.toHaveBeenCalled();
     expect(screen.getByText(/no card is required/i)).toBeInTheDocument();
+  });
+
+  it("uses the secondary paywall slot for the artist source only when private beta is disabled", () => {
+    render(
+      <PaywallPreviewScreen
+        preview={preview}
+        onSubscribe={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: /view artist source/i })).toHaveAttribute("href", preview.artist.spotifyUrl);
+    expect(screen.queryByRole("button", { name: /have a private-beta code/i })).not.toBeInTheDocument();
   });
 
   it("invokes the isolated beta endpoint without changing paid service methods", async () => {

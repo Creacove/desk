@@ -430,14 +430,16 @@ export function PaywallPreviewScreen({
                   </div>
                 ) : null}
 
-                <a
-                  href={artist.spotifyUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1.5 block truncate text-center text-[9px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline lg:mt-4 lg:text-[11px]"
-                >
-                  View artist source
-                </a>
+                {!privateBetaEnabled || !onRedeemPrivateBeta ? (
+                  <a
+                    href={artist.spotifyUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-1.5 block truncate text-center text-[9px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline lg:mt-4 lg:text-[11px]"
+                  >
+                    View artist source
+                  </a>
+                ) : null}
                 </div>
               </section>
 
