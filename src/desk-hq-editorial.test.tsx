@@ -61,4 +61,15 @@ describe("Desk HQ editorial presentation", () => {
       expect(segment).not.toHaveClass("rounded-[14px]", "border");
     });
   });
+
+  it("keeps evidence access on desktop but removes brief metadata from mobile", () => {
+    renderDeskHQ();
+
+    const desktopBrief = screen.getByTestId("desk-editorial-brief");
+    expect(within(desktopBrief).getByRole("button", { name: "View supporting evidence" })).toBeInTheDocument();
+
+    const mobileBrief = screen.getByTestId("desk-mobile-command-surface");
+    expect(within(mobileBrief).queryByRole("button", { name: "View supporting evidence" })).not.toBeInTheDocument();
+    expect(within(mobileBrief).queryByText(/^Prepared /)).not.toBeInTheDocument();
+  });
 });

@@ -87,7 +87,6 @@ export function DeskHQScreen({
         error={todayBriefError}
         missions={missions}
         agents={agents}
-        onDrawer={onDrawer}
         onNavigate={onNavigate}
         onManager={onManager}
         onOpenMission={onOpenMission}
@@ -517,7 +516,6 @@ function MobileDeskHome({
   error,
   missions,
   agents,
-  onDrawer,
   onNavigate,
   onManager,
   onOpenMission,
@@ -529,7 +527,6 @@ function MobileDeskHome({
   error: string | null;
   missions: MissionViewModel[];
   agents: AgentViewModel[];
-  onDrawer: (drawer: DrawerKind) => void;
   onNavigate: (view: CleanProductionView) => void;
   onManager: () => void;
   onOpenMission: (missionId: string) => void;
@@ -566,13 +563,6 @@ function MobileDeskHome({
 
         <div className="min-w-0 px-3.5 py-3.5">
           <p className="max-w-full break-words font-display text-[22px] font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]">{brief.headlineRead}</p>
-          <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
-            <button type="button" className="min-w-0 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
-              View supporting evidence
-            </button>
-            <span className="min-w-0 break-words text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/72">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</span>
-          </div>
-
           {compactMetrics.length ? (
             <div data-testid="desk-mobile-signal-rail" className="mt-3 min-w-0 max-w-full">
               <div
