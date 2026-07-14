@@ -1,11 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { fulfillVerifiedPaystackCheckout } from "../_shared/paystackFulfillment.ts";
 
 type BillingStatusInput = {
   reference?: string;
@@ -15,12 +10,12 @@ type BillingStatusInput = {
 };
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return json({ ok: true });
-  if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
+  if (request.method === "OPTIONS") return json(request, { ok: true });
+  if (request.method !== "POST") return json(request, { error: "Method not allowed." }, 405);
 
   try {
     const authHeader = request.headers.get("Authorization");
-    if (!authHeader) return json({ error: "Missing Authorization header." }, 401);
+    if (!authHeader) return json(request, { error: "Missing Authorization header." }, 401);
 
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
@@ -34,12 +29,12 @@ Deno.serve(async (request) => {
       data: { user },
       error: userError,
     } = await authClient.auth.getUser();
-    if (userError || !user) return json({ error: "Unauthorized." }, 401);
+    if (userError || !user) return json(request, { error: "Unauthorized." }, 401);
 
     const input = (await request.json()) as BillingStatusInput;
     let checkout = await findCheckout(serviceClient, input, user.id);
     if (!checkout) {
-      return json({
+      return json(request, {
         checkoutStatus: "missing",
         subscriptionStatus: "none",
         entitlementActive: false,
@@ -49,7 +44,7 @@ Deno.serve(async (request) => {
     }
 
     let setupDispatched = false;
-    if (input.reference && checkout.status !== "paid") {
+    if (checkout.provider === "paystack" && input.reference && checkout.status !== "paid") {
       const verified = await verifyPaystackTransaction(input.reference, requireEnv("PAYSTACK_SECRET_KEY"));
       if (verified) {
         const activated = await activateVerifiedPaystackCheckout({
@@ -65,7 +60,7 @@ Deno.serve(async (request) => {
       }
     }
 
-    if (checkout.status === "paid") {
+    if (checkout.provider === "paystack" && checkout.status === "paid") {
       const repaired = await ensureActiveSubscriptionForCheckout({
         serviceClient,
         checkout,
@@ -81,7 +76,7 @@ Deno.serve(async (request) => {
       checkout.artist_workspace_id
         ? serviceClient
             .from("billing_subscriptions")
-            .select("status,current_period_end")
+            .select("provider,status,current_period_end")
             .eq("artist_workspace_id", checkout.artist_workspace_id)
             .order("updated_at", { ascending: false })
             .limit(1)
@@ -116,9 +111,12 @@ Deno.serve(async (request) => {
     }
 
     const subscription = subscriptionResult.data;
+    const accessStatuses = subscription?.provider === "paddle"
+      ? ["active", "trialing"]
+      : ["active", "non-renewing", "attention"];
     const entitlementActive = Boolean(
       subscription &&
-        ["active", "non-renewing", "attention"].includes(subscription.status) &&
+        accessStatuses.includes(subscription.status) &&
         (!subscription.current_period_end || new Date(subscription.current_period_end).getTime() > Date.now()),
     );
 
@@ -136,9 +134,9 @@ Deno.serve(async (request) => {
       preview: toPreview(checkout),
     };
 
-    return json(response);
+    return json(request, response);
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Billing status could not be loaded." }, 500);
+    return json(request, { error: error instanceof Error ? error.message : "Billing status could not be loaded." }, 500);
   }
 });
 
@@ -192,35 +190,33 @@ async function activateVerifiedPaystackCheckout({ serviceClient, checkout, trans
   serviceRoleKey: string;
   source: string;
 }) {
-  validatePaystackAmount(checkout, transaction);
-  const providerSubscriptionCode = readSubscriptionCode(transaction) ?? checkout.provider_subscription_code ?? `paystack_charge_${checkout.provider_reference}`;
-  const providerCustomerCode = readCustomerCode(transaction) ?? checkout.provider_customer_code;
-  const { data: updatedCheckout, error: updateError } = await serviceClient
-    .from("billing_checkout_sessions")
-    .update({
-      status: "paid",
-      provider_customer_code: providerCustomerCode,
-      provider_subscription_code: providerSubscriptionCode,
-      paid_at: checkout.paid_at ?? new Date().toISOString(),
-    })
-    .eq("id", checkout.id)
-    .select("*")
-    .maybeSingle();
-  if (updateError) throw updateError;
+  const fulfilled = await fulfillVerifiedPaystackCheckout({ db: serviceClient, checkout, transaction });
+  const workspace = {
+    account_id: fulfilled.fulfillment.account_id,
+    artist_workspace_id: fulfilled.fulfillment.artist_workspace_id,
+    artist_name: checkout.selected_artist?.name,
+  };
+  await sendPaidSubscriptionActivatedEmail({
+    db: serviceClient,
+    checkout: fulfilled.checkout,
+    workspace,
+    periodStart: fulfilled.periodStart,
+    periodEnd: fulfilled.periodEnd,
+  }).catch(() => undefined);
 
-  return ensureActiveSubscriptionForCheckout({
-    serviceClient,
-    checkout: updatedCheckout ?? {
-      ...checkout,
-      status: "paid",
-      provider_customer_code: providerCustomerCode,
-      provider_subscription_code: providerSubscriptionCode,
-    },
-    supabaseUrl,
-    serviceRoleKey,
-    source,
-    transaction,
-  });
+  let setupDispatched = false;
+  try {
+    await invokeSetupFunction({
+      supabaseUrl,
+      serviceRoleKey,
+      functionName: "paid-workspace-setup",
+      body: { checkoutSessionId: checkout.id, phase: "discovery" },
+    });
+    setupDispatched = true;
+  } catch {
+    // The authenticated status poll will retry; fulfillment is already committed atomically.
+  }
+  return { checkout: fulfilled.checkout, setupDispatched, source };
 }
 
 async function ensureActiveSubscriptionForCheckout({ serviceClient, checkout, supabaseUrl, serviceRoleKey, source, transaction }: {
@@ -231,50 +227,15 @@ async function ensureActiveSubscriptionForCheckout({ serviceClient, checkout, su
   source: string;
   transaction?: Record<string, any> | null;
 }) {
-  const { data: activated, error: activationError } = await serviceClient.rpc("activate_paid_artist_workspace", {
-    p_checkout_session_id: checkout.id,
-  });
-  if (activationError) throw activationError;
-  const workspace = Array.isArray(activated) ? activated[0] : activated;
-  if (!workspace?.account_id || !workspace?.artist_workspace_id) {
-    throw new Error("Paid workspace activation did not return a workspace.");
-  }
-
-  const providerSubscriptionCode =
-    readSubscriptionCode(transaction ?? {}) ??
-    checkout.provider_subscription_code ??
-    `paystack_charge_${checkout.provider_reference}`;
-  const providerCustomerCode = readCustomerCode(transaction ?? {}) ?? checkout.provider_customer_code ?? null;
-
-  const { error: subscriptionError } = await serviceClient.from("billing_subscriptions").upsert(
-    {
-      account_id: workspace.account_id,
-      artist_workspace_id: workspace.artist_workspace_id,
-      user_id: checkout.user_id,
-      checkout_session_id: checkout.id,
-      provider: "paystack",
-      provider_subscription_code: providerSubscriptionCode,
-      provider_customer_code: providerCustomerCode,
-      provider_plan_code: checkout.provider_plan_code,
-      amount_minor: checkout.amount_minor,
-      amount: checkout.amount,
-      currency: checkout.currency,
-      status: "active",
-      current_period_start: readPeriodStart(transaction ?? {}),
-      current_period_end: readPeriodEnd(transaction ?? {}),
-      metadata: { source },
-    },
-    { onConflict: "provider,provider_subscription_code" },
-  );
+  const [{ data: transactionEvidence, error: transactionError }, { data: subscription, error: subscriptionError }] = await Promise.all([
+    serviceClient.from("billing_transactions").select("id").eq("checkout_session_id", checkout.id).eq("status", "completed").maybeSingle(),
+    serviceClient.from("billing_subscriptions").select("id,artist_workspace_id,status").eq("checkout_session_id", checkout.id).eq("provider", "paystack").maybeSingle(),
+  ]);
+  if (transactionError) throw transactionError;
   if (subscriptionError) throw subscriptionError;
-
-  await sendPaidSubscriptionActivatedEmail({
-    db: serviceClient,
-    checkout,
-    workspace,
-    periodStart: readPeriodStart(transaction ?? {}),
-    periodEnd: readPeriodEnd(transaction ?? {}),
-  }).catch(() => undefined);
+  if (!transactionEvidence || !subscription?.artist_workspace_id) {
+    throw new Error("Paid Paystack checkout is missing atomic fulfillment evidence.");
+  }
 
   const { data: updatedCheckout, error: checkoutError } = await serviceClient
     .from("billing_checkout_sessions")
@@ -301,18 +262,7 @@ async function ensureActiveSubscriptionForCheckout({ serviceClient, checkout, su
     // Setup will be retried on the next billing-status poll or via retrySetup.
   }
 
-  return { checkout: updatedCheckout ?? { ...checkout, artist_workspace_id: workspace.artist_workspace_id }, setupDispatched };
-}
-
-function validatePaystackAmount(checkout: any, data: Record<string, any>) {
-  const paidAmount = Number(data.amount ?? checkout.amount_minor);
-  const paidCurrency = String(data.currency ?? checkout.currency).toUpperCase();
-  if (paidAmount !== Number(checkout.amount_minor)) {
-    throw new Error("Paystack amount did not match checkout session.");
-  }
-  if (paidCurrency !== String(checkout.currency).toUpperCase()) {
-    throw new Error("Paystack currency did not match checkout session.");
-  }
+  return { checkout: updatedCheckout ?? { ...checkout, artist_workspace_id: subscription.artist_workspace_id }, setupDispatched, source, transaction };
 }
 
 function readSubscriptionCode(data: Record<string, any>) {
@@ -399,12 +349,15 @@ function toPreview(checkout: any) {
   return {
     checkoutSessionId: checkout.id,
     reference: checkout.provider_reference,
+    provider: checkout.provider,
     status: checkout.status,
     artist: checkout.selected_artist,
-    amount: Number(checkout.amount),
-    amountMinor: Number(checkout.amount_minor),
+    amount: checkout.amount == null ? undefined : Number(checkout.amount),
+    amountMinor: checkout.amount_minor == null ? undefined : Number(checkout.amount_minor),
     currency: checkout.currency,
     interval: checkout.interval,
+    productId: checkout.provider_product_id,
+    priceId: checkout.provider_price_id,
     expiresAt: checkout.expires_at,
     authorizationUrl: checkout.authorization_url,
     accessCode: checkout.access_code,
@@ -417,9 +370,15 @@ function requireEnv(key: string) {
   return value;
 }
 
-function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
+function json(request: Request, body: unknown, status = 200) {
+  const origin = request.headers.get("Origin");
+  const allowed = [requireEnv("APP_ORIGIN"), Deno.env.get("LOCAL_APP_ORIGIN")].filter(Boolean);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    Vary: "Origin",
+  };
+  if (origin && allowed.includes(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  return new Response(JSON.stringify(body), { status, headers });
 }

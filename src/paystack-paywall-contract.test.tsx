@@ -95,9 +95,10 @@ describe("Paystack paywall contract", () => {
     expect(calls).toEqual([
       {
         name: "paystack-initialize-checkout",
-        body: {
+        body: expect.objectContaining({
           selectedArtist: candidate,
-        },
+          clientRequestId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+        }),
       },
     ]);
     expect(calls.map((call) => call.name)).not.toContain("connect-spotify-artist");
@@ -364,7 +365,8 @@ describe("Paystack paywall contract", () => {
     expect(webhookSource).toContain("subscription.create");
     expect(webhookSource).toContain("invoice.payment_failed");
     expect(webhookSource).toContain("subscription.disable");
-    expect(webhookSource).toContain("activate_paid_artist_workspace");
+    expect(webhookSource).toContain("fulfillVerifiedPaystackCheckout");
+    expect(webhookSource).not.toContain("activate_paid_artist_workspace");
   });
 
   it("polls billing status after checkout return without granting access from callback alone", async () => {

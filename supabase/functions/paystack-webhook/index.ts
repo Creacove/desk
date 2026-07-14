@@ -1,11 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-paystack-signature",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+import { fulfillVerifiedPaystackCheckout } from "../_shared/paystackFulfillment.ts";
 
 type PaystackEvent = {
   event: string;
@@ -13,7 +8,6 @@ type PaystackEvent = {
 };
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   const rawBody = await request.text();
@@ -59,11 +53,25 @@ Deno.serve(async (request) => {
     return json({ error: "Webhook audit failed." }, 500);
   }
 
-  if (storedEvent?.id) {
+  let eventToProcess = storedEvent as { id: string; processing_status?: string } | null;
+  if (!eventToProcess) {
+    const { data: existingEvent, error: existingError } = await db.from("billing_webhook_events")
+      .select("id,processing_status")
+      .eq("provider", "paystack")
+      .eq("provider_event_key", providerEventKey)
+      .maybeSingle();
+    if (existingError) return json({ error: "Webhook audit lookup failed." }, 500);
+    eventToProcess = existingEvent;
+  }
+
+  const retryStoredFailure = eventToProcess?.processing_status === "failed";
+  const retryStoredReceived = eventToProcess?.processing_status === "received";
+  const processNewDelivery = Boolean(storedEvent?.id);
+  if (eventToProcess?.id && (processNewDelivery || retryStoredFailure || retryStoredReceived)) {
     try {
-      await processPaystackEvent(db, event, storedEvent.id);
+      await processPaystackEvent(db, event, eventToProcess.id);
     } catch (error) {
-      await recordWebhookFailure(db, storedEvent.id, error);
+      await recordWebhookFailure(db, eventToProcess.id, error);
       return json({ error: error instanceof Error ? error.message : "Webhook processing failed." }, 500);
     }
   }
@@ -116,58 +124,20 @@ async function activateSubscription(db: any, event: PaystackEvent) {
   if (checkoutError) throw checkoutError;
   if (!checkout) throw new Error("Checkout session not found for Paystack event.");
 
-  validatePaystackAmount(checkout, data);
-
-  const subscriptionCode = readSubscriptionCode(event) ?? `paystack_charge_${reference}`;
-  const customerCode = readCustomerCode(event);
-  const periodEnd = readPeriodEnd(event);
-  const periodStart = readPeriodStart(event);
-
-  await db.from("billing_checkout_sessions").update({
-    status: "paid",
-    provider_customer_code: customerCode,
-    provider_subscription_code: subscriptionCode,
-    paid_at: new Date().toISOString(),
-  }).eq("id", checkout.id);
-
-  const { data: activated, error: activationError } = await db.rpc("activate_paid_artist_workspace", {
-    p_checkout_session_id: checkout.id,
-  });
-  if (activationError) throw activationError;
-  const workspace = Array.isArray(activated) ? activated[0] : activated;
-  if (!workspace?.account_id || !workspace?.artist_workspace_id) {
-    throw new Error("activate_paid_artist_workspace did not return a workspace.");
-  }
-
-  const { error: subscriptionError } = await db.from("billing_subscriptions").upsert(
-    {
-      account_id: workspace.account_id,
-      artist_workspace_id: workspace.artist_workspace_id,
-      user_id: checkout.user_id,
-      checkout_session_id: checkout.id,
-      provider: "paystack",
-      provider_subscription_code: subscriptionCode,
-      provider_customer_code: customerCode,
-      provider_plan_code: checkout.provider_plan_code,
-      amount_minor: checkout.amount_minor,
-      amount: checkout.amount,
-      currency: checkout.currency,
-      status: "active",
-      current_period_start: periodStart,
-      current_period_end: periodEnd,
-      metadata: { source_event: event.event },
-    },
-    { onConflict: "provider,provider_subscription_code" },
-  );
-  if (subscriptionError) throw subscriptionError;
+  const fulfilled = await fulfillVerifiedPaystackCheckout({ db, checkout, transaction: data });
+  const workspace = {
+    account_id: fulfilled.fulfillment.account_id,
+    artist_workspace_id: fulfilled.fulfillment.artist_workspace_id,
+    artist_name: checkout.selected_artist?.name,
+  };
 
   await dispatchPaidSetup(checkout.id);
   await sendPaidSubscriptionActivatedEmail({
     db,
-    checkout: { ...checkout, paid_at: new Date().toISOString() },
+    checkout: fulfilled.checkout,
     workspace,
-    periodStart,
-    periodEnd,
+    periodStart: fulfilled.periodStart,
+    periodEnd: fulfilled.periodEnd,
   }).catch(() => undefined);
 }
 
@@ -235,17 +205,6 @@ async function verifyPaystackSignature(rawBody: string, signature: string, secre
   return timingSafeEqual(toHex(digest), signature);
 }
 
-function validatePaystackAmount(checkout: any, data: Record<string, any>) {
-  const paidAmount = Number(data.amount ?? checkout.amount_minor);
-  const paidCurrency = String(data.currency ?? checkout.currency).toUpperCase();
-  if (paidAmount !== Number(checkout.amount_minor)) {
-    throw new Error("Paystack amount did not match checkout session.");
-  }
-  if (paidCurrency !== String(checkout.currency).toUpperCase()) {
-    throw new Error("Paystack currency did not match checkout session.");
-  }
-}
-
 function eventKey(event: PaystackEvent) {
   const reference = readReference(event);
   const subscriptionCode = readSubscriptionCode(event);
@@ -295,6 +254,6 @@ function requireEnv(key: string) {
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
   });
 }

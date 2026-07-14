@@ -292,6 +292,7 @@ export function PaywallPreviewScreen({
   pending = false,
   error,
   onSubscribe,
+  onIntervalChange,
   onRedeemPrivateBeta,
   privateBetaEnabled = false,
   onBack,
@@ -302,6 +303,7 @@ export function PaywallPreviewScreen({
   pending?: boolean;
   error?: string | null;
   onSubscribe: () => void | Promise<void>;
+  onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
   onRedeemPrivateBeta?: (code: string) => void | Promise<void>;
   privateBetaEnabled?: boolean;
   onBack: () => void;
@@ -311,6 +313,7 @@ export function PaywallPreviewScreen({
   const [betaCode, setBetaCode] = useState("");
   const artist = preview.artist;
   const price = formatPaywallPrice(preview);
+  const intervalLabel = preview.interval === "yearly" ? "year" : "month";
   const latestProject = catalogPreview?.latestProject ?? null;
   const visibleProjectTracks = latestProject?.tracks.slice(0, 3) ?? [];
   const standaloneSingles = catalogPreview?.standaloneSingles.slice(0, 5) ?? [];
@@ -389,8 +392,30 @@ export function PaywallPreviewScreen({
                   Your desk opens with catalog import, audience intelligence, Manager brief, and music reads.
                 </p>
 
+                <div className="mt-3 grid grid-cols-2 rounded-[10px] border border-foreground/10 bg-foreground/[0.035] p-1" aria-label="Billing interval">
+                  {(["monthly", "yearly"] as const).map((interval) => {
+                    const active = preview.interval === interval;
+                    return (
+                      <button
+                        key={interval}
+                        type="button"
+                        aria-label={`${interval === "monthly" ? "Monthly" : "Yearly"} billing`}
+                        aria-pressed={active}
+                        disabled={pending && active}
+                        onClick={() => void onIntervalChange?.(interval)}
+                        className={cn(
+                          "h-8 rounded-[7px] text-[10px] font-bold transition-all",
+                          active ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {interval === "monthly" ? "Monthly" : "Yearly"}
+                      </button>
+                    );
+                  })}
+                </div>
+
                 <div className="mt-2 flex items-center justify-between gap-3 lg:mt-5">
-                  <p className="text-[20px] font-black leading-none text-foreground lg:text-[28px]">{price}/month</p>
+                  <p className="text-[20px] font-black leading-none text-foreground lg:text-[28px]">{price}/{intervalLabel}</p>
                   <Lock className="h-3.5 w-3.5 text-muted-foreground" aria-label="Subscription locked" />
                 </div>
 
@@ -403,7 +428,7 @@ export function PaywallPreviewScreen({
                   className="group mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-[9px] bg-foreground px-4 text-[10px] font-bold text-background shadow-md transition-all hover:bg-foreground/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 lg:mt-5 lg:h-11 lg:text-[12px]"
                 >
                   <CreditCard className="h-4 w-4" aria-hidden="true" />
-                  {pending ? "Opening secure checkout" : `Subscribe ${price}/month`}
+                  {pending ? "Opening secure checkout" : `Subscribe ${price}/${intervalLabel}`}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                 </button>
 
@@ -510,7 +535,8 @@ function ArtistAvatar({ name, imageUrl }: { name: string; imageUrl?: string }) {
 }
 
 function formatPaywallPrice(preview: ProductionBillingCheckoutPreview) {
-  const amount = Number.isFinite(preview.amount) ? preview.amount : preview.amountMinor / 100;
+  if (preview.provider === "paddle") return preview.formattedTotal ?? "Price unavailable";
+  const amount = Number.isFinite(preview.amount) ? Number(preview.amount) : Number(preview.amountMinor ?? 0) / 100;
   const currency = preview.currency || "USD";
 
   try {

@@ -127,18 +127,18 @@ describe("paid workspace setup orchestration", () => {
 
   it("dispatches paid setup only after the active subscription is stored", () => {
     const text = source("supabase", "functions", "paystack-webhook", "index.ts");
-    const subscriptionWrite = text.indexOf('.from("billing_subscriptions").upsert');
-    const setupDispatch = text.indexOf("dispatchPaidSetup", subscriptionWrite);
+    const atomicFulfillment = text.indexOf("fulfillVerifiedPaystackCheckout");
+    const setupDispatch = text.indexOf("dispatchPaidSetup", atomicFulfillment);
 
-    expect(subscriptionWrite).toBeGreaterThan(-1);
-    expect(setupDispatch).toBeGreaterThan(subscriptionWrite);
+    expect(atomicFulfillment).toBeGreaterThan(-1);
+    expect(setupDispatch).toBeGreaterThan(atomicFulfillment);
     expect(text).toContain('phase: "discovery"');
   });
 
   it("does not acknowledge Paystack activation before processing subscription and setup dispatch", () => {
     const text = source("supabase", "functions", "paystack-webhook", "index.ts");
 
-    expect(text).toContain("await processPaystackEvent(db, event, storedEvent.id)");
+    expect(text).toContain("await processPaystackEvent(db, event, eventToProcess.id)");
     expect(text).not.toContain("EdgeRuntime.waitUntil(task)");
     expect(text).not.toContain("task.catch(() => undefined)");
   });

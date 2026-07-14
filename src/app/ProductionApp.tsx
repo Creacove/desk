@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Check, CreditCard, Loader2, X } from "lucide-react";
 import { cn } from "../lib/utils";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
@@ -1406,6 +1406,11 @@ function CleanProductionWorkspace({
               onSignOut={onSignOut}
               workspace={workspace ?? undefined}
               onUpdatePassword={authAdapter.updatePassword}
+              onManageBilling={
+                workspace && billingService?.openCustomerPortal
+                  ? () => billingService.openCustomerPortal!(workspace)
+                  : undefined
+              }
               themeMode={themeMode}
               resolvedThemeMode={resolvedThemeMode}
               onThemeModeChange={setThemeMode}
@@ -2029,6 +2034,7 @@ function SpotifyIdentityGate({
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
   const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
+  const pricingRequestRef = useRef(0);
 
   useEffect(() => {
     if (!billingService?.loadLatestCheckoutPreview || checkoutPreview) {
@@ -2139,7 +2145,11 @@ function SpotifyIdentityGate({
             standaloneSingles: [],
           }))
         : null;
-      const preview = await billingService.createCheckoutPreview({ user, candidate });
+      const requestId = ++pricingRequestRef.current;
+      const preview = billingService.prepareProviderCheckout
+        ? await billingService.prepareProviderCheckout({ user, candidate, interval: "monthly" })
+        : await billingService.createCheckoutPreview({ user, candidate });
+      if (requestId !== pricingRequestRef.current) return;
       trackEvent("artist selected", {
         artist_id: candidate.spotifyArtistId,
         selection_source: "spotify search",
@@ -2160,8 +2170,16 @@ function SpotifyIdentityGate({
       return;
     }
 
-    if (checkoutPreview.authorizationUrl) {
-      window.location.assign(checkoutPreview.authorizationUrl);
+    if (billingService.openProviderCheckout && user) {
+      try {
+        setSelectPending(true);
+        setMessage(null);
+        await billingService.openProviderCheckout({ user, preview: checkoutPreview });
+      } catch (checkoutError) {
+        setMessage(readErrorMessage(checkoutError, "Secure checkout could not be opened."));
+      } finally {
+        setSelectPending(false);
+      }
       return;
     }
 
@@ -2182,6 +2200,29 @@ function SpotifyIdentityGate({
       setMessage(readErrorMessage(statusError, "Billing status could not be loaded."));
     } finally {
       setSelectPending(false);
+    }
+  }
+
+  async function changeBillingInterval(interval: "monthly" | "yearly") {
+    if (!checkoutPreview || !billingService?.prepareProviderCheckout || !user || checkoutPreview.interval === interval) return;
+    const requestId = ++pricingRequestRef.current;
+    try {
+      setSelectPending(true);
+      setMessage(null);
+      const preview = await billingService.prepareProviderCheckout({
+        user,
+        candidate: checkoutPreview.artist,
+        existingWorkspace: workspace ?? undefined,
+        interval,
+      });
+      if (requestId !== pricingRequestRef.current) return;
+      setCheckoutPreview(preview);
+    } catch (pricingError) {
+      if (requestId === pricingRequestRef.current) {
+        setMessage(readErrorMessage(pricingError, "Localized pricing could not be refreshed."));
+      }
+    } finally {
+      if (requestId === pricingRequestRef.current) setSelectPending(false);
     }
   }
 
@@ -2219,6 +2260,7 @@ function SpotifyIdentityGate({
           setSelectedArtistName(null);
         }}
         onSubscribe={subscribeToPreview}
+        onIntervalChange={changeBillingInterval}
         privateBetaEnabled={import.meta.env.VITE_PRIVATE_BETA_ENABLED === "true"}
         onRedeemPrivateBeta={redeemPrivateBetaCode}
         onSignOut={onSignOut}
@@ -2394,11 +2436,16 @@ function readPaymentReturnReference() {
     params.get("paystack_reference");
 
   const normalized = reference?.trim();
-  return normalized || null;
+  if (normalized) return normalized;
+  if (window.location.pathname === "/welcome") {
+    const checkoutSessionId = sessionStorage.getItem("ordersounds.paddleCheckoutSessionId")?.trim();
+    if (checkoutSessionId) return `paddle:${checkoutSessionId}`;
+  }
+  return null;
 }
 
 async function refreshPaymentReturnStatus(
-  reference: string,
+  pointer: string,
   billingService: ProductionBillingService | undefined,
   setPaymentReturn: (state: PaymentReturnState | null) => void,
   setWorkspace: (workspace: ProductionWorkspace | null) => void,
@@ -2407,7 +2454,7 @@ async function refreshPaymentReturnStatus(
 ) {
   if (!billingService) {
     setPaymentReturn({
-      reference,
+      reference: pointer,
       status: "error",
       message: "Billing confirmation is not configured for this environment.",
     });
@@ -2415,11 +2462,15 @@ async function refreshPaymentReturnStatus(
   }
 
   try {
-    const billingStatus = await billingService.loadBillingStatus({ reference });
+    const billingStatus = await billingService.loadBillingStatus(
+      pointer.startsWith("paddle:")
+        ? { checkoutSessionId: pointer.slice("paddle:".length) }
+        : { reference: pointer },
+    );
     if (billingStatus.workspace && billingStatus.entitlementActive) {
       setWorkspace(billingStatus.workspace);
       setPaymentReturn({
-        reference,
+        reference: pointer,
         status: "ready",
         message: "Payment confirmed. Opening Desk HQ.",
       });
@@ -2431,7 +2482,7 @@ async function refreshPaymentReturnStatus(
 
     if (billingStatus.checkoutStatus === "missing") {
       setPaymentReturn({
-        reference,
+        reference: pointer,
         status: "mismatch",
         message: billingStatus.message ?? "This payment is not linked to the signed-in session in this browser.",
       });
@@ -2440,7 +2491,7 @@ async function refreshPaymentReturnStatus(
 
     if (billingStatus.checkoutStatus === "failed" || billingStatus.checkoutStatus === "expired" || billingStatus.checkoutStatus === "abandoned") {
       setPaymentReturn({
-        reference,
+        reference: pointer,
         status: "error",
         message: billingStatus.message ?? "This checkout is no longer payable. Return to artist search and start a new subscription.",
       });
@@ -2448,13 +2499,13 @@ async function refreshPaymentReturnStatus(
     }
 
     setPaymentReturn({
-      reference,
+      reference: pointer,
       status: "waiting",
       message: billingStatus.message ?? "Waiting for secure payment confirmation. Desk access opens only after billing is verified.",
     });
   } catch (statusError) {
     setPaymentReturn({
-      reference,
+      reference: pointer,
       status: "error",
       message: readErrorMessage(statusError, "Payment confirmation could not be loaded."),
     });
@@ -2526,7 +2577,9 @@ function clearPaymentReturnUrl() {
 
   const url = new URL(window.location.href);
   ["reference", "trxref", "checkout_ref", "paystack_reference"].forEach((param) => url.searchParams.delete(param));
-  window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  sessionStorage.removeItem("ordersounds.paddleCheckoutSessionId");
+  const pathname = url.pathname === "/welcome" ? "/" : url.pathname;
+  window.history.replaceState({}, "", `${pathname}${url.search}${url.hash}`);
 }
 
 function readErrorMessage(error: unknown, fallback: string) {

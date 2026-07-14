@@ -12,6 +12,8 @@
     "test": "vitest run --environment jsdom --pool=vmThreads"
   },
   "dependencies": {
+    "@paddle/paddle-js": "^1.6.4",
+    "@paddle/paddle-node-sdk": "^3.8.0",
     "@radix-ui/react-dialog": "^1.1.14",
     "@supabase/supabase-js": "^2.106.2",
     "class-variance-authority": "^0.7.1",

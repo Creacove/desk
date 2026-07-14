@@ -129,6 +129,23 @@ describe("SettingsScreen", () => {
     expect(screen.getByRole("heading", { name: "Active workspace access" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "No active access" })).not.toBeInTheDocument();
   });
+
+  it("offers Paddle self-service billing from the access tab", () => {
+    const onManageBilling = vi.fn();
+    render(<SettingsScreen
+      profile={profileWithArtistIntelligence()} onChange={vi.fn()} onBack={vi.fn()}
+      workspace={{
+        accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1",
+        artistName: "Burna Boy", workspaceName: "Burna Boy Desk", status: "active",
+        spotifyConnected: true, contextComplete: true, entitlementActive: true,
+        subscriptionStatus: "active", billingProvider: "paddle",
+      }}
+      onManageBilling={onManageBilling}
+    />);
+    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("button", { name: "Manage billing" }));
+    expect(onManageBilling).toHaveBeenCalledTimes(1);
+  });
 });
 
 function profileWithArtistIntelligence(): ArtistProfileViewModel {

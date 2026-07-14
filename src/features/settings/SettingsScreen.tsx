@@ -16,6 +16,7 @@ export function SettingsScreen({
   onThemeModeChange,
   workspace,
   onUpdatePassword,
+  onManageBilling,
 }: {
   profile: ArtistProfileViewModel;
   onChange: (profile: ArtistProfileViewModel) => void;
@@ -26,6 +27,7 @@ export function SettingsScreen({
   onThemeModeChange?: (mode: ThemeMode) => void;
   workspace?: ProductionWorkspace;
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
+  onManageBilling?: () => Promise<void> | void;
 }) {
   const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
@@ -43,7 +45,7 @@ export function SettingsScreen({
 
       <div id={`settings-panel-${activeTab}`} role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
         {activeTab === "profile" ? <ProfileSettings profile={profile} update={update} /> : null}
-        {activeTab === "access" ? (workspace ? <AccessSummary workspace={workspace} /> : <AccessEmptyState />) : null}
+        {activeTab === "access" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
         {activeTab === "account" ? (
           <AccountSettings
             mode={themeMode}
@@ -122,7 +124,9 @@ function SettingsGroup({ title, children, last = false }: { title: string; child
   );
 }
 
-function AccessSummary({ workspace }: { workspace: ProductionWorkspace }) {
+function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWorkspace; onManageBilling?: () => Promise<void> | void }) {
+  const [portalPending, setPortalPending] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
   const paid = workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
   const accessLabel = paid
     ? "Paid subscription"
@@ -141,6 +145,28 @@ function AccessSummary({ workspace }: { workspace: ProductionWorkspace }) {
         {paid && workspace.renewalAt ? <AccessRow label="Renews" value={formatDate(workspace.renewalAt)} /> : null}
         {!paid && workspace.accessEndsAt ? <AccessRow label="Expires" value={formatDate(workspace.accessEndsAt)} /> : null}
       </dl>
+      {paid && workspace.billingProvider === "paddle" && onManageBilling ? (
+        <div className="mt-5">
+          <ProductButton
+            variant="secondary"
+            disabled={portalPending}
+            onClick={async () => {
+              try {
+                setPortalPending(true);
+                setPortalError(null);
+                await onManageBilling();
+              } catch (error) {
+                setPortalError(error instanceof Error ? error.message : "Billing portal could not be opened.");
+              } finally {
+                setPortalPending(false);
+              }
+            }}
+          >
+            {portalPending ? "Opening billing" : "Manage billing"}
+          </ProductButton>
+          {portalError ? <p role="alert" className="mt-3 text-[12px] font-semibold text-red-600">{portalError}</p> : null}
+        </div>
+      ) : null}
     </section>
   );
 }

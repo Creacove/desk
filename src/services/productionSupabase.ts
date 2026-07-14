@@ -44,6 +44,7 @@ import type {
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
 import { normalizeBriefMetricDisplay } from "../../supabase/functions/_shared/briefMetricDisplay";
+import { getPaddle, openPaddleCheckout, previewLocalizedPaddlePrice, resolveBillingProvider } from "../lib/paddleBilling";
 
 const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -175,7 +176,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artists(display_name, canonical_spotify_artist_id, canonical_spotify_url)",
             "artist_profiles(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs(status,created_at)",
-            "billing_subscriptions(status,current_period_end)",
+            "billing_subscriptions(provider,status,current_period_end)",
             "workspace_access_grants(access_type,status,starts_at,ends_at)",
             "workspace_setup_runs(status,current_stage,checkout_session_id,updated_at)",
           ].join(", "),
@@ -210,6 +211,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         latestCatalogSyncStatus: readLatestSyncStatus(workspace.source_sync_jobs),
         entitlementActive: hasActiveEntitlement(workspace.billing_subscriptions) || hasActiveBetaGrant(workspace.workspace_access_grants),
         subscriptionStatus: readLatestSubscriptionStatus(workspace.billing_subscriptions),
+        billingProvider: latestPaidSubscription(workspace.billing_subscriptions)?.provider ?? undefined,
         accessType: hasActiveEntitlement(workspace.billing_subscriptions)
           ? "paid_subscription"
           : hasActiveBetaGrant(workspace.workspace_access_grants) ? "private_beta" : "none",
@@ -450,10 +452,95 @@ function spotifyCatalogPreviewFromPayload(payload: unknown): ProductionSpotifyCa
 
 export function createSupabaseBillingService(client: SupabaseClient): ProductionBillingService {
   return {
+    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval }) {
+      const { data: pricingData, error: pricingError } = await client.functions.invoke("billing-pricing-config", { body: {} });
+      if (pricingError) await throwFunctionInvokeError(pricingError, "Billing pricing could not be loaded.");
+      const pricing = readBillingPricingConfig(pricingData);
+      const serverCountryCode = await loadBillingCountry();
+
+      if (resolveBillingProvider(serverCountryCode) === "paystack") {
+        return initializePaystackCheckout(client, candidate, existingWorkspace, interval);
+      }
+
+      const paddle = await getPaddle({
+        environment: pricing.paddle.environment,
+        clientToken: pricing.paddle.clientToken,
+      });
+      const priceId = pricing.paddle.priceId[interval];
+      const localized = await previewLocalizedPaddlePrice(paddle, priceId, serverCountryCode);
+      if (resolveBillingProvider(serverCountryCode, localized.countryCode) === "paystack") {
+        return initializePaystackCheckout(client, candidate, existingWorkspace, interval);
+      }
+
+      const { data, error } = await client.functions.invoke("paddle-create-checkout", {
+        body: {
+          interval,
+          clientRequestId: createClientRequestId(),
+          selectedArtist: candidate,
+          ...(existingWorkspace ? { existingArtistWorkspaceId: existingWorkspace.artistWorkspaceId } : {}),
+        },
+      });
+      if (error) await throwFunctionInvokeError(error, "Paddle checkout could not be prepared.");
+      const session = data as {
+        checkoutSessionId?: string; productId?: string; priceId?: string; interval?: "monthly" | "yearly";
+        expiresAt?: string; customData?: Record<string, unknown>;
+      } | null;
+      if (!session?.checkoutSessionId || session.priceId !== priceId || session.productId !== pricing.paddle.productId || !session.customData) {
+        throw new Error("Paddle checkout did not match the displayed plan.");
+      }
+      return {
+        checkoutSessionId: session.checkoutSessionId,
+        reference: session.checkoutSessionId,
+        provider: "paddle",
+        status: "open",
+        artist: candidate,
+        interval,
+        formattedTotal: localized.formattedTotal,
+        productId: session.productId,
+        priceId: session.priceId,
+        paddleConfig: { environment: pricing.paddle.environment, clientToken: pricing.paddle.clientToken },
+        customData: session.customData,
+        expiresAt: session.expiresAt,
+      };
+    },
+    async openProviderCheckout({ user, preview }) {
+      if (preview.provider === "paystack") {
+        if (!preview.authorizationUrl) throw new Error("Paystack checkout URL is unavailable.");
+        const destination = new URL(preview.authorizationUrl);
+        if (destination.protocol !== "https:") throw new Error("Paystack returned an unsafe checkout URL.");
+        window.location.assign(destination.href);
+        return;
+      }
+      if (preview.provider !== "paddle" || !preview.paddleConfig || !preview.priceId || !preview.customData) {
+        throw new Error("Paddle checkout is incomplete. Refresh pricing and try again.");
+      }
+      const paddle = await getPaddle(preview.paddleConfig);
+      sessionStorage.setItem("ordersounds.paddleCheckoutSessionId", preview.checkoutSessionId);
+      openPaddleCheckout(paddle, {
+        displayedPriceId: preview.priceId,
+        checkoutPriceId: preview.priceId,
+        email: user.email,
+        customData: preview.customData,
+      });
+    },
+    async openCustomerPortal(workspace) {
+      const { data, error } = await client.functions.invoke("paddle-customer-portal", {
+        body: { artistWorkspaceId: workspace.artistWorkspaceId },
+      });
+      if (error) await throwFunctionInvokeError(error, "Customer portal could not be opened.");
+      const value = (data as { url?: unknown } | null)?.url;
+      if (typeof value !== "string") throw new Error("Customer portal response was incomplete.");
+      const destination = new URL(value);
+      if (destination.protocol !== "https:" || destination.hostname !== "customer-portal.paddle.com") {
+        throw new Error("Paddle returned an unexpected customer portal destination.");
+      }
+      window.location.assign(destination.href);
+    },
     async createCheckoutPreview({ candidate, existingWorkspace }) {
       const { data, error } = await client.functions.invoke("paystack-initialize-checkout", {
         body: {
           selectedArtist: candidate,
+          clientRequestId: createClientRequestId(),
           ...(existingWorkspace ? { existingArtistWorkspaceId: existingWorkspace.artistWorkspaceId } : {}),
         },
       });
@@ -474,6 +561,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       }
 
       const payload = data as { preview?: unknown } | null;
+      if ((payload?.preview as { provider?: unknown } | undefined)?.provider === "paddle") return null;
       return payload?.preview ? billingCheckoutPreviewFromPayload(payload.preview) : null;
     },
     async loadBillingStatus({ reference }) {
@@ -532,6 +620,55 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       };
     },
   };
+}
+
+async function initializePaystackCheckout(
+  client: SupabaseClient,
+  candidate: ProductionSpotifyArtistCandidate,
+  existingWorkspace: ProductionWorkspace | undefined,
+  interval: "monthly" | "yearly",
+) {
+  const { data, error } = await client.functions.invoke("paystack-initialize-checkout", {
+    body: {
+      selectedArtist: candidate,
+      interval,
+      clientRequestId: createClientRequestId(),
+      ...(existingWorkspace ? { existingArtistWorkspaceId: existingWorkspace.artistWorkspaceId } : {}),
+    },
+  });
+  if (error) await throwFunctionInvokeError(error, "Paystack checkout could not be initialized.");
+  return { ...billingCheckoutPreviewFromPayload(data), provider: "paystack" as const };
+}
+
+async function loadBillingCountry() {
+  try {
+    const response = await fetch("/api/billing-country", { headers: { Accept: "application/json" }, cache: "no-store" });
+    if (!response.ok) return undefined;
+    const payload = await response.json() as { countryCode?: unknown };
+    return typeof payload.countryCode === "string" ? payload.countryCode : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readBillingPricingConfig(value: unknown) {
+  const data = value as {
+    paddle?: { environment?: "sandbox" | "production"; clientToken?: string; productId?: string; priceId?: { monthly?: string; yearly?: string } };
+  } | null;
+  if (!data?.paddle?.environment || !data.paddle.clientToken || !data.paddle.productId || !data.paddle.priceId?.monthly || !data.paddle.priceId.yearly) {
+    throw new Error("Billing pricing configuration is incomplete.");
+  }
+  return data as { paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string } } };
+}
+
+function createClientRequestId() {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  globalThis.crypto.getRandomValues(bytes);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function createSupabaseProfileSetupService(client: SupabaseClient): ProductionProfileSetupService {
@@ -1633,7 +1770,7 @@ type WorkspaceRow = {
   } | null;
   artist_profiles?: WorkspaceProfileRow[] | null;
   source_sync_jobs?: Array<{ status?: ProductionWorkspace["latestCatalogSyncStatus"] | null; created_at?: string | null }> | null;
-  billing_subscriptions?: Array<{ status?: ProductionWorkspace["subscriptionStatus"] | null; current_period_end?: string | null }> | null;
+  billing_subscriptions?: Array<{ provider?: ProductionWorkspace["billingProvider"] | null; status?: ProductionWorkspace["subscriptionStatus"] | null; current_period_end?: string | null }> | null;
   workspace_access_grants?: Array<{ access_type?: string | null; status?: string | null; starts_at?: string | null; ends_at?: string | null }> | null;
   workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null; checkout_session_id?: string | null; updated_at?: string | null }> | null;
 };
@@ -2645,12 +2782,18 @@ function billingCheckoutPreviewFromPayload(payload: unknown): ProductionBillingC
   return {
     checkoutSessionId: data.checkoutSessionId,
     reference: data.reference,
+    provider: data.provider,
     status: data.status ?? "open",
     artist: data.artist,
-    amount: Number(data.amount ?? 20),
-    amountMinor: Number(data.amountMinor ?? 2000),
-    currency: data.currency ?? "USD",
+    amount: data.amount == null ? undefined : Number(data.amount),
+    amountMinor: data.amountMinor == null ? undefined : Number(data.amountMinor),
+    currency: data.currency,
+    formattedTotal: data.formattedTotal,
     interval: data.interval ?? "monthly",
+    productId: data.productId,
+    priceId: data.priceId,
+    paddleConfig: data.paddleConfig,
+    customData: data.customData,
     expiresAt: data.expiresAt,
     authorizationUrl: data.authorizationUrl,
     accessCode: data.accessCode,

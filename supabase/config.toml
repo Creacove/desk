@@ -367,6 +367,12 @@ deno_version = 2
 [functions.paystack-webhook]
 verify_jwt = false
 
+[functions.paddle-webhook]
+verify_jwt = false
+
+[functions.paddle-process-webhooks]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

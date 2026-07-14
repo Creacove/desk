@@ -134,7 +134,7 @@ alter table public.billing_webhook_events
 
 create index if not exists billing_webhook_events_queue_idx
   on public.billing_webhook_events (processing_status, next_attempt_at, created_at)
-  where processing_status in ('received', 'failed');
+  where processing_status in ('received', 'failed', 'processing');
 
 create or replace function public.claim_billing_webhook_events(p_limit integer default 10)
 returns setof public.billing_webhook_events
@@ -147,8 +147,16 @@ as $$
     select event.id
     from public.billing_webhook_events event
     where event.provider = 'paddle'
-      and event.processing_status in ('received', 'failed')
-      and coalesce(event.next_attempt_at, now()) <= now()
+      and (
+        (
+          event.processing_status in ('received', 'failed')
+          and coalesce(event.next_attempt_at, now()) <= now()
+        )
+        or (
+          event.processing_status = 'processing'
+          and event.claimed_at < now() - interval '5 minutes'
+        )
+      )
     order by event.created_at asc
     for update skip locked
     limit greatest(1, least(coalesce(p_limit, 10), 50))
@@ -345,6 +353,8 @@ begin
       provider_transaction_id = p_provider_transaction_id,
       provider_customer_code = p_provider_customer_id,
       provider_subscription_code = p_provider_subscription_id,
+      amount_minor = p_total_minor,
+      currency = p_currency,
       paid_at = coalesce(paid_at, now())
   where id = v_checkout.id;
 
