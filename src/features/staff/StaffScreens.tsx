@@ -14,7 +14,7 @@ export function StaffWorkspace({
   const orderedAgents = orderTeamAgents(agents);
 
   return (
-    <section>
+    <section className="app-workspace app-workspace-reveal">
       <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
       <p className="mb-5 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
       <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">

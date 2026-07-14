@@ -2826,6 +2826,9 @@ describe("Clean production prototype-match shell", () => {
     expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
+    expect(within(songRoom).queryByTestId("track-intelligence-card")).not.toBeInTheDocument();
+    expect(within(songRoom).getByTestId("music-linked-work")).toHaveClass("max-lg:rounded-[16px]", "max-lg:shadow-none");
+    expect(within(songRoom).getByTestId("music-linked-work-list")).toHaveClass("max-lg:hidden");
 
     fireEvent.click(within(songRoom).getByRole("button", { name: "details" }));
     const mobileDetails = within(songRoom).getByTestId("song-room-mobile-details");

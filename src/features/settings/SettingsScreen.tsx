@@ -1,6 +1,6 @@
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useState, type FormEvent, type ReactNode } from "react";
-import { Field, ProductButton, TextAreaField, WorkspaceShell } from "../../design-system/components";
+import { Field, ProductButton, TextAreaField, WorkspaceShell, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
@@ -38,28 +38,7 @@ export function SettingsScreen({
   return (
     <WorkspaceShell eyebrow="Workspace" title="Settings" onBack={onBack}>
       <div className="sticky top-[109px] z-20 -mx-3 mb-4 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
-        <div role="tablist" aria-label="Settings sections" className="grid grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1 lg:max-w-md">
-          {tabs.map((tab) => {
-            const selected = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                id={`settings-tab-${tab.id}`}
-                type="button"
-                role="tab"
-                aria-selected={selected}
-                aria-controls={`settings-panel-${tab.id}`}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  "h-10 rounded-[9px] px-3 text-[12px] font-bold transition-all focus:outline-none focus:ring-2 focus:ring-brand-accent/30",
-                  selected ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+        <WorkspaceTabRail ariaLabel="Settings sections" semanticTabs idPrefix="settings" items={tabs} active={activeTab} onChange={setActiveTab} className="grid-cols-3 lg:max-w-md" />
       </div>
 
       <div id={`settings-panel-${activeTab}`} role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} className="animate-in fade-in slide-in-from-bottom-2 duration-300">

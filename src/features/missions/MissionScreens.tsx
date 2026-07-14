@@ -1,6 +1,6 @@
 import { ArrowLeft, Check, ChevronDown, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ProductButton, WorkspaceHeader } from "../../design-system/components";
+import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type {
   DrawerKind,
@@ -88,7 +88,7 @@ export function MissionsWorkspace({
 
   if (!localMissions.length) {
     return (
-      <section>
+      <section className="app-workspace app-workspace-reveal">
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <EmptyMissionState
           onCreateFirstMission={onCreateFirstMission}
@@ -100,7 +100,7 @@ export function MissionsWorkspace({
 
   if (!selected || roomMode === "list") {
     return (
-      <section>
+      <section className="app-workspace app-workspace-reveal">
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <div className="mb-5 flex justify-end">
           <ProductButton onClick={onOpenManager}>
@@ -272,7 +272,7 @@ function MissionRoom({
   const openTaskCount = tasks.filter((task) => task.result?.status !== "completed").length;
 
   return (
-    <section className="grid min-w-0 max-w-full gap-4 overflow-x-clip lg:gap-6">
+    <section className="app-workspace app-workspace-reveal grid min-w-0 max-w-full gap-4 overflow-x-clip lg:gap-6">
       <h3 className="sr-only">Missions</h3>
       <div data-testid="mobile-mission-switcher" className="sr-only" />
       <header data-testid="mission-command-bar" className="pb-1 pt-1">
@@ -1162,31 +1162,7 @@ function MissionTabRail({
     { id: "activity", label: "Activity", badge: noteCount ? String(noteCount) : null },
   ] as const;
 
-  return (
-    <div data-testid="mobile-mission-tabs" className="scrollbar-none flex w-full min-w-0 max-w-full gap-1 overflow-x-auto border-b border-foreground/8 pb-3 lg:overflow-visible">
-      {items.map((item) => (
-        <button
-          key={item.id}
-          type="button"
-          aria-pressed={tab === item.id}
-          onClick={() => onTab(item.id)}
-          className={cn(
-            "relative flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-[10px] font-semibold uppercase tracking-[0.03em] transition-colors sm:px-3.5 sm:text-[11px]",
-            tab === item.id
-              ? "border-foreground bg-foreground text-background"
-              : "border-transparent bg-transparent text-muted-foreground hover:bg-foreground/[0.045] hover:text-foreground",
-          )}
-        >
-          {item.label}
-          {item.badge ? (
-            <span className={cn("max-sm:hidden rounded-full px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal", tab === item.id ? "bg-background/14 text-background" : "bg-foreground/[0.055] text-foreground/80")}>
-              {item.badge}
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
-  );
+  return <WorkspaceTabRail ariaLabel="Mission sections" testId="mobile-mission-tabs" className="grid-cols-4" items={items} active={tab} onChange={onTab} />;
 }
 
 function MissionProgressMeter({

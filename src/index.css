@@ -1691,6 +1691,115 @@
   }
 }
 
+/* Shared editorial workspace language, derived from Desk HQ. */
+.app-workspace {
+  position: relative;
+  isolation: isolate;
+}
+
+.app-workspace::before {
+  position: absolute;
+  z-index: -1;
+  inset: -1.25rem -1.5rem auto;
+  height: min(32rem, 70vh);
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 16% 0%, hsl(var(--brand-accent) / 0.04), transparent 25rem),
+    linear-gradient(hsl(var(--foreground) / 0.012) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--foreground) / 0.01) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 92%);
+}
+
+.app-theme-dark .app-workspace::before {
+  background:
+    radial-gradient(circle at 16% 0%, hsl(var(--brand-accent) / 0.065), transparent 26rem),
+    linear-gradient(hsl(var(--foreground) / 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(var(--foreground) / 0.014) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
+}
+
+.app-workspace-reveal {
+  animation: desk-hq-editorial-arrive 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.workspace-tab-rail {
+  gap: 0.2rem;
+  min-width: 0;
+  width: 100%;
+  padding: 0.22rem;
+  border: 1px solid hsl(var(--foreground) / 0.08);
+  border-radius: 0.8rem;
+  background: hsl(var(--background) / 0.72);
+  box-shadow: inset 0 1px 0 hsl(var(--foreground) / 0.025);
+  backdrop-filter: blur(16px);
+}
+
+.workspace-tab {
+  display: inline-flex;
+  min-width: 0;
+  height: 2.35rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.7rem;
+  border: 1px solid transparent;
+  border-radius: 0.6rem;
+  color: hsl(var(--muted-foreground) / 0.86);
+  font-family: var(--font-ui);
+  font-size: 0.67rem;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+  transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.workspace-tab:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--foreground) / 0.025);
+}
+
+.workspace-tab-active {
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--foreground) / 0.075);
+  background: hsl(var(--background));
+  box-shadow: 0 1px 6px hsl(var(--foreground) / 0.065);
+}
+
+.workspace-tab-badge {
+  padding: 0.1rem 0.34rem;
+  border-radius: 999px;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--foreground) / 0.055);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (min-width: 1024px) {
+  .workspace-tab-rail {
+    width: fit-content;
+    min-width: min(100%, 22rem);
+  }
+
+  .workspace-tab {
+    min-width: 5.25rem;
+    height: 2.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-workspace-reveal {
+    animation: none !important;
+  }
+
+  .workspace-tab {
+    transition: none !important;
+  }
+}
+
 @media (max-width: 767px) {
   html,
   body,

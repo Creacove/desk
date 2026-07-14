@@ -159,6 +159,55 @@ export function WorkspaceHeader({
   );
 }
 
+export function WorkspaceTabRail<T extends string>({
+  items,
+  active,
+  onChange,
+  ariaLabel,
+  testId,
+  className,
+  semanticTabs = false,
+  idPrefix,
+}: {
+  items: ReadonlyArray<{ id: T; label: string; badge?: string | null }>;
+  active: T;
+  onChange: (id: T) => void;
+  ariaLabel: string;
+  testId?: string;
+  className?: string;
+  semanticTabs?: boolean;
+  idPrefix?: string;
+}) {
+  return (
+    <div
+      role="tablist"
+      aria-label={ariaLabel}
+      data-testid={testId}
+      className={cn("workspace-tab-rail scrollbar-none grid auto-cols-fr grid-flow-col overflow-x-auto", className)}
+    >
+      {items.map((item) => {
+        const selected = active === item.id;
+        return (
+          <button
+            key={item.id}
+            id={idPrefix ? `${idPrefix}-tab-${item.id}` : undefined}
+            type="button"
+            role={semanticTabs ? "tab" : undefined}
+            aria-selected={semanticTabs ? selected : undefined}
+            aria-pressed={selected}
+            aria-controls={idPrefix ? `${idPrefix}-panel-${item.id}` : undefined}
+            onClick={() => onChange(item.id)}
+            className={cn("workspace-tab", selected && "workspace-tab-active")}
+          >
+            <span>{item.label}</span>
+            {item.badge ? <span className="workspace-tab-badge max-lg:hidden">{item.badge}</span> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function WorkspaceShell({
   eyebrow,
   title,
@@ -173,7 +222,7 @@ export function WorkspaceShell({
   showBack?: boolean;
 }) {
   return (
-    <div className="animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="app-workspace app-workspace-reveal">
       {showBack ? (
         <div className="sticky top-0 z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background px-3 py-2 lg:static lg:mx-0 lg:mb-6 lg:border-0 lg:bg-transparent lg:p-0">
           <button

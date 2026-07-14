@@ -1,6 +1,6 @@
 import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { WorkspaceHeader } from "../../design-system/components";
+import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type {
   MissionViewModel,
@@ -224,7 +224,7 @@ export function MusicWorkspace({
   }
 
   return (
-    <section>
+    <section className="app-workspace app-workspace-reveal">
       <div
         data-testid="music-workspace-content"
         className={cn("transition duration-300 ease-out", modalActive ? "pointer-events-none select-none blur-[6px] brightness-95" : "blur-0")}
@@ -240,22 +240,13 @@ export function MusicWorkspace({
                 </p>
               </div>
               <div data-testid="music-mobile-controls" className="flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
-                <div className="grid min-w-0 flex-1 max-w-[260px] grid-cols-2 rounded-full border border-foreground/10 bg-background/80 p-1 shadow-sm">
-                  {(["songs", "projects"] as const).map((item) => (
-                    <button
-                      key={item}
-                      type="button"
-                      aria-pressed={tab === item}
-                      onClick={() => selectTab(item)}
-                      className={cn(
-                        "rounded-full px-4 py-2 text-[11px] font-bold uppercase tracking-[0.1em] transition-colors",
-                        tab === item ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {item === "songs" ? "Songs" : "Projects"}
-                    </button>
-                  ))}
-                </div>
+                <WorkspaceTabRail
+                  ariaLabel="Catalog sections"
+                  className="min-w-0 flex-1 max-w-[260px] grid-cols-2"
+                  active={tab}
+                  onChange={selectTab}
+                  items={(["songs", "projects"] as const).map((id) => ({ id, label: id === "songs" ? "Songs" : "Projects" }))}
+                />
                 <button
                   type="button"
                   onClick={() => setAddMenuKind(tab)}
@@ -660,33 +651,25 @@ function MusicSongDetail({
     <section data-testid="music-song-detail" className="grid gap-5">
       <MusicDetailTop object={song} label="Song room" onBack={onBack} onStageChange={onStageChange} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
-      <div data-testid="song-room-mobile-tabs" className="grid grid-cols-4 gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.035] p-1 lg:flex lg:flex-wrap lg:border-0 lg:bg-transparent lg:p-0">
-        {(["overview", "details", "files", "rights"] as const).map((nextTab) => (
-          <button
-            key={nextTab}
-            type="button"
-            aria-pressed={activeTab === nextTab}
-            onClick={() => onTabChange(nextTab)}
-            className={cn(
-              "rounded-[10px] border px-2 py-2 text-[10px] font-semibold uppercase tracking-[0.04em] transition-colors lg:rounded-full lg:px-4 lg:text-[11px]",
-              activeTab === nextTab ? "border-foreground bg-foreground text-background" : "border-transparent bg-transparent text-muted-foreground hover:text-foreground lg:border-foreground/10 lg:bg-background",
-            )}
-          >
-            {nextTab}
-          </button>
-        ))}
-      </div>
+      <WorkspaceTabRail
+        ariaLabel="Song sections"
+        testId="song-room-mobile-tabs"
+        className="grid-cols-4"
+        active={activeTab}
+        onChange={onTabChange}
+        items={(["overview", "details", "files", "rights"] as const).map((id) => ({ id, label: id }))}
+      />
 
       {activeTab === "overview" ? (
         <div className="grid items-start gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <div data-testid="song-room-mobile-overview" className="surface-elevated space-y-5 overflow-hidden rounded-[16px] p-4 shadow-sm sm:p-5 lg:space-y-6 lg:rounded-[22px] lg:p-6">
             <div>
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+              <div className="mb-4 flex items-start justify-between gap-3">
+                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
+                  <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/78">
                     {song.confidence === "limited" ? "Limited confidence" : `${song.confidence ?? "high"} confidence`}
                   </span>
-                  <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
+                  <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/78">
                     {managerReadStateLabel(song.managerReadState)}
                   </span>
                   {song.blocker && song.blocker !== "No active blocker" && song.blocker !== "None" ? (
@@ -700,10 +683,11 @@ function MusicSongDetail({
                   aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
                   onClick={onGenerateBrief}
                   disabled={briefPending}
-                  className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-[11px]"
                 >
                   <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
-                  {briefPending ? "Asking Manager..." : generateReadLabel}
+                  <span className="sm:hidden">{briefPending ? "Asking..." : "Ask Manager"}</span>
+                  <span className="hidden sm:inline">{briefPending ? "Asking Manager..." : generateReadLabel}</span>
                 </button>
               </div>
               {briefError ? (
@@ -714,7 +698,7 @@ function MusicSongDetail({
               <h3 className="font-display text-[22px] font-bold tracking-tight text-foreground leading-tight">{song.situationLine}</h3>
             </div>
 
-            <section data-testid="track-intelligence-card" className="overflow-hidden rounded-[12px] border border-foreground/10 bg-background shadow-sm">
+            {trackIntelligenceMetrics.length > 0 ? <section data-testid="track-intelligence-card" className="overflow-hidden rounded-[12px] border border-foreground/10 bg-background/55">
               <div className="grid gap-4 border-b border-foreground/8 bg-foreground/[0.012] px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:px-5">
                 <div className="min-w-0 border-l-2 border-[#e11937] pl-3">
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#b51224]">Record Intelligence</p>
@@ -733,9 +717,9 @@ function MusicSongDetail({
                   </div>
                 ))}
               </div>
-            </section>
+            </section> : null}
 
-            <div className="rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-5">
+            <div className="border-t border-foreground/8 pt-5">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
               {managerReadCopy ? (
                 <p data-testid="manager-read-copy" className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{managerReadCopy}</p>
@@ -1203,16 +1187,16 @@ function MusicLinkedWork({ linkedMissions, onOpenMission }: { linkedMissions: Mi
   const hasLinkedWork = linkedMissions.length > 0;
 
   return (
-    <aside data-testid="music-linked-work" className="surface-elevated self-start rounded-[22px] p-5 shadow-sm lg:sticky lg:top-8">
-      <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-4">
+    <aside data-testid="music-linked-work" className="surface-elevated self-start rounded-[22px] p-5 shadow-sm max-lg:rounded-[16px] max-lg:p-4 max-lg:shadow-none lg:sticky lg:top-8">
+      <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-4 max-lg:border-0 max-lg:pb-0">
         <div>
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Linked work</p>
-          <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground">Mission path</h4>
+          <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground max-lg:hidden">Mission path</h4>
         </div>
       </div>
 
       {hasLinkedWork ? (
-      <div className="mt-4 grid gap-4">
+      <div data-testid="music-linked-work-list" className="mt-4 grid gap-4 max-lg:hidden">
         <section className="rounded-[16px] border border-foreground/8 bg-background/72">
           <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Mission</p>
@@ -1242,6 +1226,12 @@ function MusicLinkedWork({ linkedMissions, onOpenMission }: { linkedMissions: Mi
       ) : (
         <p className="mt-4 text-[12px] font-semibold text-muted-foreground/72">No mission linked</p>
       )}
+      {hasLinkedWork ? (
+        <button type="button" onClick={() => onOpenMission(linkedMissions[0].id)} className="mt-3 flex w-full items-center justify-between gap-3 border-t border-foreground/8 pt-3 text-left lg:hidden">
+          <span className="min-w-0 truncate text-[12px] font-semibold text-foreground">{linkedMissions.length} linked mission{linkedMissions.length === 1 ? "" : "s"}</span>
+          <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Open</span>
+        </button>
+      ) : null}
     </aside>
   );
 }
