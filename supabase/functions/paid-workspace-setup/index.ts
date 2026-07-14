@@ -75,7 +75,26 @@ Deno.serve(async (request) => {
 });
 
 async function isAuthorizedSetupCheckout(db: any, checkout: any) {
-  if (checkout.status === "paid") return true;
+  if (checkout.status === "paid") {
+    const [transactionResult, subscriptionResult] = await Promise.all([
+      db
+        .from("billing_transactions")
+        .select("id")
+        .eq("checkout_session_id", checkout.id)
+        .eq("provider", checkout.provider)
+        .eq("status", "completed")
+        .maybeSingle(),
+      db
+        .from("billing_subscriptions")
+        .select("provider,status,current_period_end")
+        .eq("checkout_session_id", checkout.id)
+        .eq("provider", checkout.provider)
+        .maybeSingle(),
+    ]);
+    if (transactionResult.error) throw transactionResult.error;
+    if (subscriptionResult.error) throw subscriptionResult.error;
+    return Boolean(transactionResult.data?.id && subscriptionGrantsPaidSetupAccess(subscriptionResult.data));
+  }
   const { data, error } = await db
     .from("workspace_access_grants")
     .select("id")
@@ -89,6 +108,20 @@ async function isAuthorizedSetupCheckout(db: any, checkout: any) {
     .maybeSingle();
   if (error) throw error;
   return Boolean(data);
+}
+
+function subscriptionGrantsPaidSetupAccess(subscription: any) {
+  if (!subscription) return false;
+  const grantsForProvider = subscription.provider === "paddle"
+    ? ["active", "trialing"].includes(subscription.status)
+    : subscription.provider === "paystack"
+      ? ["active", "non-renewing", "attention"].includes(subscription.status)
+      : false;
+  if (!grantsForProvider) return false;
+  const periodEnd = subscription.current_period_end
+    ? Date.parse(subscription.current_period_end)
+    : Number.NaN;
+  return !Number.isFinite(periodEnd) || periodEnd > Date.now();
 }
 
 async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, input = {} }: any) {
