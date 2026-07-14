@@ -72,7 +72,7 @@ export function DeskHQScreen({
   const focusLead = selectTodaysFocusLead({ actionable, movement });
 
   return (
-    <section className="desk-hq-v2">
+    <section className="desk-hq-v2 relative isolate">
       <div className="hidden lg:block">
         <DeskHQHeader
           activityCount={actionable.length + movement.length}
@@ -95,7 +95,7 @@ export function DeskHQScreen({
         onAskManager={onAskManager}
       />
 
-      <div className="hidden min-w-0 gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="desk-hq-stage hidden min-w-0 gap-5 lg:grid xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-5">
           <DeskCommandBrief
             profile={profile}
@@ -153,15 +153,15 @@ function DeskHQHeader({
   }
 
   return (
-    <header className="mb-5 flex min-w-0 items-center justify-between gap-5">
+    <header className="desk-hq-reveal mb-6 flex min-w-0 items-end justify-between gap-5">
       <div className="min-w-0">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Desk Read</p>
-        <h1 className="mt-1 text-[22px] font-semibold leading-tight tracking-normal text-foreground">Desk HQ</h1>
+        <h1 className="mt-1 font-display text-[28px] font-semibold leading-none tracking-[-0.035em] text-foreground">Desk HQ</h1>
       </div>
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         <form
           aria-label="Ask your manager"
-          className="flex min-h-[44px] min-w-[320px] max-w-[560px] flex-1 items-start gap-2 rounded-[13px] border border-foreground/10 bg-background px-3 py-1.5 shadow-[0_12px_32px_rgba(17,19,24,0.06)]"
+          className="flex min-h-[44px] min-w-[320px] max-w-[560px] flex-1 items-start gap-2 rounded-[13px] border border-foreground/8 bg-background/86 px-3 py-1.5 shadow-[0_12px_36px_rgba(17,19,24,0.045)] backdrop-blur-xl"
           onSubmit={submitManagerQuestion}
         >
           <MessageSquareText className="mt-[9px] h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -191,7 +191,7 @@ function DeskHQHeader({
           type="button"
           aria-label={`Open Activity Center with ${activityCount} updates`}
           onClick={onOpenActivityCenter}
-          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-foreground/10 bg-background text-foreground shadow-[0_12px_32px_rgba(17,19,24,0.06)] transition-all hover:-translate-y-0.5 hover:border-foreground/18 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+          className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-foreground/8 bg-background/86 text-foreground shadow-[0_12px_36px_rgba(17,19,24,0.045)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:border-foreground/18 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
         >
           <Bell className="h-4 w-4" aria-hidden="true" />
           {activityCount ? (
@@ -219,7 +219,7 @@ function DeskCommandBrief({
   const compactMetrics = buildDeskMetricTiles(brief, profile);
 
   return (
-    <section className="rounded-[22px] border border-foreground/10 bg-background p-5 text-foreground shadow-[0_18px_56px_rgba(17,19,24,0.08)]">
+    <section data-testid="desk-editorial-brief" className="desk-hq-brief desk-hq-reveal rounded-[24px] border border-foreground/10 bg-background/92 p-6 text-foreground shadow-[0_28px_80px_rgba(17,19,24,0.09)] backdrop-blur-xl">
       <div className="flex min-w-0 items-center gap-3">
         {profile.imageUrl ? (
           <img className="h-10 w-10 shrink-0 rounded-[12px] object-cover ring-1 ring-foreground/10" src={profile.imageUrl} alt={`${profile.name} artist image`} />
@@ -234,10 +234,10 @@ function DeskCommandBrief({
         </div>
       </div>
 
-      <div className="pt-5">
+      <div className="pt-6">
         <p
-          className="line-clamp-3 max-w-4xl font-semibold leading-[1.1] tracking-normal"
-          style={{ fontFamily: "var(--font-display)", fontSize: "clamp(18px, 2.2vw, 30px)" }}
+          className="line-clamp-3 max-w-[54rem] font-display font-semibold leading-[1.06] tracking-[-0.035em]"
+          style={{ fontSize: "clamp(26px, 2.7vw, 38px)" }}
         >
           {brief.headlineRead}
         </p>
@@ -258,9 +258,9 @@ type DeskSignalMetric = { label: string; value: string; context: string };
 
 function SignalMetricStrip({ metrics }: { metrics: DeskSignalMetric[] }) {
   return (
-    <div data-testid="desk-signal-metric-strip" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div data-testid="desk-signal-metric-strip" className="desk-hq-evidence-rail desk-hq-reveal mt-6 grid overflow-hidden border-y border-foreground/8 divide-x divide-foreground/8 sm:grid-cols-2 xl:grid-cols-4">
       {metrics.map((metric, index) => (
-        <SignalMetricCard key={`${metric.label}-${metric.value}-${index}`} metric={metric} toneIndex={index} />
+        <SignalMetricCard key={`${metric.label}-${metric.value}-${index}`} metric={metric} />
       ))}
     </div>
   );
@@ -280,27 +280,18 @@ function buildDeskMetricTiles(brief: TodayBriefViewModel, profile: ArtistProfile
   return [...selected, ...fallback].slice(0, 4);
 }
 
-function SignalMetricCard({ metric, toneIndex }: { metric: DeskSignalMetric; toneIndex: number }) {
+function SignalMetricCard({ metric }: { metric: DeskSignalMetric }) {
   const label = metric.label;
   const value = metric.value;
   return (
     <article
       data-testid="desk-signal-metric-card"
-      className={`min-h-[86px] rounded-[14px] border p-4 shadow-sm ${signalMetricTileClass(toneIndex)}`}
+      className="min-h-[94px] bg-transparent px-4 py-5 first:pl-0 last:pr-0"
     >
       <p className="break-words text-[11px] font-semibold leading-tight text-muted-foreground">{label}</p>
       <p className="mt-2 break-words text-[24px] font-semibold leading-none tracking-normal text-foreground">{value}</p>
     </article>
   );
-}
-
-function signalMetricTileClass(index: number) {
-  return [
-    "border-violet-500/16 bg-violet-500/[0.09]",
-    "border-teal-500/16 bg-teal-500/[0.09]",
-    "border-rose-500/16 bg-rose-500/[0.09]",
-    "border-blue-500/16 bg-blue-500/[0.09]",
-  ][index % 4];
 }
 
 function TodayFocusPanel({
@@ -339,7 +330,7 @@ function TodayFocusPanel({
   );
 
   return (
-    <aside data-testid="desk-todays-focus" className="min-w-0 self-start overflow-hidden rounded-[22px] border border-foreground/10 bg-background p-4 text-foreground shadow-[0_18px_56px_rgba(17,19,24,0.08)] xl:sticky xl:top-8">
+    <aside data-testid="desk-todays-focus" className="desk-hq-focus desk-hq-reveal min-w-0 self-start overflow-hidden rounded-[22px] border border-foreground/8 bg-background/78 p-4 text-foreground shadow-[0_16px_48px_rgba(17,19,24,0.045)] backdrop-blur-xl xl:sticky xl:top-8">
       <div className="flex items-center justify-between gap-3">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Today&apos;s Focus</p>
         <button type="button" className="text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onNavigate("missionsWorkspace")}>
@@ -551,11 +542,11 @@ function MobileDeskHome({
   const visibleMissions = missions.slice(0, 3);
 
   return (
-    <div data-testid="desk-mobile-home" className="grid w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] min-w-0 justify-self-start gap-3 pb-4 lg:hidden">
+    <div data-testid="desk-mobile-home" className="desk-hq-mobile grid w-[calc(100vw-1.5rem)] max-w-[calc(100vw-1.5rem)] min-w-0 justify-self-start gap-3 pb-4 lg:hidden">
       <MobileManagerComposer onAskManager={onAskManager} />
       <section
         data-testid="desk-mobile-command-surface"
-        className="w-full min-w-0 max-w-full rounded-[18px] border border-foreground/10 bg-background text-foreground shadow-[0_1px_10px_rgba(17,19,24,0.055)]"
+        className="desk-hq-brief desk-hq-reveal w-full min-w-0 max-w-full rounded-[20px] border border-foreground/10 bg-background/92 text-foreground shadow-[0_20px_56px_rgba(17,19,24,0.08)] backdrop-blur-xl"
       >
         <div className="flex items-center justify-between gap-3 border-b border-foreground/8 px-3.5 py-3">
           <div className="flex min-w-0 items-center gap-2.5">
@@ -574,7 +565,7 @@ function MobileDeskHome({
         </div>
 
         <div className="min-w-0 px-3.5 py-3.5">
-          <p className="max-w-full break-words font-display text-[18px] font-semibold leading-[1.12] text-foreground [overflow-wrap:anywhere]">{brief.headlineRead}</p>
+          <p className="max-w-full break-words font-display text-[22px] font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]">{brief.headlineRead}</p>
           <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2">
             <button type="button" className="min-w-0 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
               View supporting evidence
@@ -586,7 +577,7 @@ function MobileDeskHome({
             <div data-testid="desk-mobile-signal-rail" className="mt-3 min-w-0 max-w-full">
               <div
                 data-testid="desk-mobile-metrics-grid"
-                className="grid min-w-0 max-w-full grid-cols-2 gap-2"
+                className="grid min-w-0 max-w-full grid-cols-2 overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.018]"
               >
                 {compactMetrics.map((metric, index) => {
                   const metricLabel = metric.label;
@@ -595,7 +586,7 @@ function MobileDeskHome({
                     <article
                       key={`${metricLabel}-${metricValue}-${index}`}
                       data-testid="desk-mobile-metric-card"
-                      className={`min-h-[78px] min-w-0 max-w-full overflow-hidden rounded-[14px] border px-3 py-2.5 shadow-sm ${signalMetricTileClass(index)}`}
+                      className={`min-h-[82px] min-w-0 max-w-full overflow-hidden bg-transparent px-3 py-3 ${index % 2 === 0 ? "border-r border-foreground/8" : ""} ${index < 2 ? "border-b border-foreground/8" : ""}`}
                     >
                       <p className="max-w-full break-words text-[10px] font-semibold leading-tight text-muted-foreground [overflow-wrap:anywhere]">{metricLabel}</p>
                       <p className="mt-1.5 max-w-full break-words text-[19px] font-semibold leading-none tracking-normal text-foreground [overflow-wrap:anywhere]">{metricValue}</p>
@@ -607,7 +598,7 @@ function MobileDeskHome({
           ) : null}
 
           {/* Always 4 sections — no expand */}
-          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card mt-3 w-full min-w-0 max-w-full rounded-[14px] p-3.5">
+          <div data-testid="desk-mobile-manager-read-card" className="manager-read-card desk-hq-manager-read desk-hq-reveal mt-4 w-full min-w-0 max-w-full rounded-[14px] p-3.5">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
             </div>
@@ -761,25 +752,28 @@ function TodayBrief({
   const managerReadSegments = buildManagerReadSegments(brief);
 
   return (
-    <section className="rounded-[22px] border border-foreground/10 bg-background p-5 shadow-[0_16px_44px_rgba(17,19,24,0.07)]">
+    <section className="desk-hq-manager-read desk-hq-reveal rounded-[22px] border border-foreground/8 bg-background/78 p-5 shadow-[0_16px_48px_rgba(17,19,24,0.045)] backdrop-blur-xl">
       <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manager&apos;s Read</p>
-      <div data-testid="desk-manager-read-card" className="manager-read-card mt-4 rounded-[18px] bg-foreground/[0.025] p-4 text-foreground">
-        <div data-testid="desk-desktop-manager-read" className="grid gap-3 md:grid-cols-2">
+      <div data-testid="desk-manager-read-card" className="manager-read-card mt-4 rounded-[18px] bg-foreground/[0.018] px-5 text-foreground">
+        <div data-testid="desk-desktop-manager-read" className="divide-y divide-foreground/8">
           {managerReadSegments.map((segment, index) => (
             <article
               key={`${segment.label}-${index}`}
               data-testid="desk-manager-read-segment"
-              className="min-h-[130px] rounded-[14px] border border-foreground/8 bg-background/75 p-4"
+              className="grid min-h-[118px] grid-cols-[2.5rem_minmax(0,1fr)] gap-4 py-5"
             >
-              <span className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent/80">{segment.label}</span>
-              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/80">{segment.body}</p>
+              <span className="font-mono text-[10px] font-bold leading-5 text-muted-foreground/58">{String(index + 1).padStart(2, "0")}</span>
+              <span className="min-w-0">
+                <span className="block font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent/80">{segment.label}</span>
+                <p className="mt-2 max-w-[58rem] text-[13px] font-semibold leading-[1.75] text-foreground/80">{segment.body}</p>
+              </span>
             </article>
           ))}
         </div>
         {error ? (
           <div className="mt-5 rounded-[12px] border border-warning/20 bg-warning/5 p-3 text-[12px] font-semibold leading-relaxed text-warning">{error}</div>
         ) : null}
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 border-t border-foreground/8 py-5 sm:flex-row sm:items-center sm:justify-between">
           <button type="button" className="text-sm font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
             View supporting evidence
           </button>

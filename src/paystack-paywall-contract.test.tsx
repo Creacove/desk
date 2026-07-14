@@ -243,6 +243,36 @@ describe("Paystack paywall contract", () => {
     expect(container.querySelector("[data-paywall-scroll-region]")).not.toBeInTheDocument();
   });
 
+  it("softens every locked preview layer except the latest project title", () => {
+    render(
+      <PaywallPreviewScreen
+        preview={{
+          checkoutSessionId: "checkout-1",
+          reference: "ors_123",
+          status: "open",
+          artist: candidate,
+          amount: 20,
+          amountMinor: 2000,
+          currency: "USD",
+          interval: "monthly",
+        }}
+        catalogPreview={catalogPreview}
+        onSubscribe={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId("paywall-locked-nav-identity")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByTestId("paywall-locked-nav-label-Desk-HQ")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByTestId("paywall-project-section-label")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByTestId("paywall-project-metadata")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByTestId("paywall-project-track-names")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByTestId("paywall-project-title")).not.toHaveClass("blur-[2px]");
+    expect(screen.getByTestId("paywall-queue-section-label")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByTestId("paywall-queue-title")).toHaveClass("blur-[2px]", "opacity-60");
+    expect(screen.getByLabelText("Subscription checkout")).not.toHaveClass("blur-[2px]");
+  });
+
   it("contains unusually long artist and catalog names inside the viewport", () => {
     const longName = "LONGTITLEWITHOUTBREAKS".repeat(18);
     render(
