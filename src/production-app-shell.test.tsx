@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
-import { ConversationWorkspace } from "./features/manager/ManagerScreens";
+import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
 import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
@@ -2901,6 +2901,29 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
     expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
   }, 20000);
+
+  it("keeps the nested mobile back row at the top and omits empty conversation history", () => {
+    render(
+      <ManagerOfficeScreen
+        conversations={[]}
+        missionGenesisResult={null}
+        missionGenesisAnswers={{}}
+        missionGenesisPending={false}
+        missionGenesisError={null}
+        onMissionGenesisAnswerChange={vi.fn()}
+        onSubmitMissionGenesisAnswers={vi.fn()}
+        onOpenCreatedMission={vi.fn()}
+        onBack={vi.fn()}
+        onConversation={vi.fn()}
+        onAskManager={vi.fn()}
+        askManagerPending={false}
+        askManagerError={null}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Back" }).parentElement).toHaveClass("top-0");
+    expect(screen.queryByText("Conversation History")).not.toBeInTheDocument();
+  });
 
   it("gives Missions, Team, Manager, and Profile dedicated compact mobile surfaces", async () => {
     await enterDeskHq();

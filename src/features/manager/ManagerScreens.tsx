@@ -173,7 +173,7 @@ export function ManagerOfficeScreen({
               </div>
         </section>
 
-        <section className="mt-8">
+        {conversations.length > 0 ? <section className="mt-8">
               <div className="mb-4 flex items-center justify-between border-b border-foreground/8 px-1 pb-4">
                 <div>
                   <p className="font-ui text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/88">Conversation History</p>
@@ -200,7 +200,7 @@ export function ManagerOfficeScreen({
                   </button>
                 ))}
               </div>
-        </section>
+        </section> : null}
       </div>
     </WorkspaceShell>
   );
