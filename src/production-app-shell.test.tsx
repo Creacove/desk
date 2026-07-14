@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
 import { ConversationWorkspace } from "./features/manager/ManagerScreens";
@@ -68,6 +68,10 @@ const workspace = {
   contextComplete: true,
   latestCatalogSyncStatus: "completed",
 } satisfies ProductionWorkspace;
+
+beforeEach(() => {
+  Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
+});
 
 afterEach(() => {
   cleanup();
@@ -2768,8 +2772,9 @@ describe("Clean production prototype-match shell", () => {
     expect(projectRoom).toHaveTextContent("Tracklist");
     expect(projectRoom).toHaveTextContent("Songs stay atomic");
     expect(projectRoom).not.toHaveTextContent("Inherited blocker");
-    expect(projectRoom).toHaveTextContent("1 needs split proof");
-    expect(within(projectRoom).getAllByText("Needs split proof").length).toBeGreaterThan(0);
+    expect(projectRoom).not.toHaveTextContent("1 needs split proof");
+    expect(within(projectRoom).queryByText("Needs split proof")).not.toBeInTheDocument();
+    expect(within(projectRoom).queryByText("Blocker")).not.toBeInTheDocument();
     fireEvent.click(within(projectRoom).getByRole("button", { name: "Open song Night Bus" }));
     songRoom = screen.getByTestId("music-song-detail");
     expect(songRoom).toHaveTextContent("Night Bus");
@@ -2815,6 +2820,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Open mobile song Night Bus" }));
     let songRoom = screen.getByTestId("music-song-detail");
     expect(within(songRoom).getByTestId("music-detail-mobile-top")).toHaveClass("lg:hidden");
+    expect(within(songRoom).getByRole("combobox", { name: "Mobile song stage" })).toBeInTheDocument();
+    expect(within(songRoom).getByTestId("music-detail-mobile-title")).toHaveClass("min-w-0", "break-words", "[overflow-wrap:anywhere]");
     expect(within(songRoom).getByTestId("music-detail-desktop-top")).toHaveClass("hidden", "lg:block");
     expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
@@ -2835,6 +2842,7 @@ describe("Clean production prototype-match shell", () => {
 
     const projectRoom = screen.getByTestId("music-project-detail");
     expect(within(projectRoom).getByTestId("music-detail-mobile-top")).toHaveClass("lg:hidden");
+    expect(within(projectRoom).getByTestId("music-detail-mobile-title")).toHaveClass("min-w-0", "break-words", "[overflow-wrap:anywhere]");
     const mobileTracklist = within(projectRoom).getByTestId("project-room-mobile-tracklist");
     const nightBusTrack = within(mobileTracklist).getByTestId("project-mobile-track-Night Bus");
     expect(mobileTracklist).toHaveClass("lg:hidden");
@@ -2845,6 +2853,53 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(projectRoom).getByRole("button", { name: "Open song Night Bus" }));
     songRoom = screen.getByTestId("music-song-detail");
     expect(within(songRoom).getByTestId("music-detail-mobile-top")).toHaveTextContent("Night Bus");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Catalog from mobile room" }));
+    fireEvent.click(screen.getByRole("button", { name: "Songs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open mobile song After Hours Static" }));
+    songRoom = screen.getByTestId("music-song-detail");
+    expect(within(songRoom).queryByRole("combobox", { name: "Mobile song stage" })).not.toBeInTheDocument();
+    expect(within(songRoom).getByTestId("mobile-locked-song-stage")).toHaveTextContent("Catalog");
+  }, 20000);
+
+  it("scrolls page transitions to the top and hides mobile chrome inside focused rooms", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+    await enterDeskHq();
+
+    const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Open Catalog workspace" }));
+    expect(await screen.findByRole("heading", { name: "Catalog" })).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0, behavior: "auto" });
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open mobile song Night Bus" }));
+    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-tabbar")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0, behavior: "auto" });
+
+    fireEvent.click(screen.getByTestId("mobile-tab-Catalog"));
+    expect(screen.getByTestId("music-mobile-library")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open mobile song Night Bus" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Catalog from mobile room" }));
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: /Release Night Bus on June 12/i })[0]);
+    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Missions" }));
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
+    openManagerFromDesk();
+    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
   }, 20000);
 
   it("gives Missions, Team, Manager, and Profile dedicated compact mobile surfaces", async () => {
@@ -2939,6 +2994,33 @@ describe("Clean production prototype-match shell", () => {
     }));
     expect(runMissionGenesis).not.toHaveBeenCalled();
     expect(await screen.findByText("Create the first mission for this workspace.")).toBeInTheDocument();
+  }, 20000);
+
+  it("opens Manager Office from a populated Missions page without submitting a first-mission prompt", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.missions = {
+      ...repositories.missions,
+      loadMissions: async () => [productionFixtureData.missions[0]],
+    };
+    repositories.manager.sendMessage = vi.fn(async () => {
+      throw new Error("Talk to Manager must not submit a message.");
+    });
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="missionsWorkspace"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));
+
+    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(repositories.manager.sendMessage).not.toHaveBeenCalled();
+    expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
   }, 20000);
 
   it.skip("runs the first Manager plan from the empty Missions page and keeps Manager chat available for context questions", async () => {

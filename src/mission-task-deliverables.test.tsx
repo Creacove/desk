@@ -1,9 +1,13 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MissionsWorkspace } from "./features/missions/MissionScreens";
 import type { MissionViewModel } from "./types/cleanProduction";
+
+beforeEach(() => {
+  Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
+});
 
 describe("mission task deliverables", () => {
   it("keeps required documents in the task flow and passes uploaded document ids into completion", async () => {
@@ -23,6 +27,7 @@ describe("mission task deliverables", () => {
         selectedMissionId="mission-1"
         onSelectMission={() => undefined}
         onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
         firstMissionPending={false}
         onApproveTask={async () => undefined}
         onCompleteTask={onCompleteTask}

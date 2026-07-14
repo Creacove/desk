@@ -201,6 +201,34 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(output.intelligenceSnapshot[0].metrics[0].evidenceIds).toEqual(["ev-1"]);
   });
 
+  it("normalizes metric numbers and replaces duplicate numeric labels before persistence", () => {
+    const output = parseTodaysBriefOutput({
+      headlineRead: "Nova Vale has a measurable audience center.",
+      intelligenceSnapshot: [
+        {
+          title: "Audience Scale",
+          insight: "The audience metrics establish the current scale.",
+          metrics: [
+            { label: "2.1M", value: "2.1456789M", context: "Monthly listeners", evidenceIds: ["ev-listeners"] },
+            { label: "Artist score", value: "97.8864321", context: "score", evidenceIds: ["ev-score"] },
+            { label: "Playlist reach", value: "2,451.873", context: "reach", evidenceIds: ["ev-playlists"] },
+          ],
+        },
+      ],
+      snapshotSummary: "The current audience scale is usable.",
+      managerRead: "Artist Intelligence: Nova Vale has a measurable public audience.\n\nAudience Scale: Monthly listeners lead the read.\n\nDiscovery: Playlist reach adds a second signal.\n\nToday: Review the strongest audience lane.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      claimAudit: [{ claim: "Audience scale is measurable.", evidenceIds: ["ev-listeners"], limitation: "Public signal only." }],
+    });
+
+    expect(output.intelligenceSnapshot[0].metrics).toEqual([
+      { label: "Monthly listeners", value: "2.1M", context: "Monthly listeners", evidenceIds: ["ev-listeners"] },
+      { label: "Artist score", value: "98", context: "score", evidenceIds: ["ev-score"] },
+      { label: "Playlist reach", value: "2,452", context: "reach", evidenceIds: ["ev-playlists"] },
+    ]);
+  });
+
   it("keeps evidence IDs out of visible Today's Brief prose while preserving audit IDs", () => {
     const uuid = "54dcf7c5-93b8-4e83-a389-4bdaa6854ca2";
     const output = parseTodaysBriefOutput({

@@ -21,6 +21,7 @@ export function MissionsWorkspace({
   selectedMissionId,
   onSelectMission,
   onCreateFirstMission,
+  onOpenManager,
   firstMissionPending,
   onApproveTask,
   onCompleteTask,
@@ -30,11 +31,13 @@ export function MissionsWorkspace({
   openRoomTab,
   openTaskId,
   listRequestKey = 0,
+  onRoomModeChange,
 }: {
   missions: MissionViewModel[];
   selectedMissionId: string;
   onSelectMission: (id: string) => void;
   onCreateFirstMission: () => void;
+  onOpenManager: () => void;
   firstMissionPending: boolean;
   onApproveTask: (taskId: string) => Promise<void>;
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
@@ -44,6 +47,7 @@ export function MissionsWorkspace({
   openRoomTab?: MissionRoomTab;
   openTaskId?: string | null;
   listRequestKey?: number;
+  onRoomModeChange?: (roomOpen: boolean) => void;
 }) {
   const [localMissions, setLocalMissions] = useState<MissionViewModel[]>(missions);
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
@@ -71,6 +75,11 @@ export function MissionsWorkspace({
     }
   }, [listRequestKey]);
 
+  useEffect(() => {
+    onRoomModeChange?.(roomMode === "room");
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [roomMode, onRoomModeChange]);
+
   function openMission(mission: MissionViewModel, nextTab: MissionRoomTab = "pulse") {
     onSelectMission(mission.id);
     setRoomMode("room");
@@ -94,7 +103,7 @@ export function MissionsWorkspace({
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <div className="mb-5 flex justify-end">
-          <ProductButton onClick={onCreateFirstMission}>
+          <ProductButton onClick={onOpenManager}>
             Talk to Manager
           </ProductButton>
         </div>
@@ -272,7 +281,7 @@ function MissionRoom({
           Back to Missions
         </button>
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-end">
-          <h2 className="max-w-4xl font-display text-[26px] font-semibold leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[36px] lg:text-[44px]">{mission.title}</h2>
+          <h2 className="min-w-0 max-w-full break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[36px] lg:max-w-4xl lg:text-[44px]">{mission.title}</h2>
           <div className="min-w-0 pb-1">
             <p className="mb-2 text-[11px] font-bold text-muted-foreground">{mission.progress}%</p>
             <MissionProgressMeter status={mission.status} progress={mission.progress} />

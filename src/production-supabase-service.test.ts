@@ -486,7 +486,9 @@ describe("production Supabase services", () => {
           title: "Current Music In View",
           insight: "The imported music should be treated as current management focus, not a total discography claim.",
           metrics: [
-            { label: "Recent focus", value: "Latest project + 5 songs", context: "working catalog", evidenceIds: ["catalog"] },
+            { label: "2.1M", value: "2.1456789M", context: "Monthly listeners", evidenceIds: ["listeners"] },
+            { label: "Artist score", value: "97.8864321", context: "score", evidenceIds: ["score"] },
+            { label: "Playlist reach", value: "2,451.873", context: "reach", evidenceIds: ["playlists"] },
           ],
         },
       ],
@@ -532,6 +534,11 @@ describe("production Supabase services", () => {
       managerSynthesisRunId: "brief-run-2",
     });
     expect(result.intelligenceSnapshot[0]?.title).toBe("Current Music In View");
+    expect(result.intelligenceSnapshot[0]?.metrics).toEqual([
+      { label: "Monthly listeners", value: "2.1M", context: "Monthly listeners", evidenceIds: ["listeners"] },
+      { label: "Artist score", value: "98", context: "score", evidenceIds: ["score"] },
+      { label: "Playlist reach", value: "2,452", context: "reach", evidenceIds: ["playlists"] },
+    ]);
   });
 
   it("passes setup-map generation mode through the Supabase function", async () => {

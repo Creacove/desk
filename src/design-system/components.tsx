@@ -311,6 +311,7 @@ export function MobileChrome({
   notificationCount = 0,
   onOpenNotifications,
   activeMissionCount = 0,
+  showTopbar = true,
 }: {
   active: NavSection;
   title: string;
@@ -318,13 +319,15 @@ export function MobileChrome({
   notificationCount?: number;
   onOpenNotifications?: () => void;
   activeMissionCount?: number;
+  showTopbar?: boolean;
 }) {
   return (
     <>
-      <header
-        data-testid="mobile-app-topbar"
-        className="sticky top-0 z-40 -mx-3 mb-3 flex items-center justify-between border-b border-foreground/10 bg-background/90 px-3 py-2.5 shadow-[0_1px_0_rgba(17,19,24,0.02)] backdrop-blur-xl lg:hidden"
-      >
+      {showTopbar ? (
+        <header
+          data-testid="mobile-app-topbar"
+          className="sticky top-0 z-40 -mx-3 mb-3 flex items-center justify-between border-b border-foreground/10 bg-background/90 px-3 py-2.5 shadow-[0_1px_0_rgba(17,19,24,0.02)] backdrop-blur-xl lg:hidden"
+        >
         <div className="flex min-w-0 items-center gap-3">
           <BrandMark size="sm" className="rounded-[9px]" />
           <div className="min-w-0">
@@ -361,7 +364,8 @@ export function MobileChrome({
             <Settings className={cn("h-3.5 w-3.5", active === "settings" && "text-brand-accent")} aria-hidden="true" />
           </button>
         </div>
-      </header>
+        </header>
+      ) : null}
       <nav
         data-testid="mobile-tabbar"
         aria-label="Mobile desk navigation"

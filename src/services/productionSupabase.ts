@@ -43,6 +43,7 @@ import type {
   ProductionWorkspace,
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
+import { normalizeBriefMetricDisplay } from "../../supabase/functions/_shared/briefMetricDisplay";
 
 const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -3582,21 +3583,24 @@ function readBriefStringArray(value: unknown) {
 
 function readBriefSnapshotGroups(value: unknown): TodayBriefViewModel["intelligenceSnapshot"] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isPlainRecord).map((group) => ({
-    title: readRequiredBriefString(group.title),
-    insight: readRequiredBriefString(group.insight),
-    metrics: readBriefMetrics(group.metrics),
-  })).filter((group) => group.title && group.insight && group.metrics.length);
+  return value.filter(isPlainRecord).map((group) => {
+    const title = readRequiredBriefString(group.title);
+    return {
+      title,
+      insight: readRequiredBriefString(group.insight),
+      metrics: readBriefMetrics(group.metrics, title),
+    };
+  }).filter((group) => group.title && group.insight && group.metrics.length);
 }
 
-function readBriefMetrics(value: unknown): TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"] {
+function readBriefMetrics(value: unknown, groupTitle: string): TodayBriefViewModel["intelligenceSnapshot"][number]["metrics"] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isPlainRecord).map((item) => ({
+  return value.filter(isPlainRecord).map((item) => normalizeBriefMetricDisplay({
     label: readRequiredBriefString(item.label),
     value: readRequiredBriefString(item.value),
     context: readOptionalBriefString(item.context),
     evidenceIds: readBriefStringArray(item.evidenceIds),
-  })).filter((metric) => metric.label && metric.value && metric.evidenceIds.length);
+  }, groupTitle)).filter((metric) => metric.label && metric.value && metric.evidenceIds.length);
 }
 
 function readBriefManagerEvidenceReads(value: unknown): NonNullable<TodayBriefViewModel["managerEvidenceReads"]> {

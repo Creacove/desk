@@ -26,6 +26,8 @@ export function MusicWorkspace({
   onMusicChanged,
   onOpenMission,
   onBack: _onBack,
+  onDetailModeChange,
+  listRequestKey = 0,
 }: {
   music: MusicObjectViewModel[];
   missions: MissionViewModel[];
@@ -34,6 +36,8 @@ export function MusicWorkspace({
   onMusicChanged: () => Promise<void>;
   onOpenMission: (missionId: string) => void;
   onBack: () => void;
+  onDetailModeChange?: (detailOpen: boolean) => void;
+  listRequestKey?: number;
 }) {
   const [tab, setTab] = useState<MusicTab>("songs");
   const [mode, setMode] = useState<DetailMode>("library");
@@ -84,6 +88,15 @@ export function MusicWorkspace({
     openObject(target, target.kind === "project" ? "projects" : "songs");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [targetMusicObjectId, music]);
+
+  useEffect(() => {
+    onDetailModeChange?.(mode !== "library");
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [mode, onDetailModeChange]);
+
+  useEffect(() => {
+    if (listRequestKey > 0) setMode("library");
+  }, [listRequestKey]);
 
   function selectTab(next: MusicTab) {
     setTab(next);
@@ -926,26 +939,18 @@ function MusicProjectDetail({
   onOpenMission: (missionId: string) => void;
   error?: string | null;
 }) {
-  const blockedTracks = tracklist.filter(isMusicBlocked);
-  const readyTracks = tracklist.filter((song) => !isMusicBlocked(song)).length;
-  const blockerRollup = getProjectBlockerRollup(blockedTracks);
-
   return (
-    <section data-testid="music-project-detail" className="grid gap-5">
+    <section data-testid="music-project-detail" className="grid min-w-0 max-w-full gap-5 overflow-x-clip">
       <MusicDetailTop object={project} label="Project" onBack={onBack} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="grid gap-5">
           <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 p-5">
-              <div>
+            <div className="border-b border-foreground/8 p-5">
+              <div className="min-w-0">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Tracklist</p>
                 <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Project songs</h4>
                 <p className="mt-1 text-[12px] font-semibold text-muted-foreground/78">Songs stay atomic inside projects.</p>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">{readyTracks}/{tracklist.length || 0} clear</span>
-                {blockerRollup ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[11px] font-bold text-warning">{blockerRollup}</span> : null}
               </div>
             </div>
 
@@ -963,12 +968,7 @@ function MusicProjectDetail({
                   <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
                   <span className="min-w-0">
                     <span className="block truncate text-[14px] font-semibold leading-tight text-foreground">{song.title}</span>
-                    <span className="mt-1 flex min-w-0 items-center gap-1.5">
-                      <span className="truncate text-[10px] font-bold uppercase tracking-[0.04em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
-                      {isMusicBlocked(song) ? (
-                        <span className="truncate rounded-md bg-warning/10 px-1.5 py-0.5 text-[9px] font-bold text-warning">{getProjectBlockerBadge(song.blocker)}</span>
-                      ) : null}
-                    </span>
+                    <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-[0.04em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
                   </span>
                   <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 </button>
@@ -989,12 +989,7 @@ function MusicProjectDetail({
                   <span>
                     <span className="block text-[15px] font-bold text-foreground">{song.title}</span>
                   </span>
-                  <span className="flex flex-wrap items-center gap-2 md:justify-end">
-                    <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
-                    {isMusicBlocked(song) ? (
-                      <span className="rounded-md bg-warning/10 px-2 py-1 text-[10px] font-bold text-warning">{getProjectBlockerBadge(song.blocker)}</span>
-                    ) : null}
-                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent md:text-right">{song.lifecycleStage ?? song.lifecycle}</span>
                   <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
                 </button>
               ))}
@@ -1116,28 +1111,15 @@ function projectManagerReadButtonLabel(state: MusicObjectViewModel["managerReadS
   return "Refresh Manager read";
 }
 
-function isMusicBlocked(song: MusicObjectViewModel) {
-  return song.blocker !== "No active blocker" && song.blocker !== "None";
-}
-
-function getProjectBlockerBadge(blocker?: string) {
-  const normalized = blocker?.toLowerCase() ?? "";
-  if (normalized.includes("split")) return "Needs split proof";
-  if (normalized.includes("rights")) return "Needs rights";
-  if (normalized.includes("tracklist")) return "Needs tracklist";
-  return "Needs attention";
-}
-
-function getProjectBlockerRollup(blockedTracks: MusicObjectViewModel[]) {
-  if (!blockedTracks.length) return null;
-  const allNeedSplitProof = blockedTracks.every((track) => getProjectBlockerBadge(track.blocker) === "Needs split proof");
-  const need = blockedTracks.length === 1 ? "needs" : "need";
-  return `${blockedTracks.length} ${need} ${allNeedSplitProof ? "split proof" : "attention"}`;
+function isLockedReleasedStage(stage?: string) {
+  const normalized = stage?.trim().toLowerCase();
+  return normalized === "released" || normalized === "catalog";
 }
 
 function MusicDetailTop({ object, label, onBack, onStageChange }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void }) {
   const stageValue = object.lifecycleStage ?? object.lifecycle;
   const situationLine = object.situationLine ?? object.sourceLimit;
+  const lockedReleasedStage = object.kind === "song" && isLockedReleasedStage(stageValue);
 
   return (
     <>
@@ -1151,35 +1133,35 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           </button>
-          <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">{label}</span>
+          <div className="flex min-w-0 items-center justify-end gap-1.5">
+            <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">{label}</span>
+            {lockedReleasedStage ? (
+              <span data-testid="mobile-locked-song-stage" className="rounded-full bg-brand-accent/10 px-2.5 py-1 text-[10px] font-bold text-brand-accent">{stageValue}</span>
+            ) : null}
+          </div>
         </div>
         <div className="mt-3 flex min-w-0 gap-3">
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
           <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
-            <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{situationLine}</p>
+            <p data-testid="music-detail-mobile-title" className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
+            {object.kind === "song" ? <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{situationLine}</p> : null}
           </div>
         </div>
-        {object.kind === "song" ? (
-          <label className="mt-3 grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/82">
+        {object.kind === "song" && !lockedReleasedStage ? (
+          <label className="mt-3 flex items-center justify-between gap-3 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/82">
             Stage
             <select
               aria-label="Mobile song stage"
               defaultValue={stageValue}
               onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
-              className="min-w-0 rounded-[10px] border border-foreground/10 bg-background px-2.5 py-2 text-[12px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
+              className="h-8 min-w-0 max-w-[160px] rounded-[9px] border border-foreground/10 bg-background px-2.5 text-[11px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
             >
               {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
                 <option key={stage} value={stage}>{stage}</option>
               ))}
             </select>
           </label>
-        ) : (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <MusicMiniStat label="State" value={object.lifecycle} />
-            <MusicMiniStat label="Blocker" value={object.blocker} />
-          </div>
-        )}
+        ) : null}
       </div>
 
       <div data-testid="music-detail-desktop-top" className="hidden rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:block">
@@ -1189,12 +1171,12 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
         </button>
         <div className="grid gap-5 lg:grid-cols-[96px_minmax(0,1fr)_280px] lg:items-end">
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />
-          <div>
+          <div className="min-w-0">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
-            <h2 className="mt-2 font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
-            <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{situationLine}</p>
+            <h2 className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
+            {object.kind === "song" ? <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{situationLine}</p> : null}
           </div>
-          {object.kind === "song" ? (
+          {object.kind === "song" && !lockedReleasedStage ? (
             <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
               Song stage
               <select
@@ -1208,12 +1190,9 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
                 ))}
               </select>
             </label>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              <MusicMiniStat label="State" value={object.lifecycle} />
-              <MusicMiniStat label="Blocker" value={object.blocker} />
-            </div>
-          )}
+          ) : lockedReleasedStage ? (
+            <span className="justify-self-start rounded-full bg-brand-accent/10 px-3 py-1.5 text-[11px] font-bold text-brand-accent lg:justify-self-end">{stageValue}</span>
+          ) : null}
         </div>
       </div>
     </>

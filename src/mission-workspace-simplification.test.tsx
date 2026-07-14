@@ -1,10 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DeskRail, MobileChrome } from "./design-system/components";
 import { MissionsWorkspace } from "./features/missions/MissionScreens";
 import type { MissionViewModel } from "./types/cleanProduction";
+
+beforeEach(() => {
+  Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
+});
 
 afterEach(cleanup);
 
@@ -27,6 +31,41 @@ describe("simplified mission navigation", () => {
 });
 
 describe("simplified mission room", () => {
+  it("reports room transitions, resets scroll, and contains the mission title", () => {
+    const onRoomModeChange = vi.fn();
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+
+    render(
+      <MissionsWorkspace
+        missions={[mission()]}
+        selectedMissionId="mission-1"
+        onSelectMission={vi.fn()}
+        onCreateFirstMission={vi.fn()}
+        onOpenManager={vi.fn()}
+        firstMissionPending={false}
+        onApproveTask={vi.fn(async () => undefined)}
+        onCompleteTask={vi.fn(async () => undefined)}
+        onDrawer={vi.fn()}
+        onRoomModeChange={onRoomModeChange}
+      />,
+    );
+
+    expect(onRoomModeChange).toHaveBeenLastCalledWith(false);
+    fireEvent.click(screen.getAllByRole("button", { name: /Define the artist's 90-day position/i })[0]);
+
+    expect(onRoomModeChange).toHaveBeenLastCalledWith(true);
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0, behavior: "auto" });
+    expect(screen.getByRole("heading", { name: "Define the artist's 90-day position" })).toHaveClass(
+      "min-w-0",
+      "max-w-full",
+      "break-words",
+      "[overflow-wrap:anywhere]",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Missions" }));
+    expect(onRoomModeChange).toHaveBeenLastCalledWith(false);
+  });
+
   it("shows the objective once with four focused tabs and no command-bar duplication", () => {
     renderMission("pulse");
 
@@ -80,6 +119,7 @@ function renderMission(tab: "pulse" | "tasks" | "checkpoints" | "activity") {
       selectedMissionId="mission-1"
       onSelectMission={vi.fn()}
       onCreateFirstMission={vi.fn()}
+      onOpenManager={vi.fn()}
       firstMissionPending={false}
       onApproveTask={vi.fn(async () => undefined)}
       onCompleteTask={vi.fn(async () => undefined)}

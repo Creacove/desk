@@ -346,11 +346,14 @@ function sanitizeVisibleString(value: string) {
 
 function readSnapshotGroups(value: unknown): TodaysBriefSnapshotGroupOutput[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map((item) => ({
-    title: readRequiredString(item.title, "intelligenceSnapshot.title"),
-    insight: readRequiredString(item.insight, "intelligenceSnapshot.insight"),
-    metrics: readSnapshotMetrics(item.metrics),
-  }));
+  return value.filter(isRecord).map((item) => {
+    const title = readRequiredString(item.title, "intelligenceSnapshot.title");
+    return {
+      title,
+      insight: readRequiredString(item.insight, "intelligenceSnapshot.insight"),
+      metrics: readSnapshotMetrics(item.metrics).map((metric) => normalizeBriefMetricDisplay(metric, title)),
+    };
+  });
 }
 
 function readSnapshotMetrics(value: unknown): TodaysBriefMetricOutput[] {
@@ -392,3 +395,4 @@ function readConfidence(value: unknown): TodaysBriefOutput["confidence"] {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+import { normalizeBriefMetricDisplay } from "./briefMetricDisplay.ts";

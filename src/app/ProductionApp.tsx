@@ -473,7 +473,10 @@ function CleanProductionWorkspace({
   const [missionRoomOpenTab, setMissionRoomOpenTab] = useState<MissionRoomTab>("pulse");
   const [missionRoomOpenTaskId, setMissionRoomOpenTaskId] = useState<string | null>(null);
   const [missionListOpenRequestKey, setMissionListOpenRequestKey] = useState(0);
+  const [musicListOpenRequestKey, setMusicListOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
+  const [musicDetailOpen, setMusicDetailOpen] = useState(false);
+  const [missionRoomOpen, setMissionRoomOpen] = useState(false);
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
   const [setupPending, setSetupPending] = useState(false);
   const [setupError, setSetupError] = useState<string | null>(null);
@@ -612,6 +615,16 @@ function CleanProductionWorkspace({
   const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0] ?? null;
   const activeAgent = selectedAgent ?? agents[1] ?? agents[0] ?? null;
   const activeConversation = selectedConversation ?? conversations[0] ?? null;
+  const showMobileTopbar =
+    view === "labelHQ" ||
+    view === "staffWorkspace" ||
+    view === "artistProfileWorkspace" ||
+    (view === "musicWorkspace" && !musicDetailOpen) ||
+    (view === "missionsWorkspace" && !missionRoomOpen);
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [view]);
 
   function navigate(nextView: CleanProductionView) {
     if (workspace && !isWorkspaceReadyForDesk(workspace) && nextView !== "setup" && nextView !== "connectArtist") {
@@ -619,9 +632,24 @@ function CleanProductionWorkspace({
       return;
     }
 
+    if (nextView !== "musicWorkspace") setMusicDetailOpen(false);
+    if (nextView !== "missionsWorkspace") setMissionRoomOpen(false);
     setView(nextView);
     setDrawer(null);
     setMobileNotificationsOpen(false);
+  }
+
+  function navigateFromMenu(nextView: CleanProductionView) {
+    if (nextView === "musicWorkspace") {
+      setTargetMusicObjectId(null);
+      setMusicDetailOpen(false);
+      setMusicListOpenRequestKey((current) => current + 1);
+    }
+    if (nextView === "missionsWorkspace") {
+      setMissionRoomOpen(false);
+      setMissionListOpenRequestKey((current) => current + 1);
+    }
+    navigate(nextView);
   }
 
   function openManager() {
@@ -1253,7 +1281,7 @@ function CleanProductionWorkspace({
   return (
     <div className="app-theme min-h-screen bg-background text-foreground selection:bg-brand-accent/15">
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
-        <DeskRail active={activeSection} activeMissionCount={missions.filter((mission) => mission.status !== "complete").length} onNavigate={navigate} onSignOut={onSignOut} />
+        <DeskRail active={activeSection} activeMissionCount={missions.filter((mission) => mission.status !== "complete").length} onNavigate={navigateFromMenu} onSignOut={onSignOut} />
         <main className="min-w-0 py-0 lg:px-8 lg:py-7">
           <MobileChrome
             active={activeSection}
@@ -1261,7 +1289,8 @@ function CleanProductionWorkspace({
             activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
             notificationCount={mobileAttentionCount + movement.length}
             onOpenNotifications={() => setMobileNotificationsOpen(true)}
-            onNavigate={navigate}
+            onNavigate={navigateFromMenu}
+            showTopbar={showMobileTopbar}
           />
           {view === "labelHQ" ? (
             <DeskHQScreen
@@ -1294,6 +1323,8 @@ function CleanProductionWorkspace({
               onMusicChanged={reloadMusic}
               onOpenMission={openMissionRoom}
               onBack={() => navigate("labelHQ")}
+              onDetailModeChange={setMusicDetailOpen}
+              listRequestKey={musicListOpenRequestKey}
             />
           ) : null}
           {view === "staffWorkspace" ? (
@@ -1354,6 +1385,7 @@ function CleanProductionWorkspace({
               selectedMissionId={selectedMissionId}
               onSelectMission={setSelectedMissionId}
               onCreateFirstMission={createFirstMissionWithManager}
+              onOpenManager={openManager}
               firstMissionPending={managerSendPending}
               onApproveTask={approveMissionTask}
               onCompleteTask={completeMissionTask}
@@ -1363,6 +1395,7 @@ function CleanProductionWorkspace({
               openRoomTab={missionRoomOpenTab}
               openTaskId={missionRoomOpenTaskId}
               listRequestKey={missionListOpenRequestKey}
+              onRoomModeChange={setMissionRoomOpen}
             />
           ) : null}
           {view === "artistProfileWorkspace" ? (
