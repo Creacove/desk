@@ -44,10 +44,21 @@ describe("private-beta access backend contract", () => {
 
   it("uses the shared paid-or-beta entitlement guard on every user-triggered protected Edge Function", () => {
     const protectedFunctions = [
+      "chartmetric-artist-enrichment",
+      "chartmetric-project-enrichment",
       "chartmetric-resolve-artist",
+      "chartmetric-track-enrichment",
+      "connect-spotify-artist",
+      "generate-music-summary",
+      "generate-todays-brief",
+      "manager-artist-discovery",
+      "manager-conversation",
+      "manager-conversation-stream",
       "manager-review-task-result",
+      "mission-genesis",
       "refresh-public-context",
       "send-split-confirmations",
+      "spotify-catalog-bootstrap",
       "spotify-catalog-search",
       "spotify-import-selection",
     ];
@@ -57,6 +68,29 @@ describe("private-beta access backend contract", () => {
       expect(functionSource, functionName).toContain('import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts"');
       expect(functionSource, functionName).toContain("await assertActiveWorkspaceEntitlement");
     }
+  });
+
+  it("keeps paid and beta access while restoring the RLS and service-role guard fixes", () => {
+    const migrationPath = join(
+      process.cwd(),
+      "supabase",
+      "migrations",
+      "20260714000100_restore_paid_or_beta_entitlement_guard.sql",
+    );
+
+    expect(existsSync(migrationPath)).toBe(true);
+    const migration = readFileSync(migrationPath, "utf8");
+
+    expect(migration).toContain("create or replace function public.has_active_workspace_entitlement");
+    expect(migration).toContain("from public.billing_subscriptions subscription");
+    expect(migration).toContain("from public.workspace_access_grants grant_record");
+    expect(migration).toContain("grant_record.access_type = 'private_beta'");
+    expect(migration).toContain("grant_record.status = 'active'");
+    expect(migration).toContain("grant_record.starts_at <= now()");
+    expect(migration).toContain("grant_record.ends_at > now()");
+    expect(migration).toContain("set row_security = off");
+    expect(migration).toContain("auth.role() = 'service_role'");
+    expect(migration).not.toContain("current_setting('request.jwt.claim.role'");
   });
 
   it("redeems beta codes through an authenticated edge function and dispatches the existing discovery phase", () => {

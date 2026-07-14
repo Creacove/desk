@@ -78,12 +78,9 @@ function renderMission(tab: "pulse" | "tasks" | "checkpoints" | "activity") {
     <MissionsWorkspace
       missions={[mission()]}
       selectedMissionId="mission-1"
-      missionGenesisResult={null}
-      missionGenesisPending={false}
-      missionGenesisError={null}
       onSelectMission={vi.fn()}
-      onRunMissionGenesis={vi.fn()}
-      onOpenMissionGenesisQuestions={vi.fn()}
+      onCreateFirstMission={vi.fn()}
+      firstMissionPending={false}
       onApproveTask={vi.fn(async () => undefined)}
       onCompleteTask={vi.fn(async () => undefined)}
       onDrawer={vi.fn()}

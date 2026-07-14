@@ -3,9 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { describe, expect, it, vi } from "vitest";
 
 import { MissionsWorkspace } from "./features/missions/MissionScreens";
-import type { MissionGenesisResultViewModel, MissionViewModel } from "./types/cleanProduction";
-
-const emptyGenesis: MissionGenesisResultViewModel | null = null;
+import type { MissionViewModel } from "./types/cleanProduction";
 
 describe("mission task deliverables", () => {
   it("keeps required documents in the task flow and passes uploaded document ids into completion", async () => {
@@ -23,12 +21,9 @@ describe("mission task deliverables", () => {
       <MissionsWorkspace
         missions={[missionWithRequiredThesis()]}
         selectedMissionId="mission-1"
-        missionGenesisResult={emptyGenesis}
-        missionGenesisPending={false}
-        missionGenesisError={null}
         onSelectMission={() => undefined}
-        onRunMissionGenesis={() => undefined}
-        onOpenMissionGenesisQuestions={() => undefined}
+        onCreateFirstMission={() => undefined}
+        firstMissionPending={false}
         onApproveTask={async () => undefined}
         onCompleteTask={onCompleteTask}
         onUploadTaskDeliverable={onUploadTaskDeliverable}

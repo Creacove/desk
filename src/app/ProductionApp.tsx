@@ -72,6 +72,8 @@ import type {
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
 
+const CREATE_FIRST_MISSION_PROMPT = "Create the first mission for this workspace.";
+
 type ProductionAppProps = {
   authAdapter?: ProductionAuthAdapter;
   workspaceLoader?: ProductionWorkspaceLoader;
@@ -1038,6 +1040,10 @@ function CleanProductionWorkspace({
     }
   }
 
+  function createFirstMissionWithManager() {
+    void sendManagerMessage(CREATE_FIRST_MISSION_PROMPT);
+  }
+
   async function submitMissionGenesisAnswers(candidateMissionId?: string) {
     const targetCandidateMissionId = candidateMissionId ?? missionGenesisResult?.candidateMissionId ?? missionGenesisResult?.candidateMissionIds?.[0];
     if (!targetCandidateMissionId) return;
@@ -1346,12 +1352,9 @@ function CleanProductionWorkspace({
             <MissionsWorkspace
               missions={missions}
               selectedMissionId={selectedMissionId}
-              missionGenesisResult={missionGenesisResult}
-              missionGenesisPending={missionGenesisPending}
-              missionGenesisError={missionGenesisError}
               onSelectMission={setSelectedMissionId}
-              onRunMissionGenesis={runMissionGenesis}
-              onOpenMissionGenesisQuestions={() => navigate("managerOffice")}
+              onCreateFirstMission={createFirstMissionWithManager}
+              firstMissionPending={managerSendPending}
               onApproveTask={approveMissionTask}
               onCompleteTask={completeMissionTask}
               onUploadTaskDeliverable={uploadMissionTaskDeliverable}

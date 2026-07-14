@@ -7,7 +7,6 @@ import type {
   MissionCheckpointViewModel,
   MissionTaskDeliverableViewModel,
   MissionEventViewModel,
-  MissionGenesisResultViewModel,
   MissionNoteViewModel,
   MissionRecapViewModel,
   MissionTaskResultViewModel,
@@ -20,12 +19,9 @@ type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "activity";
 export function MissionsWorkspace({
   missions,
   selectedMissionId,
-  missionGenesisResult,
-  missionGenesisPending,
-  missionGenesisError,
   onSelectMission,
-  onRunMissionGenesis,
-  onOpenMissionGenesisQuestions,
+  onCreateFirstMission,
+  firstMissionPending,
   onApproveTask,
   onCompleteTask,
   onUploadTaskDeliverable,
@@ -37,12 +33,9 @@ export function MissionsWorkspace({
 }: {
   missions: MissionViewModel[];
   selectedMissionId: string;
-  missionGenesisResult: MissionGenesisResultViewModel | null;
-  missionGenesisPending: boolean;
-  missionGenesisError: string | null;
   onSelectMission: (id: string) => void;
-  onRunMissionGenesis: () => void;
-  onOpenMissionGenesisQuestions: () => void;
+  onCreateFirstMission: () => void;
+  firstMissionPending: boolean;
   onApproveTask: (taskId: string) => Promise<void>;
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
@@ -89,11 +82,8 @@ export function MissionsWorkspace({
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <EmptyMissionState
-          missionGenesisResult={missionGenesisResult}
-          missionGenesisError={missionGenesisError}
-          onRunMissionGenesis={onRunMissionGenesis}
-          onOpenMissionGenesisQuestions={onOpenMissionGenesisQuestions}
-          missionGenesisPending={missionGenesisPending}
+          onCreateFirstMission={onCreateFirstMission}
+          firstMissionPending={firstMissionPending}
         />
       </section>
     );
@@ -104,7 +94,7 @@ export function MissionsWorkspace({
       <section>
         <WorkspaceHeader eyebrow="Artist work" title="Missions" />
         <div className="mb-5 flex justify-end">
-          <ProductButton onClick={onOpenMissionGenesisQuestions}>
+          <ProductButton onClick={onCreateFirstMission}>
             Talk to Manager
           </ProductButton>
         </div>
@@ -135,17 +125,11 @@ export function MissionsWorkspace({
 }
 
 function EmptyMissionState({
-  missionGenesisResult,
-  missionGenesisError,
-  onRunMissionGenesis,
-  onOpenMissionGenesisQuestions,
-  missionGenesisPending,
+  onCreateFirstMission,
+  firstMissionPending,
 }: {
-  missionGenesisResult: MissionGenesisResultViewModel | null;
-  missionGenesisError: string | null;
-  onRunMissionGenesis: () => void;
-  onOpenMissionGenesisQuestions: () => void;
-  missionGenesisPending: boolean;
+  onCreateFirstMission: () => void;
+  firstMissionPending: boolean;
 }) {
   return (
     <section className="surface-elevated rounded-[24px] p-6 shadow-sm">
@@ -156,30 +140,10 @@ function EmptyMissionState({
           The Manager has not activated mission work for this artist yet. Missions appear here after there is a durable objective, source context, checkpoints, and tasks worth coordinating.
         </p>
         <div className="mt-4">
-          <ProductButton onClick={onRunMissionGenesis} disabled={missionGenesisPending}>
-            {missionGenesisPending ? "Getting first Manager plan" : "Get first Manager plan"}
+          <ProductButton onClick={onCreateFirstMission} disabled={firstMissionPending}>
+            {firstMissionPending ? "Opening Manager" : "Create first mission"}
           </ProductButton>
         </div>
-        {missionGenesisResult ? (
-          <div className="mt-5 rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{missionGenesisResult.outcome.replace(/_/g, " ")}</p>
-            <h3 className="mt-2 text-sm font-semibold text-foreground">{missionGenesisResult.title}</h3>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{missionGenesisResult.body}</p>
-            {missionGenesisResult.questions.length ? (
-              <div className="mt-4">
-                <ProductButton variant="primary" onClick={onOpenMissionGenesisQuestions}>
-                  Answer in Manager Office
-                </ProductButton>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-        {missionGenesisError ? (
-          <div role="alert" className="mt-5 rounded-[16px] border border-red-500/20 bg-red-500/[0.055] p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{missionGenesisError}</p>
-          </div>
-        ) : null}
       </div>
     </section>
   );

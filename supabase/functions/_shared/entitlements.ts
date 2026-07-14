@@ -17,6 +17,6 @@ export async function assertActiveWorkspaceEntitlement(
   }
 
   if (data !== true) {
-    throw new Error("An active subscription is required before this AI setup action can run.");
+    throw new Error("Active paid or beta access is required before this workspace action can run.");
   }
 }
