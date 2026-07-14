@@ -280,10 +280,10 @@ function MissionRoom({
           <ArrowLeft className="h-4 w-4" aria-hidden="true" />
           Back to Missions
         </button>
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-end">
+        <div data-testid="mission-title-progress" className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_240px] lg:items-end">
           <h2 className="min-w-0 max-w-full break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[36px] lg:max-w-4xl lg:text-[44px]">{mission.title}</h2>
-          <div className="min-w-0 pb-1">
-            <p className="mb-2 text-[11px] font-bold text-muted-foreground">{mission.progress}%</p>
+          <div data-testid="mission-progress-summary" className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3 pb-1 lg:grid-cols-1 lg:gap-2">
+            <p className="text-[11px] font-bold text-muted-foreground">{mission.progress}%</p>
             <MissionProgressMeter status={mission.status} progress={mission.progress} />
           </div>
         </div>
@@ -296,7 +296,7 @@ function MissionRoom({
       <div className="min-h-[400px] min-w-0 max-w-full">
         {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onTab={onTab} /> : null}
         {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} onUploadTaskDeliverable={onUploadTaskDeliverable} /> : null}
-        {tab === "checkpoints" ? <SimplifiedCheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
+        {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
         {tab === "activity" ? <ActivityPanel notes={notes} events={events} /> : null}
       </div>
     </section>
@@ -776,83 +776,6 @@ function TaskResult({ result }: { result: MissionTaskResultViewModel }) {
   );
 }
 
-function SimplifiedCheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointViewModel[]; tasks: MissionTaskViewModel[] }) {
-  const initial = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision" || checkpoint.status === "Watching signal") ?? checkpoints[0];
-  const [selectedId, setSelectedId] = useState(initial?.id ?? "");
-  const selected = checkpoints.find((checkpoint) => checkpoint.id === selectedId) ?? initial;
-
-  if (!selected) return null;
-
-  const auditedTasks = selected.requiredTaskIds
-    .map((taskId) => tasks.find((task) => task.id === taskId))
-    .filter(Boolean) as MissionTaskViewModel[];
-
-  return (
-    <section className="grid min-w-0 gap-7 lg:grid-cols-[240px_minmax(0,1fr)] lg:items-start">
-      <aside className="min-w-0 lg:sticky lg:top-6">
-        <p className="mb-4 text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Mission checkpoints</p>
-        <div className="relative grid gap-0 before:absolute before:bottom-4 before:left-[11px] before:top-4 before:w-px before:bg-foreground/12">
-          {checkpoints.map((checkpoint) => {
-            const selectedCheckpoint = checkpoint.id === selected.id;
-            const complete = checkpoint.status === "Met" || checkpoint.status === "Ready for AI review";
-            return (
-              <button
-                key={checkpoint.id}
-                type="button"
-                aria-current={selectedCheckpoint ? "true" : undefined}
-                onClick={() => setSelectedId(checkpoint.id)}
-                className={cn("relative grid grid-cols-[24px_minmax(0,1fr)] gap-3 rounded-[12px] px-0 py-3 text-left transition-colors", selectedCheckpoint && "bg-brand-accent/[0.08] pr-3")}
-              >
-                <span className={cn("relative z-10 mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border text-[9px] font-bold", selectedCheckpoint ? "border-brand-accent bg-brand-accent text-foreground ring-4 ring-brand-accent/15" : complete ? "border-foreground bg-foreground text-background" : "border-foreground/20 bg-background text-muted-foreground")}>
-                  {complete ? <Check className="h-3 w-3" aria-hidden="true" /> : checkpoint.phase}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[13px] font-semibold leading-snug text-foreground">{checkpoint.title}</span>
-                  <span className="mt-1 block text-[10px] font-semibold text-muted-foreground">{checkpoint.status}</span>
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </aside>
-
-      <div data-testid="checkpoint-inspector" className="min-w-0 border-t border-foreground/8 pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Review &amp; analysis</p>
-            <h3 className="mt-2 font-display text-[24px] font-semibold leading-tight text-foreground">{selected.title}</h3>
-          </div>
-          <CheckpointStatusBadge status={selected.status} />
-        </div>
-
-        <div className="mt-5 border-y border-foreground/8 py-5">
-          <p className="text-[15px] font-semibold leading-relaxed text-foreground">{selected.recommendation || getCheckpointReviewCopy(selected, checkpoints)}</p>
-          <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">{selected.resultSummary || "The Manager is waiting for enough task evidence to complete this review."}</p>
-          {selected.decisionRule ? <p className="mt-3 text-[12px] font-medium leading-relaxed text-muted-foreground">{selected.decisionRule}</p> : null}
-        </div>
-
-        <div className="mt-7">
-          <h4 className="text-[12px] font-bold uppercase tracking-[0.12em] text-foreground">Task audits</h4>
-          <div className="mt-3 divide-y divide-foreground/8 border-y border-foreground/8">
-            {auditedTasks.length ? auditedTasks.map((task) => (
-              <article key={task.id} className="grid gap-3 py-4 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)] sm:gap-6">
-                <div>
-                  <p className="text-[13px] font-semibold text-foreground">{task.title}</p>
-                  <p className="mt-1 text-[11px] text-muted-foreground">{task.result?.userNote || "No submission yet."}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">Manager response</p>
-                  <p className="mt-1 text-[12px] font-medium leading-relaxed text-foreground/86">{task.result?.interpretation || "Waiting for task evidence."}</p>
-                </div>
-              </article>
-            )) : <p className="py-5 text-[13px] text-muted-foreground">No task audits for this checkpoint.</p>}
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function CheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointViewModel[]; tasks: MissionTaskViewModel[] }) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision") ?? checkpoints[0];
   const [selectedCheckpointId, setSelectedCheckpointId] = useState(activeBlocker?.id ?? checkpoints[0]?.id ?? "");
@@ -892,7 +815,7 @@ function CheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpoi
           <div className="space-y-3">
             {checkpoints.map((checkpoint) => {
               const locked = Boolean(getBlockingDependency(checkpoint, checkpoints));
-              const isOpen = expandedCheckpointId === checkpoint.id && !locked;
+              const isOpen = expandedCheckpointId === checkpoint.id;
               const phaseTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
               return (
                 <div
@@ -906,11 +829,10 @@ function CheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpoi
                 >
                   <button
                     type="button"
-                    disabled={locked}
                     aria-expanded={isOpen}
                     data-testid={`checkpoint-accordion-toggle-${checkpoint.id}`}
                     onClick={() => setExpandedCheckpointId((current) => (current === checkpoint.id ? "" : checkpoint.id))}
-                    className="w-full p-4 text-left disabled:cursor-not-allowed"
+                    className="w-full p-4 text-left"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
@@ -1124,17 +1046,24 @@ function ActivityPanel({ notes, events }: { notes: MissionNoteViewModel[]; event
     ...notes.map((note, index) => ({ id: `note-${note.id}`, order: index, label: note.route || "Agent note", message: note.message })),
     ...events.map((event, index) => ({ id: `event-${event.type}-${index}`, order: notes.length + index, label: event.type || event.actor || "Mission change", message: event.summary })),
   ].sort((a, b) => a.order - b.order);
+  const updateLabel = `${items.length} ${items.length === 1 ? "update" : "updates"}`;
 
   return (
-    <section className="mx-auto max-w-4xl py-2">
-      <h3 className="font-display text-[22px] font-semibold text-foreground">Activity</h3>
-      <div data-testid="mission-activity-feed" className="mt-5 divide-y divide-foreground/8 border-y border-foreground/8">
+    <section data-testid="mission-activity-surface" className="surface-elevated mx-auto max-w-4xl overflow-hidden rounded-[22px] shadow-sm">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-foreground/8 px-4 py-4 sm:px-5">
+        <div>
+          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Mission record</p>
+          <h3 className="mt-1 font-display text-[22px] font-semibold text-foreground">Activity</h3>
+        </div>
+        <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-muted-foreground">{updateLabel}</span>
+      </header>
+      <div data-testid="mission-activity-feed" className="divide-y divide-foreground/8">
         {items.length ? items.map((item) => (
-          <article key={item.id} className="grid gap-2 py-5 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-6">
-            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{item.label}</p>
+          <article key={item.id} data-testid="mission-activity-item" className="grid gap-2 px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:gap-6 sm:px-5">
+            <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">{item.label}</p>
             <p className="text-[14px] font-medium leading-relaxed text-foreground/88">{item.message}</p>
           </article>
-        )) : <p className="py-6 text-[13px] text-muted-foreground">No mission activity yet.</p>}
+        )) : <p className="px-4 py-8 text-center text-[13px] font-semibold text-muted-foreground sm:px-5">No mission activity yet.</p>}
       </div>
     </section>
   );
@@ -1355,7 +1284,7 @@ function missionCheckpoints(mission: MissionViewModel): MissionCheckpointViewMod
 }
 
 function missionNotes(mission: MissionViewModel): MissionNoteViewModel[] {
-  if (mission.notes?.length) return mission.notes;
+  if (mission.notes) return mission.notes;
   return [
     {
       id: `${mission.id}-manager-note`,
@@ -1394,7 +1323,7 @@ function missionRecap(mission: MissionViewModel): MissionRecapViewModel {
 }
 
 function missionEvents(mission: MissionViewModel): MissionEventViewModel[] {
-  if (mission.events?.length) return mission.events;
+  if (mission.events) return mission.events;
   return [{ type: "mission_loaded", actor: "Manager", summary: mission.summary }];
 }
 

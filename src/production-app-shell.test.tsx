@@ -2947,7 +2947,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("settings-desktop-profile-summary")).toHaveClass("hidden", "sm:flex");
   }, 20000);
 
-  it("puts AI Manager first and presents locked team agents as coming-soon placeholders", async () => {
+  it("presents team agents as plan-based access without prototype language", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.staff = {
       ...repositories.staff,
@@ -2968,19 +2968,21 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
+    expect(screen.getByText("Your AI team helps plan, coordinate, and execute the work that moves your career forward.")).toBeInTheDocument();
     const desktopList = screen.getByTestId("staff-desktop-list");
     const desktopAgents = within(desktopList).getAllByRole("button");
     expect(desktopAgents[0]).toHaveAccessibleName("AI Manager");
     expect(desktopAgents[0]).toHaveTextContent("Available now");
     expect(desktopAgents[1]).toHaveAccessibleName("Marketing Lead");
-    expect(desktopAgents[1]).toHaveTextContent("Coming soon");
+    expect(desktopAgents[1]).toHaveTextContent("Not available on this plan");
     expect(desktopAgents[2]).toHaveAccessibleName("Finance/Rights");
-    expect(desktopAgents[2]).toHaveTextContent("Coming soon");
+    expect(desktopAgents[2]).toHaveTextContent("Not available on this plan");
+    expect(screen.queryByText(/testing|coming soon|coming online/i)).not.toBeInTheDocument();
 
     fireEvent.click(desktopAgents[1]);
-    expect(screen.getByRole("heading", { name: "Marketing Lead is not live yet." })).toBeInTheDocument();
-    expect(screen.getByText("Coming soon")).toBeInTheDocument();
-    expect(screen.getByText("This specialist desk is locked while the first AI Manager experience is being tested.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Not available on this plan" })).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to this agent on your current plan.")).toBeInTheDocument();
+    expect(screen.queryByText(/testing|coming soon|not live yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Campaign command board")).not.toBeInTheDocument();
     expect(screen.queryByText("Source rail")).not.toBeInTheDocument();
   }, 20000);
@@ -4350,8 +4352,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
     expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Marketing Lead" }));
-    expect(screen.getByRole("heading", { name: "Marketing Lead is not live yet." })).toBeInTheDocument();
-    expect(screen.getByText("This specialist desk is locked while the first AI Manager experience is being tested.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Not available on this plan" })).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to this agent on your current plan.")).toBeInTheDocument();
     expect(screen.queryByText("Source rail")).not.toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));

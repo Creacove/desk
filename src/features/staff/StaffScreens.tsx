@@ -16,7 +16,7 @@ export function StaffWorkspace({
   return (
     <section>
       <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
-      <p className="text-[13px] font-semibold leading-relaxed text-muted-foreground/82 mb-5">AI Manager is live for conversations and operating decisions. The specialist agents are visible now as the next desks coming online.</p>
+      <p className="mb-5 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
       <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">
         {orderedAgents.map((agent) => {
           const Icon = agent.icon;
@@ -37,12 +37,12 @@ export function StaffWorkspace({
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-semibold text-foreground">{agent.name}</span>
                 <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">
-                  {locked ? "Specialist desk coming soon." : agent.purpose}
+                  {locked ? "Not available on this plan" : agent.purpose}
                 </span>
               </span>
-              <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[10px] font-semibold text-muted-foreground">
-                {locked ? "Coming soon" : agent.readiness}
-              </span>
+              {!locked ? (
+                <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[10px] font-semibold text-muted-foreground">Available now</span>
+              ) : null}
             </button>
           );
         })}
@@ -69,12 +69,12 @@ export function StaffWorkspace({
               <span className="min-w-0">
                 <span className="block text-base font-semibold">{agent.name}</span>
                 <span className="mt-1 block text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
-                  {locked ? "Specialist desk coming soon. AI Manager is the live agent for now." : agent.purpose}
+                  {locked ? "Not available on this plan" : agent.purpose}
                 </span>
               </span>
-              <span className="justify-self-end rounded-full bg-foreground/[0.055] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                {locked ? "Coming soon" : agent.readiness}
-              </span>
+              {!locked ? (
+                <span className="justify-self-end rounded-full bg-foreground/[0.055] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Available now</span>
+              ) : null}
             </button>
           );
         })}
@@ -91,10 +91,10 @@ export function LockedAgentWorkspace({ agent, onBack }: { agent: AgentViewModel;
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-foreground/[0.07] text-muted-foreground">
             <Lock className="h-5 w-5" aria-hidden="true" />
           </span>
-          <p className="mt-5 font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Coming soon</p>
-          <h2 className="mt-2 font-display text-[22px] font-semibold leading-tight text-foreground">{agent.name} is not live yet.</h2>
+          <p className="mt-5 font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Plan access</p>
+          <h2 className="mt-2 font-display text-[22px] font-semibold leading-tight text-foreground">Not available on this plan</h2>
           <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
-            This specialist desk is locked while the first AI Manager experience is being tested.
+            You don&apos;t have access to this agent on your current plan.
           </p>
         </div>
       </div>

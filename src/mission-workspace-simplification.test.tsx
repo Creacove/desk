@@ -79,6 +79,18 @@ describe("simplified mission room", () => {
     expect(screen.getByText("Next required action")).toBeInTheDocument();
   });
 
+  it("keeps mission progress compact beneath the title", () => {
+    renderMission("pulse");
+
+    expect(screen.getByTestId("mission-command-bar")).toHaveClass("pb-1", "pt-1");
+    expect(screen.getByTestId("mission-title-progress")).toHaveClass("gap-3");
+    expect(screen.getByTestId("mission-progress-summary")).toHaveClass(
+      "grid",
+      "grid-cols-[auto_minmax(0,1fr)]",
+      "items-center",
+    );
+  });
+
   it("keeps only one task expanded at a time", () => {
     renderMission("tasks");
 
@@ -91,18 +103,28 @@ describe("simplified mission room", () => {
     expect(screen.queryByText(/Review artist portfolio/)).not.toBeInTheDocument();
   });
 
-  it("updates the review pane when a checkpoint is selected", () => {
+  it("expands checkpoint reviews inline on mobile and preserves desktop master-detail", () => {
     renderMission("checkpoints");
 
-    fireEvent.click(screen.getByRole("button", { name: /Market validation/i }));
-    expect(screen.getByTestId("checkpoint-inspector")).toHaveTextContent("Market validation");
-    expect(screen.getByTestId("checkpoint-inspector")).toHaveTextContent("Listener response is promising");
-    expect(screen.getByText("Task audits")).toBeInTheDocument();
+    expect(screen.getByTestId("checkpoint-accordion")).toHaveClass("xl:hidden");
+    expect(screen.getByTestId("checkpoint-workspace-grid")).toHaveClass("hidden", "xl:grid");
+
+    const toggle = screen.getByTestId("checkpoint-accordion-toggle-checkpoint-2");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    const expandedCheckpoint = screen.getByTestId("checkpoint-accordion-item-checkpoint-2");
+    expect(within(expandedCheckpoint).getByText("Listener response is promising.")).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getByText("Run listener interviews")).toBeInTheDocument();
   });
 
   it("combines agent notes and mission changes into one concise activity feed", () => {
     renderMission("activity");
 
+    const surface = screen.getByTestId("mission-activity-surface");
+    expect(surface).toHaveClass("surface-elevated", "rounded-[22px]", "overflow-hidden");
+    expect(within(surface).getByText("2 updates")).toBeInTheDocument();
+    expect(within(surface).getAllByTestId("mission-activity-item")).toHaveLength(2);
     const feed = screen.getByTestId("mission-activity-feed");
     expect(within(feed).getByText("A&R → Manager")).toBeInTheDocument();
     expect(within(feed).getByText("Positioning direction confirmed.")).toBeInTheDocument();
@@ -110,12 +132,23 @@ describe("simplified mission room", () => {
     expect(within(feed).getByText("Market validation opened.")).toBeInTheDocument();
     expect(screen.queryByText("Why it matters:")).not.toBeInTheDocument();
   });
+
+  it("keeps the empty activity state inside the activity surface", () => {
+    const emptyMission = mission();
+    emptyMission.notes = [];
+    emptyMission.events = [];
+    renderMission("activity", emptyMission);
+
+    const surface = screen.getByTestId("mission-activity-surface");
+    expect(within(surface).getByText("0 updates")).toBeInTheDocument();
+    expect(within(surface).getByText("No mission activity yet.")).toBeInTheDocument();
+  });
 });
 
-function renderMission(tab: "pulse" | "tasks" | "checkpoints" | "activity") {
+function renderMission(tab: "pulse" | "tasks" | "checkpoints" | "activity", selectedMission = mission()) {
   return render(
     <MissionsWorkspace
-      missions={[mission()]}
+      missions={[selectedMission]}
       selectedMissionId="mission-1"
       onSelectMission={vi.fn()}
       onCreateFirstMission={vi.fn()}
