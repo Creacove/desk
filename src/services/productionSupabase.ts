@@ -451,12 +451,24 @@ function spotifyCatalogPreviewFromPayload(payload: unknown): ProductionSpotifyCa
 }
 
 export function createSupabaseBillingService(client: SupabaseClient): ProductionBillingService {
+  let cachedPricing: any = null;
+  let cachedCountryCode: string | undefined = undefined;
+  let countryCodeFetched = false;
+
   return {
     async prepareProviderCheckout({ user, candidate, existingWorkspace, interval }) {
-      const { data: pricingData, error: pricingError } = await client.functions.invoke("billing-pricing-config", { body: {} });
-      if (pricingError) await throwFunctionInvokeError(pricingError, "Billing pricing could not be loaded.");
-      const pricing = readBillingPricingConfig(pricingData);
-      const serverCountryCode = await loadBillingCountry();
+      if (!cachedPricing) {
+        const { data: pricingData, error: pricingError } = await client.functions.invoke("billing-pricing-config", { body: {} });
+        if (pricingError) await throwFunctionInvokeError(pricingError, "Billing pricing could not be loaded.");
+        cachedPricing = readBillingPricingConfig(pricingData);
+      }
+      const pricing = cachedPricing;
+
+      if (!countryCodeFetched) {
+        cachedCountryCode = await loadBillingCountry();
+        countryCodeFetched = true;
+      }
+      const serverCountryCode = cachedCountryCode;
 
       if (resolveBillingProvider(serverCountryCode) === "paystack") {
         return initializePaystackCheckout(client, candidate, existingWorkspace, interval);

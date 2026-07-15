@@ -137,8 +137,8 @@ describe("Paddle server integration contract", () => {
     expect(catalog).toContain("timingSafeEqual");
     expect(catalog).toContain("OrderSounds Pro Monthly NGN");
     expect(catalog).toContain("OrderSounds Pro Yearly NGN");
-    expect(catalog).toContain("amount: 3_000_000");
-    expect(catalog).toContain("amount: 30_000_000");
+    expect(catalog).toContain("amount: 3_200_000");
+    expect(catalog).toContain("amount: 30_200_000");
     expect(catalog).toContain("https://api.paystack.co/plan");
     expect(catalog).not.toContain("Access-Control-Allow-Origin");
   });
@@ -182,10 +182,11 @@ describe("Paddle server integration contract", () => {
 
   it("exposes webhook and worker endpoints without JWT while protecting the worker with its own secret", () => {
     const config = source("supabase", "config.toml");
+    const normalizedConfig = config.replace(/\r\n/g, "\n");
     const worker = source("supabase", "functions", "paddle-process-webhooks", "index.ts");
 
-    expect(config).toContain("[functions.paddle-webhook]\nverify_jwt = false");
-    expect(config).toContain("[functions.paddle-process-webhooks]\nverify_jwt = false");
+    expect(normalizedConfig).toContain("[functions.paddle-webhook]\nverify_jwt = false");
+    expect(normalizedConfig).toContain("[functions.paddle-process-webhooks]\nverify_jwt = false");
     expect(worker).toContain('requireEnv("BILLING_WORKER_SECRET")');
     expect(worker).toContain('request.headers.get("x-billing-worker-secret")');
   });

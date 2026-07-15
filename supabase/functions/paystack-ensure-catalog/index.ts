@@ -6,8 +6,8 @@ type CanonicalPlan = {
 };
 
 const CANONICAL_PLANS: CanonicalPlan[] = [
-  { name: "OrderSounds Pro Monthly NGN", amount: 3_000_000, interval: "monthly", currency: "NGN" },
-  { name: "OrderSounds Pro Yearly NGN", amount: 30_000_000, interval: "annually", currency: "NGN" },
+  { name: "OrderSounds Pro Monthly NGN", amount: 3_200_000, interval: "monthly", currency: "NGN" },
+  { name: "OrderSounds Pro Yearly NGN", amount: 30_200_000, interval: "annually", currency: "NGN" },
 ];
 
 Deno.serve(async (request) => {
@@ -31,8 +31,8 @@ Deno.serve(async (request) => {
       monthlyPlanCode: readPlanCode(plans[0]),
       yearlyPlanCode: readPlanCode(plans[1]),
       currency: "NGN",
-      monthlyAmountMinor: 3_000_000,
-      yearlyAmountMinor: 30_000_000,
+      monthlyAmountMinor: 3_200_000,
+      yearlyAmountMinor: 30_200_000,
     });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Paystack catalog could not be reconciled." }, 500);
