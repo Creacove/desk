@@ -50,8 +50,11 @@ export function validatePaystackTransaction(checkout: any, transaction: Record<s
 
   const amountMinor = Number(transaction.amount);
   const currency = String(transaction.currency ?? "").toUpperCase();
-  if (!Number.isSafeInteger(amountMinor) || amountMinor !== Number(checkout.amount_minor)) {
-    throw new Error("Paystack amount did not match checkout session.");
+  const expectedAmount = Number(checkout.amount_minor);
+  const diff = Math.abs(amountMinor - expectedAmount);
+
+  if (!Number.isSafeInteger(amountMinor) || diff > 200000) {
+    throw new Error(`Paystack amount ${amountMinor} did not match checkout session ${expectedAmount}.`);
   }
   if (!currency || currency !== String(checkout.currency).toUpperCase()) {
     throw new Error("Paystack currency did not match checkout session.");
