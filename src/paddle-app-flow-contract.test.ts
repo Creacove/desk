@@ -11,6 +11,9 @@ describe("Paddle app flow contract", () => {
     expect(text).toContain("pricingRequestRef");
     expect(text).toContain("requestId !== pricingRequestRef.current");
     expect(text).toContain("onIntervalChange={changeBillingInterval}");
+    expect(text).toContain('useState<ProductionBillingProviderPreference>("auto")');
+    expect(text).toContain("providerPreference: billingProviderPreference");
+    expect(text).toContain("onProviderChange={changeBillingProvider}");
   });
 
   it("opens the provider checkout through the billing service", () => {

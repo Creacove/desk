@@ -1,6 +1,7 @@
 import { initializePaddle, type Environments, type Paddle } from "@paddle/paddle-js";
 
 export type BillingProvider = "paddle" | "paystack";
+export type BillingProviderPreference = "auto" | BillingProvider;
 export type PaddleClientConfig = { environment: Environments; clientToken: string };
 
 let paddlePromise: Promise<Paddle> | null = null;
@@ -51,7 +52,15 @@ export async function previewLocalizedPaddlePrice(paddle: Pick<Paddle, "PricePre
   };
 }
 
-export function resolveBillingProvider(serverCountryCode?: string, paddleCountryCode?: string): BillingProvider {
+export function resolveBillingProvider(
+  serverCountryCode?: string,
+  paddleCountryCode?: string,
+  preference: BillingProviderPreference = "auto",
+): BillingProvider {
+  if (preference !== "auto" && preference !== "paddle" && preference !== "paystack") {
+    throw new Error("Billing provider preference is invalid.");
+  }
+  if (preference !== "auto") return preference;
   const serverCountry = normalizeCountryCode(serverCountryCode);
   const paddleCountry = normalizeCountryCode(paddleCountryCode);
   return (serverCountry ?? paddleCountry) === "NG" ? "paystack" : "paddle";

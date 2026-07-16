@@ -62,6 +62,34 @@ describe("provider-aware billing service", () => {
     expect(getPaddle).not.toHaveBeenCalled();
   });
 
+  it("lets a Nigerian visitor explicitly prepare canonical Paddle checkout", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "NG" }))));
+    const calls: Array<{ name: string; body: any }> = [];
+    const client = { functions: { invoke: async (name: string, options?: { body?: any }) => {
+      calls.push({ name, body: options?.body });
+      if (name === "billing-pricing-config") return { data: pricing, error: null };
+      if (name === "paddle-create-checkout") {
+        return { data: {
+          checkoutSessionId: "checkout-ng-usd", productId: "pro_1", priceId: "pri_month", interval: "monthly",
+          expiresAt: "2026-07-16T18:00:00Z",
+          customData: { version: 1, checkoutSessionId: "checkout-ng-usd", correlationToken: "secret" },
+        }, error: null };
+      }
+      throw new Error(`Unexpected function: ${name}`);
+    } } } as unknown as SupabaseClient;
+
+    const preview = await createSupabaseBillingService(client).prepareProviderCheckout!({
+      user,
+      candidate,
+      interval: "monthly",
+      providerPreference: "paddle",
+    });
+
+    expect(preview).toMatchObject({ provider: "paddle", checkoutSessionId: "checkout-ng-usd", priceId: "pri_month" });
+    expect(calls.map((call) => call.name)).toContain("paddle-create-checkout");
+    expect(calls.map((call) => call.name)).not.toContain("paystack-initialize-checkout");
+  });
+
   it("uses Paddle IP detection when the server country is absent and preserves its total", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}")));
     const client = { functions: { invoke: async (name: string) => {

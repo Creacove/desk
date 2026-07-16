@@ -281,6 +281,8 @@ export type ProductionBillingCheckoutPreview = {
   accessCode?: string;
 };
 
+export type ProductionBillingProviderPreference = "auto" | "paddle" | "paystack";
+
 export type ProductionBillingStatus = {
   checkoutSessionId?: string;
   checkoutStatus: "open" | "initialized" | "processing" | "paid" | "expired" | "failed" | "abandoned" | "missing";
@@ -307,6 +309,7 @@ export type ProductionBillingService = {
     candidate: ProductionSpotifyArtistCandidate;
     existingWorkspace?: ProductionWorkspace;
     interval: "monthly" | "yearly";
+    providerPreference?: ProductionBillingProviderPreference;
   }): Promise<ProductionBillingCheckoutPreview>;
   openProviderCheckout?(input: {
     user: ProductionUser;

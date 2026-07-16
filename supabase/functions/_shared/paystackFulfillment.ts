@@ -22,7 +22,7 @@ export async function fulfillVerifiedPaystackCheckout(input: {
     p_current_period_start: normalized.periodStart,
     p_current_period_end: normalized.periodEnd,
     p_provider_occurred_at: normalized.occurredAt,
-    p_scheduled_change_action: null,
+    p_scheduled_change_action: "none",
     p_scheduled_change_at: null,
   });
   if (error) throw error;
@@ -44,20 +44,25 @@ export async function fulfillVerifiedPaystackCheckout(input: {
 
 export function validatePaystackTransaction(checkout: any, transaction: Record<string, any>) {
   const status = String(transaction.status ?? "").toLowerCase();
-  if (status && !["success", "successful"].includes(status)) {
+  if (!["success", "successful"].includes(status)) {
     throw new Error("Paystack transaction is not successful.");
   }
 
   const amountMinor = Number(transaction.amount);
   const currency = String(transaction.currency ?? "").toUpperCase();
   const expectedAmount = Number(checkout.amount_minor);
-  const diff = Math.abs(amountMinor - expectedAmount);
 
-  if (!Number.isSafeInteger(amountMinor) || diff > 200000) {
+  if (!Number.isSafeInteger(amountMinor) || amountMinor !== expectedAmount) {
     throw new Error(`Paystack amount ${amountMinor} did not match checkout session ${expectedAmount}.`);
   }
   if (!currency || currency !== String(checkout.currency).toUpperCase()) {
     throw new Error("Paystack currency did not match checkout session.");
+  }
+
+  const expectedPlanCode = String(checkout.provider_price_id ?? checkout.provider_plan_code ?? "").trim();
+  const returnedPlanCode = String(transaction.plan_code ?? transaction.plan?.plan_code ?? "").trim();
+  if (returnedPlanCode && returnedPlanCode !== expectedPlanCode) {
+    throw new Error("Paystack plan did not match checkout session.");
   }
 
   const transactionId = String(transaction.reference ?? transaction.transaction_reference ?? "").trim();

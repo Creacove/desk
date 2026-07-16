@@ -60,6 +60,7 @@ import type {
 import type {
   ProductionAuthAdapter,
   ProductionBillingCheckoutPreview,
+  ProductionBillingProviderPreference,
   ProductionBillingService,
   ProductionMusicLibraryLoader,
   ProductionProfileSetupService,
@@ -2034,6 +2035,7 @@ function SpotifyIdentityGate({
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
   const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
+  const [billingProviderPreference, setBillingProviderPreference] = useState<ProductionBillingProviderPreference>("auto");
   const pricingRequestRef = useRef(0);
 
   useEffect(() => {
@@ -2133,6 +2135,7 @@ function SpotifyIdentityGate({
     try {
       setSelectPending(true);
       setSelectedArtistName(candidate.name);
+      setBillingProviderPreference("auto");
       setMessage(null);
       const catalog = spotifyArtistAdapter?.previewCatalog
         ? await spotifyArtistAdapter.previewCatalog(candidate).catch(() => ({
@@ -2147,7 +2150,7 @@ function SpotifyIdentityGate({
         : null;
       const requestId = ++pricingRequestRef.current;
       const preview = billingService.prepareProviderCheckout
-        ? await billingService.prepareProviderCheckout({ user, candidate, interval: "monthly" })
+        ? await billingService.prepareProviderCheckout({ user, candidate, interval: "monthly", providerPreference: "auto" })
         : await billingService.createCheckoutPreview({ user, candidate });
       if (requestId !== pricingRequestRef.current) return;
       trackEvent("artist selected", {
@@ -2214,12 +2217,38 @@ function SpotifyIdentityGate({
         candidate: checkoutPreview.artist,
         existingWorkspace: workspace ?? undefined,
         interval,
+        providerPreference: billingProviderPreference,
       });
       if (requestId !== pricingRequestRef.current) return;
       setCheckoutPreview(preview);
     } catch (pricingError) {
       if (requestId === pricingRequestRef.current) {
         setMessage(readErrorMessage(pricingError, "Localized pricing could not be refreshed."));
+      }
+    } finally {
+      if (requestId === pricingRequestRef.current) setSelectPending(false);
+    }
+  }
+
+  async function changeBillingProvider(providerPreference: "paddle" | "paystack") {
+    if (!checkoutPreview || !billingService?.prepareProviderCheckout || !user || checkoutPreview.provider === providerPreference) return;
+    const requestId = ++pricingRequestRef.current;
+    try {
+      setSelectPending(true);
+      setMessage(null);
+      const preview = await billingService.prepareProviderCheckout({
+        user,
+        candidate: checkoutPreview.artist,
+        existingWorkspace: workspace ?? undefined,
+        interval: checkoutPreview.interval,
+        providerPreference,
+      });
+      if (requestId !== pricingRequestRef.current) return;
+      setBillingProviderPreference(providerPreference);
+      setCheckoutPreview(preview);
+    } catch (pricingError) {
+      if (requestId === pricingRequestRef.current) {
+        setMessage(readErrorMessage(pricingError, "Alternative checkout could not be prepared."));
       }
     } finally {
       if (requestId === pricingRequestRef.current) setSelectPending(false);
@@ -2258,9 +2287,11 @@ function SpotifyIdentityGate({
           setCatalogPreview(null);
           setMessage(null);
           setSelectedArtistName(null);
+          setBillingProviderPreference("auto");
         }}
         onSubscribe={subscribeToPreview}
         onIntervalChange={changeBillingInterval}
+        onProviderChange={changeBillingProvider}
         privateBetaEnabled={import.meta.env.VITE_PRIVATE_BETA_ENABLED === "true"}
         onRedeemPrivateBeta={redeemPrivateBetaCode}
         onSignOut={onSignOut}

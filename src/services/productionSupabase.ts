@@ -456,7 +456,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
   let countryCodeFetched = false;
 
   return {
-    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval }) {
+    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval, providerPreference = "auto" }) {
       if (!cachedPricing) {
         const { data: pricingData, error: pricingError } = await client.functions.invoke("billing-pricing-config", { body: {} });
         if (pricingError) await throwFunctionInvokeError(pricingError, "Billing pricing could not be loaded.");
@@ -470,7 +470,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       }
       const serverCountryCode = cachedCountryCode;
 
-      if (resolveBillingProvider(serverCountryCode) === "paystack") {
+      if (resolveBillingProvider(serverCountryCode, undefined, providerPreference) === "paystack") {
         return initializePaystackCheckout(client, candidate, existingWorkspace, interval);
       }
 
@@ -480,7 +480,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       });
       const priceId = pricing.paddle.priceId[interval];
       const localized = await previewLocalizedPaddlePrice(paddle, priceId, serverCountryCode);
-      if (resolveBillingProvider(serverCountryCode, localized.countryCode) === "paystack") {
+      if (resolveBillingProvider(serverCountryCode, localized.countryCode, providerPreference) === "paystack") {
         return initializePaystackCheckout(client, candidate, existingWorkspace, interval);
       }
 

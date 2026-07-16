@@ -45,6 +45,12 @@ describe("Paddle browser checkout", () => {
     expect(resolveBillingProvider("GB")).toBe("paddle");
   });
 
+  it("lets an explicit Paddle choice override Nigerian auto-routing", () => {
+    expect(resolveBillingProvider("NG", undefined, "auto")).toBe("paystack");
+    expect(resolveBillingProvider("NG", undefined, "paddle")).toBe("paddle");
+    expect(() => resolveBillingProvider("NG", undefined, "invalid" as never)).toThrow(/provider/i);
+  });
+
   it("opens the exact displayed price as a one-page overlay and prefills email", () => {
     const open = vi.fn();
     openPaddleCheckout({ Checkout: { open } } as never, {

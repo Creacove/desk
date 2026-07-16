@@ -35,4 +35,25 @@ describe("provider-aware paywall", () => {
     expect(onIntervalChange).toHaveBeenCalledWith("yearly");
     expect(screen.getByRole("button", { name: /opening secure checkout/i })).toBeDisabled();
   });
+
+  it("offers Nigerian Paystack customers an explicit USD Paddle choice", () => {
+    const onProviderChange = vi.fn();
+    render(<PaywallPreviewScreen preview={{
+      checkoutSessionId: "checkout-ng", reference: "ors_ng", provider: "paystack", status: "initialized",
+      artist, interval: "monthly", amount: 32_000, amountMinor: 3_200_000, currency: "NGN",
+    }} onProviderChange={onProviderChange} onSubscribe={() => undefined} onBack={() => undefined} />);
+
+    const usdAction = screen.getByRole("button", { name: "Pay in USD with an international card" });
+    fireEvent.click(usdAction);
+    expect(onProviderChange).toHaveBeenCalledWith("paddle");
+  });
+
+  it("does not show the USD provider choice on Paddle previews", () => {
+    render(<PaywallPreviewScreen preview={{
+      checkoutSessionId: "checkout-usd", reference: "checkout-usd", provider: "paddle", status: "open",
+      artist, interval: "monthly", formattedTotal: "$20.00", priceId: "pri_month",
+    }} onProviderChange={() => undefined} onSubscribe={() => undefined} onBack={() => undefined} />);
+
+    expect(screen.queryByRole("button", { name: "Pay in USD with an international card" })).not.toBeInTheDocument();
+  });
 });
