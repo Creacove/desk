@@ -232,8 +232,22 @@ async function failEvent(db: any, event: QueueEvent, error: unknown) {
     processing_status: "failed",
     claimed_at: null,
     next_attempt_at: new Date(Date.now() + delaySeconds * 1000).toISOString(),
-    error: error instanceof Error ? error.message.slice(0, 2000) : "Webhook processing failed.",
+    error: processingErrorMessage(error),
   }).eq("id", event.id);
+}
+
+function processingErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message.slice(0, 2000);
+  if (error && typeof error === "object") {
+    const record = error as Record<string, unknown>;
+    const nested = record.error && typeof record.error === "object"
+      ? record.error as Record<string, unknown>
+      : null;
+    const parts = [record.message, record.code, record.details, record.detail, record.hint, nested?.message, nested?.detail]
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+    if (parts.length > 0) return parts.join(" | ").slice(0, 2000);
+  }
+  return "Webhook processing failed with an unrecognized error.";
 }
 
 function constantTimeEqual(a: string, b: string) {

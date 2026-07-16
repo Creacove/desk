@@ -84,6 +84,16 @@ describe("Paddle server integration contract", () => {
     expect(worker).toContain('phase: "discovery"');
     expect(worker).toContain("sendPaidSubscriptionActivatedEmail");
     expect(worker).toContain("occurred_at");
+    expect(worker).toContain("processingErrorMessage(error)");
+  });
+
+  it("derives the required subscription amount from verified provider minor units", () => {
+    const migration = source("supabase", "migrations", "20260716000100_fix_paddle_subscription_amount.sql");
+    const cancellationMigration = source("supabase", "migrations", "20260716000200_fix_paddle_cancel_flag.sql");
+
+    expect(migration).toContain("new.amount := new.amount_minor::numeric / 100");
+    expect(migration).toContain("before insert or update of amount, amount_minor");
+    expect(cancellationMigration).toContain("new.cancel_at_period_end := coalesce(new.cancel_at_period_end, false)");
   });
 
   it("reclaims crashed workers and rejects multiple recurring transaction items", () => {
