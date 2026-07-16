@@ -4,7 +4,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const { paddle, getPaddle } = vi.hoisted(() => {
   const instance = {
     PricePreview: vi.fn(async ({ items }: any) => ({
-      data: { address: { countryCode: "GB" }, details: { lineItems: [{ price: { id: items[0].priceId }, formattedTotals: { total: "£16.00" } }] } },
+      data: { address: { countryCode: "GB" }, details: { lineItems: items.map((item: any) => ({
+        price: { id: item.priceId },
+        formattedTotals: { total: item.priceId === "pri_year" ? "£160.00" : "£16.00" },
+      })) } },
     })),
     Checkout: { open: vi.fn() },
   };
@@ -51,6 +54,10 @@ describe("provider-aware billing service", () => {
 
     const preview = await createSupabaseBillingService(client).prepareProviderCheckout!({ user, candidate, interval: "yearly" });
     expect(preview.provider).toBe("paystack");
+    expect(preview.intervalOptions).toEqual({
+      monthly: { amount: 30_000, amountMinor: 3_000_000, currency: "NGN" },
+      yearly: { amount: 300_000, amountMinor: 30_000_000, currency: "NGN" },
+    });
     expect(calls.at(-1)).toEqual({
       name: "paystack-initialize-checkout",
       body: expect.objectContaining({
@@ -99,6 +106,17 @@ describe("provider-aware billing service", () => {
 
     const preview = await createSupabaseBillingService(client).prepareProviderCheckout!({ user, candidate, interval: "monthly" });
     expect(preview).toMatchObject({ provider: "paddle", formattedTotal: "£16.00", priceId: "pri_month", interval: "monthly" });
+    expect(preview.intervalOptions).toEqual({
+      monthly: { formattedTotal: "£16.00", priceId: "pri_month" },
+      yearly: { formattedTotal: "£160.00", priceId: "pri_year" },
+    });
+    expect(paddle.PricePreview).toHaveBeenCalledTimes(1);
+    expect(paddle.PricePreview).toHaveBeenCalledWith(expect.objectContaining({
+      items: [
+        { priceId: "pri_month", quantity: 1 },
+        { priceId: "pri_year", quantity: 1 },
+      ],
+    }));
   });
 
   it("stores only the checkout hint before opening Paddle for the signed-in email", async () => {

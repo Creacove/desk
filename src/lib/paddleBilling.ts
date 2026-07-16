@@ -36,18 +36,35 @@ export function getPaddle(config: PaddleClientConfig) {
 }
 
 export async function previewLocalizedPaddlePrice(paddle: Pick<Paddle, "PricePreview">, priceId: string, countryCode?: string) {
-  if (!priceId.startsWith("pri_")) throw new Error("Paddle price ID is invalid.");
-  const normalizedCountry = normalizeCountryCode(countryCode);
-  const response = await paddle.PricePreview({
-    items: [{ priceId, quantity: 1 }],
-    ...(normalizedCountry ? { address: { countryCode: normalizedCountry } } : {}),
-  });
-  const lineItem = response.data.details.lineItems.find((item) => item.price.id === priceId);
-  const formattedTotal = lineItem?.formattedTotals.total;
-  if (!formattedTotal) throw new Error("Paddle did not return a localized total for this plan.");
+  const preview = await previewLocalizedPaddlePrices(paddle, [priceId], countryCode);
   return {
     priceId,
-    formattedTotal,
+    formattedTotal: preview.formattedTotals[priceId],
+    countryCode: preview.countryCode,
+  };
+}
+
+export async function previewLocalizedPaddlePrices(
+  paddle: Pick<Paddle, "PricePreview">,
+  priceIds: string[],
+  countryCode?: string,
+) {
+  if (!priceIds.length || priceIds.some((priceId) => !priceId.startsWith("pri_"))) {
+    throw new Error("Paddle price ID is invalid.");
+  }
+  const normalizedCountry = normalizeCountryCode(countryCode);
+  const response = await paddle.PricePreview({
+    items: priceIds.map((priceId) => ({ priceId, quantity: 1 })),
+    ...(normalizedCountry ? { address: { countryCode: normalizedCountry } } : {}),
+  });
+  const formattedTotals = Object.fromEntries(priceIds.map((priceId) => {
+    const lineItem = response.data.details.lineItems.find((item) => item.price.id === priceId);
+    const formattedTotal = lineItem?.formattedTotals.total;
+    if (!formattedTotal) throw new Error("Paddle did not return a localized total for this plan.");
+    return [priceId, formattedTotal];
+  }));
+  return {
+    formattedTotals,
     countryCode: normalizeCountryCode(response.data.address?.countryCode),
   };
 }

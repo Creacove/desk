@@ -22,6 +22,10 @@ Deno.serve(async (request) => {
     const monthly = readCanonicalPaddlePrice("monthly");
     const yearly = readCanonicalPaddlePrice("yearly");
     if (monthly.productId !== yearly.productId) throw new Error("Paddle Pro prices must belong to one product.");
+    const paystackCurrency = requireEnv("PAYSTACK_CURRENCY").toUpperCase();
+    if (paystackCurrency !== "NGN") throw new Error("PAYSTACK_CURRENCY must be NGN.");
+    const paystackMonthlyAmountMinor = requireMinorAmount("PAYSTACK_MONTHLY_AMOUNT_MINOR", "PAYSTACK_AMOUNT_MINOR");
+    const paystackYearlyAmountMinor = requireMinorAmount("PAYSTACK_YEARLY_AMOUNT_MINOR");
 
     return respond(request, {
       paddle: {
@@ -30,11 +34,23 @@ Deno.serve(async (request) => {
         productId: monthly.productId,
         priceId: { monthly: monthly.priceId, yearly: yearly.priceId },
       },
+      paystack: {
+        currency: paystackCurrency,
+        amountMinor: { monthly: paystackMonthlyAmountMinor, yearly: paystackYearlyAmountMinor },
+      },
     });
   } catch (error) {
     return respond(request, { error: error instanceof Error ? error.message : "Pricing is unavailable." }, 500);
   }
 });
+
+function requireMinorAmount(primary: string, fallback?: string) {
+  const raw = Deno.env.get(primary)?.trim() || (fallback ? Deno.env.get(fallback)?.trim() : "");
+  if (!raw || !/^\d+$/.test(raw)) throw new Error(`${primary} must be a positive integer.`);
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value <= 0) throw new Error(`${primary} must be a positive integer.`);
+  return value;
+}
 
 function respond(request: Request, body: unknown, status = 200) {
   const origin = request.headers.get("Origin");

@@ -44,7 +44,7 @@ import type {
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
 import { normalizeBriefMetricDisplay } from "../../supabase/functions/_shared/briefMetricDisplay";
-import { getPaddle, openPaddleCheckout, previewLocalizedPaddlePrice, resolveBillingProvider } from "../lib/paddleBilling";
+import { getPaddle, openPaddleCheckout, previewLocalizedPaddlePrices, resolveBillingProvider } from "../lib/paddleBilling";
 
 const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -471,7 +471,8 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       const serverCountryCode = cachedCountryCode;
 
       if (resolveBillingProvider(serverCountryCode, undefined, providerPreference) === "paystack") {
-        return initializePaystackCheckout(client, candidate, existingWorkspace, interval);
+        const checkout = await initializePaystackCheckout(client, candidate, existingWorkspace, interval);
+        return { ...checkout, intervalOptions: paystackIntervalOptions(pricing.paystack) };
       }
 
       const paddle = await getPaddle({
@@ -479,9 +480,14 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         clientToken: pricing.paddle.clientToken,
       });
       const priceId = pricing.paddle.priceId[interval];
-      const localized = await previewLocalizedPaddlePrice(paddle, priceId, serverCountryCode);
+      const localized = await previewLocalizedPaddlePrices(
+        paddle,
+        [pricing.paddle.priceId.monthly, pricing.paddle.priceId.yearly],
+        serverCountryCode,
+      );
       if (resolveBillingProvider(serverCountryCode, localized.countryCode, providerPreference) === "paystack") {
-        return initializePaystackCheckout(client, candidate, existingWorkspace, interval);
+        const checkout = await initializePaystackCheckout(client, candidate, existingWorkspace, interval);
+        return { ...checkout, intervalOptions: paystackIntervalOptions(pricing.paystack) };
       }
 
       const { data, error } = await client.functions.invoke("paddle-create-checkout", {
@@ -507,12 +513,22 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         status: "open",
         artist: candidate,
         interval,
-        formattedTotal: localized.formattedTotal,
+        formattedTotal: localized.formattedTotals[priceId],
         productId: session.productId,
         priceId: session.priceId,
         paddleConfig: { environment: pricing.paddle.environment, clientToken: pricing.paddle.clientToken },
         customData: session.customData,
         expiresAt: session.expiresAt,
+        intervalOptions: {
+          monthly: {
+            formattedTotal: localized.formattedTotals[pricing.paddle.priceId.monthly],
+            priceId: pricing.paddle.priceId.monthly,
+          },
+          yearly: {
+            formattedTotal: localized.formattedTotals[pricing.paddle.priceId.yearly],
+            priceId: pricing.paddle.priceId.yearly,
+          },
+        },
       };
     },
     async openProviderCheckout({ user, preview }) {
@@ -666,11 +682,27 @@ async function loadBillingCountry() {
 function readBillingPricingConfig(value: unknown) {
   const data = value as {
     paddle?: { environment?: "sandbox" | "production"; clientToken?: string; productId?: string; priceId?: { monthly?: string; yearly?: string } };
+    paystack?: { currency?: string; amountMinor?: { monthly?: number; yearly?: number } };
   } | null;
-  if (!data?.paddle?.environment || !data.paddle.clientToken || !data.paddle.productId || !data.paddle.priceId?.monthly || !data.paddle.priceId.yearly) {
+  if (
+    !data?.paddle?.environment || !data.paddle.clientToken || !data.paddle.productId ||
+    !data.paddle.priceId?.monthly || !data.paddle.priceId.yearly ||
+    data.paystack?.currency !== "NGN" || !Number.isSafeInteger(data.paystack.amountMinor?.monthly) ||
+    !Number.isSafeInteger(data.paystack.amountMinor?.yearly)
+  ) {
     throw new Error("Billing pricing configuration is incomplete.");
   }
-  return data as { paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string } } };
+  return data as {
+    paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string } };
+    paystack: { currency: "NGN"; amountMinor: { monthly: number; yearly: number } };
+  };
+}
+
+function paystackIntervalOptions(pricing: { currency: string; amountMinor: { monthly: number; yearly: number } }) {
+  return {
+    monthly: { amount: pricing.amountMinor.monthly / 100, amountMinor: pricing.amountMinor.monthly, currency: pricing.currency },
+    yearly: { amount: pricing.amountMinor.yearly / 100, amountMinor: pricing.amountMinor.yearly, currency: pricing.currency },
+  };
 }
 
 function createClientRequestId() {
@@ -2809,6 +2841,7 @@ function billingCheckoutPreviewFromPayload(payload: unknown): ProductionBillingC
     expiresAt: data.expiresAt,
     authorizationUrl: data.authorizationUrl,
     accessCode: data.accessCode,
+    intervalOptions: data.intervalOptions,
   };
 }
 

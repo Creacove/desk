@@ -35,6 +35,8 @@ describe("Paddle server integration contract", () => {
 
     expect(pricing).toContain("auth.getUser()");
     expect(pricing).toContain("readCanonicalPaddlePrice");
+    expect(pricing).toContain("PAYSTACK_MONTHLY_AMOUNT_MINOR");
+    expect(pricing).toContain("PAYSTACK_YEARLY_AMOUNT_MINOR");
     expect(pricing).not.toContain("PAYSTACK_MONTHLY_PLAN_CODE");
     expect(pricing).not.toContain("PAYSTACK_YEARLY_PLAN_CODE");
     expect(pricing).not.toContain("PADDLE_API_KEY");

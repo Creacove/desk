@@ -279,6 +279,13 @@ export type ProductionBillingCheckoutPreview = {
   expiresAt?: string;
   authorizationUrl?: string;
   accessCode?: string;
+  intervalOptions?: Record<"monthly" | "yearly", {
+    amount?: number;
+    amountMinor?: number;
+    currency?: string;
+    formattedTotal?: string;
+    priceId?: string;
+  }>;
 };
 
 export type ProductionBillingProviderPreference = "auto" | "paddle" | "paystack";

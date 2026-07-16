@@ -24,16 +24,23 @@ describe("provider-aware paywall", () => {
     expect(within(checkout).getByRole("button", { name: "Yearly billing" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("requests the chosen interval and disables subscription while pricing refreshes", () => {
-    const onIntervalChange = vi.fn();
+  it("switches interval pricing immediately without entering a checkout loading state", () => {
+    const onIntervalChange = vi.fn(() => new Promise<void>(() => undefined));
     render(<PaywallPreviewScreen preview={{
       checkoutSessionId: "checkout-1", reference: "checkout-1", provider: "paddle", status: "open",
       artist, interval: "monthly", formattedTotal: "€18.00", priceId: "pri_month",
-    }} pending onIntervalChange={onIntervalChange} onSubscribe={() => undefined} onBack={() => undefined} />);
+      intervalOptions: {
+        monthly: { formattedTotal: "€18.00", priceId: "pri_month" },
+        yearly: { formattedTotal: "€180.00", priceId: "pri_year" },
+      },
+    }} onIntervalChange={onIntervalChange} onSubscribe={() => undefined} onBack={() => undefined} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Yearly billing" }));
     expect(onIntervalChange).toHaveBeenCalledWith("yearly");
-    expect(screen.getByRole("button", { name: /opening secure checkout/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Yearly billing" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("€180.00/year")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Subscribe €180.00/year" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: /opening secure checkout/i })).not.toBeInTheDocument();
   });
 
   it("offers Nigerian Paystack customers an explicit USD Paddle choice", () => {
@@ -45,7 +52,7 @@ describe("provider-aware paywall", () => {
 
     const usdAction = screen.getByRole("button", { name: "Pay in USD with an international card" });
     fireEvent.click(usdAction);
-    expect(onProviderChange).toHaveBeenCalledWith("paddle");
+    expect(onProviderChange).toHaveBeenCalledWith("paddle", "monthly");
   });
 
   it("does not show the USD provider choice on Paddle previews", () => {

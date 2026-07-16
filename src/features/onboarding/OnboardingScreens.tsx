@@ -303,9 +303,9 @@ export function PaywallPreviewScreen({
   catalogPreview?: ProductionSpotifyCatalogPreview | null;
   pending?: boolean;
   error?: string | null;
-  onSubscribe: () => void | Promise<void>;
+  onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
-  onProviderChange?: (provider: "paddle" | "paystack") => void | Promise<void>;
+  onProviderChange?: (provider: "paddle" | "paystack", interval: "monthly" | "yearly") => void | Promise<void>;
   onRedeemPrivateBeta?: (code: string) => void | Promise<void>;
   privateBetaEnabled?: boolean;
   onBack: () => void;
@@ -313,9 +313,12 @@ export function PaywallPreviewScreen({
 }) {
   const [showBetaCode, setShowBetaCode] = useState(false);
   const [betaCode, setBetaCode] = useState("");
+  const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview.interval);
   const artist = preview.artist;
-  const price = formatPaywallPrice(preview);
-  const intervalLabel = preview.interval === "yearly" ? "year" : "month";
+  const intervalOption = preview.intervalOptions?.[selectedInterval];
+  const displayPreview = { ...preview, ...intervalOption, interval: selectedInterval };
+  const price = formatPaywallPrice(displayPreview);
+  const intervalLabel = selectedInterval === "yearly" ? "year" : "month";
   const latestProject = catalogPreview?.latestProject ?? null;
   const visibleProjectTracks = latestProject?.tracks.slice(0, 3) ?? [];
   const standaloneSingles = catalogPreview?.standaloneSingles.slice(0, 5) ?? [];
@@ -396,15 +399,18 @@ export function PaywallPreviewScreen({
 
                 <div className="mt-3 grid grid-cols-2 rounded-[10px] border border-foreground/10 bg-foreground/[0.035] p-1" aria-label="Billing interval">
                   {(["monthly", "yearly"] as const).map((interval) => {
-                    const active = preview.interval === interval;
+                    const active = selectedInterval === interval;
                     return (
                       <button
                         key={interval}
                         type="button"
                         aria-label={`${interval === "monthly" ? "Monthly" : "Yearly"} billing`}
                         aria-pressed={active}
-                        disabled={pending && active}
-                        onClick={() => void onIntervalChange?.(interval)}
+                        disabled={pending}
+                        onClick={() => {
+                          setSelectedInterval(interval);
+                          void onIntervalChange?.(interval);
+                        }}
                         className={cn(
                           "h-8 rounded-[7px] text-[10px] font-bold transition-all",
                           active ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground",
@@ -425,7 +431,7 @@ export function PaywallPreviewScreen({
 
                 <button
                   type="button"
-                  onClick={() => void onSubscribe()}
+                  onClick={() => void onSubscribe(selectedInterval)}
                   disabled={pending}
                   className="group mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-[9px] bg-foreground px-4 text-[10px] font-bold text-background shadow-md transition-all hover:bg-foreground/90 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 lg:mt-5 lg:h-11 lg:text-[12px]"
                 >
@@ -437,7 +443,7 @@ export function PaywallPreviewScreen({
                 {preview.provider === "paystack" && preview.currency === "NGN" && onProviderChange ? (
                   <button
                     type="button"
-                    onClick={() => void onProviderChange("paddle")}
+                    onClick={() => void onProviderChange("paddle", selectedInterval)}
                     disabled={pending}
                     className="mt-2 w-full text-center text-[10px] font-bold text-muted-foreground underline decoration-foreground/20 underline-offset-4 transition-colors hover:text-foreground disabled:opacity-50 lg:text-[11px]"
                   >
