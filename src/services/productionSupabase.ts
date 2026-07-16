@@ -3622,10 +3622,10 @@ function profileFromRow(row: WorkspaceProfileRow | null, workspace: ProductionWo
   const spotifyName = readSpotifyIdentityName(row?.spotify_identity) ?? workspace.spotifyArtistName ?? workspace.artistName;
   return {
     name: row?.display_name ?? workspace.artistName,
-    spotify: spotifyName ? `${spotifyName} - Spotify public catalog` : "Spotify public catalog",
+    spotify: spotifyName ?? "",
     genre: row?.genres?.join(", ") ?? "",
     market: row?.home_market ?? "",
-    release: "Spotify catalog import",
+    release: "",
     goal: row?.artist_direction ?? row?.current_goal ?? "",
     budget: row?.budget_context ?? "",
     stage: row?.stage ?? "",

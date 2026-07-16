@@ -74,7 +74,7 @@ function ProfileSettings({ profile, update }: { profile: ArtistProfileViewModel;
 
       <SettingsGroup title="Identity">
         <Field label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
-        <Field label="Spotify identity" value={profile.spotify} onChange={(value) => update("spotify", value)} />
+        <Field label="Artist profile" value={profile.spotify} onChange={(value) => update("spotify", value)} />
       </SettingsGroup>
       <SettingsGroup title="Career context">
         <Field label="Artist stage" value={profile.stage} onChange={(value) => update("stage", value)} />
@@ -83,7 +83,7 @@ function ProfileSettings({ profile, update }: { profile: ArtistProfileViewModel;
         <Field label="Active release" value={profile.release} onChange={(value) => update("release", value)} />
       </SettingsGroup>
       <SettingsGroup title="Operating context">
-        <TextAreaField label="Artist Direction" value={profile.goal} onChange={(value) => update("goal", value)} />
+        <TextAreaField label="Artist goals" value={profile.goal} onChange={(value) => update("goal", value)} />
         <Field label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
       </SettingsGroup>
       <SettingsGroup title="Channels" last>

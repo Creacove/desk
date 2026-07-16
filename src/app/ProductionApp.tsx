@@ -2102,13 +2102,13 @@ function SpotifyIdentityGate({
         .then((artists) => {
           if (!cancelled) {
             setCandidates(artists);
-            setMessage(artists.length ? null : "No Spotify artists matched that search.");
+            setMessage(artists.length ? null : "No artists matched that search.");
           }
         })
         .catch((searchError) => {
           if (!cancelled) {
             setCandidates([]);
-            setMessage(readErrorMessage(searchError, "Spotify artist search failed."));
+            setMessage(readErrorMessage(searchError, "Artist search failed."));
           }
         })
         .finally(() => {
@@ -2307,7 +2307,7 @@ function SpotifyIdentityGate({
     return (
       <BrandedLoader
         title={`Preparing ${selectedArtistName} Desk`}
-        body="Reading public catalog before checkout."
+        body="Preparing your subscription options."
         steps={["Artist identity", "Latest project", "Recent singles", "Secure checkout"]}
         logoTestId="auth-brand-logo"
       />

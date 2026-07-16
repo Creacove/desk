@@ -627,7 +627,7 @@ function TasksPanel({
                                     rows={3}
                                     value={completionNote.note}
                                     onChange={(e) => setCompletionNote((current) => current ? { ...current, note: e.target.value } : null)}
-                                    placeholder={completionNote.status === "blocked" ? "e.g. The distributor rejected the submission — missing ISRC codes. Waiting on the label admin team." : "e.g. Submitted the Spotify editorial pitch for 'Night Drive' with genre context, release story, and target playlist. Confirmation received."}
+                                    placeholder={completionNote.status === "blocked" ? "e.g. The distributor rejected the submission — missing ISRC codes. Waiting on the label admin team." : "e.g. Submitted the editorial pitch for 'Night Drive' with genre context, release story, and target playlist. Confirmation received."}
                                     className="w-full resize-none rounded-[10px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:border-brand-accent/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
                                   />
                                   {completionError ? (

@@ -1477,7 +1477,7 @@ function ArtworkFrame({
       {imageUrl ? (
         <>
           <img src={imageUrl} alt={`${title} cover artwork`} className="h-full w-full object-cover" />
-          {spotifyUrl ? <span className="sr-only">Artwork sourced from Spotify public catalog.</span> : null}
+          {spotifyUrl ? <span className="sr-only">Catalog artwork.</span> : null}
         </>
       ) : (
         <span className={cn("font-display font-bold leading-none", size === "project" ? "text-[32px]" : size === "mini" ? "text-[13px]" : "text-[20px]")}>{initials}</span>
@@ -1610,13 +1610,13 @@ function MusicAddChooser({
           <button
             type="button"
             onClick={onImport}
-            aria-label="Import from Spotify"
+            aria-label="Import from catalog"
             className="group flex flex-col gap-3 rounded-[18px] border border-foreground/10 bg-background p-4 text-left transition-colors hover:border-brand-accent/40 hover:bg-brand-accent/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
           >
             <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-brand-accent/10 text-brand-accent">
               <Sparkles className="h-5 w-5" />
             </span>
-            <span className="font-display text-[16px] font-bold text-foreground">Import from Spotify</span>
+            <span className="font-display text-[16px] font-bold text-foreground">Import from catalog</span>
             <span className="text-[12px] font-semibold normal-case leading-relaxed text-muted-foreground/82">
               Pull a released {noun} from the artist&rsquo;s catalogue. We fetch the metrics and write the manager&rsquo;s read for you.
             </span>
@@ -1680,7 +1680,7 @@ function MusicImportDialog({
         if (result.mode === "releases") setReleases(result.releases);
       })
       .catch((err) => {
-        if (active.current) setError(readErrorMessage(err, "Could not load the Spotify catalogue."));
+        if (active.current) setError(readErrorMessage(err, "Could not load the catalog."));
       })
       .finally(() => {
         if (active.current) setLoadingReleases(false);
@@ -1731,7 +1731,7 @@ function MusicImportDialog({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={`Import ${noun} from Spotify`}
+        aria-label={`Import ${noun} from catalog`}
         className="flex max-h-[min(90vh,44rem)] w-[min(100%,40rem)] flex-col overflow-hidden rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)] ring-1 ring-foreground/5"
       >
         <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
@@ -1747,7 +1747,7 @@ function MusicImportDialog({
               </button>
             ) : null}
             <div>
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Import from Spotify</p>
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Import from catalog</p>
               <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">
                 {busy ? `Importing ${workingTitle || noun}` : drill ? drill.album.name : `Choose a ${noun}`}
               </h3>
@@ -1843,7 +1843,7 @@ function MusicImportDialog({
                     </li>
                   ))}
                   {filteredReleases.length === 0 ? (
-                    <ImportEmpty label={releases && releases.length > 0 ? "No releases match your filter." : "No Spotify releases found for this artist."} />
+                    <ImportEmpty label={releases && releases.length > 0 ? "No releases match your filter." : "No releases found for this artist."} />
                   ) : null}
                 </ul>
               )}
@@ -1865,7 +1865,7 @@ function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song"
   const order: ImportPhase[] = ["import", "read"];
   const currentIndex = phase === "done" ? order.length : order.indexOf(phase);
   const steps = [
-    { key: "import" as const, label: "Importing from Spotify" },
+    { key: "import" as const, label: "Adding to your catalog" },
     {
       key: "read" as const,
       label: kind === "song" ? "Fetching chart metrics & manager’s read" : "Fetching project metrics & manager’s read",

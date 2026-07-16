@@ -45,14 +45,14 @@ describe("mobile-first onboarding", () => {
     expect(screen.getByTestId("connect-mobile-intro")).toHaveClass("lg:hidden");
     expect(within(screen.getByTestId("connect-mobile-intro")).getByRole("heading", { name: "Choose your artist" })).toBeInTheDocument();
     expect(screen.getByTestId("connect-desktop-intro")).toHaveClass("hidden", "lg:block");
-    expect(screen.getByLabelText("Search Spotify artist")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search artists")).toBeInTheDocument();
 
-    const result = screen.getByRole("button", { name: `Select Spotify artist ${longName}` });
+    const result = screen.getByRole("button", { name: `Select artist ${longName}` });
     expect(result).toHaveClass("min-w-0", "overflow-hidden");
     expect(within(result).getByText(longName)).toHaveClass("truncate");
   });
 
-  it("keeps only direction, budget, and the primary action in the mobile Manager Basics path", () => {
+  it("keeps Manager Basics focused on artist goals, budget, and one primary action", () => {
     const onContinue = vi.fn();
     render(
       <SetupScreen
@@ -64,17 +64,17 @@ describe("mobile-first onboarding", () => {
     );
 
     const identityFields = screen.getByTestId("setup-identity-fields");
-    const tips = screen.getByTestId("setup-onboarding-tips");
-    const skip = screen.getByRole("button", { name: "Skip" });
     const action = screen.getByRole("button", { name: "Enter Desk HQ" });
 
     expect(screen.getByTestId("setup-mobile-identity")).toHaveClass("lg:hidden");
     expect(identityFields).toHaveClass("hidden", "lg:grid");
-    expect(tips).toHaveClass("hidden", "lg:block");
-    expect(skip).toHaveClass("hidden", "sm:inline-flex");
-    expect(screen.getByLabelText("Artist Direction")).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-onboarding-tips")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Skip" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Artist goals")).toBeInTheDocument();
     expect(screen.getByLabelText("Monthly budget")).toBeInTheDocument();
     expect(action).toHaveClass("w-full", "sm:w-auto");
+    expect(screen.queryByText(/human inputs|human constraints|enrichment|infer stage|artist direction and monthly budget/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/spotify/i)).not.toBeInTheDocument();
 
     fireEvent.click(action);
     expect(onContinue).toHaveBeenCalledWith(profile);

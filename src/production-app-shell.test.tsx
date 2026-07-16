@@ -256,7 +256,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Connect artist profile" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Sign in to Ordersounds" })).not.toBeInTheDocument();
     expect(screen.getByText("Sable Day")).toBeInTheDocument();
-    expect(screen.getAllByText("Spotify identity").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Artist identity").length).toBeGreaterThan(0);
     expect(screen.queryByText("Account")).not.toBeInTheDocument();
     expect(screen.queryByText("Manager basics")).not.toBeInTheDocument();
     expect(screen.queryByText("Desk ready")).not.toBeInTheDocument();
@@ -352,15 +352,15 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Connect artist profile" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Search Spotify artist")).toBeInTheDocument();
+    expect(screen.getByLabelText("Search artists")).toBeInTheDocument();
     expect(screen.queryByText("Step 1 / Identity")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Search Spotify artist"), { target: { value: "Nova" } });
+    fireEvent.change(screen.getByLabelText("Search artists"), { target: { value: "Nova" } });
     expect(screen.getByTestId("spotify-search-loader")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Select Spotify artist Nova Vale" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Select Spotify artist Nova Vale" }));
+    expect(await screen.findByRole("button", { name: "Select artist Nova Vale" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Select artist Nova Vale" }));
     expect(await screen.findByRole("heading", { name: "Preparing Nova Vale Desk" })).toBeInTheDocument();
-    expect(screen.getByText("Reading public catalog before checkout.")).toBeInTheDocument();
+    expect(screen.getByText("Preparing your subscription options.")).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Connect artist profile" })).not.toBeInTheDocument();
 
     await act(async () => {
@@ -445,14 +445,14 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Enter Desk HQ" })).toBeDisabled();
-    expect(screen.getByText("Add artist direction and monthly budget to enter Desk HQ.")).toBeInTheDocument();
+    expect(screen.queryByText(/human inputs|human constraints|enrichment|infer stage|artist direction and monthly budget/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Back to profile" })).toHaveClass("rounded-[10px]");
     expect(screen.queryByLabelText("Artist stage")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Home market")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Genre")).not.toBeInTheDocument();
     expect(screen.queryByText("Manager Discovery")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Artist Direction"), { target: { value: "Build Nova Vale around precise catalog proof before scale spend." } });
+    fireEvent.change(screen.getByLabelText("Artist goals"), { target: { value: "Build Nova Vale around precise catalog proof before scale spend." } });
     fireEvent.change(screen.getByLabelText("Monthly budget"), { target: { value: "$3,000" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
@@ -489,9 +489,10 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    expect(screen.getByText(/catalog import is running in the background/i)).toBeInTheDocument();
+    expect(screen.queryByText(/catalog import is running in the background/i)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
-    expect(screen.getByTestId("setup-save-loader")).toBeInTheDocument();
+    expect(screen.queryByTestId("setup-save-loader")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preparing Desk HQ" })).toBeDisabled();
     resolveSave?.({
       ...setupWorkspace,
       status: "active",
@@ -4034,10 +4035,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Add project" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Add song" }));
-    // The Add action first offers a choice between manual creation and Spotify import.
+    // The Add action first offers a choice between manual creation and catalog import.
     expect(screen.getByRole("dialog", { name: "Add song to catalogue" })).toBeInTheDocument();
     expect(screen.getByTestId("music-workspace-content")).toHaveClass("blur-[6px]");
-    expect(screen.getByRole("button", { name: "Import from Spotify" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Import from catalog" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
 
     expect(screen.getByRole("dialog", { name: "Add song" })).toBeInTheDocument();
@@ -4073,21 +4074,21 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Edit Mix engineer" })).toHaveTextContent("");
   }, 20000);
 
-  it("opens the Spotify import dialog from the Add chooser", async () => {
+  it("opens the catalog import dialog from the Add chooser", async () => {
     await enterDeskHq();
 
     const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
     fireEvent.click(within(rail).getByRole("button", { name: "Open Catalog workspace" }));
 
     fireEvent.click(screen.getByRole("button", { name: "Add song" }));
-    fireEvent.click(screen.getByRole("button", { name: "Import from Spotify" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import from catalog" }));
 
     // The import dialog mounts and loads the (fixture-empty) catalogue.
-    expect(await screen.findByRole("dialog", { name: "Import song from Spotify" })).toBeInTheDocument();
-    expect(await screen.findByText("No Spotify releases found for this artist.")).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "Import song from catalog" })).toBeInTheDocument();
+    expect(await screen.findByText("No releases found for this artist.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByRole("dialog", { name: "Import song from Spotify" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Import song from catalog" })).not.toBeInTheDocument();
   }, 20000);
 
   it("keeps upload failures visible inside the Catalog upload modal", async () => {

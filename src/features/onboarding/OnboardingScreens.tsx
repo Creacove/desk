@@ -39,7 +39,7 @@ export function ConnectArtistScreen({
               {searchMode ? "Choose your artist" : "Artist selected"}
             </h1>
             <p className="mt-2 max-w-sm text-[13px] font-semibold leading-relaxed text-muted-foreground">
-              {searchMode ? "Search Spotify and select the right profile." : "Confirm this is the artist desk you want to open."}
+              {searchMode ? "Search for the artist and select the right profile." : "Confirm this is the artist desk you want to open."}
             </p>
           </div>
           <div data-testid="connect-desktop-intro" className="hidden max-w-xl lg:block">
@@ -48,19 +48,18 @@ export function ConnectArtistScreen({
               Bring your catalog to life.
             </h1>
             <p className="mt-5 max-w-[32rem] text-[15px] font-semibold leading-relaxed text-foreground/72">
-              Connect your official artist profile to sync your releases, stream catalog data, and build your AI-powered operating desk.
+              Find the official artist profile and open a Desk built around their music and momentum.
             </p>
           </div>
 
           <div className="w-full min-w-0 overflow-hidden rounded-[18px] border border-foreground/10 bg-white/88 p-4 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl sm:p-6">
             <p className="hidden font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent lg:block">
-              <span className="sr-only">Spotify identity</span>
               Artist identity
             </p>
             <h2 className="mt-3 hidden font-display text-[24px] font-bold leading-tight tracking-tight text-foreground lg:block">Connect artist profile</h2>
             <p className="mt-2 hidden text-[13px] font-semibold leading-relaxed text-muted-foreground lg:block">
               {searchMode
-                ? "Search for your profile, choose the correct artist identity, and import public catalog context before Desk HQ opens."
+                ? "Search for the artist and choose the official profile."
                 : "Confirm the baseline profile to populate the Manager and specialist context."}
             </p>
 
@@ -71,7 +70,7 @@ export function ConnectArtistScreen({
                     <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/70" aria-hidden="true" />
                     <input
                       id="spotify-artist-search"
-                      aria-label="Search Spotify artist"
+                      aria-label="Search artists"
                       value={query}
                       onChange={(event) => onQueryChange?.(event.target.value)}
                       placeholder="Type an artist name"
@@ -89,8 +88,8 @@ export function ConnectArtistScreen({
                     <div data-testid="spotify-search-loader" className="flex items-center gap-3 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3.5">
                       <BrandMark size="sm" className="ordersounds-loader-logo" />
                       <span className="min-w-0">
-                        <span className="block text-[13px] font-bold text-foreground">Searching catalog</span>
-                        <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground">Matching artist identity and public catalog source.</span>
+                        <span className="block text-[13px] font-bold text-foreground">Finding artist</span>
+                        <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground">Checking the profile and catalog.</span>
                       </span>
                     </div>
                   ) : null}
@@ -100,7 +99,7 @@ export function ConnectArtistScreen({
                           key={candidate.spotifyArtistId}
                           type="button"
                           className="group flex min-w-0 w-full items-center justify-between gap-3 overflow-hidden rounded-[14px] border border-foreground/5 bg-foreground/[0.025] p-3.5 text-left shadow-inner transition-all hover:border-brand-accent/20 hover:bg-foreground/[0.04]"
-                          aria-label={`Select Spotify artist ${candidate.name}`}
+                          aria-label={`Select artist ${candidate.name}`}
                           onClick={() => onSelectCandidate?.(candidate)}
                         >
                           <span className="flex min-w-0 items-center gap-3">
@@ -165,7 +164,6 @@ export function SetupScreen({
   onBack,
   onContinue,
   pending = false,
-  catalogSyncStatus,
   onSignOut,
 }: {
   profile: ArtistProfileViewModel;
@@ -179,7 +177,6 @@ export function SetupScreen({
 }) {
   const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
   const complete = hasRequiredContext(profile);
-  const catalogMessage = getCatalogStatusMessage(catalogSyncStatus);
 
   return (
     <main className="app-theme relative min-h-screen overflow-x-hidden bg-background px-4 py-4 text-foreground sm:px-7 sm:py-5 lg:px-9">
@@ -208,65 +205,21 @@ export function SetupScreen({
             <p className="hidden font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent lg:block">Artist Context</p>
             <h1 className="font-display text-[32px] font-semibold leading-[1] tracking-tight text-foreground lg:mt-4 lg:text-[46px]">Manager Basics</h1>
             <p className="mt-5 hidden max-w-[28rem] text-[15px] font-semibold leading-relaxed text-foreground/72 lg:block">
-              Add the two human inputs your catalog cannot provide.
+              Set the artist&rsquo;s goals and working budget.
             </p>
-
-            <div data-testid="setup-onboarding-tips" className="mt-6 hidden rounded-[16px] border border-foreground/8 bg-white/72 p-5 shadow-sm lg:block">
-              <div className="flex items-center gap-3">
-                <ArtistAvatar name={profile.name} imageUrl={profile.imageUrl} />
-                <div className="min-w-0">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#16883f]">Artist source</p>
-                  <p className="mt-1 truncate text-[13px] font-bold text-foreground">{profile.name}</p>
-                </div>
-              </div>
-              <p className="mt-4 font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Onboarding tips</p>
-              <p className="mt-2.5 text-[13px] font-semibold leading-relaxed text-foreground/90">
-                Catalog, market, and stage reads come from enrichment. Add only the human constraints the sources cannot know.
-              </p>
-            </div>
           </div>
 
           <div className="rounded-[18px] border border-foreground/10 bg-white/88 p-5 shadow-[0_24px_70px_rgba(17,19,24,0.12)] backdrop-blur-xl">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div data-testid="setup-identity-fields" className="hidden gap-3 lg:col-span-2 lg:grid lg:grid-cols-2">
+              <div data-testid="setup-identity-fields" className="hidden gap-3 lg:col-span-2 lg:grid">
                 <SetupInput label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
-                <SetupInput label="Artist identity" value={profile.spotify} onChange={(value) => update("spotify", value)} active />
               </div>
-              <ArtistDirectionField value={profile.goal} onChange={(value) => update("goal", value)} />
+              <ArtistGoalsField value={profile.goal} onChange={(value) => update("goal", value)} />
               <SetupInput label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
             </div>
 
-            <div className="mt-5 flex flex-wrap items-center justify-between gap-4 border-t border-foreground/5 pt-4">
-              <div className="max-w-md">
-                <p className="hidden text-[12px] font-bold text-[#c2410c] opacity-80 lg:block">The desk will infer stage, market, genre, and current catalog shape from enrichment.</p>
-                {catalogMessage ? <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">{catalogMessage}</p> : null}
-                {!complete ? (
-                  <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground">
-                    {hasRequiredContext(profile)
-                      ? "Desk HQ can open while catalog import continues in the background."
-                      : "Add artist direction and monthly budget to enter Desk HQ."}
-                  </p>
-                ) : null}
-                {pending ? (
-                  <div data-testid="setup-save-loader" className="mt-3 flex items-center gap-3 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] p-3">
-                    <BrandMark size="sm" className="ordersounds-loader-logo" />
-                    <span className="min-w-0">
-                      <span className="block text-[12px] font-bold text-foreground">Preparing Desk HQ</span>
-                      <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground">Saving Manager basics and checking source readiness.</span>
-                    </span>
-                  </div>
-                ) : null}
-              </div>
-
-              <div className="flex w-full shrink-0 flex-col gap-2.5 sm:w-auto sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => onContinue(profile)}
-                  disabled={!complete || pending}
-                  className="hidden h-10 items-center justify-center rounded-[10px] border border-foreground/10 bg-background px-6 text-[12px] font-bold text-foreground transition-all hover:bg-foreground/5 disabled:pointer-events-none disabled:opacity-40 sm:inline-flex"
-                >
-                  Skip
-                </button>
+            <div className="mt-5 flex justify-end">
+              <div className="flex w-full shrink-0 sm:w-auto">
                 <button
                   type="button"
                   onClick={() => onContinue(profile)}
@@ -631,18 +584,16 @@ function SetupInput({
   );
 }
 
-function ArtistDirectionField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function ArtistGoalsField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
     <div className="group rounded-[12px] border border-brand-accent/15 bg-brand-accent/[0.025] p-3 transition-all duration-300 focus-within:border-brand-accent/45 focus-within:ring-2 focus-within:ring-brand-accent/5 sm:col-span-2">
-      <label htmlFor="artist-direction" className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-brand-accent">
-        Artist Direction
+      <label htmlFor="artist-goals" className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-brand-accent">
+        Artist goals
       </label>
-      <p className="mt-1 text-[11px] font-semibold leading-relaxed text-muted-foreground/90">
-        Specify target positioning, goals, team boundaries, or budget constraints for this release.
-      </p>
       <textarea
-        id="artist-direction"
-        aria-label="Artist Direction"
+        id="artist-goals"
+        aria-label="Artist goals"
+        placeholder="What are you working toward right now?"
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="mt-2 min-h-[70px] w-full resize-none rounded-[10px] border border-foreground/8 bg-background/75 p-3 text-[13px] font-semibold leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/85"
@@ -653,16 +604,4 @@ function ArtistDirectionField({ value, onChange }: { value: string; onChange: (v
 
 function hasRequiredContext(profile: ArtistProfileViewModel) {
   return Boolean(profile.goal.trim() && profile.budget.trim());
-}
-
-function getCatalogStatusMessage(status: "queued" | "running" | "needs_context" | "completed" | "completed_with_limits" | "failed" | "cancelled" | undefined) {
-  if (status === "queued" || status === "running") {
-    return "Catalog import is running in the background.";
-  }
-
-  if (status === "completed_with_limits") {
-    return "Catalog import completed with public catalog limits.";
-  }
-
-  return null;
 }
