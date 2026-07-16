@@ -576,9 +576,9 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       if ((payload?.preview as { provider?: unknown } | undefined)?.provider === "paddle") return null;
       return payload?.preview ? billingCheckoutPreviewFromPayload(payload.preview) : null;
     },
-    async loadBillingStatus({ reference }) {
+    async loadBillingStatus({ reference, checkoutSessionId }) {
       const { data, error } = await client.functions.invoke("billing-status", {
-        body: { reference },
+        body: checkoutSessionId ? { checkoutSessionId } : { reference },
       });
 
       if (error) {

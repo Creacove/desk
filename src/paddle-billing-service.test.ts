@@ -117,6 +117,27 @@ describe("provider-aware billing service", () => {
     }));
   });
 
+  it("passes the Paddle checkout session id to billing status", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const client = { functions: { invoke: async (name: string, options?: { body?: unknown }) => {
+      calls.push({ name, body: options?.body });
+      return { data: {
+        checkoutSessionId: "checkout-paddle",
+        checkoutStatus: "paid",
+        subscriptionStatus: "active",
+        entitlementActive: true,
+        setupStatus: "running",
+      }, error: null };
+    } } } as unknown as SupabaseClient;
+
+    await createSupabaseBillingService(client).loadBillingStatus({ checkoutSessionId: "checkout-paddle" });
+
+    expect(calls).toEqual([{
+      name: "billing-status",
+      body: { checkoutSessionId: "checkout-paddle" },
+    }]);
+  });
+
   it("rejects an unexpected customer portal origin", async () => {
     const client = { functions: { invoke: async () => ({ data: { url: "https://evil.example/session" }, error: null }) } } as unknown as SupabaseClient;
     await expect(createSupabaseBillingService(client).openCustomerPortal!({ artistWorkspaceId: "workspace-1" } as any))
