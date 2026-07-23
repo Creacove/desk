@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  classifyDiscoveryCompletion,
   normalizeDiscoveryMemoryScope,
   readChartmetricEntityId,
 } from "../supabase/functions/_shared/manager-agent/discoveryTools";
@@ -90,12 +91,14 @@ describe("Manager artist discovery edge function", () => {
     expect(discoveryFunctionSource).toContain("maxToolCalls: MAX_DISCOVERY_TOOL_CALLS");
   });
 
-  it("fails required discovery when artist or focus-asset intelligence is incomplete", () => {
+  it("fails only when required intelligence is absent and preserves partial asset results as limitations", () => {
     expect(discoveryFunctionSource).toContain("manager_discovery_completed_with_limits");
     expect(discoveryFunctionSource).toContain("tool_failures");
-    expect(discoveryFunctionSource).toContain("assertRequiredDiscoveryCompleted");
-    expect(discoveryFunctionSource).toContain('status === "unresolved"');
-    expect(discoveryFunctionSource).toContain("Required artist intelligence failed");
+    expect(discoveryFunctionSource).toContain("classifyDiscoveryCompletion");
+    expect(discoveryFunctionSource).toContain("completion.error");
+    expect(discoveryFunctionSource).toContain("completion.limitations");
+    expect(discoveryFunctionSource).toContain('completion.status === "completed_with_limits"');
+    expect(discoveryFunctionSource).not.toContain("assetResults.some");
 
     const failedToolsIndex = discoveryFunctionSource.indexOf("const failedTools = result.toolTrace.filter");
     const completionIndex = discoveryFunctionSource.indexOf("completeDiscoverySetupStage");
@@ -132,6 +135,64 @@ describe("Manager artist discovery edge function", () => {
 });
 
 describe("Manager discovery shared tools", () => {
+  it("exposes a deterministic discovery completion classifier", () => {
+    expect(discoveryToolsSource).toContain("export function classifyDiscoveryCompletion");
+  });
+
+  it("completes normally when required artist and focus-asset intelligence succeeds", () => {
+    expect(classifyDiscoveryCompletion({
+      catalogHasAssets: true,
+      toolResults: [
+        { name: "chartmetric_artist_enrich", result: { status: "completed" } },
+        { name: "chartmetric_track_enrich", result: { status: "cached" } },
+        { name: "chartmetric_project_enrich", result: { status: "completed" } },
+      ],
+      failedTools: [],
+    })).toEqual({ status: "completed", limitations: [] });
+  });
+
+  it("completes with limits when some focus assets are unresolved but one succeeds", () => {
+    expect(classifyDiscoveryCompletion({
+      catalogHasAssets: true,
+      toolResults: [
+        { name: "chartmetric_artist_enrich", result: { status: "cached" } },
+        { name: "chartmetric_track_enrich", result: { status: "completed" } },
+        { name: "chartmetric_track_enrich", result: { status: "unresolved" } },
+      ],
+      failedTools: [],
+    })).toEqual({
+      status: "completed_with_limits",
+      limitations: [{ tool: "chartmetric_track_enrich", summary: "Provider intelligence could not be matched for this focus asset." }],
+    });
+  });
+
+  it("fails when a catalog exists but no focus asset can be enriched", () => {
+    expect(classifyDiscoveryCompletion({
+      catalogHasAssets: true,
+      toolResults: [
+        { name: "chartmetric_artist_enrich", result: { status: "completed" } },
+        { name: "chartmetric_track_enrich", result: { status: "unresolved" } },
+      ],
+      failedTools: [],
+    })).toEqual({
+      status: "failed",
+      limitations: [{ tool: "chartmetric_track_enrich", summary: "Provider intelligence could not be matched for this focus asset." }],
+      error: "Required focus-asset intelligence failed; discovery cannot complete without any matched catalog assets.",
+    });
+  });
+
+  it("fails when required artist intelligence is absent", () => {
+    expect(classifyDiscoveryCompletion({
+      catalogHasAssets: false,
+      toolResults: [],
+      failedTools: [],
+    })).toEqual({
+      status: "failed",
+      limitations: [],
+      error: "Required artist intelligence failed; discovery cannot complete without provider-backed artist enrichment.",
+    });
+  });
+
   it("parses every Chartmetric get-ids response shape used by the old reliable enrichment functions", () => {
     expect(readChartmetricEntityId({ obj: [{ cm_track: 12345 }] })).toBe("12345");
     expect(readChartmetricEntityId({ obj: [{ cm_album: "45678" }] })).toBe("45678");
@@ -187,6 +248,12 @@ describe("Manager discovery shared tools", () => {
     const clientIndex = discoveryToolsSource.indexOf("const chartmetric = createChartmetricClient");
     expect(cacheIndex).toBeGreaterThan(-1);
     expect(clientIndex).toBeGreaterThan(cacheIndex);
+  });
+
+  it("reuses stored successful snapshots regardless of age during explicit setup recovery", () => {
+    expect(discoveryToolsSource).toContain("reuseExistingSnapshots?: boolean");
+    expect(discoveryToolsSource).toContain("input.reuseExistingSnapshots !== true");
+    expect(discoveryFunctionSource).toContain("reuseExistingSnapshots?: boolean");
   });
 
   it("preserves Chartmetric provider errors instead of converting them into unresolved IDs", () => {

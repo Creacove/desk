@@ -17,6 +17,7 @@ export type DiscoveryToolInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
+  reuseExistingSnapshots?: boolean;
 };
 
 type NormalizedIdentifier = {
@@ -54,7 +55,7 @@ async function checkCachedSnapshot(
 
   const snapshot = data[0];
   const ageMs = Date.now() - new Date(snapshot.created_at).getTime();
-  if (ageMs > 24 * 60 * 60 * 1000) return null; // 24-hour cache window
+  if (ageMs > 24 * 60 * 60 * 1000 && input.reuseExistingSnapshots !== true) return null; // 24-hour cache window
 
   return snapshot;
 }
@@ -643,6 +644,54 @@ export function normalizeDiscoveryMemoryScope(value: unknown) {
     return scope;
   }
   return "artist";
+}
+
+export function classifyDiscoveryCompletion(input: {
+  catalogHasAssets: boolean;
+  toolResults: Array<{ name: string; result: unknown }>;
+  failedTools: Array<{ tool: string; summary: string }>;
+}) {
+  const successfulStatuses = new Set(["completed", "cached"]);
+  const resultStatus = (result: unknown) =>
+    isRecord(result) && typeof result.status === "string" ? result.status : "";
+  const artistResults = input.toolResults.filter(({ name }) => name === "chartmetric_artist_enrich");
+  const assetResults = input.toolResults.filter(({ name }) =>
+    name === "chartmetric_track_enrich" || name === "chartmetric_project_enrich"
+  );
+  const limitations = [
+    ...input.failedTools.map(({ tool, summary }) => ({ tool, summary })),
+    ...assetResults
+      .filter(({ result }) => resultStatus(result) === "unresolved")
+      .map(({ name }) => ({
+        tool: name,
+        summary: "Provider intelligence could not be matched for this focus asset.",
+      })),
+  ];
+  const artistSucceeded =
+    artistResults.some(({ result }) => successfulStatuses.has(resultStatus(result))) &&
+    !input.failedTools.some(({ tool }) => tool === "chartmetric_artist_enrich");
+
+  if (!artistSucceeded) {
+    return {
+      status: "failed" as const,
+      limitations,
+      error: "Required artist intelligence failed; discovery cannot complete without provider-backed artist enrichment.",
+    };
+  }
+
+  const assetSucceeded = assetResults.some(({ result }) => successfulStatuses.has(resultStatus(result)));
+  if (input.catalogHasAssets && !assetSucceeded) {
+    return {
+      status: "failed" as const,
+      limitations,
+      error: "Required focus-asset intelligence failed; discovery cannot complete without any matched catalog assets.",
+    };
+  }
+
+  return {
+    status: limitations.length ? "completed_with_limits" as const : "completed" as const,
+    limitations,
+  };
 }
 
 export function readChartmetricEntityId(payload: unknown): string | undefined {

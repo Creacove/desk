@@ -73,6 +73,42 @@ describe("paid workspace setup orchestration", () => {
     expect(billingText).toContain("explicitRetry: true");
   });
 
+  it("routes retry from the failed discovery stage before considering current_stage", () => {
+    const billingText = source("supabase", "functions", "billing-status", "index.ts");
+    const retrySelector = billingText.slice(
+      billingText.indexOf("function selectSetupRetryPhase"),
+      billingText.indexOf("function selectSetupRetryPhase") + 900,
+    );
+
+    expect(billingText).toContain('select("status,current_stage,stage_status,last_error")');
+    expect(retrySelector).toContain('stageState(stageStatus, "manager_discovery") === "failed"');
+    expect(retrySelector).toContain('return "discovery"');
+    expect(retrySelector).toContain('currentStage === "setup_brief"');
+    expect(retrySelector.indexOf('stageState(stageStatus, "manager_discovery")')).toBeLessThan(
+      retrySelector.indexOf('currentStage === "setup_brief"'),
+    );
+  });
+
+  it("atomically claims a failed discovery retry before dispatching it", () => {
+    const setupText = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+    const discoveryPhase = setupText.slice(
+      setupText.indexOf("async function runDiscoveryPhase"),
+      setupText.indexOf("async function runContextualizePhase"),
+    );
+    const retryClaim = setupText.slice(
+      setupText.indexOf("async function claimFailedDiscoveryRetry"),
+      setupText.indexOf("async function claimFailedDiscoveryRetry") + 1300,
+    );
+
+    expect(discoveryPhase).toContain("claimFailedDiscoveryRetry");
+    expect(discoveryPhase).toContain("stageAlreadyClaimed: true");
+    expect(setupText).toContain("reuseExistingSnapshots: stageAlreadyClaimed");
+    expect(retryClaim).toContain('.eq("status", "failed")');
+    expect(retryClaim).toContain('.contains("stage_status", { manager_discovery: { status: "failed" } })');
+    expect(retryClaim).toContain('status: "running"');
+    expect(retryClaim).toContain('manager_discovery: { status: "running"');
+  });
+
   it("opens Desk HQ after the brief while music reads continue in the background", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
     const briefText = source("supabase", "functions", "generate-todays-brief", "index.ts");
@@ -161,6 +197,6 @@ describe("paid workspace setup orchestration", () => {
   it("routes manual setup retries back through the paid setup orchestrator", () => {
     const text = source("supabase", "functions", "billing-status", "index.ts");
     expect(text).toContain('functionName: "paid-workspace-setup"');
-    expect(text).toContain('phase: setupResult.data?.current_stage === "setup_brief" ? "contextualize" : "discovery"');
+    expect(text).toContain("phase: selectSetupRetryPhase(setupResult.data)");
   });
 });

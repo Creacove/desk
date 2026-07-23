@@ -147,6 +147,22 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
       return { status: "running", phase: "discovery" };
     }
 
+    if (existing === "failed") {
+      const claimedStages = await claimFailedDiscoveryRetry(db, setupRun.id, stages);
+      if (!claimedStages) return { status: "running", phase: "discovery" };
+      await dispatchManagerDiscoveryPhase({
+        db,
+        supabaseUrl,
+        serviceRoleKey,
+        checkout,
+        workspace,
+        setupRun,
+        stages: claimedStages,
+        stageAlreadyClaimed: true,
+      });
+      return { status: "running", phase: "discovery" };
+    }
+
     await dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages });
     return { status: "running", phase: "discovery" };
   }
@@ -461,18 +477,51 @@ async function loadCheckoutForSetupRun(db: any, checkoutSessionId: string) {
   return data;
 }
 
-async function dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages }: any) {
+async function claimFailedDiscoveryRetry(db: any, setupRunId: string, stages: StageStatus) {
   const startedAt = new Date().toISOString();
   const nextStages = {
     ...stages,
     manager_discovery: { status: "running", started_at: startedAt },
   };
-  await updateSetupRun(db, setupRun.id, {
+  const { data, error } = await db.from("workspace_setup_runs").update({
     status: "running",
     current_stage: "manager_discovery",
     stage_status: nextStages,
     last_error: null,
-  });
+  })
+    .eq("id", setupRunId)
+    .eq("status", "failed")
+    .contains("stage_status", { manager_discovery: { status: "failed" } })
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id ? nextStages : null;
+}
+
+async function dispatchManagerDiscoveryPhase({
+  db,
+  supabaseUrl,
+  serviceRoleKey,
+  checkout,
+  workspace,
+  setupRun,
+  stages,
+  stageAlreadyClaimed = false,
+}: any) {
+  let nextStages = stages;
+  if (!stageAlreadyClaimed) {
+    const startedAt = new Date().toISOString();
+    nextStages = {
+      ...stages,
+      manager_discovery: { status: "running", started_at: startedAt },
+    };
+    await updateSetupRun(db, setupRun.id, {
+      status: "running",
+      current_stage: "manager_discovery",
+      stage_status: nextStages,
+      last_error: null,
+    });
+  }
 
   scheduleBackgroundTask(invokeFunctionWithRetries({
     supabaseUrl,
@@ -486,6 +535,7 @@ async function dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, 
       artistName: checkout.selected_artist.name,
       setupRunId: setupRun.id,
       checkoutSessionId: checkout.id,
+      reuseExistingSnapshots: stageAlreadyClaimed,
     },
   }).catch(async (error) => {
     const message = error instanceof Error ? error.message : "Manager artist discovery dispatch failed.";

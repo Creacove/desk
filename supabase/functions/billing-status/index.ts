@@ -85,7 +85,7 @@ Deno.serve(async (request) => {
       checkout.artist_workspace_id
         ? serviceClient
             .from("workspace_setup_runs")
-            .select("status,current_stage,last_error")
+            .select("status,current_stage,stage_status,last_error")
             .eq("checkout_session_id", checkout.id)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -103,7 +103,7 @@ Deno.serve(async (request) => {
         functionName: "paid-workspace-setup",
         body: {
           checkoutSessionId: checkout.id,
-          phase: setupResult.data?.current_stage === "setup_brief" ? "contextualize" : "discovery",
+          phase: selectSetupRetryPhase(setupResult.data),
           explicitRetry: true,
         },
       });
@@ -139,6 +139,24 @@ Deno.serve(async (request) => {
     return json(request, { error: error instanceof Error ? error.message : "Billing status could not be loaded." }, 500);
   }
 });
+
+function selectSetupRetryPhase(setupRun: any): "discovery" | "contextualize" {
+  const stageStatus = setupRun?.stage_status;
+  const currentStage = setupRun?.current_stage;
+  if (stageState(stageStatus, "manager_discovery") === "failed") return "discovery";
+  if (stageState(stageStatus, "setup_brief") === "failed" || currentStage === "setup_brief") return "contextualize";
+  return "discovery";
+}
+
+function stageState(stages: unknown, key: string) {
+  if (!stages || typeof stages !== "object" || Array.isArray(stages)) return "not_started";
+  const value = (stages as Record<string, unknown>)[key];
+  if (typeof value === "string") return value;
+  return value && typeof value === "object" && !Array.isArray(value) &&
+      typeof (value as Record<string, unknown>).status === "string"
+    ? (value as Record<string, string>).status
+    : "not_started";
+}
 
 async function invokeSetupFunction({ supabaseUrl, serviceRoleKey, functionName, body }: {
   supabaseUrl: string;

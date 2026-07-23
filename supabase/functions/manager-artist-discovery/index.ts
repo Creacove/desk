@@ -1,7 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runManagerAgentLoop } from "../_shared/manager-conversation/agentLoop.ts";
 import type { ManagerAgentToolDefinition } from "../_shared/manager-conversation/agentLoop.ts";
-import { executeDiscoveryTool } from "../_shared/manager-agent/discoveryTools.ts";
+import { classifyDiscoveryCompletion, executeDiscoveryTool } from "../_shared/manager-agent/discoveryTools.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
@@ -20,6 +20,7 @@ type DiscoveryInput = {
   artistName: string;
   setupRunId?: string;
   checkoutSessionId?: string;
+  reuseExistingSnapshots?: boolean;
 };
 
 const discoveryCompleteSchema = {
@@ -212,20 +213,22 @@ Deno.serve(async (request) => {
     });
 
     const failedTools = result.toolTrace.filter((event) => event.status === "failed");
-    assertRequiredDiscoveryCompleted(catalogContext, discoveryToolResults, failedTools);
+    const completion = classifyDiscoveryCompletion({
+      catalogHasAssets: catalogContext.tracks.length > 0 || catalogContext.projects.length > 0,
+      toolResults: discoveryToolResults,
+      failedTools,
+    });
+    if (completion.status === "failed") throw new Error(completion.error);
     const discoveryOutput = parseDiscoveryOutput(result.outputText);
-    if (failedTools.length) {
+    if (completion.status === "completed_with_limits") {
       await writeOperatingEvent(
         db,
         input,
         "manager_discovery_completed_with_limits",
-        `Autonomous onboarding discovery completed for ${input.artistName} with ${failedTools.length} tool limitation${failedTools.length === 1 ? "" : "s"}.`,
+        `Autonomous onboarding discovery completed for ${input.artistName} with ${completion.limitations.length} tool limitation${completion.limitations.length === 1 ? "" : "s"}.`,
         {
           ...discoveryOutput,
-          tool_failures: failedTools.map((event) => ({
-            tool: event.tool,
-            summary: event.summary,
-          })),
+          tool_failures: completion.limitations,
         },
       );
     }
@@ -234,16 +237,16 @@ Deno.serve(async (request) => {
     await writeOperatingEvent(db, input, "manager_discovery_completed", `Autonomous onboarding discovery completed for ${input.artistName}.`, discoveryOutput);
 
     if (input.setupRunId) {
-      await completeDiscoverySetupStage(db, input.setupRunId, failedTools.length > 0);
+      await completeDiscoverySetupStage(db, input.setupRunId, completion.status === "completed_with_limits");
     }
     if (input.checkoutSessionId) {
       scheduleBackgroundTask(dispatchContextualizePhase(supabaseUrl, serviceRoleKey, input.checkoutSessionId));
     }
 
     return json({
-      status: "completed",
+      status: completion.status,
       discovery: discoveryOutput,
-      toolFailures: failedTools.map((event) => ({ tool: event.tool, summary: event.summary })),
+      toolFailures: completion.limitations,
     });
 
   } catch (error) {
@@ -273,23 +276,6 @@ function validateInput(input: DiscoveryInput) {
     ["artistName", input.artistName],
   ]) {
     if (!value?.trim()) throw new Error(`Missing required field: ${key}.`);
-  }
-}
-
-function assertRequiredDiscoveryCompleted(
-  catalog: { tracks: unknown[]; projects: unknown[] },
-  toolResults: Array<{ name: string; result: unknown }>,
-  failedTools: Array<{ tool: string; summary: string }>,
-) {
-  const artistResult = toolResults.find(({ name }) => name === "chartmetric_artist_enrich")?.result as Record<string, unknown> | undefined;
-  if (!artistResult || artistResult.status === "unresolved" || failedTools.some(({ tool }) => tool === "chartmetric_artist_enrich")) {
-    throw new Error("Required artist intelligence failed; discovery cannot complete without provider-backed artist enrichment.");
-  }
-
-  const assetResults = toolResults.filter(({ name }) => name === "chartmetric_track_enrich" || name === "chartmetric_project_enrich");
-  const catalogHasAssets = catalog.tracks.length > 0 || catalog.projects.length > 0;
-  if (catalogHasAssets && (!assetResults.length || assetResults.some(({ result }) => (result as Record<string, unknown>)?.status === "unresolved"))) {
-    throw new Error("Required focus-asset intelligence failed; discovery cannot complete with unmatched catalog assets.");
   }
 }
 
