@@ -2,7 +2,11 @@ import { initializePaddle, type Environments, type Paddle } from "@paddle/paddle
 
 export type BillingProvider = "paddle" | "paystack";
 export type BillingProviderPreference = "auto" | BillingProvider;
-export type PaddleClientConfig = { environment: Environments; clientToken: string };
+export type PaddleClientConfig = {
+  environment: Environments;
+  clientToken: string;
+  pwCustomer?: { id: string };
+};
 
 let paddlePromise: Promise<Paddle> | null = null;
 let initializedConfig: string | null = null;
@@ -15,18 +19,25 @@ export function validatePaddleClientConfig(config: PaddleClientConfig) {
   if (!config.clientToken.startsWith(expectedPrefix)) {
     throw new Error(`Paddle client token must start with ${expectedPrefix} in ${config.environment}.`);
   }
+  if (config.pwCustomer && !config.pwCustomer.id.startsWith("ctm_")) {
+    throw new Error("Paddle Retain customer id must start with ctm_.");
+  }
   return config;
 }
 
 export function getPaddle(config: PaddleClientConfig) {
   validatePaddleClientConfig(config);
-  const key = `${config.environment}:${config.clientToken}`;
+  const key = `${config.environment}:${config.clientToken}:${config.pwCustomer?.id ?? ""}`;
   if (initializedConfig && initializedConfig !== key) {
     throw new Error("Paddle was already initialized with different account configuration.");
   }
   if (!paddlePromise) {
     initializedConfig = key;
-    paddlePromise = initializePaddle({ environment: config.environment, token: config.clientToken })
+    paddlePromise = initializePaddle({
+      environment: config.environment,
+      token: config.clientToken,
+      ...(config.pwCustomer ? { pwCustomer: config.pwCustomer } : {}),
+    })
       .then((instance) => {
         if (!instance) throw new Error("Paddle.js did not initialize.");
         return instance;

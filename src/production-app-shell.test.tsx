@@ -112,10 +112,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("auth-mode-switch")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Terms" })).toHaveAttribute("href", "https://ordersounds.com/terms");
-    expect(screen.getByRole("link", { name: "Privacy" })).toHaveAttribute("href", "https://ordersounds.com/privacy");
-    expect(screen.getByRole("link", { name: "Refunds and cancellation" })).toHaveAttribute("href", "/refund-cancellation.html");
-    expect(screen.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "mailto:ordersoundsapp@gmail.com");
+
     expect(screen.queryByRole("button", { name: /google/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /sso/i })).not.toBeInTheDocument();
     expect(workspaceLoader.calls).toBe(0);

@@ -12,6 +12,14 @@ describe("Paddle browser checkout", () => {
     expect(() => validatePaddleClientConfig({ environment: "production", clientToken: "test_abc" })).toThrow(/live_/);
   });
 
+  it("rejects a non-Paddle customer id for Paddle Retain", () => {
+    expect(() => validatePaddleClientConfig({
+      environment: "production",
+      clientToken: "live_abcdefghijklmnopqrstuvwxyz1",
+      pwCustomer: { id: "artist@example.com" },
+    })).toThrow(/ctm_/);
+  });
+
   it("omits an unknown country and returns Paddle's formatted total unchanged", async () => {
     const PricePreview = vi.fn(async (input) => ({
       data: {

@@ -97,6 +97,41 @@ describe("provider-aware billing service", () => {
     expect(calls.map((call) => call.name)).not.toContain("paystack-initialize-checkout");
   });
 
+  it("initializes Paddle Retain with the existing live Paddle customer id", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "GB" }))));
+    const client = { functions: { invoke: async (name: string) => {
+      if (name === "billing-pricing-config") return { data: pricing, error: null };
+      return {
+        data: {
+          checkoutSessionId: "checkout-retain",
+          productId: "pro_1",
+          priceId: "pri_month",
+          interval: "monthly",
+          expiresAt: "2026-07-23T18:00:00Z",
+          customData: { version: 1, checkoutSessionId: "checkout-retain", correlationToken: "secret" },
+        },
+        error: null,
+      };
+    } } } as unknown as SupabaseClient;
+
+    const preview = await createSupabaseBillingService(client).prepareProviderCheckout!({
+      user,
+      candidate,
+      interval: "monthly",
+      existingWorkspace: {
+        artistWorkspaceId: "workspace-1",
+        paddleCustomerId: "ctm_live_customer",
+      } as any,
+    });
+
+    expect(getPaddle).toHaveBeenCalledWith(expect.objectContaining({
+      pwCustomer: { id: "ctm_live_customer" },
+    }));
+    expect(preview.paddleConfig).toEqual(expect.objectContaining({
+      pwCustomer: { id: "ctm_live_customer" },
+    }));
+  });
+
   it("uses Paddle IP detection when the server country is absent and preserves its total", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}")));
     const client = { functions: { invoke: async (name: string) => {

@@ -35,6 +35,7 @@ export type ProductionWorkspace = {
   accessStartsAt?: string;
   accessEndsAt?: string;
   renewalAt?: string;
+  paddleCustomerId?: string;
 };
 
 export type ProductionWorkspaceDraft = {

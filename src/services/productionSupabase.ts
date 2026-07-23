@@ -176,7 +176,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artists(display_name, canonical_spotify_artist_id, canonical_spotify_url)",
             "artist_profiles(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs(status,created_at)",
-            "billing_subscriptions(provider,status,current_period_end)",
+            "billing_subscriptions(provider,status,current_period_end,provider_customer_code)",
             "workspace_access_grants(access_type,status,starts_at,ends_at)",
             "workspace_setup_runs(status,current_stage,checkout_session_id,updated_at)",
           ].join(", "),
@@ -221,6 +221,9 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         accessStartsAt: latestBetaGrant(workspace.workspace_access_grants)?.starts_at ?? undefined,
         accessEndsAt: latestBetaGrant(workspace.workspace_access_grants)?.ends_at ?? undefined,
         renewalAt: latestPaidSubscription(workspace.billing_subscriptions)?.current_period_end ?? undefined,
+        paddleCustomerId: latestPaidSubscription(workspace.billing_subscriptions)?.provider === "paddle"
+          ? latestPaidSubscription(workspace.billing_subscriptions)?.provider_customer_code ?? undefined
+          : undefined,
         setupStatus: readLatestSetupStatus(workspace.workspace_setup_runs),
         setupStage: readLatestSetupStage(workspace.workspace_setup_runs),
         billingCheckoutSessionId: readLatestSetupCheckoutSessionId(workspace.workspace_setup_runs),
@@ -478,6 +481,9 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       const paddle = await getPaddle({
         environment: pricing.paddle.environment,
         clientToken: pricing.paddle.clientToken,
+        ...(existingWorkspace?.paddleCustomerId
+          ? { pwCustomer: { id: existingWorkspace.paddleCustomerId } }
+          : {}),
       });
       const priceId = pricing.paddle.priceId[interval];
       const localized = await previewLocalizedPaddlePrices(
@@ -516,7 +522,13 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         formattedTotal: localized.formattedTotals[priceId],
         productId: session.productId,
         priceId: session.priceId,
-        paddleConfig: { environment: pricing.paddle.environment, clientToken: pricing.paddle.clientToken },
+        paddleConfig: {
+          environment: pricing.paddle.environment,
+          clientToken: pricing.paddle.clientToken,
+          ...(existingWorkspace?.paddleCustomerId
+            ? { pwCustomer: { id: existingWorkspace.paddleCustomerId } }
+            : {}),
+        },
         customData: session.customData,
         expiresAt: session.expiresAt,
         intervalOptions: {
@@ -1814,7 +1826,12 @@ type WorkspaceRow = {
   } | null;
   artist_profiles?: WorkspaceProfileRow[] | null;
   source_sync_jobs?: Array<{ status?: ProductionWorkspace["latestCatalogSyncStatus"] | null; created_at?: string | null }> | null;
-  billing_subscriptions?: Array<{ provider?: ProductionWorkspace["billingProvider"] | null; status?: ProductionWorkspace["subscriptionStatus"] | null; current_period_end?: string | null }> | null;
+  billing_subscriptions?: Array<{
+    provider?: ProductionWorkspace["billingProvider"] | null;
+    status?: ProductionWorkspace["subscriptionStatus"] | null;
+    current_period_end?: string | null;
+    provider_customer_code?: string | null;
+  }> | null;
   workspace_access_grants?: Array<{ access_type?: string | null; status?: string | null; starts_at?: string | null; ends_at?: string | null }> | null;
   workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null; checkout_session_id?: string | null; updated_at?: string | null }> | null;
 };

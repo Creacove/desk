@@ -1958,12 +1958,7 @@ function AuthScreen({
           </div>
         </form>
         </>}
-        <nav aria-label="Legal and support" className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 border-t border-foreground/8 pt-4 text-[11px] font-semibold text-muted-foreground">
-          <a className="underline-offset-4 hover:text-foreground hover:underline" href="https://ordersounds.com/terms">Terms</a>
-          <a className="underline-offset-4 hover:text-foreground hover:underline" href="https://ordersounds.com/privacy">Privacy</a>
-          <a className="underline-offset-4 hover:text-foreground hover:underline" href="/refund-cancellation.html">Refunds and cancellation</a>
-          <a className="underline-offset-4 hover:text-foreground hover:underline" href="mailto:ordersoundsapp@gmail.com">Contact</a>
-        </nav>
+
       </section>
     </AuthFrame>
   );
