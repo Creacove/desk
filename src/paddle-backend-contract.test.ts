@@ -147,8 +147,8 @@ describe("Paddle server integration contract", () => {
     const catalog = source("supabase", "functions", "paystack-ensure-catalog", "index.ts");
     expect(catalog).toContain("SUPABASE_SERVICE_ROLE_KEY");
     expect(catalog).toContain("timingSafeEqual");
-    expect(catalog).toContain("OrderSounds Pro Monthly NGN");
-    expect(catalog).toContain("OrderSounds Pro Yearly NGN");
+    expect(catalog.match(/name: "Desk Pro"/g)).toHaveLength(2);
+    expect(catalog).not.toContain("OrderSounds Pro");
     expect(catalog).toContain("amount: 3_200_000");
     expect(catalog).toContain("amount: 30_200_000");
     expect(catalog).toContain("https://api.paystack.co/plan");

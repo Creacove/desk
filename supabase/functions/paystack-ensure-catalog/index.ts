@@ -6,8 +6,8 @@ type CanonicalPlan = {
 };
 
 const CANONICAL_PLANS: CanonicalPlan[] = [
-  { name: "OrderSounds Pro Monthly NGN", amount: 3_200_000, interval: "monthly", currency: "NGN" },
-  { name: "OrderSounds Pro Yearly NGN", amount: 30_200_000, interval: "annually", currency: "NGN" },
+  { name: "Desk Pro", amount: 3_200_000, interval: "monthly", currency: "NGN" },
+  { name: "Desk Pro", amount: 30_200_000, interval: "annually", currency: "NGN" },
 ];
 
 Deno.serve(async (request) => {
