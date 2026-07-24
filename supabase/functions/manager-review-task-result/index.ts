@@ -167,7 +167,7 @@ async function callOpenAIManagerReview(context: unknown) {
     method: "POST",
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.4",
+      model: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
       reasoning: { effort: "high" },
       instructions: [
         "You are the AI Manager reviewing a completed or blocked mission task result.",
@@ -487,7 +487,7 @@ async function createUsageEvent(db: any, input: ReviewInput, runId: string) {
     subject_type: "task",
     subject_id: input.taskId,
     provider: "openai",
-    model_or_tool: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.4",
+    model_or_tool: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
     operation_key: "manager_review_task_result",
     status: "started",
     provider_request_count: 1,
