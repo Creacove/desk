@@ -81,7 +81,7 @@ Deno.serve(async (request) => {
 
     const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
     const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(db, input, managerConversationModelContext(input, packet, previousResponseId), previousResponseId);
-    const persistedWork = await persistManagerMissionGraphDecisions(db, input, {
+    const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {
       conversationId,
       runId,
       sourceType: "manager_conversation",
@@ -581,8 +581,11 @@ async function persistTaskDraftOutput(
 
   return {
     type: "task" as const,
+    artifactKind: "task_draft" as const,
     title,
     body: "Manager draft saved to this task. Open the task to review or submit this version.",
+    content: output.responseBody,
+    managerOutputId: draft.id,
     id: input.taskId,
     parentMissionId: task.mission_id ?? undefined,
     status: current?.id ? "updated" as const : "created" as const,
@@ -866,6 +869,9 @@ function normalizeCreatedWork(value: unknown) {
       type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
       title: String(item.title || "").trim(),
       body: String(item.body || "").trim(),
+      artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,
+      content: item.content ? String(item.content) : undefined,
+      managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,
       id: item.id ? String(item.id) : undefined,
       parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
       status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",

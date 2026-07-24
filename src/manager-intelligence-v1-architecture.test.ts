@@ -54,6 +54,10 @@ describe("Manager intelligence V1 architecture", () => {
       expect(source).toContain('output_type: "task_draft"');
       expect(source).toContain('reasoningEffort: "high"');
       expect(source).toContain("selectConversationHistory");
+      expect(source).toContain("input.taskId ? [] : await persistManagerMissionGraphDecisions");
+      expect(source).toContain('artifactKind: "task_draft"');
+      expect(source).toContain("content: output.responseBody");
+      expect(source).toContain("managerOutputId: draft.id");
     }
   });
 

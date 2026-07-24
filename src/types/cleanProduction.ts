@@ -366,7 +366,10 @@ export type ConversationMessageViewModel = {
     body: string;
     id?: string;
     parentMissionId?: string;
-      status?: "created" | "updated" | "approval_required" | "failed" | "pending";
+    artifactKind?: "task_draft";
+    content?: string;
+    managerOutputId?: string;
+    status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
   contextRequestId?: string;
   contextQuestions?: ManagerMissionContextQuestion[];
@@ -424,6 +427,9 @@ export type ConversationViewModel = {
     body: string;
     id?: string;
     parentMissionId?: string;
+    artifactKind?: "task_draft";
+    content?: string;
+    managerOutputId?: string;
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
 };

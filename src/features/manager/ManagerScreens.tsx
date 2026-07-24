@@ -1,4 +1,4 @@
-import { ArrowRight, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -445,6 +445,7 @@ export function ConversationWorkspace({
                 )
               }
               onOpenCreatedWork={onOpenCreatedWork}
+              suppressMissionArtifacts={Boolean(taskContext)}
             />
           ))}
 
@@ -487,20 +488,13 @@ export function ConversationWorkspace({
         ) : null}
       </div>
 
-      {/* ------------------------------------------------------------------ */}
-      {/* Floating input bar                                                   */}
-      {/* ------------------------------------------------------------------ */}
-      {/*
-        Input bar: pinned to the same 680px column as the messages.
-        On mobile it spans full width with 16px gutter; on desktop it
-        aligns exactly with the reading column for visual harmony.
-      */}
       <div
-        className="fixed bottom-20 left-0 right-0 z-40 px-4 lg:bottom-6 lg:left-[216px]"
+        data-testid="manager-composer-dock"
+        className="fixed bottom-16 left-0 right-0 z-40 border-t border-foreground/10 bg-background/95 px-4 pt-3 backdrop-blur-xl lg:bottom-0 lg:left-[13.5rem]"
         style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       >
-        <div className="mx-auto max-w-[680px]">
-          <div className="overflow-hidden rounded-[20px] border border-foreground/10 bg-background/95 shadow-[0_8px_40px_rgba(0,0,0,0.1)] backdrop-blur-2xl">
+        <div className="mx-auto max-w-[680px] pb-2 lg:pb-3">
+          <div className="overflow-hidden rounded-[14px] border border-foreground/12 bg-background">
             <div className="flex items-end gap-2 px-4 py-2">
               <textarea
                 ref={textareaRef}
@@ -513,6 +507,7 @@ export function ConversationWorkspace({
                   }
                 }}
                 placeholder="Message the Manager…"
+                aria-label="Message the Manager"
                 rows={1}
                 className="min-h-[44px] w-full resize-none bg-transparent py-3 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
                 style={{ maxHeight: "200px", overflowY: "auto" }}
@@ -527,11 +522,9 @@ export function ConversationWorkspace({
                 <ArrowRight className="h-[14px] w-[14px]" aria-hidden="true" />
               </button>
             </div>
-            {sendError && !hasFailedManagerMessage ? (
-              <p role="alert" className="px-4 pb-2 text-[11px] font-medium text-red-600">{sendError}</p>
-            ) : null}
+            {sendError && !hasFailedManagerMessage ? <p role="alert" className="px-4 pb-2 text-[11px] font-medium text-red-600">{sendError}</p> : null}
           </div>
-          <p className="mt-2 text-center text-[11px] text-muted-foreground/35">Manager can make mistakes. Verify important decisions.</p>
+          <p className="mt-1.5 text-center text-[10px] text-muted-foreground/40">Verify important decisions before acting.</p>
         </div>
       </div>
     </WorkspaceShell>
@@ -548,6 +541,7 @@ function MessageRow({
   sendPending,
   onSendContextAnswers,
   onOpenCreatedWork,
+  suppressMissionArtifacts,
   prompt,
 }: {
   message: ConversationViewModel["messages"][number];
@@ -556,10 +550,15 @@ function MessageRow({
   sendPending: boolean;
   onSendContextAnswers: (answers: ManagerConversationContextAnswer[]) => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  suppressMissionArtifacts?: boolean;
   prompt?: string;
 }) {
   const isArtist = message.speaker === "artist";
   const isStreaming = message.status === "streaming";
+  const taskDraft = message.createdWork?.find((item) => item.artifactKind === "task_draft");
+  const visibleCreatedWork = (message.createdWork ?? []).filter(
+    (item) => item.artifactKind !== "task_draft" && (!suppressMissionArtifacts || item.type !== "mission"),
+  );
 
   return (
     <div className={`flex flex-col ${isArtist ? "items-end" : "items-start"}`}>
@@ -592,7 +591,13 @@ function MessageRow({
       ) : (
         // Manager message — full width, no card border
         <div className="w-full">
-          <RichMessageBody body={message.body} streaming={isStreaming} failed={message.status === "failed"} />
+          {taskDraft && !isStreaming ? (
+            <p className="text-[15px] leading-[1.65] text-foreground/90">
+              I saved the working draft below. Open it to review the full document, then tell me what you want to change.
+            </p>
+          ) : (
+            <RichMessageBody body={message.body} streaming={isStreaming} failed={message.status === "failed"} />
+          )}
 
           {/* Inline activity status during streaming */}
           {isStreaming && activeRun?.steps.length ? (
@@ -619,9 +624,13 @@ function MessageRow({
             />
           ) : null}
 
+          {taskDraft && !isStreaming ? (
+            <TaskDraftArtifactCard item={taskDraft} onOpenCreatedWork={onOpenCreatedWork} />
+          ) : null}
+
           {/* Created work — rendered as hierarchical artifact, not a flat list */}
-          {message.createdWork?.length ? (
-            <WorkArtifactGroup items={message.createdWork} onOpenCreatedWork={onOpenCreatedWork} />
+          {visibleCreatedWork.length ? (
+            <WorkArtifactGroup items={visibleCreatedWork} onOpenCreatedWork={onOpenCreatedWork} />
           ) : null}
         </div>
       )}
@@ -794,7 +803,7 @@ function RichMessageBody({ body, streaming, failed }: { body: string; streaming?
           const text = block.replace(/^#{1,3}\s+/, "");
           return (
             <p key={`h-${blockIndex}`} className="text-[16px] font-semibold text-foreground">
-              {text}
+              <InlineMarkdown text={text} />
               {streaming && blockIndex === blocks.length - 1 ? <BlinkingCursor /> : null}
             </p>
           );
@@ -805,7 +814,7 @@ function RichMessageBody({ body, streaming, failed }: { body: string; streaming?
             <ul key={`list-${blockIndex}`} className="list-disc space-y-1.5 pl-5">
               {lines.map((line, lineIndex) => (
                 <li key={`${line}-${lineIndex}`} className="text-foreground/90">
-                  {line.replace(/^([-*]|\d+\.)\s+/, "")}
+                  <InlineMarkdown text={line.replace(/^([-*]|\d+\.)\s+/, "")} />
                   {streaming && blockIndex === blocks.length - 1 && lineIndex === lines.length - 1 ? <BlinkingCursor /> : null}
                 </li>
               ))}
@@ -815,12 +824,33 @@ function RichMessageBody({ body, streaming, failed }: { body: string; streaming?
 
         return (
           <p key={`p-${blockIndex}`} className="text-foreground/90">
-            {block}
+            <InlineMarkdown text={block} />
             {streaming && blockIndex === blocks.length - 1 ? <BlinkingCursor /> : null}
           </p>
         );
       })}
     </div>
+  );
+}
+
+function InlineMarkdown({ text }: { text: string }) {
+  const parts = text.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)]+\))/g).filter(Boolean);
+  return (
+    <>
+      {parts.map((part, index) => {
+        const strong = part.match(/^\*\*([^*]+)\*\*$/);
+        if (strong) return <strong key={`${part}-${index}`} className="font-semibold text-foreground">{strong[1]}</strong>;
+        const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+        if (link) {
+          return (
+            <a key={`${part}-${index}`} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-brand-accent underline decoration-brand-accent/30 underline-offset-2 hover:decoration-brand-accent">
+              {link[1]}
+            </a>
+          );
+        }
+        return part;
+      })}
+    </>
   );
 }
 
@@ -938,8 +968,9 @@ function WorkArtifactGroup({
   items: WorkItem[];
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
 }) {
+  const draftArtifacts = items.filter((w) => w.artifactKind === "task_draft");
   const missions = items.filter((w) => w.type === "mission");
-  const tasks = items.filter((w) => w.type === "task");
+  const tasks = items.filter((w) => w.type === "task" && w.artifactKind !== "task_draft");
   const musicItems = items.filter((w) => w.type === "music_item");
   const missionIds = new Set(missions.map((mission) => mission.id).filter(Boolean));
   const standaloneTasks = tasks.filter((task) => !task.parentMissionId || !missionIds.has(task.parentMissionId));
@@ -954,6 +985,9 @@ function WorkArtifactGroup({
 
   return (
     <div className="mt-6 flex flex-col gap-3">
+      {draftArtifacts.map((item) => (
+        <TaskDraftArtifactCard key={`task-draft-${item.managerOutputId ?? item.id ?? item.title}`} item={item} onOpenCreatedWork={onOpenCreatedWork} />
+      ))}
       {/* Mission artifact — tasks nested inside */}
       {missionCards}
       {standaloneTasks.length ? (
@@ -966,6 +1000,79 @@ function WorkArtifactGroup({
         <MusicItemArtifactCard key={`music-${item.id ?? item.title}`} item={item} onOpenCreatedWork={onOpenCreatedWork} />
       ))}
     </div>
+  );
+}
+
+function TaskDraftArtifactCard({
+  item,
+  onOpenCreatedWork,
+}: {
+  item: WorkItem;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const content = item.content?.trim() || item.body;
+  const preview = content
+    .replace(/^#{1,3}\s+/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 190);
+
+  return (
+    <article
+      className="mt-6 overflow-hidden rounded-[16px] border border-foreground/14 bg-background"
+      data-manager-output-id={item.managerOutputId}
+    >
+      <div className="flex items-center gap-3 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[9px] border border-foreground/10 bg-background text-foreground/70">
+          <FileText className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-ui text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Working draft</p>
+          <h3 className="mt-0.5 truncate text-[14px] font-semibold text-foreground">{item.title}</h3>
+        </div>
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-success/[0.09] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-success">
+          <Check className="h-3 w-3" aria-hidden="true" />
+          Saved
+        </span>
+      </div>
+
+      {expanded ? (
+        <div className="border-b border-foreground/8 bg-foreground/[0.012] px-4 py-5 sm:px-6">
+          <div className="mx-auto max-w-[590px] rounded-[10px] border border-foreground/8 bg-background px-5 py-6 sm:px-7">
+            <RichMessageBody body={content} />
+          </div>
+        </div>
+      ) : (
+        <p className="line-clamp-2 px-4 py-4 text-[12.5px] leading-relaxed text-muted-foreground/80">
+          {preview}{content.length > preview.length ? "…" : ""}
+        </p>
+      )}
+
+      <div className="flex items-center justify-between gap-3 px-4 py-3">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Close" : "Open"} draft: ${item.title}`}
+          onClick={() => setExpanded((current) => !current)}
+          className="flex items-center gap-2 text-[12px] font-semibold text-foreground transition-colors hover:text-brand-accent"
+        >
+          {expanded ? "Close document" : "Open document"}
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
+        </button>
+        {item.id ? (
+          <button
+            type="button"
+            onClick={() => void onOpenCreatedWork("task", item.id)}
+            className="text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+          >
+            Open task
+          </button>
+        ) : null}
+      </div>
+    </article>
   );
 }
 

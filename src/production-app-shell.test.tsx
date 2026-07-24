@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
-import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
+import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
   ProductionBillingService,
@@ -2608,6 +2608,115 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByRole("button", { name: "Open created mission" })).toHaveLength(2);
     expect(screen.getAllByText("1 task")).toHaveLength(2);
     expect(screen.queryByText("2 tasks")).not.toBeInTheDocument();
+  });
+
+  it("renders task drafts as collapsed documents and suppresses repeated mission artifacts", () => {
+    const conversation = {
+      id: "conv-task-draft",
+      taskContextId: "task-revival",
+      topic: "Draft the REVIVAL positioning thesis",
+      status: "Manager responded",
+      summary: "The Manager drafted the task deliverable.",
+      prompt: "Draft the positioning thesis.",
+      messages: [
+        { id: "msg-user", speaker: "artist", label: "You", body: "Draft the positioning thesis." },
+        {
+          id: "msg-manager",
+          speaker: "manager",
+          label: "Manager",
+          body: "# FULL DRAFT CONTENT\n\n**Audience promise**\n\nThis is the complete positioning thesis.",
+          createdWork: [
+            {
+              type: "mission",
+              id: "mission-revival",
+              title: "Define the REVIVAL position",
+              body: "The parent mission was already created.",
+              status: "created",
+            },
+            {
+              type: "task",
+              id: "task-revival",
+              parentMissionId: "mission-revival",
+              title: "REVIVAL positioning thesis",
+              body: "Manager draft saved to this task.",
+              status: "created",
+              artifactKind: "task_draft",
+              content: "# FULL DRAFT CONTENT\n\n**Audience promise**\n\nThis is the complete positioning thesis.",
+              managerOutputId: "manager-output-1",
+            },
+          ],
+        },
+      ],
+      createdWork: [],
+    } as unknown as ConversationViewModel;
+    const taskContext: MissionTaskViewModel = {
+      id: "task-revival",
+      checkpointId: "checkpoint-revival",
+      title: "Draft the REVIVAL positioning thesis",
+      owner: "Artist",
+      deadline: "This week",
+      approvalState: "active",
+      purpose: "Turn artist context into a usable positioning document.",
+      steps: [],
+      evidenceIds: [],
+      completionMode: "manager_draft",
+      completionExpectation: "A clear positioning thesis ready for review.",
+      dependency: "None",
+      riskIfLate: "The campaign remains vague.",
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        taskContext={taskContext}
+        onBack={() => undefined}
+        onBackToTask={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    const openDraft = screen.getByRole("button", { name: "Open draft: REVIVAL positioning thesis" });
+    expect(openDraft).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("FULL DRAFT CONTENT")).not.toBeInTheDocument();
+    expect(screen.queryByText("Mission created")).not.toBeInTheDocument();
+
+    fireEvent.click(openDraft);
+
+    expect(screen.getByText("FULL DRAFT CONTENT")).toBeInTheDocument();
+    expect(screen.getByText("Audience promise", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close draft: REVIVAL positioning thesis" })).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("keeps the Manager composer in a stable pane-level dock", () => {
+    const conversation: ConversationViewModel = {
+      id: "conv-composer",
+      topic: "Release planning",
+      status: "Manager responded",
+      summary: "Release planning thread.",
+      prompt: "Plan the release.",
+      messages: [{ id: "msg-1", speaker: "artist", label: "You", body: "Plan the release." }],
+      createdWork: [],
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    expect(screen.getByTestId("manager-composer-dock")).toHaveClass("border-t");
+    const source = readFileSync(join(process.cwd(), "src", "features", "manager", "ManagerScreens.tsx"), "utf8");
+    expect(source).not.toContain("shadow-[0_8px_40px_rgba(0,0,0,0.1)]");
   });
 
   it("shows Manager-created missions on the Missions page without a page reload", async () => {

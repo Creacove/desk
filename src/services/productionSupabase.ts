@@ -2198,10 +2198,13 @@ function normalizeCreatedWork(value: unknown): ConversationViewModel["createdWor
   if (!Array.isArray(value)) return [];
   return value
     .filter(isPlainRecord)
-    .map((item) => ({
+    .map((item): ConversationViewModel["createdWork"][number] => ({
       type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
       title: readConversationString(item.title, ""),
       body: readConversationString(item.body, ""),
+      artifactKind: item.artifactKind === "task_draft" ? "task_draft" as const : undefined,
+      content: typeof item.content === "string" && item.content.trim() ? item.content.trim() : undefined,
+      managerOutputId: typeof item.managerOutputId === "string" && item.managerOutputId.trim() ? item.managerOutputId.trim() : undefined,
       id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : undefined,
       parentMissionId: typeof item.parentMissionId === "string" && item.parentMissionId.trim() ? item.parentMissionId.trim() : undefined,
       status: item.status === "created" || item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : undefined,
