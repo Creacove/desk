@@ -1721,7 +1721,7 @@
 }
 
 .app-workspace-reveal {
-  animation: desk-hq-editorial-arrive 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: desk-hq-editorial-arrive 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 
 .workspace-tab-rail {

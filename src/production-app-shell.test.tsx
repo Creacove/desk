@@ -2717,6 +2717,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("manager-composer-dock")).toHaveClass("border-t");
     const source = readFileSync(join(process.cwd(), "src", "features", "manager", "ManagerScreens.tsx"), "utf8");
     expect(source).not.toContain("shadow-[0_8px_40px_rgba(0,0,0,0.1)]");
+    const css = readFileSync(join(process.cwd(), "src", "index.css"), "utf8");
+    expect(css).toMatch(/\.app-workspace-reveal\s*\{[^}]*animation:[^;]*backwards;/);
   });
 
   it("shows Manager-created missions on the Missions page without a page reload", async () => {
