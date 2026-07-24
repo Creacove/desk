@@ -510,7 +510,7 @@ async function requestOpenAIMissionGenesis(instructions: string, context: unknow
     method: "POST",
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
+      model: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.4",
       reasoning: { effort: "high" },
       instructions,
       input: JSON.stringify(context),
@@ -612,7 +612,7 @@ async function createUsageEvent(db: any, input: MissionGenesisInput, runId: stri
       subject_type: "artist",
       subject_id: input.artistId,
       provider: "openai",
-      model_or_tool: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
+      model_or_tool: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.4",
       operation_key: input.mode === "continuation" ? "mission_genesis_continue_v2" : "mission_genesis_initial_v2",
       status: "started",
       provider_request_count: 1,
