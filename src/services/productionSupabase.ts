@@ -1609,7 +1609,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           { data: checkpointData, error: checkpointError },
           { data: taskData, error: taskError },
           { data: stepData, error: stepError },
-          { data: resultData, error: resultError }
+          { data: resultData, error: resultError },
+          { data: eventData },
+          { data: memoryData },
         ] = await Promise.all([
           client
             .from("checkpoints")
@@ -1629,6 +1631,16 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           client
             .from("task_results")
             .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up"),
+          client
+            .from("operating_events")
+            .select("id,mission_id,event_type,actor_type,summary,created_at")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .order("created_at", { ascending: true }),
+          client
+            .from("memory_entries")
+            .select("id,mission_id,scope,kind,content,source_type,reason,created_at")
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .order("created_at", { ascending: true }),
         ]);
 
         if (checkpointError) throw checkpointError;
@@ -1640,6 +1652,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const tasks = ((taskData as TaskRow[] | null) ?? []).filter((task) => task.mission_id && missionIds.has(task.mission_id));
         const steps = ((stepData as TaskStepRow[] | null) ?? []).filter((step) => tasks.some((t) => t.id === step.task_id));
         const results = ((resultData as TaskResultRow[] | null) ?? []).filter((res) => tasks.some((t) => t.id === res.task_id));
+        const operatingEvents = ((eventData as any[] | null) ?? []).filter((e) => e.mission_id && missionIds.has(e.mission_id));
+        const memoryEntries = ((memoryData as any[] | null) ?? []).filter((m) => m.mission_id && missionIds.has(m.mission_id));
         const deliverablesByTask = await loadTaskDocumentDeliverables(client, workspace, tasks.map((task) => task.id));
         const managerDraftsByTask = await loadTaskManagerDrafts(client, workspace, tasks.map((task) => task.id));
 
@@ -1651,6 +1665,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           results,
           deliverablesByTask,
           managerDraftsByTask,
+          operatingEvents.filter((e) => e.mission_id === mission.id),
+          memoryEntries.filter((m) => m.mission_id === mission.id),
         ));
       },
       async approveTask(taskId) {
@@ -5299,6 +5315,8 @@ function missionFromRow(
   results: TaskResultRow[] = [],
   deliverablesByTask: Map<string, MissionTaskDeliverableViewModel[]> = new Map(),
   managerDraftsByTask: Map<string, NonNullable<MissionTaskViewModel["managerDraft"]>> = new Map(),
+  operatingEvents: any[] = [],
+  memoryEntries: any[] = [],
 ): MissionViewModel {
   const nextTask = tasks.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
 
@@ -5370,6 +5388,24 @@ function missionFromRow(
     };
   });
 
+  const mappedEvents: MissionEventViewModel[] = operatingEvents.map((e) => ({
+    type: e.event_type ?? "mission_change",
+    actor: e.actor_type === "manager" ? "Manager" : e.actor_type === "user" ? "Artist" : "System",
+    summary: e.summary ?? "Operating event recorded.",
+  }));
+
+  const mappedNotes: MissionNoteViewModel[] = memoryEntries.map((m) => ({
+    id: m.id,
+    route: m.source_type || "Manager -> Mission record",
+    subject: m.reason || m.kind || "Mission Memory",
+    message: m.content,
+    status: row.status ?? "active",
+    sourceBasis: m.source_type ?? "Memory",
+    recommendedAction: m.content,
+    resultingChange: m.reason ?? "Memory recorded",
+    briefType: "Manager note",
+  }));
+
   return {
     id: row.id,
     title: row.title,
@@ -5382,6 +5418,8 @@ function missionFromRow(
     nextTask: nextTask?.title ?? "No next task selected.",
     checkpoints: mappedCheckpoints,
     tasks: mappedTasks,
+    notes: mappedNotes.length ? mappedNotes : undefined,
+    events: mappedEvents.length ? mappedEvents : undefined,
   };
 }
 

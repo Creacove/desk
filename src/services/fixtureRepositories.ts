@@ -1009,28 +1009,54 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         missions = missions.map((mission) => {
           const hasTask = mission.tasks?.some((task) => task.id === taskId);
           if (!hasTask) return mission;
+          const targetTask = mission.tasks?.find((task) => task.id === taskId);
+          const taskTitle = targetTask?.title ?? "Task";
           const nextTasks = mission.tasks?.map((task) =>
             task.id === taskId
               ? {
                   ...task,
                   status: input.status,
-                  managerInterpretation: input.status === "blocked"
-                    ? `Blocked: ${input.note}`
-                    : `Completed: ${input.note}`,
+                  approvalState: input.status === "completed" ? ("approved" as const) : task.approvalState,
+                  result: {
+                    status: input.status,
+                    summary: input.status === "completed" ? `Task "${taskTitle}" completed successfully.` : `Task "${taskTitle}" blocked.`,
+                    userNote: input.note,
+                    interpretation: input.status === "completed" ? "Manager reviewed the submitted outcome note." : `Blocked: ${input.note}`,
+                    missionEffect: "Checkpoint task requirement satisfied.",
+                    followUp: "Proceed to next task or manager checkpoint review.",
+                  },
                 }
               : task,
           );
           const nextCheckpoints = mission.checkpoints?.map((checkpoint) => {
             const checkpointTasks = nextTasks?.filter((task) => task.checkpointId === checkpoint.id) ?? [];
-            if (checkpointTasks.some((task) => task.status === "blocked")) {
-              return { ...checkpoint, status: "needs_revision", recommendation: "A linked task is blocked; Manager review should revise the path." };
+            if (checkpointTasks.some((task) => task.status === "blocked" || task.result?.status === "blocked")) {
+              return { ...checkpoint, status: "Needs revision" as const, recommendation: "A linked task is blocked; Manager review should revise the path." };
             }
-            if (checkpointTasks.length && checkpointTasks.every((task) => task.status === "completed")) {
-              return { ...checkpoint, status: "ready_for_manager_check", recommendation: "Required task results are ready for Manager review." };
+            if (checkpointTasks.length && checkpointTasks.every((task) => task.status === "completed" || task.result?.status === "completed")) {
+              return { ...checkpoint, status: "Ready for AI review" as const, recommendation: "Required task results are ready for Manager review." };
             }
             return checkpoint;
           });
-          updatedMission = { ...mission, tasks: nextTasks, checkpoints: nextCheckpoints };
+          const newEvent: MissionEventViewModel = {
+            type: input.status === "completed" ? "task_completed" : "task_blocked",
+            actor: "Artist",
+            summary: `Task "${taskTitle}" marked ${input.status}: ${input.note.trim() || "Result recorded."}`,
+          };
+          const newNote: MissionNoteViewModel = {
+            id: `note-${Date.now()}-${taskId}`,
+            route: "Task Result -> Mission Record",
+            subject: taskTitle,
+            message: input.status === "blocked" ? `Blocked: ${input.note}` : `Completed: ${input.note || "Task marked done."}`,
+            status: mission.status,
+            sourceBasis: "Task result submission",
+            recommendedAction: "Manager review task outcome",
+            resultingChange: "Checkpoint evaluation updated",
+            briefType: "Task Note",
+          };
+          const nextEvents = [...(mission.events ?? []), newEvent];
+          const nextNotes = [...(mission.notes ?? []), newNote];
+          updatedMission = { ...mission, tasks: nextTasks, checkpoints: nextCheckpoints, events: nextEvents, notes: nextNotes };
           return updatedMission;
         });
         return updatedMission;
