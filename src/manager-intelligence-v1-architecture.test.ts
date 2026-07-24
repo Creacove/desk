@@ -52,7 +52,7 @@ describe("Manager intelligence V1 architecture", () => {
       expect(source).toContain("ensureTaskConversation");
       expect(source).toContain("persistTaskDraftOutput");
       expect(source).toContain('output_type: "task_draft"');
-      expect(source).toContain('reasoningEffort: "high"');
+      expect(source).toContain('reasoningEffort: "medium"');
       expect(source).toContain("selectConversationHistory");
       expect(source).toContain("input.taskId ? [] : await persistManagerMissionGraphDecisions");
       expect(source).toContain('artifactKind: "task_draft"');
@@ -75,6 +75,6 @@ describe("Manager intelligence V1 architecture", () => {
     expect(review).toContain("submitted_manager_output_id");
     expect(review).toContain('"needs_revision"');
     expect(review).toContain('status: "in_progress"');
-    expect(review).toContain('reasoning: { effort: "high" }');
+    expect(review).toContain('reasoning: { effort: "low" }');
   });
 });

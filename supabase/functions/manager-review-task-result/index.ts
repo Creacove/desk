@@ -168,7 +168,7 @@ async function callOpenAIManagerReview(context: unknown) {
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      reasoning: { effort: "high" },
+      reasoning: { effort: "low" },
       instructions: [
         "You are the AI Manager reviewing a completed or blocked mission task result.",
         "Decide what the task result means for the checkpoint and mission. Update internal workspace state only; permission-required external actions must be returned as permissionRequests.",

@@ -397,13 +397,13 @@ async function callOpenAIManagerConversation(db: any, input: ManagerConversation
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
-    model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+    model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
     instructions: buildManagerConversationInstructions(playbookInstructions),
     context,
     previousResponseId,
     tools: managerConversationTools,
     jsonSchema: managerConversationJsonSchema,
-    reasoningEffort: "high",
+    reasoningEffort: "medium",
     executeTool: (name, args) => executeManagerConversationTool(db, input, name, args),
   });
   return {
@@ -702,7 +702,7 @@ async function createUsageEvent(db: any, input: ManagerConversationInput, runId:
       run_type: "manager_synthesis",
       manager_synthesis_run_id: runId,
       provider: "openai",
-      model_or_tool: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+      model_or_tool: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
       operation_key: "manager_conversation_router",
       status: "started",
     })
