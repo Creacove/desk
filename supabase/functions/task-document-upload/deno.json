@@ -1,0 +1,7 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "mammoth": "npm:mammoth@1.12.0",
+    "unpdf": "npm:unpdf@1.6.2"
+  }
+}

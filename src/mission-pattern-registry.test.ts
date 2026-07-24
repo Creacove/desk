@@ -55,14 +55,19 @@ describe("Mission pattern registry", () => {
       ],
     });
 
-    expect(selected.map((pattern) => pattern.key)).toEqual(
-      expect.arrayContaining([
-        "creator_content_validation",
-        "city_live_market_validation",
-        "rights_cleanup",
-        "data_source_completeness",
-      ]),
-    );
-    expect(selected.map((pattern) => pattern.key)).not.toEqual(["creator_content_validation"]);
+    expect(selected.map((pattern) => pattern.key)).toEqual([
+      "creator_content_validation",
+      "city_live_market_validation",
+    ]);
+  });
+
+  it("does not invent a thesis or upload mission when no pattern is relevant", () => {
+    const selected = selectMissionPatternsForPacket({
+      artist: { homeMarket: "", goals: [] },
+      managerIntelligenceMissionSeed: { mission_candidates: [] },
+      evidence: [],
+    });
+
+    expect(selected).toEqual([]);
   });
 });

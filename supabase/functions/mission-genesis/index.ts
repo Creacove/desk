@@ -510,7 +510,8 @@ async function requestOpenAIMissionGenesis(instructions: string, context: unknow
     method: "POST",
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+      model: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
+      reasoning: { effort: "high" },
       instructions,
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...missionGenesisJsonSchema } },
@@ -611,7 +612,7 @@ async function createUsageEvent(db: any, input: MissionGenesisInput, runId: stri
       subject_type: "artist",
       subject_id: input.artistId,
       provider: "openai",
-      model_or_tool: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+      model_or_tool: Deno.env.get("OPENAI_MISSION_GENESIS_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
       operation_key: input.mode === "continuation" ? "mission_genesis_continue_v2" : "mission_genesis_initial_v2",
       status: "started",
       provider_request_count: 1,
@@ -1007,21 +1008,31 @@ function mapQuestionFromRow(row: any): MissionGenesisQuestion {
   let answerKind: MissionGenesisQuestion["answerKind"] = "short_text";
   let options: string[] = [];
   let reason = "Provide context to activate this mission.";
+  let recommendedAnswer = "Use the Manager's recommendation from the current artist context.";
+  let recommendationReason = "This is the lowest-friction starting point supported by the information already saved.";
 
   if (key.endsWith("approve_mission") || key.endsWith("approve")) {
     answerKind = "single_select";
     options = ["Yes, approve", "No, decline"];
     reason = "An explicit decision is required to allocate resources and authorize external outreach.";
+    recommendedAnswer = "Yes, approve";
+    recommendationReason = "Approval is recommended only when the proposed mission matches the artist's stated objective and boundaries.";
   } else if (key.endsWith("execution_owner") || key.endsWith("owner")) {
     answerKind = "single_select";
     options = ["Artist", "Manager", "Team"];
     reason = "We must assign a single accountable owner to route approvals correctly.";
+    recommendedAnswer = "Manager";
+    recommendationReason = "The Manager can coordinate the work while keeping final decisions with the artist.";
   } else if (key.endsWith("budget_allocation") || key.endsWith("budget") || key.endsWith("budget_boundary")) {
     answerKind = "money_range";
     reason = "A realistic allocation is required before we create vendor scope and paid media plans.";
+    recommendedAnswer = "Use the smallest test budget supported by the saved budget context.";
+    recommendationReason = "A bounded test preserves optionality until the mission produces evidence.";
   } else if (key.endsWith("priority_markets") || key.endsWith("markets")) {
     answerKind = "short_text";
     reason = "Specify priority territories (e.g. US, UK, NG) to target curator and social campaigns.";
+    recommendedAnswer = "Start with the strongest market already visible in the artist's evidence.";
+    recommendationReason = "Existing demand is the most defensible starting point when the artist has not chosen a territory.";
   }
 
   return {
@@ -1030,5 +1041,7 @@ function mapQuestionFromRow(row: any): MissionGenesisQuestion {
     reason,
     answerKind,
     options,
+    recommendedAnswer,
+    recommendationReason,
   };
 }

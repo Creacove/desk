@@ -324,12 +324,12 @@ describe("OpenAI Mission Genesis", () => {
     const initial = buildMissionGenesisInstructions("initial");
     const continuation = buildMissionGenesisInstructions("continuation");
 
-    expect(initial).toContain("Think like Scooter Braun");
+    expect(initial).toContain("Use first-principles artist management judgment");
     expect(initial).toContain("If the mission, checkpoints, or tasks could apply to any random artist");
-    expect(initial).toContain("Ask every material user-controlled question at once");
+    expect(initial).toContain("Ask at most one decision-changing user question at a time");
     expect(initial).toContain("Do not create a mission merely because this workflow was invoked");
     expect(initial).toContain("missionPatternRegistry");
-    expect(initial).toContain("compose multiple management domains");
+    expect(initial).toContain("at most two relevant patterns");
     expect(initial).toContain("If no listed pattern fits");
     expect(initial).toContain("careerConditionDiagnosis");
     expect(initial).toContain("Mission Judge");
@@ -407,13 +407,6 @@ describe("OpenAI Mission Genesis", () => {
               answerKind: "short_text",
               options: [],
             },
-            {
-              key: "budget_boundary",
-              question: "What is the approval boundary before spending beyond $5,000?",
-              reason: "Budget control changes the mission scope.",
-              answerKind: "money_range",
-              options: [],
-            },
           ],
           mission: second.mission,
           checkpoints: [],
@@ -446,13 +439,6 @@ describe("OpenAI Mission Genesis", () => {
         question: "Who can own Nova Vale's London live proof loop for After Midnight?",
         reason: "Owner capacity decides whether this second candidate should activate.",
         answerKind: "short_text" as const,
-        options: [],
-      },
-      {
-        key: "budget_boundary",
-        question: "What budget boundary should govern this second London proof lane?",
-        reason: "Budget control changes the mission scope.",
-        answerKind: "money_range" as const,
         options: [],
       },
     ];
@@ -491,7 +477,7 @@ describe("OpenAI Mission Genesis", () => {
     expect(parsed.outcome).toBe("activate_mission");
     expect(parsed.questions).toEqual([]);
     expect(parsed.mission.title).toContain("After Midnight");
-    expect(parsed.missionCandidates[1].questions).toHaveLength(2);
+    expect(parsed.missionCandidates[1].questions).toHaveLength(1);
   });
 
   it("accepts a mission candidate when the legacy top-level mission fields are empty", () => {
@@ -503,13 +489,6 @@ describe("OpenAI Mission Genesis", () => {
         question: "Who can own Nova Vale's London proof loop for After Midnight?",
         reason: "Owner capacity decides whether this mission should activate.",
         answerKind: "short_text",
-        options: [],
-      },
-      {
-        key: "budget_boundary",
-        question: "What budget boundary should govern Nova Vale's After Midnight proof loop?",
-        reason: "The budget boundary changes the mission scope.",
-        answerKind: "money_range",
         options: [],
       },
     ];
@@ -557,7 +536,7 @@ describe("OpenAI Mission Genesis", () => {
     }, packet, "initial");
 
     expect(parsed.mission.objective).toContain("London listeners");
-    expect(parsed.questions).toHaveLength(2);
+    expect(parsed.questions).toHaveLength(1);
     expect(parsed.missionCandidates[0].key).toBe("london_proof_context");
   });
 

@@ -96,7 +96,7 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "riskIfLate", "sourceRefs"],
+  required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
   properties: {
     title: { type: "string" },
     ownerRole: { type: "string" },
@@ -105,6 +105,11 @@ const taskSchema = {
     steps: stringArraySchema,
     evidenceNeeded: stringArraySchema,
     completionExpectation: { type: "string" },
+    completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
+    deliverableTitle: { type: "string" },
+    deliverableRequirements: stringArraySchema,
+    managerResponsibility: { type: "string" },
+    userResponsibility: { type: "string" },
     riskIfLate: { type: "string" },
     sourceRefs: stringArraySchema,
   },
@@ -126,13 +131,15 @@ const permissionSchema = {
 const contextQuestionSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["key", "question", "reason", "answerKind", "options"],
+  required: ["key", "question", "reason", "answerKind", "options", "recommendedAnswer", "recommendationReason"],
   properties: {
     key: { type: "string" },
     question: { type: "string" },
     reason: { type: "string" },
     answerKind: { type: "string", enum: ["short_text", "single_select", "multi_select", "money_range"] },
     options: stringArraySchema,
+    recommendedAnswer: { type: "string" },
+    recommendationReason: { type: "string" },
   },
 };
 
@@ -230,7 +237,7 @@ export const managerConversationJsonSchema = {
           },
         },
       },
-      contextQuestions: { type: "array", maxItems: 5, items: contextQuestionSchema },
+      contextQuestions: { type: "array", maxItems: 1, items: contextQuestionSchema },
       proposedActions: {
         type: "array",
         maxItems: 12,
@@ -263,10 +270,12 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "Do not collapse every answer into promoting the strongest track. Use whichever management lenses fit: strategy, positioning, rights, release, market, team operations, reputation, finance, source completeness, or mission design.",
     "Set actionPolicy before any durable write is applied: answer_only for simple conversation; save_memory only when durableMemory is the only write; create_decision_package for a durable recommendation package; create_mission or update_mission for missionGraphDecisions; update_task or review_checkpoint for task/checkpoint state changes; request_permission for external, expensive, legal, financial, public, or reputational actions; request_evidence when missing evidence blocks a specific decision.",
     "When the user asks a conversational question, set actionPolicy to answer_only and do not generate missionGraphDecisions, createdWork, or proposedActions unless a concrete operational action is genuinely needed.",
-    "Use missionGraphDecisions when mission, checkpoint, or task work should be written to the operating system. A missionGraphDecision must use the Mission Genesis contract: one durable mission objective, checkpoints as decision questions with rules, and tasks as concrete work that answers checkpoint questions.",
+    "Use missionGraphDecisions only when the user is actually creating or changing mission work. Create or update at most one mission per user request: one durable objective, checkpoints as decision questions with rules, and tasks as concrete work that answers those questions.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan.",
-    "If user-controlled context is missing, return contextQuestions and no missionGraphDecisions. Ask the full question batch before creating mission work.",
+    "Every new task must declare its completion contract: result_note for an observable user-reported outcome, manager_draft when you can produce the substantive artifact in this chat, or evidence only when external proof truly must be uploaded. Never make the user upload a document you can draft with them.",
+    "When taskContext is present, work on that task inside this conversation. Produce a usable draft in responseBody, cover its deliverable requirements, state assumptions, and ask at most one question that materially changes the draft.",
+    "If user-controlled context is missing, return at most one context question and no missionGraphDecisions. Include recommendedAnswer and recommendationReason so an inexperienced artist can accept your best judgment or say they are unsure.",
     "Return createdWork only for already-known concrete non-mission artifacts. For mission/task creates and updates, prefer missionGraphDecisions and let the server emit canonical createdWork after persistence. Use proposedActions for internal next steps that the app can later approve or execute.",
     "Never mention provider mechanics, model names, or internal prompt/source packaging in the user-facing responseBody.",
     playbookInstructions,
@@ -297,7 +306,7 @@ export function parseManagerConversationOutput(raw: string): ManagerConversation
       ? parsed.missionGraphDecisions.map(normalizeMissionGraphDecision).filter(Boolean).slice(0, 4) as ManagerMissionGraphDecision[]
       : [],
     contextQuestions: Array.isArray(parsed.contextQuestions)
-      ? parsed.contextQuestions.map(normalizeContextQuestion).filter(Boolean).slice(0, 5) as MissionGenesisQuestion[]
+      ? parsed.contextQuestions.map(normalizeContextQuestion).filter(Boolean).slice(0, 1) as MissionGenesisQuestion[]
       : [],
     proposedActions: Array.isArray(parsed.proposedActions) ? parsed.proposedActions.map(normalizeAction).filter(Boolean).slice(0, 12) as ManagerConversationAction[] : [],
     durableMemory: cleanStringArray(parsed.durableMemory).slice(0, 8),
@@ -412,6 +421,13 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     steps: cleanStringArray(task.steps).slice(0, 6),
     evidenceNeeded: cleanStringArray(task.evidenceNeeded).slice(0, 12),
     completionExpectation: cleanString(task.completionExpectation, ""),
+    completionMode: ["result_note", "manager_draft", "evidence"].includes(String(task.completionMode))
+      ? task.completionMode as MissionGenesisTask["completionMode"]
+      : "result_note",
+    deliverableTitle: cleanString(task.deliverableTitle, ""),
+    deliverableRequirements: cleanStringArray(task.deliverableRequirements).slice(0, 12),
+    managerResponsibility: cleanString(task.managerResponsibility, ""),
+    userResponsibility: cleanString(task.userResponsibility, ""),
     riskIfLate: cleanString(task.riskIfLate, ""),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24),
   };
@@ -440,7 +456,15 @@ function normalizeContextQuestion(value: unknown): MissionGenesisQuestion | null
   const body = cleanString(question.question, "");
   const reason = cleanString(question.reason, "");
   return key && body && reason && answerKind
-    ? { key, question: body, reason, answerKind, options: cleanStringArray(question.options).slice(0, 8) }
+    ? {
+        key,
+        question: body,
+        reason,
+        answerKind,
+        options: cleanStringArray(question.options).slice(0, 8),
+        recommendedAnswer: cleanString(question.recommendedAnswer, ""),
+        recommendationReason: cleanString(question.recommendationReason, ""),
+      }
     : null;
 }
 

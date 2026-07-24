@@ -2303,6 +2303,16 @@ describe("production Supabase services", () => {
           created_at: "2026-06-26T07:57:00.000Z",
         },
       ],
+      artifact_links: [
+        {
+          artist_workspace_id: "workspace-1",
+          source_type: "conversation",
+          source_id: "conversation-1",
+          target_type: "task",
+          target_id: "task-1",
+          relationship: "references",
+        },
+      ],
     });
 
     const conversations = await createSupabaseProductionRepositories(client, workspace).manager.loadConversations();
@@ -2310,6 +2320,7 @@ describe("production Supabase services", () => {
     expect(conversations).toEqual([
       expect.objectContaining({
         id: "conversation-1",
+        taskContextId: "task-1",
         topic: "Budget validation",
         lastUpdate: "2026-06-26T08:00:00.000Z",
         messages: [
@@ -2718,20 +2729,40 @@ describe("production Supabase services", () => {
   });
 
   it("uploads task deliverables as linked workspace documents", async () => {
-    const uploadedFiles: Array<{ bucket: string; path: string; fileName: string; options: Record<string, unknown> }> = [];
-    const tables: Record<string, Array<Record<string, unknown>>> = {
-      uploaded_files: [],
-      documents: [],
-      document_versions: [],
-      artifact_links: [],
-      operating_events: [],
-    };
+    const uploadedFiles: Array<{ bucket: string; path: string; token: string; fileName: string; options: Record<string, unknown> }> = [];
+    const functionCalls: Array<{ name: string; body: Record<string, unknown> }> = [];
+    const tables: Record<string, Array<Record<string, unknown>>> = {};
     const client = createMutableSupabaseClient(tables, {
+      invoke: async (name, options) => {
+        functionCalls.push({ name, body: options.body as Record<string, unknown> });
+        if ((options.body as Record<string, unknown>).action === "prepare") {
+          return {
+            data: {
+              uploadId: "upload-task-1",
+              bucket: "workspace-documents",
+              path: "account-1/workspace-1/task-1/upload-task-1-thesis.pdf",
+              token: "signed-token",
+            },
+            error: null,
+          };
+        }
+        return {
+          data: {
+            id: "document-task-1",
+            documentId: "document-task-1",
+            title: "90-day thesis",
+            status: "uploaded",
+            fileName: "thesis.pdf",
+            validationSummary: "Uploaded and ready for content-aware Manager review.",
+          },
+          error: null,
+        };
+      },
       storage: {
         from(bucket) {
           return {
-            async upload(path, file, options) {
-              uploadedFiles.push({ bucket, path, fileName: file.name, options });
+            async uploadToSignedUrl(path, token, file, options) {
+              uploadedFiles.push({ bucket, path, token, fileName: file.name, options });
               return { data: { path }, error: null };
             },
           };
@@ -2747,40 +2778,23 @@ describe("production Supabase services", () => {
     expect(uploadedFiles).toEqual([expect.objectContaining({
       bucket: "workspace-documents",
       fileName: "thesis.pdf",
+      token: "signed-token",
     })]);
-    expect(tables.uploaded_files[0]).toMatchObject({
-      account_id: workspace.accountId,
-      artist_workspace_id: workspace.artistWorkspaceId,
-      artist_id: workspace.artistId,
-      file_name: "thesis.pdf",
-      file_type: "application/pdf",
-      classification: "other",
-      storage_bucket: "workspace-documents",
-      status: "uploaded",
-    });
-    expect(tables.documents[0]).toMatchObject({
-      title: "90-day thesis",
-      document_type: "task_deliverable",
-      origin: "user_uploaded",
-      status: "uploaded",
-    });
-    expect(tables.document_versions[0]).toMatchObject({
-      document_id: tables.documents[0].id,
-      uploaded_file_id: tables.uploaded_files[0].id,
-      version_number: 1,
-      file_name: "thesis.pdf",
-    });
-    expect(tables.artifact_links[0]).toMatchObject({
-      source_type: "document",
-      source_id: tables.documents[0].id,
-      target_type: "task",
-      target_id: "task-1",
-      relationship: "response_to",
-    });
+    expect(functionCalls).toEqual([
+      expect.objectContaining({
+        name: "task-document-upload",
+        body: expect.objectContaining({ action: "prepare", taskId: "task-1", fileName: "thesis.pdf" }),
+      }),
+      expect.objectContaining({
+        name: "task-document-upload",
+        body: expect.objectContaining({ action: "finalize", taskId: "task-1", uploadId: "upload-task-1" }),
+      }),
+    ]);
+    expect(tables).toEqual({});
     expect(deliverable).toMatchObject({
       title: "90-day thesis",
       status: "uploaded",
-      documentId: tables.documents[0].id,
+      documentId: "document-task-1",
       fileName: "thesis.pdf",
     });
   });

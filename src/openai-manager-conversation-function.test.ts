@@ -87,11 +87,12 @@ describe("OpenAI Manager Conversation Router", () => {
       "agent_reports",
       "missions",
       "tasks",
-      "conversation_messages",
       "manager_intelligence_packets",
     ]) {
       expect(functionSource).toContain(`selectMany(db, "${table}"`);
     }
+    expect(functionSource).toContain("selectConversationHistory");
+    expect(functionSource).not.toContain('selectMany(db, "conversation_messages"');
   });
 
   it("grants the server-side router access to conversation, run, action, and memory tables", () => {

@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { MissionsWorkspace } from "./features/missions/MissionScreens";
 import type { MissionViewModel } from "./types/cleanProduction";
@@ -8,6 +8,7 @@ import type { MissionViewModel } from "./types/cleanProduction";
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
 });
+afterEach(cleanup);
 
 describe("mission task deliverables", () => {
   it("keeps required documents in the task flow and passes uploaded document ids into completion", async () => {
@@ -41,7 +42,7 @@ describe("mission task deliverables", () => {
     expect(screen.getByText("Deliverable")).toBeInTheDocument();
     expect(screen.getByText("90-day thesis")).toBeInTheDocument();
     expect(screen.getByText("Missing")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Mark done" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Submit evidence" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("Upload deliverable for Provide 90-day thesis"), {
       target: {
@@ -57,7 +58,7 @@ describe("mission task deliverables", () => {
     expect(await screen.findByText("thesis.pdf")).toBeInTheDocument();
     expect(screen.getByText("Uploaded")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit evidence" }));
     const reviewBox = screen.getByTestId("task-completion-panel-task-thesis");
     fireEvent.change(within(reviewBox).getByLabelText("Task result note"), {
       target: { value: "Uploaded the 90-day thesis for Manager review." },
@@ -69,7 +70,52 @@ describe("mission task deliverables", () => {
       "completed",
       "Uploaded the 90-day thesis for Manager review.",
       ["doc-thesis-1"],
+      undefined,
     ));
+  });
+
+  it("routes a manager-draft task into the existing Manager chat without requiring an upload", () => {
+    const onWorkWithManager = vi.fn();
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      completionMode: "manager_draft",
+      deliverableTitle: "90-day positioning plan",
+      deliverableRequirements: [
+        "State the positioning choice.",
+        "Name the next three validation moves.",
+      ],
+      managerResponsibility: "Draft and revise the plan with workspace context.",
+      userResponsibility: "Confirm the direction and any hard constraints.",
+      completionExpectation: "A usable plan the artist can approve in chat.",
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        onWorkWithManager={onWorkWithManager}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onUploadTaskDeliverable={async () => {
+          throw new Error("manager draft tasks must not upload");
+        }}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    expect(screen.queryByText("Deliverable")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark done" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Work with Manager" }));
+    expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
+    expect(screen.getByText("Manager drafts:")).toBeInTheDocument();
+    expect(screen.getByText("You confirm:")).toBeInTheDocument();
   });
 });
 

@@ -18,6 +18,7 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import { qualifyManagerMemoryCandidates } from "../_shared/manager-conversation/memory.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
@@ -31,6 +32,7 @@ type ManagerConversationInput = {
   artistWorkspaceId: string;
   artistId: string;
   conversationId?: string;
+  taskId?: string;
   body: string;
   contextRequestId?: string;
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
@@ -78,14 +80,15 @@ Deno.serve(async (request) => {
     usageId = await createUsageEvent(db, input, runId);
 
     const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
-    const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(db, input, managerConversationModelContext(input, packet), previousResponseId);
+    const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(db, input, managerConversationModelContext(input, packet, previousResponseId), previousResponseId);
     const persistedWork = await persistManagerMissionGraphDecisions(db, input, {
       conversationId,
       runId,
       sourceType: "manager_conversation",
       trigger: "manager_conversation",
     }, output);
-    output.createdWork = persistedWork;
+    const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
+    output.createdWork = taskDraftWork ? [...persistedWork, taskDraftWork] : persistedWork;
     await persistActions(db, input, runId, output);
     await persistMemory(db, input, conversationId, runId, output);
     const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
@@ -120,7 +123,7 @@ Deno.serve(async (request) => {
       status: output.status || "Manager responded",
       summary: output.summary,
       last_update_at: new Date().toISOString(),
-    }, messages.length ? messages : [artistMessage, managerMessage]));
+    }, messages.length ? messages : [artistMessage, managerMessage], input.taskId));
   } catch (error) {
     const message = describeError(error, "Manager conversation failed.");
     if (runId) await markRunFailedSafe(runId, message);
@@ -147,6 +150,7 @@ async function assertWorkspace(db: any, input: ManagerConversationInput) {
 }
 
 async function ensureConversation(db: any, input: ManagerConversationInput) {
+  if (input.taskId) return ensureTaskConversation(db, input);
   if (input.conversationId) {
     const { data, error } = await db
       .from("conversations")
@@ -178,6 +182,97 @@ async function ensureConversation(db: any, input: ManagerConversationInput) {
   return data.id as string;
 }
 
+async function ensureTaskConversation(db: any, input: ManagerConversationInput) {
+  const { data: task, error: taskError } = await db
+    .from("tasks")
+    .select("id,title,mission_id")
+    .eq("id", input.taskId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (taskError) throw taskError;
+  if (!task) throw new Error("Manager task context was not found.");
+
+  if (input.conversationId) {
+    const { data: conversation, error } = await db.from("conversations")
+      .select("id")
+      .eq("id", input.conversationId)
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!conversation) throw new Error("Manager conversation was not found.");
+    await ensureTaskConversationLink(db, input, conversation.id);
+    return conversation.id as string;
+  }
+
+  const { data: links, error: linkError } = await db.from("artifact_links")
+    .select("source_id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("source_type", "conversation")
+    .eq("target_type", "task")
+    .eq("target_id", input.taskId)
+    .eq("relationship", "references")
+    .limit(1);
+  if (linkError) throw linkError;
+  if (links?.[0]?.source_id) return links[0].source_id as string;
+
+  let conversationId = "";
+  if (task.mission_id) {
+    const { data: mission, error: missionError } = await db.from("missions")
+      .select("originating_conversation_id")
+      .eq("id", task.mission_id)
+      .maybeSingle();
+    if (missionError) throw missionError;
+    conversationId = mission?.originating_conversation_id ?? "";
+  }
+  if (!conversationId) {
+    const { data: conversation, error } = await db.from("conversations").insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      topic: `Task: ${task.title}`,
+      status: "active",
+      summary: `Manager working session for ${task.title}.`,
+      linked_mission_id: task.mission_id,
+      last_update_at: new Date().toISOString(),
+    }).select("id").single();
+    if (error) throw error;
+    conversationId = conversation.id;
+  }
+  await ensureTaskConversationLink(db, input, conversationId);
+  return conversationId;
+}
+
+async function ensureTaskConversationLink(db: any, input: ManagerConversationInput, conversationId: string) {
+  const { data: existing, error: existingError } = await db.from("artifact_links")
+    .select("id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("source_type", "conversation")
+    .eq("source_id", conversationId)
+    .eq("target_type", "task")
+    .eq("target_id", input.taskId)
+    .eq("relationship", "references")
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing) return;
+  const { error } = await db.from("artifact_links").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    source_type: "conversation",
+    source_id: conversationId,
+    target_type: "task",
+    target_id: input.taskId,
+    relationship: "references",
+  });
+  if (error) throw error;
+}
+
 async function buildManagerConversationPacket(db: any, input: ManagerConversationInput, conversationId: string, messageId: string) {
   const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, conversations, messages, managerPackets] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context,social_handles", input, 1),
@@ -187,12 +282,13 @@ async function buildManagerConversationPacket(db: any, input: ManagerConversatio
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 12),
     selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 8),
     selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 12),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, 20),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
     selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 12),
-    selectMany(db, "conversation_messages", "id,conversation_id,speaker,label,body,metadata,created_at", input, 16),
+    selectConversationHistory(db, input, conversationId, 12),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,signal_snapshot_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,internal_only_json,created_at", input, 1),
   ]);
   const latestManagerIntelligencePacket = managerPackets[0] ?? null;
+  const taskContext = input.taskId ? tasks.find((task: any) => task.id === input.taskId) ?? null : null;
   return {
     packetVersion: "manager_conversation_router_v1",
     generatedAt: new Date().toISOString(),
@@ -227,7 +323,8 @@ async function buildManagerConversationPacket(db: any, input: ManagerConversatio
     existingMissions: missions,
     existingTasks: tasks,
     recentConversations: conversations,
-    recentMessages: messages,
+    conversationHistory: messages,
+    taskContext,
     latestManagerIntelligencePacket,
     managerIntelligenceProfileProjection: latestManagerIntelligencePacket?.profile_projection_json ?? {},
     managerIntelligenceMissionSeed: latestManagerIntelligencePacket?.mission_seed_json ?? {},
@@ -265,6 +362,20 @@ async function selectMany(db: any, table: string, columns: string, input: Manage
   return data ?? [];
 }
 
+async function selectConversationHistory(db: any, input: ManagerConversationInput, conversationId: string, limit: number) {
+  const { data, error } = await db
+    .from("conversation_messages")
+    .select("id,conversation_id,speaker,label,body,metadata,created_at")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []).reverse();
+}
+
 async function insertConversationMessage(db: any, input: ManagerConversationInput, conversationId: string, message: Record<string, unknown>) {
   const { data, error } = await db
     .from("conversation_messages")
@@ -286,12 +397,13 @@ async function callOpenAIManagerConversation(db: any, input: ManagerConversation
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
-    model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+    model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
     instructions: buildManagerConversationInstructions(playbookInstructions),
     context,
     previousResponseId,
     tools: managerConversationTools,
     jsonSchema: managerConversationJsonSchema,
+    reasoningEffort: "high",
     executeTool: (name, args) => executeManagerConversationTool(db, input, name, args),
   });
   return {
@@ -345,23 +457,136 @@ async function persistActions(db: any, input: ManagerConversationInput, runId: s
 }
 
 async function persistMemory(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {
-  for (const item of output.durableMemory) {
+  const { data: existing, error: existingError } = await db.from("memory_entries")
+    .select("id,content,kind,mission_id,task_id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .order("created_at", { ascending: false })
+    .limit(80);
+  if (existingError) throw existingError;
+  const taskMissionId = input.taskId ? await loadTaskMissionId(db, input) : "";
+  const candidates = qualifyManagerMemoryCandidates(output.durableMemory, existing ?? [], {
+    taskId: input.taskId,
+    missionId: taskMissionId,
+  });
+  for (const item of candidates) {
     const { error } = await db.from("memory_entries").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
       conversation_id: conversationId,
-      scope: "conversation",
-      kind: "fact",
-      content: item,
+      mission_id: item.mission_id,
+      task_id: item.task_id,
+      scope: item.scope,
+      kind: item.kind,
+      content: item.content,
       source_type: "manager_conversation",
       source_id: conversationId,
       confidence: output.confidence === "unknown" ? "medium" : output.confidence,
-      reason: "Saved from Manager conversation because it can affect future decisions.",
+      reason: `Qualified as ${item.category} because it can affect future decisions.`,
+      supersedes_memory_entry_id: item.supersedes_memory_entry_id,
       created_from_run_id: runId,
     });
     if (error) throw error;
   }
+}
+
+async function loadTaskMissionId(db: any, input: ManagerConversationInput) {
+  const { data, error } = await db.from("tasks")
+    .select("mission_id")
+    .eq("id", input.taskId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .maybeSingle();
+  if (error) throw error;
+  return data?.mission_id ?? "";
+}
+
+async function persistTaskDraftOutput(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  runId: string,
+  output: ManagerConversationOutput,
+) {
+  if (!input.taskId || output.contextQuestions.length) return null;
+  const { data: task, error: taskError } = await db.from("tasks")
+    .select("id,mission_id,title,completion_mode,deliverable_title,deliverable_requirements,completion_expectation")
+    .eq("id", input.taskId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (taskError) throw taskError;
+  if (!task || task.completion_mode !== "manager_draft") return null;
+
+  const { data: current, error: currentError } = await db.from("manager_outputs")
+    .select("id")
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("output_type", "task_draft")
+    .eq("subject_type", "task")
+    .eq("subject_id", input.taskId)
+    .eq("is_current", true)
+    .maybeSingle();
+  if (currentError) throw currentError;
+  if (current?.id) {
+    const { error } = await db.from("manager_outputs").update({ is_current: false }).eq("id", current.id);
+    if (error) throw error;
+  }
+
+  const title = task.deliverable_title || task.title;
+  const { data: draft, error: draftError } = await db.from("manager_outputs").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    conversation_id: conversationId,
+    mission_id: task.mission_id,
+    subject_type: "task",
+    subject_id: input.taskId,
+    output_type: "task_draft",
+    dominant_situation: "task_completion",
+    layout_pattern: "working_draft",
+    tone: "direct",
+    summary: output.summary,
+    primary_recommendation_json: { recommendation: output.responseBody },
+    confidence_json: { confidence: output.confidence },
+    supporting_evidence_json: output.evidenceIds.map((id) => ({ id })),
+    render_json: {
+      title,
+      content: output.responseBody,
+      status: "draft",
+      completionExpectation: task.completion_expectation,
+      requirements: task.deliverable_requirements ?? [],
+      assumptions: output.limitations,
+      evidenceIds: output.evidenceIds,
+      conversationId,
+    },
+    supersedes_output_id: current?.id ?? null,
+    is_current: true,
+    created_from_run_id: runId,
+  }).select("id").single();
+  if (draftError) throw draftError;
+
+  const { error: linkError } = await db.from("artifact_links").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    source_type: "manager_output",
+    source_id: draft.id,
+    target_type: "task",
+    target_id: input.taskId,
+    relationship: "response_to",
+  });
+  if (linkError) throw linkError;
+
+  return {
+    type: "task" as const,
+    title,
+    body: "Manager draft saved to this task. Open the task to review or submit this version.",
+    id: input.taskId,
+    parentMissionId: task.mission_id ?? undefined,
+    status: current?.id ? "updated" as const : "created" as const,
+  };
 }
 
 async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {
@@ -474,7 +699,7 @@ async function createUsageEvent(db: any, input: ManagerConversationInput, runId:
       run_type: "manager_synthesis",
       manager_synthesis_run_id: runId,
       provider: "openai",
-      model_or_tool: Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+      model_or_tool: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
       operation_key: "manager_conversation_router",
       status: "started",
     })
@@ -520,7 +745,7 @@ async function markUsageFailedSafe(usageId: string, errorMessage: string) {
   }
 }
 
-function toConversationViewModel(conversation: any, messages: any[]) {
+function toConversationViewModel(conversation: any, messages: any[], taskContextId?: string) {
   const normalizedMessages = messages.map((message) => {
     const metadata = isRecord(message.metadata) ? message.metadata : {};
     return {
@@ -535,6 +760,7 @@ function toConversationViewModel(conversation: any, messages: any[]) {
   });
   return {
     id: conversation.id,
+    ...(taskContextId ? { taskContextId } : {}),
     topic: conversation.topic || titleFromBody(normalizedMessages.find((message) => message.speaker === "artist")?.body || ""),
     status: conversation.status,
     summary: conversation.summary || "Manager conversation.",
@@ -545,12 +771,23 @@ function toConversationViewModel(conversation: any, messages: any[]) {
   };
 }
 
-function managerConversationModelContext(input: ManagerConversationInput, packet: unknown) {
+function managerConversationModelContext(input: ManagerConversationInput, packet: unknown, previousResponseId = "") {
+  const modelPacket = isRecord(packet)
+    ? {
+        ...packet,
+        conversationHistory: previousResponseId
+          ? []
+          : Array.isArray(packet.conversationHistory)
+            ? packet.conversationHistory.filter((message) => !isRecord(message) || message.id !== packet.newMessageId)
+            : [],
+      }
+    : packet;
   return {
-    packet,
+    packet: modelPacket,
     userMessage: input.body.trim(),
     contextRequestId: input.contextRequestId ?? "",
     contextAnswers: normalizeContextAnswers(input.contextAnswers),
+    taskId: input.taskId ?? "",
   };
 }
 
@@ -608,6 +845,7 @@ function readPlaybookKeyList(value: unknown): PlaybookKey[] {
 
 function managerArtistMessageMetadata(input: ManagerConversationInput) {
   return {
+    taskId: input.taskId ?? "",
     contextRequestId: input.contextRequestId ?? "",
     contextAnswers: normalizeContextAnswers(input.contextAnswers),
   };
@@ -645,6 +883,8 @@ function normalizeContextQuestions(value: unknown) {
       reason: String(item.reason || "").trim(),
       answerKind: item.answerKind === "single_select" || item.answerKind === "multi_select" || item.answerKind === "money_range" ? item.answerKind : "short_text",
       options: Array.isArray(item.options) ? item.options.map((option: unknown) => String(option || "").trim()).filter(Boolean) : [],
+      recommendedAnswer: String(item.recommendedAnswer || "").trim(),
+      recommendationReason: String(item.recommendationReason || "").trim(),
     }))
     .filter((item) => item.key && item.question);
 }

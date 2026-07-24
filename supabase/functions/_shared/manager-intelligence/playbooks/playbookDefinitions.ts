@@ -246,11 +246,11 @@ export const playbookDefinitions: Record<PlaybookKey, PlaybookDefinition> = {
 };
 
 export function getPlaybooksInstructions(keys: PlaybookKey[]): string {
-  const activeKeys = keys.length ? keys : (["no_engine"] as PlaybookKey[]);
+  const activeKeys = (keys.length ? keys : (["no_engine"] as PlaybookKey[])).slice(0, 3);
   const items = activeKeys.map((key) => playbookDefinitions[key]).filter(Boolean);
 
   const sections = items.map((pb) => {
-    return `### Playbook Lens: ${pb.name} (Inspired by ${pb.inspiredBy.join(", ")})
+    return `### Playbook Lens: ${pb.name}
 - **Core Principle**: ${pb.corePrinciple}
 - **Internal Questions to Ask**:
 ${pb.askInternally.map((q) => `  * ${q}`).join("\n")}

@@ -1,6 +1,6 @@
 import { ArrowRight, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
-import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel } from "../../types/cleanProduction";
+import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -341,6 +341,8 @@ export function ConversationWorkspace({
   onSendContextAnswers,
   onRetryLastMessage,
   onOpenDecisionPackage,
+  taskContext,
+  onBackToTask,
   sendPending,
   sendError,
 }: {
@@ -348,6 +350,8 @@ export function ConversationWorkspace({
   onBack: () => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
   onOpenDecisionPackage?: () => void;
+  taskContext?: MissionTaskViewModel;
+  onBackToTask?: () => void;
   onSendMessage: (body: string, conversationId: string) => void;
   onSendContextAnswers: (
     body: string,
@@ -407,6 +411,22 @@ export function ConversationWorkspace({
         — Side whitespace is the product of the column constraint, not padding hacks.
       */}
       <div className="mx-auto max-w-[680px] pb-44">
+        {taskContext ? (
+          <div className="mb-6 flex items-start justify-between gap-4 rounded-[16px] border border-brand-accent/20 bg-brand-accent/[0.045] p-4">
+            <div className="min-w-0">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Working on task</p>
+              <p className="mt-1 text-[14px] font-bold text-foreground">{taskContext.title}</p>
+              {taskContext.completionExpectation ? (
+                <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground">{taskContext.completionExpectation}</p>
+              ) : null}
+            </div>
+            {onBackToTask ? (
+              <button type="button" onClick={onBackToTask} className="shrink-0 text-[11px] font-bold text-brand-accent hover:underline">
+                Back to task
+              </button>
+            ) : null}
+          </div>
+        ) : null}
         <div className="flex flex-col gap-8">
           {conversation.messages.map((message) => (
             <MessageRow
@@ -842,6 +862,23 @@ function ManagerContextQuestionForm({
           <label key={question.key} className="grid gap-2 text-[13px] font-semibold leading-relaxed text-foreground">
             <span>{question.question}</span>
             {question.reason ? <span className="text-[12px] font-medium text-muted-foreground">{question.reason}</span> : null}
+            {question.recommendedAnswer ? (
+              <span className="rounded-xl border border-brand-accent/15 bg-brand-accent/[0.04] p-3">
+                <span className="block text-[11px] font-bold text-brand-accent">Manager recommendation</span>
+                <span className="mt-1 block text-[12px] font-medium text-foreground">{question.recommendedAnswer}</span>
+                {question.recommendationReason ? (
+                  <span className="mt-1 block text-[11px] font-medium text-muted-foreground">{question.recommendationReason}</span>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => setAnswers((current) => ({ ...current, [question.key]: question.recommendedAnswer ?? "" }))}
+                  className="mt-2 text-[11px] font-bold text-brand-accent hover:underline"
+                >
+                  Use recommendation
+                </button>
+              </span>
+            ) : null}
             {question.answerKind === "single_select" && question.options?.length ? (
               <select
                 value={answers[question.key] ?? ""}
@@ -864,6 +901,14 @@ function ManagerContextQuestionForm({
                 className="min-h-11 rounded-xl border border-foreground/10 bg-background px-3 font-ui text-[14px] text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-accent/60"
               />
             )}
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setAnswers((current) => ({ ...current, [question.key]: "I'm not sure — use your best recommendation and state the assumption." }))}
+              className="w-fit text-[11px] font-bold text-muted-foreground hover:text-foreground hover:underline"
+            >
+              I’m not sure
+            </button>
           </label>
         ))}
       </div>

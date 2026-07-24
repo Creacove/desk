@@ -6,6 +6,8 @@ export type MissionGenesisQuestion = {
   reason: string;
   answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
   options: string[];
+  recommendedAnswer: string;
+  recommendationReason: string;
 };
 
 export type MissionGenesisMission = {
@@ -38,6 +40,11 @@ export type MissionGenesisTask = {
   steps: string[];
   evidenceNeeded: string[];
   completionExpectation: string;
+  completionMode: "result_note" | "manager_draft" | "evidence";
+  deliverableTitle: string;
+  deliverableRequirements: string[];
+  managerResponsibility: string;
+  userResponsibility: string;
   riskIfLate: string;
   sourceRefs: string[];
 };
@@ -142,17 +149,19 @@ export const missionGenesisJsonSchema = {
       existingMissionId: { type: "string" },
       questions: {
         type: "array",
-        maxItems: 5,
+        maxItems: 1,
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["key", "question", "reason", "answerKind", "options"],
+          required: ["key", "question", "reason", "answerKind", "options", "recommendedAnswer", "recommendationReason"],
           properties: {
             key: { type: "string" },
             question: { type: "string" },
             reason: { type: "string" },
             answerKind: { type: "string", enum: answerKindValues },
             options: stringArraySchema,
+            recommendedAnswer: { type: "string" },
+            recommendationReason: { type: "string" },
           },
         },
       },
@@ -196,7 +205,7 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "riskIfLate", "sourceRefs"],
+          required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
           properties: {
             title: { type: "string" },
             ownerRole: { type: "string" },
@@ -205,6 +214,11 @@ export const missionGenesisJsonSchema = {
             steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
             evidenceNeeded: stringArraySchema,
             completionExpectation: { type: "string" },
+            completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
+            deliverableTitle: { type: "string" },
+            deliverableRequirements: stringArraySchema,
+            managerResponsibility: { type: "string" },
+            userResponsibility: { type: "string" },
             riskIfLate: { type: "string" },
             sourceRefs: stringArraySchema,
           },
@@ -227,7 +241,7 @@ export const missionGenesisJsonSchema = {
       },
       missionCandidates: {
         type: "array",
-        maxItems: 5,
+        maxItems: 1,
         items: {
           type: "object",
           additionalProperties: false,
@@ -240,17 +254,19 @@ export const missionGenesisJsonSchema = {
             evidenceNeeded: stringArraySchema,
             questions: {
               type: "array",
-              maxItems: 5,
+              maxItems: 1,
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["key", "question", "reason", "answerKind", "options"],
+                required: ["key", "question", "reason", "answerKind", "options", "recommendedAnswer", "recommendationReason"],
                 properties: {
                   key: { type: "string" },
                   question: { type: "string" },
                   reason: { type: "string" },
                   answerKind: { type: "string", enum: answerKindValues },
                   options: stringArraySchema,
+                  recommendedAnswer: { type: "string" },
+                  recommendationReason: { type: "string" },
                 },
               },
             },
@@ -294,7 +310,7 @@ export const missionGenesisJsonSchema = {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "riskIfLate", "sourceRefs"],
+                required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
                 properties: {
                   title: { type: "string" },
                   ownerRole: { type: "string" },
@@ -303,6 +319,11 @@ export const missionGenesisJsonSchema = {
                   steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
                   evidenceNeeded: stringArraySchema,
                   completionExpectation: { type: "string" },
+                  completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
+                  deliverableTitle: { type: "string" },
+                  deliverableRequirements: stringArraySchema,
+                  managerResponsibility: { type: "string" },
+                  userResponsibility: { type: "string" },
                   riskIfLate: { type: "string" },
                   sourceRefs: stringArraySchema,
                 },
@@ -331,13 +352,13 @@ export const missionGenesisJsonSchema = {
 };
 
 const sharedInstructions = [
-  "You are the senior Manager inside an agentic artist operating system. Think like Scooter Braun, Troy Carter, Irving Azoff, or another elite-tier music manager who operates at the highest level of artist career architecture.",
+  "You are the senior Manager inside an agentic artist operating system. Use first-principles artist management judgment: specific, commercially literate, creatively sensitive, and honest about uncertainty.",
   "The application supplies a complete artist operating packet. You alone decide whether there is a durable management objective and, if so, author its mission, checkpoints, tasks, timeline, evidence links, and permission gates.",
   "Mission Genesis is a Mission Orchestrator, not the source of first strategy. It must consume packet.managerIntelligence strategic diagnosis, mission implications, and careerConditionDiagnosis before authoring any mission.",
   "careerConditionDiagnosis is mandatory: before selecting mission families, identify the top career conditions in the packet, such as feature_leverage_moment, feature_overshadowing_risk, artist_identity_gap, song_first_attention, market_opening, rights_splits_risk, team_structure_gap, deal_readiness_moment, fan_ownership_gap, or career_direction_unclear.",
   "You are not creating marketing tasks. You are creating career-management workstreams for a human artist team. Consider creative, A&R, artist identity, collaboration, business affairs, finance, live, brand, PR, team operations, fan ownership, deal readiness, wellbeing, and market expansion.",
   "Do not recommend smart URLs, TikTok conversion, creator pilots, saves, follows, or playlist pushes unless the career-condition diagnosis specifically says the artist's highest priority is fan capture, conversion, or campaign execution.",
-  "Mission Judge: after generating candidates, reject generic missions, marketing-default missions, mixed-objective missions, system-facing tasks, vague checkpoints, and any mission not tied to one career condition. Split mixed missions before activation.",
+  "Mission Judge: before activation, reject a generic mission, marketing-default mission, mixed-objective mission, system-facing tasks, vague checkpoints, or any mission not tied to one career condition.",
   "One mission equals one career-management workstream for one career condition. A mission cannot mix career thesis, team operations, and campaign execution.",
   "Do not create a mission merely because this workflow was invoked. no_mission is a correct and valuable result when the packet does not justify coordinated work.",
   "CRITICAL: Do not use generic templates, canned release plans, smart-link checklists, or fixed seven-day timelines. Every single element must be derived from this specific artist's profile, music, evidence, memory, budget, team capacity, goals, constraints, active work, and agent reports. If you cannot produce artist-specific work, return no_mission and ask for the missing context.",
@@ -350,17 +371,18 @@ const sharedInstructions = [
   "Visible task steps must be human-facing only. Do not write system-support instructions such as retrieving the packet, attaching evidence refs, referencing mission.sourceRefs, or populating permission request queues.",
   "Every task MUST include a 'steps' array with 2–6 plain-language sequential actions. Steps describe exactly what to do — specific enough that someone could execute them without needing a meeting. No vague steps like 'do the research' or 'complete the task'. Good step examples: 'Pull city-level streaming breakdown from Spotify for Artists for the last 90 days', 'Build a creator brief with hook timestamp, posting window, and niche context for each target', 'Draft contract term sheet and send to entertainment attorney for review by [week 2]'.",
   "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: weeks or months based on the actual scope of the work involved.",
-  "Ask every material user-controlled question at once, between two and five questions. Do not ask anything already answered by profile, memory, evidence, or prior context answers.",
+  "Every task must declare exactly one completionMode: result_note when the user can report an observable outcome, manager_draft when the Manager can prepare the substantive artifact in chat, or evidence when an external file or proof must be supplied. Never require an upload for manager_draft.",
+  "Every task must state completionExpectation, deliverableRequirements, managerResponsibility, and userResponsibility so an independent artist knows what happens next without a meeting.",
+  "Ask at most one decision-changing user question at a time. Include a recommendedAnswer and recommendationReason so the user can accept the Manager's judgment or say they are unsure. Do not ask anything already answered by profile, memory, evidence, or prior context answers.",
   "Missing source proof produces request_evidence. Missing user-controlled intent, capacity, budget, timing, or boundaries may produce candidate_needs_context.",
   "If active work already owns the objective, return update_existing_mission with its exact mission id. You MUST still provide a complete revised plan, with the same rigour as activate_mission: all 7 mission identity fields (title, objective, reason, summary, patternName, currentRecommendation, timeline), changeConditions, at least 2 sourceRefs, at least one checkpoint with a binary decision rule grounded in evidence, and at least one task with 2–6 concrete steps. Author the update as if writing the mission fresh from the latest evidence. Do not return empty checkpoints or tasks.",
   "Use packet.missionPatternRegistry as the runtime management-domain contract. It defines when patterns apply, evidence needs, task types, checkpoint questions, permission boundaries, review triggers, success states, blockage states, and change conditions.",
-  "CRITICAL: Every mission MUST be grounded in a specific pattern from packet.missionPatternRegistry. Use the matched pattern's taskTypes as the skeleton for your tasks, its checkpointQuestions as the basis for checkpoint decision rules, its permissionBoundaries to determine what needs a permission request, its successState as the mission's done condition, and its blockageState as the review trigger. The mission's patternName must match a registry key or clearly derive from it. Tasks that do not trace to a pattern's taskTypes are generic and WRONG.",
-  "Use packet.recommendedMissionPatterns as strong guidance, but you may compose multiple management domains when the artist situation requires it. A global or serious artist may need career architecture plus market expansion plus audience validation plus rights or data readiness.",
-  "When the packet supports more than one durable management workstream, return multiple entries in missionCandidates. Activate candidates that are ready now; mark candidates that need user-controlled context as candidate_needs_context with their own question batch.",
+  "Ground a mission in at most two relevant patterns from packet.missionPatternRegistry. Pattern taskTypes are examples, not a skeleton or mandatory checklist. Author only tasks required by this artist's objective and current evidence.",
+  "Use packet.recommendedMissionPatterns only when they fit the user's current request. An empty recommendation list is a valid signal; do not invent a career thesis or data-upload mission to fill it.",
+  "Create or update at most one mission for one user request. Other possible workstreams belong in the explanation, not missionCandidates.",
   "Top-level outcome, questions, mission, checkpoints, tasks, and permissionRequests describe the primary decision only. If the primary top-level outcome is activate_mission, update_existing_mission, request_evidence, or no_mission, top-level questions MUST be an empty array.",
-  "If one mission candidate can activate now and another candidate needs user-controlled context, set the top-level outcome to activate_mission, keep top-level questions empty, and put the context questions only inside that candidate_needs_context entry in missionCandidates.",
   "Only set top-level outcome to candidate_needs_context when no mission should activate until those exact top-level questions are answered. In that case top-level checkpoints, tasks, and permissionRequests must be empty.",
-  "Do not collapse every mission into promotion of the strongest song. Compose multiple management domains when evidence, memory, source limits, or agent reports show more than one management problem inside a single durable objective.",
+  "Do not default every mission to promoting the strongest song. Consider all relevant management domains, then choose the single workstream that creates the most leverage now.",
   "If no listed pattern fits, create an ad hoc pattern in mission.patternName and explain why in mission.reason. The ad hoc mission must still obey the registry contract: evidence, checkpoint, task, permission, review trigger, success state, blockage state, and change condition.",
   "External outreach, spend, publishing, submission, scheduling, release-plan changes, sensitive commitments, and legal/finance/rights conclusions require a permission request.",
   "For no_mission or request_evidence, leave mission text fields empty and return empty checkpoints, tasks, and permissionRequests.",
@@ -372,8 +394,8 @@ export function buildMissionGenesisInstructions(mode: MissionGenesisMode) {
   return [
     ...sharedInstructions,
     mode === "continuation"
-      ? "This is the continuation after the user answered the complete context batch. The supplied prior candidate is the work being evaluated and is not a duplicate existing mission. You must not ask another round of context questions. Decide activate_mission, request_evidence, update_existing_mission, or no_mission."
-      : "This is the initial synthesis. Ask one complete batch of context questions only when those answers materially change whether or how the mission should exist.",
+      ? "This is the continuation after the user answered the decision-changing context question. The supplied prior candidate is the work being evaluated and is not a duplicate existing mission. You must not ask another round of context questions. Decide activate_mission, request_evidence, update_existing_mission, or no_mission."
+      : "This is the initial synthesis. Ask one decision-changing context question only when its answer materially changes whether or how the mission should exist.",
   ].join("\n");
 }
 
@@ -525,7 +547,7 @@ function validateOutput(output: MissionGenesisOutput, packet: unknown, mode: Mis
   }
 
   if (output.outcome === "candidate_needs_context") {
-    if (output.questions.length < 2 || output.questions.length > 5) throw new Error("Mission Genesis context must contain two to five questions.");
+    if (output.questions.length !== 1) throw new Error("Mission Genesis context must contain exactly one decision-changing question.");
     assertMissionIdentity(output.mission);
     if (output.checkpoints.length || output.tasks.length || output.permissionRequests.length) {
       throw new Error("Mission Genesis cannot create plan work before required context is answered.");
@@ -619,7 +641,7 @@ function validateMissionCandidate(candidate: MissionGenesisCandidate, packet: un
     if (matchedAnchors.length < 2) throw new Error(`Mission candidate ${candidate.key} is missing artist-specific anchors from the operating packet.`);
   }
   if (candidate.outcome === "candidate_needs_context") {
-    if (candidate.questions.length < 2 || candidate.questions.length > 5) throw new Error(`Mission candidate ${candidate.key} context must contain two to five questions.`);
+    if (candidate.questions.length !== 1) throw new Error(`Mission candidate ${candidate.key} context must contain exactly one decision-changing question.`);
     if (candidate.checkpoints.length || candidate.tasks.length || candidate.permissionRequests.length) throw new Error(`Mission candidate ${candidate.key} cannot create plan work before context is answered.`);
   }
   if (candidate.outcome === "activate_mission") {
@@ -738,6 +760,8 @@ function readQuestions(value: unknown): MissionGenesisQuestion[] {
     reason: readString(item.reason, "questions.reason", true),
     answerKind: readEnum(item.answerKind, answerKindValues, "questions.answerKind") as MissionGenesisQuestion["answerKind"],
     options: readStringArray(item.options),
+    recommendedAnswer: readString(item.recommendedAnswer, "questions.recommendedAnswer", false),
+    recommendationReason: readString(item.recommendationReason, "questions.recommendationReason", false),
   }));
 }
 
@@ -778,7 +802,20 @@ function readTasks(value: unknown): MissionGenesisTask[] {
     purpose: readString(item.purpose, "tasks.purpose", true),
     steps: readStringArray(item.steps),
     evidenceNeeded: readStringArray(item.evidenceNeeded),
-    completionExpectation: readString(item.completionExpectation, "tasks.completionExpectation", true),
+    completionExpectation: typeof item.completionExpectation === "string" && item.completionExpectation.trim()
+      ? item.completionExpectation.trim()
+      : readString(item.purpose, "tasks.purpose", true),
+    completionMode: readOptionalEnum(item.completionMode, ["result_note", "manager_draft", "evidence"], "result_note") as MissionGenesisTask["completionMode"],
+    deliverableTitle: typeof item.deliverableTitle === "string" && item.deliverableTitle.trim()
+      ? item.deliverableTitle.trim()
+      : readString(item.title, "tasks.title", true),
+    deliverableRequirements: readStringArray(item.deliverableRequirements),
+    managerResponsibility: typeof item.managerResponsibility === "string" && item.managerResponsibility.trim()
+      ? item.managerResponsibility.trim()
+      : "Manager reviews the submitted result and recommends the next move.",
+    userResponsibility: typeof item.userResponsibility === "string" && item.userResponsibility.trim()
+      ? item.userResponsibility.trim()
+      : "Complete the task steps and report the observable result.",
     riskIfLate: readString(item.riskIfLate, "tasks.riskIfLate", true),
     sourceRefs: readStringArray(item.sourceRefs),
   }));
@@ -888,6 +925,10 @@ function readStringArray(value: unknown) {
 function readEnum(value: unknown, allowed: string[], key: string) {
   if (typeof value !== "string" || !allowed.includes(value)) throw new Error(`OpenAI Mission Genesis output has invalid ${key}.`);
   return value;
+}
+
+function readOptionalEnum(value: unknown, allowed: string[], fallback: string) {
+  return typeof value === "string" && allowed.includes(value) ? value : fallback;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1013,8 +1054,8 @@ export function validateAndAutoRepairOutput(output: MissionGenesisOutput, packet
     output.tasks = [];
     output.permissionRequests = [];
 
-    if (output.questions.length > 5) {
-      output.questions = output.questions.slice(0, 5);
+    if (output.questions.length > 1) {
+      output.questions = output.questions.slice(0, 1);
     }
   }
 
@@ -1129,6 +1170,7 @@ function sanitizeCandidateSafe(candidate: MissionGenesisCandidate, packet: unkno
   for (const task of candidate.tasks) task.sourceRefs = sanitizeRefs(task.sourceRefs);
   if (!candidate.reasons.length) candidate.reasons = ["Candidate synthesized from available manager context."];
   if (candidate.outcome === "candidate_needs_context") {
+    candidate.questions = candidate.questions.slice(0, 1);
     candidate.checkpoints = [];
     candidate.tasks = [];
     candidate.permissionRequests = [];
@@ -1173,6 +1215,8 @@ function readQuestionsSafe(value: unknown): MissionGenesisQuestion[] {
     reason: readStringSafe(item.reason, "No reason provided"),
     answerKind: readEnumSafe(item.answerKind, answerKindValues, "short_text") as MissionGenesisQuestion["answerKind"],
     options: readStringArray(item.options),
+    recommendedAnswer: readStringSafe(item.recommendedAnswer, ""),
+    recommendationReason: readStringSafe(item.recommendationReason, ""),
   }));
 }
 
@@ -1214,6 +1258,11 @@ function readTasksSafe(value: unknown): MissionGenesisTask[] {
     steps: readStringArray(item.steps),
     evidenceNeeded: readStringArray(item.evidenceNeeded),
     completionExpectation: readStringSafe(item.completionExpectation, "Completed outcomes are documented."),
+    completionMode: readEnumSafe(item.completionMode, ["result_note", "manager_draft", "evidence"], "result_note") as MissionGenesisTask["completionMode"],
+    deliverableTitle: readStringSafe(item.deliverableTitle, ""),
+    deliverableRequirements: readStringArray(item.deliverableRequirements),
+    managerResponsibility: readStringSafe(item.managerResponsibility, ""),
+    userResponsibility: readStringSafe(item.userResponsibility, ""),
     riskIfLate: readStringSafe(item.riskIfLate, "Project timelines might delay project completion."),
     sourceRefs: readStringArray(item.sourceRefs),
   }));

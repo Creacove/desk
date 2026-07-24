@@ -469,6 +469,7 @@ function CleanProductionWorkspace({
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentViewModel | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<ConversationViewModel | null>(null);
+  const [managerTaskContextId, setManagerTaskContextId] = useState<string | null>(null);
   const [selectedMissionId, setSelectedMissionId] = useState("");
   const [missionRoomOpenRequestKey, setMissionRoomOpenRequestKey] = useState(0);
   const [missionRoomOpenTab, setMissionRoomOpenTab] = useState<MissionRoomTab>("pulse");
@@ -654,6 +655,7 @@ function CleanProductionWorkspace({
   }
 
   function openManager() {
+    setManagerTaskContextId(null);
     navigate("managerOffice");
   }
 
@@ -663,6 +665,7 @@ function CleanProductionWorkspace({
   }
 
   function openConversation(conversation: ConversationViewModel) {
+    setManagerTaskContextId(conversation.taskContextId ?? null);
     setSelectedConversation(conversation);
     navigate("conversationWorkspace");
   }
@@ -671,7 +674,7 @@ function CleanProductionWorkspace({
     body: string,
     conversationId?: string,
     stableTopic?: string,
-    options: { contextRequestId?: string; contextAnswers?: ManagerConversationContextAnswer[] } = {},
+    options: { contextRequestId?: string; contextAnswers?: ManagerConversationContextAnswer[]; taskId?: string } = {},
   ) {
     const trimmedBody = body.trim();
     if (!trimmedBody) return;
@@ -701,6 +704,7 @@ function CleanProductionWorkspace({
         ...(conversationId ? { conversationId } : {}),
         ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
         ...(options.contextAnswers?.length ? { contextAnswers: options.contextAnswers } : {}),
+        ...(options.taskId ? { taskId: options.taskId } : {}),
       };
 
       if (repositories.manager.sendMessageStream) {
@@ -1154,11 +1158,38 @@ function CleanProductionWorkspace({
     return deliverable;
   }
 
-  async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) {
+  function workWithManagerOnTask(taskId: string) {
+    const mission = missions.find((item) => item.tasks?.some((task) => task.id === taskId));
+    const task = mission?.tasks?.find((item) => item.id === taskId);
+    if (!task) return;
+    setManagerTaskContextId(taskId);
+    setSelectedMissionId(mission?.id ?? "");
+    void sendManagerMessage(
+      `Help me complete "${task.title}". Use the task's completion contract and current mission context. ${
+        task.managerDraft ? "Continue revising the current draft." : "Start a strong first draft and ask only for context that materially changes it."
+      }`,
+      undefined,
+      `Task: ${task.title}`,
+      { taskId },
+    );
+  }
+
+  function returnToManagerTask() {
+    if (!managerTaskContextId) return;
+    const mission = missions.find((item) => item.tasks?.some((task) => task.id === managerTaskContextId));
+    if (mission) setSelectedMissionId(mission.id);
+    setMissionRoomOpenTaskId(managerTaskContextId);
+    setMissionRoomOpenTab("tasks");
+    setMissionRoomOpenRequestKey((current) => current + 1);
+    navigate("missionsWorkspace");
+  }
+
+  async function completeMissionTask(taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) {
     const updatedMission = await repositories.missions.completeTask(taskId, {
       status,
       note,
       documentIds,
+      managerOutputId,
     });
     setMissions((current) => current.map((mission) => mission.id === updatedMission.id ? updatedMission : mission));
     setSelectedMissionId(updatedMission.id);
@@ -1362,16 +1393,20 @@ function CleanProductionWorkspace({
             <ConversationWorkspace
               conversation={activeConversation}
               onBack={() => navigate("managerOffice")}
+              taskContext={managerTaskContextId
+                ? missions.flatMap((mission) => mission.tasks ?? []).find((task) => task.id === managerTaskContextId)
+                : undefined}
+              onBackToTask={managerTaskContextId ? returnToManagerTask : undefined}
               onOpenCreatedWork={openCreatedWork}
               onOpenDecisionPackage={() => navigate("decisionPackage")}
-              onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic)}
+              onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, { taskId: managerTaskContextId ?? undefined })}
               onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
-                void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers })
+                void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers, taskId: managerTaskContextId ?? undefined })
               }
               onRetryLastMessage={() => {
                 const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
                 if (lastArtistMessage) {
-                  void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic);
+                  void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, { taskId: managerTaskContextId ?? undefined });
                 }
               }}
               sendPending={managerSendPending}
@@ -1387,6 +1422,7 @@ function CleanProductionWorkspace({
               onSelectMission={setSelectedMissionId}
               onCreateFirstMission={createFirstMissionWithManager}
               onOpenManager={openManager}
+              onWorkWithManager={workWithManagerOnTask}
               firstMissionPending={managerSendPending}
               onApproveTask={approveMissionTask}
               onCompleteTask={completeMissionTask}

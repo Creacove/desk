@@ -243,69 +243,59 @@ export function getMissionPatternRegistry() {
 }
 
 export function selectMissionPatternsForPacket(packet: PacketLike) {
-  const text = normalize(
-    JSON.stringify({
-      artist: packet.artist ?? {},
-      candidates: packet.managerIntelligenceMissionSeed?.mission_candidates ?? [],
-      evidence: packet.evidence ?? [],
-    }),
+  const candidateText = normalizeMissionSignalText(
+    packet.managerIntelligenceMissionSeed?.mission_candidates ?? [],
   );
-  const selected = new Map<string, MissionPattern>();
+  const evidenceText = normalizeMissionSignalText(packet.evidence ?? []);
+  const artistText = normalizeMissionSignalText({
+    goals: packet.artist && typeof packet.artist === "object"
+      ? (packet.artist as Record<string, unknown>).goals
+      : [],
+    homeMarket: packet.artist && typeof packet.artist === "object"
+      ? (packet.artist as Record<string, unknown>).homeMarket
+      : "",
+  });
+  const text = [candidateText, evidenceText, artistText].filter(Boolean).join(" ");
+  if (!text) return [];
 
-  const add = (key: string) => {
-    const pattern = missionPatternRegistry.find((item) => item.key === key);
-    if (pattern) selected.set(pattern.key, pattern);
+  const scores = new Map<string, number>();
+  const score = (key: string, needles: string[], weight = 1) => {
+    const hits = needles.filter((needle) => text.includes(needle)).length;
+    if (hits) scores.set(key, (scores.get(key) ?? 0) + hits * weight);
   };
 
-  if (matchesAny(text, ["audience", "fan", "creator", "content", "tiktok", "instagram", "youtube", "repeatable", "owned"])) {
-    add("fan_ownership");
-    add("creator_content_validation");
-  }
-  if (matchesAny(text, ["market", "city", "lagos", "london", "diaspora", "live", "tour", "venue", "promoter"])) {
-    add("city_live_market_validation");
-  }
-  if (matchesAny(text, ["split", "rights", "ownership", "metadata", "royalty", "finance", "budget", "deal risk"])) {
-    add("rights_cleanup");
-  }
-  if (matchesAny(text, ["source", "private data", "upload", "csv", "smart link", "analytics", "proof", "missing"])) {
-    add("data_source_completeness");
-  }
-  if (matchesAny(text, ["positioning", "narrative", "story", "brand posture", "public language"])) {
-    add("artist_positioning");
-  }
-  if (matchesAny(text, ["focus asset", "song", "catalog", "creative", "a&r", "collaboration", "feature", "collaborator", "asake", "artist attachment"])) {
-    add("collaboration_strategy");
-    add("catalog_asset_narrative");
-    add("focus_asset_selection");
-  }
-  if (matchesAny(text, ["release", "distributor", "dsp pitch", "launch", "date"])) {
-    add("release_planning");
-  }
-  if (matchesAny(text, ["team capacity", "overloaded", "no owner assigned", "approval chain", "accountability"])) {
-    add("team_operations");
-  }
-  if (matchesAny(text, ["sync", "deal", "brand", "partnership", "pitch", "license", "sponsorship"])) {
-    add("sync_deal_readiness");
-  }
-  if (matchesAny(text, ["crisis", "reputation", "wellbeing", "burnout", "sensitive", "conflict", "public risk"])) {
-    add("reputation_wellbeing");
-  }
-  if (matchesAny(text, ["career direction", "north star", "long-term", "competing opportunities", "do-not-do"])) {
-    add("career_north_star");
-  }
+  score("creator_content_validation", ["audience", "fan", "creator", "content", "tiktok", "instagram", "youtube", "repeatable"], 3);
+  score("fan_ownership", ["owned audience", "email", "community", "repeat fan", "fan conversion"], 2);
+  score("city_live_market_validation", ["market expansion", "city", "lagos", "london", "diaspora", "live", "tour", "venue", "promoter"], 3);
+  score("rights_cleanup", ["split", "rights", "ownership", "metadata", "royalty", "deal risk"], 3);
+  score("data_source_completeness", ["private data", "csv", "smart link", "analytics gap", "source gap"], 2);
+  score("artist_positioning", ["positioning", "narrative", "brand posture", "public language"], 2);
+  score("collaboration_strategy", ["collaboration", "feature", "collaborator", "artist attachment"], 2);
+  score("catalog_asset_narrative", ["catalog story", "catalog narrative"], 2);
+  score("focus_asset_selection", ["focus asset", "focus song", "lead single"], 2);
+  score("release_planning", ["release", "distributor", "dsp pitch", "launch date"], 2);
+  score("team_operations", ["team capacity", "overloaded", "no owner assigned", "approval chain", "accountability"], 2);
+  score("sync_deal_readiness", ["sync", "brand partnership", "license", "sponsorship"], 2);
+  score("reputation_wellbeing", ["crisis", "reputation", "wellbeing", "burnout", "public risk"], 2);
+  score("career_north_star", ["career direction", "north star", "long-term", "competing opportunities", "do-not-do"], 2);
 
-  if (selected.size === 0) {
-    add("career_north_star");
-    add("data_source_completeness");
-  }
-
-  return [...selected.values()].slice(0, 6);
+  return [...scores.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .map(([key]) => missionPatternRegistry.find((item) => item.key === key))
+    .filter((item): item is MissionPattern => Boolean(item))
+    .slice(0, 2);
 }
 
 function normalize(value: string) {
   return value.toLowerCase();
 }
 
-function matchesAny(value: string, needles: string[]) {
-  return needles.some((needle) => value.includes(needle));
+function normalizeMissionSignalText(value: unknown): string {
+  if (typeof value === "string") return normalize(value.trim());
+  if (Array.isArray(value)) return value.map(normalizeMissionSignalText).filter(Boolean).join(" ");
+  if (!value || typeof value !== "object") return "";
+  return Object.values(value as Record<string, unknown>)
+    .map(normalizeMissionSignalText)
+    .filter(Boolean)
+    .join(" ");
 }

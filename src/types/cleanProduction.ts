@@ -183,6 +183,14 @@ export type MissionTaskDeliverableViewModel = {
   validationSummary?: string;
 };
 
+export type MissionTaskDraftViewModel = {
+  id: string;
+  title: string;
+  summary: string;
+  status: "draft" | "needs_revision" | "accepted";
+  createdAt?: string;
+};
+
 export type MissionTaskViewModel = {
   id: string;
   checkpointId: string;
@@ -194,6 +202,13 @@ export type MissionTaskViewModel = {
   steps: string[];
   evidenceIds: string[];
   deliverables?: MissionTaskDeliverableViewModel[];
+  completionMode?: "result_note" | "manager_draft" | "evidence";
+  completionExpectation?: string;
+  deliverableTitle?: string;
+  deliverableRequirements?: string[];
+  managerResponsibility?: string;
+  userResponsibility?: string;
+  managerDraft?: MissionTaskDraftViewModel;
   dependency: string;
   riskIfLate: string;
   result?: MissionTaskResultViewModel;
@@ -394,6 +409,7 @@ export type DecisionPackageViewModel = {
 
 export type ConversationViewModel = {
   id: string;
+  taskContextId?: string;
   topic: string;
   status: string;
   summary: string;
@@ -477,6 +493,8 @@ export type ManagerMissionContextQuestion = {
   reason: string;
   answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
   options?: string[];
+  recommendedAnswer?: string;
+  recommendationReason?: string;
 };
 
 export type ManagerConversationContextAnswer = {
@@ -580,6 +598,7 @@ export type ManagerRepository = {
   sendMessage(input: {
     conversationId?: string;
     body: string;
+    taskId?: string;
     contextRequestId?: string;
     contextAnswers?: ManagerConversationContextAnswer[];
   }): Promise<ConversationViewModel>;
@@ -587,6 +606,7 @@ export type ManagerRepository = {
     input: {
       conversationId?: string;
       body: string;
+      taskId?: string;
       contextRequestId?: string;
       contextAnswers?: ManagerConversationContextAnswer[];
     },
@@ -601,7 +621,12 @@ export type MissionRepository = {
     taskId: string,
     input: { title: string; file: File },
   ): Promise<MissionTaskDeliverableViewModel>;
-  completeTask(taskId: string, input: { status: "completed" | "blocked"; note: string; documentIds?: string[] }): Promise<MissionViewModel>;
+  completeTask(taskId: string, input: {
+    status: "completed" | "blocked";
+    note: string;
+    documentIds?: string[];
+    managerOutputId?: string;
+  }): Promise<MissionViewModel>;
 };
 
 export type MissionGenesisQuestionViewModel = {

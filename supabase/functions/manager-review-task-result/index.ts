@@ -15,9 +15,11 @@ type ReviewInput = {
   status: "completed" | "blocked";
   note: string;
   documentIds?: string[];
+  managerOutputId?: string;
 };
 
 type ManagerTaskReview = {
+  outcome: "accepted" | "needs_revision" | "blocked";
   summary: string;
   managerInterpretation: string;
   missionEffect: string;
@@ -60,7 +62,7 @@ Deno.serve(async (request) => {
     await assertActiveWorkspaceEntitlement(authClient, input);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
-    const context = await loadReviewContext(db, input);
+    const context = await loadReviewContext(db, input, user.id);
     runId = await createManagerRun(db, input, context);
     usageId = await createUsageEvent(db, input, runId);
 
@@ -82,11 +84,11 @@ Deno.serve(async (request) => {
 function validateInput(input: ReviewInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.taskId) throw new Error("Manager task review input is incomplete.");
   if (input.status !== "completed" && input.status !== "blocked") throw new Error("Manager task review status must be completed or blocked.");
-  if (!input.note?.trim()) throw new Error("Manager task review requires the task result note.");
+  if (typeof input.note !== "string") throw new Error("Manager task review note must be a string.");
   if (input.documentIds && !Array.isArray(input.documentIds)) throw new Error("Manager task review document IDs must be an array.");
 }
 
-async function loadReviewContext(db: any, input: ReviewInput) {
+async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId: string) {
   const { data: workspace, error: workspaceError } = await db
     .from("artist_workspaces")
     .select("id,account_id,artist_id")
@@ -99,7 +101,7 @@ async function loadReviewContext(db: any, input: ReviewInput) {
 
   const { data: task, error: taskError } = await db
     .from("tasks")
-    .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,evidence_needed,completion_expectation,risk_if_late")
+    .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
     .eq("id", input.taskId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -107,26 +109,34 @@ async function loadReviewContext(db: any, input: ReviewInput) {
   if (taskError) throw taskError;
   if (!task?.mission_id) throw new Error("Manager task review task was not found.");
 
-  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments] = await Promise.all([
+  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments, submittedManagerDraft] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
-    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,evidence_needed,completion_expectation,risk_if_late", input, task.mission_id, 80),
+    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
     selectMany(db, "task_steps", "id,task_id,order_index,body", input, 160),
     selectMany(db, "task_results", "id,task_id,mission_id,checkpoint_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up,created_at", input, 80),
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,mission_id,task_id,checkpoint_id,created_at", input, 120),
     selectMany(db, "operating_events", "id,event_type,target_type,target_id,mission_id,checkpoint_id,task_id,summary,payload,created_at", input, 80),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,created_at", input, 1),
     loadSubmittedDocuments(db, input),
+    loadSubmittedManagerDraft(db, input),
   ]);
 
   const missingRequiredDeliverable = input.status === "completed" && taskRequiresDocument(task, taskSteps) && submittedDocuments.length === 0;
   if (missingRequiredDeliverable) {
     throw new Error("This task requires a submitted document before it can be marked complete.");
   }
+  if (input.status === "completed" && task.completion_mode === "manager_draft" && !submittedManagerDraft) {
+    throw new Error("This task needs a Manager draft before it can be submitted for review.");
+  }
+  if (!input.note.trim() && (input.status === "blocked" || !task.completion_mode || task.completion_mode === "result_note")) {
+    throw new Error("Manager task review requires the task result note.");
+  }
 
   return {
     packetVersion: "manager_task_result_review_v1",
+    submittedByUserId,
     generatedAt: new Date().toISOString(),
     input: { taskId: input.taskId, status: input.status, note: input.note.trim(), documentIds: input.documentIds ?? [] },
     profile: profile[0] ?? {},
@@ -140,6 +150,7 @@ async function loadReviewContext(db: any, input: ReviewInput) {
     recentOperatingEvents: events,
     latestManagerIntelligencePacket: managerPackets[0] ?? null,
     submittedDocuments,
+    submittedManagerDraft,
     missingRequiredDeliverable,
     policy: {
       internalWorkspaceUpdatesAllowed: true,
@@ -156,11 +167,14 @@ async function callOpenAIManagerReview(context: unknown) {
     method: "POST",
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+      model: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
+      reasoning: { effort: "high" },
       instructions: [
         "You are the AI Manager reviewing a completed or blocked mission task result.",
         "Decide what the task result means for the checkpoint and mission. Update internal workspace state only; permission-required external actions must be returned as permissionRequests.",
         "When submittedDocuments are present, treat them as the user's task deliverables. If a required deliverable is missing, do not mark the checkpoint or mission complete.",
+        "When submittedManagerDraft is present, review that exact immutable version against every deliverableRequirement and completionExpectation.",
+        "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
       ].join("\n"),
       input: JSON.stringify(context),
@@ -186,6 +200,7 @@ const reviewJsonSchema = {
     additionalProperties: false,
     required: [
       "summary",
+      "outcome",
       "managerInterpretation",
       "missionEffect",
       "checkpointEffect",
@@ -200,6 +215,7 @@ const reviewJsonSchema = {
       "permissionRequests",
     ],
     properties: {
+      outcome: { type: "string", enum: ["accepted", "needs_revision", "blocked"] },
       summary: { type: "string" },
       managerInterpretation: { type: "string" },
       missionEffect: { type: "string" },
@@ -249,11 +265,17 @@ const reviewJsonSchema = {
 async function applyManagerReview(db: any, input: ReviewInput, context: any, runId: string, review: ManagerTaskReview) {
   const now = new Date().toISOString();
   const checkpointId = context.task.primary_checkpoint_id ?? null;
+  const outcome = input.status === "blocked" ? "blocked" : review.outcome;
+  const taskState = outcome === "accepted"
+    ? { status: "completed", resultStatus: "completed", eventType: "task_completed" }
+    : outcome === "needs_revision"
+      ? { status: "in_progress", resultStatus: "revised", eventType: "task_needs_revision" }
+      : { status: "blocked", resultStatus: "blocked", eventType: "task_blocked" };
 
   const { error: taskError } = await db
     .from("tasks")
     .update({
-      status: input.status,
+      status: taskState.status,
       updated_at: now,
     })
     .eq("id", input.taskId)
@@ -267,9 +289,9 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     mission_id: context.task.mission_id,
     checkpoint_id: checkpointId,
     task_id: input.taskId,
-    event_type: input.status === "blocked" ? "task_blocked" : "task_completed",
+    event_type: taskState.eventType,
     from_status: context.task.status,
-    to_status: input.status,
+    to_status: taskState.status,
     actor_type: "user",
     reason: input.note.trim(),
     payload: { manager_review: review.summary },
@@ -284,8 +306,10 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     mission_id: context.task.mission_id,
     checkpoint_id: checkpointId,
     task_id: input.taskId,
-    status: input.status,
+    status: taskState.resultStatus,
     user_note: input.note.trim(),
+    submitted_manager_output_id: context.submittedManagerDraft?.id ?? null,
+    submitted_by_user_id: context.submittedByUserId,
     raw_event: { source: "manager-review-task-result", input },
     summary: review.summary,
     manager_interpretation: review.managerInterpretation,
@@ -299,7 +323,7 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
 
   if (checkpointId) {
     const { error } = await db.from("checkpoints").update({
-      status: review.checkpointStatus,
+      status: outcome === "needs_revision" ? "needs_revision" : outcome === "blocked" ? "blocked" : review.checkpointStatus,
       recommendation: review.checkpointRecommendation,
       updated_at: now,
     }).eq("id", checkpointId).eq("artist_workspace_id", input.artistWorkspaceId);
@@ -307,7 +331,7 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
   }
 
   const { error: missionError } = await db.from("missions").update({
-    status: review.missionStatus,
+    status: outcome === "needs_revision" ? "active" : outcome === "blocked" ? "blocked" : review.missionStatus,
     progress: clampProgress(review.missionProgress),
     review_point: context.checkpoint?.title ?? context.mission.review_point ?? "Manager task review",
     current_recommendation: review.missionRecommendation,
@@ -315,8 +339,18 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
   }).eq("id", context.task.mission_id).eq("artist_workspace_id", input.artistWorkspaceId);
   if (missionError) throw missionError;
 
+  const { data: existingMemory, error: existingMemoryError } = await db
+    .from("memory_entries")
+    .select("content")
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("task_id", input.taskId)
+    .limit(100);
+  if (existingMemoryError) throw existingMemoryError;
+  const knownMemory = new Set((existingMemory ?? []).map((item: any) => normalizeMemoryContent(item.content)));
+
   for (const content of review.memoryEntries.slice(0, 6)) {
-    if (!content.trim()) continue;
+    const normalizedContent = normalizeMemoryContent(content);
+    if (!normalizedContent || knownMemory.has(normalizedContent)) continue;
     const { error } = await db.from("memory_entries").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
@@ -325,7 +359,7 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
       checkpoint_id: checkpointId,
       task_id: input.taskId,
       scope: "mission",
-      kind: input.status === "blocked" ? "blocker" : "outcome_note",
+      kind: outcome === "blocked" ? "blocker" : "outcome_note",
       content: content.trim(),
       source_type: "manager_review_task_result",
       source_id: result.id,
@@ -334,13 +368,14 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
       created_from_run_id: runId,
     });
     if (error) throw error;
+    knownMemory.add(normalizedContent);
   }
 
   const { data: operatingEvent, error: operatingEventError } = await db.from("operating_events").insert({
     account_id: input.accountId,
     artist_workspace_id: input.artistWorkspaceId,
     artist_id: input.artistId,
-    event_type: input.status === "blocked" ? "task_blocked" : "task_completed",
+    event_type: taskState.eventType,
     actor_type: "manager",
     target_type: "task",
     target_id: input.taskId,
@@ -354,6 +389,33 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     payload: { review, permissionRequests: review.permissionRequests, followUpTasks: review.followUpTasks },
   }).select("id").single();
   if (operatingEventError) throw operatingEventError;
+
+  if (context.submittedManagerDraft?.id) {
+    const render = isRecord(context.submittedManagerDraft.render_json) ? context.submittedManagerDraft.render_json : {};
+    const { error: draftStatusError } = await db.from("manager_outputs").update({
+      render_json: { ...render, status: outcome === "accepted" ? "accepted" : "needs_revision" },
+    }).eq("id", context.submittedManagerDraft.id);
+    if (draftStatusError) throw draftStatusError;
+  }
+
+  const { data: previousOutputs, error: previousOutputError } = await db
+    .from("manager_outputs")
+    .select("id")
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("subject_type", "task")
+    .eq("subject_id", input.taskId)
+    .eq("output_type", "review_read")
+    .eq("is_current", true)
+    .limit(1);
+  if (previousOutputError) throw previousOutputError;
+  const previousOutputId = previousOutputs?.[0]?.id ?? null;
+  if (previousOutputId) {
+    const { error: staleOutputError } = await db
+      .from("manager_outputs")
+      .update({ is_current: false })
+      .eq("id", previousOutputId);
+    if (staleOutputError) throw staleOutputError;
+  }
 
   const { error: outputError } = await db.from("manager_outputs").insert({
     account_id: input.accountId,
@@ -375,6 +437,7 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
       review,
     },
     created_from_run_id: runId,
+    supersedes_output_id: previousOutputId,
     is_current: true,
   });
   if (outputError) throw outputError;
@@ -424,7 +487,7 @@ async function createUsageEvent(db: any, input: ReviewInput, runId: string) {
     subject_type: "task",
     subject_id: input.taskId,
     provider: "openai",
-    model_or_tool: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+    model_or_tool: Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-sol",
     operation_key: "manager_review_task_result",
     status: "started",
     provider_request_count: 1,
@@ -463,6 +526,23 @@ async function markUsageFailedSafe(usageId: string, message: string) {
   }
 }
 
+async function loadSubmittedManagerDraft(db: any, input: ReviewInput) {
+  if (!input.managerOutputId) return null;
+  const { data, error } = await db.from("manager_outputs")
+    .select("id,subject_id,mission_id,summary,render_json,created_at")
+    .eq("id", input.managerOutputId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("output_type", "task_draft")
+    .eq("subject_type", "task")
+    .eq("subject_id", input.taskId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new Error("The submitted Manager draft version was not found.");
+  return data;
+}
+
 async function loadSubmittedDocuments(db: any, input: ReviewInput) {
   const submittedIds = Array.isArray(input.documentIds) ? input.documentIds.filter((id) => typeof id === "string" && id.trim()).map((id) => id.trim()) : [];
   const { data: linkRows, error: linkError } = await db.from("artifact_links")
@@ -489,7 +569,7 @@ async function loadSubmittedDocuments(db: any, input: ReviewInput) {
       .eq("artist_id", input.artistId)
       .in("id", documentIds),
     db.from("document_versions")
-      .select("id,document_id,version_number,uploaded_file_id,file_name,file_type,storage_bucket,storage_ref,extraction_status,extracted_text_ref,created_at")
+      .select("id,document_id,version_number,uploaded_file_id,file_name,file_type,storage_bucket,storage_ref,extraction_status,extracted_text_ref,metadata,created_at")
       .eq("account_id", input.accountId)
       .eq("artist_workspace_id", input.artistWorkspaceId)
       .eq("artist_id", input.artistId)
@@ -518,6 +598,7 @@ async function loadSubmittedDocuments(db: any, input: ReviewInput) {
 }
 
 function taskRequiresDocument(task: Record<string, unknown>, steps: Array<Record<string, unknown>>) {
+  if (typeof task.completion_mode === "string") return task.completion_mode === "evidence";
   const text = [
     task.title,
     task.purpose,
@@ -583,6 +664,7 @@ function normalizeReview(raw: string): ManagerTaskReview {
   const value = JSON.parse(raw);
   if (!isRecord(value)) throw new Error("Manager task review returned invalid JSON.");
   return {
+    outcome: readEnum(value.outcome, ["accepted", "needs_revision", "blocked"], "needs_revision"),
     summary: readString(value.summary, "Manager reviewed the task result."),
     managerInterpretation: readString(value.managerInterpretation, "The task result has been recorded for mission review."),
     missionEffect: readString(value.missionEffect, "Mission progress was reviewed."),
@@ -636,6 +718,12 @@ function readEnum<T extends string>(value: unknown, allowed: T[], fallback: T): 
 
 function clampProgress(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function normalizeMemoryContent(value: unknown) {
+  return typeof value === "string"
+    ? value.trim().toLocaleLowerCase().replace(/\s+/g, " ")
+    : "";
 }
 
 function numericUsage(value: unknown) {

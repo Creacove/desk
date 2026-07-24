@@ -22,6 +22,7 @@ export function MissionsWorkspace({
   onSelectMission,
   onCreateFirstMission,
   onOpenManager,
+  onWorkWithManager,
   firstMissionPending,
   onApproveTask,
   onCompleteTask,
@@ -38,9 +39,10 @@ export function MissionsWorkspace({
   onSelectMission: (id: string) => void;
   onCreateFirstMission: () => void;
   onOpenManager: () => void;
+  onWorkWithManager?: (taskId: string) => void;
   firstMissionPending: boolean;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
   onDrawer: (drawer: DrawerKind) => void;
   openRoomRequestKey?: number;
@@ -128,6 +130,7 @@ export function MissionsWorkspace({
       onApproveTask={onApproveTask}
       onCompleteTask={onCompleteTask}
       onUploadTaskDeliverable={onUploadTaskDeliverable}
+      onWorkWithManager={onWorkWithManager}
       targetTaskId={openTaskId ?? undefined}
     />
   );
@@ -252,6 +255,7 @@ function MissionRoom({
   onApproveTask,
   onCompleteTask,
   onUploadTaskDeliverable,
+  onWorkWithManager,
   targetTaskId,
 }: {
   mission: MissionViewModel;
@@ -260,8 +264,9 @@ function MissionRoom({
   onBack: () => void;
   onDrawer: (drawer: DrawerKind) => void;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
+  onWorkWithManager?: (taskId: string) => void;
   targetTaskId?: string;
 }) {
   const checkpoints = missionCheckpoints(mission);
@@ -295,7 +300,7 @@ function MissionRoom({
 
       <div className="min-h-[400px] min-w-0 max-w-full">
         {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onTab={onTab} /> : null}
-        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} onUploadTaskDeliverable={onUploadTaskDeliverable} /> : null}
+        {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} onUploadTaskDeliverable={onUploadTaskDeliverable} onWorkWithManager={onWorkWithManager} /> : null}
         {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
         {tab === "activity" ? <ActivityPanel notes={notes} events={events} /> : null}
       </div>
@@ -368,13 +373,15 @@ function TasksPanel({
   onApproveTask,
   onCompleteTask,
   onUploadTaskDeliverable,
+  onWorkWithManager,
 }: {
   checkpoints: MissionCheckpointViewModel[];
   tasks: MissionTaskViewModel[];
   targetTaskId?: string;
   onApproveTask: (taskId: string) => Promise<void>;
-  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[]) => Promise<void>;
+  onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
+  onWorkWithManager?: (taskId: string) => void;
 }) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
   const targetTask = targetTaskId ? tasks.find((task) => task.id === targetTaskId) : undefined;
@@ -415,11 +422,12 @@ function TasksPanel({
   async function confirmCompletion() {
     if (!completionNote) return;
     const note = completionNote.note.trim();
-    if (!note) {
+    const task = tasks.find((item) => item.id === completionNote.taskId);
+    const noteIsRequired = completionNote.status === "blocked" || !task || !task.completionMode || task.completionMode === "result_note";
+    if (!note && noteIsRequired) {
       setCompletionError("Please describe what you did or what happened before marking this task done.");
       return;
     }
-    const task = tasks.find((item) => item.id === completionNote.taskId);
     const deliverables = task ? resolveTaskDeliverables(task, taskDeliverables[task.id]) : [];
     const missingDeliverable = completionNote.status === "completed" && deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
     if (missingDeliverable) {
@@ -430,7 +438,7 @@ function TasksPanel({
     setCompletionPending(true);
     setCompletionError(null);
     try {
-      await onCompleteTask(completionNote.taskId, completionNote.status, note, documentIds);
+      await onCompleteTask(completionNote.taskId, completionNote.status, note, documentIds, task?.managerDraft?.id);
       setCompletedTaskIds((current) => [...new Set([...current, completionNote.taskId])]);
       setCompletionNote(null);
     } catch (err) {
@@ -562,6 +570,7 @@ function TasksPanel({
                       const hasBlockingDeliverable = deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
                       const completionBlocked = task.approvalState === "needs approval" && !approved;
                       const isConfirmingCompletion = completionNote?.taskId === task.id;
+                      const completionMode = resolveTaskCompletionMode(task);
 
                       return (
                         <div
@@ -581,7 +590,7 @@ function TasksPanel({
                             </div>
                             <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/90">{task.owner} / {task.deadline}</p>
                             {detailsOpen ? <p className="mt-3 max-w-3xl text-[13px] leading-relaxed text-foreground/89"><span className="font-bold text-foreground">Why it matters:</span> {task.purpose}</p> : null}
-                            {detailsOpen && deliverables.length ? (
+                            {detailsOpen && completionMode === "evidence" && deliverables.length ? (
                               <TaskDeliverables
                                 task={task}
                                 deliverables={deliverables}
@@ -616,10 +625,16 @@ function TasksPanel({
                               ) : (
                                 <div data-testid={`task-completion-panel-${task.id}`} className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
                                   <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">
-                                    {completionNote.status === "blocked" ? "Why is this task blocked?" : "What did you do? What was the result?"}
+                                    {completionNote.status === "blocked"
+                                      ? "Why is this task blocked?"
+                                      : completionMode === "manager_draft"
+                                        ? "Submit this Manager draft for review?"
+                                        : "What did you do? What was the result?"}
                                   </p>
                                   <p className="text-[12px] font-semibold leading-relaxed text-foreground/80">
-                                    Record a specific outcome note. The Manager uses this to update checkpoints and shape the next recommendation.
+                                    {completionMode === "manager_draft" && completionNote.status === "completed"
+                                      ? "The exact draft version shown on this task will be reviewed. A note is optional."
+                                      : "Record a specific outcome note. The Manager uses this to update checkpoints and shape the next recommendation."}
                                   </p>
                                   <textarea
                                     id={`task-note-${task.id}`}
@@ -669,15 +684,26 @@ function TasksPanel({
                                 Approve
                               </button>
                             ) : null}
-                            <button
-                              type="button"
-                              disabled={done || completionBlocked || blocked || isConfirmingCompletion || hasBlockingDeliverable}
-                              onClick={() => startCompletion(task.id, "completed")}
-                              className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
-                            >
-                              Mark done
-                            </button>
-                            {hasBlockingDeliverable ? (
+                            {completionMode === "manager_draft" && !task.managerDraft ? (
+                              <button
+                                type="button"
+                                disabled={done || completionBlocked || blocked || isConfirmingCompletion}
+                                onClick={() => onWorkWithManager?.(task.id)}
+                                className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
+                              >
+                                {task.result?.status === "revised" ? "Continue with Manager" : "Work with Manager"}
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={done || completionBlocked || blocked || isConfirmingCompletion || (completionMode === "evidence" && hasBlockingDeliverable)}
+                                onClick={() => startCompletion(task.id, "completed")}
+                                className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
+                              >
+                                {completionMode === "manager_draft" ? "Submit for review" : completionMode === "evidence" ? "Submit evidence" : "Mark done"}
+                              </button>
+                            )}
+                            {completionMode === "evidence" && hasBlockingDeliverable ? (
                               <p className="text-right text-[11px] font-semibold leading-snug text-muted-foreground/78 lg:max-w-[180px]">
                                 Add deliverable to submit.
                               </p>
@@ -730,7 +756,7 @@ function TaskDeliverables({
               type="file"
               className="sr-only"
               aria-label={`Upload deliverable for ${task.title}`}
-              accept=".pdf,.doc,.docx,.txt,.md,.csv,application/pdf,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword"
+              accept=".pdf,.docx,.txt,.md,.csv,.json,application/pdf,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
               onChange={(event) => {
                 const file = event.currentTarget.files?.[0];
                 if (file) onUpload(task, deliverable, file);
@@ -757,6 +783,23 @@ function TaskDetails({ task }: { task: MissionTaskViewModel }) {
           <p key={step} className="text-[12px] leading-relaxed text-foreground/89">{index + 1}. {step}</p>
         ))}
       </div>
+      {task.completionExpectation ? (
+        <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Done looks like:</span> {task.completionExpectation}</p>
+      ) : null}
+      {task.deliverableRequirements?.length ? (
+        <div className="grid gap-1.5">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">What the result must include</p>
+          {task.deliverableRequirements.map((requirement) => (
+            <p key={requirement} className="text-[12px] leading-relaxed text-foreground/89">• {requirement}</p>
+          ))}
+        </div>
+      ) : null}
+      {task.managerResponsibility ? (
+        <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Manager drafts:</span> {task.managerResponsibility}</p>
+      ) : null}
+      {task.userResponsibility ? (
+        <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">You confirm:</span> {task.userResponsibility}</p>
+      ) : null}
       <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
       {task.result ? <TaskResult result={task.result} /> : null}
     </div>
@@ -1325,7 +1368,13 @@ function resolveTaskDeliverables(task: MissionTaskViewModel, localDeliverables?:
   }];
 }
 
+function resolveTaskCompletionMode(task: MissionTaskViewModel) {
+  if (task.completionMode) return task.completionMode;
+  return taskNeedsDeliverable(task) ? "evidence" : "result_note";
+}
+
 function taskNeedsDeliverable(task: MissionTaskViewModel) {
+  if (task.completionMode) return task.completionMode === "evidence";
   const taskText = [
     task.title,
     task.purpose,
