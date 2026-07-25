@@ -224,7 +224,7 @@ export function WorkspaceShell({
   return (
     <div className="app-workspace app-workspace-reveal">
       {showBack ? (
-        <div className="sticky top-0 z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background px-3 py-2 lg:static lg:mx-0 lg:mb-6 lg:border-0 lg:bg-transparent lg:p-0">
+        <div className="sticky top-0 z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-sm lg:-mx-4 lg:px-4">
           <button
             type="button"
             onClick={onBack}

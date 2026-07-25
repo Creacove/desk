@@ -781,9 +781,73 @@ function activityStatusLine(label: string, prompt?: string) {
 function RichMessageBody({ body, streaming, failed }: { body: string; streaming?: boolean; failed?: boolean }) {
   const displayed = useTypewriter(body, !!streaming);
 
-  const blocks = displayed.split(/\n{2,}/).map((block) => block.trim()).filter(Boolean);
+  // ---- Line-by-line markdown parsing ----
+  type ParsedNode =
+    | { kind: "heading"; level: number; text: string }
+    | { kind: "paragraph"; text: string }
+    | { kind: "ordered-list"; items: string[] }
+    | { kind: "unordered-list"; items: string[] };
 
-  if (!blocks.length) {
+  const rawLines = displayed.split("\n");
+  const nodes: ParsedNode[] = [];
+  let i = 0;
+
+  while (i < rawLines.length) {
+    const trimmed = rawLines[i].trim();
+
+    // Skip blank lines
+    if (!trimmed) { i++; continue; }
+
+    // Heading: # through ####
+    const headingMatch = trimmed.match(/^(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      nodes.push({ kind: "heading", level: headingMatch[1].length, text: headingMatch[2] });
+      i++;
+      continue;
+    }
+
+    // Ordered list items: 1. 2. 3. …
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const items: string[] = [];
+      while (i < rawLines.length) {
+        const itemLine = rawLines[i].trim();
+        if (!itemLine) { i++; break; }              // blank line ends the list
+        const itemMatch = itemLine.match(/^\d+\.\s+(.+)$/);
+        if (itemMatch) { items.push(itemMatch[1]); i++; }
+        else break;
+      }
+      if (items.length) nodes.push({ kind: "ordered-list", items });
+      continue;
+    }
+
+    // Unordered list items: - or *
+    if (/^[-*]\s+/.test(trimmed)) {
+      const items: string[] = [];
+      while (i < rawLines.length) {
+        const itemLine = rawLines[i].trim();
+        if (!itemLine) { i++; break; }
+        const itemMatch = itemLine.match(/^[-*]\s+(.+)$/);
+        if (itemMatch) { items.push(itemMatch[1]); i++; }
+        else break;
+      }
+      if (items.length) nodes.push({ kind: "unordered-list", items });
+      continue;
+    }
+
+    // Plain text paragraph — accumulate consecutive non-special lines
+    const pLines: string[] = [];
+    while (i < rawLines.length) {
+      const pLine = rawLines[i].trim();
+      if (!pLine) { i++; break; }
+      if (/^#{1,4}\s+/.test(pLine) || /^\d+\.\s+/.test(pLine) || /^[-*]\s+/.test(pLine)) break;
+      pLines.push(pLine);
+      i++;
+    }
+    if (pLines.length) nodes.push({ kind: "paragraph", text: pLines.join(" ") });
+  }
+
+  // Fallback for empty / whitespace-only content
+  if (!nodes.length) {
     return (
       <p className="text-[15px] leading-[1.65] text-current">
         {streaming ? <BlinkingCursor /> : displayed}
@@ -793,39 +857,58 @@ function RichMessageBody({ body, streaming, failed }: { body: string; streaming?
 
   return (
     <div className={`space-y-4 text-[15px] leading-[1.65] text-foreground ${failed ? "text-red-700" : ""}`}>
-      {blocks.map((block, blockIndex) => {
-        const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-        const isList = lines.length > 1 && lines.every((line) => /^([-*]|\d+\.)\s+/.test(line));
+      {nodes.map((node, nodeIndex) => {
+        const isLast = nodeIndex === nodes.length - 1;
+        const cursor = streaming && isLast ? <BlinkingCursor /> : null;
 
-        // Heading detection (markdown ##)
-        const isHeading = block.startsWith("## ") || block.startsWith("# ");
-        if (isHeading) {
-          const text = block.replace(/^#{1,3}\s+/, "");
+        if (node.kind === "heading") {
+          const cls =
+            node.level === 1
+              ? "text-[18px] font-bold text-foreground mt-3"
+              : node.level === 2
+                ? "text-[16px] font-semibold text-foreground mt-2"
+                : node.level === 3
+                  ? "text-[15px] font-semibold text-foreground mt-1.5"
+                  : "text-[14px] font-semibold text-foreground/90 mt-1";
           return (
-            <p key={`h-${blockIndex}`} className="text-[16px] font-semibold text-foreground">
-              <InlineMarkdown text={text} />
-              {streaming && blockIndex === blocks.length - 1 ? <BlinkingCursor /> : null}
+            <p key={`h-${nodeIndex}`} className={cls} role="heading" aria-level={node.level}>
+              <InlineMarkdown text={node.text} />
+              {cursor}
             </p>
           );
         }
 
-        if (isList) {
+        if (node.kind === "ordered-list") {
           return (
-            <ul key={`list-${blockIndex}`} className="list-disc space-y-1.5 pl-5">
-              {lines.map((line, lineIndex) => (
-                <li key={`${line}-${lineIndex}`} className="text-foreground/90">
-                  <InlineMarkdown text={line.replace(/^([-*]|\d+\.)\s+/, "")} />
-                  {streaming && blockIndex === blocks.length - 1 && lineIndex === lines.length - 1 ? <BlinkingCursor /> : null}
+            <ol key={`ol-${nodeIndex}`} className="list-decimal space-y-2 pl-6 marker:text-foreground/50 marker:font-semibold">
+              {node.items.map((item, itemIndex) => (
+                <li key={`${nodeIndex}-${itemIndex}`} className="text-foreground/90 pl-1">
+                  <InlineMarkdown text={item} />
+                  {cursor && itemIndex === node.items.length - 1 ? cursor : null}
+                </li>
+              ))}
+            </ol>
+          );
+        }
+
+        if (node.kind === "unordered-list") {
+          return (
+            <ul key={`ul-${nodeIndex}`} className="list-disc space-y-1.5 pl-5">
+              {node.items.map((item, itemIndex) => (
+                <li key={`${nodeIndex}-${itemIndex}`} className="text-foreground/90">
+                  <InlineMarkdown text={item} />
+                  {cursor && itemIndex === node.items.length - 1 ? cursor : null}
                 </li>
               ))}
             </ul>
           );
         }
 
+        // paragraph
         return (
-          <p key={`p-${blockIndex}`} className="text-foreground/90">
-            <InlineMarkdown text={block} />
-            {streaming && blockIndex === blocks.length - 1 ? <BlinkingCursor /> : null}
+          <p key={`p-${nodeIndex}`} className="text-foreground/90">
+            <InlineMarkdown text={node.text} />
+            {cursor}
           </p>
         );
       })}
