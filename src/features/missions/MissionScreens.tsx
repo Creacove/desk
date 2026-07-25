@@ -1,5 +1,7 @@
 import { ArrowLeft, Check, ChevronDown, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { ThinkingOrb } from "thinking-orbs";
+import { BorderBeam } from "border-beam";
 import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type {
@@ -609,17 +611,16 @@ function TasksPanel({
                             ) : null}
                             {isConfirmingCompletion ? (
                               completionPending ? (
-                                <div className="mt-4 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-5 flex flex-col items-center justify-center text-center gap-3">
-                                  <div className="flex gap-1.5" aria-hidden="true">
-                                    <span className="h-2 w-2 animate-bounce rounded-full bg-brand-accent" style={{ animationDelay: "0ms" }} />
-                                    <span className="h-2 w-2 animate-bounce rounded-full bg-brand-accent" style={{ animationDelay: "150ms" }} />
-                                    <span className="h-2 w-2 animate-bounce rounded-full bg-brand-accent" style={{ animationDelay: "300ms" }} />
-                                  </div>
-                                  <div>
-                                    <p className="text-[13px] font-bold text-foreground">Manager is reviewing task results</p>
-                                    <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
-                                      Analyzing outcome notes, updating checkpoint states, and re-routing active directives.
-                                    </p>
+                                <div className="relative mt-4 overflow-hidden rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04]">
+                                  <BorderBeam size="md" colorVariant="mono" active={true} />
+                                  <div className="p-5 flex flex-col items-center justify-center text-center gap-3">
+                                    <ThinkingOrb state="shaping" size={64} theme="dark" />
+                                    <div>
+                                      <p className="text-[13px] font-bold text-foreground">Manager is reviewing task results</p>
+                                      <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
+                                        Analyzing outcome notes, updating checkpoint states, and re-routing active directives.
+                                      </p>
+                                    </div>
                                   </div>
                                 </div>
                               ) : (

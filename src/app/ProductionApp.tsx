@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Check, CreditCard, Loader2, X } from "lucide-react";
+import { ThinkingOrb } from "thinking-orbs";
+import { BorderBeam } from "border-beam";
 import { cn } from "../lib/utils";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
 import { compactMovementTitle, movementKey, splitAttentionItems } from "../features/desk/deskAttention";
@@ -1604,7 +1606,7 @@ function SetupManagerActivityScreen({
                           <Check className="h-3 w-3 stroke-[3]" />
                         </div>
                       ) : status === "running" ? (
-                        <Loader2 className="h-4.5 w-4.5 animate-spin text-brand-accent" />
+                        <ThinkingOrb state="working" size={20} theme="dark" />
                       ) : (
                         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive/10 text-destructive animate-in zoom-in duration-300">
                           <X className="h-3 w-3 stroke-[3]" />
@@ -2033,7 +2035,7 @@ function PaymentReturnScreen({
         </p>
         {state.status === "checking" || state.status === "waiting" ? (
           <div className="mt-5 inline-flex items-center gap-2 text-[12px] font-bold text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            <ThinkingOrb state="solving" size={20} theme="dark" />
             Polling billing status
           </div>
         ) : null}
@@ -2419,14 +2421,6 @@ function BrandedLoader({
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
           }
         }
-        @keyframes red-antler-scan {
-          0% {
-            transform: translateX(-100%);
-          }
-          100% {
-            transform: translateX(200%);
-          }
-        }
       `}</style>
       
       <div
@@ -2435,30 +2429,28 @@ function BrandedLoader({
       >
         <div className="relative flex flex-col items-center justify-center">
           {/* Centered Brand Icon Tile */}
-          <span
-            aria-hidden="true"
-            data-testid={logoTestId}
-            className="relative inline-flex h-16 w-16 md:h-[72px] md:w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[16px] border border-foreground/10 bg-[#111] transition-all duration-300"
-            style={{
-              animation: "red-antler-float-pulse 4s ease-in-out infinite",
-            }}
-          >
-            <img src="/logo.png" alt="" className="h-full w-full object-cover" />
-          </span>
+          <div className="relative">
+            <BorderBeam size="md" colorVariant="mono" active={true} />
+            <span
+              aria-hidden="true"
+              data-testid={logoTestId}
+              className="relative inline-flex h-16 w-16 md:h-[72px] md:w-[72px] shrink-0 items-center justify-center overflow-hidden rounded-[16px] border border-foreground/10 bg-[#111] transition-all duration-300"
+              style={{
+                animation: "red-antler-float-pulse 4s ease-in-out infinite",
+              }}
+            >
+              <img src="/logo.png" alt="" className="h-full w-full object-cover" />
+            </span>
+          </div>
 
           {/* wide-tracked elegant uppercase status text */}
           <p className="font-ui mt-10 text-[9px] font-bold uppercase tracking-[0.24em] text-muted-foreground/60 leading-none">
             {statusLabel}
           </p>
 
-          {/* Minimalist ultra-thin progress bar */}
-          <div className="mt-5 h-[1.5px] w-24 overflow-hidden rounded-full bg-foreground/5">
-            <span
-              className="block h-full w-[48px] rounded-full bg-brand-accent"
-              style={{
-                animation: "red-antler-scan 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite",
-              }}
-            />
+          {/* ThinkingOrb progress indicator */}
+          <div className="mt-5">
+            <ThinkingOrb state="working" size={64} theme="dark" />
           </div>
         </div>
 

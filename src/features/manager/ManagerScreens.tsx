@@ -2,12 +2,12 @@ import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText,
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ThinkingOrb, type OrbState } from "thinking-orbs";
+import { BorderBeam } from "border-beam";
+import { MetalFx } from "metal-fx";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
-// Drips characters from `target` into display at a capped speed (~28ms/char).
-// When streaming stops it snaps immediately to full text.
-// ---------------------------------------------------------------------------
 function useTypewriter(target: string, streaming: boolean): string {
   const [displayed, setDisplayed] = useState(target);
   const frameRef = useRef<number | null>(null);
@@ -638,60 +638,74 @@ function MessageRow({
   );
 }
 
+function mapLabelToOrbState(label: string, prompt?: string): OrbState {
+  const clean = label.toLowerCase();
+  const query = prompt ? prompt.toLowerCase() : "";
+  if (clean.includes("searching") || clean.includes("catalog") || clean.includes("signals") || clean.includes("spotify") || clean.includes("chartmetric") || query.includes("search")) {
+    return "searching";
+  }
+  if (clean.includes("calculating") || clean.includes("planning") || clean.includes("strategy") || clean.includes("decisions")) {
+    return "solving";
+  }
+  if (clean.includes("reviewing") || clean.includes("memory") || clean.includes("context") || clean.includes("accessing")) {
+    return "listening";
+  }
+  if (clean.includes("formulating") || clean.includes("structuring") || clean.includes("recommendations")) {
+    return "composing";
+  }
+  if (clean.includes("coordinating") || clean.includes("shaping") || clean.includes("updating")) {
+    return "shaping";
+  }
+  return "working";
+}
+
 // ---------------------------------------------------------------------------
 // Thinking indicator — replaces the old dual-line card
 // ---------------------------------------------------------------------------
 function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewModel["activeRun"]; prompt?: string }) {
-  // Always show the most-recently-added step, regardless of its status.
-  // Tool events complete quickly so by the time React renders they may already
-  // be "completed" — we still want to show them rather than falling back to
-  // the long-running parent run step.
   const latestStep = activeRun?.steps.length ? activeRun.steps.at(-1) : null;
-  // Force present-progressive rendering: the ThinkingIndicator is always a
-  // loading state so every step should read as "currently happening".
   const label = latestStep ? activityStatusLine(latestStep.label, prompt) : "Reading your workspace…";
+  const orbState = mapLabelToOrbState(label, prompt);
 
   return (
     <div className="flex flex-col items-start animate-in fade-in duration-300">
       {/* Speaker label row */}
       <div className="mb-2 flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent animate-pulse">
-          <Sparkles className="h-4 w-4" aria-hidden="true" />
+        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent">
+          <ThinkingOrb state={orbState} size={20} theme="dark" />
         </span>
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
           Manager
         </p>
       </div>
 
-      <div className="mt-1 flex items-center gap-2.5 rounded-xl border border-foreground/8 bg-foreground/[0.012] px-3.5 py-2.5 text-[13px] font-bold text-foreground/80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-1 max-w-full w-fit">
-        <Loader2 className="h-4.5 w-4.5 animate-spin text-brand-accent shrink-0" />
-        <span key={label} className="truncate animate-in fade-in duration-300">
-          {label}
-        </span>
+      <div className="relative mt-1 overflow-hidden rounded-xl border border-foreground/8 bg-foreground/[0.012]">
+        <BorderBeam size="sm" colorVariant="mono" active={true} />
+        <div className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-bold text-foreground/80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-1 max-w-full w-fit">
+          <ThinkingOrb state={orbState} size={20} theme="dark" />
+          <span key={label} className="truncate animate-in fade-in duration-300">
+            {label}
+          </span>
+        </div>
       </div>
     </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Manager activity status — always-visible inline line during streaming
-// ---------------------------------------------------------------------------
 function ManagerActivityStatus({ run, prompt }: { run: NonNullable<ConversationViewModel["activeRun"]>; prompt?: string }) {
   const [expanded, setExpanded] = useState(false);
-  // Same logic as ThinkingIndicator: show the most recent step in present-progressive mode.
   const latestStep = run.steps.at(-1);
   const statusText = latestStep ? activityStatusLine(latestStep.label, prompt) : "Getting your answer ready…";
 
   return (
     <div className="mt-4 border-t border-foreground/6 pt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* Always-visible activity line */}
-        <p
-          key={statusText}
-          className="animate-in fade-in duration-300 text-[12px] font-medium text-muted-foreground/80"
-        >
-          {statusText}
-        </p>
+        <div key={statusText} className="flex items-center gap-2 animate-in fade-in duration-300">
+          <ThinkingOrb state={mapLabelToOrbState(statusText, prompt)} size={20} theme="dark" />
+          <p className="text-[12px] font-medium text-muted-foreground/80">
+            {statusText}
+          </p>
+        </div>
         <button
           type="button"
           aria-expanded={expanded}

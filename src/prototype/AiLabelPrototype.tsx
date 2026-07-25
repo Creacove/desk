@@ -38,6 +38,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
+import { ThinkingOrb } from "thinking-orbs";
+import { BorderBeam } from "border-beam";
 
 type View =
   | "connectArtist"
@@ -6376,9 +6378,9 @@ const MusicDistributionHub = ({
 
       {isDistributing && (
         <div className="py-6 flex flex-col items-center justify-center">
-          <div className="relative flex items-center justify-center h-12 w-12 mb-4">
-            <div className="absolute inset-0 rounded-full border-4 border-brand-accent/20 animate-pulse" />
-            <div className="h-8 w-8 rounded-full border-b-2 border-t-2 border-brand-accent animate-spin" />
+          <div className="relative overflow-hidden rounded-[16px] border border-foreground/10 bg-background/50 p-4 mb-4 flex items-center justify-center">
+            <BorderBeam size="md" colorVariant="mono" active={true} />
+            <ThinkingOrb state="shaping" size={64} theme="dark" />
           </div>
           <h4 className="font-display text-[16px] font-bold text-foreground">Packaging & Broadcasting Content...</h4>
           

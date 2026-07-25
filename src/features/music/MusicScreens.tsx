@@ -1,4 +1,7 @@
 import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { ThinkingOrb } from "thinking-orbs";
+import { BorderBeam } from "border-beam";
+import { MetalFx } from "metal-fx";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
@@ -678,17 +681,19 @@ function MusicSongDetail({
                     </span>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
-                  onClick={onGenerateBrief}
-                  disabled={briefPending}
-                  className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-[11px]"
-                >
-                  <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
-                  <span className="sm:hidden">{briefPending ? "Asking..." : "Ask Manager"}</span>
-                  <span className="hidden sm:inline">{briefPending ? "Asking Manager..." : generateReadLabel}</span>
-                </button>
+                <MetalFx variant="button" preset="chromatic" paused={!briefPending}>
+                  <button
+                    type="button"
+                    aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
+                    onClick={onGenerateBrief}
+                    disabled={briefPending}
+                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-[11px]"
+                  >
+                    {briefPending ? <ThinkingOrb state="composing" size={20} theme="light" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                    <span className="sm:hidden">{briefPending ? "Asking..." : "Ask Manager"}</span>
+                    <span className="hidden sm:inline">{briefPending ? "Asking Manager..." : generateReadLabel}</span>
+                  </button>
+                </MetalFx>
               </div>
               {briefError ? (
                 <p className="mb-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
@@ -1018,15 +1023,17 @@ function MusicProjectBrief({
             {managerReadStateLabel(project.managerReadState)}
           </span>
         </div>
-        <button
-          type="button"
-          onClick={onGenerateBrief}
-          disabled={briefPending}
-          className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <RefreshCw className={briefPending ? "h-3.5 w-3.5 animate-spin" : "h-3.5 w-3.5"} aria-hidden="true" />
-          {briefPending ? "Asking Manager..." : generateReadLabel}
-        </button>
+        <MetalFx variant="button" preset="chromatic" paused={!briefPending}>
+          <button
+            type="button"
+            onClick={onGenerateBrief}
+            disabled={briefPending}
+            className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {briefPending ? <ThinkingOrb state="composing" size={20} theme="light" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+            {briefPending ? "Asking Manager..." : generateReadLabel}
+          </button>
+        </MetalFx>
       </div>
 
       {briefError ? (
@@ -1889,7 +1896,7 @@ function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song"
                     : "border-foreground/10 bg-background text-muted-foreground/60",
               )}
             >
-              {done ? <Check className="h-4 w-4" /> : activeStep ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="text-[12px] font-bold">{index + 1}</span>}
+              {done ? <Check className="h-4 w-4" /> : activeStep ? <ThinkingOrb state="working" size={20} theme="dark" /> : <span className="text-[12px] font-bold">{index + 1}</span>}
             </span>
             <span className={cn("text-[13px] font-semibold", done || activeStep ? "text-foreground" : "text-muted-foreground/70")}>{step.label}</span>
           </div>
@@ -1962,19 +1969,22 @@ function ImportRow({
 
 function ImportLoadingRows({ label }: { label: string }) {
   return (
-    <div className="grid gap-1.5" aria-live="polite">
-      <p className="mb-1 flex items-center gap-2 text-[12px] font-semibold text-muted-foreground/80">
-        <Loader2 className="h-4 w-4 animate-spin" /> {label}
+    <div className="relative overflow-hidden rounded-[16px] border border-foreground/10 bg-background/50 p-3" aria-live="polite">
+      <BorderBeam size="md" colorVariant="mono" active={true} />
+      <p className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted-foreground/80">
+        <ThinkingOrb state="searching" size={20} theme="dark" /> {label}
       </p>
-      {[0, 1, 2, 3].map((row) => (
-        <div key={row} className="flex items-center gap-3 rounded-[14px] border border-foreground/8 bg-background px-3 py-2.5">
-          <span className="h-11 w-11 shrink-0 animate-pulse rounded-[10px] bg-foreground/8" />
-          <span className="grid flex-1 gap-1.5">
-            <span className="h-3 w-1/2 animate-pulse rounded bg-foreground/8" />
-            <span className="h-2.5 w-1/3 animate-pulse rounded bg-foreground/6" />
-          </span>
-        </div>
-      ))}
+      <div className="grid gap-1.5">
+        {[0, 1, 2, 3].map((row) => (
+          <div key={row} className="flex items-center gap-3 rounded-[14px] border border-foreground/8 bg-background px-3 py-2.5">
+            <span className="h-11 w-11 shrink-0 animate-pulse rounded-[10px] bg-foreground/8" />
+            <span className="grid flex-1 gap-1.5">
+              <span className="h-3 w-1/2 animate-pulse rounded bg-foreground/8" />
+              <span className="h-2.5 w-1/3 animate-pulse rounded bg-foreground/6" />
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
