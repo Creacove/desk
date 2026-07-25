@@ -623,6 +623,7 @@ function CleanProductionWorkspace({
     view === "artistProfileWorkspace" ||
     (view === "musicWorkspace" && !musicDetailOpen) ||
     (view === "missionsWorkspace" && !missionRoomOpen);
+  const showMobileTabbar = view !== "conversationWorkspace" && view !== "investigation" && view !== "decisionPackage";
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
@@ -1323,6 +1324,7 @@ function CleanProductionWorkspace({
             onOpenNotifications={() => setMobileNotificationsOpen(true)}
             onNavigate={navigateFromMenu}
             showTopbar={showMobileTopbar}
+            showTabbar={showMobileTabbar}
           />
           {view === "labelHQ" ? (
             <DeskHQScreen

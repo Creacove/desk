@@ -361,6 +361,7 @@ export function MobileChrome({
   onOpenNotifications,
   activeMissionCount = 0,
   showTopbar = true,
+  showTabbar = true,
 }: {
   active: NavSection;
   title: string;
@@ -369,6 +370,7 @@ export function MobileChrome({
   onOpenNotifications?: () => void;
   activeMissionCount?: number;
   showTopbar?: boolean;
+  showTabbar?: boolean;
 }) {
   return (
     <>
@@ -415,6 +417,7 @@ export function MobileChrome({
         </div>
         </header>
       ) : null}
+      {showTabbar ? (
       <nav
         data-testid="mobile-tabbar"
         aria-label="Mobile desk navigation"
@@ -448,6 +451,7 @@ export function MobileChrome({
           );
         })}
       </nav>
+      ) : null}
     </>
   );
 }

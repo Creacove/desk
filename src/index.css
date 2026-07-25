@@ -1806,7 +1806,7 @@
   #root,
   .app-theme {
     max-width: 100%;
-    overflow-x: hidden;
+    overflow-x: clip;
   }
 
   .desk-hq-v2 {
