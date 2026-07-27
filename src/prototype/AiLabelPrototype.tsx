@@ -38,7 +38,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
-import { ThinkingOrb } from "thinking-orbs";
+import { AppThinkingOrb } from "../design-system/AppThinkingOrb";
 import { BorderBeam } from "border-beam";
 
 type View =
@@ -6380,7 +6380,7 @@ const MusicDistributionHub = ({
         <div className="py-6 flex flex-col items-center justify-center">
           <div className="relative overflow-hidden rounded-[16px] border border-foreground/10 bg-background/50 p-4 mb-4 flex items-center justify-center">
             <BorderBeam size="md" colorVariant="mono" active={true} />
-            <ThinkingOrb state="shaping" size={64} theme="dark" />
+            <AppThinkingOrb state="shaping" size={64} />
           </div>
           <h4 className="font-display text-[16px] font-bold text-foreground">Packaging & Broadcasting Content...</h4>
           

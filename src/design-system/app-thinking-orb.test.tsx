@@ -1,5 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("thinking-orbs", () => ({
@@ -51,5 +53,22 @@ describe("AppThinkingOrb", () => {
     );
 
     expect(screen.getByTestId("thinking-orb")).toHaveAttribute("data-theme", "light");
+  });
+
+  it("routes every app orb through the theme-aware adapter", () => {
+    const files = [
+      "src/features/music/MusicScreens.tsx",
+      "src/features/manager/ManagerScreens.tsx",
+      "src/features/missions/MissionScreens.tsx",
+      "src/app/ProductionApp.tsx",
+      "src/prototype/AiLabelPrototype.tsx",
+    ];
+
+    for (const file of files) {
+      const source = readFileSync(resolve(process.cwd(), file), "utf8");
+      expect(source).not.toMatch(/import\s*\{\s*ThinkingOrb/);
+      expect(source).not.toMatch(/<ThinkingOrb\b/);
+      expect(source).not.toMatch(/theme="(?:light|dark)"/);
+    }
   });
 });

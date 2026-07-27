@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Check, CreditCard, Loader2, X } from "lucide-react";
-import { ThinkingOrb } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
 import { cn } from "../lib/utils";
+import { AppThinkingOrb } from "../design-system/AppThinkingOrb";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
 import { compactMovementTitle, movementKey, splitAttentionItems } from "../features/desk/deskAttention";
 import { DeskHQScreen } from "../features/desk/DeskHQ";
@@ -1606,7 +1606,7 @@ function SetupManagerActivityScreen({
                           <Check className="h-3 w-3 stroke-[3]" />
                         </div>
                       ) : status === "running" ? (
-                        <ThinkingOrb state="working" size={20} theme="dark" />
+                        <AppThinkingOrb state="working" size={20} />
                       ) : (
                         <div className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive/10 text-destructive animate-in zoom-in duration-300">
                           <X className="h-3 w-3 stroke-[3]" />
@@ -2035,7 +2035,7 @@ function PaymentReturnScreen({
         </p>
         {state.status === "checking" || state.status === "waiting" ? (
           <div className="mt-5 inline-flex items-center gap-2 text-[12px] font-bold text-muted-foreground">
-            <ThinkingOrb state="solving" size={20} theme="dark" />
+            <AppThinkingOrb state="solving" size={20} />
             Polling billing status
           </div>
         ) : null}
@@ -2450,7 +2450,7 @@ function BrandedLoader({
 
           {/* ThinkingOrb progress indicator */}
           <div className="mt-5">
-            <ThinkingOrb state="working" size={64} theme="dark" />
+            <AppThinkingOrb state="working" size={64} />
           </div>
         </div>
 

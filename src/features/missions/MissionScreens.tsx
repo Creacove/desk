@@ -1,6 +1,6 @@
 import { ArrowLeft, Check, ChevronDown, Lock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { ThinkingOrb } from "thinking-orbs";
+import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { BorderBeam } from "border-beam";
 import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
@@ -614,7 +614,7 @@ function TasksPanel({
                                 <div className="relative mt-4 overflow-hidden rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04]">
                                   <BorderBeam size="md" colorVariant="mono" active={true} />
                                   <div className="p-5 flex flex-col items-center justify-center text-center gap-3">
-                                    <ThinkingOrb state="shaping" size={64} theme="dark" />
+                                    <AppThinkingOrb state="shaping" size={64} />
                                     <div>
                                       <p className="text-[13px] font-bold text-foreground">Manager is reviewing task results</p>
                                       <p className="mt-1 text-[11px] font-semibold text-muted-foreground">

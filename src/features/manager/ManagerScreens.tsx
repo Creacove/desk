@@ -1,10 +1,10 @@
 import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
+import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ThinkingOrb, type OrbState } from "thinking-orbs";
+import type { OrbState } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
-import { MetalFx } from "metal-fx";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
@@ -672,7 +672,7 @@ function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewM
       {/* Speaker label row */}
       <div className="mb-2 flex items-center gap-2">
         <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent">
-          <ThinkingOrb state={orbState} size={20} theme="dark" />
+          <AppThinkingOrb state={orbState} size={20} />
         </span>
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
           Manager
@@ -682,7 +682,7 @@ function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewM
       <div className="relative mt-1 overflow-hidden rounded-xl border border-foreground/8 bg-foreground/[0.012]">
         <BorderBeam size="sm" colorVariant="mono" active={true} />
         <div className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-bold text-foreground/80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-1 max-w-full w-fit">
-          <ThinkingOrb state={orbState} size={20} theme="dark" />
+          <AppThinkingOrb state={orbState} size={20} />
           <span key={label} className="truncate animate-in fade-in duration-300">
             {label}
           </span>
@@ -701,7 +701,7 @@ function ManagerActivityStatus({ run, prompt }: { run: NonNullable<ConversationV
     <div className="mt-4 border-t border-foreground/6 pt-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div key={statusText} className="flex items-center gap-2 animate-in fade-in duration-300">
-          <ThinkingOrb state={mapLabelToOrbState(statusText, prompt)} size={20} theme="dark" />
+          <AppThinkingOrb state={mapLabelToOrbState(statusText, prompt)} size={20} />
           <p className="text-[12px] font-medium text-muted-foreground/80">
             {statusText}
           </p>

@@ -1,5 +1,4 @@
 import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
-import { ThinkingOrb } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
@@ -1892,7 +1891,7 @@ function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song"
                     : "border-foreground/10 bg-background text-muted-foreground/60",
               )}
             >
-              {done ? <Check className="h-4 w-4" /> : activeStep ? <ThinkingOrb state="working" size={20} theme="dark" /> : <span className="text-[12px] font-bold">{index + 1}</span>}
+              {done ? <Check className="h-4 w-4" /> : activeStep ? <AppThinkingOrb state="working" size={20} /> : <span className="text-[12px] font-bold">{index + 1}</span>}
             </span>
             <span className={cn("text-[13px] font-semibold", done || activeStep ? "text-foreground" : "text-muted-foreground/70")}>{step.label}</span>
           </div>
@@ -1968,7 +1967,7 @@ function ImportLoadingRows({ label }: { label: string }) {
     <div className="relative overflow-hidden rounded-[16px] border border-foreground/10 bg-background/50 p-3" aria-live="polite">
       <BorderBeam size="md" colorVariant="mono" active={true} />
       <p className="mb-2 flex items-center gap-2 text-[12px] font-semibold text-muted-foreground/80">
-        <ThinkingOrb state="searching" size={20} theme="dark" /> {label}
+        <AppThinkingOrb state="searching" size={20} /> {label}
       </p>
       <div className="grid gap-1.5">
         {[0, 1, 2, 3].map((row) => (
