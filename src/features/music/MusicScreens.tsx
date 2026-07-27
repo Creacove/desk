@@ -55,13 +55,12 @@ export function MusicWorkspace({
   const [actionPending, setActionPending] = useState(false);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
-  const [generatedReads, setGeneratedReads] = useState<Record<string, MusicObjectViewModel>>({});
+  const managerReadPollInFlight = useRef(false);
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
-  const displayedMusic = music.map((object) => generatedReads[object.id] ?? object);
-  const getMusicObject = (id: string) => generatedReads[id] ?? music.find((object) => object.id === id);
-  const songs = displayedMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
-  const projects = displayedMusic.filter((object) => object.kind === "project");
+  const getMusicObject = (id: string) => music.find((object) => object.id === id);
+  const songs = music.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
+  const projects = music.filter((object) => object.kind === "project");
   const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
   const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
   const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
@@ -70,10 +69,10 @@ export function MusicWorkspace({
   // logic the song/project rooms use, so the catalog list can never disagree with
   // what you see after opening an item.
   const linkedMissionCountById = useMemo(() => {
-    const resolve = (id: string) => generatedReads[id] ?? music.find((object) => object.id === id);
+    const resolve = (id: string) => music.find((object) => object.id === id);
     const map: Record<string, number> = {};
     for (const object of music) {
-      const resolved = generatedReads[object.id] ?? object;
+      const resolved = object;
       const objectTracklist =
         resolved.kind === "project"
           ? ((resolved.songIds?.map(resolve).filter(Boolean) as MusicObjectViewModel[] | undefined) ?? [])
@@ -81,7 +80,7 @@ export function MusicWorkspace({
       map[resolved.id] = findCatalogLinkedMissions(resolved, missions, objectTracklist).length;
     }
     return map;
-  }, [music, generatedReads, missions]);
+  }, [music, missions]);
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
@@ -99,6 +98,28 @@ export function MusicWorkspace({
   useEffect(() => {
     if (listRequestKey > 0) setMode("library");
   }, [listRequestKey]);
+
+  useEffect(() => {
+    if (selected?.managerReadStatus !== "running" && selected?.managerReadStatus !== "refreshing") return;
+
+    let cancelled = false;
+    const poll = async () => {
+      if (cancelled || managerReadPollInFlight.current) return;
+      managerReadPollInFlight.current = true;
+      try {
+        await onMusicChanged();
+      } catch {
+        // A transient reload failure must not discard the persisted read or stop later polls.
+      } finally {
+        managerReadPollInFlight.current = false;
+      }
+    };
+    const timer = window.setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [selected?.id, selected?.managerReadStatus, onMusicChanged]);
 
   function selectTab(next: MusicTab) {
     setTab(next);
@@ -130,20 +151,14 @@ export function MusicWorkspace({
     }
   }
 
-  async function runGenerateBrief(subjectId: string, subjectType: "music_item" | "music_project") {
-    const generated = await musicRepository.generateMusicSummary(subjectId, subjectType);
-    setGeneratedReads((current) => ({ ...current, [generated.id]: generated }));
-    await onMusicChanged();
-    return generated;
-  }
-
-  async function generateBrief(subjectId: string, subjectType: "music_item" | "music_project") {
+  async function startManagerRead(subjectId: string, subjectType: "music_item" | "music_project") {
     try {
       setBriefError(null);
       setBriefPending(true);
-      await runGenerateBrief(subjectId, subjectType);
-    } catch (error) {
-      setBriefError(readErrorMessage(error, "Brief could not be generated."));
+      await musicRepository.startManagerRead(subjectId, subjectType);
+      await onMusicChanged();
+    } catch {
+      setBriefError("Manager Read could not start. Try again.");
     } finally {
       setBriefPending(false);
     }
@@ -306,7 +321,7 @@ export function MusicWorkspace({
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
           onRemoveSplitContributor={(contributorId) => removeSplitContributor(selected.id, contributorId)}
           onSendSplitConfirmationLinks={() => sendSplitConfirmationLinks(selected.id)}
-          onGenerateBrief={() => generateBrief(selected.id, "music_item")}
+          onGenerateBrief={() => startManagerRead(selected.id, "music_item")}
           briefPending={briefPending}
           briefError={briefError}
           onBack={backToLibrary}
@@ -322,7 +337,7 @@ export function MusicWorkspace({
           linkedMissions={linkedMissions}
           onBack={backToLibrary}
           onOpenSong={(song) => openObject(song, "projects")}
-          onGenerateBrief={() => generateBrief(selected.id, "music_project")}
+          onGenerateBrief={() => startManagerRead(selected.id, "music_project")}
           briefPending={briefPending}
           briefError={briefError}
           onOpenMission={onOpenMission}
@@ -363,7 +378,7 @@ export function MusicWorkspace({
           onCancel={() => setImportKind(null)}
           onSearch={(input) => musicRepository.searchSpotifyCatalog(input)}
           onImportSelection={(input) => musicRepository.importSpotifySelection(input)}
-          onGenerateRead={(subjectId, subjectType) => runGenerateBrief(subjectId, subjectType)}
+          onGenerateRead={startManagerRead}
           onDone={openImportedRecord}
         />
       ) : null}
@@ -642,12 +657,8 @@ function MusicSongDetail({
   const detailConfirmedCount = allDetailFields.filter((field) => field.status === "Confirmed").length;
   const detailMissingCount = allDetailFields.filter((field) => field.status === "Missing").length;
   const detailDraftCount = allDetailFields.filter((field) => field.status === "Draft").length;
-  const trackIntelligenceMetrics = selectTrackIntelligenceMetrics(song.intelligenceSnapshot ?? []);
-  const trackSnapshotSummary =
-    acceptedVisibleTrackReadText(song.snapshotSummary) ??
-    "Record intelligence is focused on the usable numbers already in view.";
-  const managerReadCopy = acceptedVisibleTrackReadText(song.managerRead);
-  const generateReadLabel = songManagerReadButtonLabel(song.managerReadState, Boolean(managerReadCopy));
+  const generateReadLabel = managerReadButtonLabel("song", song.managerReadStatus);
+  const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -669,10 +680,7 @@ function MusicSongDetail({
               <div className="mb-4 flex items-start justify-between gap-3">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
                   <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/78">
-                    {song.confidence === "limited" ? "Limited confidence" : `${song.confidence ?? "high"} confidence`}
-                  </span>
-                  <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/78">
-                    {managerReadStateLabel(song.managerReadState)}
+                    {managerReadStatusLabel(song.managerReadStatus)}
                   </span>
                   {song.blocker && song.blocker !== "No active blocker" && song.blocker !== "None" ? (
                     <span className="rounded-full bg-warning/10 px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-warning">
@@ -682,14 +690,13 @@ function MusicSongDetail({
                 </div>
                 <button
                   type="button"
-                  aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
+                  aria-label={briefPending ? "Manager is reading" : generateReadLabel}
                   onClick={onGenerateBrief}
-                  disabled={briefPending}
+                  disabled={readBusy}
                   className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 font-ui text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:px-4 sm:text-[11px]"
                 >
-                  {briefPending ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
-                  <span className="sm:hidden">{briefPending ? "Asking..." : "Ask Manager"}</span>
-                  <span className="hidden sm:inline">{briefPending ? "Asking Manager..." : generateReadLabel}</span>
+                  {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                  <span>{briefPending ? "Manager is reading" : generateReadLabel}</span>
                 </button>
               </div>
               {briefError ? (
@@ -697,41 +704,8 @@ function MusicSongDetail({
                   {briefError}
                 </p>
               ) : null}
-              <h3 className="font-display text-[22px] font-bold tracking-tight text-foreground leading-tight">{song.situationLine}</h3>
             </div>
-
-            {trackIntelligenceMetrics.length > 0 ? <section data-testid="track-intelligence-card" className="overflow-hidden rounded-[12px] border border-foreground/10 bg-background/55">
-              <div className="grid gap-4 border-b border-foreground/8 bg-foreground/[0.012] px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:px-5">
-                <div className="min-w-0 border-l-2 border-[#e11937] pl-3">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#b51224]">Record Intelligence</p>
-                  <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{trackIntelligenceMetrics.length} key signals</p>
-                </div>
-                <p className="min-w-0 text-[13px] font-semibold leading-relaxed text-foreground/72 sm:max-w-3xl">
-                  {trackSnapshotSummary}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
-                {trackIntelligenceMetrics.map((metric) => (
-                  <div key={`${metric.groupTitle}-${metric.label}-${metric.value}`} className="min-w-0 border-t border-foreground/8 px-3 py-3 sm:px-4">
-                    <p className="text-[10px] font-semibold leading-tight text-muted-foreground/82">{metric.label}</p>
-                    <p className="mt-1 break-words text-[20px] font-semibold leading-none text-foreground">{metric.value}</p>
-                    {metric.context ? <p className="mt-1 text-[10px] font-semibold leading-tight text-muted-foreground/70">{metric.context}</p> : null}
-                  </div>
-                ))}
-              </div>
-            </section> : null}
-
-            <div className="border-t border-foreground/8 pt-5">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
-              {managerReadCopy ? (
-                <p data-testid="manager-read-copy" className="mt-4 text-[14px] font-semibold leading-relaxed text-foreground/90 whitespace-pre-line">{managerReadCopy}</p>
-              ) : (
-                <div data-testid="manager-read-copy" className="mt-4">
-                  <p className="text-[15px] font-semibold text-foreground">No Manager read yet</p>
-                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Ask Manager for a plain-English view of this song before making a move.</p>
-                </div>
-              )}
-            </div>
+            <MusicManagerReadContent subject={song} testId="manager-read-copy" />
           </div>
           <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
         </div>
@@ -981,7 +955,7 @@ function MusicProjectDetail({
               ))}
             </div>
           </div>
-          <MusicProjectBrief project={project} tracklist={tracklist} onGenerateBrief={onGenerateBrief} briefPending={briefPending} briefError={briefError} />
+          <MusicProjectBrief project={project} onGenerateBrief={onGenerateBrief} briefPending={briefPending} briefError={briefError} />
         </div>
         <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
       </div>
@@ -991,43 +965,35 @@ function MusicProjectDetail({
 
 function MusicProjectBrief({
   project,
-  tracklist,
   onGenerateBrief,
   briefPending,
   briefError,
 }: {
   project: MusicObjectViewModel;
-  tracklist: MusicObjectViewModel[];
   onGenerateBrief: () => void;
   briefPending: boolean;
   briefError: string | null;
 }) {
-  const projectIntelligenceMetrics = selectTrackIntelligenceMetrics(project.intelligenceSnapshot ?? []);
-  const projectSnapshotSummary =
-    acceptedVisibleTrackReadText(project.snapshotSummary) ??
-    "Project intelligence is focused on the usable release and tracklist facts already in view.";
-  const managerReadCopy = acceptedVisibleTrackReadText(project.managerRead);
-  const generateReadLabel = projectManagerReadButtonLabel(project.managerReadState, Boolean(managerReadCopy));
+  const generateReadLabel = managerReadButtonLabel("project", project.managerReadStatus);
+  const readBusy = briefPending || isActiveManagerRead(project.managerReadStatus);
 
   return (
     <div className="surface-elevated overflow-hidden rounded-[22px] p-5 shadow-sm sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {project.confidence === "limited" ? "Limited confidence" : `${project.confidence ?? "high"} confidence`}
-          </span>
-          <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {managerReadStateLabel(project.managerReadState)}
+            {managerReadStatusLabel(project.managerReadStatus)}
           </span>
         </div>
         <button
           type="button"
           onClick={onGenerateBrief}
-          disabled={briefPending}
+          disabled={readBusy}
+          aria-label={briefPending ? "Manager is reading" : generateReadLabel}
           className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 font-ui text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40"
         >
-          {briefPending ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
-          {briefPending ? "Asking Manager..." : generateReadLabel}
+          {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+          {briefPending ? "Manager is reading" : generateReadLabel}
         </button>
       </div>
 
@@ -1037,64 +1003,109 @@ function MusicProjectBrief({
         </p>
       ) : null}
 
-      <h3 className="mt-4 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">{project.situationLine}</h3>
-
-      <section data-testid="project-intelligence-card" className="mt-5 overflow-hidden rounded-[12px] border border-foreground/10 bg-background shadow-sm">
-        <div className="grid gap-4 border-b border-foreground/8 bg-foreground/[0.012] px-4 py-4 sm:grid-cols-[160px_minmax(0,1fr)] sm:px-5">
-          <div className="min-w-0 border-l-2 border-[#e11937] pl-3">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-[#b51224]">Project Intelligence</p>
-            <p className="mt-1 text-[11px] font-semibold text-muted-foreground">{projectIntelligenceMetrics.length} key signals</p>
-          </div>
-          <p className="min-w-0 text-[13px] font-semibold leading-relaxed text-foreground/72 sm:max-w-3xl">
-            {projectSnapshotSummary}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5">
-          {projectIntelligenceMetrics.map((metric) => (
-            <div key={`${metric.groupTitle}-${metric.label}-${metric.value}`} className="min-w-0 border-t border-foreground/8 px-3 py-3 sm:px-4">
-              <p className="text-[10px] font-semibold leading-tight text-muted-foreground/82">{metric.label}</p>
-              <p className="mt-1 break-words text-[20px] font-semibold leading-none text-foreground">{metric.value}</p>
-              {metric.context ? <p className="mt-1 text-[10px] font-semibold leading-tight text-muted-foreground/70">{metric.context}</p> : null}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <div className="mt-5 rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-5">
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager's Read</p>
-        {managerReadCopy ? (
-          <p data-testid="project-manager-read-copy" className="mt-4 whitespace-pre-line text-[14px] font-semibold leading-relaxed text-foreground/90">{managerReadCopy}</p>
-        ) : (
-          <div data-testid="project-manager-read-copy" className="mt-4">
-            <p className="text-[15px] font-semibold text-foreground">No Manager read yet</p>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Ask Manager for a project-level view before turning this release into work.</p>
-          </div>
-        )}
+      <div className="mt-5">
+        <MusicManagerReadContent subject={project} testId="project-manager-read-copy" />
       </div>
     </div>
   );
 }
 
-function managerReadStateLabel(state: MusicObjectViewModel["managerReadState"]) {
-  if (state === "fresh") return "Fresh";
-  if (state === "limited") return "Limited";
-  if (state === "loading") return "Loading";
-  if (state === "failed") return "Failed";
-  if (state === "stale") return "Refresh needed";
-  if (state === "fallback") return "Saved-packet read";
+function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectViewModel; testId: string }) {
+  const read = subject.managerRead;
+  const statusMessage =
+    subject.managerReadStatus === "refreshing"
+      ? "Manager Read is being refreshed. The current read remains available."
+      : subject.managerReadStatus === "refresh_failed"
+        ? "Manager Read could not be refreshed. Your previous read is still available."
+        : subject.managerReadStatus === "failed"
+          ? "Manager Read could not be completed. Try again."
+          : null;
+
+  return (
+    <section data-testid={testId} className="overflow-hidden rounded-[14px] border border-foreground/10 bg-background/70">
+      <div className="border-b border-foreground/8 px-4 py-4 sm:px-5">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager&apos;s Read</p>
+        {statusMessage ? (
+          <p className="mt-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
+            {statusMessage}
+          </p>
+        ) : null}
+        {read ? (
+          <>
+            <h3 className="mt-4 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">{read.position}</h3>
+            <p className="mt-2 font-ui text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{read.managementRole}</p>
+          </>
+        ) : (
+          <div className="mt-4">
+            <p className="text-[15px] font-semibold text-foreground">No Manager Read yet</p>
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
+              {subject.kind === "project"
+                ? "Ask Manager for a project-level view before turning this release into work."
+                : "Ask Manager for a clear view of this song before making a move."}
+            </p>
+          </div>
+        )}
+      </div>
+
+      {read ? (
+        <>
+          <div className="grid sm:grid-cols-2 xl:grid-cols-3">
+            {read.signals.map((signal) => (
+              <div key={`${signal.label}-${signal.value}`} className="min-w-0 border-b border-foreground/8 px-4 py-4 sm:px-5 xl:border-r xl:last:border-r-0">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{signal.label}</p>
+                <p className="mt-1 break-words font-display text-[22px] font-semibold leading-none text-foreground">{signal.value}</p>
+                <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/82">{signal.meaning}</p>
+              </div>
+            ))}
+          </div>
+
+          <div className="px-4 py-5 sm:px-5">
+            <p className="whitespace-pre-line text-[14px] font-semibold leading-[1.75] text-foreground/90">{read.body}</p>
+
+            <div className="mt-6 grid gap-3 lg:grid-cols-3">
+              {[
+                ["Decision", read.decision],
+                ["Avoid", read.avoid],
+                ["Watch", read.watch],
+              ].map(([label, value]) => (
+                <div key={label} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-4">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">{label}</p>
+                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/86">{value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 border-t border-foreground/8 pt-4">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{titleCaseStatus(read.confidence)} confidence</p>
+              <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/84">{read.confidenceReason}</p>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+function managerReadStatusLabel(status: MusicObjectViewModel["managerReadStatus"]) {
+  if (status === "fresh") return "Current read";
+  if (status === "running") return "Manager is reading";
+  if (status === "refreshing") return "Refreshing";
+  if (status === "refresh_failed") return "Refresh failed";
+  if (status === "failed") return "Read failed";
+  if (status === "stale") return "Refresh required";
   return "Not generated";
 }
 
-function songManagerReadButtonLabel(state: MusicObjectViewModel["managerReadState"], hasManagerRead: boolean) {
-  if (!hasManagerRead || state === "loading" || !state) return "Ask Manager for a read";
-  if (state === "failed") return "Retry Manager read";
-  return "Refresh Manager read";
+function isActiveManagerRead(status: MusicObjectViewModel["managerReadStatus"]) {
+  return status === "running" || status === "refreshing";
 }
 
-function projectManagerReadButtonLabel(state: MusicObjectViewModel["managerReadState"], hasManagerRead: boolean) {
-  if (!hasManagerRead || state === "loading" || !state) return "Ask Manager for a project read";
-  if (state === "failed") return "Retry project read";
-  return "Refresh Manager read";
+function managerReadButtonLabel(kind: MusicObjectViewModel["kind"], status: MusicObjectViewModel["managerReadStatus"]) {
+  if (status === "running") return "Manager is reading";
+  if (status === "refreshing") return "Refreshing Manager Read";
+  if (status === "failed" || status === "refresh_failed") return "Retry Manager Read";
+  if (status === "not_generated" || !status) return kind === "project" ? "Ask Manager for a project read" : "Ask Manager for a read";
+  return "Refresh Manager Read";
 }
 
 function isLockedReleasedStage(stage?: string) {
@@ -1104,7 +1115,7 @@ function isLockedReleasedStage(stage?: string) {
 
 function MusicDetailTop({ object, label, onBack, onStageChange }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void }) {
   const stageValue = object.lifecycleStage ?? object.lifecycle;
-  const situationLine = object.situationLine ?? object.sourceLimit;
+  const subjectContext = object.sourceLimit;
   const lockedReleasedStage = object.kind === "song" && isLockedReleasedStage(stageValue);
 
   return (
@@ -1130,7 +1141,7 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
           <div className="min-w-0 flex-1">
             <p data-testid="music-detail-mobile-title" className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
-            {object.kind === "song" ? <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{situationLine}</p> : null}
+            {object.kind === "song" ? <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{subjectContext}</p> : null}
           </div>
         </div>
         {object.kind === "song" && !lockedReleasedStage ? (
@@ -1160,7 +1171,7 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           <div className="min-w-0">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
             <h2 className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
-            {object.kind === "song" ? <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{situationLine}</p> : null}
+            {object.kind === "song" ? <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{subjectContext}</p> : null}
           </div>
           {object.kind === "song" && !lockedReleasedStage ? (
             <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
@@ -2181,132 +2192,4 @@ function getProjectReadiness(project: MusicObjectViewModel, getMusicObject: (id:
   return {
     trackCount: tracks?.length ?? project.songs?.length ?? 0,
   };
-}
-
-type CompactTrackMetric = {
-  label: string;
-  value: string;
-  context?: string;
-  evidenceIds: string[];
-  groupTitle: string;
-};
-
-function selectTrackIntelligenceMetrics(groups: { title: string; metrics: { label: string; value: string; context?: string; evidenceIds: string[] }[] }[]): CompactTrackMetric[] {
-  const allMetrics = groups.flatMap((group) => group.metrics.map((metric) => ({ ...metric, groupTitle: group.title })));
-  const uniqueMetrics = allMetrics.filter((metric, index, list) => {
-    const key = `${metric.label.toLowerCase()}-${metric.value.toLowerCase()}`;
-    return list.findIndex((candidate) => `${candidate.label.toLowerCase()}-${candidate.value.toLowerCase()}` === key) === index;
-  });
-
-  const displayMetrics = uniqueMetrics.filter(isDisplayableTrackMetric).map((metric) => ({
-    ...metric,
-    context: compactTrackMetricContext(metric.context),
-  }));
-
-  return displayMetrics
-    .map((metric, index) => ({ metric, index, priority: getTrackMetricPriority(metric) }))
-    .sort((left, right) => left.priority - right.priority || left.index - right.index)
-    .slice(0, 10)
-    .map(({ metric }) => metric);
-}
-
-function isDisplayableTrackMetric(metric: CompactTrackMetric) {
-  const visibleText = [metric.groupTitle, metric.label, metric.value, metric.context ?? ""].join(" ");
-  if (hasBannedTrackVisibleTerm(visibleText)) return false;
-  if (metric.label.trim().length > 30) return false;
-  if (!isCompactTrackMetricValue(metric.value)) return false;
-
-  const priority = getTrackMetricPriority(metric);
-  if (priority < TRACK_METRIC_FALLBACK_PRIORITY) return true;
-  if (/[\d#%]/.test(metric.value)) return true;
-  return /release state|catalog status|read status/i.test(metric.label) && metric.value.trim().length <= 14;
-}
-
-function isCompactTrackMetricValue(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed || trimmed.length > 22) return false;
-  if (/[.!?]/.test(trimmed.replace(/(\d)\.(\d)/g, "$1$2"))) return false;
-  const wordCount = trimmed.split(/\s+/).filter(Boolean).length;
-  if (!/[\d#%]/.test(trimmed) && wordCount > 2) return false;
-  return true;
-}
-
-function compactTrackMetricContext(context?: string) {
-  const clean = acceptedVisibleTrackReadText(context);
-  if (!clean) return undefined;
-  if (clean.length <= 52) return clean;
-  return undefined;
-}
-
-function getTrackMetricPriority(metric: { label: string; context?: string }) {
-  const text = `${metric.label} ${metric.context ?? ""}`.toLowerCase();
-  const priorities = [
-    /spotify streams|last 28 days|peak day|stream trend|reported streams/,
-    /popularity|score/,
-    /playlist reach|playlist count|editorial/,
-    /tiktok creates|tiktok posts|tiktok views|tiktok/,
-    /youtube views|youtube/,
-    /shazam/,
-    /airplay|radio/,
-  ];
-  const priority = priorities.findIndex((pattern) => pattern.test(text));
-  return priority === -1 ? TRACK_METRIC_FALLBACK_PRIORITY : priority;
-}
-
-const TRACK_METRIC_FALLBACK_PRIORITY = 99;
-
-const TRACK_VISIBLE_BANNED_TERMS = [
-  "chatgpt",
-  "ai",
-  "bot",
-  "backend",
-  "chartmetric",
-  "provider",
-  "api",
-  "apis",
-  "database",
-  "evidence row",
-  "third-party",
-  "spotify confirms",
-  "spotify for artists",
-  "private conversion data",
-  "private saves",
-  "private analytics",
-  "private document",
-  "private documents",
-  "distributor proof",
-  "proof of listeners",
-  "listeners or saves",
-  "missing saves",
-  "missing listeners",
-  "we do not yet have",
-  "we don't yet have",
-  "repeat listeners",
-  "source-of-stream",
-  "source limits",
-  "source limit",
-  "conversion proof",
-  "campaign roi",
-  "missing proof",
-  "still missing",
-  "missing data",
-  "catalog-only",
-  "metadata-only",
-  "only catalog metadata",
-  "metadata record",
-  "saved track metadata",
-];
-
-function acceptedVisibleTrackReadText(value?: string) {
-  const text = value?.trim();
-  if (!text || hasBannedTrackVisibleTerm(text)) return undefined;
-  return text;
-}
-
-function hasBannedTrackVisibleTerm(value: string) {
-  return TRACK_VISIBLE_BANNED_TERMS.some((term) => new RegExp(`\\b${escapeTrackRegex(term)}\\b`, "i").test(value));
-}
-
-function escapeTrackRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

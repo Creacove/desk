@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
+import { MusicWorkspace } from "./features/music/MusicScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
 import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
@@ -68,6 +69,66 @@ const workspace = {
   contextComplete: true,
   latestCatalogSyncStatus: "completed",
 } satisfies ProductionWorkspace;
+
+const completeSongManagerRead: NonNullable<MusicObjectViewModel["managerRead"]> = {
+  position: "Jam is the clearest public-pressure record in the current catalog.",
+  managementRole: "Lead attention asset",
+  body:
+    "Jam is carrying the strongest aligned public response in the current catalog. Its recent streams, short-form reach, and Lagos response point to the same record rather than three disconnected spikes.\n\nUse Jam to test whether this attention can become repeatable audience behavior before widening spend.",
+  decision: "Make Jam the lead validation record for the next focused audience test.",
+  avoid: "Do not spread equal campaign weight across weaker catalog records.",
+  watch: "Watch whether Lagos response and repeat public discovery remain aligned.",
+  confidence: "high",
+  confidenceReason: "Three current evidence families agree on the same song and market direction.",
+  signals: [
+    { label: "Recent streams", value: "5.2M", meaning: "Current listening pressure", evidenceIds: ["ev-song-streams"] },
+    { label: "Top TikTok clip", value: "19M", meaning: "Short-form discovery scale", evidenceIds: ["ev-song-tiktok"] },
+    { label: "Lagos rank", value: "#14", meaning: "A market lane worth testing", evidenceIds: ["ev-song-market"] },
+  ],
+  evidenceIds: ["ev-song-streams", "ev-song-tiktok", "ev-song-market"],
+};
+
+const completeProjectManagerRead: NonNullable<MusicObjectViewModel["managerRead"]> = {
+  position: "Blue Rooms is the release system with the clearest near-term leverage.",
+  managementRole: "Focused project campaign",
+  body:
+    "Blue Rooms works best as a release-level system led by Jam, not as four songs receiving equal weight. The project has enough aligned listening and market response to support a focused sequence.\n\nKeep the campaign centered on the carrying track while the next reporting window tests whether attention travels into the wider release.",
+  decision: "Lead the Blue Rooms campaign with Jam and sequence the remaining tracks behind it.",
+  avoid: "Do not market every track as an equal focus.",
+  watch: "Watch whether project listening grows beyond Jam in the next reporting window.",
+  confidence: "medium",
+  confidenceReason: "The lead-track and market signals agree, while project-wide conversion is still developing.",
+  signals: [
+    { label: "Project streams", value: "8.4M", meaning: "Current release-level listening", evidenceIds: ["ev-project-streams"] },
+    { label: "Carrying track", value: "Jam", meaning: "The song leading project attention", evidenceIds: ["ev-project-track"] },
+    { label: "Lagos rank", value: "#9", meaning: "The strongest current market lane", evidenceIds: ["ev-project-market"] },
+  ],
+  evidenceIds: ["ev-project-streams", "ev-project-track", "ev-project-market"],
+};
+
+function musicReadSubject(
+  kind: "song" | "project",
+  managerReadStatus: MusicObjectViewModel["managerReadStatus"],
+  managerRead = kind === "song" ? completeSongManagerRead : completeProjectManagerRead,
+): MusicObjectViewModel {
+  return {
+    id: kind === "song" ? "song-jam" : "project-blue-rooms",
+    kind,
+    title: kind === "song" ? "Jam" : "Blue Rooms",
+    lifecycle: "Released",
+    lifecycleStage: "Released",
+    blocker: "No active blocker",
+    sourceKind: "public catalog",
+    sourceLimit: "Current public music context.",
+    managerRead,
+    managerReadStatus,
+    managerReadRunId: managerReadStatus === "running" || managerReadStatus === "refreshing" ? "run-active" : "run-terminal",
+    linkedMissionIds: [],
+    linkedTaskIds: [],
+    linkedTaskCount: 0,
+    songIds: kind === "project" ? ["song-jam"] : undefined,
+  };
+}
 
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
@@ -802,9 +863,9 @@ describe("Clean production prototype-match shell", () => {
             blocker: "No active blocker",
             sourceKind: "spotify_public_catalog",
             sourceLimit: "Public catalog connected.",
-            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
-            managerRead: loadMusicCalls > 1 ? "Setup Song has a generated Manager Read." : undefined,
-            nextMove: "Wait for setup intelligence.",
+            managerReadStatus: loadMusicCalls > 1 ? "fresh" as const : "running" as const,
+            managerRead: loadMusicCalls > 1 ? { ...completeSongManagerRead, position: "Setup Song is ready for its first management focus." } : undefined,
+            managerReadRunId: "setup-song-read-run",
             linkedMissionIds: [],
             linkedTaskCount: 0,
           },
@@ -817,9 +878,9 @@ describe("Clean production prototype-match shell", () => {
             blocker: "No active blocker",
             sourceKind: "spotify_public_catalog",
             sourceLimit: "Public catalog connected.",
-            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
-            managerRead: loadMusicCalls > 1 ? "Setup Project has a generated Manager Read." : undefined,
-            nextMove: "Wait for setup intelligence.",
+            managerReadStatus: loadMusicCalls > 1 ? "fresh" as const : "running" as const,
+            managerRead: loadMusicCalls > 1 ? { ...completeProjectManagerRead, position: "Setup Project is ready for its first release-level focus." } : undefined,
+            managerReadRunId: "setup-project-read-run",
             linkedMissionIds: [],
             linkedTaskCount: 0,
             songIds: ["song-setup"],
@@ -958,9 +1019,9 @@ describe("Clean production prototype-match shell", () => {
             blocker: "No active blocker",
             sourceKind: "spotify_public_catalog",
             sourceLimit: "Public catalog connected.",
-            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
-            managerRead: loadMusicCalls > 1 ? "Setup Song has a generated Manager Read." : undefined,
-            nextMove: "Wait for setup intelligence.",
+            managerReadStatus: loadMusicCalls > 1 ? "fresh" as const : "running" as const,
+            managerRead: loadMusicCalls > 1 ? { ...completeSongManagerRead, position: "Setup Song is ready for its first management focus." } : undefined,
+            managerReadRunId: "setup-song-read-run",
             linkedMissionIds: [],
             linkedTaskCount: 0,
           },
@@ -973,9 +1034,9 @@ describe("Clean production prototype-match shell", () => {
             blocker: "No active blocker",
             sourceKind: "spotify_public_catalog",
             sourceLimit: "Public catalog connected.",
-            managerReadState: loadMusicCalls > 1 ? "fresh" : "fallback",
-            managerRead: loadMusicCalls > 1 ? "Setup Project has a generated Manager Read." : undefined,
-            nextMove: "Wait for setup intelligence.",
+            managerReadStatus: loadMusicCalls > 1 ? "fresh" as const : "running" as const,
+            managerRead: loadMusicCalls > 1 ? { ...completeProjectManagerRead, position: "Setup Project is ready for its first release-level focus." } : undefined,
+            managerReadRunId: "setup-project-read-run",
             linkedMissionIds: [],
             linkedTaskCount: 0,
             songIds: ["song-setup"],
@@ -3940,45 +4001,13 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
   }, 20000);
 
-  it("uses empty-state Manager read copy before a song or project has a saved read", async () => {
-    const music: MusicObjectViewModel[] = [
-      {
-        id: "song-no-read",
-        kind: "song",
-        title: "No Read Song",
-        lifecycle: "Ready",
-        lifecycleStage: "Ready",
-        blocker: "No active blocker",
-        sourceKind: "manual",
-        sourceLimit: "Test song.",
-        nextMove: "Ask Manager for a view.",
-        managerReadState: "loading",
-        linkedMissionIds: [],
-        linkedTaskIds: [],
-        linkedTaskCount: 0,
-      },
-      {
-        id: "project-no-read",
-        kind: "project",
-        title: "No Read Project",
-        lifecycle: "Ready",
-        lifecycleStage: "Ready",
-        blocker: "No active blocker",
-        sourceKind: "manual",
-        sourceLimit: "Test project.",
-        nextMove: "Ask Manager for a project view.",
-        managerReadState: "loading",
-        linkedMissionIds: [],
-        linkedTaskIds: [],
-        linkedTaskCount: 0,
-        songIds: ["song-no-read"],
-      },
+  it("renders the complete Manager Read v2 contract for songs and projects without internal evidence IDs", async () => {
+    const music = [
+      musicReadSubject("song", "fresh"),
+      musicReadSubject("project", "fresh"),
     ];
     const repositories = repositoriesFor("Nova Vale");
-    repositories.music = {
-      ...repositories.music,
-      loadMusic: async () => music,
-    };
+    repositories.music = { ...repositories.music, loadMusic: async () => music };
 
     render(
       <ProductionApp
@@ -3990,154 +4019,118 @@ describe("Clean production prototype-match shell", () => {
     );
 
     await screen.findByRole("heading", { name: "Catalog" });
-    fireEvent.click(screen.getByRole("button", { name: "Open song No Read Song" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const songRoom = screen.getByTestId("music-song-detail");
-    const songAskManagerButton = within(songRoom).getByRole("button", { name: "Ask Manager for a read" });
-    expect(songAskManagerButton).toHaveClass("bg-foreground", "text-background", "focus:ring-brand-accent/30");
-    expect(songAskManagerButton.closest(".metal-fx-root")).toBeNull();
-    expect(songRoom).toHaveTextContent("No Manager read yet");
-    expect(songRoom).toHaveTextContent("Ask Manager for a plain-English view of this song before making a move.");
-    expect(songRoom).not.toHaveTextContent("Regenerate brief");
+    expect(songRoom).toHaveTextContent(completeSongManagerRead.position);
+    expect(songRoom).toHaveTextContent("Lead attention asset");
+    expect(songRoom).toHaveTextContent("5.2M");
+    expect(songRoom).toHaveTextContent("Current listening pressure");
+    expect(songRoom).toHaveTextContent("Decision");
+    expect(songRoom).toHaveTextContent(completeSongManagerRead.decision);
+    expect(songRoom).toHaveTextContent("Avoid");
+    expect(songRoom).toHaveTextContent(completeSongManagerRead.avoid);
+    expect(songRoom).toHaveTextContent("Watch");
+    expect(songRoom).toHaveTextContent(completeSongManagerRead.watch);
+    expect(songRoom).toHaveTextContent("High confidence");
+    expect(songRoom).toHaveTextContent("Three current evidence families agree");
+    expect(songRoom).not.toHaveTextContent("ev-song-streams");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Catalog" }));
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open project No Read Project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open project Blue Rooms" }));
     const projectRoom = screen.getByTestId("music-project-detail");
-    const projectAskManagerButton = within(projectRoom).getByRole("button", { name: "Ask Manager for a project read" });
-    expect(projectAskManagerButton).toHaveClass("bg-foreground", "text-background", "focus:ring-brand-accent/30");
-    expect(projectAskManagerButton.closest(".metal-fx-root")).toBeNull();
-    expect(projectRoom).toHaveTextContent("No Manager read yet");
-    expect(projectRoom).toHaveTextContent("Ask Manager for a project-level view before turning this release into work.");
-    expect(projectRoom).not.toHaveTextContent("Regenerate brief");
+    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.position);
+    expect(projectRoom).toHaveTextContent("Focused project campaign");
+    expect(projectRoom).toHaveTextContent("8.4M");
+    expect(projectRoom).toHaveTextContent("Current release-level listening");
+    expect(projectRoom).toHaveTextContent("Decision");
+    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.decision);
+    expect(projectRoom).toHaveTextContent("Avoid");
+    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.avoid);
+    expect(projectRoom).toHaveTextContent("Watch");
+    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.watch);
+    expect(projectRoom).toHaveTextContent("Medium confidence");
+    expect(projectRoom).toHaveTextContent("The lead-track and market signals agree");
+    expect(projectRoom).not.toHaveTextContent("ev-project-streams");
   }, 20000);
 
-  it("renders a project brief under the tracklist and regenerates it from the project subject", async () => {
-    const calls: Array<{ subjectId: string; subjectType: "music_item" | "music_project" }> = [];
-    const music: MusicObjectViewModel[] = [
-      {
-        id: "song-project-1",
-        kind: "song",
-        title: "Focus Track",
-        lifecycle: "Released",
-        lifecycleStage: "Released",
-        blocker: "No active blocker",
-        sourceKind: "Spotify public catalog",
-        sourceLimit: "Song source.",
-        nextMove: "Inspect the song.",
-        linkedMissionIds: [],
-        linkedTaskIds: [],
-        linkedTaskCount: 0,
-      },
-      {
-        id: "project-brief-1",
-        kind: "project",
-        title: "Brief Project",
-        lifecycle: "Released",
-        lifecycleStage: "Released",
-        blocker: "No inherited blockers",
-        sourceKind: "manual",
-        sourceLimit: "Project source.",
-        situationLine: "Released EP · Focus Track is carrying the first project read",
-        snapshotSummary: "We do not yet have distributor proof of listeners, saves, or source limits.",
-        managerRead:
-          "The project has playlist exposure, but we do not yet have distributor proof of listeners or saves, and source limits are blocking the read.",
-        managerReadState: "fresh",
-        confidence: "medium",
-        nextMove: "Use Focus Track as the first project focus before widening the release plan.",
-        intelligenceSnapshot: [
-          {
-            title: "Project Intelligence",
-            insight: "Brief Project has a clear first track to inspect.",
-            metrics: [
-              {
-                label: "Missing proof",
-                value: "Private documents are still missing",
-                context: "Spotify for Artists export",
-                evidenceIds: ["bad-gap"],
-              },
-              { label: "Playlist count", value: "5.7K", context: "EP playlists", evidenceIds: ["playlist-count"] },
-              { label: "Editorial placements", value: "24", context: "editorial playlists", evidenceIds: ["editorial"] },
-              { label: "Playlist reach", value: "16.2M", context: "playlist total reach", evidenceIds: ["playlist-reach"] },
-              { label: "Track count", value: "1", context: "track mapped into release", evidenceIds: ["catalog-setup"] },
-            ],
-          },
-        ],
-        linkedMissionIds: [],
-        linkedTaskIds: [],
-        linkedTaskCount: 0,
-        songIds: ["song-project-1"],
-      },
-    ];
+  it.each([
+    ["song", "not_generated", "Not generated", "Ask Manager for a read", false],
+    ["song", "stale", "Refresh required", "Refresh Manager Read", false],
+    ["song", "running", "Manager is reading", "Manager is reading", true],
+    ["song", "refreshing", "Refreshing", "Refreshing Manager Read", true],
+    ["song", "fresh", "Current read", "Refresh Manager Read", false],
+    ["song", "failed", "Read failed", "Retry Manager Read", false],
+    ["song", "refresh_failed", "Refresh failed", "Retry Manager Read", false],
+    ["project", "not_generated", "Not generated", "Ask Manager for a project read", false],
+    ["project", "stale", "Refresh required", "Refresh Manager Read", false],
+    ["project", "running", "Manager is reading", "Manager is reading", true],
+    ["project", "refreshing", "Refreshing", "Refreshing Manager Read", true],
+    ["project", "fresh", "Current read", "Refresh Manager Read", false],
+    ["project", "failed", "Read failed", "Retry Manager Read", false],
+    ["project", "refresh_failed", "Refresh failed", "Retry Manager Read", false],
+  ] as const)("renders the %s %s Manager Read state", async (kind, status, statusLabel, buttonLabel, disabled) => {
+    const subject = musicReadSubject(kind, status);
+    subject.managerRead = status === "not_generated" || status === "running" || status === "failed"
+      ? undefined
+      : kind === "song" ? completeSongManagerRead : completeProjectManagerRead;
+    const onMusicChanged = vi.fn(async () => undefined);
     const repositories = repositoriesFor("Nova Vale");
-    repositories.music = {
-      ...repositories.music,
-      loadMusic: async () => music,
-      generateMusicSummary: async (subjectId, subjectType) => {
-        calls.push({ subjectId, subjectType });
-        return {
-          ...music.find((item) => item.id === subjectId)!,
-          situationLine: "Generated project read - Focus Track is now the release lever.",
-          managerRead: "Generated read: Brief Project should be managed around Focus Track because the project evidence now points to one clear lead record.",
-          nextMove: "Move the project plan around Focus Track before widening spend.",
-          managerReadState: "fresh",
-          snapshotSummary: "Generated project summary from the latest packet.",
-          intelligenceSnapshot: [
-            {
-              title: "Generated Project Read",
-              insight: "Focus Track is now the project's lead management lever.",
-              metrics: [{ label: "Lead track", value: "Focus Track", context: "generated read", evidenceIds: ["generated-ev"] }],
-            },
-          ],
-        };
-      },
-    };
+    const startManagerRead = vi.fn(repositories.music.startManagerRead);
 
     render(
-      <ProductionApp
-        authAdapter={authWithSession(session)}
-        workspaceLoader={workspaceLoaderWith(workspace)}
-        repositories={repositories}
-        initialView="musicWorkspace"
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, startManagerRead }}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
       />,
     );
 
-    await screen.findByRole("heading", { name: "Catalog" });
-    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open project Brief Project" }));
-    const projectRoom = screen.getByTestId("music-project-detail");
+    if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
+    const room = screen.getByTestId(kind === "song" ? "music-song-detail" : "music-project-detail");
+    expect(room).toHaveTextContent(statusLabel);
+    const button = within(room).getByRole("button", { name: buttonLabel });
+    expect(button).toHaveProperty("disabled", disabled);
+    if (disabled) {
+      fireEvent.click(button);
+      expect(startManagerRead).not.toHaveBeenCalled();
+    }
+  });
 
-    const tracklistLabel = within(projectRoom).getByText("Tracklist");
-    const briefLabel = within(projectRoom).getByText("Project Intelligence");
-    expect(tracklistLabel.compareDocumentPosition(briefLabel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(projectRoom).toHaveTextContent("Released EP · Focus Track is carrying the first project read");
-    expect(projectRoom).toHaveTextContent("No Manager read yet");
-    expect(projectRoom).toHaveTextContent("Ask Manager for a project-level view before turning this release into work.");
-    expect(projectRoom).toHaveTextContent("Playlist count");
-    expect(projectRoom).toHaveTextContent("5.7K");
-    expect(projectRoom).toHaveTextContent("Editorial placements");
-    expect(projectRoom).toHaveTextContent("24");
-    expect(projectRoom).toHaveTextContent("Playlist reach");
-    expect(projectRoom).toHaveTextContent("16.2M");
-    expect(projectRoom).toHaveTextContent("Track count");
-    expect(projectRoom).toHaveTextContent("1");
-    expect(projectRoom).toHaveTextContent("Fresh");
-    expect(projectRoom).not.toHaveTextContent("The Manager read is being refreshed");
-    expect(projectRoom).not.toHaveTextContent("Spotify public catalog");
-    expect(within(projectRoom).getByTestId("music-linked-work")).toHaveClass("self-start", "lg:sticky", "lg:top-8");
-    expect(projectRoom).not.toHaveTextContent("Missing proof");
-    expect(projectRoom).not.toHaveTextContent("Private documents");
-    expect(projectRoom).not.toHaveTextContent("Spotify for Artists");
-    expect(projectRoom).not.toHaveTextContent("distributor proof");
-    expect(projectRoom).not.toHaveTextContent("source limits");
+  it.each([
+    ["song", "refreshing", "Refreshing", "Manager Read is being refreshed. The current read remains available."],
+    ["song", "refresh_failed", "Refresh failed", "Manager Read could not be refreshed. Your previous read is still available."],
+    ["project", "refreshing", "Refreshing", "Manager Read is being refreshed. The current read remains available."],
+    ["project", "refresh_failed", "Refresh failed", "Manager Read could not be refreshed. Your previous read is still available."],
+  ] as const)("keeps the prior %s read visible while %s", (kind, status, statusLabel, safeMessage) => {
+    const subject = musicReadSubject(kind, status);
+    subject.managerReadError = "OpenAI provider API returned database internals";
+    const repositories = repositoriesFor("Nova Vale");
 
-    fireEvent.click(within(projectRoom).getByRole("button", { name: "Ask Manager for a project read" }));
-
-    await waitFor(() => {
-      expect(calls).toEqual([{ subjectId: "project-brief-1", subjectType: "music_project" }]);
-    });
-    expect(projectRoom).toHaveTextContent("Generated read: Brief Project should be managed around Focus Track");
-    expect(projectRoom).toHaveTextContent("Generated project summary from the latest packet.");
-  }, 20000);
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
+    const room = screen.getByTestId(kind === "song" ? "music-song-detail" : "music-project-detail");
+    expect(room).toHaveTextContent(statusLabel);
+    expect(room).toHaveTextContent(subject.managerRead!.body.split("\n")[0]);
+    expect(room).toHaveTextContent(safeMessage);
+    expect(room).not.toHaveTextContent("OpenAI");
+    expect(room).not.toHaveTextContent("provider API");
+    expect(room).not.toHaveTextContent("database internals");
+  });
 
   it("exposes production Catalog create and upload actions in context", async () => {
     await enterDeskHq();
@@ -4256,115 +4249,139 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("dialog", { name: "Upload Split sheet document" })).toBeInTheDocument();
   }, 20000);
 
-  it("keeps the song overview as a prose read without duplicating the Details tab", async () => {
-    const summarySong: MusicObjectViewModel = {
-      id: "song-summary",
-      kind: "song",
-      title: "Source Proof",
-      lifecycle: "released",
-      lifecycleStage: "Released",
-      blocker: "No active blocker",
-      sourceKind: "spotify_public_catalog",
-      sourceLimit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-      situationLine: "Released song · Listening increased this week · Split proof is clear",
-      managerRead:
-        "Source Proof is the record with the clearest playlist doorway right now: 12,500 people can be reached from the current playlist base, and the release spine is clean enough to make the read about audience behavior instead of setup hygiene. I would use this record as the first music focus and watch whether the playlist lift keeps creating real listening over the next week.",
-      nextMove: "Use Source Proof as the first music focus and watch whether the playlist lift keeps creating real listening over the next week.",
-      watchNext: "Check whether listening stays up next week.",
-      managerReadState: "fresh",
-      intelligenceSnapshot: [
-        {
-          title: "Record Intelligence",
-          insight: "Chartmetric third-party APIs say Source Proof has a playlist doorway worth watching this week.",
-          metrics: [
-            {
-              label: "Missing proof",
-              value: "Territory streaming and save behavior still needs the private document",
-              context: "Spotify for Artists export",
-              evidenceIds: ["bad-source-gap"],
-            },
-            {
-              label: "Features and releases",
-              value: "Career help across releases and collaborations",
-              context: "long sentence value that does not belong in a compact metric table",
-              evidenceIds: ["bad-long-copy"],
-            },
-            { label: "Playlist reach", value: "12.5K", context: "people reachable from current playlists", evidenceIds: ["evidence-1"] },
-            { label: "Release state", value: "Live", context: "public record is available", evidenceIds: ["catalog-setup"] },
-          ],
-        },
-      ],
-      snapshotSummary: "Chartmetric third-party APIs say Source Proof has a playlist doorway worth watching this week.",
-      linkedMissionIds: [],
-      linkedTaskCount: 0,
-      sourceSummary: {
-        headline: "Source Proof is a Released song backed by Spotify public catalog and Chartmetric evidence.",
-        badges: ["Spotify", "Chartmetric"],
-        facts: [
-          { label: "Spotify track ID", value: "spotify-track-1", source: "Spotify", status: "Confirmed" },
-          { label: "ISRC", value: "USNV12600010", source: "Spotify", status: "Confirmed" },
-        ],
-        evidence: [
-          {
-            label: "Spotify playlist reach",
-            value: "12500 listeners",
-            source: "Chartmetric",
-            window: "Last 7 days",
-            limitation: "Chartmetric public/social intelligence can report supported platform metrics, but does not prove private saves, source-of-stream, revenue, conversion, or campaign ROI.",
-          },
-        ],
-        limitations: [
-          "Private analytics are still missing: streams, saves, listeners, source-of-stream, revenue, conversion, and campaign ROI are not proven by these sources.",
-        ],
-      },
+  it("starts Manager Read in the backend, reloads durable state, and never shadows it with the start response", async () => {
+    const subject = musicReadSubject("song", "not_generated");
+    subject.managerRead = undefined;
+    const startResponse = {
+      ...subject,
+      managerReadStatus: "running" as const,
+      managerReadRunId: "run-new",
+      managerRead: { ...completeSongManagerRead, body: "This response must not be rendered before the repository reload." },
     };
+    const startManagerRead = vi.fn(async () => startResponse);
+    const onMusicChanged = vi.fn(async () => undefined);
     const repositories = repositoriesFor("Nova Vale");
-    repositories.music = {
-      ...repositories.music,
-      loadMusic: async () => [summarySong],
-    };
 
     render(
-      <ProductionApp
-        authAdapter={authWithSession(session)}
-        workspaceLoader={workspaceLoaderWith(workspace)}
-        repositories={repositories}
-        initialView="musicWorkspace"
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, startManagerRead }}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" }));
+
+    await waitFor(() => expect(startManagerRead).toHaveBeenCalledWith("song-jam", "music_item"));
+    expect(onMusicChanged).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("This response must not be rendered");
+  });
+
+  it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
+    const subject = musicReadSubject("song", "not_generated");
+    subject.managerRead = undefined;
+    const repositories = repositoriesFor("Nova Vale");
+    const startManagerRead = vi.fn(async () => {
+      throw new Error("OpenAI API exhausted compute resources in database worker");
+    });
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, startManagerRead }}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" }));
+
+    const room = screen.getByTestId("music-song-detail");
+    expect(await within(room).findByText("Manager Read could not start. Try again.")).toBeInTheDocument();
+    expect(room).not.toHaveTextContent("OpenAI");
+    expect(room).not.toHaveTextContent("compute resources");
+    expect(room).not.toHaveTextContent("database worker");
+  });
+
+  it("polls persisted active Manager Read state every two seconds without overlap and stops at terminal state", async () => {
+    vi.useFakeTimers();
+    let releaseFirstPoll: (() => void) | undefined;
+    const onMusicChanged = vi.fn()
+      .mockImplementationOnce(() => new Promise<void>((resolve) => { releaseFirstPoll = resolve; }))
+      .mockResolvedValue(undefined);
+    const repositories = repositoriesFor("Nova Vale");
+    const running = musicReadSubject("song", "running");
+    running.managerRead = undefined;
+    const { rerender, unmount } = render(
+      <MusicWorkspace
+        music={[running]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onMusicChanged={() => onMusicChanged()}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
       />,
     );
 
-    await screen.findByRole("heading", { name: "Catalog" });
-    fireEvent.click(screen.getByRole("button", { name: "Open song Source Proof" }));
-    const songRoom = screen.getByTestId("music-song-detail");
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(1);
+    rerender(
+      <MusicWorkspace
+        music={[running]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onMusicChanged={() => onMusicChanged()}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(1);
 
-    expect(songRoom).toHaveTextContent("Manager's Read");
-    expect(songRoom).toHaveTextContent("Record Intelligence");
-    expect(songRoom).toHaveTextContent("Source Proof is the record with the clearest playlist doorway");
-    expect(songRoom).toHaveTextContent("12.5K");
-    expect(songRoom).toHaveTextContent("Released song · Listening increased this week · Split proof is clear");
-    expect(songRoom).toHaveTextContent("Fresh");
-    expect(within(songRoom).getByTestId("music-linked-work")).toHaveClass("self-start", "lg:sticky", "lg:top-8");
-    expect(songRoom.querySelectorAll('[data-testid="manager-read-copy"]')).toHaveLength(1);
-    expect(songRoom).not.toHaveTextContent("Chartmetric");
-    expect(songRoom).not.toHaveTextContent("third-party");
-    expect(songRoom).not.toHaveTextContent("APIs");
-    expect(songRoom).not.toHaveTextContent("Missing proof");
-    expect(songRoom).not.toHaveTextContent("Territory streaming");
-    expect(songRoom).not.toHaveTextContent("Spotify for Artists");
-    expect(songRoom).not.toHaveTextContent("Features and releases");
-    expect(songRoom).not.toHaveTextContent("Career help");
-    expect(songRoom).not.toHaveTextContent("What I am watching");
-    expect(songRoom).not.toHaveTextContent("Next Move");
-    expect(songRoom).not.toHaveTextContent("Chartmetric adds public movement context");
-    expect(songRoom).not.toHaveTextContent("Source-backed song summary");
-    expect(songRoom).not.toHaveTextContent("Spotify track ID");
-    expect(songRoom).not.toHaveTextContent("spotify-track-1");
-    expect(songRoom).not.toHaveTextContent("Private analytics are still missing");
-    expect(songRoom).not.toHaveTextContent("source-of-stream");
-    expect(songRoom).not.toHaveTextContent("repeat listeners");
-    expect(songRoom).not.toHaveTextContent("Spotify streams 12500");
-    expect(songRoom).not.toHaveTextContent("Campaign ROI proven");
-  }, 20000);
+    await act(async () => {
+      releaseFirstPoll?.();
+      await Promise.resolve();
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(2);
+
+    rerender(
+      <MusicWorkspace
+        music={[musicReadSubject("song", "fresh")]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(2);
+    unmount();
+
+    render(
+      <MusicWorkspace
+        music={[running]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(3);
+    cleanup();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
+    expect(onMusicChanged).toHaveBeenCalledTimes(3);
+  });
 
   it("uses the production split ledger flow in the Music rights tab", async () => {
     const actions: string[] = [];
@@ -5047,8 +5064,8 @@ function repositoriesFor(
         linkedMissionIds: [],
         linkedTaskCount: 0,
       }),
-      generateMusicSummary: async () => {
-        throw new Error("generateMusicSummary is not configured in this test.");
+      startManagerRead: async () => {
+        throw new Error("startManagerRead is not configured in this test.");
       },
       updateLifecycleStage: async () => undefined,
       saveDetail: async () => undefined,
