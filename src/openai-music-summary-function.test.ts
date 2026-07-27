@@ -73,6 +73,18 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).not.toContain("latestManagerIntelligencePacket,");
   });
 
+  it("uses a tightly bounded saved packet-evidence fallback without synthesizing evidence IDs", () => {
+    expect(functionSource).toContain("MAX_MANAGER_PACKET_EVIDENCE_ITEMS = 12");
+    expect(functionSource).toContain("supporting_evidence_json");
+    expect(functionSource).toContain("const managerPacketEvidence = projectManagerPacketEvidence(packet)");
+    expect(functionSource).toContain("managerPacketEvidence,");
+    expect(functionSource).toContain("packet.supporting_evidence_json.filter(isRecord)");
+    expect(functionSource).toContain('.filter((item) => Boolean(readString(item.id)))');
+    expect(functionSource).toContain(".slice(0, MAX_MANAGER_PACKET_EVIDENCE_ITEMS)");
+    expect(functionSource).toContain("...managerPacketEvidence");
+    expect(functionSource).not.toMatch(/syntheticEvidence|catalogEvidence|subjectId.*evidence/i);
+  });
+
   it("uses the current Responses structured-output shape and bounded model routing", () => {
     expect(functionSource).toContain('Deno.env.get("OPENAI_MANAGER_READ_MODEL")');
     expect(functionSource).toContain('Deno.env.get("OPENAI_MANAGER_REASONING_MODEL")');
@@ -92,11 +104,34 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain("buildMusicManagerReadRepairInstructions");
     expect(functionSource).toContain("<invalid_output_json>");
     expect(functionSource).toContain("<validation_violations_json>");
-    expect(functionSource).toContain("requestCount: 2");
+    expect(countOccurrences(functionSource, "return requestOpenAI({")).toBe(1);
+    expect(countOccurrences(functionSource, "const repaired = await requestOpenAI({")).toBe(1);
     expect(functionSource).toContain("cached_tokens");
     expect(functionSource).toContain("reasoning_tokens");
     expect(functionSource).toContain("responseId");
     expect(functionSource).not.toMatch(/MAX_RETRIES|callOpenAIManagerReadWithRetry|openAiRetryDelayMs|isRetryableOpenAIError/);
+  });
+
+  it("owns one request ledger for initial and repair calls and counts each attempt before fetch", () => {
+    expect(functionSource).toContain("const requestLedger = createOpenAIRequestLedger()");
+    expect(functionSource).toContain("generateInitialManagerRead(context, input.subjectType, model, requestLedger)");
+    expect(functionSource).toContain("validateAndRepairManagerRead(context, input.subjectType, model, initial, requestLedger)");
+    const requestFunctionStart = functionSource.indexOf("async function requestOpenAI");
+    const increment = functionSource.indexOf("ledger.providerRequestCount += 1", requestFunctionStart);
+    const fetchCall = functionSource.indexOf('await fetch("https://api.openai.com/v1/responses"', requestFunctionStart);
+    expect(increment).toBeGreaterThan(requestFunctionStart);
+    expect(fetchCall).toBeGreaterThan(increment);
+    expect(functionSource).toContain("accumulateOpenAIUsage(ledger, usage)");
+  });
+
+  it("persists request and token truth when a provider or repair failure terminalizes usage", () => {
+    expect(functionSource).toContain("markUsageFailedSafe(db, usageId, runId, input, message, requestLedger)");
+    expect(functionSource).toContain("provider_request_count: requestLedger.providerRequestCount");
+    expect(functionSource).toContain("input_tokens: requestLedger.usage.inputTokens");
+    expect(functionSource).toContain("cached_input_tokens: requestLedger.usage.cachedInputTokens");
+    expect(functionSource).toContain("output_tokens: requestLedger.usage.outputTokens");
+    expect(functionSource).toContain("reasoning_tokens: requestLedger.usage.reasoningTokens");
+    expect(functionSource).toContain('.eq("status", "started")');
   });
 
   it("stages the exact v2 projection and atomically finalizes run, usage, and activation", () => {

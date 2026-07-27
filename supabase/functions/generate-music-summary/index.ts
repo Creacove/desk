@@ -28,6 +28,7 @@ const MUSIC_MANAGER_READ_CLASSIFICATION = "music_manager_read_v2";
 const ACTIVE_RUN_STALE_MS = 5 * 60 * 1000;
 const CHARTMETRIC_EVIDENCE_FRESH_MS = 24 * 60 * 60 * 1000;
 const MAX_MANAGER_READ_CONTEXT_CHARS = 45_000;
+const MAX_MANAGER_PACKET_EVIDENCE_ITEMS = 12;
 type StepName = "queued" | WorkflowStep;
 
 const WORKFLOW_STEPS: StepName[] = [
@@ -53,6 +54,11 @@ type OpenAIUsage = {
   cachedInputTokens: number;
   outputTokens: number;
   reasoningTokens: number;
+};
+
+type OpenAIRequestLedger = {
+  providerRequestCount: number;
+  usage: OpenAIUsage;
 };
 
 type ManagerReadContext = {
@@ -234,6 +240,7 @@ async function completeManagerReadInBackground({
 }) {
   let usageId: string | null = null;
   const model = selectManagerReadModel();
+  const requestLedger = createOpenAIRequestLedger();
   const steps = new Map<StepName, WorkflowStepStatus>([["queued", "completed"]]);
   let builtContext: ManagerReadContext | null = null;
 
@@ -252,8 +259,8 @@ async function completeManagerReadInBackground({
         builtContext = await buildManagerReadContext(db, input);
         return builtContext;
       },
-      generateInitial: (context) => generateInitialManagerRead(context, input.subjectType, model),
-      validateAndRepair: (context, initial) => validateAndRepairManagerRead(context, input.subjectType, model, initial),
+      generateInitial: (context) => generateInitialManagerRead(context, input.subjectType, model, requestLedger),
+      validateAndRepair: (context, initial) => validateAndRepairManagerRead(context, input.subjectType, model, initial, requestLedger),
       stageOutput: async (output) => {
         if (!builtContext) throw new Error("Music Manager Read context was not built before output staging.");
         return stageManagerOutput(db, input, runId, builtContext, output);
@@ -274,7 +281,7 @@ async function completeManagerReadInBackground({
   } catch (error) {
     const message = describeError(error, "Music Manager Read generation failed.");
     await markRunFailedSafe(db, runId, input, message);
-    if (usageId) await markUsageFailedSafe(db, usageId, runId, input, message);
+    if (usageId) await markUsageFailedSafe(db, usageId, runId, input, message, requestLedger);
   }
 }
 
@@ -387,6 +394,7 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
     evidence: relatedEvidenceBySubject.get(String(record.id)) ?? [],
   }));
   const packetProjection = projectManagerPacket(packet, input.subjectId);
+  const managerPacketEvidence = projectManagerPacketEvidence(packet);
   const modelContext: Record<string, unknown> = {
     requestedSubject: {
       subjectType: input.subjectType,
@@ -398,6 +406,7 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
     relatedRecords: compactRelated,
     projectTracklist: tracklist.slice(0, 20).map((item) => compactRecord(item, ["music_item_id", "display_title", "order_index", "disc_number"])),
     managerPacket: packetProjection,
+    managerPacketEvidence,
   };
   const serialized = JSON.stringify(modelContext);
   if (serialized.length > MAX_MANAGER_READ_CONTEXT_CHARS) {
@@ -405,7 +414,7 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
   }
 
   const allowedEvidenceIds = new Set<string>();
-  for (const item of [...exactEvidence, ...Array.from(relatedEvidenceBySubject.values()).flat()]) {
+  for (const item of [...exactEvidence, ...Array.from(relatedEvidenceBySubject.values()).flat(), ...managerPacketEvidence]) {
     const id = readString(item.id);
     if (id) allowedEvidenceIds.add(id);
   }
@@ -482,7 +491,7 @@ async function loadProjectTracklist(db: any, input: GenerateMusicSummaryInput) {
 
 async function loadLatestManagerIntelligencePacket(db: any, input: GenerateMusicSummaryInput) {
   const { data, error } = await exactOwnedQuery(
-    db.from("manager_intelligence_packets").select("id,profile_projection_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,do_not_do_json,internal_only_json,created_at"), input,
+    db.from("manager_intelligence_packets").select("id,profile_projection_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,do_not_do_json,supporting_evidence_json,internal_only_json,created_at"), input,
   ).in("status", ["completed", "completed_with_limits"]).order("created_at", { ascending: false }).limit(1);
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
@@ -512,6 +521,14 @@ function projectManagerPacket(packet: Record<string, unknown> | null, subjectId:
   };
 }
 
+function projectManagerPacketEvidence(packet: Record<string, unknown> | null) {
+  if (!packet || !Array.isArray(packet.supporting_evidence_json)) return [];
+  return packet.supporting_evidence_json.filter(isRecord)
+    .filter((item) => Boolean(readString(item.id)))
+    .slice(0, MAX_MANAGER_PACKET_EVIDENCE_ITEMS)
+    .map((item) => compactRecord(item, ["id", "metric", "value", "source", "interpretation"]));
+}
+
 function compactEvidence(item: Record<string, unknown>) {
   return compactRecord(item, [
     "id", "source", "source_kind", "evidence_type", "subject_type", "subject_id", "subject_label",
@@ -519,11 +536,17 @@ function compactEvidence(item: Record<string, unknown>) {
   ]);
 }
 
-async function generateInitialManagerRead(context: ManagerReadContext, subjectType: MusicManagerReadSubjectType, model: string) {
+async function generateInitialManagerRead(
+  context: ManagerReadContext,
+  subjectType: MusicManagerReadSubjectType,
+  model: string,
+  ledger: OpenAIRequestLedger,
+) {
   return requestOpenAI({
     model,
     instructions: buildMusicManagerReadInstructions(subjectType, context.playbookInstructions),
     input: JSON.stringify(context.modelContext),
+    ledger,
   });
 }
 
@@ -532,10 +555,16 @@ async function validateAndRepairManagerRead(
   subjectType: MusicManagerReadSubjectType,
   model: string,
   initial: { outputText: string; usage: OpenAIUsage; responseId: string },
+  ledger: OpenAIRequestLedger,
 ) {
   const firstValidation = parseAndValidate(initial.outputText, context);
   if (firstValidation.output) {
-    return { output: firstValidation.output, usage: initial.usage, responseId: initial.responseId, requestCount: 1 };
+    return {
+      output: firstValidation.output,
+      usage: { ...ledger.usage },
+      responseId: initial.responseId,
+      requestCount: ledger.providerRequestCount,
+    };
   }
 
   const repairInstructions = [
@@ -549,6 +578,7 @@ async function validateAndRepairManagerRead(
     model,
     instructions: repairInstructions,
     input: JSON.stringify(context.modelContext),
+    ledger,
   });
   const repairedValidation = parseAndValidate(repaired.outputText, context);
   if (!repairedValidation.output) {
@@ -556,9 +586,9 @@ async function validateAndRepairManagerRead(
   }
   return {
     output: repairedValidation.output,
-    usage: mergeUsage(initial.usage, repaired.usage),
+    usage: { ...ledger.usage },
     responseId: repaired.responseId,
-    requestCount: 2,
+    requestCount: ledger.providerRequestCount,
   };
 }
 
@@ -578,11 +608,23 @@ function parseAndValidate(outputText: string, context: ManagerReadContext): { ou
   }
 }
 
-async function requestOpenAI({ model, instructions, input }: { model: string; instructions: string; input: string }) {
+async function requestOpenAI({
+  model,
+  instructions,
+  input,
+  ledger,
+}: {
+  model: string;
+  instructions: string;
+  input: string;
+  ledger: OpenAIRequestLedger;
+}) {
+  const apiKey = requireEnv("OPENAI_API_KEY");
+  ledger.providerRequestCount += 1;
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
+      Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -604,11 +646,13 @@ async function requestOpenAI({ model, instructions, input }: { model: string; in
   }
   const payload = await response.json();
   if (!isRecord(payload)) throw new Error("OpenAI Music Manager Read returned an invalid response.");
+  const usage = readResponsesUsage(payload.usage);
+  accumulateOpenAIUsage(ledger, usage);
   const responseId = readString(payload.id);
   if (!responseId) throw new Error("OpenAI Music Manager Read response did not include an ID.");
   return {
     outputText: readResponsesOutputText(payload),
-    usage: readResponsesUsage(payload.usage),
+    usage,
     responseId,
   };
 }
@@ -650,6 +694,17 @@ function mergeUsage(left: OpenAIUsage, right: OpenAIUsage): OpenAIUsage {
     outputTokens: left.outputTokens + right.outputTokens,
     reasoningTokens: left.reasoningTokens + right.reasoningTokens,
   };
+}
+
+function createOpenAIRequestLedger(): OpenAIRequestLedger {
+  return {
+    providerRequestCount: 0,
+    usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+  };
+}
+
+function accumulateOpenAIUsage(ledger: OpenAIRequestLedger, usage: OpenAIUsage) {
+  ledger.usage = mergeUsage(ledger.usage, usage);
 }
 
 async function stageManagerOutput(
@@ -778,10 +833,16 @@ async function markUsageFailedSafe(
   runId: string,
   input: GenerateMusicSummaryInput,
   message: string,
+  requestLedger: OpenAIRequestLedger,
 ) {
   try {
     const { error } = await exactUsageQuery(db.from("ai_run_usage_events").update({
       status: "failed",
+      provider_request_count: requestLedger.providerRequestCount,
+      input_tokens: requestLedger.usage.inputTokens,
+      cached_input_tokens: requestLedger.usage.cachedInputTokens,
+      output_tokens: requestLedger.usage.outputTokens,
+      reasoning_tokens: requestLedger.usage.reasoningTokens,
       failure_reason: boundedString(message, 1000),
       completed_at: new Date().toISOString(),
     }), usageId, runId, input).eq("status", "started");
