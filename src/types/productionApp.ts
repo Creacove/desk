@@ -1,4 +1,9 @@
-import type { MusicReadTarget, TodayBriefViewModel } from "./cleanProduction";
+import type {
+  MusicManagerReadStatus,
+  MusicManagerReadViewModel,
+  MusicReadTarget,
+  TodayBriefViewModel,
+} from "./cleanProduction";
 
 export type ProductionUser = {
   id: string;
@@ -111,18 +116,10 @@ export type ProductionMusicItem = {
   }>;
   releasedAt?: string | null;
   manualDetails?: Record<string, string>;
-  generatedManagerRead?: {
-    situationLine?: string;
-    managerRead?: string;
-    nextMove?: string;
-    watchNext?: string;
-    generationState?: "fresh" | "limited" | "fallback" | "failed";
-    intelligenceSnapshot?: Array<{ title: string; insight: string; metrics: Array<{ label: string; value: string; context?: string; evidenceIds: string[] }> }>;
-    snapshotSummary?: string;
-    claimAudit?: Array<{ claim: string; evidenceIds: string[]; limitation: string }>;
-    confidence?: string;
-    sourceLine?: string;
-  };
+  managerRead?: MusicManagerReadViewModel;
+  managerReadStatus: MusicManagerReadStatus;
+  managerReadRunId?: string;
+  managerReadError?: string;
   assets: Array<{ label: string; status: string; group: "Audio" | "Artwork" | "Splits"; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
   credits: Array<{ role: string; names: string; status: string }>;
   splits?: {
@@ -166,18 +163,10 @@ export type ProductionMusicProject = {
   totalTracks?: number;
   coverImageUrl?: string;
   releasedAt?: string | null;
-  generatedManagerRead?: {
-    situationLine?: string;
-    managerRead?: string;
-    nextMove?: string;
-    watchNext?: string;
-    generationState?: "fresh" | "limited" | "fallback" | "failed";
-    intelligenceSnapshot?: Array<{ title: string; insight: string; metrics: Array<{ label: string; value: string; context?: string; evidenceIds: string[] }> }>;
-    snapshotSummary?: string;
-    claimAudit?: Array<{ claim: string; evidenceIds: string[]; limitation: string }>;
-    confidence?: string;
-    sourceLine?: string;
-  };
+  managerRead?: MusicManagerReadViewModel;
+  managerReadStatus: MusicManagerReadStatus;
+  managerReadRunId?: string;
+  managerReadError?: string;
   evidence: Array<{
     id: string;
     source: string;
@@ -196,6 +185,17 @@ export type ProductionMusicProject = {
 export type ProductionMusicLibrary = {
   songs: ProductionMusicItem[];
   projects: ProductionMusicProject[];
+  managerRuns: ProductionMusicManagerRun[];
+};
+
+export type ProductionMusicManagerRun = {
+  id: string;
+  subjectType: "music_item" | "music_project";
+  subjectId: string;
+  status: "queued" | "running" | "completed" | "completed_with_limits" | "failed" | "cancelled";
+  error?: string;
+  createdAt: string;
+  completedAt?: string;
 };
 
 export type ProductionMusicLibraryLoader = {

@@ -12,6 +12,7 @@ import type {
   MissionNoteViewModel,
   MissionRecapViewModel,
   MissionTaskViewModel,
+  MusicObjectViewModel,
   ProductionFixtureData,
 } from "../types/cleanProduction";
 import type { ProductionAuthAdapter, ProductionUser, ProductionWorkspace, ProductionWorkspaceLoader } from "../types/productionApp";
@@ -611,8 +612,24 @@ export const productionFixtureData: ProductionFixtureData = {
       lifecycleStage: "Ready",
       sourceKind: "User-supplied + public catalog setup",
       sourceLimit: "Public catalog and user-supplied details do not include private Spotify analytics.",
-      managerRead: "This is the strongest current focus asset because story, hook response, and release intent are lining up.",
-      nextMove: "Clear rights and delivery gaps before increasing spend or making public commitments.",
+      managerRead: {
+        position: "Night Bus is the clearest current focus asset.",
+        managementRole: "Lead validation record",
+        body: "Night Bus has the strongest aligned response in the current fixture catalog. Listening, hook response, and release intent point to the same record.\n\nUse it for one focused validation cycle before widening spend or making broader campaign commitments.",
+        decision: "Use Night Bus for the next focused validation test.",
+        avoid: "Do not widen campaign spend before the validation window closes.",
+        watch: "Watch whether listening and hook response remain aligned.",
+        confidence: "high",
+        confidenceReason: "Three current evidence families agree on the same record.",
+        signals: [
+          { label: "Recent streams", value: "5.2M", meaning: "Current listening pressure", evidenceIds: ["fixture-ev-streams"] },
+          { label: "Hook response", value: "19M", meaning: "Short-form discovery scale", evidenceIds: ["fixture-ev-hook"] },
+          { label: "Lagos", value: "#14", meaning: "A market lane worth testing", evidenceIds: ["fixture-ev-market"] },
+        ],
+        evidenceIds: ["fixture-ev-streams", "fixture-ev-hook", "fixture-ev-market"],
+      },
+      managerReadStatus: "fresh",
+      managerReadRunId: "fixture-music-read-song-night-bus",
       rightsState: "Split sheet holding release clearance",
       coverImageUrl: "/logo.png",
       assets: ["Final master", "Artwork", "Metadata draft"],
@@ -650,7 +667,7 @@ export const productionFixtureData: ProductionFixtureData = {
       lifecycleStage: "Catalog",
       sourceKind: "Spotify public catalog",
       sourceLimit: "Spotify public catalog supports identity and public metadata only.",
-      nextMove: "Use as a safer fit hypothesis for pitch packages once assets are confirmed.",
+      managerReadStatus: "not_generated",
       linkedMissionIds: [],
       linkedTaskIds: [],
       linkedTaskCount: 0,
@@ -673,7 +690,7 @@ export const productionFixtureData: ProductionFixtureData = {
       sourceKind: "User-supplied",
       blocker: "Night Bus split sheet",
       sourceLimit: "Projects roll up blockers from their songs without duplicating song state.",
-      nextMove: "Resolve inherited blocker before final release packaging.",
+      managerReadStatus: "not_generated",
       coverImageUrl: "/logo.png",
       linkedMissionIds: ["mission-night-bus"],
       linkedTaskIds: ["confirm-split-sheet"],
@@ -724,8 +741,13 @@ export function createFixtureRepositories(): CleanProductionRepositories {
     checkpoints: mission.checkpoints?.map((checkpoint) => ({ ...checkpoint })),
     tasks: mission.tasks?.map((task) => ({ ...task })),
   }));
-  let music = productionFixtureData.music.map((item) => ({
+  let music: MusicObjectViewModel[] = productionFixtureData.music.map((item) => ({
     ...item,
+    managerRead: item.managerRead ? {
+      ...item.managerRead,
+      signals: item.managerRead.signals.map((signal) => ({ ...signal, evidenceIds: [...signal.evidenceIds] })),
+      evidenceIds: [...item.managerRead.evidenceIds],
+    } : undefined,
     files: item.files?.map((file) => ({ ...file })),
     fileAssets: item.fileAssets?.map((asset) => ({ ...asset })),
     details: item.details?.map((detail) => ({ ...detail })),
@@ -771,11 +793,17 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       async loadMusic() {
         return music;
       },
-      async generateMusicSummary(subjectId) {
-        // In fixture mode, just return the existing music object as-is
+      async startManagerRead(subjectId) {
         const found = music.find((item) => item.id === subjectId);
-        if (!found) throw new Error("Fixture music item not found for brief generation.");
-        return found;
+        if (!found) throw new Error("Fixture music item not found for Manager Read.");
+        const updated = {
+          ...found,
+          managerReadStatus: "running" as const,
+          managerReadRunId: `fixture-music-read-${subjectId}`,
+          managerReadError: undefined,
+        };
+        music = music.map((item) => item.id === subjectId ? updated : item);
+        return updated;
       },
       async searchSpotifyCatalog() {
         // Fixture mode has no live Spotify connection.
@@ -794,7 +822,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
           blocker: "No active blocker",
           sourceKind: "manual",
           sourceLimit: "Fixture-created song.",
-          nextMove: "Add files, credits, and rights details.",
+          managerReadStatus: "not_generated" as const,
           linkedMissionIds: [],
           linkedTaskCount: 0,
         };
@@ -812,7 +840,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
           blocker: "No inherited blockers",
           sourceKind: "manual",
           sourceLimit: "Fixture-created project.",
-          nextMove: "Add songs to this project.",
+          managerReadStatus: "not_generated" as const,
           linkedMissionIds: [],
           linkedTaskCount: 0,
         };

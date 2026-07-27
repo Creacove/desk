@@ -264,6 +264,33 @@ export type MissionEventViewModel = {
   summary: string;
 };
 
+export type MusicManagerReadViewModel = {
+  position: string;
+  managementRole: string;
+  body: string;
+  decision: string;
+  avoid: string;
+  watch: string;
+  confidence: "low" | "medium" | "high";
+  confidenceReason: string;
+  signals: Array<{
+    label: string;
+    value: string;
+    meaning: string;
+    evidenceIds: string[];
+  }>;
+  evidenceIds: string[];
+};
+
+export type MusicManagerReadStatus =
+  | "not_generated"
+  | "stale"
+  | "running"
+  | "refreshing"
+  | "fresh"
+  | "failed"
+  | "refresh_failed";
+
 export type MusicObjectViewModel = {
   id: string;
   kind: "song" | "project";
@@ -274,15 +301,10 @@ export type MusicObjectViewModel = {
   blocker: string;
   sourceKind?: string;
   sourceLimit: string;
-  managerRead?: string;
-  situationLine?: string;
-  watchNext?: string;
-  managerReadState?: "fresh" | "limited" | "loading" | "fallback" | "stale" | "failed";
-  nextMove: string;
-  intelligenceSnapshot?: TodayBriefSnapshotGroup[];
-  snapshotSummary?: string;
-  confidence?: string;
-  sourceLine?: string;
+  managerRead?: MusicManagerReadViewModel;
+  managerReadStatus: MusicManagerReadStatus;
+  managerReadRunId?: string;
+  managerReadError?: string;
   rightsState?: string;
   assets?: string[];
   coverImageUrl?: string;
@@ -579,7 +601,7 @@ export type SpotifyImportResult = {
 
 export type MusicRepository = {
   loadMusic(): Promise<MusicObjectViewModel[]>;
-  generateMusicSummary(subjectId: string, subjectType: "music_item" | "music_project"): Promise<MusicObjectViewModel>;
+  startManagerRead(subjectId: string, subjectType: "music_item" | "music_project"): Promise<MusicObjectViewModel>;
   searchSpotifyCatalog(input: { kind: "song" | "project"; albumId?: string }): Promise<SpotifyCatalogSearchResult>;
   importSpotifySelection(input: { kind: "song" | "project"; albumId: string; trackId?: string }): Promise<SpotifyImportResult>;
   createSong(input: { title: string; itemType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;

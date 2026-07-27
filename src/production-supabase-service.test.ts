@@ -35,6 +35,23 @@ const workspace: ProductionWorkspace = {
 
 const productionSupabaseSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
 
+const musicManagerReadV2 = {
+  position: "Jam is the current lead validation record.",
+  managementRole: "Lead attention asset",
+  body: "Jam has aligned public pressure across the current evidence. The listening, short-form, and market signals point to the same record.\n\nUse the next reporting window to test whether that attention can become repeatable audience behavior before widening spend.",
+  decision: "Use Jam for the next focused validation test.",
+  avoid: "Do not spread spend equally across the catalog.",
+  watch: "Watch whether Lagos discovery remains aligned.",
+  confidence: "high",
+  confidenceReason: "Three current evidence families agree.",
+  signals: [
+    { label: "Recent streams", value: "5.2M", meaning: "Current listening pressure", evidenceIds: ["ev-1"] },
+    { label: "TikTok", value: "19M", meaning: "Short-form discovery scale", evidenceIds: ["ev-2"] },
+    { label: "Lagos", value: "#14", meaning: "A market lane worth testing", evidenceIds: ["ev-3"] },
+  ],
+  evidenceIds: ["ev-1", "ev-2", "ev-3"],
+} as const;
+
 describe("production Supabase services", () => {
   it("loads an ephemeral Spotify catalog preview through the preview function", async () => {
     const calls: Array<{ name: string; body: unknown }> = [];
@@ -903,11 +920,7 @@ describe("production Supabase services", () => {
     ]);
     expect(musicViewModels.find((item) => item.id === "song-1")).toEqual(
       expect.objectContaining({
-        situationLine: "Released song · 1 current result available",
-        managerRead: expect.stringContaining("The Manager's Read for North Star is being prepared from the saved packet."),
-        watchNext: "Watch this room for the generated Manager Read for North Star.",
-        managerReadState: "loading",
-        nextMove: "Wait for North Star's generated Manager Read, or regenerate it if the read does not appear shortly.",
+        managerReadStatus: "not_generated",
         blocker: "No active blocker",
         rightsState: "Released catalog rights attached outside this app",
         linkedTaskCount: 0,
@@ -956,9 +969,7 @@ describe("production Supabase services", () => {
     ]);
     expect(musicViewModels.find((item) => item.id === "project-1")).toEqual(
       expect.objectContaining({
-        managerRead: expect.stringContaining("The Manager's Read for Midnight Signal is being prepared from the saved packet."),
-        managerReadState: "loading",
-        snapshotSummary: expect.stringContaining("Spotify streams"),
+        managerReadStatus: "not_generated",
         sourceSummary: expect.objectContaining({
           badges: expect.arrayContaining(["Spotify", "Chartmetric"]),
           evidence: expect.arrayContaining([
@@ -967,513 +978,135 @@ describe("production Supabase services", () => {
         }),
       }),
     );
-    const projectView = musicViewModels.find((item) => item.id === "project-1");
-    expect(projectView?.nextMove).toBe("Wait for Midnight Signal's generated Manager Read, or regenerate it if the read does not appear shortly.");
-    expect(projectView?.intelligenceSnapshot?.[0]?.metrics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: "Recent streams", value: "845K" }),
-      expect.objectContaining({ label: "Playlist reach", value: "1.8M" }),
-    ]));
-    expect(projectView?.managerRead).not.toMatch(/private saves|repeat listeners|source-of-stream|campaign ROI|rights clearance/i);
+    expect(library.managerRuns).toEqual([]);
   });
 
-  it("prefers generated Manager reads from Music metadata without exposing provider mechanics in the main read", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-generated",
-          title: "Late Nights",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { track_id: "spotify-track-generated", popularity: 55 },
-            manager_read: {
-              situationLine: "Released song · Listening is growing · Split proof is missing",
-              managerRead: "Late Nights is the record with the cleanest early music-platform surface: 42,000 reported streams on its best day, 14 active playlists, and one editorial placement give the team a real song-level read. I would use Late Nights as the first record to inspect and decide whether the playlist base or the peak listening day should shape the next team action.",
-              nextMove: "Use Late Nights as the first record to inspect and compare playlist support against the peak listening day.",
-              watchNext: "Check whether listening stays up after playlist activity slows.",
-              generationState: "fresh",
-            },
-          },
-        },
-      ],
-      music_projects: [
-        {
-          id: "project-generated",
-          title: "After Hours",
-          project_type: "album",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { album_id: "spotify-album-generated", total_tracks: 12 },
-            manager_read: {
-              managerRead: "I found After Hours behaving like a project with one clear job: identify the two records still pulling attention and stop treating all 12 tracks the same. The next read should rank the tracklist, not describe the album.",
-              nextMove: "Rank the tracklist by outside attention, then choose the two songs worth management time this week.",
-            },
-          },
-        },
-      ],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [],
-    });
+  it.each([
+    {
+      name: "no read and no run",
+      outputs: [],
+      runs: [],
+      status: "not_generated",
+      hasRead: false,
+    },
+    {
+      name: "legacy current output",
+      outputs: [musicManagerOutputRow({ schema_version: "music-manager-read-v1", render_json: { managerRead: "Legacy copy" } })],
+      runs: [],
+      status: "stale",
+      hasRead: false,
+    },
+    {
+      name: "active first read",
+      outputs: [],
+      runs: [musicManagerRunRow({ id: "run-active", status: "running", created_at: "2026-07-27T10:00:00.000Z" })],
+      status: "running",
+      runId: "run-active",
+      hasRead: false,
+    },
+    {
+      name: "active refresh",
+      outputs: [musicManagerOutputRow()],
+      runs: [musicManagerRunRow({ id: "run-refresh", status: "queued", created_at: "2026-07-27T10:00:00.000Z" })],
+      status: "refreshing",
+      runId: "run-refresh",
+      hasRead: true,
+    },
+    {
+      name: "failed first read",
+      outputs: [],
+      runs: [musicManagerRunRow({ id: "run-failed", status: "failed", error: "Provider unavailable", created_at: "2026-07-27T10:00:00.000Z" })],
+      status: "failed",
+      runId: "run-failed",
+      error: "Provider unavailable",
+      hasRead: false,
+    },
+    {
+      name: "failed refresh newer than current output",
+      outputs: [musicManagerOutputRow({ created_at: "2026-07-27T09:00:00.000Z" })],
+      runs: [musicManagerRunRow({ id: "run-refresh-failed", status: "failed", error: "Refresh unavailable", created_at: "2026-07-27T10:00:00.000Z" })],
+      status: "refresh_failed",
+      runId: "run-refresh-failed",
+      error: "Refresh unavailable",
+      hasRead: true,
+    },
+    {
+      name: "failed run older than current output",
+      outputs: [musicManagerOutputRow({ created_at: "2026-07-27T10:00:00.000Z", created_from_run_id: "run-current" })],
+      runs: [musicManagerRunRow({ id: "run-old-failure", status: "failed", error: "Old failure", created_at: "2026-07-27T09:00:00.000Z" })],
+      status: "fresh",
+      runId: "run-current",
+      hasRead: true,
+    },
+  ])("recovers $name as durable Manager Read state", async ({ outputs, runs, status, runId, error, hasRead }) => {
+    const tables = musicManagerReadTables({ manager_outputs: outputs, manager_synthesis_runs: runs });
+    const [song] = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).music.loadMusic();
 
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
-
-    expect(musicViewModels.find((item) => item.id === "song-generated")).toMatchObject({
-      situationLine: "Released song · Listening is growing · Split proof is missing",
-      managerRead: expect.stringContaining("Late Nights is the record with the cleanest early music-platform surface"),
-      nextMove: "Use Late Nights as the first record to inspect and compare playlist support against the peak listening day.",
-      watchNext: "Check whether listening stays up after playlist activity slows.",
-      managerReadState: "fresh",
+    expect(song).toMatchObject({
+      id: "song-jam",
+      managerReadStatus: status,
+      ...(runId ? { managerReadRunId: runId } : {}),
+      ...(error ? { managerReadError: error } : {}),
     });
-    expect(musicViewModels.find((item) => item.id === "song-generated")?.managerRead).not.toContain("Chartmetric");
-    expect(musicViewModels.find((item) => item.id === "project-generated")).toMatchObject({
-      managerRead: expect.stringContaining("I found After Hours behaving like a project"),
-      nextMove: "Rank the tracklist by outside attention, then choose the two songs worth management time this week.",
-    });
+    expect(Boolean(song?.managerRead)).toBe(hasRead);
+    if (hasRead) expect(song?.managerRead).toEqual(musicManagerReadV2);
   });
 
-  it("prefers current song and project Manager outputs over legacy Music metadata reads", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-output",
-          title: "Signal Run",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { track_id: "spotify-track-output", popularity: 45 },
-            manager_read: {
-              managerRead: "Legacy song metadata should not win.",
-              nextMove: "Use the old metadata move.",
-              generationState: "limited",
-            },
-          },
-        },
+  it("selects the newest subject run deterministically when database order is ambiguous", async () => {
+    const tables = musicManagerReadTables({
+      manager_synthesis_runs: [
+        musicManagerRunRow({ id: "run-a", status: "failed", created_at: "2026-07-27T10:00:00.000Z" }),
+        musicManagerRunRow({ id: "run-z", status: "running", created_at: "2026-07-27T10:00:00.000Z" }),
+        musicManagerRunRow({ id: "run-foreign", artist_workspace_id: "workspace-other", status: "failed", created_at: "2026-07-27T11:00:00.000Z" }),
       ],
-      music_projects: [
-        {
-          id: "project-output",
-          title: "Signal Pack",
-          project_type: "ep",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { album_id: "spotify-album-output", total_tracks: 4 },
-            manager_read: {
-              managerRead: "Legacy project metadata should not win.",
-              nextMove: "Use the old project move.",
-            },
-          },
-        },
-      ],
-      manager_outputs: [
-        {
-          id: "song-output-read",
-          output_type: "song_manager_read",
-          subject_type: "music_item",
-          subject_id: "song-output",
-          is_current: true,
-          render_json: {
-            situationLine: "Released song - playlist support and city pressure are visible",
-            managerRead:
-              "Signal Run is the record with the clearest working read: playlist support and city pressure are pointing to the same song. I would make Signal Run the first music-room focus and inspect whether the playlist base or the city signal should shape the next team action.",
-            nextMove: "Use Signal Run as the first music-room focus, then compare playlist support against the city signal.",
-            watchNext: "Watch whether playlist support keeps matching the city signal.",
-            generationState: "fresh",
-          },
-          created_at: "2026-06-18T08:30:00.000Z",
-        },
-        {
-          id: "project-output-read",
-          output_type: "project_manager_read",
-          subject_type: "music_project",
-          subject_id: "project-output",
-          is_current: true,
-          render_json: {
-            managerRead:
-              "Signal Pack reads like a project that needs a focus-track decision before a broad release push. The next read should rank the four songs by outside attention and choose the one that deserves management time first.",
-            nextMove: "Rank the four songs by outside attention, then choose the first focus track.",
-            generationState: "fresh",
-          },
-          created_at: "2026-06-18T08:30:00.000Z",
-        },
-      ],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [],
     });
 
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
+    const [song] = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).music.loadMusic();
 
-    expect(musicViewModels.find((item) => item.id === "song-output")).toMatchObject({
-      managerRead: expect.stringContaining("Signal Run is the record with the clearest working read"),
-      nextMove: "Use Signal Run as the first music-room focus, then compare playlist support against the city signal.",
-      managerReadState: "fresh",
-    });
-    expect(musicViewModels.find((item) => item.id === "song-output")?.managerRead).not.toContain("Legacy song metadata");
-    expect(musicViewModels.find((item) => item.id === "project-output")).toMatchObject({
-      managerRead: expect.stringContaining("Signal Pack reads like a project"),
-      nextMove: "Rank the four songs by outside attention, then choose the first focus track.",
-      managerReadState: "fresh",
-    });
-    expect(musicViewModels.find((item) => item.id === "project-output")?.managerRead).not.toContain("Legacy project metadata");
+    expect(song).toMatchObject({ managerReadStatus: "running", managerReadRunId: "run-z" });
   });
 
-  it("rejects bloated generated Manager reads that sound like source dumps or fake commands", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-bad-generated",
-          title: "6 Million",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: {
-              track_id: "1WVM8SKzLoAHOVBtijHdjt",
-              popularity: 47,
-              upc: "054391223517",
-              release_date: "2025-12-05",
-              artists: [{ name: "PEEKABOO" }, { name: "Skrillex" }, { name: "Flowdan" }],
-            },
-            manager_read: {
-              managerRead:
-                'I found that the track "6 Million" is a released single (UPC 054391223517) on 2025-12-05 credited to PEEKABOO, Skrillex, Flowdan and Fireboy DML, released under Major Recordings / Warner Records Inc. The public catalog gives us the exact Spotify asset and the cover image, duration, copyright owner, exclusive license, and territory/scene lanes.',
-              nextMove:
-                "Within 48 hours I will demand from the label/aggregator full DSP analytics for first 7 / 28 / 90 days, playlist placement report, ISRC and master ownership statement, composition splits/publishing contacts, and then brief two remix commissions while preparing a press and radio list.",
-            },
-          },
-        },
-      ],
-      music_projects: [],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [],
+  it.each([
+    ["partial", { ...musicManagerReadV2, evidenceIds: undefined }],
+    ["legacy", { headline: "Jam is moving", nextMove: "Spend now" }],
+    ["unknown-key", { ...musicManagerReadV2, sourceLine: "Internal source" }],
+  ])("rejects %s payloads instead of filling v2 fields with fallback copy", async (_case, renderJson) => {
+    const tables = musicManagerReadTables({
+      manager_outputs: [musicManagerOutputRow({ render_json: renderJson })],
     });
 
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
-    const song = musicViewModels.find((item) => item.id === "song-bad-generated");
+    const [song] = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).music.loadMusic();
 
-    expect(song?.managerRead).toContain("The Manager's Read for 6 Million is being prepared from the saved packet.");
-    expect(song?.managerReadState).toBe("loading");
-    expect(song?.managerRead).not.toContain("released under Major Recordings");
-    expect(song?.managerRead).not.toContain("The public catalog gives us");
-    expect(song?.managerRead).not.toContain("territory/scene lanes");
-    expect(song?.managerRead).not.toMatch(/source-of-stream|private saves|repeat listeners|campaign ROI/i);
-    expect(song?.nextMove).toBe("Wait for 6 Million's generated Manager Read, or regenerate it if the read does not appear shortly.");
-    expect(song?.nextMove).not.toContain("Within 48 hours I will demand");
+    expect(song).toMatchObject({ managerReadStatus: "not_generated" });
+    expect(song?.managerRead).toBeUndefined();
   });
 
-  it("keeps data-rich generated Manager reads instead of falling back on arbitrary short-copy limits", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-useful-generated",
-          title: "Colorado",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { track_id: "spotify-track-colorado" },
-            manager_read: {
-              situationLine: "Released song - 154.2M recent streams and 408.4K TikTok videos",
-              managerRead:
-                "Colorado is the record with the clearest public pressure in this workspace: 154.2M Spotify streams in the latest 28-day window, 4.2M playlist reach, 408.4K TikTok videos, and 230.5K Shazams all point to the same song. I would use Colorado as the first record to organize around and start with the platform behavior already visible: streaming scale plus short-form discovery.",
-              nextMove: "Use Colorado as the first record to organize around, starting with streaming scale plus short-form discovery.",
-              watchNext: "Watch whether streaming scale and TikTok creation keep pointing to the same record.",
-              generationState: "limited",
-            },
-          },
-        },
-      ],
-      music_projects: [],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [],
+  it("starts one backend Manager Read job and reloads its persisted running state", async () => {
+    const invoked: string[] = [];
+    const tables = musicManagerReadTables();
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async (name) => {
+        invoked.push(name);
+        tables.manager_synthesis_runs.push(musicManagerRunRow({ id: "run-1", status: "running" }));
+        return { data: { status: "processing", runId: "run-1" }, error: null };
+      },
     });
 
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
-    const song = musicViewModels.find((item) => item.id === "song-useful-generated");
+    const result = await createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item");
 
-    expect(song?.managerReadState).toBe("limited");
-    expect(song?.managerRead).toContain("154.2M Spotify streams");
-    expect(song?.managerRead).not.toContain("Basic read");
-    expect(song?.managerRead).not.toMatch(/third-party|source-of-stream|private saves|repeat listeners|conversion/i);
+    expect(invoked).toEqual(["generate-music-summary"]);
+    expect(result.managerReadRunId).toBe("run-1");
+    expect(result.managerReadStatus).toBe("running");
   });
 
-  it("keeps full-length OpenAI Manager reads that match the current prompt contract", async () => {
-    const openAiManagerRead = [
-      "Down Below is the record I would put in front of the team first because the useful facts are not scattered: the latest seven-day stream count, playlist count, and playlist reach all point back to one song. The public read is not saying this is already a campaign answer; it is saying the record has enough present behavior to deserve a focused inspection before the catalog gets split into too many small priorities.",
-      "The important difference is that Down Below is showing both listening scale and playlist support, so the next decision should not be a generic push. I would compare whether the current lift is coming from playlist surfaces or from listeners choosing the song directly, then decide which lane gets the first team action.",
-      "Today, I would make Down Below the lead record for the music room, inspect the playlist support against the latest stream window, and use that read to choose one practical next move instead of asking the team to work every song at once, with the artist seeing the actual management judgment instead of a recycled placeholder.",
-    ].join("\n\n");
-    const openAiProjectRead = [
-      "IMMORTAL reads like a project that needs a focus-track decision before it needs a broad release speech. Six mapped songs give the release enough shape to judge, but the useful management question is which record is carrying the project today and which tracks are only supporting the world around it. I would not treat the EP as one equal block when the saved facts can help choose the first song to inspect.",
-      "The project-level numbers give the release a real base: playlist reach and playlist count show that there is already public surface around the body of work. That matters because the team can decide whether to organize the next move around the strongest track, the playlist lane, or the release story instead of asking every song to do the same job.",
-      "Today, I would keep IMMORTAL as the release frame, inspect the mapped tracklist for the song with the clearest present behavior, and use that focus-track read to decide the next team action before spending attention on the whole project.",
-    ].join("\n\n");
-
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-openai-long-read",
-          title: "Down Below",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { track_id: "spotify-track-down-below" },
-            manager_read: {
-              situationLine: "Released song - streaming scale and playlist support are both visible",
-              managerRead: openAiManagerRead,
-              nextMove: "Make Down Below the lead record, then compare playlist support against the latest stream window.",
-              watchNext: "Watch whether playlist support keeps matching the latest stream window.",
-              generationState: "fresh",
-            },
-          },
-        },
-      ],
-      music_projects: [
-        {
-          id: "project-openai-long-read",
-          title: "IMMORTAL",
-          project_type: "ep",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { album_id: "spotify-project-immortal", total_tracks: 6 },
-            manager_read: {
-              situationLine: "Released EP - six mapped songs with playlist support in view",
-              managerRead: openAiProjectRead,
-              nextMove: "Keep IMMORTAL as the release frame, then choose the focus track from the mapped tracklist.",
-              watchNext: "Watch which mapped song keeps carrying the project read.",
-              generationState: "fresh",
-            },
-          },
-        },
-      ],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [],
+  it("rejects invalid backend Manager Read start responses", async () => {
+    const client = createMutableSupabaseClient(musicManagerReadTables(), {
+      invoke: async () => ({ data: { status: "completed", runId: null }, error: null }),
     });
 
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
-    const song = musicViewModels.find((item) => item.id === "song-openai-long-read");
-    const project = musicViewModels.find((item) => item.id === "project-openai-long-read");
-
-    expect(openAiManagerRead.split(/\s+/).filter(Boolean).length).toBeGreaterThan(170);
-    expect(openAiProjectRead.split(/\s+/).filter(Boolean).length).toBeGreaterThan(170);
-    expect(song?.managerReadState).toBe("fresh");
-    expect(song?.managerRead).toBe(openAiManagerRead);
-    expect(song?.managerRead).not.toContain("Down Below is live, but the first management read is simple");
-    expect(project?.managerReadState).toBe("fresh");
-    expect(project?.managerRead).toBe(openAiProjectRead);
-    expect(project?.managerRead).not.toContain("IMMORTAL has 0 mapped songs");
-  });
-
-  it("does not expose vendor/source-limit language from stored generated song intelligence", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-dirty-snapshot",
-          title: "Jam",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: {
-            spotify: { track_id: "spotify-track-jam" },
-            manager_read: {
-              situationLine: "Released song - 19M top TikTok views",
-              managerRead:
-                "Jam is the record with the clearest public pressure right now: 19M views on the top TikTok clip and 8.1M YouTube views point to the same song. Today, I would make Jam the first record to inspect and decide whether short-form discovery or video demand should lead the next team action.",
-              nextMove: "Make Jam the first record to inspect and compare short-form discovery against video demand.",
-              watchNext: "Watch whether TikTok and YouTube keep pointing to the same record.",
-              generationState: "fresh",
-              confidence: "medium",
-              snapshotSummary: "Chartmetric third-party APIs say Jam has public movement.",
-              intelligenceSnapshot: [
-                {
-                  title: "Record Intelligence",
-                  insight: "Provider data shows Jam moving.",
-                  metrics: [
-                    {
-                      label: "Missing proof",
-                      value: "Territory streaming and private documents are still missing",
-                      context: "Spotify for Artists export",
-                      evidenceIds: ["bad-gap"],
-                    },
-                  ],
-                },
-              ],
-            },
-          },
-        },
-      ],
-      music_projects: [],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [
-        {
-          id: "evidence-tiktok",
-          music_item_id: "song-dirty-snapshot",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "public_social_metric",
-          subject_type: "music_item",
-          subject_id: "song-dirty-snapshot",
-          metric_name: "tiktok_top_video_views",
-          metric_value: 19000000,
-          metric_unit: "views",
-          freshness: "provider_window",
-          confidence: "medium",
-        },
-      ],
-    });
-
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
-    const song = musicViewModels.find((item) => item.id === "song-dirty-snapshot");
-    const visibleSnapshotText = JSON.stringify({
-      situationLine: song?.situationLine,
-      managerRead: song?.managerRead,
-      snapshotSummary: song?.snapshotSummary,
-      intelligenceSnapshot: song?.intelligenceSnapshot,
-    });
-
-    expect(song?.managerReadState).toBe("fresh");
-    expect(song?.managerRead).toContain("Jam is the record with the clearest public pressure");
-    expect(song?.snapshotSummary).toContain("top TikTok clip");
-    expect(song?.intelligenceSnapshot?.[0]?.metrics?.[0]?.label).toBe("Top TikTok clip");
-    expect(visibleSnapshotText).not.toMatch(/Chartmetric|third-party|API|provider|Missing proof|Spotify for Artists|source limits|private documents/i);
-  });
-
-  it("builds a ranked fallback Manager read from high-value evidence instead of raw metric names", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-ranked-fallback",
-          title: "Colorado",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: { spotify: { track_id: "spotify-track-colorado" } },
-        },
-      ],
-      music_projects: [],
-      music_project_items: [],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [
-        {
-          music_item_id: "song-ranked-fallback",
-          status: "Missing",
-          summary: "Missing split proof",
-        },
-      ],
-      music_identifiers: [],
-      evidence_items: [
-        {
-          id: "evidence-raw-low",
-          music_item_id: "song-ranked-fallback",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "public_social_metric",
-          subject_type: "music_item",
-          subject_id: "song-ranked-fallback",
-          metric_name: "tiktok_peak_day_video_creates",
-          metric_value: 342000,
-          metric_unit: "video_creates",
-          freshness: "provider_window",
-          confidence: "low",
-        },
-        {
-          id: "evidence-streams",
-          music_item_id: "song-ranked-fallback",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "spotify_trailing_streams",
-          subject_type: "music_item",
-          subject_id: "song-ranked-fallback",
-          metric_name: "spotify_trailing_28d_streams",
-          metric_value: 154185578,
-          metric_unit: "streams",
-          freshness: "provider_window",
-          confidence: "medium",
-        },
-        {
-          id: "evidence-reach",
-          music_item_id: "song-ranked-fallback",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "platform_metric",
-          subject_type: "music_item",
-          subject_id: "song-ranked-fallback",
-          metric_name: "spotify_playlist_total_reach",
-          metric_value: 4222033,
-          metric_unit: "reach",
-          freshness: "provider_window",
-          confidence: "medium",
-        },
-        {
-          id: "evidence-tiktok",
-          music_item_id: "song-ranked-fallback",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "public_social_metric",
-          subject_type: "music_item",
-          subject_id: "song-ranked-fallback",
-          metric_name: "tiktok_video_count",
-          metric_value: 408400,
-          metric_unit: "videos",
-          freshness: "provider_window",
-          confidence: "low",
-        },
-      ],
-    });
-
-    const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
-    const song = musicViewModels.find((item) => item.id === "song-ranked-fallback");
-
-    expect(song?.managerReadState).toBe("loading");
-    expect(song?.managerRead).toContain("The Manager's Read for Colorado is being prepared from the saved packet.");
-    expect(song?.managerRead).not.toMatch(/private saves|repeat listeners|source-of-stream|campaign ROI|still missing/i);
-    expect(song?.managerRead).not.toContain("video_creates");
-    expect(song?.managerRead).not.toContain("provider_window");
-    expect(song?.nextMove).toBe("Wait for Colorado's generated Manager Read, or regenerate it if the read does not appear shortly.");
-    expect(song?.blocker).toBe("No active blocker");
-    expect(song?.situationLine).not.toMatch(/split proof/i);
-    expect(song?.rightsState).not.toMatch(/split proof/i);
-    expect(song?.fileAssets?.some((asset) => asset.group === "Splits" && asset.status === "Missing")).toBe(false);
+    await expect(
+      createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item"),
+    ).rejects.toThrow("Song Manager Read returned an invalid run response.");
   });
 
   it("keeps manual unreleased split proof blocking while ignoring split proof for released Spotify catalog imports", async () => {
@@ -1538,207 +1171,19 @@ describe("production Supabase services", () => {
     expect(spotifySong).toMatchObject({
       blocker: "No active blocker",
       rightsState: "Released catalog rights attached outside this app",
+      managerReadStatus: "not_generated",
     });
-    expect(spotifySong?.situationLine).not.toMatch(/split proof/i);
-    expect(spotifySong?.nextMove).not.toMatch(/split proof|rights proof/i);
     expect(spotifySong?.fileAssets?.some((asset) => asset.group === "Splits" && asset.status === "Missing")).toBe(false);
-    expect(spotifyProject?.blocker).toBe("No inherited blockers");
-    expect(spotifyProject?.nextMove).not.toMatch(/clear rights|split proof/i);
+    expect(spotifyProject).toMatchObject({ blocker: "No inherited blockers", managerReadStatus: "not_generated" });
 
     expect(manualSong).toMatchObject({
       blocker: "Missing split proof",
       rightsState: "Rights proof not connected",
+      managerReadStatus: "not_generated",
     });
-    expect(manualSong?.situationLine).toMatch(/Missing split proof/i);
     expect(manualSong?.fileAssets).toEqual(expect.arrayContaining([
       expect.objectContaining({ group: "Splits", label: "Split sheet document", status: "Missing", canUpload: true }),
     ]));
-  });
-
-  it("builds a project fallback Manager read from available EP metrics instead of source gaps", async () => {
-    const client = fakeSupabaseClient({
-      music_items: [
-        {
-          id: "song-alaye",
-          title: "Alaye",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: { spotify: { track_id: "spotify-track-alaye" } },
-        },
-        {
-          id: "song-state-of-mind",
-          title: "STATE OF MIND",
-          item_type: "released_track",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: { spotify: { track_id: "spotify-track-state" } },
-        },
-      ],
-      music_projects: [
-        {
-          id: "project-real",
-          title: "REAL, Vol. 1",
-          project_type: "ep",
-          lifecycle_stage: "released",
-          source_kind: "spotify_public_catalog",
-          source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-          metadata: { spotify: { album_id: "spotify-album-real", total_tracks: 2 } },
-        },
-      ],
-      music_project_items: [
-        { music_project_id: "project-real", music_item_id: "song-alaye", order_index: 1, disc_number: 1, display_title: "Alaye" },
-        { music_project_id: "project-real", music_item_id: "song-state-of-mind", order_index: 2, disc_number: 1, display_title: "STATE OF MIND" },
-      ],
-      music_assets: [],
-      music_credits: [],
-      music_splits: [],
-      music_identifiers: [],
-      evidence_items: [
-        {
-          id: "project-playlist-count",
-          music_project_id: "project-real",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "platform_metric",
-          subject_type: "music_project",
-          subject_id: "project-real",
-          metric_name: "spotify_playlist_count",
-          metric_value: 5700,
-          metric_unit: "playlists",
-          freshness: "current",
-          confidence: "medium",
-        },
-        {
-          id: "project-editorial-count",
-          music_project_id: "project-real",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "platform_metric",
-          subject_type: "music_project",
-          subject_id: "project-real",
-          metric_name: "spotify_editorial_playlist_count",
-          metric_value: 24,
-          metric_unit: "playlists",
-          freshness: "current",
-          confidence: "medium",
-        },
-        {
-          id: "project-reach",
-          music_project_id: "project-real",
-          source: "Chartmetric",
-          source_kind: "chartmetric",
-          evidence_type: "platform_metric",
-          subject_type: "music_project",
-          subject_id: "project-real",
-          metric_name: "spotify_playlist_total_reach",
-          metric_value: 16200000,
-          metric_unit: "reach",
-          freshness: "current",
-          confidence: "medium",
-        },
-      ],
-    });
-
-    const project = (await createSupabaseProductionRepositories(client, workspace).music.loadMusic()).find((item) => item.id === "project-real");
-    const visibleText = JSON.stringify({
-      situationLine: project?.situationLine,
-      snapshotSummary: project?.snapshotSummary,
-      managerRead: project?.managerRead,
-      intelligenceSnapshot: project?.intelligenceSnapshot,
-      nextMove: project?.nextMove,
-    });
-
-    expect(project?.managerReadState).toBe("loading");
-    expect(project?.managerRead).toContain("The Manager's Read for REAL, Vol. 1 is being prepared from the saved packet.");
-    expect(project?.snapshotSummary).toContain("playlist reach");
-    expect(project?.intelligenceSnapshot?.[0]?.metrics).toEqual(expect.arrayContaining([
-      expect.objectContaining({ label: "Playlist count", value: "5.7K" }),
-      expect.objectContaining({ label: "Editorial support", value: "24" }),
-      expect.objectContaining({ label: "Playlist reach", value: "16.2M" }),
-    ]));
-    expect(visibleText).not.toMatch(/private analytics|private saves|listeners or saves|source-of-stream|campaign ROI|source limit|source gaps|still missing/i);
-  });
-
-  it("uses project-specific copy when project brief generation fails", async () => {
-    const client = createMutableSupabaseClient(
-      {
-        music_items: [],
-        music_projects: [],
-        music_project_items: [],
-        music_identifiers: [],
-        music_assets: [],
-        music_credits: [],
-        music_splits: [],
-        evidence_items: [],
-      },
-      {
-        invoke: async () => ({
-          data: null,
-          error: {
-            context: {
-              clone: () => ({
-                json: async () => ({}),
-              }),
-            },
-          },
-        }),
-      },
-    );
-
-    await expect(
-      createSupabaseProductionRepositories(client, workspace).music.generateMusicSummary("project-error", "music_project"),
-    ).rejects.toThrow("Project brief generation failed.");
-  });
-
-  it("merges the generated music summary response into the reloaded music model", () => {
-    const serviceSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
-
-    expect(serviceSource).toContain("const generatedRead = readGeneratedManagerReadPayload(payload?.read)");
-    expect(serviceSource).toContain("return mergeGeneratedManagerReadIntoMusicObject(updated, generatedRead)");
-    expect(serviceSource).toContain("function mergeGeneratedManagerReadIntoMusicObject");
-  });
-
-  it("self-enriches a project from Chartmetric before generating its Manager Read", async () => {
-    const invoked: string[] = [];
-    const client = createMutableSupabaseClient(
-      {
-        music_items: [],
-        music_projects: [
-          {
-            id: "project-import",
-            artist_workspace_id: "workspace-1",
-            status: "active",
-            title: "Night Bus",
-            project_type: "album",
-            lifecycle_stage: "released",
-            source_kind: "spotify_public_catalog",
-            source_limit: "Spotify public catalog supports identity, catalog, and public metadata only.",
-            metadata: { spotify: { album_id: "spotify-album-1", total_tracks: 2 } },
-          },
-        ],
-        music_project_items: [],
-        music_identifiers: [{ artist_workspace_id: "workspace-1", music_project_id: "project-import", identifier_type: "spotify_album_id", identifier_value: "spotify-album-1" }],
-        music_assets: [],
-        music_credits: [],
-        music_splits: [],
-        evidence_items: [],
-      },
-      {
-        invoke: async (name: string) => {
-          invoked.push(name);
-          if (name === "chartmetric-project-enrichment") return { data: { status: "completed" }, error: null };
-          return { data: { read: { managerRead: "A grounded project read." } }, error: null };
-        },
-      },
-    );
-
-    await createSupabaseProductionRepositories(client, workspace).music.generateMusicSummary("project-import", "music_project");
-
-    // Project enrichment must run before the Manager Read call, mirroring the song path.
-    expect(invoked).toEqual(["chartmetric-project-enrichment", "generate-music-summary"]);
   });
 
   it("searches the connected artist's Spotify catalogue through the edge function", async () => {
@@ -3231,6 +2676,75 @@ describe("production Supabase services", () => {
     ).rejects.toThrow("Missing required environment variable: SPOTIFY_CLIENT_SECRET");
   });
 });
+
+function musicManagerReadTables(
+  overrides: Partial<Record<string, Array<Record<string, unknown>>>> = {},
+): Record<string, Array<Record<string, unknown>>> {
+  return {
+    music_items: [
+      {
+        id: "song-jam",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        status: "active",
+        title: "Jam",
+        item_type: "released_track",
+        lifecycle_stage: "released",
+        source_kind: "spotify_public_catalog",
+        source_limit: "Public catalog metadata only.",
+        created_at: "2026-07-27T08:00:00.000Z",
+        metadata: { spotify: { track_id: "spotify-track-jam" } },
+      },
+    ],
+    music_projects: [],
+    music_project_items: [],
+    music_identifiers: [],
+    music_assets: [],
+    music_credits: [],
+    music_splits: [],
+    evidence_items: [],
+    manager_outputs: [],
+    manager_synthesis_runs: [],
+    ...overrides,
+  };
+}
+
+function musicManagerOutputRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "output-jam",
+    account_id: "account-1",
+    artist_workspace_id: "workspace-1",
+    artist_id: "artist-1",
+    source_packet_id: "packet-1",
+    created_from_run_id: "run-output",
+    output_type: "song_manager_read",
+    subject_type: "music_item",
+    subject_id: "song-jam",
+    is_current: true,
+    schema_version: "music-manager-read-v2",
+    render_json: musicManagerReadV2,
+    created_at: "2026-07-27T09:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function musicManagerRunRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "run-jam",
+    account_id: "account-1",
+    artist_workspace_id: "workspace-1",
+    artist_id: "artist-1",
+    classification: "music_manager_read_v2",
+    subject_type: "music_item",
+    subject_id: "song-jam",
+    status: "completed",
+    error: null,
+    created_at: "2026-07-27T09:00:00.000Z",
+    completed_at: "2026-07-27T09:01:00.000Z",
+    ...overrides,
+  };
+}
 
 function fakeSupabaseClient(tableData: Record<string, unknown[]>) {
   return {
