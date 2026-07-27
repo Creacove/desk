@@ -253,7 +253,7 @@ begin
     or usage_event.subject_id is distinct from next_output.subject_id
     or usage_event.workflow_key <> 'music_readiness_run'
     or usage_event.run_type <> 'manager_synthesis'
-    or usage_event.operation_key <> 'music_manager_read'
+    or usage_event.operation_key <> 'music_manager_read_v2'
   then
     raise exception 'Usage event does not match the staged Music Manager Read output.';
   end if;
@@ -295,10 +295,6 @@ begin
   end if;
 
   if run_was_terminal then
-    if not next_output.is_current then
-      raise exception 'Finalized output is no longer current.';
-    end if;
-
     return next_output.id;
   elsif next_output.is_current then
     raise exception 'A staged output must not be current before finalization.';

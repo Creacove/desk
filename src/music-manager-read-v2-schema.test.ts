@@ -110,7 +110,7 @@ describe("Music Manager Read v2 schema", () => {
       "usage_event.run_type <> 'manager_synthesis'",
     );
     expect(migration).toContain(
-      "usage_event.operation_key <> 'music_manager_read'",
+      "usage_event.operation_key <> 'music_manager_read_v2'",
     );
   });
 
@@ -155,6 +155,18 @@ describe("Music Manager Read v2 schema", () => {
     expect(migration).toContain(
       "usage_event.provider_request_count is distinct from target_provider_request_count",
     );
+  });
+
+  it("does not reactivate an exact replay after its output was superseded", () => {
+    const replayBranch =
+      migration.match(
+        /if run_was_terminal is distinct from usage_was_terminal then[\s\S]*?end if;\s+if run_was_terminal then([\s\S]*?)elsif next_output\.is_current then/i,
+      )?.[1] ?? "";
+
+    expect(replayBranch).toContain("return next_output.id;");
+    expect(replayBranch).not.toContain("if not next_output.is_current");
+    expect(replayBranch).not.toContain("set is_current = true");
+    expect(migration).not.toContain("Finalized output is no longer current.");
   });
 
   it("accepts only exact music subject and output type pairings", () => {
