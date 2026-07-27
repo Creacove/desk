@@ -1140,6 +1140,57 @@ describe("production Supabase services", () => {
     expect(invoked).toEqual(["generate-music-summary"]);
   });
 
+  it("accepts the exact Manager Read run when it completes before the reload", async () => {
+    const invoked: string[] = [];
+    const tables = musicManagerReadTables();
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async (name) => {
+        invoked.push(name);
+        tables.manager_synthesis_runs.push(musicManagerRunRow({ id: "run-1", status: "completed" }));
+        tables.manager_outputs.push(musicManagerOutputRow({ created_from_run_id: "run-1" }));
+        return { data: { status: "processing", runId: "run-1" }, error: null };
+      },
+    });
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item");
+
+    expect(result).toMatchObject({
+      managerReadRunId: "run-1",
+      managerReadStatus: "fresh",
+      managerRead: musicManagerReadV2,
+    });
+    expect(invoked).toEqual(["generate-music-summary"]);
+  });
+
+  it.each([
+    ["failed first read", [], "failed"],
+    ["failed refresh", [musicManagerOutputRow({ created_from_run_id: "run-old", created_at: "2026-07-27T08:00:00.000Z" })], "refresh_failed"],
+  ] as const)("accepts the exact Manager Read run after a fast %s", async (_case, outputs, expectedStatus) => {
+    const invoked: string[] = [];
+    const tables = musicManagerReadTables({ manager_outputs: [...outputs] });
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async (name) => {
+        invoked.push(name);
+        tables.manager_synthesis_runs.push(musicManagerRunRow({
+          id: "run-1",
+          status: "failed",
+          error: "Provider unavailable",
+          created_at: "2026-07-27T10:00:00.000Z",
+        }));
+        return { data: { status: "processing", runId: "run-1" }, error: null };
+      },
+    });
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item");
+
+    expect(result).toMatchObject({
+      managerReadRunId: "run-1",
+      managerReadStatus: expectedStatus,
+      managerReadError: "Provider unavailable",
+    });
+    expect(invoked).toEqual(["generate-music-summary"]);
+  });
+
   it("returns running fixture state for a first read", async () => {
     const repositories = createFixtureRepositories();
 

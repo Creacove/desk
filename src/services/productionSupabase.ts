@@ -1004,10 +1004,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (!updated) {
           throw new Error(`${subjectLabel} could not be reloaded after starting the Manager Read.`);
         }
-        if (
-          updated.managerReadRunId !== runId ||
-          (updated.managerReadStatus !== "running" && updated.managerReadStatus !== "refreshing")
-        ) {
+        const hasCoherentRunState =
+          updated.managerReadStatus === "running" ||
+          updated.managerReadStatus === "refreshing" ||
+          updated.managerReadStatus === "fresh" ||
+          updated.managerReadStatus === "failed" ||
+          updated.managerReadStatus === "refresh_failed";
+        if (updated.managerReadRunId !== runId || !hasCoherentRunState) {
           throw new Error(`${subjectLabel} Manager Read did not reload the active run that was started.`);
         }
         return updated;
