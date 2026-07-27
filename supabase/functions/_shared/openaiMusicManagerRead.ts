@@ -26,24 +26,28 @@ export type ValidationContext = {
   allowedEvidenceIds: Set<string>;
 };
 
+const ROOT_OUTPUT_KEYS = [
+  "position",
+  "managementRole",
+  "body",
+  "decision",
+  "avoid",
+  "watch",
+  "confidence",
+  "confidenceReason",
+  "signals",
+  "evidenceIds",
+] as const;
+
+const SIGNAL_OUTPUT_KEYS = ["label", "value", "meaning", "evidenceIds"] as const;
+
 export const musicManagerReadJsonSchema = {
   name: "music_manager_read_v2",
   strict: true,
   schema: {
     type: "object",
     additionalProperties: false,
-    required: [
-      "position",
-      "managementRole",
-      "body",
-      "decision",
-      "avoid",
-      "watch",
-      "confidence",
-      "confidenceReason",
-      "signals",
-      "evidenceIds",
-    ],
+    required: ROOT_OUTPUT_KEYS,
     properties: {
       position: { type: "string", maxLength: 220 },
       managementRole: { type: "string", maxLength: 100 },
@@ -60,13 +64,14 @@ export const musicManagerReadJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["label", "value", "meaning", "evidenceIds"],
+          required: SIGNAL_OUTPUT_KEYS,
           properties: {
             label: { type: "string", maxLength: 56 },
             value: { type: "string", maxLength: 18 },
             meaning: { type: "string", maxLength: 120 },
             evidenceIds: {
               type: "array",
+              minItems: 1,
               items: { type: "string" },
             },
           },
@@ -74,6 +79,7 @@ export const musicManagerReadJsonSchema = {
       },
       evidenceIds: {
         type: "array",
+        minItems: 1,
         items: { type: "string" },
       },
     },
@@ -81,12 +87,13 @@ export const musicManagerReadJsonSchema = {
 } as const;
 
 const FORBIDDEN_VISIBLE_TERMS =
-  /\b(openai|chatgpt|model|provider|api|database|prompt|chartmetric|evidence row|third-party)\b/i;
+  /\b(openai|chatgpt|anthropic|claude|gemini|model|provider|api|database|prompt|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id)\b/i;
 
 export function parseMusicManagerReadOutput(value: unknown): MusicManagerReadV2 {
   if (!isPlainObject(value)) {
     throw new Error("OpenAI music manager read output must be a plain object.");
   }
+  assertExactOwnEnumerableKeys(value, ROOT_OUTPUT_KEYS, "root");
 
   return {
     position: readRequiredString(value.position, "position"),
@@ -134,6 +141,11 @@ export function validateMusicManagerReadOutput(
     if (match) {
       violations.push(`${field} contains forbidden provider or internal terminology "${match[0]}".`);
     }
+    for (const evidenceId of context.allowedEvidenceIds) {
+      if (evidenceId && text.includes(evidenceId)) {
+        violations.push(`${field} exposes evidence ID "${evidenceId}" in visible content.`);
+      }
+    }
   }
 
   const judgmentFields: Array<[string, string]> = [
@@ -157,6 +169,8 @@ export function validateMusicManagerReadOutput(
   }
 
   validateEvidenceIds(output.evidenceIds, "evidenceIds", context.allowedEvidenceIds, violations);
+  const rootEvidenceIds = new Set(output.evidenceIds);
+  const missingSignalEvidenceIds = new Set<string>();
   output.signals.forEach((signal, index) => {
     validateEvidenceIds(
       signal.evidenceIds,
@@ -164,13 +178,19 @@ export function validateMusicManagerReadOutput(
       context.allowedEvidenceIds,
       violations,
     );
+    for (const evidenceId of signal.evidenceIds) {
+      if (!rootEvidenceIds.has(evidenceId)) missingSignalEvidenceIds.add(evidenceId);
+    }
   });
+  for (const evidenceId of missingSignalEvidenceIds) {
+    violations.push(`evidenceIds must include signal evidence ID "${evidenceId}".`);
+  }
 
   return violations;
 }
 
 export function buildMusicManagerReadRepairInstructions(violations: string[]): string {
-  const violationList = violations.map((violation) => `- ${violation}`).join("\n");
+  const violationList = violations.map((violation) => `- ${JSON.stringify(violation)}`).join("\n");
   return [
     "Correct only these violations:",
     violationList,
@@ -214,6 +234,7 @@ function readSignals(value: unknown): MusicManagerReadV2["signals"] {
     if (!isPlainObject(signal)) {
       throw new Error(`OpenAI music manager read output signals[${index}] must be a plain object.`);
     }
+    assertExactOwnEnumerableKeys(signal, SIGNAL_OUTPUT_KEYS, `signals[${index}]`);
     return {
       label: readRequiredString(signal.label, `signals[${index}].label`),
       value: readRequiredString(signal.value, `signals[${index}].value`),
@@ -241,6 +262,9 @@ function readEvidenceIds(value: unknown, field: string): string[] {
   if (!Array.isArray(value)) {
     throw new Error(`OpenAI music manager read output ${field} must be an array of strings.`);
   }
+  if (value.length === 0) {
+    throw new Error(`OpenAI music manager read output ${field} must contain at least one evidence ID.`);
+  }
 
   const trimmed = value.map((evidenceId) => {
     if (typeof evidenceId !== "string" || !evidenceId.trim()) {
@@ -252,9 +276,9 @@ function readEvidenceIds(value: unknown, field: string): string[] {
 }
 
 function containsExactSubjectTitle(position: string, subjectTitle: string): boolean {
-  const requestedTitle = subjectTitle.trim().toLocaleLowerCase();
+  const requestedTitle = subjectTitle.trim().normalize("NFC").toLowerCase();
   if (!requestedTitle) return false;
-  const normalizedPosition = position.toLocaleLowerCase();
+  const normalizedPosition = position.normalize("NFC").toLowerCase();
   let searchStart = 0;
   while (searchStart < normalizedPosition.length) {
     const titleStart = normalizedPosition.indexOf(requestedTitle, searchStart);
@@ -286,7 +310,7 @@ function tokenOverlap(left: string, right: string): number {
 }
 
 function tokenize(value: string): string[] {
-  return value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  return value.normalize("NFC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 function countWords(value: string): number {
@@ -310,4 +334,24 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function assertExactOwnEnumerableKeys(
+  value: Record<string, unknown>,
+  expectedKeys: readonly string[],
+  field: string,
+): void {
+  const actualKeys = Object.keys(value);
+  const expectedKeySet = new Set(expectedKeys);
+  for (const key of actualKeys) {
+    if (!expectedKeySet.has(key)) {
+      throw new Error(`OpenAI music manager read output ${field} contains unexpected key "${key}".`);
+    }
+  }
+  const actualKeySet = new Set(actualKeys);
+  for (const key of expectedKeys) {
+    if (!actualKeySet.has(key)) {
+      throw new Error(`OpenAI music manager read output ${field}.${key} must be a required own enumerable key.`);
+    }
+  }
 }
