@@ -48,6 +48,11 @@ where subject_id is not null
   and classification = 'music_manager_read_v2'
   and status in ('queued', 'running');
 
+create unique index if not exists manager_outputs_music_read_v2_run_unique_idx
+on public.manager_outputs (created_from_run_id)
+where created_from_run_id is not null
+  and schema_version = 'music-manager-read-v2';
+
 create or replace function public.finalize_music_manager_read_v2(
   target_output_id uuid,
   target_usage_id uuid,
@@ -74,6 +79,7 @@ declare
   expected_usage_status public.usage_status;
   run_was_terminal boolean;
   usage_was_terminal boolean;
+  affected_rows integer;
 begin
   if target_run_status is null
     or target_run_status not in ('completed', 'completed_with_limits')
@@ -295,6 +301,22 @@ begin
   end if;
 
   if run_was_terminal then
+    if not next_output.is_current
+      and not exists (
+        select 1
+        from public.manager_outputs
+        where supersedes_output_id = next_output.id
+          and account_id = next_output.account_id
+          and artist_workspace_id = next_output.artist_workspace_id
+          and artist_id = next_output.artist_id
+          and output_type = next_output.output_type
+          and subject_type = next_output.subject_type
+          and subject_id = next_output.subject_id
+      )
+    then
+      raise exception 'Terminal output is not present in the finalized lineage.';
+    end if;
+
     return next_output.id;
   elsif next_output.is_current then
     raise exception 'A staged output must not be current before finalization.';
@@ -315,16 +337,23 @@ begin
   limit 1
   for update;
 
-  update public.manager_outputs
-  set is_current = false
-  where account_id = next_output.account_id
-    and artist_workspace_id = next_output.artist_workspace_id
-    and artist_id = next_output.artist_id
-    and output_type = next_output.output_type
-    and subject_type = next_output.subject_type
-    and subject_id = next_output.subject_id
-    and is_current = true
-    and id <> next_output.id;
+  if previous_output_id is not null then
+    update public.manager_outputs
+    set is_current = false
+    where id = previous_output_id
+      and account_id = next_output.account_id
+      and artist_workspace_id = next_output.artist_workspace_id
+      and artist_id = next_output.artist_id
+      and output_type = next_output.output_type
+      and subject_type = next_output.subject_type
+      and subject_id = next_output.subject_id
+      and is_current = true;
+
+    get diagnostics affected_rows = row_count;
+    if affected_rows <> 1 then
+      raise exception 'Previous Music Manager Read output could not be retired.';
+    end if;
+  end if;
 
   update public.manager_outputs
   set
@@ -336,7 +365,13 @@ begin
     and artist_id = next_output.artist_id
     and output_type = next_output.output_type
     and subject_type = next_output.subject_type
-    and subject_id = next_output.subject_id;
+    and subject_id = next_output.subject_id
+    and is_current = false;
+
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 1 then
+    raise exception 'Staged Music Manager Read output could not be activated.';
+  end if;
 
   update public.manager_synthesis_runs
   set
@@ -345,6 +380,11 @@ begin
     completed_at = now(),
     error = null
   where id = synthesis_run.id;
+
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 1 then
+    raise exception 'Music Manager Read synthesis run could not be terminalized.';
+  end if;
 
   update public.ai_run_usage_events
   set
@@ -358,6 +398,11 @@ begin
     failure_reason = null,
     metadata = target_usage_metadata
   where id = usage_event.id;
+
+  get diagnostics affected_rows = row_count;
+  if affected_rows <> 1 then
+    raise exception 'Music Manager Read usage event could not be terminalized.';
+  end if;
 
   return next_output.id;
 end;

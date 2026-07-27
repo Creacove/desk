@@ -27,6 +27,15 @@ describe("Music Manager Read v2 schema", () => {
     expect(migration).toContain("where subject_id is not null");
   });
 
+  it("allows only one v2 output to be staged from each synthesis run", () => {
+    expect(migration).toContain(
+      "manager_outputs_music_read_v2_run_unique_idx",
+    );
+    expect(migration).toMatch(
+      /create unique index if not exists manager_outputs_music_read_v2_run_unique_idx\s+on public\.manager_outputs \(created_from_run_id\)\s+where created_from_run_id is not null\s+and schema_version = 'music-manager-read-v2';/i,
+    );
+  });
+
   it("requires valid subjects for v2 runs without constraining legacy classifications", () => {
     expect(migration).toContain(
       "manager_synthesis_runs_music_read_v2_subject_check",
@@ -157,16 +166,41 @@ describe("Music Manager Read v2 schema", () => {
     );
   });
 
-  it("does not reactivate an exact replay after its output was superseded", () => {
+  it("accepts exact replays only for current or lineage-superseded outputs", () => {
     const replayBranch =
       migration.match(
         /if run_was_terminal is distinct from usage_was_terminal then[\s\S]*?end if;\s+if run_was_terminal then([\s\S]*?)elsif next_output\.is_current then/i,
       )?.[1] ?? "";
 
     expect(replayBranch).toContain("return next_output.id;");
-    expect(replayBranch).not.toContain("if not next_output.is_current");
+    expect(replayBranch).toContain("if not next_output.is_current");
+    expect(replayBranch).toContain(
+      "supersedes_output_id = next_output.id",
+    );
+    expect(replayBranch).toContain(
+      "raise exception 'Terminal output is not present in the finalized lineage.'",
+    );
     expect(replayBranch).not.toContain("set is_current = true");
     expect(migration).not.toContain("Finalized output is no longer current.");
+  });
+
+  it("rejects zero-row writes instead of reporting false finalization success", () => {
+    expect(
+      migration.match(/get diagnostics affected_rows = row_count;/gi)?.length,
+    ).toBeGreaterThanOrEqual(4);
+    expect(migration).toContain("if affected_rows <> 1 then");
+    expect(migration).toContain(
+      "raise exception 'Previous Music Manager Read output could not be retired.'",
+    );
+    expect(migration).toContain(
+      "raise exception 'Staged Music Manager Read output could not be activated.'",
+    );
+    expect(migration).toContain(
+      "raise exception 'Music Manager Read synthesis run could not be terminalized.'",
+    );
+    expect(migration).toContain(
+      "raise exception 'Music Manager Read usage event could not be terminalized.'",
+    );
   });
 
   it("accepts only exact music subject and output type pairings", () => {
@@ -187,6 +221,8 @@ describe("Music Manager Read v2 schema", () => {
       migration.match(
         /update public\.manager_outputs\s+set is_current = false[\s\S]*?;/i,
       )?.[0] ?? "";
+
+    expect(retirementScope).toContain("id = previous_output_id");
 
     for (const scope of [predecessorScope, retirementScope]) {
       expect(scope).toContain("account_id = next_output.account_id");
