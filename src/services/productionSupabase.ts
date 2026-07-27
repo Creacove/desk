@@ -992,7 +992,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         }
 
         const payload = data as { status?: unknown; runId?: unknown } | null;
-        if (payload?.status !== "processing" || typeof payload.runId !== "string") {
+        const runId = typeof payload?.runId === "string" ? payload.runId.trim() : "";
+        if (payload?.status !== "processing" || !runId) {
           throw new Error(`${subjectLabel} Manager Read returned an invalid run response.`);
         }
 
@@ -1002,6 +1003,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const updated = models.find((model) => model.id === subjectId);
         if (!updated) {
           throw new Error(`${subjectLabel} could not be reloaded after starting the Manager Read.`);
+        }
+        if (
+          updated.managerReadRunId !== runId ||
+          (updated.managerReadStatus !== "running" && updated.managerReadStatus !== "refreshing")
+        ) {
+          throw new Error(`${subjectLabel} Manager Read did not reload the active run that was started.`);
         }
         return updated;
       },

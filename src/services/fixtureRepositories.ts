@@ -798,7 +798,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         if (!found) throw new Error("Fixture music item not found for Manager Read.");
         const updated = {
           ...found,
-          managerReadStatus: "running" as const,
+          managerReadStatus: found.managerRead ? "refreshing" as const : "running" as const,
           managerReadRunId: `fixture-music-read-${subjectId}`,
           managerReadError: undefined,
         };

@@ -12,6 +12,7 @@ import {
   createSupabaseSpotifyArtistAdapter,
   createSupabaseWorkspaceLoader,
 } from "./services/productionSupabase";
+import { createFixtureRepositories } from "./services/fixtureRepositories";
 import type { ProductionWorkspace } from "./types/productionApp";
 
 afterEach(() => {
@@ -1088,7 +1089,7 @@ describe("production Supabase services", () => {
       invoke: async (name) => {
         invoked.push(name);
         tables.manager_synthesis_runs.push(musicManagerRunRow({ id: "run-1", status: "running" }));
-        return { data: { status: "processing", runId: "run-1" }, error: null };
+        return { data: { status: "processing", runId: " run-1 " }, error: null };
       },
     });
 
@@ -1107,6 +1108,63 @@ describe("production Supabase services", () => {
     await expect(
       createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item"),
     ).rejects.toThrow("Song Manager Read returned an invalid run response.");
+  });
+
+  it("rejects a whitespace-only Manager Read run id", async () => {
+    const client = createMutableSupabaseClient(musicManagerReadTables(), {
+      invoke: async () => ({ data: { status: "processing", runId: "   " }, error: null }),
+    });
+
+    await expect(
+      createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item"),
+    ).rejects.toThrow("Song Manager Read returned an invalid run response.");
+  });
+
+  it.each([
+    ["a different persisted run", musicManagerRunRow({ id: "run-other", status: "running" })],
+    ["a non-active persisted run", musicManagerRunRow({ id: "run-1", status: "completed" })],
+  ])("rejects reloads containing %s after starting a Manager Read", async (_case, persistedRun) => {
+    const invoked: string[] = [];
+    const tables = musicManagerReadTables();
+    const client = createMutableSupabaseClient(tables, {
+      invoke: async (name) => {
+        invoked.push(name);
+        tables.manager_synthesis_runs.push(persistedRun);
+        return { data: { status: "processing", runId: "run-1" }, error: null };
+      },
+    });
+
+    await expect(
+      createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item"),
+    ).rejects.toThrow("Song Manager Read did not reload the active run that was started.");
+    expect(invoked).toEqual(["generate-music-summary"]);
+  });
+
+  it("returns running fixture state for a first read", async () => {
+    const repositories = createFixtureRepositories();
+
+    const result = await repositories.music.startManagerRead("song-after-hours", "music_item");
+
+    expect(result).toMatchObject({
+      id: "song-after-hours",
+      managerReadStatus: "running",
+      managerReadRunId: "fixture-music-read-song-after-hours",
+    });
+    expect(result.managerRead).toBeUndefined();
+  });
+
+  it("preserves the current fixture read while marking a refresh active", async () => {
+    const repositories = createFixtureRepositories();
+    const current = (await repositories.music.loadMusic()).find((item) => item.id === "song-night-bus");
+
+    const result = await repositories.music.startManagerRead("song-night-bus", "music_item");
+
+    expect(result).toMatchObject({
+      id: "song-night-bus",
+      managerReadStatus: "refreshing",
+      managerReadRunId: "fixture-music-read-song-night-bus",
+    });
+    expect(result.managerRead).toEqual(current?.managerRead);
   });
 
   it("keeps manual unreleased split proof blocking while ignoring split proof for released Spotify catalog imports", async () => {
