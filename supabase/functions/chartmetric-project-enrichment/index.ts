@@ -71,6 +71,7 @@ Deno.serve(async (request) => {
   }
 
   let jobId: string | null = null;
+  let requestCount = 0;
   let context: ProjectEnrichmentInput | null = null;
 
   try {
@@ -135,13 +136,19 @@ Deno.serve(async (request) => {
       refreshToken: requireEnv("CHARTMETRIC_REFRESH_TOKEN"),
       baseUrl: Deno.env.get("CHARTMETRIC_BASE_URL") || undefined,
     });
+    const meteredChartmetric: ChartmetricClient = {
+      async requestJson<T>(path: string, init?: RequestInit) {
+        requestCount += 1;
+        return chartmetric.requestJson<T>(path, init);
+      },
+    };
 
     // Step 1: Resolve the Chartmetric album ID via direct identifier lookup.
     // Priority: explicit override → spotify_album_id → upc. Avoids guessing from title search.
     const chartmetricProjectIdFromJob = readString(queuedJob.metadata.chartmetric_project_id);
     const resolution = await resolveChartmetricProjectId(
       identifiers,
-      chartmetric,
+      meteredChartmetric,
       input.chartmetricProjectId ?? chartmetricProjectIdFromJob,
     );
 
@@ -192,12 +199,13 @@ Deno.serve(async (request) => {
     }
 
     // Step 2: Fetch base album detail from the resolved Chartmetric album ID.
-    const detail = await chartmetric.requestJson<Record<string, unknown>>(
+    const detail = await meteredChartmetric.requestJson<Record<string, unknown>>(
       `/api/album/${encodeURIComponent(resolution.id)}`,
     );
 
     // Step 3: Fetch supplemental intelligence in parallel — streaming stats and playlist placements.
-    const supplementals = await fetchProjectSupplementals(resolution.id, chartmetric);
+    const supplementals = await fetchProjectSupplementals(resolution.id, meteredChartmetric);
+    const supplementalErrors = supplementals.supplementalErrors;
 
     // Step 4: Merge base detail and supplementals into a single enriched payload.
     const enrichedPayload = mergeChartmetricProjectPayload(detail.data, supplementals);
@@ -220,7 +228,7 @@ Deno.serve(async (request) => {
         identifiers,
         tracklist,
         supplemental_fetch_window: supplementals.fetchWindow,
-        supplemental_errors: supplementals.supplementalErrors,
+        supplemental_errors: supplementalErrors,
         rate_limit: detail.rateLimit,
       },
     });
@@ -237,26 +245,9 @@ Deno.serve(async (request) => {
     });
     await writeEvidenceItems(authClient, evidenceItems);
 
-    const managerReadResult = await invokeManagerReadGeneration(authHeader, input, {
-      subjectType: "music_project",
-      subjectId: input.musicProjectId,
-    });
-    if (managerReadResult.status === "failed") {
-      await writeOperatingEvent(authClient, input, {
-        eventType: "music_manager_read_handoff_failed",
-        targetType: "music_project",
-        targetId: input.musicProjectId,
-        sourceType: "source_snapshot",
-        sourceId: snapshotId,
-        summary: `Could not generate a Manager Read for ${musicProject.title} after Chartmetric project evidence was stored.`,
-        payload: { error: managerReadResult.error },
-      });
-    }
-
     const completedStatus =
-      Object.keys(supplementals.supplementalErrors).length ||
-      evidenceItems.length === 0 ||
-      managerReadResult.status === "failed"
+      Object.keys(supplementalErrors).length ||
+      evidenceItems.length === 0
         ? "completed_with_limits"
         : "completed";
     await updateSourceSyncJob(authClient, jobId, { status: completedStatus, snapshotIds: [snapshotId] });
@@ -273,8 +264,7 @@ Deno.serve(async (request) => {
         resolved_via: resolution.resolvedVia,
         evidence_count: evidenceItems.length,
         track_count: tracklist.length,
-        manager_read_status: managerReadResult.status,
-        supplemental_errors: supplementals.supplementalErrors,
+        supplemental_errors: supplementalErrors,
         status: completedStatus,
       },
     });
@@ -282,11 +272,10 @@ Deno.serve(async (request) => {
     return json({
       status: completedStatus,
       sourceSyncJobId: jobId,
-      sourceSnapshotId: snapshotId,
-      evidenceCount: evidenceItems.length,
-      managerReadStatus: managerReadResult.status,
-      supplementalErrors: supplementals.supplementalErrors,
-      rateLimit: detail.rateLimit,
+      snapshotId,
+      evidenceItemCount: evidenceItems.length,
+      providerRequestCount: requestCount,
+      supplementalErrors,
     });
   } catch (error) {
     if (jobId && context) {
@@ -611,35 +600,6 @@ async function writeEvidenceItems(supabase: any, evidenceItems: Array<Record<str
   if (!evidenceItems.length) return;
   const { error } = await supabase.from("evidence_items").insert(evidenceItems);
   if (error) throw error;
-}
-
-async function invokeManagerReadGeneration(
-  authHeader: string,
-  input: ProjectEnrichmentInput,
-  subject: { subjectType: "music_project"; subjectId: string },
-) {
-  try {
-    const response = await fetch(`${requireEnv("SUPABASE_URL")}/functions/v1/generate-music-summary`, {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        accountId: input.accountId,
-        artistWorkspaceId: input.artistWorkspaceId,
-        artistId: input.artistId,
-        subjectType: subject.subjectType,
-        subjectId: subject.subjectId,
-      }),
-    });
-    if (!response.ok) {
-      return { status: "failed", error: await response.text() };
-    }
-    return { status: "completed" };
-  } catch (error) {
-    return { status: "failed", error: error instanceof Error ? error.message : "Manager Read generation failed." };
-  }
 }
 
 async function updateSourceSyncJob(

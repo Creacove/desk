@@ -206,6 +206,7 @@ Deno.serve(async (request) => {
 
     // Step 3: Fetch supplemental intelligence in parallel — streaming stats, playlists, charts, social.
     const supplementals = await fetchTrackSupplementals(resolution.id, meteredChartmetric);
+    const supplementalErrors = supplementals.supplementalErrors;
 
     // Step 4: Merge base detail and supplementals into a single enriched payload for the snapshot.
     const enrichedPayload = mergeChartmetricTrackPayload(detail.data, supplementals);
@@ -226,7 +227,7 @@ Deno.serve(async (request) => {
         resolved_via: resolution.resolvedVia,
         identifiers,
         supplemental_fetch_window: supplementals.fetchWindow,
-        supplemental_errors: supplementals.supplementalErrors,
+        supplemental_errors: supplementalErrors,
         rate_limit: detail.rateLimit,
       },
     });
@@ -243,26 +244,9 @@ Deno.serve(async (request) => {
     });
     await writeEvidenceItems(authClient, evidenceItems);
 
-    const managerReadResult = await invokeManagerReadGeneration(authHeader, input, {
-      subjectType: "music_item",
-      subjectId: input.musicItemId,
-    }, isServiceRoleInvocation ? configuredBackfillToken : undefined);
-    if (managerReadResult.status === "failed") {
-      await writeOperatingEvent(authClient, input, {
-        eventType: "music_manager_read_handoff_failed",
-        targetType: "music_item",
-        targetId: input.musicItemId,
-        sourceType: "source_snapshot",
-        sourceId: snapshotId,
-        summary: `Could not generate a Manager Read for ${musicItem.title} after Chartmetric track evidence was stored.`,
-        payload: { error: managerReadResult.error },
-      });
-    }
-
     const completedStatus =
-      Object.keys(supplementals.supplementalErrors).length ||
-      evidenceItems.length === 0 ||
-      managerReadResult.status === "failed"
+      Object.keys(supplementalErrors).length ||
+      evidenceItems.length === 0
         ? "completed_with_limits"
         : "completed";
     await updateSourceSyncJob(authClient, jobId, { status: completedStatus, snapshotIds: [snapshotId] });
@@ -279,8 +263,7 @@ Deno.serve(async (request) => {
         chartmetric_track_id: resolution.id,
         resolved_via: resolution.resolvedVia,
         evidence_count: evidenceItems.length,
-        manager_read_status: managerReadResult.status,
-        supplemental_errors: supplementals.supplementalErrors,
+        supplemental_errors: supplementalErrors,
         status: completedStatus,
       },
     });
@@ -288,11 +271,10 @@ Deno.serve(async (request) => {
     return json({
       status: completedStatus,
       sourceSyncJobId: jobId,
-      sourceSnapshotId: snapshotId,
-      evidenceCount: evidenceItems.length,
-      managerReadStatus: managerReadResult.status,
-      supplementalErrors: supplementals.supplementalErrors,
-      rateLimit: detail.rateLimit,
+      snapshotId,
+      evidenceItemCount: evidenceItems.length,
+      providerRequestCount: requestCount,
+      supplementalErrors,
     });
   } catch (error) {
     if (jobId && context) {
@@ -626,37 +608,6 @@ async function writeEvidenceItems(supabase: any, evidenceItems: Array<Record<str
 
   const { error } = await supabase.from("evidence_items").insert(evidenceItems);
   if (error) throw error;
-}
-
-async function invokeManagerReadGeneration(
-  authHeader: string,
-  input: TrackEnrichmentInput,
-  subject: { subjectType: "music_item"; subjectId: string },
-  backfillToken?: string,
-) {
-  try {
-    const response = await fetch(`${requireEnv("SUPABASE_URL")}/functions/v1/generate-music-summary`, {
-      method: "POST",
-      headers: {
-        Authorization: authHeader,
-        "Content-Type": "application/json",
-        ...(backfillToken ? { "X-Chartmetric-Backfill-Token": backfillToken } : {}),
-      },
-      body: JSON.stringify({
-        accountId: input.accountId,
-        artistWorkspaceId: input.artistWorkspaceId,
-        artistId: input.artistId,
-        subjectType: subject.subjectType,
-        subjectId: subject.subjectId,
-      }),
-    });
-    if (!response.ok) {
-      return { status: "failed", error: await response.text() };
-    }
-    return { status: "completed" };
-  } catch (error) {
-    return { status: "failed", error: error instanceof Error ? error.message : "Manager Read generation failed." };
-  }
 }
 
 async function updateSourceSyncJob(

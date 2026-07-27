@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "chartmetric-track-enrichment", "index.ts"), "utf8");
+const normalizedFunctionSource = functionSource.replace(/\r\n/g, "\n");
 
 describe("Chartmetric track enrichment edge function", () => {
   it("authenticates and checks account membership before provider calls", () => {
@@ -86,15 +87,22 @@ describe("Chartmetric track enrichment edge function", () => {
     expect(normalizeIndex).toBeGreaterThan(snapshotIndex);
   });
 
-  it("hands off to the Manager Read generator after normalized evidence is written", () => {
-    expect(functionSource).toContain("invokeManagerReadGeneration");
-    expect(functionSource).toContain("generate-music-summary");
-    expect(functionSource).toContain('subjectType: "music_item"');
-
+  it("finishes after normalized evidence without invoking OpenAI or Manager Read generation", () => {
     const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, evidenceItems)");
-    const managerReadIndex = functionSource.indexOf("await invokeManagerReadGeneration(authHeader, input");
     expect(evidenceIndex).toBeGreaterThan(-1);
-    expect(managerReadIndex).toBeGreaterThan(evidenceIndex);
+    expect(functionSource).not.toContain("invokeManagerReadGeneration");
+    expect(functionSource).not.toContain("generate-music-summary");
+    expect(functionSource).not.toContain("music_manager_read_handoff_failed");
+    expect(functionSource).not.toContain("manager_read_status");
+    expect(functionSource).not.toContain("managerReadStatus");
+    expect(normalizedFunctionSource).toContain(`return json({
+      status: completedStatus,
+      sourceSyncJobId: jobId,
+      snapshotId,
+      evidenceItemCount: evidenceItems.length,
+      providerRequestCount: requestCount,
+      supplementalErrors,
+    });`);
   });
 
   it("requires exact track identity before requesting the detail endpoint from search results", () => {
