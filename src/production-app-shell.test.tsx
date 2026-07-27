@@ -71,25 +71,6 @@ const workspace = {
 
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
-  Object.defineProperty(HTMLCanvasElement.prototype, "getContext", {
-    configurable: true,
-    writable: true,
-    value: vi.fn(() => null),
-  });
-  Object.defineProperty(window, "matchMedia", {
-    configurable: true,
-    writable: true,
-    value: vi.fn().mockImplementation((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
-  });
 });
 
 afterEach(() => {

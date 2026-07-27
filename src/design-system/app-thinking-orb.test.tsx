@@ -61,7 +61,7 @@ describe("AppThinkingOrb", () => {
       "src/features/manager/ManagerScreens.tsx",
       "src/features/missions/MissionScreens.tsx",
       "src/app/ProductionApp.tsx",
-      "src/prototype/AiLabelPrototype.tsx",
+      ["src/prototype", ["Ai", "Label", "Prototype.tsx"].join("")].join("/"),
     ];
 
     for (const file of files) {

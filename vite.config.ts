@@ -1,5 +1,5 @@
 import path from "path";
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react-swc";
 
 export default defineConfig({
@@ -17,5 +17,8 @@ export default defineConfig({
     // The main bundle is already reported by size; skipping duplicate gzip
     // computation keeps Windows CI and low-memory developer machines stable.
     reportCompressedSize: false,
+  },
+  test: {
+    setupFiles: ["./src/test-setup.ts"],
   },
 });
