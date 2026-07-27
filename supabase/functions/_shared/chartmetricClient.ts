@@ -20,6 +20,26 @@ export type ChartmetricClient = {
   requestJson<T>(path: string, init?: RequestInit): Promise<ChartmetricJsonResponse<T>>;
 };
 
+export type ChartmetricRequestPhase = "token_exchange" | "api_request";
+
+export class ChartmetricRequestError extends Error {
+  readonly status: number;
+  readonly phase: ChartmetricRequestPhase;
+
+  constructor(message: string, status: number, phase: ChartmetricRequestPhase) {
+    super(message);
+    this.name = "ChartmetricRequestError";
+    this.status = status;
+    this.phase = phase;
+  }
+}
+
+export function isChartmetricNotFoundError(error: unknown): error is ChartmetricRequestError {
+  return error instanceof ChartmetricRequestError &&
+    error.phase === "api_request" &&
+    error.status === 404;
+}
+
 type AccessTokenState = {
   token: string;
   expiresAt: number;
@@ -53,7 +73,11 @@ export function createChartmetricClient(options: ChartmetricClientOptions): Char
     });
 
     if (!response.ok) {
-      throw new Error(`Chartmetric token exchange failed with status ${response.status}.`);
+      throw new ChartmetricRequestError(
+        `Chartmetric token exchange failed with status ${response.status}.`,
+        response.status,
+        "token_exchange",
+      );
     }
 
     const payload = (await response.json()) as { token?: string; expires_in?: number };
@@ -89,7 +113,11 @@ export function createChartmetricClient(options: ChartmetricClientOptions): Char
       }
 
       if (!response.ok) {
-        throw new Error(`Chartmetric request failed with status ${response.status}.`);
+        throw new ChartmetricRequestError(
+          `Chartmetric request failed with status ${response.status}.`,
+          response.status,
+          "api_request",
+        );
       }
 
       return {

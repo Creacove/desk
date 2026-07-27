@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createChartmetricClient } from "../supabase/functions/_shared/chartmetricClient";
+import {
+  ChartmetricRequestError,
+  createChartmetricClient,
+  isChartmetricNotFoundError,
+} from "../supabase/functions/_shared/chartmetricClient";
 
 describe("Chartmetric client", () => {
   it("exchanges the refresh token for a bearer token before API requests", async () => {
@@ -100,6 +104,68 @@ describe("Chartmetric client", () => {
       remaining: "42",
       reset: "1710000000",
     });
+  });
+
+  it.each([404, 429, 500])("preserves API request status %i in a typed request error", async (status) => {
+    const client = createChartmetricClient({
+      refreshToken: "refresh-token-1",
+      fetch: createFetchStub([], [
+        jsonResponse({ token: "access-token-1", expires_in: 3600 }),
+        jsonResponse({ error: "provider failure" }, {}, status),
+      ]),
+    });
+
+    const error = await client.requestJson("/api/artist/123").catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ChartmetricRequestError);
+    expect(error).toMatchObject({
+      status,
+      phase: "api_request",
+    });
+    expect(isChartmetricNotFoundError(error)).toBe(status === 404);
+  });
+
+  it("distinguishes token-exchange failures from API request failures", async () => {
+    const client = createChartmetricClient({
+      refreshToken: "refresh-token-1",
+      fetch: createFetchStub([], [
+        jsonResponse({ error: "token unavailable" }, {}, 404),
+      ]),
+    });
+
+    const error = await client.requestJson("/api/artist/123").catch((caught) => caught);
+
+    expect(error).toBeInstanceOf(ChartmetricRequestError);
+    expect(error).toMatchObject({
+      status: 404,
+      phase: "token_exchange",
+    });
+    expect(isChartmetricNotFoundError(error)).toBe(false);
+  });
+
+  it("classifies only API-request 404 errors as Chartmetric not-found failures", () => {
+    expect(isChartmetricNotFoundError(new ChartmetricRequestError(
+      "Chartmetric request failed with status 404.",
+      404,
+      "api_request",
+    ))).toBe(true);
+    expect(isChartmetricNotFoundError(new ChartmetricRequestError(
+      "Chartmetric token exchange failed with status 404.",
+      404,
+      "token_exchange",
+    ))).toBe(false);
+    expect(isChartmetricNotFoundError(new ChartmetricRequestError(
+      "Chartmetric request failed with status 401.",
+      401,
+      "api_request",
+    ))).toBe(false);
+    expect(isChartmetricNotFoundError(new ChartmetricRequestError(
+      "Chartmetric request failed with status 429.",
+      429,
+      "api_request",
+    ))).toBe(false);
+    expect(isChartmetricNotFoundError(new TypeError("fetch failed"))).toBe(false);
+    expect(isChartmetricNotFoundError(new Error("general failure"))).toBe(false);
   });
 });
 

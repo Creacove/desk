@@ -60,6 +60,32 @@ describe("Chartmetric project enrichment edge function", () => {
     expect(functionSource).not.toContain('.from("music_projects").update');
   });
 
+  it("records durable paid Chartmetric request usage for resolved and unresolved project enrichment", () => {
+    expect(functionSource).toContain('from("ai_run_usage_events")');
+    expect(functionSource).toContain('provider: "chartmetric"');
+    expect(functionSource).toContain('operation_key: "chartmetric_project_enrichment"');
+    expect(functionSource).toContain('subject_type: "music_project"');
+    expect(functionSource).toContain("subject_id: input.musicProjectId");
+    expect(functionSource).toContain("provider_request_count");
+    expect(functionSource).toContain("requestCount");
+
+    const jobIndex = functionSource.indexOf("jobId =");
+    const usageStartIndex = functionSource.indexOf("usageId = await createChartmetricUsageEvent(authClient, input, jobId)");
+    expect(jobIndex).toBeGreaterThan(-1);
+    expect(usageStartIndex).toBeGreaterThan(jobIndex);
+    expect(functionSource.match(/usageId = await createChartmetricUsageEvent\(authClient, input, jobId\)/g)).toHaveLength(1);
+    expect(functionSource.match(/await completeChartmetricUsageEvent\(authClient, usageId, requestCount/g)).toHaveLength(2);
+  });
+
+  it("persists failed project provider usage without replacing the original error", () => {
+    expect(functionSource).toContain("await markFailedSafe(jobId, context, error, usageId, requestCount)");
+    expect(functionSource).toContain('status: "failed"');
+    expect(functionSource).toContain("provider_request_count: requestCount");
+    expect(functionSource).toContain("failure_reason: message");
+    expect(functionSource).toContain("completed_at: new Date().toISOString()");
+    expect(functionSource).toContain("Preserve the original error response when failure logging also fails.");
+  });
+
   it("finishes after normalized evidence without invoking OpenAI or Manager Read generation", () => {
     const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, evidenceItems)");
     expect(evidenceIndex).toBeGreaterThan(-1);
@@ -79,6 +105,7 @@ describe("Chartmetric project enrichment edge function", () => {
   });
 
   it("requires exact release identity before requesting the detail endpoint from search results", () => {
+    expect(functionSource).toContain("isChartmetricNotFoundError");
     expect(functionSource).toContain("resolveChartmetricProjectId");
     expect(functionSource).toContain("fetchProjectSupplementals");
     expect(functionSource).toContain("/api/album/spotify/");
@@ -93,6 +120,17 @@ describe("Chartmetric project enrichment edge function", () => {
     expect(functionSource).not.toContain('matchesProjectIdentity');
     expect(functionSource).not.toContain('searchParams.set("spotify_album_id"');
     expect(functionSource).not.toContain('searchParams.set("upc"');
+  });
+
+  it("falls through only on typed Chartmetric 404 identifier misses", () => {
+    const resolverStart = normalizedFunctionSource.indexOf("async function resolveChartmetricProjectId(");
+    const resolverEnd = normalizedFunctionSource.indexOf("function readCmIdFromGetIds(", resolverStart);
+    const resolverSource = normalizedFunctionSource.slice(resolverStart, resolverEnd);
+
+    expect(resolverStart).toBeGreaterThan(-1);
+    expect(resolverEnd).toBeGreaterThan(resolverStart);
+    expect(resolverSource.match(/catch \(error\) \{/g)).toHaveLength(2);
+    expect(resolverSource.match(/if \(!isChartmetricNotFoundError\(error\)\) throw error;/g)).toHaveLength(2);
   });
 
   it("uses documented album intelligence endpoints without labeling popularity as streams", () => {
@@ -115,7 +153,14 @@ describe("Chartmetric project enrichment edge function", () => {
     expect(functionSource).toContain("chartmetric_project_enrichment_unresolved");
     expect(functionSource).toContain("No exact Chartmetric project match");
     expect(functionSource).toContain('status: "unresolved"');
-    expect(functionSource).toContain("return json({");
+    expect(normalizedFunctionSource).toContain(`return json({
+        status: "unresolved",
+        sourceSyncJobId: jobId,
+        snapshotId,
+        evidenceItemCount: 0,
+        providerRequestCount: requestCount,
+        supplementalErrors: {},
+      });`);
   });
 
   it("reads the seeded Chartmetric provider instead of inserting reference data with the authenticated client", () => {

@@ -107,6 +107,7 @@ describe("Chartmetric track enrichment edge function", () => {
 
   it("requires exact track identity before requesting the detail endpoint from search results", () => {
     expect(functionSource).toContain("createChartmetricClient");
+    expect(functionSource).toContain("isChartmetricNotFoundError");
     expect(functionSource).toContain("resolveChartmetricTrackId");
     expect(functionSource).toContain("fetchTrackSupplementals");
     expect(functionSource).toContain("/api/track/spotify/");
@@ -121,6 +122,17 @@ describe("Chartmetric track enrichment edge function", () => {
     expect(functionSource).not.toContain('matchesTrackIdentity');
     expect(functionSource).not.toContain('searchParams.set("spotify_track_id"');
     expect(functionSource).not.toContain('searchParams.set("isrc"');
+  });
+
+  it("falls through only on typed Chartmetric 404 identifier misses", () => {
+    const resolverStart = normalizedFunctionSource.indexOf("async function resolveChartmetricTrackId(");
+    const resolverEnd = normalizedFunctionSource.indexOf("function readCmIdFromGetIds(", resolverStart);
+    const resolverSource = normalizedFunctionSource.slice(resolverStart, resolverEnd);
+
+    expect(resolverStart).toBeGreaterThan(-1);
+    expect(resolverEnd).toBeGreaterThan(resolverStart);
+    expect(resolverSource.match(/catch \(error\) \{/g)).toHaveLength(2);
+    expect(resolverSource.match(/if \(!isChartmetricNotFoundError\(error\)\) throw error;/g)).toHaveLength(2);
   });
 
   it("uses the documented Chartmetric track intelligence endpoints", () => {
@@ -146,7 +158,14 @@ describe("Chartmetric track enrichment edge function", () => {
     expect(functionSource).toContain("chartmetric_track_enrichment_unresolved");
     expect(functionSource).toContain("No exact Chartmetric track match");
     expect(functionSource).toContain('status: "unresolved"');
-    expect(functionSource).toContain("return json({");
+    expect(normalizedFunctionSource).toContain(`return json({
+        status: "unresolved",
+        sourceSyncJobId: jobId,
+        snapshotId,
+        evidenceItemCount: 0,
+        providerRequestCount: requestCount,
+        supplementalErrors: {},
+      });`);
   });
 
   it("reads the seeded Chartmetric provider instead of inserting reference data with the authenticated client", () => {

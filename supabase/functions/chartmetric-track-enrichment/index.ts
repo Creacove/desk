@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createChartmetricClient } from "../_shared/chartmetricClient.ts";
+import { createChartmetricClient, isChartmetricNotFoundError } from "../_shared/chartmetricClient.ts";
 import type { ChartmetricClient } from "../_shared/chartmetricClient.ts";
 import { normalizeChartmetricTrackEvidence } from "../_shared/chartmetricEvidence.ts";
 import {
@@ -194,8 +194,10 @@ Deno.serve(async (request) => {
       return json({
         status: "unresolved",
         sourceSyncJobId: jobId,
-        sourceSnapshotId: snapshotId,
-        evidenceCount: 0,
+        snapshotId,
+        evidenceItemCount: 0,
+        providerRequestCount: requestCount,
+        supplementalErrors: {},
       });
     }
 
@@ -310,7 +312,8 @@ async function resolveChartmetricTrackId(
       );
       const id = readCmIdFromGetIds(result.data);
       if (id) return { id, resolvedVia: "spotify_track_id" };
-    } catch {
+    } catch (error) {
+      if (!isChartmetricNotFoundError(error)) throw error;
       // Fall through to ISRC lookup.
     }
   }
@@ -323,7 +326,8 @@ async function resolveChartmetricTrackId(
       );
       const id = readCmIdFromGetIds(result.data);
       if (id) return { id, resolvedVia: "isrc" };
-    } catch {
+    } catch (error) {
+      if (!isChartmetricNotFoundError(error)) throw error;
       // Fall through to unresolved.
     }
   }

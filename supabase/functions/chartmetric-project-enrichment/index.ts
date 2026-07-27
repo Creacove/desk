@@ -1,5 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { createChartmetricClient } from "../_shared/chartmetricClient.ts";
+import { createChartmetricClient, isChartmetricNotFoundError } from "../_shared/chartmetricClient.ts";
 import type { ChartmetricClient } from "../_shared/chartmetricClient.ts";
 import { normalizeChartmetricProjectEvidence } from "../_shared/chartmetricEvidence.ts";
 import {
@@ -71,6 +71,7 @@ Deno.serve(async (request) => {
   }
 
   let jobId: string | null = null;
+  let usageId: string | null = null;
   let requestCount = 0;
   let context: ProjectEnrichmentInput | null = null;
 
@@ -123,6 +124,7 @@ Deno.serve(async (request) => {
       (await createSourceSyncJob(authClient, input, sourceConnectionId, "manual"));
 
     await updateSourceSyncJob(authClient, jobId, { status: "running" });
+    usageId = await createChartmetricUsageEvent(authClient, input, jobId);
     await writeOperatingEvent(authClient, input, {
       eventType: "chartmetric_project_enrichment_started",
       targetType: "music_project",
@@ -181,6 +183,7 @@ Deno.serve(async (request) => {
         },
       });
       await updateSourceSyncJob(authClient, jobId, { status: "completed", snapshotIds: [snapshotId] });
+      await completeChartmetricUsageEvent(authClient, usageId, requestCount);
       await writeOperatingEvent(authClient, input, {
         eventType: "chartmetric_project_enrichment_unresolved",
         targetType: "music_project",
@@ -193,8 +196,10 @@ Deno.serve(async (request) => {
       return json({
         status: "unresolved",
         sourceSyncJobId: jobId,
-        sourceSnapshotId: snapshotId,
-        evidenceCount: 0,
+        snapshotId,
+        evidenceItemCount: 0,
+        providerRequestCount: requestCount,
+        supplementalErrors: {},
       });
     }
 
@@ -251,6 +256,7 @@ Deno.serve(async (request) => {
         ? "completed_with_limits"
         : "completed";
     await updateSourceSyncJob(authClient, jobId, { status: completedStatus, snapshotIds: [snapshotId] });
+    await completeChartmetricUsageEvent(authClient, usageId, requestCount, completedStatus === "completed_with_limits");
     await writeOperatingEvent(authClient, input, {
       eventType: "chartmetric_project_enrichment_completed",
       targetType: "music_project",
@@ -279,7 +285,7 @@ Deno.serve(async (request) => {
     });
   } catch (error) {
     if (jobId && context) {
-      await markFailedSafe(jobId, context, error);
+      await markFailedSafe(jobId, context, error, usageId, requestCount);
     }
     return json({ error: error instanceof Error ? error.message : "Chartmetric project enrichment failed." }, 500);
   }
@@ -310,7 +316,8 @@ async function resolveChartmetricProjectId(
       );
       const id = readCmIdFromGetIds(result.data);
       if (id) return { id, resolvedVia: "spotify_album_id" };
-    } catch {
+    } catch (error) {
+      if (!isChartmetricNotFoundError(error)) throw error;
       // Fall through to UPC lookup.
     }
   }
@@ -323,7 +330,8 @@ async function resolveChartmetricProjectId(
       );
       const id = readCmIdFromGetIds(result.data);
       if (id) return { id, resolvedVia: "upc" };
-    } catch {
+    } catch (error) {
+      if (!isChartmetricNotFoundError(error)) throw error;
       // Fall through to unresolved.
     }
   }
@@ -620,6 +628,42 @@ async function updateSourceSyncJob(
   if (error) throw error;
 }
 
+async function createChartmetricUsageEvent(supabase: any, input: ProjectEnrichmentInput, jobId: string) {
+  const { data, error } = await supabase
+    .from("ai_run_usage_events")
+    .insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      workflow_key: "music_readiness_run",
+      run_type: "source_sync",
+      source_sync_job_id: jobId,
+      subject_type: "music_project",
+      subject_id: input.musicProjectId,
+      provider: "chartmetric",
+      model_or_tool: "chartmetric_api",
+      operation_key: "chartmetric_project_enrichment",
+      status: "started",
+      provider_request_count: 0,
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function completeChartmetricUsageEvent(supabase: any, usageId: string, requestCount: number, partial = false) {
+  const { error } = await supabase
+    .from("ai_run_usage_events")
+    .update({
+      status: partial ? "partial" : "succeeded",
+      provider_request_count: requestCount,
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", usageId);
+  if (error) throw error;
+}
+
 async function writeOperatingEvent(
   supabase: any,
   input: ProjectEnrichmentInput,
@@ -649,13 +693,30 @@ async function writeOperatingEvent(
   if (error) throw error;
 }
 
-async function markFailedSafe(jobId: string, input: ProjectEnrichmentInput, error: unknown) {
+async function markFailedSafe(
+  jobId: string,
+  input: ProjectEnrichmentInput,
+  error: unknown,
+  usageId: string | null,
+  requestCount: number,
+) {
   try {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const serviceClient = createClient(supabaseUrl, serviceRoleKey);
     const message = error instanceof Error ? error.message : "Chartmetric project enrichment failed.";
     await updateSourceSyncJob(serviceClient, jobId, { status: "failed", error: message });
+    if (usageId) {
+      await serviceClient
+        .from("ai_run_usage_events")
+        .update({
+          status: "failed",
+          provider_request_count: requestCount,
+          failure_reason: message,
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", usageId);
+    }
     await writeOperatingEvent(serviceClient, input, {
       eventType: "chartmetric_project_enrichment_failed",
       targetType: "music_project",
