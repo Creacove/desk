@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   MUSIC_MANAGER_READ_SCHEMA_VERSION,
+  type MusicManagerReadV2,
   buildMusicManagerReadInstructions,
   buildMusicManagerReadRepairInstructions,
   musicManagerReadJsonSchema,
@@ -15,14 +16,14 @@ const body = [
   "The management priority is to concentrate the next decision around Jam without treating every large number as the same kind of demand. Short-form reach is attention, the Lagos chart position is local traction, and streams are closer to consumption; the team should connect those layers before widening spend. Keep the story specific to the record and market, then watch whether the next reporting window holds listening and rank as the TikTok clip ages.",
 ].join("\n\n");
 
-const validOutput = {
+const validOutput: MusicManagerReadV2 = {
   position: "Jam is the clearest lead-attention record in the current release picture.",
   managementRole: "Lead attention asset",
   body,
   decision: "Concentrate the next campaign decision on Jam and connect its discovery reach to listening in Lagos.",
   avoid: "Do not spread spend evenly across the release before Jam's attention converts into sustained consumption.",
   watch: "Watch whether streams and the Lagos rank hold as the leading TikTok clip ages.",
-  confidence: "high" as const,
+  confidence: "high",
   confidenceReason: "Three independent public signals point to the same record and market.",
   signals: [
     {
@@ -53,6 +54,21 @@ const validationContext = {
   allowedEvidenceIds,
 };
 
+function cloneValidOutput(): MusicManagerReadV2 {
+  return JSON.parse(JSON.stringify(validOutput)) as MusicManagerReadV2;
+}
+
+function outputWithBodyWords(wordCount: number): MusicManagerReadV2 {
+  return {
+    ...cloneValidOutput(),
+    body: Array.from({ length: wordCount }, (_, index) => `word${index + 1}`).join(" "),
+  };
+}
+
+function countOccurrences(value: string, fragment: string): number {
+  return value.split(fragment).length - 1;
+}
+
 describe("Music Manager Read v2 contract", () => {
   it("uses the v2 schema version and parses the exact complete payload", () => {
     expect(MUSIC_MANAGER_READ_SCHEMA_VERSION).toBe("music-manager-read-v2");
@@ -60,6 +76,9 @@ describe("Music Manager Read v2 contract", () => {
   });
 
   it("defines a strict structured-output schema for every v2 field", () => {
+    const properties = musicManagerReadJsonSchema.schema.properties;
+    const signalSchema = properties.signals;
+
     expect(musicManagerReadJsonSchema.name).toBe("music_manager_read_v2");
     expect(musicManagerReadJsonSchema.strict).toBe(true);
     expect(musicManagerReadJsonSchema.schema.additionalProperties).toBe(false);
@@ -75,9 +94,23 @@ describe("Music Manager Read v2 contract", () => {
       "signals",
       "evidenceIds",
     ]);
-    expect(musicManagerReadJsonSchema.schema.properties.signals.minItems).toBe(3);
-    expect(musicManagerReadJsonSchema.schema.properties.signals.maxItems).toBe(6);
-    expect(musicManagerReadJsonSchema.schema.properties.signals.items.additionalProperties).toBe(false);
+    expect(properties.position.maxLength).toBe(220);
+    expect(properties.managementRole.maxLength).toBe(100);
+    expect(properties.body.maxLength).toBe(2400);
+    expect(properties.decision.maxLength).toBe(260);
+    expect(properties.avoid.maxLength).toBe(260);
+    expect(properties.watch.maxLength).toBe(260);
+    expect(properties.confidenceReason.maxLength).toBe(260);
+    expect(properties.confidence.enum).toEqual(["low", "medium", "high"]);
+    expect(signalSchema.minItems).toBe(3);
+    expect(signalSchema.maxItems).toBe(6);
+    expect(signalSchema.items.additionalProperties).toBe(false);
+    expect(signalSchema.items.required).toEqual(["label", "value", "meaning", "evidenceIds"]);
+    expect(signalSchema.items.properties.label.maxLength).toBe(56);
+    expect(signalSchema.items.properties.value.maxLength).toBe(18);
+    expect(signalSchema.items.properties.meaning.maxLength).toBe(120);
+    expect(signalSchema.items.properties.evidenceIds.items.type).toBe("string");
+    expect(properties.evidenceIds.items.type).toBe("string");
   });
 
   it("does not preserve any removed legacy keys", () => {
@@ -135,33 +168,147 @@ describe("Music Manager Read v2 contract", () => {
     ]);
   });
 
-  it("rejects visible provider and internal terminology", () => {
-    const invalidOutput = {
-      ...validOutput,
-      body: validOutput.body.replace("Its 5.2M", "The Chartmetric API reports 5.2M"),
+  it("finds a later case-insensitive exact subject after an embedded substring", () => {
+    const output = {
+      ...cloneValidOutput(),
+      position: "Jamming leads, but JAM is the requested subject.",
     };
 
-    expect(validateMusicManagerReadOutput(invalidOutput, validationContext)).toContain(
-      'body contains forbidden provider or internal terminology "Chartmetric".',
+    expect(validateMusicManagerReadOutput(output, validationContext)).toEqual([]);
+  });
+
+  it.each([
+    {
+      field: "position",
+      expected: 'position contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.position = "Jam is the OpenAI-led subject.";
+      },
+    },
+    {
+      field: "managementRole",
+      expected: 'managementRole contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.managementRole = "OpenAI attention lead";
+      },
+    },
+    {
+      field: "body",
+      expected: 'body contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.body = `${output.body} OpenAI`;
+      },
+    },
+    {
+      field: "decision",
+      expected: 'decision contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.decision = "Use OpenAI for the next distinct operating choice.";
+      },
+    },
+    {
+      field: "avoid",
+      expected: 'avoid contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.avoid = "Avoid an OpenAI-led expansion before conversion is clear.";
+      },
+    },
+    {
+      field: "watch",
+      expected: 'watch contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.watch = "Watch a separate OpenAI measure over the next window.";
+      },
+    },
+    {
+      field: "confidenceReason",
+      expected: 'confidenceReason contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.confidenceReason = "OpenAI is named as the confidence source.";
+      },
+    },
+    {
+      field: "signal label",
+      expected: 'signals[0].label contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.signals[0].label = "OpenAI streams";
+      },
+    },
+    {
+      field: "signal value",
+      expected: 'signals[0].value contains forbidden provider or internal terminology "API".',
+      change: (output: MusicManagerReadV2) => {
+        output.signals[0].value = "API";
+      },
+    },
+    {
+      field: "signal meaning",
+      expected: 'signals[0].meaning contains forbidden provider or internal terminology "OpenAI".',
+      change: (output: MusicManagerReadV2) => {
+        output.signals[0].meaning = "OpenAI is presented as the source of this signal.";
+      },
+    },
+  ])("rejects forbidden terminology in $field", ({ change, expected }) => {
+    const output = cloneValidOutput();
+    change(output);
+
+    expect(validateMusicManagerReadOutput(output, validationContext)).toEqual([expected]);
+  });
+
+  it("rejects decision and avoid at exactly 0.8 token overlap", () => {
+    const output = {
+      ...cloneValidOutput(),
+      decision: "alpha beta gamma delta epsilon",
+      avoid: "alpha beta gamma delta zeta",
+      watch: "theta iota kappa lambda mu",
+    };
+
+    expect(validateMusicManagerReadOutput(output, validationContext)).toContain(
+      "decision and avoid must be meaningfully distinct.",
     );
   });
 
-  it("rejects meaningfully repeated decision, avoid, and watch text", () => {
-    const repeated = "Keep Jam as the lead record and focus the next campaign decision on Lagos listening.";
-    const invalidOutput = {
-      ...validOutput,
-      decision: repeated,
-      avoid: repeated,
-      watch: repeated,
+  it("accepts judgment pairs below 0.8 token overlap", () => {
+    const output = {
+      ...cloneValidOutput(),
+      decision: "alpha beta gamma delta epsilon",
+      avoid: "alpha beta gamma zeta eta",
+      watch: "theta iota kappa lambda mu",
     };
 
-    expect(validateMusicManagerReadOutput(invalidOutput, validationContext)).toEqual(
-      expect.arrayContaining([
-        "decision and avoid must be meaningfully distinct.",
-        "decision and watch must be meaningfully distinct.",
-        "avoid and watch must be meaningfully distinct.",
-      ]),
+    expect(validateMusicManagerReadOutput(output, validationContext).filter((violation) =>
+      violation.includes("meaningfully distinct"),
+    )).toEqual([]);
+  });
+
+  it("rejects an unsupported evidence ID inside a signal", () => {
+    const output = cloneValidOutput();
+    output.signals[1].evidenceIds.push("ev-invented");
+
+    expect(validateMusicManagerReadOutput(output, validationContext)).toContain(
+      'signals[1].evidenceIds contains unsupported evidence ID "ev-invented".',
     );
+  });
+
+  it.each([120, 320])("accepts a body containing exactly %i words", (wordCount) => {
+    expect(validateMusicManagerReadOutput(outputWithBodyWords(wordCount), validationContext)).toEqual([]);
+  });
+
+  it.each([119, 321])("rejects a body containing %i words", (wordCount) => {
+    expect(validateMusicManagerReadOutput(outputWithBodyWords(wordCount), validationContext)).toContain(
+      `body must contain 120–320 words; received ${wordCount}.`,
+    );
+  });
+
+  it("validates without mutating any output content", () => {
+    const output = cloneValidOutput();
+    output.position = "Another Song leads the current picture.";
+    output.signals[0].evidenceIds.push("ev-invented");
+    const snapshot = structuredClone(output);
+
+    validateMusicManagerReadOutput(output, validationContext);
+
+    expect(output).toEqual(snapshot);
   });
 
   it("builds repair instructions from exact violations while preserving valid content", () => {
@@ -181,25 +328,48 @@ describe("Music Manager Read v2 contract", () => {
     const instructions = buildMusicManagerReadInstructions("music_item", "");
 
     expect(instructions).toContain("artist's senior Manager");
+    expect(countOccurrences(instructions, "senior Manager")).toBe(1);
     expect(instructions).toContain("current position");
+    expect(instructions).toContain("Put the conclusion first");
     expect(instructions).toContain("two or three natural paragraphs");
+    expect(instructions).toContain("plain, direct English");
+    expect(instructions).toContain("exact requested subject, artist, markets, comparisons, and numbers");
     expect(instructions).toContain("5.2M");
     expect(instructions).toContain("decision, avoid, and watch");
     expect(instructions).toContain("Do not substitute a comparison");
     expect(instructions).toContain("attention, discovery, conversion, and durable fandom");
+    expect(instructions).toContain("missions");
+    expect(instructions).toContain("tasks");
+    expect(instructions).toContain("fake commitments");
+    expect(instructions).toContain("provider references");
+    expect(instructions).toContain("internal mechanics");
+    expect(instructions).toContain("Use only supplied evidence IDs");
+    expect(instructions).toContain("never print evidence IDs in visible text");
     expect(instructions).not.toContain("sourceLine must be exactly");
     expect(instructions).not.toContain("headline");
     expect(instructions).not.toContain("watchNext");
+    for (const ruleFragment of [
+      "two or three natural paragraphs",
+      "Do not substitute a comparison",
+      "5.2M",
+      "supplied evidence IDs",
+    ]) {
+      expect(countOccurrences(instructions, ruleFragment)).toBe(1);
+    }
   });
 
-  it("adds trimmed playbook instructions exactly once and omits empty playbooks", () => {
+  it("includes project guidance only for projects and appends a trimmed playbook exactly once", () => {
     const playbook = "  Give priority to Lagos before wider market expansion.  ";
     const withPlaybook = buildMusicManagerReadInstructions("music_project", playbook);
+    const itemInstructions = buildMusicManagerReadInstructions("music_item", playbook);
     const withoutPlaybook = buildMusicManagerReadInstructions("music_project", "   ");
 
     expect(withPlaybook.match(/Give priority to Lagos before wider market expansion\./g)).toHaveLength(1);
     expect(withPlaybook).toContain("reason across the release");
     expect(withPlaybook).toContain("carrying tracks");
+    expect(itemInstructions).not.toContain("reason across the release");
+    expect(itemInstructions).not.toContain("carrying tracks");
+    expect(itemInstructions.match(/Give priority to Lagos before wider market expansion\./g)).toHaveLength(1);
     expect(withoutPlaybook).not.toContain("Playbook");
   });
 });
@@ -211,6 +381,27 @@ describe("parseMusicManagerReadOutput", () => {
     expect(() => parseMusicManagerReadOutput(missingPosition)).toThrow(/position/);
     expect(() => parseMusicManagerReadOutput({ ...validOutput, body: 42 })).toThrow(/body/);
     expect(() => parseMusicManagerReadOutput("not an object")).toThrow(/object/);
+  });
+
+  it.each([
+    "position",
+    "managementRole",
+    "body",
+    "decision",
+    "avoid",
+    "watch",
+    "confidenceReason",
+  ] as const)("rejects a whitespace-only %s", (field) => {
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, [field]: " \n\t " })).toThrow(
+      new RegExp(field),
+    );
+  });
+
+  it.each(["label", "value", "meaning"] as const)("rejects a whitespace-only signal %s", (field) => {
+    const output = cloneValidOutput();
+    output.signals[0][field] = " \n\t ";
+
+    expect(() => parseMusicManagerReadOutput(output)).toThrow(new RegExp(`signals\\[0\\]\\.${field}`));
   });
 
   it("accepts only low, medium, or high confidence", () => {

@@ -185,7 +185,7 @@ export function buildMusicManagerReadInstructions(
 ): string {
   const instructions = [
     "You are the artist's senior Manager.",
-    "Deliver senior Manager judgment on the current position, management role, grounded interpretation, decision, avoid, watch, and calibrated confidence.",
+    "Deliver judgment on the current position, management role, grounded interpretation, decision, avoid, watch, and calibrated confidence.",
     "Put the conclusion first. Write the body as two or three natural paragraphs in plain, direct English.",
     "Use the exact requested subject, artist, markets, comparisons, and numbers supplied in context.",
     "Distinguish attention, discovery, conversion, and durable fandom when interpreting the evidence.",
@@ -255,12 +255,17 @@ function containsExactSubjectTitle(position: string, subjectTitle: string): bool
   const requestedTitle = subjectTitle.trim().toLocaleLowerCase();
   if (!requestedTitle) return false;
   const normalizedPosition = position.toLocaleLowerCase();
-  const titleStart = normalizedPosition.indexOf(requestedTitle);
-  if (titleStart < 0) return false;
+  let searchStart = 0;
+  while (searchStart < normalizedPosition.length) {
+    const titleStart = normalizedPosition.indexOf(requestedTitle, searchStart);
+    if (titleStart < 0) return false;
 
-  const before = normalizedPosition[titleStart - 1];
-  const after = normalizedPosition[titleStart + requestedTitle.length];
-  return !isWordCharacter(before) && !isWordCharacter(after);
+    const before = normalizedPosition[titleStart - 1];
+    const after = normalizedPosition[titleStart + requestedTitle.length];
+    if (!isWordCharacter(before) && !isWordCharacter(after)) return true;
+    searchStart = titleStart + 1;
+  }
+  return false;
 }
 
 function isWordCharacter(value: string | undefined): boolean {
