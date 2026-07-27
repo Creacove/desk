@@ -71,6 +71,20 @@ const workspace = {
 
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  });
 });
 
 afterEach(() => {
@@ -3992,7 +4006,9 @@ describe("Clean production prototype-match shell", () => {
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song No Read Song" }));
     const songRoom = screen.getByTestId("music-song-detail");
-    expect(within(songRoom).getByRole("button", { name: "Ask Manager for a read" })).toBeInTheDocument();
+    const songAskManagerButton = within(songRoom).getByRole("button", { name: "Ask Manager for a read" });
+    expect(songAskManagerButton).toHaveClass("bg-foreground", "text-background", "focus:ring-brand-accent/30");
+    expect(songAskManagerButton.closest(".metal-fx-root")).toBeNull();
     expect(songRoom).toHaveTextContent("No Manager read yet");
     expect(songRoom).toHaveTextContent("Ask Manager for a plain-English view of this song before making a move.");
     expect(songRoom).not.toHaveTextContent("Regenerate brief");
@@ -4001,7 +4017,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
     fireEvent.click(screen.getByRole("button", { name: "Open project No Read Project" }));
     const projectRoom = screen.getByTestId("music-project-detail");
-    expect(within(projectRoom).getByRole("button", { name: "Ask Manager for a project read" })).toBeInTheDocument();
+    const projectAskManagerButton = within(projectRoom).getByRole("button", { name: "Ask Manager for a project read" });
+    expect(projectAskManagerButton).toHaveClass("bg-foreground", "text-background", "focus:ring-brand-accent/30");
+    expect(projectAskManagerButton.closest(".metal-fx-root")).toBeNull();
     expect(projectRoom).toHaveTextContent("No Manager read yet");
     expect(projectRoom).toHaveTextContent("Ask Manager for a project-level view before turning this release into work.");
     expect(projectRoom).not.toHaveTextContent("Regenerate brief");

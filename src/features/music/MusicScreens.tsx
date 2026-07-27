@@ -1,8 +1,8 @@
 import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { ThinkingOrb } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
-import { MetalFx } from "metal-fx";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type {
@@ -681,19 +681,17 @@ function MusicSongDetail({
                     </span>
                   ) : null}
                 </div>
-                <MetalFx variant="button" preset="chromatic" paused={!briefPending}>
-                  <button
-                    type="button"
-                    aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
-                    onClick={onGenerateBrief}
-                    disabled={briefPending}
-                    className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:text-[11px]"
-                  >
-                    {briefPending ? <ThinkingOrb state="composing" size={20} theme="light" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
-                    <span className="sm:hidden">{briefPending ? "Asking..." : "Ask Manager"}</span>
-                    <span className="hidden sm:inline">{briefPending ? "Asking Manager..." : generateReadLabel}</span>
-                  </button>
-                </MetalFx>
+                <button
+                  type="button"
+                  aria-label={briefPending ? "Generating Manager read" : generateReadLabel}
+                  onClick={onGenerateBrief}
+                  disabled={briefPending}
+                  className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 font-ui text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:px-4 sm:text-[11px]"
+                >
+                  {briefPending ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                  <span className="sm:hidden">{briefPending ? "Asking..." : "Ask Manager"}</span>
+                  <span className="hidden sm:inline">{briefPending ? "Asking Manager..." : generateReadLabel}</span>
+                </button>
               </div>
               {briefError ? (
                 <p className="mb-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
@@ -1023,17 +1021,15 @@ function MusicProjectBrief({
             {managerReadStateLabel(project.managerReadState)}
           </span>
         </div>
-        <MetalFx variant="button" preset="chromatic" paused={!briefPending}>
-          <button
-            type="button"
-            onClick={onGenerateBrief}
-            disabled={briefPending}
-            className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {briefPending ? <ThinkingOrb state="composing" size={20} theme="light" /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
-            {briefPending ? "Asking Manager..." : generateReadLabel}
-          </button>
-        </MetalFx>
+        <button
+          type="button"
+          onClick={onGenerateBrief}
+          disabled={briefPending}
+          className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 font-ui text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40"
+        >
+          {briefPending ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+          {briefPending ? "Asking Manager..." : generateReadLabel}
+        </button>
       </div>
 
       {briefError ? (
