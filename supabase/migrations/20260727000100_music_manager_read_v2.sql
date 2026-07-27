@@ -48,7 +48,18 @@ where subject_id is not null
   and classification = 'music_manager_read_v2'
   and status in ('queued', 'running');
 
-create or replace function public.activate_music_manager_read_v2(target_output_id uuid)
+create or replace function public.finalize_music_manager_read_v2(
+  target_output_id uuid,
+  target_usage_id uuid,
+  target_run_status public.run_status,
+  target_steps_payload jsonb,
+  target_input_tokens integer,
+  target_cached_input_tokens integer,
+  target_output_tokens integer,
+  target_reasoning_tokens integer,
+  target_provider_request_count integer,
+  target_usage_metadata jsonb
+)
 returns uuid
 language plpgsql
 security invoker
@@ -57,8 +68,60 @@ as $$
 declare
   initial_output public.manager_outputs%rowtype;
   next_output public.manager_outputs%rowtype;
+  synthesis_run public.manager_synthesis_runs%rowtype;
+  usage_event public.ai_run_usage_events%rowtype;
   previous_output_id uuid;
+  expected_usage_status public.usage_status;
+  run_was_terminal boolean;
+  usage_was_terminal boolean;
 begin
+  if target_run_status is null
+    or target_run_status not in ('completed', 'completed_with_limits')
+  then
+    raise exception 'Music Manager Read finalization requires a completed run status.';
+  end if;
+
+  expected_usage_status := case target_run_status
+    when 'completed' then 'succeeded'::public.usage_status
+    else 'partial'::public.usage_status
+  end;
+
+  if target_input_tokens is null or target_input_tokens < 0
+    or target_cached_input_tokens is null or target_cached_input_tokens < 0
+    or target_output_tokens is null or target_output_tokens < 0
+    or target_reasoning_tokens is null or target_reasoning_tokens < 0
+    or target_provider_request_count is null or target_provider_request_count < 0
+  then
+    raise exception 'Music Manager Read usage counters must be nonnegative.';
+  end if;
+
+  if target_cached_input_tokens > target_input_tokens then
+    raise exception 'Cached input tokens cannot exceed input tokens.';
+  end if;
+
+  if target_steps_payload is null
+    or jsonb_typeof(target_steps_payload) <> 'array'
+  then
+    raise exception 'Terminal steps must be an array.';
+  end if;
+
+  if not exists (
+      select 1
+      from jsonb_array_elements(target_steps_payload) as step
+      where step ->> 'step' = 'output_activation'
+        and step ->> 'status' = 'completed'
+    )
+  then
+    raise exception 'Terminal steps must include completed output activation.';
+  end if;
+
+  if target_usage_metadata is null
+    or jsonb_typeof(target_usage_metadata) <> 'object'
+    or octet_length(target_usage_metadata::text) > 8192
+  then
+    raise exception 'Music Manager Read usage metadata must be a bounded object.';
+  end if;
+
   select *
   into initial_output
   from public.manager_outputs
@@ -69,7 +132,7 @@ begin
   end if;
 
   if initial_output.schema_version <> 'music-manager-read-v2' then
-    raise exception 'Only Music Manager Read v2 outputs can be activated.';
+    raise exception 'Only Music Manager Read v2 outputs can be finalized.';
   end if;
 
   if initial_output.subject_id is null then
@@ -120,7 +183,7 @@ begin
   end if;
 
   if next_output.schema_version <> 'music-manager-read-v2' then
-    raise exception 'Only Music Manager Read v2 outputs can be activated.';
+    raise exception 'Only Music Manager Read v2 outputs can be finalized.';
   end if;
 
   if next_output.subject_id is null then
@@ -140,12 +203,105 @@ begin
     or next_output.output_type is distinct from initial_output.output_type
     or next_output.subject_type is distinct from initial_output.subject_type
     or next_output.subject_id is distinct from initial_output.subject_id
+    or next_output.schema_version is distinct from initial_output.schema_version
+    or next_output.created_from_run_id is distinct from initial_output.created_from_run_id
   then
-    raise exception 'Manager output identity changed during activation.';
+    raise exception 'Manager output identity changed during finalization.';
   end if;
 
-  if next_output.is_current then
+  if next_output.created_from_run_id is null then
+    raise exception 'Music Manager Read output requires a synthesis run.';
+  end if;
+
+  select *
+  into synthesis_run
+  from public.manager_synthesis_runs
+  where id = next_output.created_from_run_id
+  for update;
+
+  if not found then
+    raise exception 'Music Manager Read synthesis run was not found.';
+  end if;
+
+  if next_output.created_from_run_id is distinct from synthesis_run.id
+    or synthesis_run.classification is null
+    or synthesis_run.classification <> 'music_manager_read_v2'
+    or synthesis_run.account_id is distinct from next_output.account_id
+    or synthesis_run.artist_workspace_id is distinct from next_output.artist_workspace_id
+    or synthesis_run.artist_id is distinct from next_output.artist_id
+    or synthesis_run.subject_type is distinct from next_output.subject_type
+    or synthesis_run.subject_id is distinct from next_output.subject_id
+  then
+    raise exception 'Synthesis run does not match the staged Music Manager Read output.';
+  end if;
+
+  select *
+  into usage_event
+  from public.ai_run_usage_events
+  where id = target_usage_id
+  for update;
+
+  if not found then
+    raise exception 'Music Manager Read usage event was not found.';
+  end if;
+
+  if usage_event.manager_synthesis_run_id is distinct from synthesis_run.id
+    or usage_event.account_id is distinct from next_output.account_id
+    or usage_event.artist_workspace_id is distinct from next_output.artist_workspace_id
+    or usage_event.artist_id is distinct from next_output.artist_id
+    or usage_event.subject_type is distinct from next_output.subject_type
+    or usage_event.subject_id is distinct from next_output.subject_id
+    or usage_event.workflow_key <> 'music_readiness_run'
+    or usage_event.run_type <> 'manager_synthesis'
+    or usage_event.operation_key <> 'music_manager_read'
+  then
+    raise exception 'Usage event does not match the staged Music Manager Read output.';
+  end if;
+
+  run_was_terminal := synthesis_run.status in ('completed', 'completed_with_limits');
+  usage_was_terminal := usage_event.status in ('succeeded', 'partial');
+
+  if run_was_terminal then
+    if synthesis_run.status is distinct from target_run_status
+      or synthesis_run.steps_payload is distinct from target_steps_payload
+      or synthesis_run.completed_at is null
+      or synthesis_run.error is not null
+    then
+      raise exception 'Terminal synthesis run does not match this finalization replay.';
+    end if;
+  elsif synthesis_run.status not in ('queued', 'running') then
+    raise exception 'Synthesis run is not eligible for successful finalization.';
+  end if;
+
+  if usage_was_terminal then
+    if usage_event.status is distinct from expected_usage_status
+      or usage_event.input_tokens is distinct from target_input_tokens
+      or usage_event.cached_input_tokens is distinct from target_cached_input_tokens
+      or usage_event.output_tokens is distinct from target_output_tokens
+      or usage_event.reasoning_tokens is distinct from target_reasoning_tokens
+      or usage_event.provider_request_count is distinct from target_provider_request_count
+      or usage_event.metadata is distinct from target_usage_metadata
+      or usage_event.completed_at is null
+      or usage_event.failure_reason is not null
+    then
+      raise exception 'Terminal usage event does not match this finalization replay.';
+    end if;
+  elsif usage_event.status <> 'started' then
+    raise exception 'Usage event is not eligible for successful finalization.';
+  end if;
+
+  if run_was_terminal is distinct from usage_was_terminal then
+    raise exception 'Run and usage terminal state do not match.';
+  end if;
+
+  if run_was_terminal then
+    if not next_output.is_current then
+      raise exception 'Finalized output is no longer current.';
+    end if;
+
     return next_output.id;
+  elsif next_output.is_current then
+    raise exception 'A staged output must not be current before finalization.';
   end if;
 
   select id
@@ -186,12 +342,33 @@ begin
     and subject_type = next_output.subject_type
     and subject_id = next_output.subject_id;
 
+  update public.manager_synthesis_runs
+  set
+    status = target_run_status,
+    steps_payload = target_steps_payload,
+    completed_at = now(),
+    error = null
+  where id = synthesis_run.id;
+
+  update public.ai_run_usage_events
+  set
+    status = expected_usage_status,
+    input_tokens = target_input_tokens,
+    cached_input_tokens = target_cached_input_tokens,
+    output_tokens = target_output_tokens,
+    reasoning_tokens = target_reasoning_tokens,
+    provider_request_count = target_provider_request_count,
+    completed_at = now(),
+    failure_reason = null,
+    metadata = target_usage_metadata
+  where id = usage_event.id;
+
   return next_output.id;
 end;
 $$;
 
-revoke execute on function public.activate_music_manager_read_v2(uuid)
+revoke execute on function public.finalize_music_manager_read_v2(uuid, uuid, public.run_status, jsonb, integer, integer, integer, integer, integer, jsonb)
 from public, anon;
 
-grant execute on function public.activate_music_manager_read_v2(uuid)
+grant execute on function public.finalize_music_manager_read_v2(uuid, uuid, public.run_status, jsonb, integer, integer, integer, integer, integer, jsonb)
 to authenticated, service_role;
