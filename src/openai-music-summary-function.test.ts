@@ -1,353 +1,293 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { checkBannedVisibleMusicTerms, checkSourceLine, parseManagerReadOutput, stripBannedVisibleMusicTerms } from "../supabase/functions/_shared/openaiManagerRead";
+import {
+  MUSIC_MANAGER_READ_SCHEMA_VERSION,
+  buildMusicManagerReadInstructions,
+  buildMusicManagerReadRepairInstructions,
+  musicManagerReadJsonSchema,
+  parseMusicManagerReadOutput,
+  validateMusicManagerReadOutput,
+} from "../supabase/functions/_shared/openaiMusicManagerRead";
 
-const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "generate-music-summary", "index.ts"), "utf8");
-const promptSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "openaiManagerRead.ts"), "utf8");
+const allowedEvidenceIds = new Set(["ev-streams", "ev-tiktok", "ev-market"]);
 
-describe("OpenAI music Manager Read generation function", () => {
-  it("authenticates the Supabase user and checks account membership before model calls", () => {
-    expect(functionSource).toContain("Deno.serve");
-    expect(functionSource).toContain("Authorization");
-    expect(functionSource).toContain("auth.getUser()");
-    expect(functionSource).toContain("is_account_member");
+const body = [
+  "Jam is the clearest lead-attention asset in the current release picture. Its 5.2M recent streams show meaningful listening scale, while the 19M-view top TikTok clip shows that discovery is reaching well beyond the existing audience. A #14 Lagos rank gives the activity a useful market centre rather than leaving it as broad platform noise. Together, those facts put Jam ahead as the record that can open the campaign conversation, but they do not yet prove that casual discovery is becoming durable fandom.",
+  "The management priority is to concentrate the next decision around Jam without treating every large number as the same kind of demand. Short-form reach is attention, the Lagos chart position is local traction, and streams are closer to consumption; the team should connect those layers before widening spend. Keep the story specific to the record and market, then watch whether the next reporting window holds listening and rank as the TikTok clip ages.",
+].join("\n\n");
 
-    const authIndex = functionSource.indexOf("auth.getUser()");
-    const openAiIndex = functionSource.indexOf("callOpenAIManagerRead");
-    expect(authIndex).toBeGreaterThan(-1);
-    expect(openAiIndex).toBeGreaterThan(authIndex);
+const validOutput = {
+  position: "Jam is the clearest lead-attention record in the current release picture.",
+  managementRole: "Lead attention asset",
+  body,
+  decision: "Concentrate the next campaign decision on Jam and connect its discovery reach to listening in Lagos.",
+  avoid: "Do not spread spend evenly across the release before Jam's attention converts into sustained consumption.",
+  watch: "Watch whether streams and the Lagos rank hold as the leading TikTok clip ages.",
+  confidence: "high" as const,
+  confidenceReason: "Three independent public signals point to the same record and market.",
+  signals: [
+    {
+      label: "Recent streams",
+      value: "5.2M",
+      meaning: "Listening scale supports Jam as more than a short-form moment.",
+      evidenceIds: ["ev-streams"],
+    },
+    {
+      label: "Top TikTok clip",
+      value: "19M",
+      meaning: "Short-form discovery is the largest attention signal.",
+      evidenceIds: ["ev-tiktok"],
+    },
+    {
+      label: "Lagos rank",
+      value: "#14",
+      meaning: "The record has a specific market centre for the next decision.",
+      evidenceIds: ["ev-market"],
+    },
+  ],
+  evidenceIds: ["ev-streams", "ev-tiktok", "ev-market"],
+};
+
+const validationContext = {
+  subjectType: "music_item" as const,
+  subjectTitle: "Jam",
+  allowedEvidenceIds,
+};
+
+describe("Music Manager Read v2 contract", () => {
+  it("uses the v2 schema version and parses the exact complete payload", () => {
+    expect(MUSIC_MANAGER_READ_SCHEMA_VERSION).toBe("music-manager-read-v2");
+    expect(parseMusicManagerReadOutput(validOutput)).toEqual(validOutput);
   });
 
-  it("allows service-role invocations for controlled backfills", () => {
-    expect(functionSource).toContain("isServiceRoleInvocation");
-    expect(functionSource).toContain('readBearerJwtRole(authHeader) === "service_role"');
-    expect(functionSource).toContain("X-Chartmetric-Backfill-Token");
-    expect(functionSource).toContain('Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN")');
-    expect(functionSource).toContain('requireEnv("SUPABASE_SERVICE_ROLE_KEY")');
-    expect(functionSource).toContain("if (!isServiceRoleInvocation)");
+  it("defines a strict structured-output schema for every v2 field", () => {
+    expect(musicManagerReadJsonSchema.name).toBe("music_manager_read_v2");
+    expect(musicManagerReadJsonSchema.strict).toBe(true);
+    expect(musicManagerReadJsonSchema.schema.additionalProperties).toBe(false);
+    expect(musicManagerReadJsonSchema.schema.required).toEqual([
+      "position",
+      "managementRole",
+      "body",
+      "decision",
+      "avoid",
+      "watch",
+      "confidence",
+      "confidenceReason",
+      "signals",
+      "evidenceIds",
+    ]);
+    expect(musicManagerReadJsonSchema.schema.properties.signals.minItems).toBe(3);
+    expect(musicManagerReadJsonSchema.schema.properties.signals.maxItems).toBe(6);
+    expect(musicManagerReadJsonSchema.schema.properties.signals.items.additionalProperties).toBe(false);
   });
 
-  it("builds the read packet from saved Music and evidence records instead of client-supplied facts", () => {
-    expect(functionSource).toContain('from("music_items")');
-    expect(functionSource).toContain('from("music_projects")');
-    expect(functionSource).toContain('from("music_project_items")');
-    expect(functionSource).toContain('from("music_identifiers")');
-    expect(functionSource).toContain('from("evidence_items")');
-    expect(functionSource).toContain(".limit(150)");
-    expect(functionSource).toContain("buildManagerReadPacket");
-    expect(functionSource).toContain("loadArtistProfile");
-    expect(functionSource).toContain("loadRelatedRecordContext");
-    expect(functionSource).toContain("loadLatestManagerIntelligencePacket");
-    expect(functionSource).toContain("packetAssetReads");
-    expect(functionSource).toContain("packetSubjectRead");
-    expect(functionSource).toContain('from("manager_intelligence_packets")');
-    expect(functionSource).toContain("deriveRecordInsights");
-    expect(functionSource).toContain("relatedRecords");
-    expect(functionSource).toContain("derivedInsights");
-    expect(functionSource).not.toContain("input.facts");
-    expect(functionSource).not.toContain("input.evidence");
-    expect(functionSource).not.toContain("input.managerRead");
-  });
-
-  it("uses Responses API structured output and persists the generated read with provenance", () => {
-    expect(functionSource).toContain("/v1/responses");
-    expect(functionSource).toContain("json_schema");
-    expect(functionSource).toContain("manager_synthesis_runs");
-    expect(functionSource).toContain("ai_run_usage_events");
-    expect(functionSource).toContain('trigger_type: "evidence_triggered"');
-    expect(functionSource).toContain('workflow_key: "music_readiness_run"');
-    expect(functionSource).toContain('run_type: "manager_synthesis"');
-    expect(functionSource).toContain('status: "succeeded"');
-    expect(functionSource).toContain("failure_reason");
-    expect(functionSource).toContain("operating_events");
-    expect(functionSource).toContain("persistGeneratedRead");
-    expect(functionSource).toContain("manager_outputs");
-    expect(functionSource).toContain("callOpenAIManagerReadWithRetry");
-    expect(functionSource).toContain("isRetryableOpenAIError");
-    expect(functionSource).toContain("await delay(openAiRetryDelayMs(attempt))");
-    expect(promptSource).toContain("situationLine");
-    expect(promptSource).toContain("watchNext");
-    expect(promptSource).toContain("generationState");
-  });
-
-  it("stores generated song and project reads as manager_outputs instead of canonical music metadata", () => {
-    expect(functionSource).toContain('from("manager_outputs")');
-    expect(functionSource).toContain("song_manager_read");
-    expect(functionSource).toContain("project_manager_read");
-    expect(functionSource).toContain("subject_type: input.subjectType");
-    expect(functionSource).toContain("subject_id: input.subjectId");
-    expect(functionSource).toContain("render_json: output");
-    expect(functionSource).not.toContain("fallbackManagerReadFromPacket");
-    expect(functionSource).not.toContain("persistFallbackGeneratedRead");
-    expect(functionSource).not.toContain("completed_with_fallback");
-    expect(functionSource).not.toContain("music_manager_read_fallback_generated");
-    expect(functionSource).toContain("retireCurrentManagerOutput");
-    expect(functionSource).toContain("is_current: false");
-    expect(functionSource).not.toContain("nextMetadata");
-  });
-
-  it("retries real OpenAI and network failures instead of completing with local prose", () => {
-    expect(functionSource).toContain("callOpenAIManagerReadWithRetry");
-    expect(functionSource).toContain("const maxAttempts = 4");
-    expect(functionSource).toContain("isRetryableOpenAIError");
-    expect(functionSource).toContain("too much compute");
-    expect(functionSource).toContain("network|fetch|timed out|timeout|connection");
-    expect(functionSource).toContain("OpenAI manager read output");
-    expect(functionSource).toContain("const output = await callOpenAIManagerReadWithRetry");
-  });
-
-  it("rejects a brief that substitutes a comparison track for the requested song", () => {
-    expect(functionSource).toContain("subjectTitleMissing");
-    expect(functionSource).toContain("does not name the exact requested subject");
-    expect(promptSource).toContain("name the exact requested song or project title");
-    expect(promptSource).toContain("Never substitute a comparison track");
-  });
-
-  it("rejects a headline that contains only the requested title", () => {
-    expect(functionSource).toContain("subjectHeadlineTooThin");
-    expect(functionSource).toContain("does not include a specific management judgment");
-    expect(promptSource).toContain("Do not return the title alone");
-  });
-
-  it("rejects unrelated writing-system characters that are absent from the source packet", () => {
-    expect(functionSource).toContain("unexpectedScriptCharacter");
-    expect(functionSource).toContain("findUnexpectedScriptCharacter");
-    expect(functionSource).toContain("an unrelated writing-system character");
-    expect(promptSource).toContain("Do not introduce characters from an unrelated writing system");
-  });
-
-  it("builds a compact OpenAI model packet instead of sending the full Manager Intelligence packet", () => {
-    expect(functionSource).toContain("buildManagerReadModelPacket");
-    expect(functionSource).toContain("MAX_MANAGER_READ_MODEL_PACKET_CHARS");
-    expect(functionSource).toContain("packetSubjectRead");
-    expect(functionSource).toContain("packetMissionSeed");
-    expect(functionSource).not.toContain('{ role: "user", content: JSON.stringify(packet) }');
-    expect(promptSource).toContain("When packetSubjectRead or packetAssetReads exists");
-  });
-
-  it("uses a valid operating-event actor and does not fail a completed read when telemetry fails", () => {
-    expect(functionSource).toContain('actor_type: "manager"');
-    expect(functionSource).not.toContain('actor_type: "manager_ai"');
-    expect(functionSource).toContain("writeOperatingEventSafe");
-  });
-
-  it("prompts as a human Manager while keeping provider attribution out of the main read", () => {
-    expect(promptSource).toContain("You are the artist's senior manager");
-    expect(promptSource).toContain("Write in first person as the Manager");
-    expect(promptSource).toContain("180 to 260 words");
-    expect(promptSource).toContain("managerRead: { type: \"string\", maxLength: 1800 }");
-    expect(promptSource).toContain("36 words maximum");
-    expect(promptSource).toContain("Do not say I will demand");
-    expect(promptSource).toContain("Do not dump credits, copyright notices, label text");
-    expect(promptSource).toContain("Do not say Chartmetric found");
-    expect(promptSource).toContain("Do not say Spotify confirms");
-    expect(promptSource).toContain("Do not call the whole packet catalog-only");
-    expect(promptSource).toContain("Do not use the words ChatGPT");
-    expect(promptSource).toContain("Rank by commercial usefulness");
-    expect(promptSource).toContain("Never expose raw names like provider_window");
-    expect(promptSource).toContain("not just a request for more data");
-    expect(promptSource).toContain("Do not say movement, signal, activity, or momentum unless");
-    expect(promptSource).toContain("Provider names belong in the internal audit fields");
-    expect(promptSource).toContain("exact numbers, names, dates, placements, ranks, and trends");
-    expect(promptSource).toContain("basic English");
-    expect(promptSource).toContain("what happened, why it matters, and what to do next");
-    expect(promptSource).toContain("Do not use analytics jargon");
-    expect(promptSource).toContain("Record Intelligence");
-    expect(promptSource).toContain("record role");
-    expect(promptSource).toContain("When packetSubjectRead or packetAssetReads exists");
-    expect(promptSource).toContain("Do not lead with missing data");
-    expect(promptSource).toContain("If a sentence could be said to another record");
-    expect(promptSource).toContain("The final sentence of the Manager Read must be today's practical move");
-    expect(promptSource).toContain('MANAGER_READ_SOURCE_LINE = "Prepared from the record details and audience signals I can already see."');
-    expect(promptSource).toContain("The sourceLine must be exactly:");
-    expect(promptSource).toContain("Do not put missing proof, unavailable private documents, source limits, or vendor names into Record Intelligence.");
-    expect(promptSource).toContain("Record Intelligence metric values are table cells, not sentences");
-    expect(promptSource).not.toContain("third-party intelligence shows attention");
-  });
-
-  it("prompts project briefs as release-level reads with tracklist and focus-track judgment", () => {
-    expect(promptSource).toContain("For music_project subjects");
-    expect(promptSource).toContain("release-level brief");
-    expect(promptSource).toContain("tracklist");
-    expect(promptSource).toContain("focus track");
-    expect(promptSource).toContain("release readiness");
-    expect(promptSource).toContain("Project Intelligence");
-  });
-
-  it("flags backend, vendor, and missing-proof language from visible song brief fields", () => {
-    const payload = {
-      situationLine: "ChatGPT says the track has private conversion data missing.",
-      headline: "Chartmetric track report",
-      managerRead: "Chartmetric third-party provider data says private saves and source-of-stream are still missing.",
-      nextMove: "Check conversion proof.",
-      watchNext: "Wait for API evidence.",
-      generationState: "fresh",
-      whatMatters: [],
-      doNotDoYet: [],
-      missingProof: [],
-      confidence: "medium",
-      evidenceIdsUsed: ["evidence-1"],
-      sourcePanelNote: "Technical source note.",
-      intelligenceSnapshot: [
-        {
-          title: "Record Intelligence",
-          insight: "Provider data shows movement.",
-          metrics: [{ label: "Streams", value: "6.2M", context: "third-party metric", evidenceIds: ["evidence-1"] }],
-        },
-      ],
-      snapshotSummary: "API-backed attention summary.",
-      claimAudit: [{ claim: "The record has public reach.", evidenceIds: ["evidence-1"], limitation: "Public attention only." }],
-      sourceLine: "Based on saved track metadata, public attention signals, and source limits.",
-    };
-
-    const output = parseManagerReadOutput(payload);
-
-    expect(checkBannedVisibleMusicTerms(output)).toBe("ChatGPT");
-  });
-
-  it("does not block generation when provider language only appears in non-visible legacy fields", () => {
-    const payload = {
-      situationLine: "Jam is the current public-pressure record.",
-      headline: "Jam has the clearest public-pressure read.",
-      managerRead:
-        "Jam is the record with the clearest public pressure right now: 19M views on the top TikTok clip, 8.1M YouTube views, and 4.8M playlist reach all point to the same song. Today, I would make Jam the first record to inspect and decide whether short-form discovery or playlist support should lead the next team action.",
-      nextMove: "Make Jam the first record to inspect and compare short-form discovery against playlist support.",
-      watchNext: "Watch whether TikTok and YouTube keep pointing to the same record.",
-      generationState: "fresh",
-      whatMatters: ["Provider details are available in the audit panel."],
-      doNotDoYet: ["Do not expose provider names in the main read."],
-      missingProof: ["Provider-side private proof is not connected."],
-      confidence: "medium",
-      evidenceIdsUsed: ["evidence-1"],
-      sourcePanelNote: "Provider names and limitations are available for audit.",
-      intelligenceSnapshot: [
-        {
-          title: "Record Intelligence",
-          insight: "Jam has public pressure across short-form, video, and playlist behavior.",
-          metrics: [{ label: "Top TikTok clip", value: "19M", context: "views on the top public clip", evidenceIds: ["evidence-1"] }],
-        },
-      ],
-      snapshotSummary: "Jam has public pressure across short-form, video, and playlist behavior.",
-      claimAudit: [{ claim: "Jam has public pressure.", evidenceIds: ["evidence-1"], limitation: "Public attention only." }],
-      sourceLine: "Prepared from the record details and audience signals I can already see.",
-    };
-
-    const output = parseManagerReadOutput(payload);
-
-    expect(checkBannedVisibleMusicTerms(output)).toBeNull();
-    expect(checkSourceLine(output)).toBe(true);
-  });
-
-  it("keeps empty Record Intelligence evidence IDs honest instead of inventing a source packet", () => {
-    const payload = {
-      situationLine: "IMMORTAL is a released EP with the tracklist ready for a focus-track read.",
-      headline: "IMMORTAL needs a focus-track decision.",
-      managerRead:
-        "IMMORTAL is useful as a release frame because the mapped tracklist gives the team enough shape to choose a focus track before treating all songs equally. The practical read is that the EP should organize attention around the song with the clearest present behavior, then use the rest of the project as support instead of asking every track to carry the same campaign.",
-      nextMove: "Use IMMORTAL as the release frame, then choose the first focus track from the mapped tracklist.",
-      watchNext: "Watch which mapped song keeps carrying the release read.",
-      generationState: "fresh",
-      whatMatters: [],
-      doNotDoYet: [],
-      missingProof: [],
-      confidence: "medium",
-      evidenceIdsUsed: [],
-      sourcePanelNote: "Prepared from saved source packet context.",
-      intelligenceSnapshot: [
-        {
-          title: "Project Intelligence",
-          insight: "The mapped tracklist is enough to force a focus-track decision.",
-          metrics: [{ label: "Mapped songs", value: "6", context: "songs in the release frame", evidenceIds: [] }],
-        },
-      ],
-      snapshotSummary: "IMMORTAL has a release frame and needs the first focus-track choice.",
-      claimAudit: [{ claim: "IMMORTAL has a mapped release frame.", evidenceIds: [], limitation: "Source packet context, not private account proof." }],
-      sourceLine: "Prepared from the record details and audience signals I can already see.",
-    };
-
-    const output = parseManagerReadOutput(payload);
-
-    expect(output.evidenceIdsUsed).toEqual([]);
-    expect(output.intelligenceSnapshot[0]?.metrics[0]?.evidenceIds).toEqual([]);
-    expect(output.claimAudit[0]?.evidenceIds).toEqual([]);
-    expect(JSON.stringify(output)).not.toContain("source-packet");
-  });
-
-  it("requires the song brief source line to sound manager-owned instead of source-mechanical", () => {
-    const validPayload = {
-      situationLine: "Jam is the current public-pressure record.",
-      headline: "Jam has the clearest public-pressure read.",
-      managerRead:
-        "Jam is the record with the clearest public pressure right now: 19M views on the top TikTok clip and 8.1M YouTube views point to the same song. I would make Jam the first record to inspect and decide whether short-form discovery or video demand should lead the next team action.",
-      nextMove: "Make Jam the first record to inspect and compare short-form discovery against video demand.",
-      watchNext: "Watch whether TikTok and YouTube keep pointing to the same record.",
-      generationState: "fresh",
-      whatMatters: [],
-      doNotDoYet: [],
-      missingProof: [],
-      confidence: "medium",
-      evidenceIdsUsed: ["evidence-1"],
-      sourcePanelNote: "Technical source note.",
-      intelligenceSnapshot: [
-        {
-          title: "Record Intelligence",
-          insight: "Jam has public pressure across short-form and video behavior.",
-          metrics: [{ label: "Top TikTok clip", value: "19M", context: "views on the top public clip", evidenceIds: ["evidence-1"] }],
-        },
-      ],
-      snapshotSummary: "Jam has public pressure across short-form and video behavior.",
-      claimAudit: [{ claim: "Jam has public pressure.", evidenceIds: ["evidence-1"], limitation: "Public attention only." }],
-      sourceLine: "Prepared from the record details and audience signals I can already see.",
-    };
-    const mechanicalPayload = {
-      ...validPayload,
-      sourceLine: "Based on saved track details, public attention signals, and source limits.",
-    };
-
-    expect(checkSourceLine(parseManagerReadOutput(validPayload))).toBe(true);
-    expect(checkSourceLine(parseManagerReadOutput(mechanicalPayload))).toBe(false);
-  });
-
-  it("strips visible vendor wording into manager-safe language without showing removal placeholders", () => {
-    const payload = {
-      situationLine: "Chartmetric says Jam has third-party reach.",
-      headline: "Provider read for Jam",
-      managerRead: "Chartmetric provider data says Jam has 19M TikTok views, but private saves are still missing.",
-      nextMove: "Use the API read.",
-      watchNext: "Check source-of-stream later.",
-      generationState: "fresh",
-      whatMatters: [],
-      doNotDoYet: [],
-      missingProof: [],
-      confidence: "medium",
-      evidenceIdsUsed: ["evidence-1"],
-      sourcePanelNote: "Technical source note.",
-      intelligenceSnapshot: [
-        {
-          title: "Record Intelligence",
-          insight: "Third-party data shows movement.",
-          metrics: [{ label: "Provider metric", value: "19M", context: "Chartmetric public metric", evidenceIds: ["evidence-1"] }],
-        },
-      ],
-      snapshotSummary: "API-backed attention summary.",
-      claimAudit: [{ claim: "Jam has public reach.", evidenceIds: ["evidence-1"], limitation: "Public attention only." }],
-      sourceLine: "Prepared from the record details and audience signals I can already see.",
-    };
-
-    const stripped = stripBannedVisibleMusicTerms(parseManagerReadOutput(payload));
-    const visible = JSON.stringify({
-      situationLine: stripped.situationLine,
-      headline: stripped.headline,
-      managerRead: stripped.managerRead,
-      nextMove: stripped.nextMove,
-      watchNext: stripped.watchNext,
-      intelligenceSnapshot: stripped.intelligenceSnapshot,
-      snapshotSummary: stripped.snapshotSummary,
-      sourceLine: stripped.sourceLine,
+  it("does not preserve any removed legacy keys", () => {
+    const parsed = parseMusicManagerReadOutput({
+      ...validOutput,
+      headline: "legacy",
+      situationLine: "legacy",
+      nextMove: "legacy",
+      watchNext: "legacy",
+      generationState: "legacy",
+      whatMatters: ["legacy"],
+      doNotDoYet: ["legacy"],
+      missingProof: ["legacy"],
+      evidenceIdsUsed: ["legacy"],
+      sourcePanelNote: "legacy",
+      sourceLine: "legacy",
+      snapshotSummary: "legacy",
+      intelligenceSnapshot: ["legacy"],
+      claimAudit: ["legacy"],
     });
 
-    expect(checkBannedVisibleMusicTerms(stripped)).toBeNull();
-    expect(visible).not.toContain("[removed]");
+    const serialized = JSON.stringify(parsed);
+    for (const removedKey of [
+      "headline",
+      "situationLine",
+      "nextMove",
+      "watchNext",
+      "generationState",
+      "whatMatters",
+      "doNotDoYet",
+      "missingProof",
+      "evidenceIdsUsed",
+      "sourcePanelNote",
+      "sourceLine",
+      "snapshotSummary",
+      "intelligenceSnapshot",
+      "claimAudit",
+    ]) {
+      expect(serialized).not.toContain(`"${removedKey}"`);
+    }
+  });
+
+  it("returns useful exact violations for a substituted subject and invented evidence", () => {
+    expect(validateMusicManagerReadOutput(validOutput, validationContext)).toEqual([]);
+
+    const invalidOutput = {
+      ...validOutput,
+      position: "Another Song is the clearest lead-attention record.",
+      evidenceIds: [...validOutput.evidenceIds, "ev-invented"],
+    };
+
+    expect(validateMusicManagerReadOutput(invalidOutput, validationContext)).toEqual([
+      'position must name the exact subject title "Jam".',
+      'evidenceIds contains unsupported evidence ID "ev-invented".',
+    ]);
+  });
+
+  it("rejects visible provider and internal terminology", () => {
+    const invalidOutput = {
+      ...validOutput,
+      body: validOutput.body.replace("Its 5.2M", "The Chartmetric API reports 5.2M"),
+    };
+
+    expect(validateMusicManagerReadOutput(invalidOutput, validationContext)).toContain(
+      'body contains forbidden provider or internal terminology "Chartmetric".',
+    );
+  });
+
+  it("rejects meaningfully repeated decision, avoid, and watch text", () => {
+    const repeated = "Keep Jam as the lead record and focus the next campaign decision on Lagos listening.";
+    const invalidOutput = {
+      ...validOutput,
+      decision: repeated,
+      avoid: repeated,
+      watch: repeated,
+    };
+
+    expect(validateMusicManagerReadOutput(invalidOutput, validationContext)).toEqual(
+      expect.arrayContaining([
+        "decision and avoid must be meaningfully distinct.",
+        "decision and watch must be meaningfully distinct.",
+        "avoid and watch must be meaningfully distinct.",
+      ]),
+    );
+  });
+
+  it("builds repair instructions from exact violations while preserving valid content", () => {
+    const violations = [
+      'position must name the exact subject title "Jam".',
+      'evidenceIds contains unsupported evidence ID "ev-invented".',
+    ];
+    const instructions = buildMusicManagerReadRepairInstructions(violations);
+
+    for (const violation of violations) expect(instructions).toContain(violation);
+    expect(instructions).toContain("Correct only these violations");
+    expect(instructions).toContain("Preserve all already-valid content");
+    expect(instructions).toContain("Return the full music_manager_read_v2 schema again");
+  });
+
+  it("keeps the main prompt focused on senior Manager judgment and natural prose", () => {
+    const instructions = buildMusicManagerReadInstructions("music_item", "");
+
+    expect(instructions).toContain("artist's senior Manager");
+    expect(instructions).toContain("current position");
+    expect(instructions).toContain("two or three natural paragraphs");
+    expect(instructions).toContain("5.2M");
+    expect(instructions).toContain("decision, avoid, and watch");
+    expect(instructions).toContain("Do not substitute a comparison");
+    expect(instructions).toContain("attention, discovery, conversion, and durable fandom");
+    expect(instructions).not.toContain("sourceLine must be exactly");
+    expect(instructions).not.toContain("headline");
+    expect(instructions).not.toContain("watchNext");
+  });
+
+  it("adds trimmed playbook instructions exactly once and omits empty playbooks", () => {
+    const playbook = "  Give priority to Lagos before wider market expansion.  ";
+    const withPlaybook = buildMusicManagerReadInstructions("music_project", playbook);
+    const withoutPlaybook = buildMusicManagerReadInstructions("music_project", "   ");
+
+    expect(withPlaybook.match(/Give priority to Lagos before wider market expansion\./g)).toHaveLength(1);
+    expect(withPlaybook).toContain("reason across the release");
+    expect(withPlaybook).toContain("carrying tracks");
+    expect(withoutPlaybook).not.toContain("Playbook");
+  });
+});
+
+describe("parseMusicManagerReadOutput", () => {
+  it("throws when a required field is missing or has the wrong type", () => {
+    const { position: _position, ...missingPosition } = validOutput;
+
+    expect(() => parseMusicManagerReadOutput(missingPosition)).toThrow(/position/);
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, body: 42 })).toThrow(/body/);
+    expect(() => parseMusicManagerReadOutput("not an object")).toThrow(/object/);
+  });
+
+  it("accepts only low, medium, or high confidence", () => {
+    for (const confidence of ["low", "medium", "high"] as const) {
+      expect(parseMusicManagerReadOutput({ ...validOutput, confidence }).confidence).toBe(confidence);
+    }
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, confidence: "unknown" })).toThrow(/confidence/);
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, confidence: 1 })).toThrow(/confidence/);
+  });
+
+  it("requires three to six complete signal objects", () => {
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, signals: validOutput.signals.slice(0, 2) })).toThrow(/signals/);
+    expect(() =>
+      parseMusicManagerReadOutput({
+        ...validOutput,
+        signals: [...validOutput.signals, ...validOutput.signals, validOutput.signals[0]],
+      }),
+    ).toThrow(/signals/);
+    expect(() =>
+      parseMusicManagerReadOutput({
+        ...validOutput,
+        signals: validOutput.signals.map((signal, index) => {
+          if (index !== 0) return signal;
+          const { meaning: _meaning, ...incomplete } = signal;
+          return incomplete;
+        }),
+      }),
+    ).toThrow(/signals\[0\]\.meaning/);
+  });
+
+  it("trims strings and trims and deduplicates every evidence ID array", () => {
+    const parsed = parseMusicManagerReadOutput({
+      ...validOutput,
+      position: `  ${validOutput.position}  `,
+      managementRole: ` ${validOutput.managementRole} `,
+      body: `\n${validOutput.body}\n`,
+      decision: ` ${validOutput.decision} `,
+      avoid: ` ${validOutput.avoid} `,
+      watch: ` ${validOutput.watch} `,
+      confidenceReason: ` ${validOutput.confidenceReason} `,
+      evidenceIds: [" ev-streams ", "ev-streams", " ev-market "],
+      signals: validOutput.signals.map((signal) => ({
+        ...signal,
+        label: ` ${signal.label} `,
+        value: ` ${signal.value} `,
+        meaning: ` ${signal.meaning} `,
+        evidenceIds: [` ${signal.evidenceIds[0]} `, signal.evidenceIds[0]],
+      })),
+    });
+
+    expect(parsed.position).toBe(validOutput.position);
+    expect(parsed.body).toBe(validOutput.body);
+    expect(parsed.evidenceIds).toEqual(["ev-streams", "ev-market"]);
+    expect(parsed.signals[0]).toEqual(validOutput.signals[0]);
+  });
+
+  it("rejects malformed evidence ID arrays instead of coercing them", () => {
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, evidenceIds: "ev-streams" })).toThrow(/evidenceIds/);
+    expect(() => parseMusicManagerReadOutput({ ...validOutput, evidenceIds: ["ev-streams", 12] })).toThrow(/evidenceIds/);
+    expect(() =>
+      parseMusicManagerReadOutput({
+        ...validOutput,
+        signals: validOutput.signals.map((signal, index) =>
+          index === 0 ? { ...signal, evidenceIds: ["ev-streams", "   "] } : signal,
+        ),
+      }),
+    ).toThrow(/signals\[0\]\.evidenceIds/);
+  });
+
+  it("constructs fresh root and signal objects without unknown properties", () => {
+    const parsed = parseMusicManagerReadOutput({
+      ...validOutput,
+      ignoredRoot: "do not copy",
+      signals: validOutput.signals.map((signal) => ({ ...signal, ignoredSignal: "do not copy" })),
+    });
+
+    expect(parsed).not.toHaveProperty("ignoredRoot");
+    for (const signal of parsed.signals) expect(signal).not.toHaveProperty("ignoredSignal");
   });
 });
