@@ -969,24 +969,6 @@ function CleanProductionWorkspace({
     ]);
   }
 
-  async function refreshSetupMusicReadTargets(targets: MusicReadTarget[]) {
-    if (!targets.length) return;
-    const targetKeys = new Set(targets.map((target) => `${target.subjectType}:${target.subjectId}`));
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      const nextMusic = await reloadMusic();
-      const matchingTargets = nextMusic
-        .filter((item) => {
-          const subjectType = item.kind === "project" ? "music_project" : "music_item";
-          return targetKeys.has(`${subjectType}:${item.id}`);
-        });
-      const allTargetsResolved =
-        matchingTargets.length === targetKeys.size &&
-        matchingTargets.every((item) => isResolvedManagerReadState(item.managerReadState));
-      if (allTargetsResolved) return;
-      await delay(1200);
-    }
-  }
-
   async function completeSetupActivity(nextWorkspace: ProductionWorkspace) {
     const generationStartedAt = Date.now();
     try {
@@ -1009,8 +991,7 @@ function CleanProductionWorkspace({
         },
         `${analyticsUser.id}:${nextWorkspace.artistWorkspaceId}:${setupBriefId}`,
       );
-      setSetupActivityStep("music-reads");
-      await refreshSetupMusicReadTargets(setupMusicReadTargetsFromGenerationResult(setupGeneration));
+
       trackEventOnce(
         "onboarding completed",
         { artist_id: nextWorkspace.artistId, setup_mode: "setup-map", is_test_user: isTestUser },
@@ -2966,11 +2947,6 @@ function briefAnalyticsId(brief: TodayBriefViewModel, artistWorkspaceId: string)
   return brief.managerOutputId ?? brief.managerSynthesisRunId ?? brief.generatedAt ?? `${artistWorkspaceId}:brief`;
 }
 
-function setupMusicReadTargetsFromGenerationResult(result: TodayBriefGenerationResponse): MusicReadTarget[] {
-  if (!isTodayBriefGenerationResult(result)) return [];
-  return Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [];
-}
-
 function isTodayBriefGenerationResult(result: TodayBriefGenerationResponse): result is { brief: TodayBriefViewModel; setupMusicReadTargets?: MusicReadTarget[] } {
   return Boolean(result && typeof result === "object" && "brief" in result);
 }
@@ -2979,9 +2955,6 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function isResolvedManagerReadState(state: MusicObjectViewModel["managerReadState"]) {
-  return state === "fresh" || state === "limited";
-}
 
 function isWorkspaceReadyForDesk(workspace: ProductionWorkspace) {
   if (!workspace.contextComplete) return false;

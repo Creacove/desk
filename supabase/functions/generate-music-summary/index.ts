@@ -90,11 +90,11 @@ Deno.serve(async (request) => {
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const backfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
     const suppliedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
-    const trustedInvocation = authHeader === `Bearer ${serviceRoleKey}` || Boolean(
+    const isServiceRoleInvocation = authHeader === `Bearer ${serviceRoleKey}` || Boolean(
       backfillToken && suppliedBackfillToken && backfillToken === suppliedBackfillToken
     );
 
-    if (!trustedInvocation) {
+    if (!isServiceRoleInvocation) {
       const authClient = createClient(supabaseUrl, anonKey, {
         global: { headers: { Authorization: authHeader } },
       });
@@ -111,7 +111,9 @@ Deno.serve(async (request) => {
     // Service authority is constructed only after caller authentication.
     const db = createClient(supabaseUrl, serviceRoleKey);
     await assertWorkspace(db, input);
-    if (!trustedInvocation) await assertActiveWorkspaceEntitlement(db, input);
+    if (!isServiceRoleInvocation) {
+      await assertActiveWorkspaceEntitlement(db, input);
+    }
 
     const run = await acquireManagerReadRun(db, input);
     const runId = run.runId;

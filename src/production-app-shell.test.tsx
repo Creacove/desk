@@ -952,7 +952,7 @@ describe("Clean production prototype-match shell", () => {
     });
 
     await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
-    await waitFor(() => expect(loadMusicCalls).toBeGreaterThan(1));
+    await waitFor(() => expect(loadMusicCalls).toBe(1));
     expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
       "first brief viewed",
       { brief_id: "setup-map-run", artist_id: "artist-1", is_test_user: false },
@@ -1065,7 +1065,7 @@ describe("Clean production prototype-match shell", () => {
 
     await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
     await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
-    await waitFor(() => expect(loadMusicCalls).toBeGreaterThan(1));
+    await waitFor(() => expect(loadMusicCalls).toBe(1));
   }, 20000);
 
   it("keeps the setup activity screen visible with a retry path when setup map generation fails", async () => {
