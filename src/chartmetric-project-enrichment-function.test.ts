@@ -6,6 +6,17 @@ const functionSource = readFileSync(join(process.cwd(), "supabase", "functions",
 const normalizedFunctionSource = functionSource.replace(/\r\n/g, "\n");
 
 describe("Chartmetric project enrichment edge function", () => {
+  it("accepts exact service-role or backfill credentials without requiring an end-user session", () => {
+    expect(functionSource).toContain('Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN")');
+    expect(functionSource).toContain('request.headers.get("X-Chartmetric-Backfill-Token")');
+    expect(functionSource).toContain("isServiceRoleInvocation");
+    expect(functionSource).toContain('authHeader === `Bearer ${serviceRoleKey}`');
+    expect(functionSource).toContain('const scopedAuthHeader = isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader');
+    expect(functionSource).toContain("if (!isServiceRoleInvocation)");
+    expect(functionSource.indexOf("if (!isServiceRoleInvocation)")).toBeLessThan(functionSource.indexOf("auth.getUser()"));
+    expect(functionSource).toContain("await assertActiveWorkspaceEntitlement(authClient, input)");
+  });
+
   it("authenticates and checks account membership before provider calls", () => {
     expect(functionSource).toContain("Deno.serve");
     expect(functionSource).toContain("Authorization");

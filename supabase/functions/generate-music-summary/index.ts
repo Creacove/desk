@@ -1,17 +1,22 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import {
-  buildManagerReadInstructions,
-  managerReadJsonSchema,
-  parseManagerReadOutput,
-  checkBannedVisibleMusicTerms,
-  checkSourceLine,
-  type ManagerReadOutput,
-  type ManagerReadPacket,
-  type ManagerReadSubjectType,
-} from "../_shared/openaiManagerRead.ts";
+import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
-import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import {
+  MUSIC_MANAGER_READ_SCHEMA_VERSION,
+  buildMusicManagerReadInstructions,
+  buildMusicManagerReadRepairInstructions,
+  musicManagerReadJsonSchema,
+  parseMusicManagerReadOutput,
+  validateMusicManagerReadOutput,
+  type MusicManagerReadSubjectType,
+  type MusicManagerReadV2,
+} from "../_shared/openaiMusicManagerRead.ts";
+import {
+  runMusicManagerReadWorkflow,
+  type WorkflowStep,
+  type WorkflowStepStatus,
+} from "../_shared/music-manager-read/workflow.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,26 +24,56 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const MUSIC_MANAGER_READ_CLASSIFICATION = "music_manager_read_v2";
+const ACTIVE_RUN_STALE_MS = 5 * 60 * 1000;
+const CHARTMETRIC_EVIDENCE_FRESH_MS = 24 * 60 * 60 * 1000;
+const MAX_MANAGER_READ_CONTEXT_CHARS = 45_000;
+type StepName = "queued" | WorkflowStep;
+
+const WORKFLOW_STEPS: StepName[] = [
+  "queued",
+  "evidence_check",
+  "chartmetric_enrichment",
+  "context_build",
+  "manager_synthesis",
+  "output_validation",
+  "output_activation",
+];
+
 type GenerateMusicSummaryInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
-  subjectType: ManagerReadSubjectType;
+  subjectType: MusicManagerReadSubjectType;
   subjectId: string;
 };
 
-const MAX_MANAGER_READ_MODEL_PACKET_CHARS = 45_000;
+type OpenAIUsage = {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+};
+
+type ManagerReadContext = {
+  modelContext: Record<string, unknown>;
+  sourcePacketId: string | null;
+  subjectTitle: string;
+  allowedEvidenceIds: Set<string>;
+  playbookInstructions: string;
+};
+
+type StepState = {
+  step: StepName;
+  status: WorkflowStepStatus;
+};
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
-  let runId: string | null = null;
-  let usageId: string | null = null;
-  let input: GenerateMusicSummaryInput | null = null;
-
   try {
-    input = (await request.json()) as GenerateMusicSummaryInput;
+    const input = (await request.json()) as GenerateMusicSummaryInput;
     validateInput(input);
 
     const authHeader = request.headers.get("Authorization");
@@ -47,28 +82,17 @@ Deno.serve(async (request) => {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const configuredBackfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
-    const presentedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
-    // Supabase's reserved runtime service key can differ from the legacy
-    // service-role JWT that callers send, so trust the verified JWT role too.
-    const isServiceRoleInvocation =
-      authHeader === `Bearer ${serviceRoleKey}` ||
-      readBearerJwtRole(authHeader) === "service_role" ||
-      Boolean(
-        configuredBackfillToken &&
-        presentedBackfillToken &&
-        configuredBackfillToken === presentedBackfillToken
-      );
-    const scopedAuthHeader = isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader;
-    const authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
-      global: { headers: { Authorization: scopedAuthHeader } },
-    });
+    const backfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
+    const suppliedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
+    const trustedInvocation = authHeader === `Bearer ${serviceRoleKey}` || Boolean(
+      backfillToken && suppliedBackfillToken && backfillToken === suppliedBackfillToken
+    );
 
-    if (!isServiceRoleInvocation) {
-      const {
-        data: { user },
-        error: userError,
-      } = await authClient.auth.getUser();
+    if (!trustedInvocation) {
+      const authClient = createClient(supabaseUrl, anonKey, {
+        global: { headers: { Authorization: authHeader } },
+      });
+      const { data: { user }, error: userError } = await authClient.auth.getUser();
       if (userError || !user) return json({ error: "Unauthorized." }, 401);
 
       const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
@@ -78,659 +102,777 @@ Deno.serve(async (request) => {
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
 
-    if (!isServiceRoleInvocation) {
-      await assertActiveWorkspaceEntitlement(authClient, input);
+    // Service authority is constructed only after caller authentication.
+    const db = createClient(supabaseUrl, serviceRoleKey);
+    await assertWorkspace(db, input);
+    if (!trustedInvocation) await assertActiveWorkspaceEntitlement(db, input);
+
+    const run = await acquireManagerReadRun(db, input);
+    const runId = run.runId;
+    if (run.created) {
+      scheduleBackgroundRun(completeManagerReadInBackground({
+        db,
+        input,
+        runId,
+        serviceRoleKey,
+      }));
     }
 
-    const packet = await buildManagerReadPacket(authClient, input);
-    runId = await createManagerSynthesisRun(authClient, input, packet);
-    usageId = await createUsageEvent(authClient, input, runId);
-    const appliedPlaybooks = readAppliedPlaybooks(packet.latestManagerIntelligencePacket);
-    const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
-    const output = await callOpenAIManagerReadWithRetry(packet, playbookLensText);
-    const managerOutputId = await persistGeneratedRead(authClient, input, output, runId);
-    await completeManagerSynthesisRun(authClient, runId, packet, output);
-    await completeUsageEvent(authClient, usageId, output);
-    await writeOperatingEventSafe(authClient, input, {
-      eventType: "music_manager_read_generated",
-      summary: `Generated Manager Read for ${readSubjectTitle(packet)}.`,
-      payload: {
-        manager_synthesis_run_id: runId,
-        manager_output_id: managerOutputId,
-        confidence: output.confidence,
-        evidence_ids_used: output.evidenceIdsUsed,
-      },
-    });
-
-    return json({ status: "completed", managerSynthesisRunId: runId, read: output });
+    return json({ status: "processing", runId }, 202);
   } catch (error) {
-    if (runId && input) await markRunFailedSafe(runId, input, error);
-    if (usageId && input) await markUsageFailedSafe(usageId, input, error);
     return json({ error: describeError(error, "Music Manager Read generation failed.") }, 500);
   }
 });
 
-async function buildManagerReadPacket(supabase: any, input: GenerateMusicSummaryInput): Promise<ManagerReadPacket> {
-  const subject = input.subjectType === "music_item"
-    ? await loadMusicItem(supabase, input)
-    : await loadMusicProject(supabase, input);
-  const identifiers = await loadIdentifiers(supabase, input);
-  const evidence = await loadEvidence(supabase, input);
-  const artistProfile = await loadArtistProfile(supabase, input);
-  const relatedRecords = await loadRelatedRecordContext(supabase, input);
-  const relatedEvidence = await loadRelatedEvidence(supabase, input);
-  const tracklist = input.subjectType === "music_project" ? await loadProjectTracklist(supabase, input) : [];
-  const latestManagerIntelligencePacket = await loadLatestManagerIntelligencePacket(supabase, input);
-  const packetAssetReads = Array.isArray(latestManagerIntelligencePacket?.asset_reads_json)
-    ? latestManagerIntelligencePacket.asset_reads_json.filter(isRecord)
-    : [];
-  const packetSubjectRead = selectPacketSubjectRead(packetAssetReads, input.subjectId);
-  const limitations = [
-    readString(subject.source_limit) ? `Catalog source limit: ${readString(subject.source_limit)}` : undefined,
-    ...evidence.map((item: Record<string, unknown>) => readString(item.limitation)).filter(Boolean),
-    "Do not claim saves, repeat listeners, source-of-stream, revenue, conversion, campaign ROI, or rights certainty unless the packet contains direct proof.",
-  ].filter((item): item is string => Boolean(item));
-
-  const formattedEvidence = evidence.map((item: Record<string, unknown>) => {
-    const rawVal = item.metric_value;
-    if (typeof rawVal === "number") {
-      return {
-        ...item,
-        formatted_value: formatMetricValue(rawVal, item.metric_unit as string | null),
-      };
-    }
-    return item;
-  });
-  const formattedRelatedRecords = attachRelatedEvidence(relatedRecords, relatedEvidence, input.subjectId);
-  const derivedInsights = deriveRecordInsights(subject, formattedEvidence, formattedRelatedRecords);
-
-  return {
-    subjectType: input.subjectType,
-    subject,
-    identifiers,
-    evidence: formattedEvidence,
-    artistProfile,
-    relatedRecords: formattedRelatedRecords,
-    derivedInsights,
-    latestManagerIntelligencePacket,
-    packetAssetReads,
-    packetSubjectRead,
-    packetMissionSeed: isRecord(latestManagerIntelligencePacket?.mission_seed_json) ? latestManagerIntelligencePacket.mission_seed_json : {},
-    tracklist,
-    limitations: Array.from(new Set(limitations)),
-    sourcePanelInstruction: "Source names, provenance, confidence, and limitations belong in the Sources panel; the Manager Read should speak as the Manager.",
-  };
+function scheduleBackgroundRun(task: Promise<void>) {
+  const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof runtime?.waitUntil === "function") {
+    runtime.waitUntil(task);
+    return;
+  }
+  task.catch((error) => console.error("Music Manager Read background run failed:", error));
 }
 
-async function loadLatestManagerIntelligencePacket(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("manager_intelligence_packets")
-    .select("id,packet_type,profile_projection_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,supporting_evidence_json,created_at")
+async function assertWorkspace(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await db
+    .from("artist_workspaces")
+    .select("id,account_id,artist_id")
+    .eq("id", input.artistWorkspaceId)
+    .eq("account_id", input.accountId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.id) throw new Error("Artist workspace does not match the requested account and artist.");
+}
+
+async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) {
+  const staleBefore = new Date(Date.now() - ACTIVE_RUN_STALE_MS).toISOString();
+  const { data: staleRuns, error: staleError } = await exactActiveRunQuery(
+    db.from("manager_synthesis_runs").update({
+      status: "failed",
+      error: "Music Manager Read run expired before completion.",
+      completed_at: new Date().toISOString(),
+    }),
+    input,
+  ).lt("created_at", staleBefore).select("id");
+  if (staleError) throw staleError;
+  const staleRunIds = Array.isArray(staleRuns) ? staleRuns.map((run) => run.id).filter(Boolean) : [];
+  if (staleRunIds.length > 0) {
+    const { error: staleUsageError } = await exactOwnedQuery(
+      db.from("ai_run_usage_events").update({
+        status: "failed",
+        failure_reason: "Music Manager Read run expired before completion.",
+        completed_at: new Date().toISOString(),
+      }),
+      input,
+    ).in("manager_synthesis_run_id", staleRunIds)
+      .eq("operation_key", "music_manager_read_v2")
+      .eq("subject_type", input.subjectType)
+      .eq("subject_id", input.subjectId)
+      .eq("status", "started");
+    if (staleUsageError) throw staleUsageError;
+  }
+
+  const active = await findActiveManagerReadRun(db, input);
+  if (active) return { runId: active.id as string, created: false };
+
+  const queuedStep = { step: "queued", status: "completed" };
+  const { data, error } = await db.from("manager_synthesis_runs").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    trigger_type: "evidence_triggered",
+    status: "queued",
+    classification: "music_manager_read_v2",
+    subject_type: input.subjectType,
+    subject_id: input.subjectId,
+    context_payload: {
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+    },
+    steps_payload: [queuedStep],
+  }).select("id").single();
+
+  if (!error && data?.id) return { runId: data.id as string, created: true };
+  if (error && error.code === "23505") {
+    const winner = await findActiveManagerReadRun(db, input);
+    if (winner) return { runId: winner.id as string, created: false };
+  }
+  throw error ?? new Error("Music Manager Read run could not be queued.");
+}
+
+function exactActiveRunQuery(query: any, input: GenerateMusicSummaryInput) {
+  return query
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
-    .eq("status", "completed")
-    .order("created_at", { ascending: false })
-    .limit(1);
+    .eq("classification", MUSIC_MANAGER_READ_CLASSIFICATION)
+    .eq("subject_type", input.subjectType)
+    .eq("subject_id", input.subjectId)
+    .in("status", ["queued", "running"]);
+}
+
+async function findActiveManagerReadRun(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactActiveRunQuery(
+    db.from("manager_synthesis_runs").select("id,status,created_at"),
+    input,
+  ).order("created_at", { ascending: false }).limit(1);
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] ?? null : data ?? null;
+}
+
+async function completeManagerReadInBackground({
+  db,
+  input,
+  runId,
+  serviceRoleKey,
+}: {
+  db: any;
+  input: GenerateMusicSummaryInput;
+  runId: string;
+  serviceRoleKey: string;
+}) {
+  let usageId: string | null = null;
+  const model = selectManagerReadModel();
+  const steps = new Map<StepName, WorkflowStepStatus>([["queued", "completed"]]);
+  let builtContext: ManagerReadContext | null = null;
+
+  try {
+    await setRunRunning(db, runId, input);
+    usageId = await createUsageEvent(db, input, runId, model);
+
+    const result = await runMusicManagerReadWorkflow<ManagerReadContext, MusicManagerReadV2, OpenAIUsage>({
+      markStep: async (step, status) => {
+        steps.set(step, status);
+        await persistActiveSteps(db, runId, orderedSteps(steps));
+      },
+      inspectEvidence: () => inspectChartmetricEvidence(db, input),
+      enrichEvidence: () => enrichChartmetricEvidence(db, input, serviceRoleKey),
+      buildContext: async () => {
+        builtContext = await buildManagerReadContext(db, input);
+        return builtContext;
+      },
+      generateInitial: (context) => generateInitialManagerRead(context, input.subjectType, model),
+      validateAndRepair: (context, initial) => validateAndRepairManagerRead(context, input.subjectType, model, initial),
+      stageOutput: async (output) => {
+        if (!builtContext) throw new Error("Music Manager Read context was not built before output staging.");
+        return stageManagerOutput(db, input, runId, builtContext, output);
+      },
+      finalizeOutput: async (workflowResult) => {
+        if (!usageId) throw new Error("Music Manager Read usage event is missing.");
+        const terminalStatus = workflowResult.completedWithLimits ? "completed_with_limits" : "completed";
+        const terminalSteps = orderedSteps(new Map(steps).set("output_activation", "completed"));
+        await finalizeManagerRead(db, input, runId, usageId, model, terminalStatus, terminalSteps, workflowResult);
+      },
+    });
+
+    await writeOperatingEventSafe(db, input, {
+      eventType: "music_manager_read_generated",
+      summary: `Generated Manager Read for ${result.output.position}.`,
+      payload: { manager_synthesis_run_id: runId, manager_output_id: result.outputId },
+    });
+  } catch (error) {
+    const message = describeError(error, "Music Manager Read generation failed.");
+    await markRunFailedSafe(db, runId, input, message);
+    if (usageId) await markUsageFailedSafe(db, usageId, runId, input, message);
+  }
+}
+
+async function setRunRunning(db: any, runId: string, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactRunQuery(
+    db.from("manager_synthesis_runs").update({ status: "running", started_at: new Date().toISOString() }),
+    runId,
+    input,
+  ).eq("status", "queued").select("id").maybeSingle();
+  if (error) throw error;
+  if (!data?.id) throw new Error("Music Manager Read run is no longer queued.");
+}
+
+async function createUsageEvent(db: any, input: GenerateMusicSummaryInput, runId: string, model: string) {
+  const { data, error } = await db.from("ai_run_usage_events").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    workflow_key: "music_readiness_run",
+    run_type: "manager_synthesis",
+    manager_synthesis_run_id: runId,
+    subject_type: input.subjectType,
+    subject_id: input.subjectId,
+    provider: "openai",
+    model_or_tool: model,
+    operation_key: "music_manager_read_v2",
+    status: "started",
+    provider_request_count: 0,
+  }).select("id").single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function persistActiveSteps(db: any, runId: string, steps: StepState[]) {
+  const { error } = await db.from("manager_synthesis_runs").update({ steps_payload: steps })
+    .eq("id", runId)
+    .in("status", ["queued", "running"]);
+  if (error) throw error;
+}
+
+function orderedSteps(steps: Map<StepName, WorkflowStepStatus>): StepState[] {
+  return WORKFLOW_STEPS.flatMap((step) => {
+    const status = steps.get(step);
+    return status ? [{ step, status }] : [];
+  });
+}
+
+async function inspectChartmetricEvidence(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactSubjectQuery(
+    db.from("evidence_items").select("id,created_at"),
+    input,
+  ).eq("source", "Chartmetric").order("created_at", { ascending: false }).limit(1);
+  if (error) throw error;
+  const newest = Array.isArray(data) ? data[0] : data;
+  if (!newest?.created_at) return { state: "missing" as const };
+  const age = Date.now() - new Date(newest.created_at).getTime();
+  return { state: age <= CHARTMETRIC_EVIDENCE_FRESH_MS ? "fresh" as const : "stale" as const };
+}
+
+async function enrichChartmetricEvidence(db: any, input: GenerateMusicSummaryInput, serviceRoleKey: string) {
+  const functionName = input.subjectType === "music_item"
+    ? "chartmetric-track-enrichment"
+    : "chartmetric-project-enrichment";
+  const subjectInput = input.subjectType === "music_item"
+    ? { musicItemId: input.subjectId }
+    : { musicProjectId: input.subjectId };
+  const { data, error } = await db.functions.invoke(functionName, {
+    body: {
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      ...subjectInput,
+    },
+    headers: { Authorization: `Bearer ${serviceRoleKey}` },
+  });
+  if (error) throw new Error(`Chartmetric enrichment failed. ${describeError(error, "Function invocation failed.")}`);
+  const status = isRecord(data) ? data.status : undefined;
+  if (status !== "completed" && status !== "completed_with_limits" && status !== "unresolved" && status !== "failed") {
+    throw new Error("Chartmetric enrichment failed. The function returned an invalid terminal status.");
+  }
+  if (status === "failed") throw new Error("Chartmetric enrichment failed. The provider returned failed.");
+  return { status };
+}
+
+async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput): Promise<ManagerReadContext> {
+  const [subject, identifiers, evidence, artistProfile, relatedRecords, relatedEvidence, tracklist, packet] = await Promise.all([
+    loadSubject(db, input),
+    loadIdentifiers(db, input),
+    loadEvidence(db, input),
+    loadArtistProfile(db, input),
+    loadRelatedRecords(db, input),
+    loadRelatedEvidence(db, input),
+    input.subjectType === "music_project" ? loadProjectTracklist(db, input) : Promise.resolve([]),
+    loadLatestManagerIntelligencePacket(db, input),
+  ]);
+
+  const subjectTitle = readString(subject.title);
+  if (!subjectTitle) throw new Error("Music Manager Read subject has no title.");
+  const exactEvidence = evidence.slice(0, 40).map(compactEvidence);
+  const relatedEvidenceBySubject = new Map<string, Array<Record<string, unknown>>>();
+  for (const item of relatedEvidence.slice(0, 48)) {
+    const subjectId = readString(item.subject_id);
+    if (!subjectId) continue;
+    const bucket = relatedEvidenceBySubject.get(subjectId) ?? [];
+    if (bucket.length < 4) bucket.push(compactEvidence(item));
+    relatedEvidenceBySubject.set(subjectId, bucket);
+  }
+  const compactRelated = relatedRecords.slice(0, 8).map((record) => ({
+    ...compactRecord(record, ["id", "title", "item_type", "lifecycle_stage", "released_at"]),
+    evidence: relatedEvidenceBySubject.get(String(record.id)) ?? [],
+  }));
+  const packetProjection = projectManagerPacket(packet, input.subjectId);
+  const modelContext: Record<string, unknown> = {
+    requestedSubject: {
+      subjectType: input.subjectType,
+      ...compactRecord(subject, ["id", "title", "item_type", "project_type", "lifecycle_stage", "released_at", "source_kind", "source_limit"]),
+    },
+    identifiers: identifiers.slice(0, 8).map((item) => compactRecord(item, ["identifier_type", "identifier_value"])),
+    evidence: exactEvidence,
+    artistProfile: compactRecord(artistProfile, ["display_name", "genres", "home_market", "stage", "artist_direction", "current_goal", "budget_context"]),
+    relatedRecords: compactRelated,
+    projectTracklist: tracklist.slice(0, 20).map((item) => compactRecord(item, ["music_item_id", "display_title", "order_index", "disc_number"])),
+    managerPacket: packetProjection,
+  };
+  const serialized = JSON.stringify(modelContext);
+  if (serialized.length > MAX_MANAGER_READ_CONTEXT_CHARS) {
+    throw new Error(`Music Manager Read context exceeds ${MAX_MANAGER_READ_CONTEXT_CHARS} characters after bounded projection.`);
+  }
+
+  const allowedEvidenceIds = new Set<string>();
+  for (const item of [...exactEvidence, ...Array.from(relatedEvidenceBySubject.values()).flat()]) {
+    const id = readString(item.id);
+    if (id) allowedEvidenceIds.add(id);
+  }
+  if (allowedEvidenceIds.size === 0) throw new Error("Music Manager Read requires at least one saved evidence item.");
+
+  return {
+    modelContext,
+    sourcePacketId: readString(packet?.id) ?? null,
+    subjectTitle,
+    allowedEvidenceIds,
+    playbookInstructions: getPlaybooksInstructions(readAppliedPlaybooks(packet)),
+  };
+}
+
+async function loadSubject(db: any, input: GenerateMusicSummaryInput) {
+  const table = input.subjectType === "music_item" ? "music_items" : "music_projects";
+  const fields = input.subjectType === "music_item"
+    ? "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit"
+    : "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit";
+  const { data, error } = await exactOwnedQuery(db.from(table).select(fields), input).eq("id", input.subjectId).maybeSingle();
+  if (error) throw error;
+  if (!data?.id) throw new Error("Music Manager Read subject was not found.");
+  return data as Record<string, unknown>;
+}
+
+async function loadIdentifiers(db: any, input: GenerateMusicSummaryInput) {
+  const subjectColumn = input.subjectType === "music_item" ? "music_item_id" : "music_project_id";
+  const { data, error } = await exactOwnedQuery(
+    db.from("music_identifiers").select("identifier_type,identifier_value"), input,
+  ).eq(subjectColumn, input.subjectId).limit(8);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadEvidence(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactSubjectQuery(
+    db.from("evidence_items").select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,created_at"), input,
+  ).order("created_at", { ascending: false }).limit(80);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadArtistProfile(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactOwnedQuery(
+    db.from("artist_profiles").select("display_name,genres,home_market,stage,artist_direction,current_goal,budget_context"), input,
+  ).maybeSingle();
+  if (error) throw error;
+  return isRecord(data) ? data : {};
+}
+
+async function loadRelatedRecords(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactOwnedQuery(
+    db.from("music_items").select("id,title,item_type,lifecycle_stage,released_at"), input,
+  ).order("released_at", { ascending: false }).limit(8);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadRelatedEvidence(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactOwnedQuery(
+    db.from("evidence_items").select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation,created_at"), input,
+  ).eq("subject_type", "music_item").order("created_at", { ascending: false }).limit(64);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadProjectTracklist(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactOwnedQuery(
+    db.from("music_project_items").select("music_item_id,display_title,order_index,disc_number"), input,
+  ).eq("music_project_id", input.subjectId).order("order_index", { ascending: true }).limit(20);
+  if (error) throw error;
+  return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadLatestManagerIntelligencePacket(db: any, input: GenerateMusicSummaryInput) {
+  const { data, error } = await exactOwnedQuery(
+    db.from("manager_intelligence_packets").select("id,profile_projection_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,do_not_do_json,internal_only_json,created_at"), input,
+  ).in("status", ["completed", "completed_with_limits"]).order("created_at", { ascending: false }).limit(1);
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
   return isRecord(row) ? row : null;
 }
 
-function selectPacketSubjectRead(assetReads: Array<Record<string, unknown>>, subjectId: string) {
-  return assetReads.find((read) => read.asset_id === subjectId) ?? null;
-}
-
-/**
- * Calls OpenAI with automatic retry on banned-term violations.
- *
- * Attempt 1: normal call.
- * Attempts 2-3: feed the violation back as a correction message so the model
- *               can fix the specific words that slipped through.
- * After all retries: strip banned terms in-place and return — never hard-fail
- *                    the artist over a one-word style slip.
- */
-async function callOpenAIManagerReadWithRetry(
-  packet: ManagerReadPacket,
-  playbookLensText?: string,
-): Promise<ManagerReadOutput> {
-  const maxAttempts = 4;
-  let lastError: unknown = null;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    try {
-      return await callOpenAIManagerRead(packet, playbookLensText);
-    } catch (error) {
-      lastError = error;
-      if (!isRetryableOpenAIError(error) || attempt === maxAttempts - 1) throw error;
-      await delay(openAiRetryDelayMs(attempt));
-    }
-  }
-
-  throw lastError ?? new Error("OpenAI Manager Read request failed.");
-}
-
-async function callOpenAIManagerRead(
-  packet: ManagerReadPacket,
-  playbookLensText?: string,
-): Promise<ManagerReadOutput> {
-  const MAX_RETRIES = 2;
-  let correctionNote = "";
-  let lastViolations: string[] = [];
-  const modelPacket = buildManagerReadModelPacket(packet);
-
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const messages: Array<{ role: string; content: string }> = [
-      { role: "system", content: buildManagerReadInstructions(packet.subjectType, playbookLensText) },
-      { role: "user", content: JSON.stringify(modelPacket) },
-    ];
-
-    // On retries, append the targeted correction so the model knows exactly what to fix.
-    if (attempt > 0 && correctionNote) {
-      messages.push({ role: "user", content: correctionNote });
-    }
-
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-        input: messages,
-        text: {
-          format: {
-            type: "json_schema",
-            ...managerReadJsonSchema,
-          },
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`OpenAI Manager Read request failed with status ${response.status}.`);
-    }
-
-    const payload = await response.json();
-    const output = parseManagerReadOutput(readOutputText(payload));
-    const bannedTerm = checkBannedVisibleMusicTerms(output);
-    const badSourceLine = !checkSourceLine(output);
-    const requestedTitle = readSubjectTitle(packet);
-    const normalizedHeadline = output.headline.trim().toLowerCase();
-    const normalizedRequestedTitle = requestedTitle.trim().toLowerCase();
-    const subjectTitleMissing = !normalizedHeadline.includes(normalizedRequestedTitle);
-    const subjectHeadlineTooThin =
-      !subjectTitleMissing &&
-      (normalizedHeadline === normalizedRequestedTitle ||
-        output.headline.trim().length <= requestedTitle.trim().length + 8);
-    const unexpectedScriptCharacter = findUnexpectedScriptCharacter(output, modelPacket);
-
-    if (!bannedTerm && !badSourceLine && !subjectTitleMissing && !subjectHeadlineTooThin && !unexpectedScriptCharacter) {
-      // Clean output — return immediately.
-      return output;
-    }
-
-    // Build a targeted correction prompt for the next attempt.
-    const violations: string[] = [];
-    if (bannedTerm) violations.push(`the word "${bannedTerm}"`);
-    if (badSourceLine) violations.push(`a sourceLine that does not match the required wording`);
-    if (subjectTitleMissing) violations.push(`a headline that does not name the exact requested subject "${requestedTitle}"`);
-    if (subjectHeadlineTooThin) {
-      violations.push(`a headline that names "${requestedTitle}" but does not include a specific management judgment`);
-    }
-    if (unexpectedScriptCharacter) {
-      violations.push(`an unrelated writing-system character "${unexpectedScriptCharacter}" that is absent from the source packet`);
-    }
-    lastViolations = violations;
-    correctionNote =
-      `Your previous response included ${violations.join(" and ")} in a visible field. ` +
-      `The headline must name the exact requested subject "${requestedTitle}", add a specific management judgment, and must not substitute a comparison track. ` +
-      `Rewrite your response removing all instances. The sourceLine must be exactly: ` +
-      `"Prepared from the record details and audience signals I can already see." ` +
-      `All other content rules still apply.`;
-
-    console.warn(
-      `[generate-music-summary] Attempt ${attempt + 1}: violation detected — ${violations.join(", ")}. ` +
-      (attempt < MAX_RETRIES ? "Retrying with correction." : "Retries exhausted.")
-    );
-  }
-
-  throw new Error(`OpenAI manager read output failed validation: ${lastViolations.join(", ")}.`);
-}
-
-function buildManagerReadModelPacket(packet: ManagerReadPacket) {
-  const modelPacket = {
-    subjectType: packet.subjectType,
-    subject: compactRecord(packet.subject, [
-      "id",
-      "title",
-      "item_type",
-      "project_type",
-      "lifecycle_stage",
-      "source_kind",
-      "source_limit",
-      "released_at",
-    ]),
-    identifiers: packet.identifiers.slice(0, 8).map((item) => compactRecord(item, ["identifier_type", "identifier_value"])),
-    evidence: packet.evidence.slice(0, 36).map((item) => compactRecord(item, [
-      "id",
-      "source",
-      "source_kind",
-      "evidence_type",
-      "subject_type",
-      "subject_id",
-      "subject_label",
-      "metric_name",
-      "formatted_value",
-      "metric_value",
-      "metric_unit",
-      "freshness",
-      "confidence",
-      "limitation",
-    ])),
-    artistProfile: compactRecord(packet.artistProfile ?? {}, [
-      "display_name",
-      "genres",
-      "home_market",
-      "stage",
-      "artist_direction",
-      "current_goal",
-      "budget_context",
-    ]),
-    relatedRecords: (packet.relatedRecords ?? []).slice(0, 8).map((item) => compactValue(item, 3)),
-    derivedInsights: (packet.derivedInsights ?? []).slice(0, 5).map((item) => compactValue(item, 3)),
-    packetSubjectRead: compactValue(packet.packetSubjectRead ?? {}, 3),
-    packetAssetReads: (packet.packetAssetReads ?? [])
-      .filter((read) => read.asset_id === packet.subject.id || read.asset_name === packet.subject.title)
-      .slice(0, 4)
-      .map((read) => compactRecord(read, ["asset_type", "asset_id", "asset_name", "management_role", "read", "next_move", "watch_metric", "risk", "evidence_ids"])),
-    packetMissionSeed: compactMissionSeed(packet.packetMissionSeed ?? {}),
-    tracklist: packet.tracklist.slice(0, 20).map((item) => compactRecord(item, ["music_item_id", "display_title", "order_index", "disc_number"])),
-    limitations: packet.limitations.slice(0, 8),
-    sourcePanelInstruction: packet.sourcePanelInstruction,
+function projectManagerPacket(packet: Record<string, unknown> | null, subjectId: string) {
+  if (!packet) return null;
+  const assetReads = Array.isArray(packet.asset_reads_json) ? packet.asset_reads_json.filter(isRecord) : [];
+  const target = assetReads.find((read) => read.asset_id === subjectId) ?? null;
+  const comparisons = assetReads.filter((read) => read.asset_id !== subjectId).slice(0, 3);
+  const markets = Array.isArray(packet.market_reads_json) ? packet.market_reads_json.slice(0, 4) : [];
+  return {
+    managerIntelligencePacketId: readString(packet.id),
+    profileProjection: compactValue(packet.profile_projection_json, 3),
+    strategicDiagnosis: compactValue(packet.strategic_diagnosis_json, 3),
+    targetAssetRead: compactValue(target, 3),
+    comparisonAssetReads: comparisons.map((item) => compactValue(item, 3)),
+    marketReads: markets.map((item) => compactValue(item, 3)),
+    missionDirection: compactValue(
+      isRecord(packet.mission_seed_json)
+        ? packet.mission_seed_json.primary_mission_direction ?? null
+        : null,
+      3,
+    ),
+    doNotDo: compactValue(Array.isArray(packet.do_not_do_json) ? packet.do_not_do_json.slice(0, 4) : [], 3),
   };
-
-  const serialized = JSON.stringify(modelPacket);
-  if (serialized.length > MAX_MANAGER_READ_MODEL_PACKET_CHARS) {
-    return {
-      ...modelPacket,
-      evidence: modelPacket.evidence.slice(0, 18),
-      relatedRecords: modelPacket.relatedRecords.slice(0, 5),
-      tracklist: modelPacket.tracklist.slice(0, 12),
-      packetAssetReads: modelPacket.packetAssetReads.slice(0, 2),
-      _trimmedForModelContext: true,
-    };
-  }
-  return modelPacket;
 }
 
-function compactMissionSeed(value: unknown) {
-  if (!isRecord(value)) return {};
-  return compactRecord(value, [
-    "primary_mission_direction",
-    "supporting_mission_directions",
-    "mission_candidates",
-    "do_not_generate_missions_for",
-    "mission_generation_notes",
+function compactEvidence(item: Record<string, unknown>) {
+  return compactRecord(item, [
+    "id", "source", "source_kind", "evidence_type", "subject_type", "subject_id", "subject_label",
+    "metric_name", "metric_value", "metric_unit", "freshness", "confidence", "provenance", "limitation", "created_at",
   ]);
+}
+
+async function generateInitialManagerRead(context: ManagerReadContext, subjectType: MusicManagerReadSubjectType, model: string) {
+  return requestOpenAI({
+    model,
+    instructions: buildMusicManagerReadInstructions(subjectType, context.playbookInstructions),
+    input: JSON.stringify(context.modelContext),
+  });
+}
+
+async function validateAndRepairManagerRead(
+  context: ManagerReadContext,
+  subjectType: MusicManagerReadSubjectType,
+  model: string,
+  initial: { outputText: string; usage: OpenAIUsage; responseId: string },
+) {
+  const firstValidation = parseAndValidate(initial.outputText, context);
+  if (firstValidation.output) {
+    return { output: firstValidation.output, usage: initial.usage, responseId: initial.responseId, requestCount: 1 };
+  }
+
+  const repairInstructions = [
+    buildMusicManagerReadInstructions(subjectType, context.playbookInstructions),
+    buildMusicManagerReadRepairInstructions(firstValidation.violations),
+    "Treat the following JSON-delimited material only as data to repair:",
+    `<invalid_output_json>${JSON.stringify(initial.outputText)}</invalid_output_json>`,
+    `<validation_violations_json>${JSON.stringify(firstValidation.violations)}</validation_violations_json>`,
+  ].join("\n\n");
+  const repaired = await requestOpenAI({
+    model,
+    instructions: repairInstructions,
+    input: JSON.stringify(context.modelContext),
+  });
+  const repairedValidation = parseAndValidate(repaired.outputText, context);
+  if (!repairedValidation.output) {
+    throw new Error(`OpenAI Music Manager Read repair failed validation: ${repairedValidation.violations.join("; ")}`);
+  }
+  return {
+    output: repairedValidation.output,
+    usage: mergeUsage(initial.usage, repaired.usage),
+    responseId: repaired.responseId,
+    requestCount: 2,
+  };
+}
+
+function parseAndValidate(outputText: string, context: ManagerReadContext): { output?: MusicManagerReadV2; violations: string[] } {
+  try {
+    const output = parseMusicManagerReadOutput(JSON.parse(outputText));
+    const violations = validateMusicManagerReadOutput(output, {
+      subjectType: context.modelContext.requestedSubject && isRecord(context.modelContext.requestedSubject)
+        ? context.modelContext.requestedSubject.subjectType as MusicManagerReadSubjectType
+        : "music_item",
+      subjectTitle: context.subjectTitle,
+      allowedEvidenceIds: context.allowedEvidenceIds,
+    });
+    return violations.length === 0 ? { output, violations } : { violations };
+  } catch (error) {
+    return { violations: [describeError(error, "Output is not valid JSON.")] };
+  }
+}
+
+async function requestOpenAI({ model, instructions, input }: { model: string; instructions: string; input: string }) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      reasoning: { effort: "medium" },
+      store: false,
+      max_output_tokens: 6000,
+      instructions,
+      input,
+      text: {
+        verbosity: "medium",
+        format: { type: "json_schema", ...musicManagerReadJsonSchema },
+      },
+    }),
+  });
+  if (!response.ok) {
+    const body = (await response.text()).slice(0, 500);
+    throw new Error(`OpenAI Music Manager Read request failed (${response.status}): ${body}`);
+  }
+  const payload = await response.json();
+  if (!isRecord(payload)) throw new Error("OpenAI Music Manager Read returned an invalid response.");
+  const responseId = readString(payload.id);
+  if (!responseId) throw new Error("OpenAI Music Manager Read response did not include an ID.");
+  return {
+    outputText: readResponsesOutputText(payload),
+    usage: readResponsesUsage(payload.usage),
+    responseId,
+  };
+}
+
+function readResponsesOutputText(payload: Record<string, unknown>) {
+  if (typeof payload.output_text === "string" && payload.output_text.trim()) return payload.output_text;
+  const output = Array.isArray(payload.output) ? payload.output : [];
+  const texts: string[] = [];
+  for (const item of output) {
+    if (!isRecord(item) || !Array.isArray(item.content)) continue;
+    for (const content of item.content) {
+      if (!isRecord(content)) continue;
+      if ((content.type === "output_text" || content.type === "text") && typeof content.text === "string") {
+        texts.push(content.text);
+      }
+    }
+  }
+  if (texts.length) return texts.join("");
+  throw new Error("OpenAI response did not include output text.");
+}
+
+function readResponsesUsage(value: unknown): OpenAIUsage {
+  if (!isRecord(value)) throw new Error("OpenAI Music Manager Read response did not include usage.");
+  const usage = value;
+  const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  return {
+    inputTokens: requiredTokenCount(usage.input_tokens, "input_tokens"),
+    cachedInputTokens: nonnegativeInteger(inputDetails.cached_tokens),
+    outputTokens: requiredTokenCount(usage.output_tokens, "output_tokens"),
+    reasoningTokens: nonnegativeInteger(outputDetails.reasoning_tokens),
+  };
+}
+
+function mergeUsage(left: OpenAIUsage, right: OpenAIUsage): OpenAIUsage {
+  return {
+    inputTokens: left.inputTokens + right.inputTokens,
+    cachedInputTokens: left.cachedInputTokens + right.cachedInputTokens,
+    outputTokens: left.outputTokens + right.outputTokens,
+    reasoningTokens: left.reasoningTokens + right.reasoningTokens,
+  };
+}
+
+async function stageManagerOutput(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  runId: string,
+  context: ManagerReadContext,
+  output: MusicManagerReadV2,
+) {
+  const { data, error } = await db.from("manager_outputs").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    source_packet_id: context.sourcePacketId,
+    output_type: input.subjectType === "music_item" ? "song_manager_read" : "project_manager_read",
+    subject_type: input.subjectType,
+    subject_id: input.subjectId,
+    summary: output.position,
+    primary_recommendation_json: { decision: output.decision, watch: output.watch },
+    avoid_json: [output.avoid],
+    confidence_json: { level: output.confidence, reason: output.confidenceReason },
+    supporting_evidence_json: output.evidenceIds.map((id) => ({ id })),
+    render_json: output,
+    schema_version: MUSIC_MANAGER_READ_SCHEMA_VERSION,
+    created_from_run_id: runId,
+    is_current: false,
+  }).select("id").single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+async function finalizeManagerRead(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  runId: string,
+  usageId: string,
+  model: string,
+  runStatus: "completed" | "completed_with_limits",
+  steps: StepState[],
+  result: { outputId: string; usage: OpenAIUsage; responseId: string; requestCount: number },
+) {
+  const metadata = { response_id: boundedString(result.responseId, 180), model: boundedString(model, 180) };
+  const rpcArguments = {
+    target_output_id: result.outputId,
+    target_usage_id: usageId,
+    target_run_status: runStatus,
+    target_steps_payload: steps,
+    target_input_tokens: result.usage.inputTokens,
+    target_cached_input_tokens: result.usage.cachedInputTokens,
+    target_output_tokens: result.usage.outputTokens,
+    target_reasoning_tokens: result.usage.reasoningTokens,
+    target_provider_request_count: result.requestCount,
+    target_usage_metadata: metadata,
+  };
+  const { error: rpcError } = await db.rpc("finalize_music_manager_read_v2", rpcArguments);
+  if (!rpcError) return;
+  const reconciled = await reconcileFinalization(db, input, runId, usageId, runStatus, steps, result, metadata);
+  if (!reconciled) throw rpcError;
+}
+
+async function reconcileFinalization(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  runId: string,
+  usageId: string,
+  runStatus: "completed" | "completed_with_limits",
+  steps: StepState[],
+  result: { outputId: string; usage: OpenAIUsage; responseId: string; requestCount: number },
+  metadata: Record<string, unknown>,
+) {
+  try {
+    const [{ data: run, error: runError }, { data: usage, error: usageError }, { data: outputs, error: outputError }] = await Promise.all([
+      exactRunQuery(db.from("manager_synthesis_runs").select("id,status,steps_payload,completed_at,error"), runId, input).maybeSingle(),
+      exactUsageQuery(db.from("ai_run_usage_events").select("id,status,input_tokens,cached_input_tokens,output_tokens,reasoning_tokens,provider_request_count,metadata,completed_at,failure_reason"), usageId, runId, input).maybeSingle(),
+      exactOutputScopeQuery(db.from("manager_outputs").select("id,is_current,supersedes_output_id,created_from_run_id,schema_version"), input),
+    ]);
+    if (runError || usageError || outputError || !run || !usage || !Array.isArray(outputs)) return false;
+    const expectedUsageStatus = runStatus === "completed" ? "succeeded" : "partial";
+    const runMatches = run.status === runStatus && Boolean(run.completed_at) && run.error === null && jsonEqual(run.steps_payload, steps);
+    const usageMatches = usage.status === expectedUsageStatus && Boolean(usage.completed_at) && usage.failure_reason === null &&
+      usage.input_tokens === result.usage.inputTokens && usage.cached_input_tokens === result.usage.cachedInputTokens &&
+      usage.output_tokens === result.usage.outputTokens && usage.reasoning_tokens === result.usage.reasoningTokens &&
+      usage.provider_request_count === result.requestCount && jsonEqual(usage.metadata, metadata);
+    const stagedOutput = outputs.find((row: any) => row.id === result.outputId);
+    const outputMatches = stagedOutput?.created_from_run_id === runId && stagedOutput?.schema_version === MUSIC_MANAGER_READ_SCHEMA_VERSION &&
+      outputIsInCurrentLineage(outputs, result.outputId);
+    return runMatches && usageMatches && outputMatches;
+  } catch {
+    return false;
+  }
+}
+
+function outputIsInCurrentLineage(outputs: Array<Record<string, unknown>>, outputId: string) {
+  let cursor = outputs.find((row) => row.is_current === true);
+  const visited = new Set<string>();
+  while (cursor) {
+    const id = readString(cursor.id);
+    if (!id || visited.has(id)) return false;
+    if (id === outputId) return true;
+    visited.add(id);
+    const previousId = readString(cursor.supersedes_output_id);
+    cursor = previousId ? outputs.find((row) => row.id === previousId) : undefined;
+  }
+  return false;
+}
+
+async function markRunFailedSafe(db: any, runId: string, input: GenerateMusicSummaryInput, message: string) {
+  try {
+    const { data, error } = await exactRunQuery(db.from("manager_synthesis_runs").update({
+      status: "failed",
+      error: boundedString(message, 1000),
+      completed_at: new Date().toISOString(),
+    }), runId, input).in("status", ["queued", "running"]).select("id");
+    if (error) throw error;
+    if (Array.isArray(data) && data.length > 0) {
+      await writeOperatingEventSafe(db, input, { eventType: "music_manager_read_failed", summary: boundedString(message, 500) });
+    }
+  } catch (bookkeepingError) {
+    console.error("Music Manager Read failure bookkeeping failed:", bookkeepingError);
+  }
+}
+
+async function markUsageFailedSafe(
+  db: any,
+  usageId: string,
+  runId: string,
+  input: GenerateMusicSummaryInput,
+  message: string,
+) {
+  try {
+    const { error } = await exactUsageQuery(db.from("ai_run_usage_events").update({
+      status: "failed",
+      failure_reason: boundedString(message, 1000),
+      completed_at: new Date().toISOString(),
+    }), usageId, runId, input).eq("status", "started");
+    if (error) throw error;
+  } catch (bookkeepingError) {
+    console.error("Music Manager Read usage failure bookkeeping failed:", bookkeepingError);
+  }
+}
+
+async function writeOperatingEventSafe(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  event: { eventType: string; summary: string; payload?: Record<string, unknown> },
+) {
+  try {
+    const { error } = await db.from("operating_events").insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      event_type: event.eventType,
+      actor_type: "manager",
+      target_type: input.subjectType,
+      target_id: input.subjectId,
+      summary: event.summary,
+      payload: event.payload ?? {},
+    });
+    if (error) console.error("Music Manager Read operating event write failed:", error);
+  } catch (error) {
+    console.error("Music Manager Read operating event write failed:", error);
+  }
+}
+
+function exactOwnedQuery(query: any, input: GenerateMusicSummaryInput) {
+  return query.eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId);
+}
+
+function exactSubjectQuery(query: any, input: GenerateMusicSummaryInput) {
+  return exactOwnedQuery(query, input).eq("subject_type", input.subjectType).eq("subject_id", input.subjectId);
+}
+
+function exactRunQuery(query: any, runId: string, input: GenerateMusicSummaryInput) {
+  return exactOwnedQuery(query, input).eq("id", runId).eq("classification", MUSIC_MANAGER_READ_CLASSIFICATION)
+    .eq("subject_type", input.subjectType).eq("subject_id", input.subjectId);
+}
+
+function exactUsageQuery(query: any, usageId: string, runId: string, input: GenerateMusicSummaryInput) {
+  return exactOwnedQuery(query, input).eq("id", usageId).eq("manager_synthesis_run_id", runId)
+    .eq("operation_key", "music_manager_read_v2").eq("subject_type", input.subjectType).eq("subject_id", input.subjectId);
+}
+
+function exactOutputScopeQuery(query: any, input: GenerateMusicSummaryInput) {
+  return exactOwnedQuery(query, input).eq("subject_type", input.subjectType).eq("subject_id", input.subjectId)
+    .eq("output_type", input.subjectType === "music_item" ? "song_manager_read" : "project_manager_read")
+    .eq("schema_version", MUSIC_MANAGER_READ_SCHEMA_VERSION);
 }
 
 function compactRecord(value: Record<string, unknown>, keys: string[]) {
   return Object.fromEntries(keys.flatMap((key) => {
     const item = value[key];
-    if (item === undefined || item === null || item === "") return [];
-    return [[key, compactValue(item, 3)]];
+    return item === undefined || item === null || item === "" ? [] : [[key, compactValue(item, 3)]];
   }));
 }
 
 function compactValue(value: unknown, depth: number): unknown {
-  if (typeof value === "string") return value.length > 650 ? `${value.slice(0, 650)}...` : value;
+  if (typeof value === "string") return boundedString(value, 600);
   if (typeof value !== "object" || value === null) return value;
   if (depth <= 0) return Array.isArray(value) ? `[${value.length} items]` : "[object]";
   if (Array.isArray(value)) return value.slice(0, 12).map((item) => compactValue(item, depth - 1));
   return Object.fromEntries(Object.entries(value).slice(0, 16).map(([key, item]) => [key, compactValue(item, depth - 1)]));
 }
 
-function readOutputText(payload: unknown) {
-  const output = isRecord(payload) && Array.isArray(payload.output) ? payload.output : [];
-  for (const item of output) {
-    if (!isRecord(item) || !Array.isArray(item.content)) continue;
-    for (const content of item.content) {
-      if (isRecord(content) && typeof content.text === "string") return content.text;
-    }
-  }
-  if (isRecord(payload) && typeof payload.output_text === "string") return payload.output_text;
-  throw new Error("OpenAI response did not include structured output text.");
+function readAppliedPlaybooks(packet: Record<string, unknown> | null): PlaybookKey[] {
+  const internal = packet && isRecord(packet.internal_only_json) ? packet.internal_only_json : {};
+  return Array.isArray(internal.playbooks_applied)
+    ? internal.playbooks_applied.filter((item): item is PlaybookKey => typeof item === "string" && Boolean(item.trim()))
+    : [];
 }
 
-async function persistGeneratedRead(supabase: any, input: GenerateMusicSummaryInput, output: ManagerReadOutput, runId: string) {
-  const outputType = input.subjectType === "music_item" ? "song_manager_read" : "project_manager_read";
-  await retireCurrentManagerOutput(supabase, {
-    accountId: input.accountId,
-    artistWorkspaceId: input.artistWorkspaceId,
-    artistId: input.artistId,
-    subjectType: input.subjectType,
-    subjectId: input.subjectId,
-    outputType,
-  });
-
-  const { data, error } = await supabase
-    .from("manager_outputs")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      subject_type: input.subjectType,
-      subject_id: input.subjectId,
-      output_type: outputType,
-      hero_json: {
-        headline: output.headline,
-        subline: output.situationLine,
-        confidence: {
-          level: output.confidence,
-          reason: output.sourceLine,
-        },
-      },
-      blocks_json: output.intelligenceSnapshot.map((group, index) => ({
-        block_id: `music_read_block_${index + 1}`,
-        block_type: "signal_stack",
-        title: group.title,
-        content: group.insight,
-        items: group.metrics,
-      })),
-      summary: output.snapshotSummary,
-      primary_recommendation_json: {
-        summary: output.nextMove,
-        watch_next: output.watchNext,
-      },
-      avoid_json: output.doNotDoYet,
-      confidence_json: {
-        level: output.confidence,
-        source_line: output.sourceLine,
-      },
-      supporting_evidence_json: output.claimAudit,
-      render_json: output,
-      schema_version: "manager-output-v1",
-      created_from_run_id: runId,
-      is_current: true,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function retireCurrentManagerOutput(
-  supabase: any,
-  input: {
-    accountId: string;
-    artistWorkspaceId: string;
-    artistId: string;
-    subjectType: string;
-    subjectId: string;
-    outputType: string;
-  },
-) {
-  const { error } = await supabase
-    .from("manager_outputs")
-    .update({ is_current: false })
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("subject_type", input.subjectType)
-    .eq("subject_id", input.subjectId)
-    .eq("output_type", input.outputType)
-    .eq("is_current", true);
-  if (error) throw error;
-}
-
-async function loadMusicItem(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("music_items")
-    .select("id,title,item_type,lifecycle_stage,source_kind,source_limit,released_at,metadata")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("id", input.subjectId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data?.id) throw new Error("Music item was not found for Manager Read generation.");
-  return data as Record<string, unknown>;
-}
-
-async function loadMusicProject(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("music_projects")
-    .select("id,title,project_type,lifecycle_stage,source_kind,source_limit,released_at,metadata")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("id", input.subjectId)
-    .maybeSingle();
-  if (error) throw error;
-  if (!data?.id) throw new Error("Music project was not found for Manager Read generation.");
-  return data as Record<string, unknown>;
-}
-
-async function loadIdentifiers(supabase: any, input: GenerateMusicSummaryInput) {
-  const column = input.subjectType === "music_item" ? "music_item_id" : "music_project_id";
-  const { data, error } = await supabase
-    .from("music_identifiers")
-    .select("identifier_type,identifier_value")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq(column, input.subjectId);
-  if (error) throw error;
-  return (data ?? []) as Array<Record<string, unknown>>;
-}
-
-async function loadEvidence(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("evidence_items")
-    .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("subject_type", input.subjectType)
-    .eq("subject_id", input.subjectId)
-    .order("created_at", { ascending: false })
-    .limit(150);
-  if (error) throw error;
-  return (data ?? []) as Array<Record<string, unknown>>;
-}
-
-async function loadArtistProfile(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("artist_profiles")
-    .select("display_name,spotify_identity,genres,home_market,stage,artist_direction,current_goal,budget_context")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .maybeSingle();
-  if (error) throw error;
-  return isRecord(data) ? data : {};
-}
-
-async function loadRelatedRecordContext(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("music_items")
-    .select("id,title,item_type,lifecycle_stage,source_kind,released_at,metadata")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .order("released_at", { ascending: false })
-    .limit(12);
-  if (error) throw error;
-  return (data ?? []) as Array<Record<string, unknown>>;
-}
-
-async function loadRelatedEvidence(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("evidence_items")
-    .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .in("subject_type", ["music_item", "music_project"])
-    .order("created_at", { ascending: false })
-    .limit(240);
-  if (error) throw error;
-  return (data ?? []) as Array<Record<string, unknown>>;
-}
-
-async function loadProjectTracklist(supabase: any, input: GenerateMusicSummaryInput) {
-  const { data, error } = await supabase
-    .from("music_project_items")
-    .select("music_item_id,display_title,order_index,disc_number")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("music_project_id", input.subjectId)
-    .order("order_index", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as Array<Record<string, unknown>>;
-}
-
-async function createManagerSynthesisRun(supabase: any, input: GenerateMusicSummaryInput, packet: ManagerReadPacket) {
-  const { data, error } = await supabase
-    .from("manager_synthesis_runs")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      trigger_type: "evidence_triggered",
-      status: "running",
-      classification: `${input.subjectType}_manager_read`,
-      context_payload: packet,
-      started_at: new Date().toISOString(),
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function completeManagerSynthesisRun(supabase: any, runId: string, packet: ManagerReadPacket, output: ManagerReadOutput) {
-  const { error } = await supabase
-    .from("manager_synthesis_runs")
-    .update({
-      status: "completed",
-      confidence: output.confidence,
-      context_payload: packet,
-      action_plan: [output],
-      limitations: output.missingProof,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", runId);
-  if (error) throw error;
-}
-
-async function createUsageEvent(supabase: any, input: GenerateMusicSummaryInput, runId: string) {
-  const { data, error } = await supabase
-    .from("ai_run_usage_events")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      workflow_key: "music_readiness_run",
-      run_type: "manager_synthesis",
-      manager_synthesis_run_id: runId,
-      subject_type: input.subjectType,
-      subject_id: input.subjectId,
-      provider: "openai",
-      model_or_tool: Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
-      operation_key: "music_manager_read",
-      status: "started",
-      provider_request_count: 1,
-    })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function completeUsageEvent(supabase: any, usageId: string, output: ManagerReadOutput) {
-  const { error } = await supabase
-    .from("ai_run_usage_events")
-    .update({
-      status: "succeeded",
-      output_tokens: output.managerRead.split(/\s+/).length,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", usageId);
-  if (error) throw error;
-}
-
-async function writeOperatingEvent(
-  supabase: any,
-  input: GenerateMusicSummaryInput,
-  draft: { eventType: string; summary: string; payload?: Record<string, unknown> },
-) {
-  const { error } = await supabase.from("operating_events").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    event_type: draft.eventType,
-    actor_type: "manager",
-    target_type: input.subjectType,
-    target_id: input.subjectId,
-    summary: draft.summary,
-    payload: draft.payload ?? {},
-  });
-  if (error) throw error;
-}
-
-async function writeOperatingEventSafe(
-  supabase: any,
-  input: GenerateMusicSummaryInput,
-  draft: { eventType: string; summary: string; payload?: Record<string, unknown> },
-) {
-  try {
-    await writeOperatingEvent(supabase, input, draft);
-  } catch (error) {
-    console.error("Manager Read operating event write failed:", describeError(error, "Unknown operating event error."));
-  }
-}
-
-async function markRunFailedSafe(runId: string, input: GenerateMusicSummaryInput, error: unknown) {
-  try {
-    const serviceClient = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const failureMessage = describeError(error, "Manager Read generation failed.");
-    await serviceClient.from("manager_synthesis_runs").update({
-      status: "failed",
-      error: failureMessage,
-      completed_at: new Date().toISOString(),
-    }).eq("id", runId);
-    await writeOperatingEventSafe(serviceClient, input, {
-      eventType: "music_manager_read_failed",
-      summary: failureMessage,
-    });
-  } catch {
-    // Preserve the original response when failure logging fails.
-  }
-}
-
-async function markUsageFailedSafe(usageId: string, _input: GenerateMusicSummaryInput, error: unknown) {
-  try {
-    const serviceClient = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    await serviceClient.from("ai_run_usage_events").update({
-      status: "failed",
-      failure_reason: describeError(error, "Manager Read generation failed."),
-      completed_at: new Date().toISOString(),
-    }).eq("id", usageId);
-  } catch {
-    // Preserve the original response when failure logging fails.
-  }
+function selectManagerReadModel() {
+  return Deno.env.get("OPENAI_MANAGER_READ_MODEL") ||
+    Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") ||
+    Deno.env.get("OPENAI_SUMMARY_MODEL") ||
+    "gpt-5.6-luna";
 }
 
 function validateInput(input: GenerateMusicSummaryInput) {
   for (const [key, value] of Object.entries({
-    accountId: input.accountId,
-    artistWorkspaceId: input.artistWorkspaceId,
-    artistId: input.artistId,
-    subjectId: input.subjectId,
+    accountId: input?.accountId,
+    artistWorkspaceId: input?.artistWorkspaceId,
+    artistId: input?.artistId,
+    subjectId: input?.subjectId,
   })) {
     if (typeof value !== "string" || !value.trim()) throw new Error(`Missing required field: ${key}.`);
   }
@@ -739,179 +881,38 @@ function validateInput(input: GenerateMusicSummaryInput) {
   }
 }
 
-function readBearerJwtRole(authHeader: string) {
-  const token = authHeader.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) return undefined;
-  const [, encodedPayload] = token.split(".");
-  if (!encodedPayload) return undefined;
+function nonnegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? Math.floor(value) : 0;
+}
 
-  try {
-    const payload = JSON.parse(decodeBase64Url(encodedPayload));
-    return isRecord(payload) && typeof payload.role === "string" ? payload.role : undefined;
-  } catch {
-    return undefined;
+function requiredTokenCount(value: unknown, field: string) {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    throw new Error(`OpenAI Music Manager Read usage ${field} is invalid.`);
   }
+  return value;
 }
 
-function decodeBase64Url(value: string) {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  return atob(padded);
+function boundedString(value: string, maxLength: number) {
+  return value.length <= maxLength ? value : value.slice(0, maxLength);
 }
 
-function attachRelatedEvidence(
-  records: Array<Record<string, unknown>>,
-  evidence: Array<Record<string, unknown>>,
-  currentSubjectId: string,
-) {
-  return records.map((record) => {
-    const recordId = readString(record.id);
-    const recordEvidence = evidence
-      .filter((item) => readString(item.subject_id) === recordId)
-      .map(formatEvidenceForPacket)
-      .sort((left, right) => metricPriority(readString(left.metric_name)) - metricPriority(readString(right.metric_name)))
-      .slice(0, 12);
-    return {
-      id: recordId,
-      title: readString(record.title),
-      itemType: readString(record.item_type),
-      lifecycleStage: readString(record.lifecycle_stage),
-      releasedAt: readString(record.released_at),
-      isCurrentSubject: recordId === currentSubjectId,
-      strongestMetric: recordEvidence[0] ?? null,
-      evidence: recordEvidence,
-    };
-  });
+function jsonEqual(left: unknown, right: unknown) {
+  return stableJson(left) === stableJson(right);
 }
 
-function formatEvidenceForPacket(item: Record<string, unknown>) {
-  const rawVal = item.metric_value;
-  return typeof rawVal === "number"
-    ? { ...item, formatted_value: formatMetricValue(rawVal, item.metric_unit as string | null) }
-    : item;
-}
-
-function deriveRecordInsights(
-  subject: Record<string, unknown>,
-  evidence: Array<Record<string, unknown>>,
-  relatedRecords: Array<Record<string, unknown>>,
-) {
-  const subjectTitle = readString(subject.title) ?? "This record";
-  const insights: Array<Record<string, unknown>> = [];
-  const strongest = evidence
-    .filter((item) => typeof item.metric_value === "number")
-    .sort((left, right) => metricPriority(readString(left.metric_name)) - metricPriority(readString(right.metric_name)))[0];
-
-  if (strongest) {
-    insights.push({
-      label: "Lead record behavior",
-      read: `${subjectTitle}'s strongest saved behavior is ${metricLabel(readString(strongest.metric_name))}: ${readString(strongest.formatted_value) ?? strongest.metric_value}.`,
-      evidenceIds: [readString(strongest.id)].filter(Boolean),
-    });
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (isRecord(value)) {
+    return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(",")}}`;
   }
-
-  const comparison = strongest ? strongestComparison(strongest, relatedRecords, subjectTitle) : undefined;
-  if (comparison) insights.push(comparison);
-
-  const social = evidence.find((item) => {
-    const metric = readString(item.metric_name) ?? "";
-    return metric.includes("tiktok") || metric.includes("youtube") || metric.includes("shazam");
-  });
-  const playlist = evidence.find((item) => {
-    const metric = readString(item.metric_name) ?? "";
-    return metric.includes("playlist") || metric.includes("editorial");
-  });
-  if (social && playlist) {
-    insights.push({
-      label: "Two-lane read",
-      read: `${subjectTitle} has both public discovery behavior and playlist support in view; the Manager should decide which lane leads before asking the team to act.`,
-      evidenceIds: [readString(social.id), readString(playlist.id)].filter(Boolean),
-    });
-  }
-
-  return insights.slice(0, 5);
-}
-
-function strongestComparison(strongest: Record<string, unknown>, relatedRecords: Array<Record<string, unknown>>, subjectTitle: string) {
-  const metricName = readString(strongest.metric_name);
-  const value = typeof strongest.metric_value === "number" ? strongest.metric_value : undefined;
-  if (!metricName || value === undefined) return undefined;
-
-  const peers = relatedRecords.flatMap((record) => {
-    const evidence = Array.isArray(record.evidence) ? record.evidence.filter(isRecord) : [];
-    return evidence
-      .filter((item) => readString(item.metric_name) === metricName && typeof item.metric_value === "number")
-      .map((item) => ({
-        title: readString(record.title) ?? "another current record",
-        value: item.metric_value as number,
-        formattedValue: readString(item.formatted_value) ?? String(item.metric_value),
-        evidenceId: readString(item.id),
-      }));
-  }).sort((left, right) => right.value - left.value);
-
-  const leader = peers[0];
-  if (!leader) return undefined;
-  if (leader.title === subjectTitle || leader.value === value) {
-    return {
-      label: "Workspace comparison",
-      read: `${subjectTitle} is tied to the top current ${metricLabel(metricName)} read in the workspace.`,
-      evidenceIds: [readString(strongest.id), leader.evidenceId].filter(Boolean),
-    };
-  }
-  return {
-    label: "Workspace comparison",
-    read: `${subjectTitle}'s ${metricLabel(metricName)} is ${readString(strongest.formatted_value) ?? value}, while ${leader.title} leads that same lane at ${leader.formattedValue}.`,
-    evidenceIds: [readString(strongest.id), leader.evidenceId].filter(Boolean),
-  };
-}
-
-function metricPriority(metricName?: string) {
-  const metric = metricName ?? "";
-  const priorities = [
-    /spotify_trailing_28d_streams/,
-    /spotify_trailing_7d_streams/,
-    /spotify_playlist_total_reach|spotify_playlist_reach|spotify_editorial_playlist_reach/,
-    /spotify_playlist_count/,
-    /spotify_editorial_playlist_count|apple_music_editorial_playlist_count/,
-    /tiktok_top_video_views|tiktok_video_count|video_creates/,
-    /youtube_views/,
-    /shazam/,
-    /airplay|radio/,
-  ];
-  const index = priorities.findIndex((pattern) => pattern.test(metric));
-  return index === -1 ? priorities.length : index;
-}
-
-function metricLabel(metricName?: string) {
-  const metric = metricName ?? "";
-  if (metric.includes("spotify_trailing_28d_streams")) return "recent streams";
-  if (metric.includes("spotify_trailing_7d_streams")) return "last-7-day streams";
-  if (metric.includes("playlist") || metric.includes("editorial")) return "playlist support";
-  if (metric.includes("tiktok_top_video_views")) return "top TikTok clip";
-  if (metric.includes("tiktok") || metric.includes("video_creates")) return "short-form creation";
-  if (metric.includes("youtube")) return "YouTube demand";
-  if (metric.includes("shazam")) return "active discovery";
-  if (metric.includes("airplay") || metric.includes("radio")) return "radio pressure";
-  return metric.replace(/[_-]+/g, " ").trim() || "saved metric";
-}
-
-function readSubjectTitle(packet: ManagerReadPacket) {
-  return readString(packet.subject.title) ?? "Music subject";
-}
-
-function findUnexpectedScriptCharacter(output: ManagerReadOutput, modelPacket: Record<string, unknown>) {
-  const sourceText = JSON.stringify(modelPacket);
-  const generatedText = JSON.stringify(output);
-  const scriptCharacters =
-    generatedText.match(/[\u0400-\u052f\u0600-\u06ff\u0900-\u097f\u0e00-\u0e7f\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/gu) ?? [];
-  return scriptCharacters.find((character) => !sourceText.includes(character));
+  return JSON.stringify(value) ?? "null";
 }
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+function isRecord(value: unknown): value is Record<string, any> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
@@ -919,25 +920,6 @@ function describeError(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) return error.message.trim();
   if (isRecord(error) && typeof error.message === "string" && error.message.trim()) return error.message.trim();
   return fallback;
-}
-
-function isRetryableOpenAIError(error: unknown) {
-  const message = describeError(error, "");
-  const status = Number(message.match(/\bstatus\s+(\d{3})\b/i)?.[1]);
-  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504 ||
-    /too much compute|network|fetch|timed out|timeout|connection|OpenAI manager read output/i.test(message);
-}
-
-function openAiRetryDelayMs(attempt: number) {
-  return [1000, 2500, 5000][attempt] ?? 5000;
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function uniqueStrings(values: Array<string | undefined>) {
-  return Array.from(new Set(values.filter((value): value is string => Boolean(value?.trim()))));
 }
 
 function requireEnv(key: string) {
@@ -951,25 +933,4 @@ function json(body: unknown, status = 200) {
     status,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
-}
-
-function formatMetricValue(value: number, unit?: string | null) {
-  if (unit === "rank") return `#${value.toLocaleString("en-US")}`;
-  if (unit === "score" || unit === "percent_change") return `${value.toLocaleString("en-US")}${unit === "percent_change" ? "%" : ""}`;
-  return formatCompactNumber(value);
-}
-
-function formatCompactNumber(value: number) {
-  return new Intl.NumberFormat("en-US", {
-    notation: "compact",
-    maximumFractionDigits: value >= 1_000_000 ? 1 : 0,
-  }).format(value);
-}
-
-function readAppliedPlaybooks(managerIntelligencePacket: Record<string, unknown> | null | undefined): PlaybookKey[] {
-  if (!managerIntelligencePacket) return [];
-  const internalOnly = isRecord(managerIntelligencePacket.internal_only_json) ? managerIntelligencePacket.internal_only_json : {};
-  const applied = internalOnly.playbooks_applied;
-  if (!Array.isArray(applied)) return [];
-  return applied.filter((item): item is PlaybookKey => typeof item === "string" && Boolean(item.trim()));
 }

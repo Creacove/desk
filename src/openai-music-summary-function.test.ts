@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   MUSIC_MANAGER_READ_SCHEMA_VERSION,
@@ -8,6 +10,125 @@ import {
   parseMusicManagerReadOutput,
   validateMusicManagerReadOutput,
 } from "../supabase/functions/_shared/openaiMusicManagerRead";
+
+const functionPath = join(process.cwd(), "supabase", "functions", "generate-music-summary", "index.ts");
+const legacyPromptPath = join(process.cwd(), "supabase", "functions", "_shared", "openaiManagerRead.ts");
+const functionSource = readFileSync(functionPath, "utf8");
+
+describe("generate-music-summary durable v2 endpoint contract", () => {
+  it("returns a durable 202 run immediately and schedules the backend workflow", () => {
+    expect(functionSource).toContain('classification: "music_manager_read_v2"');
+    expect(functionSource).toContain('json({ status: "processing", runId }, 202)');
+    expect(functionSource).toContain("EdgeRuntime");
+    expect(functionSource).toContain("waitUntil");
+    expect(functionSource).toContain("runMusicManagerReadWorkflow");
+  });
+
+  it("authenticates before constructing its service-role database and verifies the exact workspace tuple", () => {
+    expect(functionSource.indexOf("auth.getUser")).toBeLessThan(functionSource.indexOf("const db = createClient(supabaseUrl, serviceRoleKey)"));
+    expect(functionSource).toContain('from("artist_workspaces")');
+    expect(functionSource).toContain('.eq("account_id", input.accountId)');
+    expect(functionSource).toContain('.eq("artist_id", input.artistId)');
+    expect(functionSource).toContain("assertActiveWorkspaceEntitlement");
+  });
+
+  it("reuses an exact active run, expires only stale exact-subject v2 runs, and handles the unique race", () => {
+    expect(functionSource).toContain("ACTIVE_RUN_STALE_MS = 5 * 60 * 1000");
+    expect(functionSource).toContain('.eq("classification", MUSIC_MANAGER_READ_CLASSIFICATION)');
+    expect(functionSource).toContain('.eq("subject_type", input.subjectType)');
+    expect(functionSource).toContain('.eq("subject_id", input.subjectId)');
+    expect(functionSource).toContain('.in("status", ["queued", "running"])');
+    expect(functionSource).toContain('error.code === "23505"');
+    expect(functionSource).toMatch(/return \{ runId: active\.id(?: as string)?, created: false \}/);
+    expect(functionSource).toContain('const queuedStep = { step: "queued", status: "completed" }');
+    expect(functionSource).toContain('new Map<StepName, WorkflowStepStatus>([["queued", "completed"]])');
+  });
+
+  it("checks Chartmetric freshness and enriches before building context or calling OpenAI", () => {
+    expect(functionSource).toContain("CHARTMETRIC_EVIDENCE_FRESH_MS = 24 * 60 * 60 * 1000");
+    expect(functionSource).toContain('"chartmetric-track-enrichment"');
+    expect(functionSource).toContain('"chartmetric-project-enrichment"');
+    expect(functionSource).toContain("musicItemId: input.subjectId");
+    expect(functionSource).toContain("musicProjectId: input.subjectId");
+    expect(functionSource).toContain('.eq("source", "Chartmetric")');
+    expect(functionSource).not.toContain('.ilike("source", "%chartmetric%")');
+    const workflowCall = functionSource.indexOf("runMusicManagerReadWorkflow({");
+    expect(functionSource.indexOf("inspectEvidence:", workflowCall)).toBeLessThan(functionSource.indexOf("buildContext:", workflowCall));
+    expect(functionSource.indexOf("buildContext:", workflowCall)).toBeLessThan(functionSource.indexOf("generateInitial:", workflowCall));
+    expect(functionSource).toContain('throw new Error("Chartmetric enrichment failed.');
+  });
+
+  it("builds only bounded exact-scope context and projects the newest packet", () => {
+    expect(functionSource).toContain("MAX_MANAGER_READ_CONTEXT_CHARS = 45_000");
+    expect(functionSource).toContain("managerIntelligencePacketId");
+    expect(functionSource).toContain("profileProjection");
+    expect(functionSource).toContain("strategicDiagnosis");
+    expect(functionSource).toContain("targetAssetRead");
+    expect(functionSource).toContain("comparisonAssetReads");
+    expect(functionSource).toContain("marketReads");
+    expect(functionSource).toContain("missionDirection");
+    expect(functionSource).toContain("doNotDo");
+    expect(functionSource).toContain("do_not_do_json");
+    expect(functionSource).not.toContain("sourcePanelInstruction");
+    expect(functionSource).not.toContain("latestManagerIntelligencePacket,");
+  });
+
+  it("uses the current Responses structured-output shape and bounded model routing", () => {
+    expect(functionSource).toContain('Deno.env.get("OPENAI_MANAGER_READ_MODEL")');
+    expect(functionSource).toContain('Deno.env.get("OPENAI_MANAGER_REASONING_MODEL")');
+    expect(functionSource).toContain('Deno.env.get("OPENAI_SUMMARY_MODEL")');
+    expect(functionSource).toContain('"gpt-5.6-luna"');
+    expect(functionSource).toContain('reasoning: { effort: "medium" }');
+    expect(functionSource).toContain("store: false");
+    expect(functionSource).toContain("max_output_tokens: 6000");
+    expect(functionSource).toContain("buildMusicManagerReadInstructions");
+    expect(functionSource).toContain('input: JSON.stringify(context.modelContext)');
+    expect(functionSource).toContain('verbosity: "medium"');
+    expect(functionSource).toContain('type: "json_schema"');
+    expect(functionSource).toContain("...musicManagerReadJsonSchema");
+  });
+
+  it("allows exactly one semantic repair, merges Responses usage, and never retries provider failures", () => {
+    expect(functionSource).toContain("buildMusicManagerReadRepairInstructions");
+    expect(functionSource).toContain("<invalid_output_json>");
+    expect(functionSource).toContain("<validation_violations_json>");
+    expect(functionSource).toContain("requestCount: 2");
+    expect(functionSource).toContain("cached_tokens");
+    expect(functionSource).toContain("reasoning_tokens");
+    expect(functionSource).toContain("responseId");
+    expect(functionSource).not.toMatch(/MAX_RETRIES|callOpenAIManagerReadWithRetry|openAiRetryDelayMs|isRetryableOpenAIError/);
+  });
+
+  it("stages the exact v2 projection and atomically finalizes run, usage, and activation", () => {
+    expect(functionSource).toContain('schema_version: MUSIC_MANAGER_READ_SCHEMA_VERSION');
+    expect(functionSource).toContain("source_packet_id: context.sourcePacketId");
+    expect(functionSource).toContain("summary: output.position");
+    expect(functionSource).toContain("primary_recommendation_json: { decision: output.decision, watch: output.watch }");
+    expect(functionSource).toContain("avoid_json: [output.avoid]");
+    expect(functionSource).toContain("confidence_json: { level: output.confidence, reason: output.confidenceReason }");
+    expect(functionSource).toContain("supporting_evidence_json: output.evidenceIds.map((id) => ({ id }))");
+    expect(functionSource).toContain("is_current: false");
+    expect(functionSource).toContain('.rpc("finalize_music_manager_read_v2"');
+    expect(functionSource).not.toContain("activate_music_manager_read_v2");
+  });
+
+  it("reconciles ambiguous finalization and scopes failure cleanup to active rows only", () => {
+    expect(functionSource).toContain("reconcileFinalization");
+    expect(functionSource).toContain("stableJson(left) === stableJson(right)");
+    expect(functionSource).toContain("Object.keys(value).sort()");
+    expect(functionSource).toContain("supersedes_output_id");
+    expect(functionSource).toContain('.in("status", ["queued", "running"])');
+    expect(functionSource).toContain('.eq("status", "started")');
+    expect(functionSource).toContain("throw rpcError");
+  });
+
+  it("removes the legacy prompt and rewrite/sanitization implementation", () => {
+    expect(existsSync(legacyPromptPath)).toBe(false);
+    expect(functionSource).not.toMatch(/openaiManagerRead|stripBannedVisibleMusicTerms|checkBannedVisibleMusicTerms|checkSourceLine/);
+    expect(functionSource).not.toContain("hero_json");
+    expect(functionSource).not.toContain("blocks_json");
+  });
+});
 
 const allowedEvidenceIds = new Set(["ev-streams", "ev-tiktok", "ev-market"]);
 

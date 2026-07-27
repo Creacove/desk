@@ -10,7 +10,7 @@ import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-chartmetric-backfill-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -87,25 +87,38 @@ Deno.serve(async (request) => {
 
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
-    const authClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
+    const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+    const configuredBackfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
+    const presentedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
+    const isServiceRoleInvocation =
+      authHeader === `Bearer ${serviceRoleKey}` ||
+      Boolean(
+        configuredBackfillToken &&
+        presentedBackfillToken &&
+        configuredBackfillToken === presentedBackfillToken
+      );
+    const scopedAuthHeader = isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader;
+    const authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
+      global: { headers: { Authorization: scopedAuthHeader } },
     });
 
-    const {
-      data: { user },
-      error: userError,
-    } = await authClient.auth.getUser();
+    if (!isServiceRoleInvocation) {
+      const {
+        data: { user },
+        error: userError,
+      } = await authClient.auth.getUser();
 
-    if (userError || !user) {
-      return json({ error: "Unauthorized." }, 401);
+      if (userError || !user) {
+        return json({ error: "Unauthorized." }, 401);
+      }
+
+      const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
+        target_account_id: input.accountId,
+      });
+
+      if (membershipError) throw membershipError;
+      if (!membership) return json({ error: "Forbidden." }, 403);
     }
-
-    const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", {
-      target_account_id: input.accountId,
-    });
-
-    if (membershipError) throw membershipError;
-    if (!membership) return json({ error: "Forbidden." }, 403);
 
     await assertActiveWorkspaceEntitlement(authClient, input);
 

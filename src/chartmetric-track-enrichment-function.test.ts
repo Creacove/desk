@@ -25,6 +25,7 @@ describe("Chartmetric track enrichment edge function", () => {
     expect(functionSource).toContain('Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN")');
     expect(functionSource).toContain('requireEnv("SUPABASE_SERVICE_ROLE_KEY")');
     expect(functionSource).toContain("if (!isServiceRoleInvocation)");
+    expect(functionSource).toContain('authHeader === `Bearer ${serviceRoleKey}`');
   });
 
   it("accepts a single scoped music item request with optional Chartmetric identifiers", () => {

@@ -84,11 +84,13 @@ Deno.serve(async (request) => {
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const configuredBackfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
     const presentedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
-    const isServiceRoleInvocation = Boolean(
-      configuredBackfillToken &&
-      presentedBackfillToken &&
-      configuredBackfillToken === presentedBackfillToken
-    );
+    const isServiceRoleInvocation =
+      authHeader === `Bearer ${serviceRoleKey}` ||
+      Boolean(
+        configuredBackfillToken &&
+        presentedBackfillToken &&
+        configuredBackfillToken === presentedBackfillToken
+      );
     const scopedAuthHeader = isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader;
     const authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
       global: { headers: { Authorization: scopedAuthHeader } },
