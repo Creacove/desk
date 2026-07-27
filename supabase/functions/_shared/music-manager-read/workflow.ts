@@ -56,10 +56,42 @@ export interface MusicManagerReadWorkflowDependencies<
     initial: InitialGeneration<TUsage>,
   ): Awaitable<ValidatedGeneration<TOutput, TUsage>>;
   stageOutput(output: TOutput): Awaitable<string>;
-  activateOutput(outputId: string): Awaitable<void>;
-  complete(
+  /**
+   * Atomically and idempotently activates the staged output and persists the
+   * output_activation completion, terminal run state, and usage. Implementors
+   * must reconcile ambiguous network results before returning or rejecting.
+   */
+  finalizeOutput(
     result: MusicManagerReadWorkflowResult<TOutput, TUsage>,
   ): Awaitable<void>;
+}
+
+const FAILURE_BOOKKEEPING_MESSAGE =
+  "Music Manager Read workflow failure bookkeeping failed.";
+
+function reportFailureBookkeepingError(bookkeepingError: unknown): void {
+  try {
+    console.error(FAILURE_BOOKKEEPING_MESSAGE, bookkeepingError);
+  } catch {
+    // Reporting must never replace the workflow's primary error.
+  }
+}
+
+async function rethrowAfterFailedTransition(
+  dependencies: Pick<
+    MusicManagerReadWorkflowDependencies<unknown, unknown, unknown>,
+    "markStep"
+  >,
+  step: WorkflowStep,
+  primaryError: unknown,
+): Promise<never> {
+  try {
+    await dependencies.markStep(step, "failed");
+  } catch (bookkeepingError) {
+    reportFailureBookkeepingError(bookkeepingError);
+  }
+
+  throw primaryError;
 }
 
 async function runStep<T>(
@@ -77,26 +109,11 @@ async function runStep<T>(
     await dependencies.markStep(step, "completed");
     return result;
   } catch (error) {
-    await dependencies.markStep(step, "failed");
-    throw error;
+    return rethrowAfterFailedTransition(dependencies, step, error);
   }
 }
 
-async function inspectEvidence(
-  dependencies: Pick<
-    MusicManagerReadWorkflowDependencies<unknown, unknown, unknown>,
-    "inspectEvidence" | "markStep"
-  >,
-): Promise<EvidenceInspection> {
-  try {
-    return await dependencies.inspectEvidence();
-  } catch (error) {
-    await dependencies.markStep("evidence_check", "failed");
-    throw error;
-  }
-}
-
-async function enrichEvidence(
+async function runEnrichment(
   dependencies: Pick<
     MusicManagerReadWorkflowDependencies<unknown, unknown, unknown>,
     "enrichEvidence" | "markStep"
@@ -116,8 +133,44 @@ async function enrichEvidence(
     await dependencies.markStep("chartmetric_enrichment", terminalStatus);
     return result;
   } catch (error) {
-    await dependencies.markStep("chartmetric_enrichment", "failed");
-    throw error;
+    return rethrowAfterFailedTransition(
+      dependencies,
+      "chartmetric_enrichment",
+      error,
+    );
+  }
+}
+
+async function runEvidencePhase(
+  dependencies: Pick<
+    MusicManagerReadWorkflowDependencies<unknown, unknown, unknown>,
+    "enrichEvidence" | "inspectEvidence" | "markStep"
+  >,
+): Promise<{
+  evidence: EvidenceInspection;
+  enrichmentWasLimited: boolean;
+}> {
+  await dependencies.markStep("evidence_check", "running");
+
+  try {
+    let evidence = await dependencies.inspectEvidence();
+    let enrichmentWasLimited = false;
+
+    if (evidence.state !== "fresh") {
+      const enrichment = await runEnrichment(dependencies);
+      enrichmentWasLimited =
+        enrichment.status === "completed_with_limits" ||
+        enrichment.status === "unresolved";
+      evidence = await dependencies.inspectEvidence();
+    }
+
+    await dependencies.markStep(
+      "evidence_check",
+      evidence.state === "fresh" ? "completed" : "completed_with_limits",
+    );
+    return { evidence, enrichmentWasLimited };
+  } catch (error) {
+    return rethrowAfterFailedTransition(dependencies, "evidence_check", error);
   }
 }
 
@@ -132,23 +185,10 @@ export async function runMusicManagerReadWorkflow<
     TUsage
   >,
 ): Promise<MusicManagerReadWorkflowResult<TOutput, TUsage>> {
-  await dependencies.markStep("evidence_check", "running");
-  let evidence = await inspectEvidence(dependencies);
-  let enrichmentWasLimited = false;
-
-  if (evidence.state !== "fresh") {
-    const enrichment = await enrichEvidence(dependencies);
-    enrichmentWasLimited =
-      enrichment.status === "completed_with_limits" ||
-      enrichment.status === "unresolved";
-    evidence = await inspectEvidence(dependencies);
-  }
-
-  const evidenceWasLimited = evidence.state !== "fresh";
-  await dependencies.markStep(
-    "evidence_check",
-    evidenceWasLimited ? "completed_with_limits" : "completed",
+  const { evidence, enrichmentWasLimited } = await runEvidencePhase(
+    dependencies,
   );
+  const evidenceWasLimited = evidence.state !== "fresh";
 
   const context = await runStep(dependencies, "context_build", () =>
     dependencies.buildContext()
@@ -159,18 +199,23 @@ export async function runMusicManagerReadWorkflow<
   const validated = await runStep(dependencies, "output_validation", () =>
     dependencies.validateAndRepair(context, initial)
   );
-  const outputId = await runStep(dependencies, "output_activation", async () => {
-    const stagedOutputId = await dependencies.stageOutput(validated.output);
-    await dependencies.activateOutput(stagedOutputId);
-    return stagedOutputId;
-  });
+  await dependencies.markStep("output_activation", "running");
 
-  const result: MusicManagerReadWorkflowResult<TOutput, TUsage> = {
-    ...validated,
-    outputId,
-    completedWithLimits: enrichmentWasLimited || evidenceWasLimited,
-  };
+  try {
+    const outputId = await dependencies.stageOutput(validated.output);
+    const result: MusicManagerReadWorkflowResult<TOutput, TUsage> = {
+      ...validated,
+      outputId,
+      completedWithLimits: enrichmentWasLimited || evidenceWasLimited,
+    };
 
-  await dependencies.complete(result);
-  return result;
+    await dependencies.finalizeOutput(result);
+    return result;
+  } catch (error) {
+    return rethrowAfterFailedTransition(
+      dependencies,
+      "output_activation",
+      error,
+    );
+  }
 }

@@ -5,6 +5,8 @@ import {
   type EnrichmentResult,
   type EvidenceInspection,
   type MusicManagerReadWorkflowDependencies,
+  type WorkflowStep,
+  type WorkflowStepStatus,
 } from "../supabase/functions/_shared/music-manager-read/workflow";
 
 type Context = { subject: string; limited: boolean };
@@ -31,13 +33,19 @@ type Operation =
   | "generateInitial"
   | "validateAndRepair"
   | "stageOutput"
-  | "activateOutput"
-  | "complete";
+  | "finalizeOutput";
+
+type MarkStepFailure = {
+  step: WorkflowStep;
+  status: WorkflowStepStatus;
+  error: Error;
+};
 
 type FactoryOptions = {
-  inspections?: EvidenceInspection[];
+  inspections?: Array<EvidenceInspection | Error>;
   enrichment?: EnrichmentResult;
   failures?: Partial<Record<Operation, Error>>;
+  markStepFailures?: MarkStepFailure[];
 };
 
 function createDependencies(options: FactoryOptions = {}) {
@@ -55,11 +63,21 @@ function createDependencies(options: FactoryOptions = {}) {
   const dependencies = {
     markStep: vi.fn(async (step, status) => {
       events.push(`${step}:${status}`);
+      const configuredFailure = options.markStepFailures?.find(
+        (failure) => failure.step === step && failure.status === status,
+      );
+      if (configuredFailure) {
+        throw configuredFailure.error;
+      }
     }),
     inspectEvidence: vi.fn(async () => {
       events.push("inspectEvidence");
       failIfConfigured("inspectEvidence");
-      return inspections.shift() ?? { state: "fresh" as const };
+      const inspection = inspections.shift() ?? { state: "fresh" as const };
+      if (inspection instanceof Error) {
+        throw inspection;
+      }
+      return inspection;
     }),
     enrichEvidence: vi.fn(async () => {
       events.push("enrichEvidence");
@@ -86,13 +104,9 @@ function createDependencies(options: FactoryOptions = {}) {
       failIfConfigured("stageOutput");
       return "output-1";
     }),
-    activateOutput: vi.fn(async () => {
-      events.push("activateOutput");
-      failIfConfigured("activateOutput");
-    }),
-    complete: vi.fn(async () => {
-      events.push("complete");
-      failIfConfigured("complete");
+    finalizeOutput: vi.fn(async () => {
+      events.push("finalizeOutput");
+      failIfConfigured("finalizeOutput");
     }),
   } satisfies MusicManagerReadWorkflowDependencies<Context, Output, Usage>;
 
@@ -110,8 +124,7 @@ describe("Music Manager Read v2 workflow", () => {
     expect(dependencies.validateAndRepair).toHaveBeenCalledOnce();
     expect(dependencies.validateAndRepair).toHaveBeenCalledWith(context, initial);
     expect(dependencies.stageOutput).toHaveBeenCalledOnce();
-    expect(dependencies.activateOutput).toHaveBeenCalledOnce();
-    expect(dependencies.complete).toHaveBeenCalledOnce();
+    expect(dependencies.finalizeOutput).toHaveBeenCalledOnce();
     expect(result.outputId).toBe("output-1");
   });
 
@@ -143,6 +156,19 @@ describe("Music Manager Read v2 workflow", () => {
       "chartmetric_enrichment",
       "failed",
     );
+    expect(
+      dependencies.markStep.mock.calls.filter(
+        ([step, status]) => step === "evidence_check" && status === "failed",
+      ),
+    ).toHaveLength(1);
+    expect(
+      dependencies.markStep.mock.calls.map(([step, status]) => `${step}:${status}`),
+    ).toEqual([
+      "evidence_check:running",
+      "chartmetric_enrichment:running",
+      "chartmetric_enrichment:failed",
+      "evidence_check:failed",
+    ]);
     expect(dependencies.buildContext).not.toHaveBeenCalled();
     expect(dependencies.generateInitial).not.toHaveBeenCalled();
   });
@@ -158,6 +184,10 @@ describe("Music Manager Read v2 workflow", () => {
 
     expect(dependencies.markStep).toHaveBeenCalledWith(
       "chartmetric_enrichment",
+      "failed",
+    );
+    expect(dependencies.markStep).toHaveBeenCalledWith(
+      "evidence_check",
       "failed",
     );
     expect(dependencies.generateInitial).not.toHaveBeenCalled();
@@ -212,8 +242,7 @@ describe("Music Manager Read v2 workflow", () => {
     );
     expect(dependencies.validateAndRepair).not.toHaveBeenCalled();
     expect(dependencies.stageOutput).not.toHaveBeenCalled();
-    expect(dependencies.activateOutput).not.toHaveBeenCalled();
-    expect(dependencies.complete).not.toHaveBeenCalled();
+    expect(dependencies.finalizeOutput).not.toHaveBeenCalled();
   });
 
   it("marks validation failed and stops when validation fails", async () => {
@@ -229,33 +258,139 @@ describe("Music Manager Read v2 workflow", () => {
       "failed",
     );
     expect(dependencies.stageOutput).not.toHaveBeenCalled();
-    expect(dependencies.activateOutput).not.toHaveBeenCalled();
-    expect(dependencies.complete).not.toHaveBeenCalled();
+    expect(dependencies.finalizeOutput).not.toHaveBeenCalled();
   });
 
-  it("marks activation failed and never completes after staging or activation errors", async () => {
-    for (const operation of ["stageOutput", "activateOutput"] as const) {
-      const error = new Error(`${operation} failed`);
+  it("marks activation failed and never finalizes after staging errors", async () => {
+    const error = new Error("stageOutput failed");
+    const { dependencies } = createDependencies({
+      failures: { stageOutput: error },
+    });
+
+    await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(error);
+
+    expect(dependencies.markStep).toHaveBeenCalledWith(
+      "output_activation",
+      "failed",
+    );
+    expect(dependencies.finalizeOutput).not.toHaveBeenCalled();
+  });
+
+  it("marks activation failed after finalization errors", async () => {
+    const error = new Error("finalizeOutput failed");
+    const { dependencies } = createDependencies({
+      failures: { finalizeOutput: error },
+    });
+
+    await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(error);
+
+    expect(dependencies.stageOutput).toHaveBeenCalledOnce();
+    expect(dependencies.finalizeOutput).toHaveBeenCalledOnce();
+    expect(dependencies.markStep).toHaveBeenCalledWith(
+      "output_activation",
+      "failed",
+    );
+  });
+
+  it("preserves primary errors when failed-transition bookkeeping rejects", async () => {
+    const scenarios: Array<{
+      operation: Operation;
+      step: WorkflowStep;
+      inspections?: Array<EvidenceInspection | Error>;
+    }> = [
+      { operation: "buildContext", step: "context_build" },
+      { operation: "generateInitial", step: "manager_synthesis" },
+      { operation: "validateAndRepair", step: "output_validation" },
+      {
+        operation: "enrichEvidence",
+        step: "chartmetric_enrichment",
+        inspections: [{ state: "missing" }],
+      },
+      { operation: "inspectEvidence", step: "evidence_check" },
+    ];
+
+    for (const { operation, step, inspections } of scenarios) {
+      const primaryError = new Error(`${operation} primary failure`);
+      const bookkeepingError = new Error(`${step} bookkeeping failure`);
+      const reporter = vi.spyOn(console, "error").mockImplementation(() => {});
       const { dependencies } = createDependencies({
-        failures: { [operation]: error },
+        inspections,
+        failures: { [operation]: primaryError },
+        markStepFailures: [{ step, status: "failed", error: bookkeepingError }],
       });
 
-      await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(error);
-
-      expect(dependencies.markStep).toHaveBeenCalledWith(
-        "output_activation",
-        "failed",
-      );
-      if (operation === "stageOutput") {
-        expect(dependencies.activateOutput).not.toHaveBeenCalled();
-      } else {
-        expect(dependencies.activateOutput).toHaveBeenCalledOnce();
+      try {
+        await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(
+          primaryError,
+        );
+        expect(reporter).toHaveBeenCalledWith(
+          "Music Manager Read workflow failure bookkeeping failed.",
+          bookkeepingError,
+        );
+      } finally {
+        reporter.mockRestore();
       }
-      expect(dependencies.complete).not.toHaveBeenCalled();
     }
   });
 
-  it("passes the complete successful result through unchanged", async () => {
+  it("preserves staging and finalization errors when activation failure bookkeeping rejects", async () => {
+    for (const operation of ["stageOutput", "finalizeOutput"] as const) {
+      const error = new Error(`${operation} failed`);
+      const bookkeepingError = new Error("activation bookkeeping failed");
+      const reporter = vi.spyOn(console, "error").mockImplementation(() => {});
+      const { dependencies } = createDependencies({
+        failures: { [operation]: error },
+        markStepFailures: [
+          {
+            step: "output_activation",
+            status: "failed",
+            error: bookkeepingError,
+          },
+        ],
+      });
+
+      try {
+        await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(
+          error,
+        );
+        expect(reporter).toHaveBeenCalledWith(
+          "Music Manager Read workflow failure bookkeeping failed.",
+          bookkeepingError,
+        );
+      } finally {
+        reporter.mockRestore();
+      }
+    }
+  });
+
+  it("preserves the primary error even if the bookkeeping reporter throws", async () => {
+    const primaryError = new Error("context primary failure");
+    const bookkeepingError = new Error("context bookkeeping failure");
+    const reporterError = new Error("console unavailable");
+    const reporter = vi.spyOn(console, "error").mockImplementation(() => {
+      throw reporterError;
+    });
+    const { dependencies } = createDependencies({
+      failures: { buildContext: primaryError },
+      markStepFailures: [
+        {
+          step: "context_build",
+          status: "failed",
+          error: bookkeepingError,
+        },
+      ],
+    });
+
+    try {
+      await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(
+        primaryError,
+      );
+    } finally {
+      reporter.mockRestore();
+    }
+  });
+
+  it("passes the full successful result to finalization and returns it", async () => {
     const { dependencies } = createDependencies();
 
     const result = await runMusicManagerReadWorkflow(dependencies);
@@ -268,33 +403,43 @@ describe("Music Manager Read v2 workflow", () => {
       outputId: "output-1",
       completedWithLimits: false,
     });
-    expect(dependencies.complete).toHaveBeenCalledWith(result);
+    expect(dependencies.finalizeOutput).toHaveBeenCalledOnce();
+    expect(dependencies.finalizeOutput).toHaveBeenCalledWith(result);
   });
 
-  it("records evidence, context, synthesis, validation, activation, and completion in order", async () => {
+  it("records every transition once and performs downstream calls in exact order", async () => {
     const { dependencies, events } = createDependencies({
       inspections: [{ state: "missing" }, { state: "fresh" }],
     });
 
     await runMusicManagerReadWorkflow(dependencies);
 
-    const before = (first: string, second: string) => {
-      expect(events.indexOf(first), `${first} before ${second}`).toBeLessThan(
-        events.indexOf(second),
-      );
-    };
+    expect(events).toEqual([
+      "evidence_check:running",
+      "inspectEvidence",
+      "chartmetric_enrichment:running",
+      "enrichEvidence",
+      "chartmetric_enrichment:completed",
+      "inspectEvidence",
+      "evidence_check:completed",
+      "context_build:running",
+      "buildContext",
+      "context_build:completed",
+      "manager_synthesis:running",
+      "generateInitial",
+      "manager_synthesis:completed",
+      "output_validation:running",
+      "validateAndRepair",
+      "output_validation:completed",
+      "output_activation:running",
+      "stageOutput",
+      "finalizeOutput",
+    ]);
 
-    before("evidence_check:running", "chartmetric_enrichment:running");
-    expect(events.filter((event) => event === "inspectEvidence")).toHaveLength(2);
-    expect(events.indexOf("chartmetric_enrichment:completed")).toBeLessThan(
-      events.lastIndexOf("inspectEvidence"),
-    );
-    before("chartmetric_enrichment:completed", "context_build:running");
-    before("evidence_check:completed", "context_build:running");
-    before("context_build:completed", "manager_synthesis:running");
-    before("manager_synthesis:completed", "output_validation:running");
-    before("output_validation:completed", "output_activation:running");
-    before("output_activation:completed", "complete");
+    const expectedTransitions = events.filter((event) => event.includes(":"));
+    for (const transition of expectedTransitions) {
+      expect(events.filter((event) => event === transition)).toHaveLength(1);
+    }
   });
 
   it("marks the evidence check failed when initial inspection throws", async () => {
@@ -309,7 +454,30 @@ describe("Music Manager Read v2 workflow", () => {
       "evidence_check",
       "failed",
     );
+    expect(
+      dependencies.markStep.mock.calls.filter(
+        ([step, status]) => step === "evidence_check" && status === "failed",
+      ),
+    ).toHaveLength(1);
     expect(dependencies.enrichEvidence).not.toHaveBeenCalled();
     expect(dependencies.buildContext).not.toHaveBeenCalled();
+  });
+
+  it("marks the evidence check failed exactly once when reinspection throws", async () => {
+    const error = new Error("refreshed evidence read failed");
+    const { dependencies } = createDependencies({
+      inspections: [{ state: "stale" }, error],
+    });
+
+    await expect(runMusicManagerReadWorkflow(dependencies)).rejects.toBe(error);
+
+    expect(dependencies.markStep.mock.calls).toEqual([
+      ["evidence_check", "running"],
+      ["chartmetric_enrichment", "running"],
+      ["chartmetric_enrichment", "completed"],
+      ["evidence_check", "failed"],
+    ]);
+    expect(dependencies.buildContext).not.toHaveBeenCalled();
+    expect(dependencies.generateInitial).not.toHaveBeenCalled();
   });
 });
