@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
+import { createActiveRunFallback } from "../../services/activeRunFallback";
 import type {
   MissionViewModel,
   MusicObjectViewModel,
@@ -69,7 +70,6 @@ export function MusicWorkspace({
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
-  const managerReadPollInFlight = useRef(false);
   const unknownManagerReadChecks = useRef(new Set<string>());
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
@@ -157,31 +157,47 @@ export function MusicWorkspace({
 
   useEffect(() => {
     if (selected?.managerReadStatus !== "running" && selected?.managerReadStatus !== "refreshing") return;
+    const runId = selected.managerReadRunId;
+    if (!runId) return;
 
     let cancelled = false;
-    const poll = async () => {
-      if (cancelled || managerReadPollInFlight.current) return;
-      managerReadPollInFlight.current = true;
-      try {
-        const refreshed = await onRefreshObject(
-          selected.id,
-          selected.kind === "project" ? "music_project" : "music_item",
-        );
-        if (!cancelled && refreshed) {
-          rememberFocusedUpdate(refreshed);
+    const subjectId = selected.id;
+    const subjectType = selected.kind === "project" ? "music_project" as const : "music_item" as const;
+    const fallback = createActiveRunFallback({
+      delaysMs: [5_000, 10_000, 20_000, 30_000],
+      deadlineMs: 6 * 60_000,
+      isVisible: () => document.visibilityState !== "hidden",
+      isOnline: () => navigator.onLine !== false,
+      check: async () => {
+        const run = await musicRepository.loadManagerRun(runId);
+        if (!run) return "active";
+        if (run.subjectId !== subjectId || run.subjectType !== subjectType) {
+          throw new Error("Manager Read status did not match the selected music object.");
         }
-      } catch {
-        // A transient reload failure must not discard the persisted read or stop later polls.
-      } finally {
-        managerReadPollInFlight.current = false;
-      }
-    };
-    const timer = window.setInterval(() => void poll(), 2000);
+        if (run.status === "queued" || run.status === "running") return "active";
+        if (cancelled) return "terminal";
+
+        const refreshed = await onRefreshObject(subjectId, subjectType);
+        if (!refreshed) return "active";
+        if (!cancelled) rememberFocusedUpdate(refreshed);
+        return "terminal";
+      },
+      onTerminal: () => undefined,
+      onError: () => {
+        // Keep the last good read visible and retry with bounded backoff.
+      },
+    });
+    const resume = () => fallback.resume();
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    fallback.start();
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+      fallback.stop();
     };
-  }, [selected?.id, selected?.kind, selected?.managerReadStatus, onRefreshObject]);
+  }, [musicRepository, onRefreshObject, selected?.id, selected?.kind, selected?.managerReadRunId, selected?.managerReadStatus]);
 
   function selectTab(next: MusicTab) {
     setTab(next);

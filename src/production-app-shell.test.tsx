@@ -219,6 +219,60 @@ describe("Clean production prototype-match shell", () => {
     expect(billingChecks).toEqual(["ors_paid_return"]);
   });
 
+  it("bounds payment confirmation at five minutes and offers an exact manual retry", async () => {
+    vi.useFakeTimers();
+    window.history.pushState({}, "", "/?reference=ors_slow_return");
+    const loadBillingStatus = vi.fn(async () => ({
+      checkoutStatus: "initialized" as const,
+      subscriptionStatus: "none" as const,
+      entitlementActive: false,
+      setupStatus: "not_started" as const,
+    }));
+    const billingService = {
+      async createCheckoutPreview() {
+        throw new Error("Checkout preview should not be created on a payment return.");
+      },
+      loadBillingStatus,
+    } satisfies ProductionBillingService;
+    const workspaceLoader = workspaceLoaderWith(workspace);
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoader}
+        billingService={billingService}
+        repositories={repositoriesFor("Nova Vale")}
+      />,
+    );
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("heading", { name: "Confirming payment" })).toBeInTheDocument();
+    expect(loadBillingStatus).toHaveBeenCalledTimes(1);
+    expect(loadBillingStatus).toHaveBeenLastCalledWith({ reference: "ors_slow_return" });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300_000);
+    });
+    const callsAtDeadline = loadBillingStatus.mock.calls.length;
+    expect(screen.getByRole("button", { name: "Retry payment confirmation" })).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(loadBillingStatus).toHaveBeenCalledTimes(callsAtDeadline);
+    expect(workspaceLoader.calls).toBe(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry payment confirmation" }));
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(loadBillingStatus).toHaveBeenCalledTimes(callsAtDeadline + 1);
+    expect(loadBillingStatus).toHaveBeenLastCalledWith({ reference: "ors_slow_return" });
+  });
+
   it("uses the branded loader while preparing workspace view data", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.artistProfile.loadProfile = async () => new Promise(() => undefined);
@@ -239,12 +293,20 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Preparing artist, music, mission, and manager views.")).toBeInTheDocument();
   });
 
-  it("does not continuously restart workspace polling while catalog sync is running", async () => {
+  it("checks only the exact catalog status while catalog sync is running", async () => {
+    vi.useFakeTimers();
     const runningWorkspace = {
       ...workspace,
       latestCatalogSyncStatus: "running" as const,
     };
-    const workspaceLoader = workspaceLoaderWithClonedResults(runningWorkspace);
+    const loadActiveWorkspace = vi.fn(async () => ({ ...runningWorkspace }));
+    const loadCatalogSyncStatus = vi.fn()
+      .mockResolvedValueOnce("running")
+      .mockResolvedValueOnce("completed");
+    const workspaceLoader = {
+      loadActiveWorkspace,
+      loadCatalogSyncStatus,
+    };
 
     render(
       <ProductionApp
@@ -255,10 +317,25 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(loadActiveWorkspace).toHaveBeenCalledTimes(1);
+    expect(loadCatalogSyncStatus).toHaveBeenCalledTimes(1);
+    expect(loadCatalogSyncStatus).toHaveBeenCalledWith(runningWorkspace);
 
-    await new Promise((resolve) => setTimeout(resolve, 100));
-    expect(workspaceLoader.calls).toBe(2);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(loadCatalogSyncStatus).toHaveBeenCalledTimes(2);
+    expect(loadActiveWorkspace).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(loadCatalogSyncStatus).toHaveBeenCalledTimes(2);
   });
 
   it("disables sign-in submission while signing in", async () => {
@@ -4341,16 +4418,27 @@ describe("Clean production prototype-match shell", () => {
 
   it("refreshes one active Manager Read object without overlap or a broad Music reload", async () => {
     vi.useFakeTimers();
-    let releaseFirstPoll: (() => void) | undefined;
+    let releaseFirstCheck: (() => void) | undefined;
     const repositories = repositoriesFor("Nova Vale");
     const running = musicReadSubject("song", "running");
     running.managerRead = undefined;
     const fresh = musicReadSubject("song", "fresh");
-    const loadMusicObject = vi.fn()
-      .mockImplementationOnce(() => new Promise<MusicObjectViewModel | null>((resolve) => {
-        releaseFirstPoll = () => resolve(running);
+    const loadManagerRun = vi.fn()
+      .mockImplementationOnce(() => new Promise<Awaited<ReturnType<typeof repositories.music.loadManagerRun>>>((resolve) => {
+        releaseFirstCheck = () => resolve({
+          id: "run-active",
+          status: "running",
+          subjectId: "song-jam",
+          subjectType: "music_item",
+        });
       }))
-      .mockResolvedValueOnce(fresh);
+      .mockResolvedValueOnce({
+        id: "run-active",
+        status: "completed",
+        subjectId: "song-jam",
+        subjectType: "music_item",
+      });
+    const loadMusicObject = vi.fn(async () => fresh);
     const directRepositoryRefresh = vi.fn(async () => {
       throw new Error("MusicWorkspace must use the focused refresh callback boundary.");
     });
@@ -4363,7 +4451,7 @@ describe("Clean production prototype-match shell", () => {
       <MusicWorkspace
         music={[running]}
         missions={[]}
-        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh }}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh, loadManagerRun }}
         onRefreshObject={onRefreshObject}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
@@ -4371,43 +4459,28 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(1);
-    expect(onRefreshObject).toHaveBeenCalledWith("song-jam", "music_item");
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(loadManagerRun).toHaveBeenCalledTimes(1);
+    expect(loadManagerRun).toHaveBeenCalledWith("run-active");
+    expect(onRefreshObject).not.toHaveBeenCalled();
     expect(directRepositoryRefresh).not.toHaveBeenCalled();
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(1);
-    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(loadManagerRun).toHaveBeenCalledTimes(1);
 
     await act(async () => {
-      releaseFirstPoll?.();
+      releaseFirstCheck?.();
       await Promise.resolve();
     });
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(2);
-    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(loadManagerRun).toHaveBeenCalledTimes(2);
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    expect(onRefreshObject).toHaveBeenCalledWith("song-jam", "music_item");
     expect(loadMusic).not.toHaveBeenCalled();
     expect(onMusicChanged).not.toHaveBeenCalled();
     unmount();
-
-    render(
-      <MusicWorkspace
-        music={[running]}
-        missions={[]}
-        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh }}
-        onRefreshObject={onRefreshObject}
-        onMusicChanged={onMusicChanged}
-        onOpenMission={() => undefined}
-        onBack={() => undefined}
-      />,
-    );
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(3);
-    cleanup();
-    await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(loadManagerRun).toHaveBeenCalledTimes(2);
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the previous Manager Read visible when a focused refresh fails transiently", async () => {
@@ -4415,9 +4488,10 @@ describe("Clean production prototype-match shell", () => {
     const refreshing = musicReadSubject("song", "refreshing");
     const previousBody = refreshing.managerRead?.body ?? "";
     const repositories = repositoriesFor("Nova Vale");
-    const loadMusicObject = vi.fn(async () => {
+    const loadManagerRun = vi.fn(async () => {
       throw new Error("Temporary connection loss");
     });
+    const loadMusicObject = vi.fn(async () => refreshing);
     const directRepositoryRefresh = vi.fn(async () => {
       throw new Error("MusicWorkspace must use the focused refresh callback boundary.");
     });
@@ -4427,7 +4501,7 @@ describe("Clean production prototype-match shell", () => {
       <MusicWorkspace
         music={[refreshing]}
         missions={[]}
-        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh }}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh, loadManagerRun }}
         onRefreshObject={loadMusicObject}
         onMusicChanged={async () => undefined}
         onOpenMission={() => undefined}
@@ -4437,9 +4511,10 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(previousBody.split("\n\n")[0]);
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
 
-    expect(loadMusicObject).toHaveBeenCalledTimes(1);
+    expect(loadManagerRun).toHaveBeenCalledTimes(1);
+    expect(loadMusicObject).not.toHaveBeenCalled();
     expect(directRepositoryRefresh).not.toHaveBeenCalled();
     expect(loadMusic).not.toHaveBeenCalled();
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(previousBody.split("\n\n")[0]);
@@ -4453,12 +4528,14 @@ describe("Clean production prototype-match shell", () => {
       ...musicReadSubject("song", "running"),
       id: sharedId,
       title: "Shared UUID song",
+      managerReadRunId: "run-song",
       managerRead: undefined,
     };
     const project = {
       ...musicReadSubject("project", "running"),
       id: sharedId,
       title: "Shared UUID project",
+      managerReadRunId: "run-project",
       managerRead: undefined,
     };
     const refreshedSong = {
@@ -4482,12 +4559,18 @@ describe("Clean production prototype-match shell", () => {
     const onRefreshObject = vi.fn(async (_id: string, subjectType: "music_item" | "music_project") =>
       subjectType === "music_item" ? refreshedSong : refreshedProject
     );
+    const loadManagerRun = vi.fn(async (runId: string) => ({
+      id: runId,
+      status: "completed" as const,
+      subjectId: sharedId,
+      subjectType: runId === song.managerReadRunId ? "music_item" as const : "music_project" as const,
+    }));
 
     render(
       <MusicWorkspace
         music={[song, project]}
         missions={[]}
-        musicRepository={repositories.music}
+        musicRepository={{ ...repositories.music, loadManagerRun }}
         onRefreshObject={onRefreshObject}
         onMusicChanged={async () => undefined}
         onOpenMission={() => undefined}
@@ -4495,12 +4578,12 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(onRefreshObject).toHaveBeenNthCalledWith(1, sharedId, "music_item");
 
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
     fireEvent.click(screen.getByRole("button", { name: "Open project Shared UUID project" }));
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     expect(onRefreshObject).toHaveBeenNthCalledWith(2, sharedId, "music_project");
     expect(screen.getByTestId("music-project-detail")).toHaveTextContent("The focused project refresh stayed attached");
 

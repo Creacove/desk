@@ -35,6 +35,7 @@ import {
   createSupabaseSpotifyArtistAdapter,
   createSupabaseWorkspaceLoader,
 } from "../services/productionSupabase";
+import { createActiveRunFallback } from "../services/activeRunFallback";
 import { useTheme } from "./theme";
 import type {
   AgentViewModel,
@@ -99,7 +100,7 @@ type SetupActivityStep = "setup-map" | "music-reads";
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "activity";
 type PaymentReturnState = {
   reference: string;
-  status: "checking" | "waiting" | "ready" | "mismatch" | "error";
+  status: "checking" | "waiting" | "ready" | "mismatch" | "error" | "timed-out";
   message?: string;
 };
 
@@ -276,13 +277,17 @@ export function ProductionApp({
   }, [paymentReturnReference, sessionUser?.id, workspace?.artistWorkspaceId, workspace?.entitlementActive]);
 
   useEffect(() => {
-    if (status !== "payment-return" || !paymentReturn?.reference || !sessionUser || paymentReturn.status === "ready") {
+    if (status !== "payment-return" || !paymentReturn?.reference || !sessionUser || paymentReturn.status !== "waiting") {
       return;
     }
 
     let cancelled = false;
-    const poll = async () => {
-      await refreshPaymentReturnStatus(
+    const fallback = createActiveRunFallback({
+      delaysMs: [3_000, 6_000, 12_000, 20_000, 30_000],
+      deadlineMs: 5 * 60_000,
+      isVisible: () => document.visibilityState !== "hidden",
+      isOnline: () => navigator.onLine !== false,
+      check: () => refreshPaymentReturnStatus(
         paymentReturn.reference,
         runtime.billingService,
         (next) => {
@@ -294,48 +299,88 @@ export function ProductionApp({
         (nextStatus) => {
           if (!cancelled) setStatus(nextStatus);
         },
-      );
-    };
-
-    const handle = window.setInterval(() => {
-      void poll();
-    }, 3000);
+      ),
+      onTerminal: () => undefined,
+      onError: () => undefined,
+      onDeadline: () => {
+        if (!cancelled) {
+          setPaymentReturn({
+            reference: paymentReturn.reference,
+            status: "timed-out",
+            message: "Confirmation is taking longer than expected. You can retry safely without starting another checkout.",
+          });
+        }
+      },
+    });
+    const resume = () => fallback.resume();
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    fallback.start();
 
     return () => {
       cancelled = true;
-      window.clearInterval(handle);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+      fallback.stop();
     };
   }, [paymentReturn?.reference, paymentReturn?.status, runtime.billingService, sessionUser, status]);
 
+  const retryPaymentConfirmation = useCallback(() => {
+    if (!paymentReturn?.reference) return;
+    const reference = paymentReturn.reference;
+    setPaymentReturn({ reference, status: "checking" });
+    void refreshPaymentReturnStatus(
+      reference,
+      runtime.billingService,
+      setPaymentReturn,
+      setWorkspace,
+      setStatus,
+      setSuccessNotice,
+    );
+  }, [paymentReturn?.reference, runtime.billingService]);
+
   useEffect(() => {
-    if (!sessionUser || !activeWorkspaceId || !isCatalogSyncPending(activeCatalogSyncStatus)) {
+    if (!workspace || !sessionUser || !activeWorkspaceId || !isCatalogSyncPending(activeCatalogSyncStatus)) {
       return;
     }
+    const loadCatalogSyncStatus = runtime.workspaceLoader.loadCatalogSyncStatus;
+    if (!loadCatalogSyncStatus) return;
 
     let cancelled = false;
-    const poll = async () => {
-      try {
-        const nextWorkspace = await runtime.workspaceLoader.loadActiveWorkspace(sessionUser as ProductionUser);
-        if (!cancelled && nextWorkspace) {
-          setWorkspace((currentWorkspace) =>
-            currentWorkspace && areWorkspacesEquivalent(currentWorkspace, nextWorkspace) ? currentWorkspace : nextWorkspace,
-          );
+    const targetWorkspace = workspace;
+    const fallback = createActiveRunFallback({
+      delaysMs: [4_000, 4_000, 8_000, 15_000, 30_000],
+      deadlineMs: 6 * 60_000,
+      isVisible: () => document.visibilityState !== "hidden",
+      isOnline: () => navigator.onLine !== false,
+      check: async () => {
+        const nextStatus = await loadCatalogSyncStatus(targetWorkspace);
+        if (!nextStatus || isCatalogSyncPending(nextStatus)) return "active";
+        if (!cancelled) {
+          setWorkspace((currentWorkspace) => currentWorkspace?.artistWorkspaceId === targetWorkspace.artistWorkspaceId
+            ? { ...currentWorkspace, latestCatalogSyncStatus: nextStatus }
+            : currentWorkspace);
         }
-      } catch {
-        // Catalog polling should never break the active onboarding/session view.
-      }
-    };
-
-    const handle = window.setInterval(() => {
-      void poll();
-    }, 4000);
-    void poll();
+        return "terminal";
+      },
+      onTerminal: () => undefined,
+      onError: () => {
+        // Keep the current workspace visible and retry with bounded backoff.
+      },
+    });
+    const resume = () => fallback.resume();
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    fallback.start();
+    fallback.resume();
 
     return () => {
       cancelled = true;
-      window.clearInterval(handle);
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+      fallback.stop();
     };
-  }, [runtime.workspaceLoader, sessionUser, activeWorkspaceId, activeCatalogSyncStatus]);
+  }, [runtime.workspaceLoader, sessionUser, workspace, activeWorkspaceId, activeCatalogSyncStatus]);
 
   if (typeof window !== "undefined" && window.location.pathname === "/update-password") {
     return <UpdatePasswordScreen authAdapter={runtime.authAdapter} onComplete={() => { window.history.replaceState({}, "", "/"); void loadProductionState(); }} />;
@@ -357,7 +402,13 @@ export function ProductionApp({
   }
 
   if (status === "payment-return" && paymentReturn) {
-    return <PaymentReturnScreen state={paymentReturn} onSignOut={sessionUser ? handleSignOut : undefined} />;
+    return (
+      <PaymentReturnScreen
+        state={paymentReturn}
+        onRetry={paymentReturn.status === "timed-out" ? retryPaymentConfirmation : undefined}
+        onSignOut={sessionUser ? handleSignOut : undefined}
+      />
+    );
   }
 
   if (status === "missing-workspace") {
@@ -2001,9 +2052,11 @@ function AuthScreen({
 
 function PaymentReturnScreen({
   state,
+  onRetry,
   onSignOut,
 }: {
   state: PaymentReturnState;
+  onRetry?: () => void;
   onSignOut?: () => void;
 }) {
   const body =
@@ -2031,7 +2084,12 @@ function PaymentReturnScreen({
         {state.status === "checking" || state.status === "waiting" ? (
           <div className="mt-5 inline-flex items-center gap-2 text-[12px] font-bold text-muted-foreground">
             <AppThinkingOrb state="solving" size={20} />
-            Polling billing status
+            Checking payment status
+          </div>
+        ) : null}
+        {onRetry ? (
+          <div className="mt-5">
+            <ProductButton onClick={onRetry}>Retry payment confirmation</ProductButton>
           </div>
         ) : null}
         {onSignOut ? (
@@ -2512,14 +2570,14 @@ async function refreshPaymentReturnStatus(
   setWorkspace: (workspace: ProductionWorkspace | null) => void,
   setStatus: (status: "loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error") => void,
   setSuccessNotice: (message: string | null) => void,
-) {
+): Promise<"active" | "terminal"> {
   if (!billingService) {
     setPaymentReturn({
       reference: pointer,
       status: "error",
       message: "Billing confirmation is not configured for this environment.",
     });
-    return;
+    return "terminal";
   }
 
   try {
@@ -2538,7 +2596,7 @@ async function refreshPaymentReturnStatus(
       clearPaymentReturnUrl();
       setSuccessNotice(`Payment successful — ${billingStatus.workspace.artistName}'s Desk is unlocked.`);
       setStatus("ready");
-      return;
+      return "terminal";
     }
 
     if (billingStatus.checkoutStatus === "missing") {
@@ -2547,7 +2605,7 @@ async function refreshPaymentReturnStatus(
         status: "mismatch",
         message: billingStatus.message ?? "This payment is not linked to the signed-in session in this browser.",
       });
-      return;
+      return "terminal";
     }
 
     if (billingStatus.checkoutStatus === "failed" || billingStatus.checkoutStatus === "expired" || billingStatus.checkoutStatus === "abandoned") {
@@ -2556,7 +2614,7 @@ async function refreshPaymentReturnStatus(
         status: "error",
         message: billingStatus.message ?? "This checkout is no longer payable. Return to artist search and start a new subscription.",
       });
-      return;
+      return "terminal";
     }
 
     setPaymentReturn({
@@ -2564,12 +2622,14 @@ async function refreshPaymentReturnStatus(
       status: "waiting",
       message: billingStatus.message ?? "Waiting for secure payment confirmation. Desk access opens only after billing is verified.",
     });
-  } catch (statusError) {
+    return "active";
+  } catch {
     setPaymentReturn({
       reference: pointer,
-      status: "error",
-      message: readErrorMessage(statusError, "Payment confirmation could not be loaded."),
+      status: "waiting",
+      message: "Payment confirmation could not be loaded. We will retry safely.",
     });
+    return "active";
   }
 }
 

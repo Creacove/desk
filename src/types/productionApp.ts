@@ -50,6 +50,7 @@ export type ProductionWorkspaceDraft = {
 
 export type ProductionWorkspaceLoader = {
   loadActiveWorkspace(user: ProductionUser): Promise<ProductionWorkspace | null>;
+  loadCatalogSyncStatus?(workspace: ProductionWorkspace): Promise<ProductionWorkspace["latestCatalogSyncStatus"]>;
   createInitialWorkspace?(user: ProductionUser, draft: ProductionWorkspaceDraft): Promise<ProductionWorkspace>;
 };
 

@@ -1315,6 +1315,36 @@ describe("production Supabase services", () => {
     });
   });
 
+  it("loads only the latest catalog status for the exact workspace owner scope", async () => {
+    const { client, calls } = createObservedSupabaseClient({
+      source_sync_jobs: [{
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        job_type: "spotify_catalog_bootstrap",
+        status: "completed_with_limits",
+        created_at: "2026-07-28T10:00:00.000Z",
+      }],
+    });
+
+    const status = await createSupabaseWorkspaceLoader(client).loadCatalogSyncStatus?.(workspace);
+
+    expect(status).toBe("completed_with_limits");
+    expect(calls).toEqual([{
+      table: "source_sync_jobs",
+      select: "status",
+      filters: [
+        ["account_id", "account-1"],
+        ["artist_workspace_id", "workspace-1"],
+        ["artist_id", "artist-1"],
+        ["job_type", "spotify_catalog_bootstrap"],
+      ],
+      inFilters: [],
+      orders: [["created_at", false]],
+      limit: 1,
+    }]);
+  });
+
   it.each([
     "queued",
     "running",

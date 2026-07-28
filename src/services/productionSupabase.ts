@@ -236,6 +236,20 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         billingCheckoutSessionId: readLatestSetupCheckoutSessionId(workspace.workspace_setup_runs),
       } satisfies ProductionWorkspace;
     },
+    async loadCatalogSyncStatus(workspace) {
+      const { data, error } = await client
+        .from("source_sync_jobs")
+        .select("status")
+        .eq("account_id", workspace.accountId)
+        .eq("artist_workspace_id", workspace.artistWorkspaceId)
+        .eq("artist_id", workspace.artistId)
+        .eq("job_type", "spotify_catalog_bootstrap")
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+      return readLatestSyncStatus(data as Array<{ status?: ProductionWorkspace["latestCatalogSyncStatus"] | null }> | null);
+    },
     async createInitialWorkspace(_user, draft) {
       const { data, error } = await client.rpc("create_initial_artist_workspace", {
         p_artist_display_name: draft.artistName.trim(),
