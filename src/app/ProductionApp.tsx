@@ -924,6 +924,17 @@ function CleanProductionWorkspace({
     return nextMusic;
   }
 
+  const refreshMusicObject = useCallback(async (
+    subjectId: string,
+    subjectType: "music_item" | "music_project",
+  ) => {
+    const refreshed = await repositories.music.loadMusicObject(subjectId, subjectType);
+    const expectedKind = subjectType === "music_project" ? "project" : "song";
+    if (!refreshed || refreshed.id !== subjectId || refreshed.kind !== expectedKind) return null;
+    setMusic((current) => current.map((item) => item.id === subjectId ? refreshed : item));
+    return refreshed;
+  }, [repositories.music]);
+
   async function generateTodaysBrief(mode: TodayBriefGenerationMode = "operating") {
     try {
       setTodayBriefPending(true);
@@ -1337,6 +1348,7 @@ function CleanProductionWorkspace({
               missions={missions}
               targetMusicObjectId={targetMusicObjectId}
               musicRepository={repositories.music}
+              onRefreshObject={refreshMusicObject}
               onMusicChanged={reloadMusic}
               onOpenMission={openMissionRoom}
               onBack={() => navigate("labelHQ")}

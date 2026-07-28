@@ -285,6 +285,14 @@ export type MusicManagerReadStatus =
   | "failed"
   | "refresh_failed";
 
+export type MusicManagerRunStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "completed_with_limits"
+  | "failed"
+  | "cancelled";
+
 export type MusicObjectViewModel = {
   id: string;
   kind: "song" | "project";
@@ -603,7 +611,7 @@ export type MusicRepository = {
   ): Promise<MusicObjectViewModel | null>;
   loadManagerRun(runId: string): Promise<{
     id: string;
-    status: string;
+    status: MusicManagerRunStatus;
     subjectId: string;
     subjectType: "music_item" | "music_project";
     error?: string;

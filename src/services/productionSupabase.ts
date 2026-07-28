@@ -19,6 +19,7 @@ import type {
   MissionTaskViewModel,
   MissionViewModel,
   MusicManagerReadStatus,
+  MusicManagerRunStatus,
   MusicManagerReadViewModel,
   MusicObjectViewModel,
   SpotifyCatalogSearchResult,
@@ -1056,7 +1057,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
   const loadManagerRun = async (runId: string): Promise<{
     id: string;
-    status: string;
+    status: MusicManagerRunStatus;
     subjectId: string;
     subjectType: "music_item" | "music_project";
     error?: string;
@@ -1073,15 +1074,16 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     if (error) throw error;
     const row = data as ManagerSynthesisRunRow | null;
     const subjectType = row?.subject_type;
+    const status = row?.status;
     if (
       !row ||
       (subjectType !== "music_item" && subjectType !== "music_project") ||
       !row.subject_id ||
-      !row.status
+      !isMusicManagerRunStatus(status)
     ) return null;
     return {
       id: row.id,
-      status: row.status,
+      status,
       subjectId: row.subject_id,
       subjectType,
       ...(row.error ? { error: row.error } : {}),
@@ -3520,7 +3522,7 @@ function musicManagerRunsFromRows(rows: ManagerSynthesisRunRow[]): ProductionMus
   });
 }
 
-function isMusicManagerRunStatus(value: string | null | undefined): value is ProductionMusicManagerRun["status"] {
+function isMusicManagerRunStatus(value: string | null | undefined): value is MusicManagerRunStatus {
   return value === "queued" || value === "running" || value === "completed" ||
     value === "completed_with_limits" || value === "failed" || value === "cancelled";
 }

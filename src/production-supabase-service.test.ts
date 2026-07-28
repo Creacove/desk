@@ -1233,6 +1233,39 @@ describe("production Supabase services", () => {
     });
   });
 
+  it.each([
+    "queued",
+    "running",
+    "completed",
+    "completed_with_limits",
+    "failed",
+    "cancelled",
+  ] as const)("accepts supported Manager Read run status %s", async (status) => {
+    const tables = musicManagerReadTables({
+      manager_synthesis_runs: [musicManagerRunRow({ id: `run-${status}`, status })],
+    });
+
+    const result = await createSupabaseProductionRepositories(
+      createObservedSupabaseClient(tables).client,
+      workspace,
+    ).music.loadManagerRun(`run-${status}`);
+
+    expect(result?.status).toBe(status);
+  });
+
+  it("rejects an unsupported Manager Read run status", async () => {
+    const tables = musicManagerReadTables({
+      manager_synthesis_runs: [musicManagerRunRow({ id: "run-unknown", status: "sleeping" })],
+    });
+
+    const result = await createSupabaseProductionRepositories(
+      createObservedSupabaseClient(tables).client,
+      workspace,
+    ).music.loadManagerRun("run-unknown");
+
+    expect(result).toBeNull();
+  });
+
   it("starts Manager Read with one focused object reload and never invokes the broad library loader", async () => {
     const tables = musicManagerReadTables();
     const { client, calls } = createObservedSupabaseClient(tables, {

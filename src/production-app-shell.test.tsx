@@ -4067,6 +4067,7 @@ describe("Clean production prototype-match shell", () => {
         music={[subject]}
         missions={[]}
         musicRepository={{ ...repositories.music, startManagerRead }}
+        onRefreshObject={repositories.music.loadMusicObject}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4100,6 +4101,7 @@ describe("Clean production prototype-match shell", () => {
         music={[subject]}
         missions={[]}
         musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
         onMusicChanged={async () => undefined}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4252,6 +4254,7 @@ describe("Clean production prototype-match shell", () => {
         music={[subject]}
         missions={[]}
         musicRepository={{ ...repositories.music, loadMusic, startManagerRead }}
+        onRefreshObject={repositories.music.loadMusicObject}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4279,6 +4282,7 @@ describe("Clean production prototype-match shell", () => {
         music={[subject]}
         missions={[]}
         musicRepository={{ ...repositories.music, startManagerRead }}
+        onRefreshObject={repositories.music.loadMusicObject}
         onMusicChanged={async () => undefined}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4306,13 +4310,20 @@ describe("Clean production prototype-match shell", () => {
         releaseFirstPoll = () => resolve(running);
       }))
       .mockResolvedValueOnce(fresh);
+    const directRepositoryRefresh = vi.fn(async () => {
+      throw new Error("MusicWorkspace must use the focused refresh callback boundary.");
+    });
+    const onRefreshObject = vi.fn((subjectId: string, subjectType: "music_item" | "music_project") =>
+      loadMusicObject(subjectId, subjectType)
+    );
     const loadMusic = vi.fn(repositories.music.loadMusic);
     const onMusicChanged = vi.fn(async () => undefined);
     const { unmount } = render(
       <MusicWorkspace
         music={[running]}
         missions={[]}
-        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject }}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh }}
+        onRefreshObject={onRefreshObject}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4320,21 +4331,22 @@ describe("Clean production prototype-match shell", () => {
     );
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(1);
-    expect(loadMusicObject).toHaveBeenCalledWith("song-jam", "music_item");
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    expect(onRefreshObject).toHaveBeenCalledWith("song-jam", "music_item");
+    expect(directRepositoryRefresh).not.toHaveBeenCalled();
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(1);
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(1);
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       releaseFirstPoll?.();
       await Promise.resolve();
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(2);
+    expect(onRefreshObject).toHaveBeenCalledTimes(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(2);
+    expect(onRefreshObject).toHaveBeenCalledTimes(2);
     expect(loadMusic).not.toHaveBeenCalled();
     expect(onMusicChanged).not.toHaveBeenCalled();
     unmount();
@@ -4343,17 +4355,18 @@ describe("Clean production prototype-match shell", () => {
       <MusicWorkspace
         music={[running]}
         missions={[]}
-        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject }}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh }}
+        onRefreshObject={onRefreshObject}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
       />,
     );
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(3);
+    expect(onRefreshObject).toHaveBeenCalledTimes(3);
     cleanup();
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(loadMusicObject).toHaveBeenCalledTimes(3);
+    expect(onRefreshObject).toHaveBeenCalledTimes(3);
   });
 
   it("keeps the previous Manager Read visible when a focused refresh fails transiently", async () => {
@@ -4364,13 +4377,17 @@ describe("Clean production prototype-match shell", () => {
     const loadMusicObject = vi.fn(async () => {
       throw new Error("Temporary connection loss");
     });
+    const directRepositoryRefresh = vi.fn(async () => {
+      throw new Error("MusicWorkspace must use the focused refresh callback boundary.");
+    });
     const loadMusic = vi.fn(repositories.music.loadMusic);
 
     render(
       <MusicWorkspace
         music={[refreshing]}
         missions={[]}
-        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject }}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject: directRepositoryRefresh }}
+        onRefreshObject={loadMusicObject}
         onMusicChanged={async () => undefined}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4382,6 +4399,7 @@ describe("Clean production prototype-match shell", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
 
     expect(loadMusicObject).toHaveBeenCalledTimes(1);
+    expect(directRepositoryRefresh).not.toHaveBeenCalled();
     expect(loadMusic).not.toHaveBeenCalled();
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(previousBody.split("\n\n")[0]);
   });

@@ -25,6 +25,7 @@ export function MusicWorkspace({
   missions,
   targetMusicObjectId,
   musicRepository,
+  onRefreshObject,
   onMusicChanged,
   onOpenMission,
   onBack: _onBack,
@@ -35,6 +36,10 @@ export function MusicWorkspace({
   missions: MissionViewModel[];
   targetMusicObjectId?: string | null;
   musicRepository: MusicRepository;
+  onRefreshObject: (
+    subjectId: string,
+    subjectType: "music_item" | "music_project",
+  ) => Promise<MusicObjectViewModel | null>;
   onMusicChanged: () => Promise<void>;
   onOpenMission: (missionId: string) => void;
   onBack: () => void;
@@ -112,7 +117,7 @@ export function MusicWorkspace({
       if (cancelled || managerReadPollInFlight.current) return;
       managerReadPollInFlight.current = true;
       try {
-        const refreshed = await musicRepository.loadMusicObject(
+        const refreshed = await onRefreshObject(
           selected.id,
           selected.kind === "project" ? "music_project" : "music_item",
         );
@@ -130,7 +135,7 @@ export function MusicWorkspace({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selected?.id, selected?.kind, selected?.managerReadStatus, musicRepository]);
+  }, [selected?.id, selected?.kind, selected?.managerReadStatus, onRefreshObject]);
 
   function selectTab(next: MusicTab) {
     setTab(next);

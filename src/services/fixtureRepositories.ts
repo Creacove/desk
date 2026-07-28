@@ -12,6 +12,7 @@ import type {
   MissionNoteViewModel,
   MissionRecapViewModel,
   MissionTaskViewModel,
+  MusicManagerRunStatus,
   MusicObjectViewModel,
   ProductionFixtureData,
 } from "../types/cleanProduction";
@@ -798,7 +799,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       async loadManagerRun(runId) {
         const found = music.find((item) => item.managerReadRunId === runId);
         if (!found) return null;
-        const status = found.managerReadStatus === "refreshing" || found.managerReadStatus === "running"
+        const status: MusicManagerRunStatus = found.managerReadStatus === "refreshing" || found.managerReadStatus === "running"
           ? "running"
           : found.managerReadStatus === "failed" || found.managerReadStatus === "refresh_failed"
             ? "failed"
