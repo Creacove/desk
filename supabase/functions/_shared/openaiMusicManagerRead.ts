@@ -2,21 +2,36 @@ export const MUSIC_MANAGER_READ_SCHEMA_VERSION = "music-manager-read-v2";
 
 export type MusicManagerReadSubjectType = "music_item" | "music_project";
 
+export const MUSIC_MANAGER_READ_LIMITS = {
+  positionChars: 220,
+  managementRoleChars: 160,
+  bodyChars: 2400,
+  bodyMinWords: 140,
+  bodyMaxWords: 280,
+  metricMinItems: 1,
+  metricMaxItems: 5,
+  evidenceMaxItems: 24,
+} as const;
+
+export type MusicManagerReadModelOutput = {
+  position: string;
+  managementRole: string;
+  body: string;
+  metricEvidenceIds: string[];
+  evidenceIds: string[];
+};
+
+export type MusicManagerReadMetric = {
+  label: string;
+  value: string;
+  evidenceId: string;
+};
+
 export type MusicManagerReadV2 = {
   position: string;
   managementRole: string;
   body: string;
-  decision: string;
-  avoid: string;
-  watch: string;
-  confidence: "low" | "medium" | "high";
-  confidenceReason: string;
-  signals: Array<{
-    label: string;
-    value: string;
-    meaning: string;
-    evidenceIds: string[];
-  }>;
+  metrics: MusicManagerReadMetric[];
   evidenceIds: string[];
 };
 
@@ -24,22 +39,16 @@ export type ValidationContext = {
   subjectType: MusicManagerReadSubjectType;
   subjectTitle: string;
   allowedEvidenceIds: Set<string>;
+  allowedMetricEvidenceIds: Set<string>;
 };
 
 const ROOT_OUTPUT_KEYS = [
   "position",
   "managementRole",
   "body",
-  "decision",
-  "avoid",
-  "watch",
-  "confidence",
-  "confidenceReason",
-  "signals",
+  "metricEvidenceIds",
   "evidenceIds",
 ] as const;
-
-const SIGNAL_OUTPUT_KEYS = ["label", "value", "meaning", "evidenceIds"] as const;
 
 export const musicManagerReadJsonSchema = {
   name: "music_manager_read_v2",
@@ -49,37 +58,19 @@ export const musicManagerReadJsonSchema = {
     additionalProperties: false,
     required: ROOT_OUTPUT_KEYS,
     properties: {
-      position: { type: "string", maxLength: 220 },
-      managementRole: { type: "string", maxLength: 160 },
-      body: { type: "string", maxLength: 2400 },
-      decision: { type: "string", maxLength: 260 },
-      avoid: { type: "string", maxLength: 260 },
-      watch: { type: "string", maxLength: 260 },
-      confidence: { type: "string", enum: ["low", "medium", "high"] },
-      confidenceReason: { type: "string", maxLength: 260 },
-      signals: {
+      position: { type: "string", maxLength: MUSIC_MANAGER_READ_LIMITS.positionChars },
+      managementRole: { type: "string", maxLength: MUSIC_MANAGER_READ_LIMITS.managementRoleChars },
+      body: { type: "string", maxLength: MUSIC_MANAGER_READ_LIMITS.bodyChars },
+      metricEvidenceIds: {
         type: "array",
-        minItems: 3,
-        maxItems: 6,
-        items: {
-          type: "object",
-          additionalProperties: false,
-          required: SIGNAL_OUTPUT_KEYS,
-          properties: {
-            label: { type: "string", maxLength: 64 },
-            value: { type: "string", maxLength: 36 },
-            meaning: { type: "string", maxLength: 120 },
-            evidenceIds: {
-              type: "array",
-              minItems: 1,
-              items: { type: "string" },
-            },
-          },
-        },
+        minItems: MUSIC_MANAGER_READ_LIMITS.metricMinItems,
+        maxItems: MUSIC_MANAGER_READ_LIMITS.metricMaxItems,
+        items: { type: "string" },
       },
       evidenceIds: {
         type: "array",
         minItems: 1,
+        maxItems: MUSIC_MANAGER_READ_LIMITS.evidenceMaxItems,
         items: { type: "string" },
       },
     },
@@ -87,30 +78,25 @@ export const musicManagerReadJsonSchema = {
 } as const;
 
 const FORBIDDEN_VISIBLE_TERMS =
-  /\b(openai|chatgpt|anthropic|claude|gemini|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id|provider window|ingestion error|provider data|source window|data ingestion|metric window|provider limit)\b/i;
+  /\b(openai|chatgpt|anthropic|claude|gemini|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id|provider window|ingestion error|provider data|source window|data ingestion|metric window|provider limit|the provider|the api|the database|the prompt)\b/i;
 
-export function parseMusicManagerReadOutput(value: unknown): MusicManagerReadV2 {
+export function parseMusicManagerReadOutput(value: unknown): MusicManagerReadModelOutput {
   if (!isPlainObject(value)) {
     throw new Error("OpenAI music manager read output must be a plain object.");
   }
   assertExactOwnEnumerableKeys(value, ROOT_OUTPUT_KEYS, "root");
 
   return {
-    position: readRequiredString(value.position, "position"),
-    managementRole: readRequiredString(value.managementRole, "managementRole"),
-    body: readRequiredString(value.body, "body"),
-    decision: readRequiredString(value.decision, "decision"),
-    avoid: readRequiredString(value.avoid, "avoid"),
-    watch: readRequiredString(value.watch, "watch"),
-    confidence: readConfidence(value.confidence),
-    confidenceReason: readRequiredString(value.confidenceReason, "confidenceReason"),
-    signals: readSignals(value.signals),
-    evidenceIds: readEvidenceIds(value.evidenceIds, "evidenceIds"),
+    position: readRequiredString(value.position, "position", MUSIC_MANAGER_READ_LIMITS.positionChars),
+    managementRole: readRequiredString(value.managementRole, "managementRole", MUSIC_MANAGER_READ_LIMITS.managementRoleChars),
+    body: readRequiredString(value.body, "body", MUSIC_MANAGER_READ_LIMITS.bodyChars),
+    metricEvidenceIds: readEvidenceIds(value.metricEvidenceIds, "metricEvidenceIds", false, MUSIC_MANAGER_READ_LIMITS.metricMaxItems),
+    evidenceIds: readEvidenceIds(value.evidenceIds, "evidenceIds", true, MUSIC_MANAGER_READ_LIMITS.evidenceMaxItems),
   };
 }
 
 export function validateMusicManagerReadOutput(
-  output: MusicManagerReadV2,
+  output: MusicManagerReadModelOutput,
   context: ValidationContext,
 ): string[] {
   const violations: string[] = [];
@@ -123,21 +109,10 @@ export function validateMusicManagerReadOutput(
     ["position", output.position],
     ["managementRole", output.managementRole],
     ["body", output.body],
-    ["decision", output.decision],
-    ["avoid", output.avoid],
-    ["watch", output.watch],
-    ["confidenceReason", output.confidenceReason],
   ];
-  output.signals.forEach((signal, index) => {
-    visibleFields.push(
-      [`signals[${index}].label`, signal.label],
-      [`signals[${index}].value`, signal.value],
-      [`signals[${index}].meaning`, signal.meaning],
-    );
-  });
 
   if (/\b(as|for|of|with|and|or|in|to|at|by|the|a|an)\s*$/i.test(output.managementRole.trim())) {
-    violations.push(`managementRole must be a complete role title and not end mid-sentence.`);
+    violations.push("managementRole must be a complete role title and not end mid-sentence.");
   }
 
   for (const [field, text] of visibleFields) {
@@ -152,53 +127,28 @@ export function validateMusicManagerReadOutput(
     }
   }
 
-  output.signals.forEach((signal, index) => {
-    if (signal.value.includes(";")) {
-      violations.push(`signals[${index}].value must represent a single metric without semicolons.`);
+  const seenMetricIds = new Set<string>();
+  for (const evidenceId of output.metricEvidenceIds) {
+    if (seenMetricIds.has(evidenceId)) {
+      violations.push(`metricEvidenceIds must not contain duplicate evidence ID "${evidenceId}".`);
     }
-    if (/\d+\.\s*$/.test(signal.value)) {
-      violations.push(`signals[${index}].value must be a complete figure and not end in a trailing decimal point.`);
+    seenMetricIds.add(evidenceId);
+    if (!context.allowedMetricEvidenceIds.has(evidenceId)) {
+      violations.push(`metricEvidenceIds contains unsupported metric evidence ID "${evidenceId}".`);
     }
-  });
-
-  const judgmentFields: Array<[string, string]> = [
-    ["decision", output.decision],
-    ["avoid", output.avoid],
-    ["watch", output.watch],
-  ];
-  for (let leftIndex = 0; leftIndex < judgmentFields.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < judgmentFields.length; rightIndex += 1) {
-      const [leftName, leftText] = judgmentFields[leftIndex];
-      const [rightName, rightText] = judgmentFields[rightIndex];
-      if (tokenOverlap(leftText, rightText) >= 0.8) {
-        violations.push(`${leftName} and ${rightName} must be meaningfully distinct.`);
-      }
+    if (!output.evidenceIds.includes(evidenceId)) {
+      violations.push(`evidenceIds must include selected metric evidence ID "${evidenceId}".`);
     }
   }
 
   const bodyWordCount = countWords(output.body);
-  if (bodyWordCount < 80 || bodyWordCount > 400) {
-    violations.push(`body must contain 80–400 words; received ${bodyWordCount}.`);
+  if (bodyWordCount < MUSIC_MANAGER_READ_LIMITS.bodyMinWords || bodyWordCount > MUSIC_MANAGER_READ_LIMITS.bodyMaxWords) {
+    violations.push(
+      `body must contain ${MUSIC_MANAGER_READ_LIMITS.bodyMinWords}–${MUSIC_MANAGER_READ_LIMITS.bodyMaxWords} words; received ${bodyWordCount}.`,
+    );
   }
 
   validateEvidenceIds(output.evidenceIds, "evidenceIds", context.allowedEvidenceIds, violations);
-  const rootEvidenceIds = new Set(output.evidenceIds);
-  const missingSignalEvidenceIds = new Set<string>();
-  output.signals.forEach((signal, index) => {
-    validateEvidenceIds(
-      signal.evidenceIds,
-      `signals[${index}].evidenceIds`,
-      context.allowedEvidenceIds,
-      violations,
-    );
-    for (const evidenceId of signal.evidenceIds) {
-      if (!rootEvidenceIds.has(evidenceId)) missingSignalEvidenceIds.add(evidenceId);
-    }
-  });
-  for (const evidenceId of missingSignalEvidenceIds) {
-    violations.push(`evidenceIds must include signal evidence ID "${evidenceId}".`);
-  }
-
   return violations;
 }
 
@@ -208,7 +158,7 @@ export function buildMusicManagerReadRepairInstructions(violations: string[]): s
     "Correct only these violations:",
     violationList,
     "Preserve all already-valid content.",
-    "Return the full music_manager_read_v2 schema again.",
+    "Return the complete structured output again.",
   ].join("\n");
 }
 
@@ -216,95 +166,62 @@ export function buildMusicManagerReadInstructions(
   subjectType: MusicManagerReadSubjectType,
   playbookInstructions: string,
 ): string {
+  const isProject = subjectType === "music_project";
+  const subject = isProject ? "project" : "song";
+  const subjectPossessive = isProject ? "project's" : "song's";
+  const systemRole = isProject ? "release-level role this project is becoming" : "role this song is becoming";
   const instructions = [
-    // Analyst Persona
-    "You are the artist's senior Manager — an experienced A&R and music business operator who writes honest, direct reads grounded in data. You are skeptical of vanity metrics and you prioritize what is true over what sounds impressive.",
-
-    // Chain-of-Thought: Reason Before Writing
-    "Before writing anything, silently ask yourself: (1) What is the single most distinctive thing about this song's data right now — what would surprise a seasoned manager? (2) What does the artist's current stage and goal tell you about what matters most here? (3) What is the core argument the body should make? Then write from those answers.",
-
-    // Anti-Template Rules
-    "Do not produce a read with a fixed shape. If the data has one dominant story, tell that story. If the data has three competing stories, address all three. Let the data dictate the structure of the insight, not the other way around.",
-    "Do not open with any version of 'This song is...' or a generic introduction. Open with the most specific insight the data reveals for this song.",
-    "Do not repeat metric values verbatim. Interpret what they mean for this artist at this stage.",
-    "Vary your sentence structure and opening. No two reads should start the same way.",
-
-    // Analyst Judgment Anchors
-    "Calibrate your read to the artist's current stage and current goal supplied in the context. The same stream count means something fundamentally different for a micro artist versus an established act.",
-    "Interpret direction, not just scale. If the evidence shows trajectory — growing, stalling, or declining — name it explicitly.",
-    "Identify what kind of asset this song is becoming: an attention driver, a conversion tool, a catalog anchor, or a moment that has passed its window.",
-    "The decision must name a single concrete move grounded in a specific data pattern from the evidence. Do not write generic strategic advice.",
-    "The avoid must name the specific wrong move this data might tempt someone to make — not a generic caution.",
-    "The watch must name one leading indicator from the evidence that would change the entire read if it moved.",
-    "Use the exact requested subject, artist, markets, comparisons, and numbers supplied in context.",
-
-    // Schema and Format Rules
-    "Write managementRole as a short, complete 3–7 word executive status title (e.g., 'Lead Attention Asset — Requires Conversion Proof'). Never write a long run-on sentence or end mid-sentence.",
-    "For each signal: put the metric name, timeframe, or platform into label (e.g., 'Spotify Streams (7d)', 'TikTok Creation Scale', 'Shazam Discovery', 'Playlist Inclusions', 'Benchmark: Goosebumps'). Put ONLY the clean, formatted figure or ranking into value (e.g., '1.23M', '5.2M', '7.08K', '2.3M', '8.89K', '100', '#14'). Do NOT put unit words ('views', 'TikTok', 'Shazams', 'playlists', 'trailing 7d'), semicolons, or multiple metrics inside value.",
-    "Make the decision, avoid, and watch meaningfully distinct from each other.",
-    "Do not reference data quality, metric reliability, source windows, data limitations, or any inconsistencies in the underlying data in your output. If metrics seem conflicting, use only what is clearly reliable. Write only about what the artist and song are doing in the market.",
-    "Do not create missions, tasks, fake commitments, provider references, or descriptions of internal mechanics.",
-    "Do not substitute a comparison artist for the requested subject; position must name the exact requested subject.",
-    ...(subjectType === "music_project"
-      ? [
-          "For a project, reason across the full release. Identify carrying tracks only when the supplied context supports them.",
-        ]
-      : []),
-    "Use only supplied evidence IDs, and never print evidence IDs in visible text.",
+    "You are the artist's senior Manager — an experienced A&R and music business operator who writes honest, direct reads grounded in data. You are skeptical of vanity metrics and prioritize what is true over what sounds impressive.",
+    `Before writing anything, silently ask yourself: (1) What is the single most distinctive thing about this ${subjectPossessive} data right now — what would surprise a seasoned manager? (2) What do the artist's current stage and current goal make important here? (3) What is the core argument the read should make? Then write only the final judgment, not your private reasoning.`,
+    "Do not produce a read with a fixed shape. If the data has one dominant story, tell that story. If it has competing stories, address only those that change the judgment. Let the data dictate the structure of the insight, not the other way around.",
+    `Do not open with a generic introduction. Open with the most specific insight the supplied data reveals for this ${subject}. Vary sentence structure and opening across reads.`,
+    "Calibrate the read to the artist's current stage and current goal. The same number means something fundamentally different for an emerging artist and an established act.",
+    "Interpret direction, not just scale. When the supplied evidence supports a trajectory — growing, stalling, or declining — name what that direction means.",
+    `Identify the ${systemRole} in the artist's current system and explain why the supplied evidence supports that judgment.`,
+    `In the ${subjectPossessive} Manager's Read, naturally weave together the current judgment, the concrete next move, the attractive but wrong move, and the observable condition that would materially change the judgment. Do not label these as separate sections.`,
+    "Use the exact requested subject, artist, markets, comparisons, and numbers supplied in context when they materially support the argument. Use supplied dates and ranks when they change the judgment. Interpret figures instead of dumping a list of metrics.",
+    "Write body as 140–280 words in two to four short, natural paragraphs. Lead with the conclusion, keep every paragraph specific to this artist, and remove repetition before removing evidence or management judgment.",
+    "Write managementRole as a short, complete 3–7 word executive status title. Never end it mid-sentence.",
+    "Select one to five metric candidate IDs supplied in context, preserving the order in which those exact metrics should appear. Select only metrics that materially support the read; never invent or rewrite a metric value. If only one usable candidate is supplied, select that one rather than adding filler.",
+    "Do not create missions, tasks, fake commitments, provider references, or descriptions of internal mechanics. Do not mention prompts, APIs, databases, evidence rows, source windows, ingestion, provider limits, internal IDs, or data pipelines.",
+    "Do not substitute a comparison artist or comparison track for the requested subject; position must name the exact requested subject.",
+    ...(isProject
+      ? ["For a project, reason across the full release and supplied tracklist. Identify carrying tracks only when the evidence supports them, but keep the project—not one song—as the subject of the final judgment."]
+      : ["For a song, judge the individual track's role inside the wider artist system; do not turn the answer into a project or catalog review."]),
+    "Use only supplied evidence IDs in metricEvidenceIds and evidenceIds, and never print evidence IDs in visible text.",
   ];
   const playbook = playbookInstructions.trim();
   if (playbook) instructions.push(playbook);
   return instructions.join("\n");
 }
 
-function readSignals(value: unknown): MusicManagerReadV2["signals"] {
-  if (!Array.isArray(value) || value.length < 3 || value.length > 6) {
-    throw new Error("OpenAI music manager read output signals must contain 3–6 objects.");
-  }
-
-  return value.map((signal, index) => {
-    if (!isPlainObject(signal)) {
-      throw new Error(`OpenAI music manager read output signals[${index}] must be a plain object.`);
-    }
-    assertExactOwnEnumerableKeys(signal, SIGNAL_OUTPUT_KEYS, `signals[${index}]`);
-    return {
-      label: readRequiredString(signal.label, `signals[${index}].label`),
-      value: readRequiredString(signal.value, `signals[${index}].value`),
-      meaning: readRequiredString(signal.meaning, `signals[${index}].meaning`),
-      evidenceIds: readEvidenceIds(signal.evidenceIds, `signals[${index}].evidenceIds`),
-    };
-  });
-}
-
-function readRequiredString(value: unknown, field: string): string {
+function readRequiredString(value: unknown, field: string, maxLength: number): string {
   if (typeof value !== "string" || !value.trim()) {
     throw new Error(`OpenAI music manager read output ${field} must be a non-empty string.`);
   }
-  return value.trim();
+  const trimmed = value.trim();
+  if (trimmed.length > maxLength) {
+    throw new Error(`OpenAI music manager read output ${field} exceeds ${maxLength} characters.`);
+  }
+  return trimmed;
 }
 
-function readConfidence(value: unknown): MusicManagerReadV2["confidence"] {
-  if (value !== "low" && value !== "medium" && value !== "high") {
-    throw new Error("OpenAI music manager read output confidence must be low, medium, or high.");
+function readEvidenceIds(
+  value: unknown,
+  field: string,
+  deduplicate: boolean,
+  maxItems: number,
+): string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > maxItems) {
+    throw new Error(`OpenAI music manager read output ${field} must contain 1–${maxItems} evidence IDs.`);
   }
-  return value;
-}
-
-function readEvidenceIds(value: unknown, field: string): string[] {
-  if (!Array.isArray(value)) {
-    throw new Error(`OpenAI music manager read output ${field} must be an array of strings.`);
-  }
-  if (value.length === 0) {
-    throw new Error(`OpenAI music manager read output ${field} must contain at least one evidence ID.`);
-  }
-
   const trimmed = value.map((evidenceId) => {
     if (typeof evidenceId !== "string" || !evidenceId.trim()) {
       throw new Error(`OpenAI music manager read output ${field} must contain only non-empty strings.`);
     }
     return evidenceId.trim();
   });
-  return [...new Set(trimmed)];
+  return deduplicate ? [...new Set(trimmed)] : trimmed;
 }
 
 function containsExactSubjectTitle(position: string, subjectTitle: string): boolean {
@@ -315,7 +232,6 @@ function containsExactSubjectTitle(position: string, subjectTitle: string): bool
   while (searchStart < normalizedPosition.length) {
     const titleStart = normalizedPosition.indexOf(requestedTitle, searchStart);
     if (titleStart < 0) return false;
-
     const before = normalizedPosition[titleStart - 1];
     const after = normalizedPosition[titleStart + requestedTitle.length];
     if (!isWordCharacter(before) && !isWordCharacter(after)) return true;
@@ -326,23 +242,6 @@ function containsExactSubjectTitle(position: string, subjectTitle: string): bool
 
 function isWordCharacter(value: string | undefined): boolean {
   return value !== undefined && /[\p{L}\p{N}_]/u.test(value);
-}
-
-function tokenOverlap(left: string, right: string): number {
-  const leftTokens = new Set(tokenize(left));
-  const rightTokens = new Set(tokenize(right));
-  const smallerSize = Math.min(leftTokens.size, rightTokens.size);
-  if (smallerSize === 0) return 0;
-
-  let intersectionSize = 0;
-  for (const token of leftTokens) {
-    if (rightTokens.has(token)) intersectionSize += 1;
-  }
-  return intersectionSize / smallerSize;
-}
-
-function tokenize(value: string): string[] {
-  return value.normalize("NFC").toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 }
 
 function countWords(value: string): number {
