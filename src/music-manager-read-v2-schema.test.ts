@@ -11,6 +11,12 @@ const migration = readFileSync(
   ),
   "utf8",
 );
+const singleSurfaceMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260728000100_music_manager_read_single_surface.sql",
+);
 
 describe("Music Manager Read v2 schema", () => {
   it("adds durable subject identity to manager synthesis runs", () => {
@@ -251,5 +257,37 @@ describe("Music Manager Read v2 schema", () => {
     expect(migration).toMatch(
       /create or replace function public\.finalize_music_manager_read_v2[\s\S]*?security invoker\s+set search_path = public/i,
     );
+  });
+});
+
+describe("Music Manager Read single-surface conversion", () => {
+  it("converts transitional reads and metrics in original order", () => {
+    const sql = readFileSync(singleSurfaceMigrationPath, "utf8");
+    expect(sql).toContain("jsonb_array_elements");
+    expect(sql).toContain("with ordinality");
+    expect(sql).toContain("jsonb_build_object('label'");
+    expect(sql).toContain("'managerRead', converted.render_json->>'body'");
+    expect(sql).toContain("avoid_json = '[]'::jsonb");
+    expect(sql).toContain("confidence_json = '{}'::jsonb");
+    expect(sql).toContain("supporting_evidence_json = converted.supporting_evidence");
+  });
+
+  it("is idempotently scoped only to transitional v2 music reads", () => {
+    const sql = readFileSync(singleSurfaceMigrationPath, "utf8");
+    expect(sql).toMatch(/where schema_version = 'music-manager-read-v2'/i);
+    expect(sql).toMatch(/render_json \? 'signals'/i);
+    expect(sql).toMatch(/render_json \? 'decision'/i);
+    expect(sql).toMatch(/output_type in \('song_manager_read', 'project_manager_read'\)/i);
+  });
+
+  it("preserves row identity, lineage, current state, and timestamps", () => {
+    const sql = readFileSync(singleSurfaceMigrationPath, "utf8");
+    const setClause = sql.match(/update public\.manager_outputs[\s\S]*?\sset\s+([\s\S]*?)\sfrom converted/i)?.[1] ?? "";
+    expect(setClause).not.toMatch(/\bid\s*=/i);
+    expect(setClause).not.toMatch(/\bis_current\s*=/i);
+    expect(setClause).not.toMatch(/\bsupersedes_output_id\s*=/i);
+    expect(setClause).not.toMatch(/\bcreated_from_run_id\s*=/i);
+    expect(setClause).not.toMatch(/\bcreated_at\s*=/i);
+    expect(setClause).not.toMatch(/\bupdated_at\s*=/i);
   });
 });
