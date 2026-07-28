@@ -1,4 +1,15 @@
-import type { ManagerConversationStreamEvent } from "../types/cleanProduction";
+import type { ManagerConversationRefreshHint, ManagerConversationStreamEvent } from "../types/cleanProduction";
+import type { WorkspaceInvalidation } from "./workspaceLiveSync";
+
+export function invalidationsFromManagerRefreshHint(hint?: ManagerConversationRefreshHint): WorkspaceInvalidation[] {
+  if (!hint) return [];
+  const invalidations: WorkspaceInvalidation[] = [];
+  if (hint.conversations) invalidations.push({ scope: "conversation-list" });
+  if (hint.missions) invalidations.push({ scope: "mission-list" });
+  if (hint.music) invalidations.push({ scope: "music-list" });
+  if (hint.desk) invalidations.push({ scope: "activity" }, { scope: "desk-brief" });
+  return invalidations;
+}
 
 export async function parseManagerConversationEventStream(stream: ReadableStream<Uint8Array> | null): Promise<ManagerConversationStreamEvent[]> {
   const events: ManagerConversationStreamEvent[] = [];

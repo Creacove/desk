@@ -36,7 +36,10 @@ import {
   createSupabaseWorkspaceLoader,
 } from "../services/productionSupabase";
 import { createActiveRunFallback } from "../services/activeRunFallback";
-import { createResourceRequestCoordinator } from "../services/resourceRequestCoordinator";
+import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
+import { invalidationsFromManagerRefreshHint } from "../services/managerConversationStream";
+import type { WorkspaceInvalidation } from "../services/workspaceLiveSync";
+import { useWorkspaceLiveSync } from "./useWorkspaceLiveSync";
 import { useTheme } from "./theme";
 import type {
   AgentViewModel,
@@ -122,6 +125,7 @@ export function ProductionApp({
   fixtureMode = false,
 }: ProductionAppProps) {
   const shouldUseFixtureRuntime = fixtureMode || import.meta.env.VITE_PRODUCTION_FIXTURES === "true";
+  const liveUpdatesEnabled = !shouldUseFixtureRuntime && import.meta.env.VITE_WORKSPACE_LIVE_UPDATES === "true";
   const paymentReturnReference = useMemo(() => readPaymentReturnReference(), []);
 
   const runtime = useMemo(() => {
@@ -137,6 +141,7 @@ export function ProductionApp({
 
       return {
         ...fixtureRuntime,
+        supabaseClient: null,
         billingService,
         spotifyArtistAdapter,
         profileSetupService,
@@ -151,6 +156,7 @@ export function ProductionApp({
     };
 
     return {
+      supabaseClient: liveUpdatesEnabled ? getClient() : null,
       authAdapter: authAdapter ?? createSupabaseAuthAdapter(getClient()),
       workspaceLoader: workspaceLoader ?? createSupabaseWorkspaceLoader(getClient()),
       billingService: billingService ?? createSupabaseBillingService(getClient()),
@@ -173,7 +179,7 @@ export function ProductionApp({
       repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) =>
         repositories ?? createSupabaseProductionRepositories(getClient(), nextWorkspace),
     };
-  }, [authAdapter, billingService, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, workspaceLoader]);
+  }, [authAdapter, billingService, liveUpdatesEnabled, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, workspaceLoader]);
 
   const [status, setStatus] = useState<"loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error">("loading");
   const [session, setSession] = useState<ProductionSession | null>(null);
@@ -469,6 +475,9 @@ export function ProductionApp({
       analyticsUser={sessionUser as ProductionUser}
       authAdapter={runtime.authAdapter}
       workspace={workspace}
+      workspaceLoader={runtime.workspaceLoader}
+      supabaseClient={runtime.supabaseClient}
+      liveUpdatesEnabled={liveUpdatesEnabled}
       repositories={activeRepositories as CleanProductionRepositories}
       profileSetupService={runtime.profileSetupService}
       billingService={runtime.billingService}
@@ -486,6 +495,9 @@ function CleanProductionWorkspace({
   analyticsUser,
   authAdapter,
   workspace,
+  workspaceLoader,
+  supabaseClient,
+  liveUpdatesEnabled,
   repositories,
   profileSetupService,
   billingService,
@@ -498,6 +510,9 @@ function CleanProductionWorkspace({
   analyticsUser: ProductionUser;
   authAdapter: ProductionAuthAdapter;
   workspace: ProductionWorkspace | null;
+  workspaceLoader: ProductionWorkspaceLoader;
+  supabaseClient: ReturnType<typeof createBrowserSupabaseClient> | null;
+  liveUpdatesEnabled: boolean;
   repositories: CleanProductionRepositories;
   profileSetupService?: ProductionProfileSetupService;
   billingService?: ProductionBillingService;
@@ -581,7 +596,17 @@ function CleanProductionWorkspace({
     repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations()
   );
 
+  const { status: liveUpdateStatus } = useWorkspaceLiveSync({
+    enabled: liveUpdatesEnabled && Boolean(workspace?.artistWorkspaceId),
+    client: supabaseClient,
+    userId: analyticsUser.id,
+    workspaceId: workspace?.artistWorkspaceId ?? "",
+    coordinator: resourceRequests,
+    onInvalidations: handleWorkspaceInvalidations,
+  });
+
   useEffect(() => {
+    if (liveUpdatesEnabled) return;
     if (!shouldPollManagerDiscoveryEvents({
       fixtureRuntime,
       view,
@@ -622,7 +647,7 @@ function CleanProductionWorkspace({
     return () => {
       window.clearInterval(timerId);
     };
-  }, [fixtureRuntime, view, workspace]);
+  }, [fixtureRuntime, liveUpdatesEnabled, view, workspace]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1039,31 +1064,78 @@ function CleanProductionWorkspace({
     }));
   }
 
+  async function handleWorkspaceInvalidations(invalidations: WorkspaceInvalidation[]) {
+    for (const invalidation of invalidations) {
+      resourceRequests.invalidate(resourceWorkspaceId, workspaceResourceKey(invalidation));
+    }
+
+    const scopes = new Set(invalidations.map((invalidation) => invalidation.scope));
+    const baseLoads: Promise<void>[] = [];
+    let loadedMissions: MissionViewModel[] | undefined;
+
+    if (scopes.has("workspace")) {
+      baseLoads.push(workspaceLoader.loadActiveWorkspace(analyticsUser).then((nextWorkspace) => {
+        if (nextWorkspace) onWorkspaceChange?.(nextWorkspace);
+      }));
+    }
+    if (scopes.has("activity")) {
+      baseLoads.push(loadActivityResource().then((nextActivity) => {
+        setAttention(nextActivity.attention);
+        setMovement(nextActivity.movement);
+      }));
+    }
+    if (scopes.has("desk-brief")) {
+      baseLoads.push(loadBriefResource().then(setTodayBrief));
+    }
+    if (scopes.has("music-list")) {
+      baseLoads.push(loadMusicListResource().then(setMusic));
+    }
+    if (scopes.has("mission-list")) {
+      baseLoads.push(loadMissionListResource().then((nextMissions) => {
+        loadedMissions = nextMissions;
+        setMissions(nextMissions);
+        setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
+      }));
+    }
+    if (scopes.has("conversation-list")) {
+      baseLoads.push(loadConversationListResource().then((nextConversations) => {
+        conversationListLoaded.current = true;
+        setConversations(nextConversations);
+      }));
+    }
+    await Promise.all(baseLoads);
+
+    for (const invalidation of invalidations) {
+      if (invalidation.scope === "music-object") {
+        const current = music.find((item) => item.id === invalidation.id);
+        if (!current) continue;
+        const subjectType = current.kind === "project" ? "music_project" : "music_item";
+        const refreshed = await resourceRequests.load(resourceWorkspaceId, `music-object:${invalidation.id}`, () =>
+          repositories.music.loadMusicObject(invalidation.id, subjectType)
+        );
+        if (refreshed) setMusic((items) => items.map((item) => item.id === refreshed.id ? refreshed : item));
+      }
+      if (invalidation.scope === "mission") await hydrateMission(invalidation.id);
+      if (invalidation.scope === "conversation" && selectedConversation?.id === invalidation.id) {
+        const refreshed = await resourceRequests.load(resourceWorkspaceId, `conversation:${invalidation.id}`, () =>
+          repositories.manager.loadConversation?.(invalidation.id)
+            ?? repositories.manager.loadConversations().then((items) => items.find((item) => item.id === invalidation.id) ?? null)
+        );
+        if (refreshed) {
+          setSelectedConversation(refreshed);
+          setConversations((items) => [refreshed, ...items.filter((item) => item.id !== refreshed.id)]);
+        }
+      }
+    }
+
+    return { missions: loadedMissions };
+  }
+
   async function refreshFromManagerHint(hint?: ManagerConversationRefreshHint) {
     if (!hint) return;
-    if (hint.conversations) {
-      resourceRequests.invalidate(resourceWorkspaceId, "conversation-list");
-      const nextConversations = await loadConversationListResource();
-      setConversations(nextConversations);
-      setSelectedConversation((current) => current ? nextConversations.find((conversation) => conversation.id === current.id) ?? current : current);
-    }
-    if (hint.missions) {
-      resourceRequests.invalidate(resourceWorkspaceId, "mission-list");
-      const nextMissions = await loadMissionListResource();
-      setMissions(nextMissions);
-      setSelectedMissionId((current) => selectTargetMissionId(hint, nextMissions) || current || nextMissions[0]?.id || "");
-    }
-    if (hint.music) {
-      await reloadMusic();
-    }
-    if (hint.desk) {
-      resourceRequests.invalidate(resourceWorkspaceId, "activity");
-      resourceRequests.invalidate(resourceWorkspaceId, "desk-brief");
-      resourceRequests.invalidate(resourceWorkspaceId, "workspace");
-      const [nextActivity, nextBrief] = await Promise.all([loadActivityResource(), loadBriefResource()]);
-      setAttention(nextActivity.attention);
-      setMovement(nextActivity.movement);
-      setTodayBrief(nextBrief);
+    const result = await handleWorkspaceInvalidations(invalidationsFromManagerRefreshHint(hint));
+    if (hint.missions && result.missions) {
+      setSelectedMissionId((current) => selectTargetMissionId(hint, result.missions!) || current || result.missions![0]?.id || "");
     }
   }
 
@@ -1663,6 +1735,7 @@ function CleanProductionWorkspace({
         onClose={() => setMobileNotificationsOpen(false)}
       />
       <span className="sr-only">{workspace?.workspaceName ?? "Ordersounds workspace"}</span>
+      {liveUpdatesEnabled ? <span className="sr-only" aria-live="polite">{liveUpdateStatus}</span> : null}
     </div>
   );
 }
@@ -2864,6 +2937,15 @@ function readErrorMessage(error: unknown, fallback: string) {
   }
 
   return fallback;
+}
+
+function workspaceResourceKey(invalidation: WorkspaceInvalidation): ResourceKey {
+  switch (invalidation.scope) {
+    case "music-object": return `music-object:${invalidation.id}`;
+    case "mission": return `mission:${invalidation.id}`;
+    case "conversation": return `conversation:${invalidation.id}`;
+    default: return invalidation.scope;
+  }
 }
 
 function createOptimisticManagerConversation(body: string): ConversationViewModel {

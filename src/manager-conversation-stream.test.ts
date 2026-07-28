@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { ReadableStream } from "node:stream/web";
 
-import { parseManagerConversationEventStream } from "./services/managerConversationStream";
+import { invalidationsFromManagerRefreshHint, parseManagerConversationEventStream } from "./services/managerConversationStream";
 
 describe("Manager conversation stream parser", () => {
+  it("maps stream refresh hints onto the shared workspace invalidation contract", () => {
+    expect(invalidationsFromManagerRefreshHint({ conversations: true, missions: true, music: true, desk: true })).toEqual([
+      { scope: "conversation-list" },
+      { scope: "mission-list" },
+      { scope: "music-list" },
+      { scope: "activity" },
+      { scope: "desk-brief" },
+    ]);
+  });
   it("parses SSE events, ignores duplicate event ids, and keeps malformed chunks non-fatal", async () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

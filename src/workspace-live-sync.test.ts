@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
 
 import { writeWorkspaceEvent } from "../supabase/functions/_shared/workspaceEvents";
 import {
@@ -7,6 +8,7 @@ import {
   mergeWorkspaceInvalidations,
   type WorkspaceOperatingEvent,
 } from "./services/workspaceLiveSync";
+import { useWorkspaceLiveSync } from "./app/useWorkspaceLiveSync";
 
 function insertDb(result: { data: { id: string } | null; error: unknown }) {
   const maybeSingle = vi.fn(async () => result);
@@ -173,6 +175,111 @@ describe("workspace live sync", () => {
       createdAt: pages[2][49].createdAt,
       id: pages[2][49].id,
     });
+  });
+});
+
+describe("useWorkspaceLiveSync", () => {
+  it("does not subscribe when the rollout gate is disabled", () => {
+    const client = { channel: vi.fn() };
+    renderHook(() => useWorkspaceLiveSync({
+      enabled: false,
+      client,
+      userId: "user-a",
+      workspaceId: "workspace-a",
+      coordinator: { invalidate: vi.fn(), clearWorkspace: vi.fn() },
+      onInvalidations: vi.fn(),
+    }));
+    expect(client.channel).not.toHaveBeenCalled();
+  });
+
+  it("subscribes once, catches up on channel health, and unsubscribes on unmount", async () => {
+    const unsubscribe = vi.fn();
+    const channel: any = {
+      on: vi.fn(() => channel),
+      subscribe: vi.fn((callback) => {
+        callback("SUBSCRIBED");
+        return channel;
+      }),
+      unsubscribe,
+    };
+    const limit = vi.fn(async () => ({ data: [], error: null }));
+    const builder: any = { select: () => builder, eq: () => builder, or: () => builder, order: () => builder, limit };
+    const clearWorkspace = vi.fn();
+    const coordinator = { invalidate: vi.fn(), clearWorkspace };
+    const client = { channel: vi.fn(() => channel), from: vi.fn(() => builder) };
+    const rendered = renderHook(() => useWorkspaceLiveSync({
+      enabled: true,
+      client,
+      userId: "user-a",
+      workspaceId: "workspace-a",
+      coordinator,
+      onInvalidations: vi.fn(),
+    }));
+
+    await waitFor(() => expect(rendered.result.current.status).toBe("Up to date"));
+    expect(client.channel).toHaveBeenCalledTimes(1);
+    expect(limit).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    expect(clearWorkspace).toHaveBeenCalledWith("workspace-a");
+  });
+
+  it("does not fetch while offline and catches up when connectivity returns", async () => {
+    const originalOnline = navigator.onLine;
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    const channel: any = { on: vi.fn(() => channel), subscribe: vi.fn(() => channel), unsubscribe: vi.fn() };
+    const limit = vi.fn(async () => ({ data: [], error: null }));
+    const builder: any = { select: () => builder, eq: () => builder, or: () => builder, order: () => builder, limit };
+    const coordinator = { invalidate: vi.fn(), clearWorkspace: vi.fn() };
+    const rendered = renderHook(() => useWorkspaceLiveSync({
+      enabled: true,
+      client: { channel: vi.fn(() => channel), from: vi.fn(() => builder) },
+      userId: "user-a",
+      workspaceId: "workspace-a",
+      coordinator,
+      onInvalidations: vi.fn(),
+    }));
+    expect(rendered.result.current.status).toBe("Offline — updates resume when you're back");
+    expect(limit).not.toHaveBeenCalled();
+
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+    await act(async () => window.dispatchEvent(new Event("online")));
+    await waitFor(() => expect(limit).toHaveBeenCalledTimes(1));
+    rendered.unmount();
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: originalOnline });
+  });
+
+  it("defers event-driven reads while hidden and flushes them when visible", async () => {
+    vi.useFakeTimers();
+    const originalVisibility = document.visibilityState;
+    let handler: ((payload: { new: Record<string, unknown> }) => void) | undefined;
+    const channel: any = {
+      on: vi.fn((_kind, _filter, nextHandler) => { handler = nextHandler; return channel; }),
+      subscribe: vi.fn(() => channel),
+      unsubscribe: vi.fn(),
+    };
+    const onInvalidations = vi.fn();
+    const coordinator = { invalidate: vi.fn(), clearWorkspace: vi.fn() };
+    const rendered = renderHook(() => useWorkspaceLiveSync({
+      enabled: true,
+      client: { channel: vi.fn(() => channel), from: vi.fn() },
+      userId: "user-a",
+      workspaceId: "workspace-a",
+      coordinator,
+      onInvalidations,
+    }));
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    handler?.({ new: event() as unknown as Record<string, unknown> });
+    await act(async () => vi.advanceTimersByTimeAsync(250));
+    expect(onInvalidations).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    act(() => document.dispatchEvent(new Event("visibilitychange")));
+    expect(onInvalidations).toHaveBeenCalledTimes(1);
+    rendered.unmount();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: originalVisibility });
   });
 });
 
