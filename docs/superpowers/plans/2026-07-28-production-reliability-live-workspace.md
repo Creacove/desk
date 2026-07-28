@@ -23,6 +23,7 @@
 7. Do not replace the existing `music-manager-read-v2` output schema or `finalize_music_manager_read_v2` behavior.
 8. Do not run paid Chartmetric enrichment as a smoke test.
 9. If a phase increases idle traffic, broad-query counts, duplicate active runs, or current-output duplicates, stop and roll back that phase.
+10. This project does not use Docker or a local Supabase database. Treat every `supabase db reset` / `db lint --local` command below as superseded: use migration contract tests during implementation, then `db push --dry-run --linked` and `db lint --linked` at the explicit deployment gate. Exercise claims and recovery with isolated synthetic rows inside rollback-safe transactions; never reset the linked project.
 
 ## File and Responsibility Map
 
