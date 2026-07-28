@@ -328,7 +328,7 @@ describe("Music Manager Read v2 contract", () => {
       "evidenceIds",
     ]);
     expect(properties.position.maxLength).toBe(220);
-    expect(properties.managementRole.maxLength).toBe(100);
+    expect(properties.managementRole.maxLength).toBe(160);
     expect(properties.body.maxLength).toBe(2400);
     expect(properties.decision.maxLength).toBe(260);
     expect(properties.avoid.maxLength).toBe(260);
@@ -339,8 +339,8 @@ describe("Music Manager Read v2 contract", () => {
     expect(signalSchema.maxItems).toBe(6);
     expect(signalSchema.items.additionalProperties).toBe(false);
     expect(signalSchema.items.required).toEqual(["label", "value", "meaning", "evidenceIds"]);
-    expect(signalSchema.items.properties.label.maxLength).toBe(56);
-    expect(signalSchema.items.properties.value.maxLength).toBe(18);
+    expect(signalSchema.items.properties.label.maxLength).toBe(64);
+    expect(signalSchema.items.properties.value.maxLength).toBe(36);
     expect(signalSchema.items.properties.meaning.maxLength).toBe(120);
     expect(signalSchema.items.properties.evidenceIds.minItems).toBe(1);
     expect(signalSchema.items.properties.evidenceIds.items.type).toBe("string");

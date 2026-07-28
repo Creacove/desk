@@ -1010,6 +1010,18 @@ function MusicProjectBrief({
   );
 }
 
+function formatCleanManagementRole(role: string): string {
+  const trimmed = role.trim().replace(/\s+(as|for|of|with|and|or|in|to|at|by|the|a|an)\s*$/i, "").trim();
+  return trimmed || role.trim();
+}
+
+function formatCleanSignalValue(val: string): string {
+  // Take first metric before semicolon if legacy string had combined metrics
+  const first = val.split(";")[0].trim();
+  // Strip trailing uncompleted decimal points or symbols
+  return first.replace(/\.\s*$/, "").trim();
+}
+
 function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectViewModel; testId: string }) {
   const read = subject.managerRead;
   const statusMessage =
@@ -1033,7 +1045,7 @@ function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectView
         {read ? (
           <>
             <h3 className="mt-4 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">{read.position}</h3>
-            <p className="mt-2 font-ui text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{read.managementRole}</p>
+            <p className="mt-2 font-ui text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{formatCleanManagementRole(read.managementRole)}</p>
           </>
         ) : (
           <div className="mt-4">
@@ -1053,7 +1065,7 @@ function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectView
             {read.signals.map((signal) => (
               <div key={`${signal.label}-${signal.value}`} className="min-w-0 border-b border-foreground/8 px-4 py-4 sm:px-5 xl:border-r xl:last:border-r-0">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{signal.label}</p>
-                <p className="mt-1 break-words font-display text-[22px] font-semibold leading-none text-foreground">{signal.value}</p>
+                <p className="mt-1 break-words font-display text-[22px] font-semibold leading-none text-foreground">{formatCleanSignalValue(signal.value)}</p>
               </div>
             ))}
           </div>

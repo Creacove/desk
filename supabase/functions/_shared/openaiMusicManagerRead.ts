@@ -50,7 +50,7 @@ export const musicManagerReadJsonSchema = {
     required: ROOT_OUTPUT_KEYS,
     properties: {
       position: { type: "string", maxLength: 220 },
-      managementRole: { type: "string", maxLength: 100 },
+      managementRole: { type: "string", maxLength: 160 },
       body: { type: "string", maxLength: 2400 },
       decision: { type: "string", maxLength: 260 },
       avoid: { type: "string", maxLength: 260 },
@@ -66,8 +66,8 @@ export const musicManagerReadJsonSchema = {
           additionalProperties: false,
           required: SIGNAL_OUTPUT_KEYS,
           properties: {
-            label: { type: "string", maxLength: 56 },
-            value: { type: "string", maxLength: 18 },
+            label: { type: "string", maxLength: 64 },
+            value: { type: "string", maxLength: 36 },
             meaning: { type: "string", maxLength: 120 },
             evidenceIds: {
               type: "array",
@@ -136,6 +136,10 @@ export function validateMusicManagerReadOutput(
     );
   });
 
+  if (/\b(as|for|of|with|and|or|in|to|at|by|the|a|an)\s*$/i.test(output.managementRole.trim())) {
+    violations.push(`managementRole must be a complete role title and not end mid-sentence.`);
+  }
+
   for (const [field, text] of visibleFields) {
     const match = text.match(FORBIDDEN_VISIBLE_TERMS);
     if (match) {
@@ -147,6 +151,15 @@ export function validateMusicManagerReadOutput(
       }
     }
   }
+
+  output.signals.forEach((signal, index) => {
+    if (signal.value.includes(";")) {
+      violations.push(`signals[${index}].value must represent a single metric without semicolons.`);
+    }
+    if (/\d+\.\s*$/.test(signal.value)) {
+      violations.push(`signals[${index}].value must be a complete figure and not end in a trailing decimal point.`);
+    }
+  });
 
   const judgmentFields: Array<[string, string]> = [
     ["decision", output.decision],
@@ -205,11 +218,13 @@ export function buildMusicManagerReadInstructions(
 ): string {
   const instructions = [
     "You are the artist's senior Manager.",
+    "Deliver an elite, executive-level A&R and management assessment suitable for a $1,000/mo management platform.",
     "Deliver judgment on the current position, management role, grounded interpretation, decision, avoid, watch, and calibrated confidence.",
+    "Write managementRole as a short, complete 3–7 word executive status title (e.g., 'Lead Attention Asset — Requires Conversion Proof'). Never write a long run-on sentence or end mid-sentence.",
     "Put the conclusion first. Write the body as two or three natural paragraphs in plain, direct English.",
     "Use the exact requested subject, artist, markets, comparisons, and numbers supplied in context.",
     "Distinguish attention, discovery, conversion, and durable fandom when interpreting the evidence.",
-    "Format signal values compactly with K, M, #, or %, for example 5.2M.",
+    "For each signal: put the metric name, timeframe, or platform into label (e.g., 'Spotify Streams (7d)', 'TikTok Creation Scale', 'Shazam Discovery', 'Playlist Inclusions', 'Benchmark: Goosebumps'). Put ONLY the clean, formatted figure or ranking into value (e.g., '1.23M', '5.2M', '7.08K', '2.3M', '8.89K', '100', '#14'). Do NOT put unit words ('views', 'TikTok', 'Shazams', 'playlists', 'trailing 7d'), semicolons, or multiple metrics inside value.",
     "Make the decision, avoid, and watch meaningfully distinct.",
     "Do not create missions, tasks, fake commitments, provider references, or descriptions of internal mechanics.",
     "Do not substitute a comparison for the requested subject; the position must name the exact requested subject.",
