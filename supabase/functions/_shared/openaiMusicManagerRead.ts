@@ -87,7 +87,7 @@ export const musicManagerReadJsonSchema = {
 } as const;
 
 const FORBIDDEN_VISIBLE_TERMS =
-  /\b(openai|chatgpt|anthropic|claude|gemini|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id)\b/i;
+  /\b(openai|chatgpt|anthropic|claude|gemini|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id|provider window|ingestion error|provider data|source window|data ingestion|metric window|provider limit)\b/i;
 
 export function parseMusicManagerReadOutput(value: unknown): MusicManagerReadV2 {
   if (!isPlainObject(value)) {
@@ -242,6 +242,7 @@ export function buildMusicManagerReadInstructions(
     "Write managementRole as a short, complete 3–7 word executive status title (e.g., 'Lead Attention Asset — Requires Conversion Proof'). Never write a long run-on sentence or end mid-sentence.",
     "For each signal: put the metric name, timeframe, or platform into label (e.g., 'Spotify Streams (7d)', 'TikTok Creation Scale', 'Shazam Discovery', 'Playlist Inclusions', 'Benchmark: Goosebumps'). Put ONLY the clean, formatted figure or ranking into value (e.g., '1.23M', '5.2M', '7.08K', '2.3M', '8.89K', '100', '#14'). Do NOT put unit words ('views', 'TikTok', 'Shazams', 'playlists', 'trailing 7d'), semicolons, or multiple metrics inside value.",
     "Make the decision, avoid, and watch meaningfully distinct from each other.",
+    "Do not reference data quality, metric reliability, source windows, data limitations, or any inconsistencies in the underlying data in your output. If metrics seem conflicting, use only what is clearly reliable. Write only about what the artist and song are doing in the market.",
     "Do not create missions, tasks, fake commitments, provider references, or descriptions of internal mechanics.",
     "Do not substitute a comparison artist for the requested subject; position must name the exact requested subject.",
     ...(subjectType === "music_project"

@@ -400,7 +400,7 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
   const modelContext: Record<string, unknown> = {
     requestedSubject: {
       subjectType: input.subjectType,
-      ...compactRecord(subject, ["id", "title", "item_type", "project_type", "lifecycle_stage", "released_at", "source_kind", "source_limit"]),
+      ...compactRecord(subject, ["id", "title", "item_type", "project_type", "lifecycle_stage", "released_at"]),
     },
     identifiers: identifiers.slice(0, 8).map((item) => compactRecord(item, ["identifier_type", "identifier_value"])),
     evidence: exactEvidence,
@@ -434,8 +434,8 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
 async function loadSubject(db: any, input: GenerateMusicSummaryInput) {
   const table = input.subjectType === "music_item" ? "music_items" : "music_projects";
   const fields = input.subjectType === "music_item"
-    ? "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit"
-    : "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit";
+    ? "id,title,item_type,lifecycle_stage,released_at"
+    : "id,title,project_type,lifecycle_stage,released_at";
   const { data, error } = await exactOwnedQuery(db.from(table).select(fields), input).eq("id", input.subjectId).maybeSingle();
   if (error) throw error;
   if (!data?.id) throw new Error("Music Manager Read subject was not found.");
@@ -453,7 +453,7 @@ async function loadIdentifiers(db: any, input: GenerateMusicSummaryInput) {
 
 async function loadEvidence(db: any, input: GenerateMusicSummaryInput) {
   const { data, error } = await exactSubjectQuery(
-    db.from("evidence_items").select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,created_at"), input,
+    db.from("evidence_items").select("id,source,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,confidence,created_at"), input,
   ).order("created_at", { ascending: false }).limit(80);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
@@ -477,7 +477,7 @@ async function loadRelatedRecords(db: any, input: GenerateMusicSummaryInput) {
 
 async function loadRelatedEvidence(db: any, input: GenerateMusicSummaryInput) {
   const { data, error } = await exactOwnedQuery(
-    db.from("evidence_items").select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation,created_at"), input,
+    db.from("evidence_items").select("id,source,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,confidence,created_at"), input,
   ).eq("subject_type", "music_item").order("created_at", { ascending: false }).limit(64);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
@@ -533,8 +533,8 @@ function projectManagerPacketEvidence(packet: Record<string, unknown> | null) {
 
 function compactEvidence(item: Record<string, unknown>) {
   return compactRecord(item, [
-    "id", "source", "source_kind", "evidence_type", "subject_type", "subject_id", "subject_label",
-    "metric_name", "metric_value", "metric_unit", "freshness", "confidence", "provenance", "limitation", "created_at",
+    "id", "source", "evidence_type", "subject_type", "subject_id", "subject_label",
+    "metric_name", "metric_value", "confidence", "created_at",
   ]);
 }
 
