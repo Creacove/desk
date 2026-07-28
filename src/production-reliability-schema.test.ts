@@ -8,8 +8,30 @@ const migration = readFileSync(join(
   "migrations",
   "20260728000200_production_reliability_v1.sql",
 ), "utf8").toLowerCase();
+const eventMigration = readFileSync(join(
+  process.cwd(), "supabase", "migrations", "20260728000300_operating_events_realtime.sql",
+), "utf8").toLowerCase();
 
 describe("production reliability v1 schema", () => {
+  it("adds the narrow durable workspace-event outbox without replacing existing access policies", () => {
+    for (const field of ["workspace_setup_run_id uuid", "dedupe_key text", "display_mode text", "refresh_scope text[]", "recipient_user_id uuid"]) {
+      expect(eventMigration).toContain(`add column if not exists ${field}`);
+    }
+    expect(eventMigration).toContain("on delete set null");
+    expect(eventMigration).toContain("display_mode is null or display_mode in ('activity', 'toast', 'action')");
+    expect(eventMigration).toContain("operating_events_workspace_dedupe_idx");
+    expect(eventMigration).toContain("artist_workspace_id, dedupe_key");
+    expect(eventMigration).toContain("where dedupe_key is not null");
+    expect(eventMigration).toContain("operating_events_workspace_cursor_idx");
+    expect(eventMigration).toContain("artist_workspace_id, created_at, id");
+    expect(eventMigration).not.toContain("drop policy");
+  });
+
+  it("idempotently adds only operating events to the realtime publication", () => {
+    expect(eventMigration).toContain("pg_publication_tables");
+    expect(eventMigration).toContain("alter publication supabase_realtime add table public.operating_events");
+    expect(eventMigration.match(/add table/g)).toHaveLength(1);
+  });
   it("adds backward-safe workflow identity, retry, availability, and lease metadata", () => {
     for (const column of [
       "workflow_version", "input_refs", "scope_key", "idempotency_key", "attempt_count",
