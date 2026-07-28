@@ -765,6 +765,16 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       },
     },
     desk: {
+      async loadBrief() {
+        return productionFixtureData.todayBrief;
+      },
+      async loadActivity() {
+        return {
+          priority: productionFixtureData.priority,
+          attention: productionFixtureData.attention,
+          movement: productionFixtureData.movement,
+        };
+      },
       async loadDesk() {
         return {
           priority: productionFixtureData.priority,
@@ -969,6 +979,18 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       },
     },
     manager: {
+      async loadConversationList() {
+        return conversations.map((conversation) => ({
+          ...conversation,
+          messages: [],
+          activeRun: undefined,
+          decisionPackage: undefined,
+          createdWork: [],
+        }));
+      },
+      async loadConversation(conversationId) {
+        return conversations.find((conversation) => conversation.id === conversationId) ?? null;
+      },
       async loadConversations() {
         return conversations;
       },
@@ -1045,6 +1067,14 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       },
     },
     missions: {
+      async loadMissionList() {
+        return missions
+          .filter((mission) => mission.status !== "candidate")
+          .map((mission) => ({ ...mission, tasks: [], checkpoints: [], notes: [], events: [], recap: undefined }));
+      },
+      async loadMission(missionId) {
+        return missions.find((mission) => mission.id === missionId && mission.status !== "candidate") ?? null;
+      },
       async loadMissions() {
         return missions.filter((mission) => mission.status !== "candidate");
       },

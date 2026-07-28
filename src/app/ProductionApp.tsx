@@ -518,6 +518,15 @@ function CleanProductionWorkspace({
   const [conversations, setConversations] = useState<ConversationViewModel[]>([]);
   const [missions, setMissions] = useState<MissionViewModel[]>([]);
   const [evidence, setEvidence] = useState<EvidenceItemViewModel[]>([]);
+  const [conversationDetailPending, setConversationDetailPending] = useState(false);
+  const [missionDetailPending, setMissionDetailPending] = useState(false);
+  const [evidencePending, setEvidencePending] = useState(false);
+  const evidenceLoaded = useRef(false);
+  const evidenceLoadInFlight = useRef(false);
+  const evidenceRequest = useRef(0);
+  const conversationListLoaded = useRef(false);
+  const conversationDetailRequest = useRef(0);
+  const missionDetailRequest = useRef(0);
   const [viewModelError, setViewModelError] = useState<string | null>(null);
   const [drawer, setDrawer] = useState<DrawerKind>(null);
   const [selectedAgent, setSelectedAgent] = useState<AgentViewModel | null>(null);
@@ -596,18 +605,28 @@ function CleanProductionWorkspace({
 
   useEffect(() => {
     let isMounted = true;
+    evidenceLoaded.current = false;
+    evidenceLoadInFlight.current = false;
+    evidenceRequest.current += 1;
+    conversationListLoaded.current = false;
+    setEvidence([]);
+    setConversations([]);
 
     async function loadViewModels() {
       try {
         setViewModelError(null);
-        const [nextProfile, nextDesk, nextAgents, nextMusic, nextConversations, nextMissions, nextEvidence] = await Promise.all([
+        const deskSnapshotPromise = repositories.desk.loadActivity && repositories.desk.loadBrief
+          ? Promise.all([repositories.desk.loadActivity(), repositories.desk.loadBrief()])
+          : repositories.desk.loadDesk().then((snapshot) => [
+              { priority: snapshot.priority, attention: snapshot.attention, movement: snapshot.movement },
+              snapshot.todayBrief,
+            ] as const);
+        const [nextProfile, [nextActivity, nextBrief], nextAgents, nextMusic, nextMissions] = await Promise.all([
           repositories.artistProfile.loadProfile(),
-          repositories.desk.loadDesk(),
+          deskSnapshotPromise,
           repositories.staff.loadAgents(),
-          repositories.music.loadMusic(),
-          repositories.manager.loadConversations(),
-          repositories.missions.loadMissions(),
-          repositories.evidence.loadEvidence(),
+          repositories.music.loadMusicList(),
+          repositories.missions.loadMissionList?.() ?? repositories.missions.loadMissions(),
         ]);
 
         if (!isMounted) {
@@ -615,14 +634,12 @@ function CleanProductionWorkspace({
         }
 
         setProfile(nextProfile);
-        setAttention(nextDesk.attention);
-        setMovement(nextDesk.movement);
-        setTodayBrief(nextDesk.todayBrief);
+        setAttention(nextActivity.attention);
+        setMovement(nextActivity.movement);
+        setTodayBrief(nextBrief);
         setAgents(nextAgents);
         setMusic(nextMusic);
-        setConversations(nextConversations);
         setMissions(nextMissions);
-        setEvidence(nextEvidence);
         setSelectedMissionId((current) => {
           if (current && nextMissions.some((mission) => mission.id === current)) {
             return current;
@@ -643,6 +660,24 @@ function CleanProductionWorkspace({
       isMounted = false;
     };
   }, [repositories]);
+
+  useEffect(() => {
+    if (view !== "managerOffice" || conversationListLoaded.current) return;
+    let cancelled = false;
+    void (repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations())
+      .then((nextConversations) => {
+        if (!cancelled) {
+          conversationListLoaded.current = true;
+          setConversations(nextConversations);
+        }
+      })
+      .catch((loadError) => {
+        if (!cancelled) setViewModelError(readErrorMessage(loadError, "Manager conversations could not load."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repositories.manager, view]);
 
   useEffect(() => {
     if (view !== "labelHQ" || !todayBrief || !workspace) return;
@@ -718,10 +753,75 @@ function CleanProductionWorkspace({
     navigate("musicWorkspace");
   }
 
-  function openConversation(conversation: ConversationViewModel) {
+  async function openConversation(conversation: ConversationViewModel) {
     setManagerTaskContextId(conversation.taskContextId ?? null);
     setSelectedConversation(conversation);
     navigate("conversationWorkspace");
+    const request = ++conversationDetailRequest.current;
+    setConversationDetailPending(true);
+    try {
+      const detail = repositories.manager.loadConversation
+        ? await repositories.manager.loadConversation(conversation.id)
+        : (await repositories.manager.loadConversations()).find((item) => item.id === conversation.id) ?? null;
+      if (request !== conversationDetailRequest.current || !detail) return;
+      setSelectedConversation(detail);
+      setConversations((current) => [detail, ...current.filter((item) => item.id !== detail.id)]);
+      setManagerTaskContextId(detail.taskContextId ?? null);
+    } catch (loadError) {
+      if (request === conversationDetailRequest.current) {
+        setManagerSendError(readErrorMessage(loadError, "Conversation detail could not load."));
+      }
+    } finally {
+      if (request === conversationDetailRequest.current) setConversationDetailPending(false);
+    }
+  }
+
+  async function hydrateMission(missionId: string) {
+    const request = ++missionDetailRequest.current;
+    setMissionDetailPending(true);
+    try {
+      const detail = repositories.missions.loadMission
+        ? await repositories.missions.loadMission(missionId)
+        : (await repositories.missions.loadMissions()).find((mission) => mission.id === missionId) ?? null;
+      if (request !== missionDetailRequest.current || !detail) return;
+      setMissions((current) => [detail, ...current.filter((mission) => mission.id !== detail.id)]);
+    } catch (loadError) {
+      if (request === missionDetailRequest.current) {
+        setViewModelError(readErrorMessage(loadError, "Mission detail could not load."));
+      }
+    } finally {
+      if (request === missionDetailRequest.current) setMissionDetailPending(false);
+    }
+  }
+
+  function selectMissionForDetail(missionId: string) {
+    setSelectedMissionId(missionId);
+    void hydrateMission(missionId);
+  }
+
+  function openDrawer(nextDrawer: DrawerKind) {
+    setDrawer(nextDrawer);
+    if (nextDrawer !== "evidence" || evidenceLoaded.current || evidenceLoadInFlight.current) return;
+    const request = ++evidenceRequest.current;
+    evidenceLoadInFlight.current = true;
+    setEvidencePending(true);
+    void repositories.evidence.loadEvidence()
+      .then((nextEvidence) => {
+        if (request !== evidenceRequest.current) return;
+        evidenceLoaded.current = true;
+        setEvidence(nextEvidence);
+      })
+      .catch((loadError) => {
+        if (request === evidenceRequest.current) {
+          setViewModelError(readErrorMessage(loadError, "Evidence could not load."));
+        }
+      })
+      .finally(() => {
+        if (request === evidenceRequest.current) {
+          evidenceLoadInFlight.current = false;
+          setEvidencePending(false);
+        }
+      });
   }
 
   async function sendManagerMessage(
@@ -916,7 +1016,7 @@ function CleanProductionWorkspace({
   async function refreshFromManagerHint(hint?: ManagerConversationRefreshHint) {
     if (!hint) return;
     if (hint.conversations) {
-      const nextConversations = await repositories.manager.loadConversations();
+      const nextConversations = await (repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations());
       setConversations(nextConversations);
       setSelectedConversation((current) => current ? nextConversations.find((conversation) => conversation.id === current.id) ?? current : current);
     }
@@ -929,10 +1029,15 @@ function CleanProductionWorkspace({
       await reloadMusic();
     }
     if (hint.desk) {
-      const nextDesk = await repositories.desk.loadDesk();
-      setAttention(nextDesk.attention);
-      setMovement(nextDesk.movement);
-      setTodayBrief(nextDesk.todayBrief);
+      const [nextActivity, nextBrief] = repositories.desk.loadActivity && repositories.desk.loadBrief
+        ? await Promise.all([repositories.desk.loadActivity(), repositories.desk.loadBrief()])
+        : await repositories.desk.loadDesk().then((snapshot) => [
+            { priority: snapshot.priority, attention: snapshot.attention, movement: snapshot.movement },
+            snapshot.todayBrief,
+          ] as const);
+      setAttention(nextActivity.attention);
+      setMovement(nextActivity.movement);
+      setTodayBrief(nextBrief);
     }
   }
 
@@ -967,6 +1072,7 @@ function CleanProductionWorkspace({
     setMissionRoomOpenTaskId(null);
     setMissionRoomOpenRequestKey((current) => current + 1);
     navigate("missionsWorkspace");
+    void hydrateMission(missionId);
   }
 
   async function reloadMusic() {
@@ -1390,7 +1496,7 @@ function CleanProductionWorkspace({
                 setSelectedAgent(agent);
                 navigate("lockedAgentWorkspace");
               }}
-              onDrawer={setDrawer}
+              onDrawer={openDrawer}
               onOpenMusicFocus={openMusicFocus}
               onAskManager={(body) => void sendManagerMessage(body)}
             />
@@ -1440,50 +1546,54 @@ function CleanProductionWorkspace({
             />
           ) : null}
           {view === "conversationWorkspace" && activeConversation ? (
-            <ConversationWorkspace
-              conversation={activeConversation}
-              onBack={() => navigate("managerOffice")}
-              taskContext={managerTaskContextId
-                ? missions.flatMap((mission) => mission.tasks ?? []).find((task) => task.id === managerTaskContextId)
-                : undefined}
-              onBackToTask={managerTaskContextId ? returnToManagerTask : undefined}
-              onOpenCreatedWork={openCreatedWork}
-              onOpenDecisionPackage={() => navigate("decisionPackage")}
-              onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, { taskId: managerTaskContextId ?? undefined })}
-              onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
-                void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers, taskId: managerTaskContextId ?? undefined })
-              }
-              onRetryLastMessage={() => {
-                const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
-                if (lastArtistMessage) {
-                  void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, { taskId: managerTaskContextId ?? undefined });
+            <div aria-busy={conversationDetailPending}>
+              <ConversationWorkspace
+                conversation={activeConversation}
+                onBack={() => navigate("managerOffice")}
+                taskContext={managerTaskContextId
+                  ? missions.flatMap((mission) => mission.tasks ?? []).find((task) => task.id === managerTaskContextId)
+                  : undefined}
+                onBackToTask={managerTaskContextId ? returnToManagerTask : undefined}
+                onOpenCreatedWork={openCreatedWork}
+                onOpenDecisionPackage={() => navigate("decisionPackage")}
+                onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, { taskId: managerTaskContextId ?? undefined })}
+                onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
+                  void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers, taskId: managerTaskContextId ?? undefined })
                 }
-              }}
-              sendPending={managerSendPending}
-              sendError={managerSendError}
-            />
+                onRetryLastMessage={() => {
+                  const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
+                  if (lastArtistMessage) {
+                    void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, { taskId: managerTaskContextId ?? undefined });
+                  }
+                }}
+                sendPending={managerSendPending}
+                sendError={managerSendError}
+              />
+            </div>
           ) : null}
           {view === "investigation" && activeConversation?.decisionPackage ? <InvestigationScreen onBack={() => navigate("managerOffice")} onDecision={() => navigate("decisionPackage")} /> : null}
           {view === "decisionPackage" ? <DecisionPackageScreen conversation={activeConversation} onBack={() => navigate("managerOffice")} onNavigate={navigate} /> : null}
           {view === "missionsWorkspace" ? (
-            <MissionsWorkspace
-              missions={missions}
-              selectedMissionId={selectedMissionId}
-              onSelectMission={setSelectedMissionId}
-              onCreateFirstMission={createFirstMissionWithManager}
-              onOpenManager={openManager}
-              onWorkWithManager={workWithManagerOnTask}
-              firstMissionPending={managerSendPending}
-              onApproveTask={approveMissionTask}
-              onCompleteTask={completeMissionTask}
-              onUploadTaskDeliverable={uploadMissionTaskDeliverable}
-              onDrawer={setDrawer}
-              openRoomRequestKey={missionRoomOpenRequestKey}
-              openRoomTab={missionRoomOpenTab}
-              openTaskId={missionRoomOpenTaskId}
-              listRequestKey={missionListOpenRequestKey}
-              onRoomModeChange={setMissionRoomOpen}
-            />
+            <div aria-busy={missionDetailPending}>
+              <MissionsWorkspace
+                missions={missions}
+                selectedMissionId={selectedMissionId}
+                onSelectMission={selectMissionForDetail}
+                onCreateFirstMission={createFirstMissionWithManager}
+                onOpenManager={openManager}
+                onWorkWithManager={workWithManagerOnTask}
+                firstMissionPending={managerSendPending}
+                onApproveTask={approveMissionTask}
+                onCompleteTask={completeMissionTask}
+                onUploadTaskDeliverable={uploadMissionTaskDeliverable}
+                onDrawer={openDrawer}
+                openRoomRequestKey={missionRoomOpenRequestKey}
+                openRoomTab={missionRoomOpenTab}
+                openTaskId={missionRoomOpenTaskId}
+                listRequestKey={missionListOpenRequestKey}
+                onRoomModeChange={setMissionRoomOpen}
+              />
+            </div>
           ) : null}
           {view === "artistProfileWorkspace" ? (
             <SettingsScreen
@@ -1505,13 +1615,15 @@ function CleanProductionWorkspace({
           ) : null}
         </main>
       </div>
-      <ProductionDrawers drawer={drawer} evidence={evidence} mission={selectedMission} onClose={() => setDrawer(null)} />
+      <div aria-busy={evidencePending}>
+        <ProductionDrawers drawer={drawer} evidence={evidence} mission={selectedMission} onClose={() => setDrawer(null)} />
+      </div>
       <MobileNotificationSheet
         open={mobileNotificationsOpen}
         attention={attention}
         movement={movement}
         onNavigate={navigate}
-        onDrawer={setDrawer}
+        onDrawer={openDrawer}
         onClose={() => setMobileNotificationsOpen(false)}
       />
       <span className="sr-only">{workspace?.workspaceName ?? "Ordersounds workspace"}</span>

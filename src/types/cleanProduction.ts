@@ -563,6 +563,8 @@ export type ArtistProfileRepository = {
 };
 
 export type DeskRepository = {
+  loadBrief?(): Promise<TodayBriefViewModel>;
+  loadActivity?(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement">>;
   loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement" | "todayBrief">>;
   generateTodaysBrief(mode?: TodayBriefGenerationMode): Promise<TodayBriefGenerationResponse>;
   refreshPublicContext?(): Promise<PublicContextRefreshResult>;
@@ -638,6 +640,8 @@ export type MusicRepository = {
 };
 
 export type ManagerRepository = {
+  loadConversationList?(): Promise<ConversationViewModel[]>;
+  loadConversation?(conversationId: string): Promise<ConversationViewModel | null>;
   loadConversations(): Promise<ConversationViewModel[]>;
   sendMessage(input: {
     conversationId?: string;
@@ -659,6 +663,8 @@ export type ManagerRepository = {
 };
 
 export type MissionRepository = {
+  loadMissionList?(): Promise<MissionViewModel[]>;
+  loadMission?(missionId: string): Promise<MissionViewModel | null>;
   loadMissions(): Promise<MissionViewModel[]>;
   approveTask(taskId: string): Promise<void>;
   uploadTaskDeliverable?(

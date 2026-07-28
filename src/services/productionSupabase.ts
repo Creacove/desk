@@ -22,6 +22,7 @@ import type {
   MusicManagerRunStatus,
   MusicManagerReadViewModel,
   MusicObjectViewModel,
+  PriorityItem,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
   SplitConfirmationViewModel,
@@ -1147,6 +1148,74 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       },
     },
     desk: {
+      async loadActivity() {
+        const [{ data: syncRows, error: syncError }, { data: eventRows, error: eventError }] = await Promise.all([
+          client
+            .from("source_sync_jobs")
+            .select("status,completed_at,job_type")
+            .eq("account_id", workspace.accountId)
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("artist_id", workspace.artistId)
+            .order("created_at", { ascending: false })
+            .limit(5),
+          client
+            .from("operating_events")
+            .select("id,event_type,summary,created_at")
+            .eq("account_id", workspace.accountId)
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("artist_id", workspace.artistId)
+            .order("created_at", { ascending: false })
+            .limit(20),
+        ]);
+        if (syncError) throw syncError;
+        if (eventError) throw eventError;
+
+        const latestSync = (syncRows as SourceSyncJobRow[] | null)?.[0];
+        const connectedLabel = latestSync?.status === "completed_with_limits" ? "Spotify catalog connected with limits" : "Spotify catalog connected";
+        return {
+          priority: [
+            { label: "Focus", value: connectedLabel, meta: "Music", actionLabel: "Open imported catalog", target: "musicWorkspace" },
+            { label: "Source", value: "Public catalog only", meta: "Spotify", actionLabel: "Open source limitation", target: "musicWorkspace" },
+          ] as PriorityItem[],
+          attention: buildDeskAttentionItems(latestSync),
+          movement: ((eventRows as OperatingEventRow[] | null) ?? []).map((event) => ({
+            label: formatEventLabel(event.event_type),
+            title: formatMovementSummary(event.summary),
+            time: formatEventTime(event.created_at),
+          })),
+        };
+      },
+      async loadBrief() {
+        const [{ data: managerOutputRows, error: managerOutputError }, { data: briefRows, error: briefError }] = await Promise.all([
+          client
+            .from("manager_outputs")
+            .select("id,source_packet_id,created_from_run_id,output_type,subject_type,subject_id,is_current,render_json,hero_json,blocks_json,summary,confidence_json,supporting_evidence_json,created_at")
+            .eq("account_id", workspace.accountId)
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("artist_id", workspace.artistId)
+            .eq("subject_type", "artist")
+            .eq("subject_id", workspace.artistId)
+            .eq("is_current", true)
+            .in("output_type", ["setup_first_manager_read", "recurring_todays_brief"])
+            .order("created_at", { ascending: false })
+            .limit(1),
+          client
+            .from("manager_synthesis_runs")
+            .select("id,status,classification,confidence,action_plan,limitations,completed_at,created_at")
+            .eq("account_id", workspace.accountId)
+            .eq("artist_workspace_id", workspace.artistWorkspaceId)
+            .eq("artist_id", workspace.artistId)
+            .eq("classification", "setup_todays_brief_v1")
+            .eq("status", "completed")
+            .order("completed_at", { ascending: false })
+            .limit(1),
+        ]);
+        if (managerOutputError) throw managerOutputError;
+        if (briefError) throw briefError;
+        return todayBriefFromManagerOutput(((managerOutputRows as ManagerOutputRow[] | null) ?? [])[0])
+          ?? todayBriefFromManagerRun(((briefRows as ManagerSynthesisRunRow[] | null) ?? [])[0])
+          ?? buildFallbackTodayBrief(workspace);
+      },
       async loadDesk() {
         const [
           { data: syncRows, error: syncError },
@@ -1766,6 +1835,66 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       },
     },
     manager: {
+      async loadConversationList() {
+        const { data, error } = await ownerFilters(client
+          .from("conversations")
+          .select("id,topic,status,summary,last_update_at,created_at")
+        )
+          .order("last_update_at", { ascending: false })
+          .limit(20);
+        if (error) throw error;
+        return ((data as ConversationRow[] | null) ?? []).map((row) => conversationFromRows(row, [], undefined, undefined));
+      },
+      async loadConversation(conversationId) {
+        const { data, error } = await ownerFilters(client
+          .from("conversations")
+          .select("id,topic,status,summary,last_update_at,created_at")
+        )
+          .eq("id", conversationId)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        const row = data as ConversationRow | null;
+        if (!row) return null;
+
+        const [{ data: messages, error: messageError }, { data: outputs, error: outputError }, { data: links, error: linkError }] = await Promise.all([
+          ownerFilters(client
+            .from("conversation_messages")
+            .select("id,conversation_id,speaker,label,body,metadata,created_at")
+          )
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: true })
+            .limit(200),
+          ownerFilters(client
+            .from("manager_outputs")
+            .select("id,subject_id,summary,render_json,created_at")
+          )
+            .eq("output_type", "decision_package")
+            .eq("subject_type", "conversation")
+            .eq("subject_id", conversationId)
+            .eq("is_current", true)
+            .order("created_at", { ascending: false })
+            .limit(1),
+          ownerFilters(client
+            .from("artifact_links")
+            .select("source_id,target_id,relationship")
+          )
+            .eq("source_type", "conversation")
+            .eq("source_id", conversationId)
+            .eq("target_type", "task")
+            .eq("relationship", "references")
+            .limit(1),
+        ]);
+        if (messageError) throw messageError;
+        if (outputError) throw outputError;
+        if (linkError) throw linkError;
+        return conversationFromRows(
+          row,
+          (messages as ConversationMessageRow[] | null) ?? [],
+          ((outputs as ManagerOutputRow[] | null) ?? [])[0],
+          ((links as ArtifactLinkRow[] | null) ?? [])[0]?.target_id,
+        );
+      },
       async loadConversations() {
         const { data, error } = await client
           .from("conversations")
@@ -1898,6 +2027,102 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       },
     },
     missions: {
+      async loadMissionList() {
+        const { data, error } = await ownerFilters(client
+          .from("missions")
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
+        )
+          .order("created_at", { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        return ((data as MissionRow[] | null) ?? [])
+          .filter((mission) => !["candidate", "archived", "cancelled"].includes(mission.status ?? ""))
+          .map((mission) => missionFromRow(mission));
+      },
+      async loadMission(missionId) {
+        const { data, error } = await ownerFilters(client
+          .from("missions")
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
+        )
+          .eq("id", missionId)
+          .limit(1)
+          .maybeSingle();
+        if (error) throw error;
+        const mission = data as MissionRow | null;
+        if (!mission || ["candidate", "archived", "cancelled"].includes(mission.status ?? "")) return null;
+
+        const [
+          { data: checkpointData, error: checkpointError },
+          { data: taskData, error: taskError },
+          { data: eventData, error: eventError },
+          { data: memoryData, error: memoryError },
+        ] = await Promise.all([
+          ownerFilters(client
+            .from("checkpoints")
+            .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
+          )
+            .eq("mission_id", missionId)
+            .order("created_at", { ascending: true }),
+          ownerFilters(client
+            .from("tasks")
+            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+          )
+            .eq("mission_id", missionId)
+            .order("created_at", { ascending: true }),
+          ownerFilters(client
+            .from("operating_events")
+            .select("id,mission_id,event_type,actor_type,summary,created_at")
+          )
+            .eq("mission_id", missionId)
+            .order("created_at", { ascending: true })
+            .limit(100),
+          ownerFilters(client
+            .from("memory_entries")
+            .select("id,mission_id,scope,kind,content,source_type,reason,created_at")
+          )
+            .eq("mission_id", missionId)
+            .order("created_at", { ascending: true })
+            .limit(100),
+        ]);
+        if (checkpointError) throw checkpointError;
+        if (taskError) throw taskError;
+        if (eventError) throw eventError;
+        if (memoryError) throw memoryError;
+
+        const tasks = (taskData as TaskRow[] | null) ?? [];
+        const taskIds = tasks.map((task) => task.id);
+        const [{ data: stepData, error: stepError }, { data: resultData, error: resultError }] = taskIds.length
+          ? await Promise.all([
+              ownerFilters(client
+                .from("task_steps")
+                .select("task_id,body,order_index")
+              )
+                .in("task_id", taskIds)
+                .order("order_index", { ascending: true }),
+              ownerFilters(client
+                .from("task_results")
+                .select("task_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up")
+              )
+                .in("task_id", taskIds),
+            ])
+          : [{ data: [], error: null }, { data: [], error: null }];
+        if (stepError) throw stepError;
+        if (resultError) throw resultError;
+
+        const deliverablesByTask = await loadTaskDocumentDeliverables(client, workspace, taskIds);
+        const managerDraftsByTask = await loadTaskManagerDrafts(client, workspace, taskIds);
+        return missionFromRow(
+          mission,
+          (checkpointData as CheckpointRow[] | null) ?? [],
+          tasks,
+          (stepData as TaskStepRow[] | null) ?? [],
+          (resultData as TaskResultRow[] | null) ?? [],
+          deliverablesByTask,
+          managerDraftsByTask,
+          (eventData as any[] | null) ?? [],
+          (memoryData as any[] | null) ?? [],
+        );
+      },
       async loadMissions() {
         const { data, error } = await client
           .from("missions")

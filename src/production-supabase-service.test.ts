@@ -1345,6 +1345,53 @@ describe("production Supabase services", () => {
     }]);
   });
 
+  it("splits Desk, mission, and conversation list/detail reads into focused queries", async () => {
+    const { client, calls } = createObservedSupabaseClient({
+      source_sync_jobs: [{ status: "completed", completed_at: "2026-07-28T10:00:00.000Z", job_type: "spotify_catalog_bootstrap" }],
+      operating_events: [{ id: "event-1", mission_id: "mission-1", event_type: "mission_updated", summary: "Mission updated", created_at: "2026-07-28T10:00:00.000Z" }],
+      manager_outputs: [],
+      manager_synthesis_runs: [],
+      missions: [{ id: "mission-1", account_id: "account-1", artist_workspace_id: "workspace-1", artist_id: "artist-1", title: "Focused mission", objective: "Ship safely", status: "active", progress: 20 }],
+      checkpoints: [],
+      tasks: [],
+      task_steps: [],
+      task_results: [],
+      memory_entries: [],
+      conversations: [{ id: "conversation-1", account_id: "account-1", artist_workspace_id: "workspace-1", artist_id: "artist-1", topic: "Focused conversation", status: "active", summary: "Summary", last_update_at: "2026-07-28T10:00:00.000Z", created_at: "2026-07-28T09:00:00.000Z" }],
+      conversation_messages: [{ id: "message-1", account_id: "account-1", artist_workspace_id: "workspace-1", artist_id: "artist-1", conversation_id: "conversation-1", speaker: "manager", label: "Manager", body: "Detail", metadata: {}, created_at: "2026-07-28T10:00:00.000Z" }],
+      artifact_links: [],
+    });
+    const repositories = createSupabaseProductionRepositories(client, workspace);
+
+    await (repositories.desk as any).loadActivity();
+    expect(calls.map((call) => call.table)).toEqual(["source_sync_jobs", "operating_events"]);
+    expect(calls.find((call) => call.table === "operating_events")?.limit).toBe(20);
+
+    calls.splice(0);
+    await (repositories.desk as any).loadBrief();
+    expect(calls.map((call) => call.table)).toEqual(["manager_outputs", "manager_synthesis_runs"]);
+
+    calls.splice(0);
+    await (repositories.missions as any).loadMissionList();
+    expect(calls.map((call) => call.table)).toEqual(["missions"]);
+
+    calls.splice(0);
+    await (repositories.missions as any).loadMission("mission-1");
+    expect(calls.find((call) => call.table === "missions")?.filters).toContainEqual(["id", "mission-1"]);
+    for (const table of ["checkpoints", "tasks", "operating_events", "memory_entries"]) {
+      expect(calls.find((call) => call.table === table)?.filters).toContainEqual(["mission_id", "mission-1"]);
+    }
+
+    calls.splice(0);
+    await (repositories.manager as any).loadConversationList();
+    expect(calls.map((call) => call.table)).toEqual(["conversations"]);
+
+    calls.splice(0);
+    await (repositories.manager as any).loadConversation("conversation-1");
+    expect(calls.find((call) => call.table === "conversations")?.filters).toContainEqual(["id", "conversation-1"]);
+    expect(calls.find((call) => call.table === "conversation_messages")?.filters).toContainEqual(["conversation_id", "conversation-1"]);
+  });
+
   it.each([
     "queued",
     "running",

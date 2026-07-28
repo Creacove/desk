@@ -293,6 +293,27 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Preparing artist, music, mission, and manager views.")).toBeInTheDocument();
   });
 
+  it("defers evidence rows until the supporting-evidence drawer opens", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const loadEvidence = vi.fn(repositories.evidence.loadEvidence);
+    repositories.evidence.loadEvidence = loadEvidence;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(loadEvidence).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole("button", { name: "View supporting evidence" })[0]);
+    await waitFor(() => expect(loadEvidence).toHaveBeenCalledTimes(1));
+  });
+
   it("checks only the exact catalog status while catalog sync is running", async () => {
     vi.useFakeTimers();
     const runningWorkspace = {
@@ -2021,12 +2042,12 @@ describe("Clean production prototype-match shell", () => {
 
     openManagerFromDesk();
     expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
-    expect(screen.getByText("Conversation History")).toBeInTheDocument();
+    expect(await screen.findByText("Conversation History")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Night Bus release planning" }));
     expect(screen.getByText("Direct message")).toBeInTheDocument();
-    expect(screen.getByText("I want to drop a new song next week.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open created mission" })).toBeInTheDocument();
+    expect(await screen.findByText("I want to drop a new song next week.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Open created mission" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
     expect((await screen.findAllByText("Release Night Bus on June 12")).length).toBeGreaterThan(0);
@@ -5314,6 +5335,13 @@ function repositoriesFor(
       loadProfile: async () => profile,
     },
     desk: {
+      async loadActivity() {
+        const { priority, attention, movement } = await this.loadDesk();
+        return { priority, attention, movement };
+      },
+      async loadBrief() {
+        return (await this.loadDesk()).todayBrief;
+      },
       loadDesk: async () => ({
         priority: [
           {
@@ -5340,6 +5368,9 @@ function repositoriesFor(
       loadAgents: async () => productionFixtureData.agents,
     },
     music: {
+      async loadMusicList() {
+        return this.loadMusic();
+      },
       loadMusic: async () => [],
       createSong: async (input) => ({
         id: "test-song",
@@ -5388,9 +5419,17 @@ function repositoriesFor(
       }),
     },
     manager: {
+      async loadConversationList() {
+        return this.loadConversations();
+      },
+      loadConversation: async () => undefined,
       loadConversations: async () => [],
     },
     missions: {
+      async loadMissionList() {
+        return this.loadMissions();
+      },
+      loadMission: async () => undefined,
       loadMissions: async () => [],
       approveTask: async () => undefined,
       completeTask: async (_taskId, input) => ({
