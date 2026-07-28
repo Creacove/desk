@@ -4024,15 +4024,7 @@ describe("Clean production prototype-match shell", () => {
     expect(songRoom).toHaveTextContent(completeSongManagerRead.position);
     expect(songRoom).toHaveTextContent("Lead attention asset");
     expect(songRoom).toHaveTextContent("5.2M");
-    expect(songRoom).toHaveTextContent("Current listening pressure");
-    expect(songRoom).toHaveTextContent("Decision");
-    expect(songRoom).toHaveTextContent(completeSongManagerRead.decision);
-    expect(songRoom).toHaveTextContent("Avoid");
-    expect(songRoom).toHaveTextContent(completeSongManagerRead.avoid);
-    expect(songRoom).toHaveTextContent("Watch");
-    expect(songRoom).toHaveTextContent(completeSongManagerRead.watch);
-    expect(songRoom).toHaveTextContent("High confidence");
-    expect(songRoom).toHaveTextContent("Three current evidence families agree");
+    expect(songRoom).toHaveTextContent("Jam is carrying the strongest aligned public response");
     expect(songRoom).not.toHaveTextContent("ev-song-streams");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Catalog" }));
@@ -4042,15 +4034,7 @@ describe("Clean production prototype-match shell", () => {
     expect(projectRoom).toHaveTextContent(completeProjectManagerRead.position);
     expect(projectRoom).toHaveTextContent("Focused project campaign");
     expect(projectRoom).toHaveTextContent("8.4M");
-    expect(projectRoom).toHaveTextContent("Current release-level listening");
-    expect(projectRoom).toHaveTextContent("Decision");
-    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.decision);
-    expect(projectRoom).toHaveTextContent("Avoid");
-    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.avoid);
-    expect(projectRoom).toHaveTextContent("Watch");
-    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.watch);
-    expect(projectRoom).toHaveTextContent("Medium confidence");
-    expect(projectRoom).toHaveTextContent("The lead-track and market signals agree");
+    expect(projectRoom).toHaveTextContent("Blue Rooms works best as a release-level system");
     expect(projectRoom).not.toHaveTextContent("ev-project-streams");
   }, 20000);
 

@@ -1054,31 +1054,12 @@ function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectView
               <div key={`${signal.label}-${signal.value}`} className="min-w-0 border-b border-foreground/8 px-4 py-4 sm:px-5 xl:border-r xl:last:border-r-0">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{signal.label}</p>
                 <p className="mt-1 break-words font-display text-[22px] font-semibold leading-none text-foreground">{signal.value}</p>
-                <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/82">{signal.meaning}</p>
               </div>
             ))}
           </div>
 
           <div className="px-4 py-5 sm:px-5">
             <p className="whitespace-pre-line text-[14px] font-semibold leading-[1.75] text-foreground/90">{read.body}</p>
-
-            <div className="mt-6 grid gap-3 lg:grid-cols-3">
-              {[
-                ["Decision", read.decision],
-                ["Avoid", read.avoid],
-                ["Watch", read.watch],
-              ].map(([label, value]) => (
-                <div key={label} className="rounded-[12px] border border-foreground/8 bg-foreground/[0.018] p-4">
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">{label}</p>
-                  <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground/86">{value}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 border-t border-foreground/8 pt-4">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{titleCaseStatus(read.confidence)} confidence</p>
-              <p className="mt-2 text-[12px] font-semibold leading-relaxed text-muted-foreground/84">{read.confidenceReason}</p>
-            </div>
           </div>
         </>
       ) : null}

@@ -87,7 +87,7 @@ export const musicManagerReadJsonSchema = {
 } as const;
 
 const FORBIDDEN_VISIBLE_TERMS =
-  /\b(openai|chatgpt|anthropic|claude|gemini|model|provider|api|database|prompt|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id)\b/i;
+  /\b(openai|chatgpt|anthropic|claude|gemini|playbook|chartmetric|evidence row|third-party|uuid|source ref(?:erence)?|internal id)\b/i;
 
 export function parseMusicManagerReadOutput(value: unknown): MusicManagerReadV2 {
   if (!isPlainObject(value)) {
