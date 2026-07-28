@@ -17,5 +17,8 @@ describe("browser Supabase client", () => {
 
     expect(second).toBe(first);
     expect(createClient).toHaveBeenCalledTimes(1);
+    expect(createClient).toHaveBeenCalledWith(expect.any(String), expect.any(String), {
+      realtime: { params: { eventsPerSecond: 10 } },
+    });
   });
 });
