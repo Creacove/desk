@@ -156,7 +156,7 @@ Code validates:
 - every selected metric ID belongs to the metric-candidate set and is included in root evidence IDs;
 - selected metric IDs are unique and within the two-to-five target when enough candidates exist;
 - visible fields contain no evidence IDs or unambiguous internal/provider terminology;
-- body includes an actionable management recommendation and a decision-changing condition without requiring visible headings.
+- the prompt explicitly requires an actionable management recommendation, a wrong move, and a decision-changing condition without visible headings; representative quality fixtures guard this behavior without brittle keyword-based prose rewriting or rejection.
 
 Validation does not rewrite generated prose. A failed response receives one repair request containing only the exact failures, original context, and invalid structured response. A second invalid response terminally fails the run while preserving the previous good output.
 
