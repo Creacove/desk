@@ -17,8 +17,16 @@ const singleSurfaceMigrationPath = join(
   "migrations",
   "20260728000100_music_manager_read_single_surface.sql",
 );
+const reliabilityMigration = readFileSync(
+  join(process.cwd(), "supabase", "migrations", "20260728000200_production_reliability_v1.sql"),
+  "utf8",
+);
 
 describe("Music Manager Read v2 schema", () => {
+  it("preserves the existing active Music Manager Read uniqueness contract", () => {
+    expect(reliabilityMigration).not.toContain("drop index manager_synthesis_runs_active_music_read_v2_idx");
+    expect(reliabilityMigration).not.toContain("drop index if exists manager_synthesis_runs_active_music_read_v2_idx");
+  });
   it("adds durable subject identity to manager synthesis runs", () => {
     expect(migration).toContain("add column if not exists subject_type text");
     expect(migration).toContain("add column if not exists subject_id uuid");
