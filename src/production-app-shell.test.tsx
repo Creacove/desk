@@ -4233,24 +4233,25 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("dialog", { name: "Upload Split sheet document" })).toBeInTheDocument();
   }, 20000);
 
-  it("starts Manager Read in the backend, reloads durable state, and never shadows it with the start response", async () => {
+  it("merges the focused Manager Read start response without a redundant broad reload", async () => {
     const subject = musicReadSubject("song", "not_generated");
     subject.managerRead = undefined;
     const startResponse = {
       ...subject,
       managerReadStatus: "running" as const,
       managerReadRunId: "run-new",
-      managerRead: { ...completeSongManagerRead, body: "This response must not be rendered before the repository reload." },
+      managerRead: { ...completeSongManagerRead, body: "The last good read remains visible while the focused refresh runs." },
     };
     const startManagerRead = vi.fn(async () => startResponse);
     const onMusicChanged = vi.fn(async () => undefined);
     const repositories = repositoriesFor("Nova Vale");
+    const loadMusic = vi.fn(repositories.music.loadMusic);
 
     render(
       <MusicWorkspace
         music={[subject]}
         missions={[]}
-        musicRepository={{ ...repositories.music, startManagerRead }}
+        musicRepository={{ ...repositories.music, loadMusic, startManagerRead }}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
@@ -4260,8 +4261,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" }));
 
     await waitFor(() => expect(startManagerRead).toHaveBeenCalledWith("song-jam", "music_item"));
-    expect(onMusicChanged).toHaveBeenCalledTimes(1);
-    expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("This response must not be rendered");
+    expect(onMusicChanged).not.toHaveBeenCalled();
+    expect(loadMusic).not.toHaveBeenCalled();
+    await waitFor(() => expect(screen.getByTestId("music-song-detail")).toHaveTextContent("The last good read remains visible"));
   });
 
   it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
@@ -4292,79 +4294,96 @@ describe("Clean production prototype-match shell", () => {
     expect(room).not.toHaveTextContent("database worker");
   });
 
-  it("polls persisted active Manager Read state every two seconds without overlap and stops at terminal state", async () => {
+  it("refreshes one active Manager Read object without overlap or a broad Music reload", async () => {
     vi.useFakeTimers();
     let releaseFirstPoll: (() => void) | undefined;
-    const onMusicChanged = vi.fn()
-      .mockImplementationOnce(() => new Promise<void>((resolve) => { releaseFirstPoll = resolve; }))
-      .mockResolvedValue(undefined);
     const repositories = repositoriesFor("Nova Vale");
     const running = musicReadSubject("song", "running");
     running.managerRead = undefined;
-    const { rerender, unmount } = render(
+    const fresh = musicReadSubject("song", "fresh");
+    const loadMusicObject = vi.fn()
+      .mockImplementationOnce(() => new Promise<MusicObjectViewModel | null>((resolve) => {
+        releaseFirstPoll = () => resolve(running);
+      }))
+      .mockResolvedValueOnce(fresh);
+    const loadMusic = vi.fn(repositories.music.loadMusic);
+    const onMusicChanged = vi.fn(async () => undefined);
+    const { unmount } = render(
       <MusicWorkspace
         music={[running]}
         missions={[]}
-        musicRepository={repositories.music}
-        onMusicChanged={() => onMusicChanged()}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject }}
+        onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
       />,
     );
 
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(1);
-    rerender(
-      <MusicWorkspace
-        music={[running]}
-        missions={[]}
-        musicRepository={repositories.music}
-        onMusicChanged={() => onMusicChanged()}
-        onOpenMission={() => undefined}
-        onBack={() => undefined}
-      />,
-    );
+    expect(loadMusicObject).toHaveBeenCalledTimes(1);
+    expect(loadMusicObject).toHaveBeenCalledWith("song-jam", "music_item");
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(1);
+    expect(loadMusicObject).toHaveBeenCalledTimes(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(1);
+    expect(loadMusicObject).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       releaseFirstPoll?.();
       await Promise.resolve();
     });
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(2);
-
-    rerender(
-      <MusicWorkspace
-        music={[musicReadSubject("song", "fresh")]}
-        missions={[]}
-        musicRepository={repositories.music}
-        onMusicChanged={onMusicChanged}
-        onOpenMission={() => undefined}
-        onBack={() => undefined}
-      />,
-    );
+    expect(loadMusicObject).toHaveBeenCalledTimes(2);
     await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(2);
+    expect(loadMusicObject).toHaveBeenCalledTimes(2);
+    expect(loadMusic).not.toHaveBeenCalled();
+    expect(onMusicChanged).not.toHaveBeenCalled();
     unmount();
 
     render(
       <MusicWorkspace
         music={[running]}
         missions={[]}
-        musicRepository={repositories.music}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject }}
         onMusicChanged={onMusicChanged}
         onOpenMission={() => undefined}
         onBack={() => undefined}
       />,
     );
     await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(3);
+    expect(loadMusicObject).toHaveBeenCalledTimes(3);
     cleanup();
     await act(async () => { await vi.advanceTimersByTimeAsync(4000); });
-    expect(onMusicChanged).toHaveBeenCalledTimes(3);
+    expect(loadMusicObject).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps the previous Manager Read visible when a focused refresh fails transiently", async () => {
+    vi.useFakeTimers();
+    const refreshing = musicReadSubject("song", "refreshing");
+    const previousBody = refreshing.managerRead?.body ?? "";
+    const repositories = repositoriesFor("Nova Vale");
+    const loadMusicObject = vi.fn(async () => {
+      throw new Error("Temporary connection loss");
+    });
+    const loadMusic = vi.fn(repositories.music.loadMusic);
+
+    render(
+      <MusicWorkspace
+        music={[refreshing]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, loadMusic, loadMusicObject }}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(previousBody.split("\n\n")[0]);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+
+    expect(loadMusicObject).toHaveBeenCalledTimes(1);
+    expect(loadMusic).not.toHaveBeenCalled();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent(previousBody.split("\n\n")[0]);
   });
 
   it("uses the production split ledger flow in the Music rights tab", async () => {

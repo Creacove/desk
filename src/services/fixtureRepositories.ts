@@ -788,8 +788,32 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       async loadMusic() {
         return music;
       },
-      async startManagerRead(subjectId) {
-        const found = music.find((item) => item.id === subjectId);
+      async loadMusicList() {
+        return music;
+      },
+      async loadMusicObject(subjectId, subjectType) {
+        const expectedKind = subjectType === "music_project" ? "project" : "song";
+        return music.find((item) => item.id === subjectId && item.kind === expectedKind) ?? null;
+      },
+      async loadManagerRun(runId) {
+        const found = music.find((item) => item.managerReadRunId === runId);
+        if (!found) return null;
+        const status = found.managerReadStatus === "refreshing" || found.managerReadStatus === "running"
+          ? "running"
+          : found.managerReadStatus === "failed" || found.managerReadStatus === "refresh_failed"
+            ? "failed"
+            : "completed";
+        return {
+          id: runId,
+          status,
+          subjectId: found.id,
+          subjectType: found.kind === "project" ? "music_project" : "music_item",
+          ...(found.managerReadError ? { error: found.managerReadError } : {}),
+        };
+      },
+      async startManagerRead(subjectId, subjectType) {
+        const expectedKind = subjectType === "music_project" ? "project" : "song";
+        const found = music.find((item) => item.id === subjectId && item.kind === expectedKind);
         if (!found) throw new Error("Fixture music item not found for Manager Read.");
         const updated = {
           ...found,

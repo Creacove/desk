@@ -55,12 +55,17 @@ export function MusicWorkspace({
   const [actionPending, setActionPending] = useState(false);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
+  const [focusedMusicById, setFocusedMusicById] = useState<Record<string, MusicObjectViewModel>>({});
   const managerReadPollInFlight = useRef(false);
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
-  const getMusicObject = (id: string) => music.find((object) => object.id === id);
-  const songs = music.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
-  const projects = music.filter((object) => object.kind === "project");
+  const currentMusic = useMemo(
+    () => music.map((item) => focusedMusicById[item.id] ?? item),
+    [focusedMusicById, music],
+  );
+  const getMusicObject = (id: string) => currentMusic.find((object) => object.id === id);
+  const songs = currentMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
+  const projects = currentMusic.filter((object) => object.kind === "project");
   const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
   const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
   const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
@@ -69,9 +74,9 @@ export function MusicWorkspace({
   // logic the song/project rooms use, so the catalog list can never disagree with
   // what you see after opening an item.
   const linkedMissionCountById = useMemo(() => {
-    const resolve = (id: string) => music.find((object) => object.id === id);
+    const resolve = (id: string) => currentMusic.find((object) => object.id === id);
     const map: Record<string, number> = {};
-    for (const object of music) {
+    for (const object of currentMusic) {
       const resolved = object;
       const objectTracklist =
         resolved.kind === "project"
@@ -80,7 +85,7 @@ export function MusicWorkspace({
       map[resolved.id] = findCatalogLinkedMissions(resolved, missions, objectTracklist).length;
     }
     return map;
-  }, [music, missions]);
+  }, [currentMusic, missions]);
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
@@ -107,7 +112,13 @@ export function MusicWorkspace({
       if (cancelled || managerReadPollInFlight.current) return;
       managerReadPollInFlight.current = true;
       try {
-        await onMusicChanged();
+        const refreshed = await musicRepository.loadMusicObject(
+          selected.id,
+          selected.kind === "project" ? "music_project" : "music_item",
+        );
+        if (!cancelled && refreshed) {
+          setFocusedMusicById((current) => ({ ...current, [refreshed.id]: refreshed }));
+        }
       } catch {
         // A transient reload failure must not discard the persisted read or stop later polls.
       } finally {
@@ -119,7 +130,7 @@ export function MusicWorkspace({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selected?.id, selected?.managerReadStatus, onMusicChanged]);
+  }, [selected?.id, selected?.kind, selected?.managerReadStatus, musicRepository]);
 
   function selectTab(next: MusicTab) {
     setTab(next);
@@ -155,8 +166,8 @@ export function MusicWorkspace({
     try {
       setBriefError(null);
       setBriefPending(true);
-      await musicRepository.startManagerRead(subjectId, subjectType);
-      await onMusicChanged();
+      const updated = await musicRepository.startManagerRead(subjectId, subjectType);
+      setFocusedMusicById((current) => ({ ...current, [updated.id]: updated }));
     } catch {
       setBriefError("Manager Read could not start. Try again.");
     } finally {

@@ -801,6 +801,292 @@ export function createSupabaseProfileSetupService(client: SupabaseClient): Produ
 
 export function createSupabaseProductionRepositories(client: SupabaseClient, workspace: ProductionWorkspace): CleanProductionRepositories {
   const musicLibraryLoader = createSupabaseMusicLibraryLoader(client);
+  const ownerFilters = (query: unknown): ScopedMusicQuery => {
+    const scoped = query as ScopedMusicQuery;
+    return scoped
+      .eq("account_id", workspace.accountId)
+      .eq("artist_workspace_id", workspace.artistWorkspaceId)
+      .eq("artist_id", workspace.artistId);
+  };
+
+  const loadMusicList = async (): Promise<MusicObjectViewModel[]> => {
+    const [
+      { data: itemRows, error: itemError },
+      { data: projectRows, error: projectError },
+      { data: projectItemRows, error: projectItemError },
+      { data: managerOutputRows, error: managerOutputError },
+      { data: managerRunRows, error: managerRunError },
+    ] = await Promise.all([
+      ownerFilters(client
+        .from("music_items")
+        .select("id,title,item_type,lifecycle_stage,source_kind,source_limit,released_at,metadata")
+      )
+        .eq("status", "active")
+        .order("released_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .limit(100),
+      ownerFilters(client
+        .from("music_projects")
+        .select("id,title,project_type,lifecycle_stage,source_kind,source_limit,released_at,metadata")
+      )
+        .eq("status", "active")
+        .order("released_at", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .limit(50),
+      ownerFilters(client
+        .from("music_project_items")
+        .select("music_project_id,music_item_id,order_index,disc_number,display_title")
+      )
+        .order("music_project_id", { ascending: true })
+        .order("disc_number", { ascending: true })
+        .order("order_index", { ascending: true })
+        .order("music_item_id", { ascending: true })
+        .limit(150),
+      ownerFilters(client
+        .from("manager_outputs")
+        .select("id,created_from_run_id,output_type,subject_type,subject_id,is_current,schema_version,summary,created_at")
+      )
+        .eq("is_current", true)
+        .in("subject_type", ["music_item", "music_project"])
+        .in("output_type", ["song_manager_read", "project_manager_read"])
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(100),
+      ownerFilters(client
+        .from("manager_synthesis_runs")
+        .select("id,subject_type,subject_id,status,error,created_at,completed_at")
+      )
+        .eq("classification", "music_manager_read_v2")
+        .in("subject_type", ["music_item", "music_project"])
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(100),
+    ]);
+
+    if (itemError) throw itemError;
+    if (projectError) throw projectError;
+    if (projectItemError) throw projectItemError;
+    if (managerOutputError) throw managerOutputError;
+    if (managerRunError) throw managerRunError;
+
+    const library = mapMusicLibrary({
+      itemRows: (itemRows ?? []) as MusicItemRow[],
+      projectRows: (projectRows ?? []) as MusicProjectRow[],
+      projectItemRows: (projectItemRows ?? []) as MusicProjectItemRow[],
+      identifierRows: [],
+      assetRows: [],
+      creditRows: [],
+      splitRows: [],
+      splitContributorRows: [],
+    });
+    return applyMusicListManagerState(
+      musicViewModelsFromLibrary(library),
+      (managerOutputRows ?? []) as ManagerOutputRow[],
+      (managerRunRows ?? []) as ManagerSynthesisRunRow[],
+    );
+  };
+
+  const loadMusicObject = async (
+    subjectId: string,
+    subjectType: "music_item" | "music_project",
+  ): Promise<MusicObjectViewModel | null> => {
+    const isSong = subjectType === "music_item";
+    const subjectColumn = isSong ? "music_item_id" : "music_project_id";
+    const outputType = isSong ? "song_manager_read" : "project_manager_read";
+
+    const identityQuery = ownerFilters(client
+      .from(isSong ? "music_items" : "music_projects")
+      .select(isSong
+        ? "id,title,item_type,lifecycle_stage,source_kind,source_limit,released_at,metadata"
+        : "id,title,project_type,lifecycle_stage,source_kind,source_limit,released_at,metadata")
+    )
+      .eq("id", subjectId)
+      .eq("status", "active")
+      .order("id", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    const projectItemsQuery = ownerFilters(client
+      .from("music_project_items")
+      .select("music_project_id,music_item_id,order_index,disc_number,display_title")
+    )
+      .eq(subjectColumn, subjectId)
+      .order("disc_number", { ascending: true })
+      .order("order_index", { ascending: true })
+      .order("music_item_id", { ascending: true })
+      .limit(150);
+
+    const [
+      { data: identityRow, error: identityError },
+      { data: projectItemRows, error: projectItemError },
+      { data: identifierRows, error: identifierError },
+      { data: assetRows, error: assetError },
+      { data: creditRows, error: creditError },
+      { data: splitRows, error: splitError },
+      { data: evidenceRows, error: evidenceError },
+      { data: managerOutputRows, error: managerOutputError },
+      { data: managerRunRows, error: managerRunError },
+    ] = await Promise.all([
+      identityQuery,
+      projectItemsQuery,
+      ownerFilters(client
+        .from("music_identifiers")
+        .select("music_item_id,music_project_id,identifier_type,identifier_value")
+      )
+        .eq(subjectColumn, subjectId)
+        .order("identifier_type", { ascending: true })
+        .order("identifier_value", { ascending: true })
+        .limit(40),
+      ownerFilters(client
+        .from("music_assets")
+        .select("music_item_id,music_project_id,asset_type,title,status,uploaded_file_id")
+      )
+        .eq(subjectColumn, subjectId)
+        .order("created_at", { ascending: false })
+        .order("asset_type", { ascending: true })
+        .limit(40),
+      ownerFilters(client
+        .from("music_credits")
+        .select("music_item_id,music_project_id,role,name,status")
+      )
+        .eq(subjectColumn, subjectId)
+        .order("role", { ascending: true })
+        .order("name", { ascending: true })
+        .limit(80),
+      isSong
+        ? ownerFilters(client
+            .from("music_splits")
+            .select("id,music_item_id,status,summary,publishing_total,master_total")
+          )
+            .eq("music_item_id", subjectId)
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: false })
+            .limit(1)
+        : Promise.resolve({ data: [], error: null }),
+      ownerFilters(client
+        .from("evidence_items")
+        .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation")
+      )
+        .eq("subject_type", subjectType)
+        .eq("subject_id", subjectId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(80),
+      ownerFilters(client
+        .from("manager_outputs")
+        .select("id,source_packet_id,created_from_run_id,output_type,subject_type,subject_id,is_current,schema_version,render_json,created_at")
+      )
+        .eq("subject_type", subjectType)
+        .eq("subject_id", subjectId)
+        .eq("output_type", outputType)
+        .eq("is_current", true)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1),
+      ownerFilters(client
+        .from("manager_synthesis_runs")
+        .select("id,subject_type,subject_id,status,error,created_at,completed_at")
+      )
+        .eq("classification", "music_manager_read_v2")
+        .eq("subject_type", subjectType)
+        .eq("subject_id", subjectId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1),
+    ]);
+
+    if (identityError) throw identityError;
+    if (!identityRow) return null;
+    if (projectItemError) throw projectItemError;
+    if (identifierError) throw identifierError;
+    if (assetError) throw assetError;
+    if (creditError) throw creditError;
+    if (splitError) throw splitError;
+    if (evidenceError) throw evidenceError;
+    if (managerOutputError) throw managerOutputError;
+    if (managerRunError) throw managerRunError;
+
+    const links = (projectItemRows ?? []) as MusicProjectItemRow[];
+    const relatedIds = links.map((row) => isSong ? row.music_project_id : row.music_item_id);
+    const relatedTable = isSong ? "music_projects" : "music_items";
+    const relatedSelect = isSong
+      ? "id,title,project_type,lifecycle_stage,source_kind,source_limit,released_at,metadata"
+      : "id,title,item_type,lifecycle_stage,source_kind,source_limit,released_at,metadata";
+    const { data: relatedRows, error: relatedError } = relatedIds.length
+      ? await ownerFilters(client.from(relatedTable).select(relatedSelect))
+          .in("id", relatedIds)
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .limit(150)
+      : { data: [], error: null };
+    if (relatedError) throw relatedError;
+
+    const splits = (splitRows ?? []) as MusicSplitRow[];
+    const splitIds = splits.flatMap((row) => row.id ? [row.id] : []);
+    const { data: contributorRows, error: contributorError } = splitIds.length
+      ? await ownerFilters(client
+          .from("music_split_contributors")
+          .select("id,music_split_id,name,role,email,publishing_share,master_share,approval_status")
+        )
+          .in("music_split_id", splitIds)
+          .order("created_at", { ascending: true })
+          .order("id", { ascending: true })
+          .limit(100)
+      : { data: [], error: null };
+    if (contributorError) throw contributorError;
+
+    const relatedMusicRows = ((relatedRows as Array<MusicItemRow | MusicProjectRow> | null) ?? []);
+    const library = mapMusicLibrary({
+      itemRows: (isSong ? [identityRow, ...relatedMusicRows] : relatedMusicRows) as MusicItemRow[],
+      projectRows: (isSong ? relatedMusicRows : [identityRow]) as MusicProjectRow[],
+      projectItemRows: links,
+      identifierRows: (identifierRows ?? []) as MusicIdentifierRow[],
+      assetRows: (assetRows ?? []) as MusicAssetRow[],
+      creditRows: (creditRows ?? []) as MusicCreditRow[],
+      splitRows: splits,
+      splitContributorRows: (contributorRows ?? []) as MusicSplitContributorRow[],
+      evidenceRows: (evidenceRows ?? []) as EvidenceRow[],
+      managerOutputRows: (managerOutputRows ?? []) as ManagerOutputRow[],
+      managerRunRows: (managerRunRows ?? []) as ManagerSynthesisRunRow[],
+    });
+    return musicViewModelsFromLibrary(library).find((model) => model.id === subjectId) ?? null;
+  };
+
+  const loadManagerRun = async (runId: string): Promise<{
+    id: string;
+    status: string;
+    subjectId: string;
+    subjectType: "music_item" | "music_project";
+    error?: string;
+  } | null> => {
+    const { data, error } = await ownerFilters(client
+      .from("manager_synthesis_runs")
+      .select("id,status,subject_id,subject_type,error")
+    )
+      .eq("id", runId)
+      .eq("classification", "music_manager_read_v2")
+      .order("id", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    const row = data as ManagerSynthesisRunRow | null;
+    const subjectType = row?.subject_type;
+    if (
+      !row ||
+      (subjectType !== "music_item" && subjectType !== "music_project") ||
+      !row.subject_id ||
+      !row.status
+    ) return null;
+    return {
+      id: row.id,
+      status: row.status,
+      subjectId: row.subject_id,
+      subjectType,
+      ...(row.error ? { error: row.error } : {}),
+    };
+  };
 
   return {
     artistProfile: {
@@ -975,6 +1261,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const library = await musicLibraryLoader.loadMusicLibrary(workspace);
         return musicViewModelsFromLibrary(library);
       },
+      loadMusicList,
+      loadMusicObject,
+      loadManagerRun,
       async startManagerRead(subjectId, subjectType) {
         const subjectLabel = subjectType === "music_project" ? "Project" : "Song";
         const { data, error } = await client.functions.invoke("generate-music-summary", {
@@ -997,10 +1286,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           throw new Error(`${subjectLabel} Manager Read returned an invalid run response.`);
         }
 
-        // Reload the full library so the returned view model carries the fresh brief
-        const library = await musicLibraryLoader.loadMusicLibrary(workspace);
-        const models = musicViewModelsFromLibrary(library);
-        const updated = models.find((model) => model.id === subjectId);
+        const updated = await loadMusicObject(subjectId, subjectType);
         if (!updated) {
           throw new Error(`${subjectLabel} could not be reloaded after starting the Manager Read.`);
         }
@@ -1983,6 +2269,14 @@ type ManagerOutputRow = {
   confidence_json?: unknown;
   supporting_evidence_json?: unknown;
   created_at?: string | null;
+};
+
+type ScopedMusicQuery = PromiseLike<{ data: unknown; error: unknown }> & {
+  eq(column: string, value: unknown): ScopedMusicQuery;
+  in(column: string, values: unknown[]): ScopedMusicQuery;
+  order(column: string, options?: { ascending?: boolean }): ScopedMusicQuery;
+  limit(count: number): ScopedMusicQuery;
+  maybeSingle(): PromiseLike<{ data: unknown; error: unknown }>;
 };
 
 type AgentProfileRow = {
@@ -4389,6 +4683,61 @@ function musicViewModelsFromLibrary(library: ProductionMusicLibrary): MusicObjec
   });
 
   return [...songs, ...projects];
+}
+
+function applyMusicListManagerState(
+  models: MusicObjectViewModel[],
+  outputRows: ManagerOutputRow[],
+  runRows: ManagerSynthesisRunRow[],
+) {
+  const outputsBySubject = new Map<string, ManagerOutputRow>();
+  for (const output of [...outputRows].sort(compareManagerRowsNewestFirst)) {
+    if (
+      !output.subject_id ||
+      (output.subject_type !== "music_item" && output.subject_type !== "music_project") ||
+      output.is_current === false
+    ) continue;
+    const key = musicManagerRunKey(output.subject_type, output.subject_id);
+    if (!outputsBySubject.has(key)) outputsBySubject.set(key, output);
+  }
+  const latestRuns = latestMusicManagerRunsBySubject(musicManagerRunsFromRows(runRows));
+
+  return models.map((model) => {
+    const subjectType = model.kind === "project" ? "music_project" : "music_item";
+    const key = musicManagerRunKey(subjectType, model.id);
+    const output = outputsBySubject.get(key);
+    const run = latestRuns.get(key);
+    const outputIsCurrentV2 = output?.schema_version === "music-manager-read-v2";
+    let managerReadStatus: MusicManagerReadStatus = "not_generated";
+    if (run?.status === "queued" || run?.status === "running") {
+      managerReadStatus = outputIsCurrentV2 ? "refreshing" : "running";
+    } else if (
+      run?.status === "failed" &&
+      (!output?.created_at || validDateMilliseconds(run.createdAt) > validDateMilliseconds(output.created_at))
+    ) {
+      managerReadStatus = outputIsCurrentV2 ? "refresh_failed" : "failed";
+    } else if (outputIsCurrentV2) {
+      managerReadStatus = "fresh";
+    } else if (output) {
+      managerReadStatus = "stale";
+    }
+    return {
+      ...model,
+      managerReadSummary: output?.summary ?? undefined,
+      managerReadStatus,
+      managerReadRunId: managerReadStatus === "fresh"
+        ? output?.created_from_run_id ?? undefined
+        : managerReadStatus === "running" ||
+            managerReadStatus === "refreshing" ||
+            managerReadStatus === "failed" ||
+            managerReadStatus === "refresh_failed"
+          ? run?.id
+          : undefined,
+      managerReadError: managerReadStatus === "failed" || managerReadStatus === "refresh_failed"
+        ? run?.error
+        : undefined,
+    };
+  });
 }
 
 function buildAssetLabels(song: ProductionMusicItem) {

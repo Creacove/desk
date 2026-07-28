@@ -1097,6 +1097,161 @@ describe("production Supabase services", () => {
     expect(result.managerReadStatus).toBe("running");
   });
 
+  it("loads a bounded Music list without detail payloads or full Manager Read renders", async () => {
+    const tables = musicManagerReadTables({
+      manager_outputs: [musicManagerOutputRow()],
+      manager_synthesis_runs: [musicManagerRunRow()],
+    });
+    const { client, calls } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicList();
+
+    expect(result).toEqual([expect.objectContaining({ id: "song-jam", kind: "song" })]);
+    expect(calls.map((call) => call.table)).toEqual([
+      "music_items",
+      "music_projects",
+      "music_project_items",
+      "manager_outputs",
+      "manager_synthesis_runs",
+    ]);
+    expect(calls.some((call) => call.select.includes("render_json"))).toBe(false);
+    expect(calls.some((call) => [
+      "music_identifiers",
+      "music_assets",
+      "music_credits",
+      "music_splits",
+      "music_split_contributors",
+      "evidence_items",
+    ].includes(call.table))).toBe(false);
+    for (const call of calls) {
+      expect(call.filters).toEqual(expect.arrayContaining([
+        ["account_id", "account-1"],
+        ["artist_workspace_id", "workspace-1"],
+        ["artist_id", "artist-1"],
+      ]));
+      expect(call.limit).toBeGreaterThan(0);
+      expect(call.limit).toBeLessThan(200);
+      expect(call.orders.length).toBeGreaterThan(0);
+    }
+  });
+
+  it.each([
+    ["music_item", "song-jam", "music_item_id"],
+    ["music_project", "project-jam", "music_project_id"],
+  ] as const)("loads only the owned %s detail for the exact subject", async (subjectType, subjectId, subjectColumn) => {
+    const tables = musicManagerReadTables({
+      music_projects: [{
+        id: "project-jam",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        status: "active",
+        title: "Jam Project",
+        project_type: "album",
+        lifecycle_stage: "released",
+        source_kind: "spotify_public_catalog",
+        source_limit: "Public catalog metadata only.",
+        created_at: "2026-07-27T08:00:00.000Z",
+        metadata: {},
+      }],
+      music_identifiers: [
+        {
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          music_item_id: "song-jam",
+          music_project_id: null,
+          identifier_type: "isrc",
+          identifier_value: "OWNED",
+        },
+        {
+          account_id: "account-other",
+          artist_workspace_id: "workspace-other",
+          artist_id: "artist-other",
+          music_item_id: "song-jam",
+          music_project_id: null,
+          identifier_type: "isrc",
+          identifier_value: "FOREIGN",
+        },
+      ],
+      manager_outputs: [musicManagerOutputRow()],
+      manager_synthesis_runs: [musicManagerRunRow()],
+    });
+    const { client, calls } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicObject(subjectId, subjectType);
+
+    expect(result).toEqual(expect.objectContaining({ id: subjectId }));
+    for (const call of calls) {
+      expect(call.filters).toEqual(expect.arrayContaining([
+        ["account_id", "account-1"],
+        ["artist_workspace_id", "workspace-1"],
+        ["artist_id", "artist-1"],
+      ]));
+    }
+    for (const table of ["music_identifiers", "music_assets", "music_credits", "manager_outputs", "manager_synthesis_runs"]) {
+      const call = calls.find((entry) => entry.table === table);
+      expect(call?.filters).toContainEqual([subjectColumn === "music_item_id" && table.startsWith("music_")
+        ? "music_item_id"
+        : subjectColumn === "music_project_id" && table.startsWith("music_")
+          ? "music_project_id"
+          : "subject_id", subjectId]);
+    }
+    const identityTable = subjectType === "music_item" ? "music_items" : "music_projects";
+    expect(calls.find((call) => call.table === identityTable)?.filters).toContainEqual(["id", subjectId]);
+    expect(Boolean(result?.identifiers?.some((identifier) => identifier.value === "FOREIGN"))).toBe(false);
+  });
+
+  it("loads one Manager Read run by the exact owner tuple and run id", async () => {
+    const tables = musicManagerReadTables({
+      manager_synthesis_runs: [
+        musicManagerRunRow({ id: "run-owned", status: "running" }),
+        musicManagerRunRow({ id: "run-owned", account_id: "account-other", status: "failed" }),
+        musicManagerRunRow({ id: "run-other", status: "failed" }),
+      ],
+    });
+    const { client, calls } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadManagerRun("run-owned");
+
+    expect(result).toEqual({
+      id: "run-owned",
+      status: "running",
+      subjectId: "song-jam",
+      subjectType: "music_item",
+    });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      table: "manager_synthesis_runs",
+      limit: 1,
+      filters: expect.arrayContaining([
+        ["account_id", "account-1"],
+        ["artist_workspace_id", "workspace-1"],
+        ["artist_id", "artist-1"],
+        ["id", "run-owned"],
+      ]),
+    });
+  });
+
+  it("starts Manager Read with one focused object reload and never invokes the broad library loader", async () => {
+    const tables = musicManagerReadTables();
+    const { client, calls } = createObservedSupabaseClient(tables, {
+      invoke: async () => {
+        tables.manager_synthesis_runs.push(musicManagerRunRow({ id: "run-focused", status: "running" }));
+        return { data: { status: "processing", runId: "run-focused" }, error: null };
+      },
+    });
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.startManagerRead("song-jam", "music_item");
+
+    expect(result).toMatchObject({ id: "song-jam", managerReadRunId: "run-focused" });
+    expect(calls.filter((call) => call.table === "music_items")).toHaveLength(1);
+    expect(calls.some((call) => call.table === "music_projects")).toBe(false);
+    expect(calls.every((call) => call.filters.some(([key, value]) =>
+      (key === "id" || key === "subject_id" || key === "music_item_id") && value === "song-jam",
+    ) || call.table === "music_project_items" || call.table === "music_split_contributors")).toBe(true);
+  });
+
   it("rejects invalid backend Manager Read start responses", async () => {
     const client = createMutableSupabaseClient(musicManagerReadTables(), {
       invoke: async () => ({ data: { status: "completed", runId: null }, error: null }),
@@ -2893,6 +3048,82 @@ function createMutableSupabaseClient(
       return mutableQuery(table, tableData);
     },
   } as unknown as SupabaseClient;
+}
+
+type ObservedQueryCall = {
+  table: string;
+  select: string;
+  filters: Array<[string, unknown]>;
+  inFilters: Array<[string, unknown[]]>;
+  orders: Array<[string, boolean | undefined]>;
+  limit?: number;
+};
+
+function createObservedSupabaseClient(
+  tableData: Record<string, Array<Record<string, unknown>>>,
+  extras: {
+    invoke?: (name: string, options: { body: unknown }) => Promise<{ data: unknown; error: unknown }>;
+  } = {},
+) {
+  const calls: ObservedQueryCall[] = [];
+  const client = {
+    functions: extras.invoke ? { invoke: extras.invoke } : undefined,
+    from(table: string) {
+      const filters: Array<[string, unknown]> = [];
+      const inFilters: Array<[string, unknown[]]> = [];
+      const orders: Array<[string, boolean | undefined]> = [];
+      let selectedColumns = "";
+      let limitCount: number | undefined;
+
+      const execute = async () => {
+        calls.push({
+          table,
+          select: selectedColumns,
+          filters: [...filters],
+          inFilters: [...inFilters],
+          orders: [...orders],
+          limit: limitCount,
+        });
+        const rows = (tableData[table] ?? []).filter((row) =>
+          filters.every(([key, value]) => row[key] === value) &&
+          inFilters.every(([key, values]) => values.includes(row[key])),
+        );
+        return { data: typeof limitCount === "number" ? rows.slice(0, limitCount) : rows, error: null };
+      };
+
+      const query = {
+        select(columns: string) {
+          selectedColumns = columns;
+          return query;
+        },
+        eq(key: string, value: unknown) {
+          filters.push([key, value]);
+          return query;
+        },
+        in(key: string, values: unknown[]) {
+          inFilters.push([key, values]);
+          return query;
+        },
+        order(key: string, options?: { ascending?: boolean }) {
+          orders.push([key, options?.ascending]);
+          return query;
+        },
+        limit(count: number) {
+          limitCount = count;
+          return query;
+        },
+        maybeSingle: () => execute().then(({ data, error }) => ({ data: data[0] ?? null, error })),
+        single: () => execute().then(({ data, error }) => ({ data: data[0], error })),
+        then: (
+          resolve: (value: { data: Array<Record<string, unknown>>; error: null }) => unknown,
+          reject: (reason: unknown) => unknown,
+        ) => execute().then(resolve, reject),
+      };
+      return query;
+    },
+  } as unknown as SupabaseClient;
+
+  return { client, calls };
 }
 
 function mutableQuery(table: string, tableData: Record<string, Array<Record<string, unknown>>>) {

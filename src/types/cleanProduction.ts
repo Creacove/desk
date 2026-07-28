@@ -296,6 +296,7 @@ export type MusicObjectViewModel = {
   sourceKind?: string;
   sourceLimit: string;
   managerRead?: MusicManagerReadViewModel;
+  managerReadSummary?: string;
   managerReadStatus: MusicManagerReadStatus;
   managerReadRunId?: string;
   managerReadError?: string;
@@ -595,6 +596,18 @@ export type SpotifyImportResult = {
 
 export type MusicRepository = {
   loadMusic(): Promise<MusicObjectViewModel[]>;
+  loadMusicList(): Promise<MusicObjectViewModel[]>;
+  loadMusicObject(
+    subjectId: string,
+    subjectType: "music_item" | "music_project",
+  ): Promise<MusicObjectViewModel | null>;
+  loadManagerRun(runId: string): Promise<{
+    id: string;
+    status: string;
+    subjectId: string;
+    subjectType: "music_item" | "music_project";
+    error?: string;
+  } | null>;
   startManagerRead(subjectId: string, subjectType: "music_item" | "music_project"): Promise<MusicObjectViewModel>;
   searchSpotifyCatalog(input: { kind: "song" | "project"; albumId?: string }): Promise<SpotifyCatalogSearchResult>;
   importSpotifySelection(input: { kind: "song" | "project"; albumId: string; trackId?: string }): Promise<SpotifyImportResult>;
