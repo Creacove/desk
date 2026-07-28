@@ -137,12 +137,13 @@ export function MusicWorkspace({
   }, [music]);
 
   useEffect(() => {
-    if (mode === "library" || !selected) return;
+    if (!selected) return;
     const key = musicObjectKey(selected);
     if (selected.managerReadStatus !== "unknown") {
       unknownManagerReadChecks.current.delete(key);
       return;
     }
+    if (mode === "library") return;
     if (unknownManagerReadChecks.current.has(key)) return;
     unknownManagerReadChecks.current.add(key);
     void checkManagerReadStatus(
@@ -267,9 +268,7 @@ export function MusicWorkspace({
       setBriefPending(true);
       const refreshed = await onRefreshObject(subjectId, subjectType);
       if (!refreshed) return;
-      rememberFocusedUpdate(refreshed.managerReadStatus === "unknown"
-        ? { ...refreshed, managerReadStatus: "not_generated" }
-        : refreshed);
+      rememberFocusedUpdate(refreshed);
     } catch {
       setBriefError("Manager Read status could not be checked. Try again.");
     } finally {

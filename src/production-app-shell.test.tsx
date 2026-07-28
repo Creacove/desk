@@ -4521,7 +4521,12 @@ describe("Clean production prototype-match shell", () => {
     };
     const repositories = repositoriesFor("Nova Vale");
     const startManagerRead = vi.fn(repositories.music.startManagerRead);
-    const onRefreshObject = vi.fn(async () => authoritative);
+    let resolveFirstCheck: ((value: MusicObjectViewModel) => void) | undefined;
+    const onRefreshObject = vi.fn()
+      .mockImplementationOnce(() => new Promise<MusicObjectViewModel>((resolve) => {
+        resolveFirstCheck = resolve;
+      }))
+      .mockResolvedValue(authoritative);
     const workspace = (music: MusicObjectViewModel[]) => (
       <MusicWorkspace
         music={music}
@@ -4537,22 +4542,62 @@ describe("Clean production prototype-match shell", () => {
 
     expect(onRefreshObject).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    await act(async () => { await Promise.resolve(); });
 
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(onRefreshObject).toHaveBeenCalledWith("song-jam", "music_item");
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Not generated");
-    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: "Back to Catalog" }));
+    await act(async () => {
+      resolveFirstCheck?.(unknown);
+      await Promise.resolve();
+    });
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
 
     rerender(workspace([{ ...authoritative, managerReadStatus: "fresh", managerRead: completeSongManagerRead }]));
     rerender(workspace([unknown]));
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     await act(async () => { await Promise.resolve(); });
     expect(onRefreshObject).toHaveBeenCalledTimes(2);
+    expect(startManagerRead).not.toHaveBeenCalled();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Not generated");
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" })).toBeInTheDocument();
+  });
+
+  it("preserves an inconclusive exact Manager Read status without exposing generation", async () => {
+    vi.useFakeTimers();
+    const unknown = musicReadSubject("song", "unknown");
+    unknown.managerRead = undefined;
+    const repositories = repositoriesFor("Nova Vale");
+    const startManagerRead = vi.fn(repositories.music.startManagerRead);
+    const onRefreshObject = vi.fn(async () => unknown);
+
+    render(
+      <MusicWorkspace
+        music={[unknown]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, startManagerRead }}
+        onRefreshObject={onRefreshObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    await act(async () => { await Promise.resolve(); });
+
+    const room = screen.getByTestId("music-song-detail");
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    expect(startManagerRead).not.toHaveBeenCalled();
+    expect(room).toHaveTextContent("Status available when opened");
+    expect(within(room).getByRole("button", { name: "Check status" })).toBeInTheDocument();
+    expect(within(room).queryByRole("button", { name: "Ask Manager for a read" })).not.toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
   });
 
