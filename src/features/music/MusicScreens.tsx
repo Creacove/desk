@@ -70,6 +70,7 @@ export function MusicWorkspace({
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
   const managerReadPollInFlight = useRef(false);
+  const unknownManagerReadChecks = useRef(new Set<string>());
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
   const currentMusic = useMemo(
@@ -121,6 +122,37 @@ export function MusicWorkspace({
   useEffect(() => {
     if (listRequestKey > 0) setMode("library");
   }, [listRequestKey]);
+
+  useEffect(() => {
+    setFocusedMusicById((current) => {
+      let reconciled = current;
+      for (const [key, overlay] of Object.entries(current)) {
+        const parent = music.find((item) => musicObjectKey(item) === key);
+        if (parent && managerReadRevision(parent) === overlay.parentManagerRevision) continue;
+        if (reconciled === current) reconciled = { ...current };
+        delete reconciled[key];
+      }
+      return reconciled;
+    });
+  }, [music]);
+
+  useEffect(() => {
+    if (mode === "library" || !selected) return;
+    const key = musicObjectKey(selected);
+    if (selected.managerReadStatus !== "unknown") {
+      unknownManagerReadChecks.current.delete(key);
+      return;
+    }
+    if (unknownManagerReadChecks.current.has(key)) return;
+    unknownManagerReadChecks.current.add(key);
+    void checkManagerReadStatus(
+      selected.id,
+      selected.kind === "project" ? "music_project" : "music_item",
+    );
+    // The typed key and unknown status gate this exact read; callback identity changes
+    // must not turn visibility into recurring traffic.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, selected?.id, selected?.kind, selected?.managerReadStatus]);
 
   useEffect(() => {
     if (selected?.managerReadStatus !== "running" && selected?.managerReadStatus !== "refreshing") return;
@@ -227,6 +259,30 @@ export function MusicWorkspace({
       setSongRoomTab("overview");
       setMode("songDetail");
     }
+  }
+
+  async function checkManagerReadStatus(subjectId: string, subjectType: "music_item" | "music_project") {
+    try {
+      setBriefError(null);
+      setBriefPending(true);
+      const refreshed = await onRefreshObject(subjectId, subjectType);
+      if (!refreshed) return;
+      rememberFocusedUpdate(refreshed.managerReadStatus === "unknown"
+        ? { ...refreshed, managerReadStatus: "not_generated" }
+        : refreshed);
+    } catch {
+      setBriefError("Manager Read status could not be checked. Try again.");
+    } finally {
+      setBriefPending(false);
+    }
+  }
+
+  function handleManagerReadAction(subject: MusicObjectViewModel) {
+    const subjectType = subject.kind === "project" ? "music_project" : "music_item";
+    if (subject.managerReadStatus === "unknown") {
+      return checkManagerReadStatus(subject.id, subjectType);
+    }
+    return startManagerRead(subject.id, subjectType);
   }
 
   function rememberFocusedUpdate(updated: MusicObjectViewModel) {
@@ -367,7 +423,7 @@ export function MusicWorkspace({
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
           onRemoveSplitContributor={(contributorId) => removeSplitContributor(selected.id, contributorId)}
           onSendSplitConfirmationLinks={() => sendSplitConfirmationLinks(selected.id)}
-          onGenerateBrief={() => startManagerRead(selected.id, "music_item")}
+          onGenerateBrief={() => handleManagerReadAction(selected)}
           briefPending={briefPending}
           briefError={briefError}
           onBack={backToLibrary}
@@ -383,7 +439,7 @@ export function MusicWorkspace({
           linkedMissions={linkedMissions}
           onBack={backToLibrary}
           onOpenSong={(song) => openObject(song, "projects")}
-          onGenerateBrief={() => startManagerRead(selected.id, "music_project")}
+          onGenerateBrief={() => handleManagerReadAction(selected)}
           briefPending={briefPending}
           briefError={briefError}
           onOpenMission={onOpenMission}
@@ -705,6 +761,7 @@ function MusicSongDetail({
   const detailDraftCount = allDetailFields.filter((field) => field.status === "Draft").length;
   const generateReadLabel = managerReadButtonLabel("song", song.managerReadStatus);
   const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
+  const pendingReadLabel = song.managerReadStatus === "unknown" ? "Checking status" : "Manager is reading";
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -736,13 +793,13 @@ function MusicSongDetail({
                 </div>
                 <button
                   type="button"
-                  aria-label={briefPending ? "Manager is reading" : generateReadLabel}
+                  aria-label={briefPending ? pendingReadLabel : generateReadLabel}
                   onClick={onGenerateBrief}
                   disabled={readBusy}
                   className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 font-ui text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:px-4 sm:text-[11px]"
                 >
                   {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
-                  <span>{briefPending ? "Manager is reading" : generateReadLabel}</span>
+                  <span>{briefPending ? pendingReadLabel : generateReadLabel}</span>
                 </button>
               </div>
               {briefError ? (
@@ -1022,6 +1079,7 @@ function MusicProjectBrief({
 }) {
   const generateReadLabel = managerReadButtonLabel("project", project.managerReadStatus);
   const readBusy = briefPending || isActiveManagerRead(project.managerReadStatus);
+  const pendingReadLabel = project.managerReadStatus === "unknown" ? "Checking status" : "Manager is reading";
 
   return (
     <div className="surface-elevated overflow-hidden rounded-[22px] p-5 shadow-sm sm:p-6">
@@ -1035,11 +1093,11 @@ function MusicProjectBrief({
           type="button"
           onClick={onGenerateBrief}
           disabled={readBusy}
-          aria-label={briefPending ? "Manager is reading" : generateReadLabel}
+          aria-label={briefPending ? pendingReadLabel : generateReadLabel}
           className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 font-ui text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40"
         >
           {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
-          {briefPending ? "Manager is reading" : generateReadLabel}
+          {briefPending ? pendingReadLabel : generateReadLabel}
         </button>
       </div>
 
@@ -1133,7 +1191,7 @@ function managerReadButtonLabel(kind: MusicObjectViewModel["kind"], status: Musi
   if (status === "refreshing") return "Refreshing Manager Read";
   if (status === "failed" || status === "refresh_failed") return "Retry Manager Read";
   if (status === "not_generated" || !status) return kind === "project" ? "Ask Manager for a project read" : "Ask Manager for a read";
-  if (status === "unknown") return "Check Manager Read";
+  if (status === "unknown") return "Check status";
   return "Refresh Manager Read";
 }
 

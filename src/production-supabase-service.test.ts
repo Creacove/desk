@@ -12,7 +12,7 @@ import {
   createSupabaseSpotifyArtistAdapter,
   createSupabaseWorkspaceLoader,
 } from "./services/productionSupabase";
-import { createFixtureRepositories } from "./services/fixtureRepositories";
+import { createFixtureRepositories, productionFixtureData } from "./services/fixtureRepositories";
 import type { ProductionWorkspace } from "./types/productionApp";
 
 afterEach(() => {
@@ -1466,7 +1466,7 @@ describe("production Supabase services", () => {
     expect(result).toMatchObject({
       id: "song-after-hours",
       managerReadStatus: "running",
-      managerReadRunId: "fixture-music-read-song-after-hours",
+      managerReadRunId: "fixture-music-read-music_item-song-after-hours",
     });
     expect(result.managerRead).toBeUndefined();
   });
@@ -1480,9 +1480,37 @@ describe("production Supabase services", () => {
     expect(result).toMatchObject({
       id: "song-night-bus",
       managerReadStatus: "refreshing",
-      managerReadRunId: "fixture-music-read-song-night-bus",
+      managerReadRunId: "fixture-music-read-music_item-song-night-bus",
     });
     expect(result.managerRead).toEqual(current?.managerRead);
+  });
+
+  it("keeps a same-id fixture project unchanged when starting a song Manager Read", async () => {
+    const song = productionFixtureData.music.find((item) => item.kind === "song");
+    const project = productionFixtureData.music.find((item) => item.kind === "project");
+    expect(song).toBeDefined();
+    expect(project).toBeDefined();
+    if (!song || !project) return;
+
+    const originalProjectId = project.id;
+    project.id = song.id;
+    try {
+      const repositories = createFixtureRepositories();
+      const projectBefore = await repositories.music.loadMusicObject(song.id, "music_project");
+
+      const updatedSong = await repositories.music.startManagerRead(song.id, "music_item");
+      const projectAfter = await repositories.music.loadMusicObject(song.id, "music_project");
+
+      expect(updatedSong).toMatchObject({
+        id: song.id,
+        kind: "song",
+        managerReadRunId: `fixture-music-read-music_item-${song.id}`,
+      });
+      expect(projectAfter).toEqual(projectBefore);
+      expect(projectAfter).toMatchObject({ id: song.id, kind: "project", title: project.title });
+    } finally {
+      project.id = originalProjectId;
+    }
   });
 
   it("keeps manual unreleased split proof blocking while ignoring split proof for released Spotify catalog imports", async () => {

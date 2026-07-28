@@ -819,10 +819,12 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         const updated = {
           ...found,
           managerReadStatus: found.managerRead ? "refreshing" as const : "running" as const,
-          managerReadRunId: `fixture-music-read-${subjectId}`,
+          managerReadRunId: `fixture-music-read-${subjectType}-${subjectId}`,
           managerReadError: undefined,
         };
-        music = music.map((item) => item.id === subjectId ? updated : item);
+        music = music.map((item) =>
+          item.id === subjectId && item.kind === expectedKind ? updated : item
+        );
         return updated;
       },
       async searchSpotifyCatalog() {

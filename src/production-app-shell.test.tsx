@@ -4293,6 +4293,21 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Durable parent title");
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent("The durable parent read supersedes");
     expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The last good read remains visible");
+
+    rerender(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, loadMusic, startManagerRead }}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The last good read remains visible");
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Not generated");
   });
 
   it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
@@ -4494,6 +4509,51 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song Shared UUID song" }));
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent("The focused song refresh stayed attached");
     expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The focused project refresh stayed attached");
+  });
+
+  it("resolves an unknown list status once on open without generating or interval polling", async () => {
+    vi.useFakeTimers();
+    const unknown = musicReadSubject("song", "unknown");
+    unknown.managerRead = undefined;
+    const authoritative = {
+      ...unknown,
+      managerReadStatus: "not_generated" as const,
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    const startManagerRead = vi.fn(repositories.music.startManagerRead);
+    const onRefreshObject = vi.fn(async () => authoritative);
+    const workspace = (music: MusicObjectViewModel[]) => (
+      <MusicWorkspace
+        music={music}
+        missions={[]}
+        musicRepository={{ ...repositories.music, startManagerRead }}
+        onRefreshObject={onRefreshObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />
+    );
+    const { rerender } = render(workspace([unknown]));
+
+    expect(onRefreshObject).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    expect(onRefreshObject).toHaveBeenCalledWith("song-jam", "music_item");
+    expect(startManagerRead).not.toHaveBeenCalled();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Not generated");
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" })).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    expect(startManagerRead).not.toHaveBeenCalled();
+
+    rerender(workspace([{ ...authoritative, managerReadStatus: "fresh", managerRead: completeSongManagerRead }]));
+    rerender(workspace([unknown]));
+    await act(async () => { await Promise.resolve(); });
+    expect(onRefreshObject).toHaveBeenCalledTimes(2);
+    expect(startManagerRead).not.toHaveBeenCalled();
   });
 
   it("uses the production split ledger flow in the Music rights tab", async () => {
