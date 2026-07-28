@@ -116,7 +116,15 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, serviceRoleKey");
     expect(functionSource).not.toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey");
     expect(functionSource).toContain("finalizeSetupMusicReadWave");
-    expect(functionSource).toContain('status: failures.length ? "completed_with_limits" : "completed"');
+    expect(functionSource).toContain("readSetupMusicManagerRunId");
+    expect(functionSource).toContain("waitForSetupMusicReadRuns");
+    expect(functionSource).toContain('.eq("account_id", input.accountId)');
+    expect(functionSource).toContain('.eq("artist_workspace_id", input.artistWorkspaceId)');
+    expect(functionSource).toContain('.eq("artist_id", input.artistId)');
+    expect(functionSource).toContain('.eq("classification", "music_manager_read_v2")');
+    expect(functionSource).toContain('.in("id", runIds)');
+    expect(functionSource).toContain('"completed_with_limits"');
+    expect(functionSource).toContain("run_id: dispatch.runId");
     expect(functionSource).toContain("generate-music-summary");
     expect(functionSource).toContain('subjectType: "music_project"');
     expect(functionSource).toContain('subjectType: "music_item"');
@@ -199,6 +207,12 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(visibleCopy).not.toMatch(/\bcampaign\b/i);
     expect(output.managerRead).toContain("London");
     expect(output.intelligenceSnapshot[0].metrics[0].evidenceIds).toEqual(["ev-1"]);
+  });
+
+  it("requires each accepted music-read dispatch to return its durable run ID", () => {
+    expect(functionSource).toContain('payload.status !== "processing"');
+    expect(functionSource).toContain("readSetupMusicManagerRunId(payload)");
+    expect(functionSource).toContain("Setup music Manager Read dispatch returned no run ID");
   });
 
   it("normalizes metric numbers and replaces duplicate numeric labels before persistence", () => {

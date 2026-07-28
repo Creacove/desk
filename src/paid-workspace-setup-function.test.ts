@@ -115,9 +115,13 @@ describe("paid workspace setup orchestration", () => {
 
     expect(briefText).toContain("EdgeRuntime.waitUntil");
     expect(briefText).toContain("Promise.allSettled");
-    expect(text).toMatch(/music_reads:\s*\{\s*status: hasMusicReadTargets \? "running" : "completed"/);
+    expect(text).toContain('status: hasMusicReadTargets ? "running" : "completed"');
+    expect(text).toContain("music_reads: mergeSetupMusicReadStage");
     expect(text).toContain('status: "completed"');
     expect(text).toContain("setupRunId: setupRun.id");
+    expect(text).toContain("mergeSetupMusicReadStage");
+    expect(text).toContain('latestMusicReadStatus === "completed"');
+    expect(text).toContain('latestMusicReadStatus === "completed_with_limits"');
   });
 
   it("reconciles a stuck running brief from its persisted Manager output", () => {

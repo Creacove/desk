@@ -289,19 +289,21 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
 
   const completedAt = new Date().toISOString();
   const hasMusicReadTargets = Array.isArray(result.setupMusicReadTargets) && result.setupMusicReadTargets.length > 0;
+  const latestStages = await loadLatestSetupStages(db, setupRun.id);
+  const proposedMusicReadStage = {
+    status: hasMusicReadTargets ? "running" : "completed",
+    target_count: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets.length : 0,
+    targets: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [],
+    started_at: completedAt,
+    ...(hasMusicReadTargets ? {} : { completed_at: completedAt }),
+  };
   await updateSetupRun(db, setupRun.id, {
     status: "completed",
     current_stage: "music_reads",
     stage_status: {
-      ...contextStages,
+      ...latestStages,
       setup_brief: { status: "completed", started_at: startedAt, completed_at: completedAt },
-      music_reads: {
-        status: hasMusicReadTargets ? "running" : "completed",
-        target_count: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets.length : 0,
-        targets: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets : [],
-        started_at: completedAt,
-        ...(hasMusicReadTargets ? {} : { completed_at: completedAt }),
-      },
+      music_reads: mergeSetupMusicReadStage(latestStages.music_reads, proposedMusicReadStage),
     },
     completed_at: completedAt,
     last_error: null,
@@ -330,16 +332,18 @@ async function reconcileCompletedSetupBrief(db: any, workspace: any, setupRun: a
   if (!data?.created_at) return stages;
 
   const targets = await loadSetupMusicReadTargets(db, workspace);
+  const latestStages = await loadLatestSetupStages(db, setupRun.id);
+  const proposedMusicReadStage = {
+    status: targets.length ? "running" : "completed",
+    target_count: targets.length,
+    targets,
+    started_at: data.created_at,
+    ...(targets.length ? {} : { completed_at: data.created_at }),
+  };
   const completedStages = {
-    ...stages,
+    ...latestStages,
     setup_brief: { status: "completed", started_at: startedAt, completed_at: data.created_at },
-    music_reads: {
-      status: targets.length ? "running" : "completed",
-      target_count: targets.length,
-      targets,
-      started_at: data.created_at,
-      ...(targets.length ? {} : { completed_at: data.created_at }),
-    },
+    music_reads: mergeSetupMusicReadStage(latestStages.music_reads, proposedMusicReadStage),
   };
   await updateSetupRun(db, setupRun.id, {
     status: "completed",
@@ -629,6 +633,29 @@ async function markSetupFailed(db: any, run: any, phase: string, message: string
 async function updateSetupRun(db: any, id: string, patch: Record<string, unknown>) {
   const { error } = await db.from("workspace_setup_runs").update(patch).eq("id", id);
   if (error) throw error;
+}
+
+async function loadLatestSetupStages(db: any, setupRunId: string): Promise<StageStatus> {
+  const { data, error } = await db.from("workspace_setup_runs")
+    .select("stage_status")
+    .eq("id", setupRunId)
+    .maybeSingle();
+  if (error) throw error;
+  return stageStatus(data?.stage_status);
+}
+
+function mergeSetupMusicReadStage(latest: unknown, proposed: Record<string, unknown>) {
+  const latestStage = latest && typeof latest === "object" && !Array.isArray(latest)
+    ? latest as Record<string, unknown>
+    : null;
+  const latestMusicReadStatus = typeof latestStage?.status === "string" ? latestStage.status : "";
+  if (latestMusicReadStatus === "completed" || latestMusicReadStatus === "completed_with_limits") {
+    return latestStage as Record<string, unknown>;
+  }
+  if (latestMusicReadStatus === "running" && Array.isArray(latestStage?.targets)) {
+    return { ...proposed, ...latestStage };
+  }
+  return proposed;
 }
 
 async function claimSetupRun(db: any, id: string, expectedStatus: string, patch: Record<string, unknown>) {
