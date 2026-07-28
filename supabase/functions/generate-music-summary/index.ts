@@ -9,9 +9,20 @@ import {
   musicManagerReadJsonSchema,
   parseMusicManagerReadOutput,
   validateMusicManagerReadOutput,
+  type MusicManagerReadModelOutput,
   type MusicManagerReadSubjectType,
   type MusicManagerReadV2,
 } from "../_shared/openaiMusicManagerRead.ts";
+import {
+  projectMusicManagerReadEvidence,
+  resolveSelectedManagerReadMetrics,
+  type MusicManagerMetricCandidate,
+} from "../_shared/musicManagerReadEvidence.ts";
+import {
+  MusicManagerReadFailure,
+  logMusicManagerReadDiagnostic,
+  toPublicMusicManagerReadFailure,
+} from "../_shared/musicManagerReadErrors.ts";
 import {
   runMusicManagerReadWorkflow,
   type WorkflowStep,
@@ -66,6 +77,8 @@ type ManagerReadContext = {
   sourcePacketId: string | null;
   subjectTitle: string;
   allowedEvidenceIds: Set<string>;
+  allowedMetricEvidenceIds: Set<string>;
+  metricCandidates: MusicManagerMetricCandidate[];
   playbookInstructions: string;
 };
 
@@ -128,7 +141,9 @@ Deno.serve(async (request) => {
 
     return json({ status: "processing", runId }, 202);
   } catch (error) {
-    return json({ error: describeError(error, "Music Manager Read generation failed.") }, 500);
+    const failure = toPublicMusicManagerReadFailure(error);
+    logMusicManagerReadDiagnostic("Music Manager Read request failed", error);
+    return json({ error: failure.message, code: failure.code }, 500);
   }
 });
 
@@ -281,9 +296,10 @@ async function completeManagerReadInBackground({
       payload: { manager_synthesis_run_id: runId, manager_output_id: result.outputId },
     });
   } catch (error) {
-    const message = describeError(error, "Music Manager Read generation failed.");
-    await markRunFailedSafe(db, runId, input, message);
-    if (usageId) await markUsageFailedSafe(db, usageId, runId, input, message, requestLedger);
+    const failure = toPublicMusicManagerReadFailure(error);
+    logMusicManagerReadDiagnostic("Music Manager Read background run failed", error, { runId });
+    await markRunFailedSafe(db, runId, input, failure.message);
+    if (usageId) await markUsageFailedSafe(db, usageId, runId, input, failure.message, requestLedger);
   }
 }
 
@@ -382,13 +398,16 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
 
   const subjectTitle = readString(subject.title);
   if (!subjectTitle) throw new Error("Music Manager Read subject has no title.");
-  const exactEvidence = evidence.slice(0, 40).map(compactEvidence);
+  const exactProjection = projectMusicManagerReadEvidence(evidence.slice(0, 40));
+  const exactEvidence = exactProjection.reasoningEvidence;
+  const metricCandidates = exactProjection.metricCandidates;
   const relatedEvidenceBySubject = new Map<string, Array<Record<string, unknown>>>();
   for (const item of relatedEvidence.slice(0, 48)) {
     const subjectId = readString(item.subject_id);
     if (!subjectId) continue;
     const bucket = relatedEvidenceBySubject.get(subjectId) ?? [];
-    if (bucket.length < 4) bucket.push(compactEvidence(item));
+    const projected = projectMusicManagerReadEvidence([item]).reasoningEvidence[0];
+    if (bucket.length < 4 && projected) bucket.push(projected);
     relatedEvidenceBySubject.set(subjectId, bucket);
   }
   const compactRelated = relatedRecords.slice(0, 8).map((record) => ({
@@ -403,7 +422,8 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
       ...compactRecord(subject, ["id", "title", "item_type", "project_type", "lifecycle_stage", "released_at"]),
     },
     identifiers: identifiers.slice(0, 8).map((item) => compactRecord(item, ["identifier_type", "identifier_value"])),
-    evidence: exactEvidence,
+    reasoningEvidence: exactEvidence,
+    metricCandidates,
     artistProfile: compactRecord(artistProfile, ["display_name", "genres", "home_market", "stage", "artist_direction", "current_goal", "budget_context"]),
     relatedRecords: compactRelated,
     projectTracklist: tracklist.slice(0, 20).map((item) => compactRecord(item, ["music_item_id", "display_title", "order_index", "disc_number"])),
@@ -421,12 +441,18 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
     if (id) allowedEvidenceIds.add(id);
   }
   if (allowedEvidenceIds.size === 0) throw new Error("Music Manager Read requires at least one saved evidence item.");
+  const allowedMetricEvidenceIds = new Set(metricCandidates.map((candidate) => candidate.id));
+  if (allowedMetricEvidenceIds.size === 0) {
+    throw new MusicManagerReadFailure("workflow", { diagnostic: "no_metric_candidates" });
+  }
 
   return {
     modelContext,
     sourcePacketId: readString(packet?.id) ?? null,
     subjectTitle,
     allowedEvidenceIds,
+    allowedMetricEvidenceIds,
+    metricCandidates,
     playbookInstructions: getPlaybooksInstructions(readAppliedPlaybooks(packet)),
   };
 }
@@ -453,7 +479,7 @@ async function loadIdentifiers(db: any, input: GenerateMusicSummaryInput) {
 
 async function loadEvidence(db: any, input: GenerateMusicSummaryInput) {
   const { data, error } = await exactSubjectQuery(
-    db.from("evidence_items").select("id,source,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,confidence,created_at"), input,
+    db.from("evidence_items").select("id,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation,created_at"), input,
   ).order("created_at", { ascending: false }).limit(80);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
@@ -477,7 +503,7 @@ async function loadRelatedRecords(db: any, input: GenerateMusicSummaryInput) {
 
 async function loadRelatedEvidence(db: any, input: GenerateMusicSummaryInput) {
   const { data, error } = await exactOwnedQuery(
-    db.from("evidence_items").select("id,source,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,confidence,created_at"), input,
+    db.from("evidence_items").select("id,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation,created_at"), input,
   ).eq("subject_type", "music_item").order("created_at", { ascending: false }).limit(64);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
@@ -528,14 +554,7 @@ function projectManagerPacketEvidence(packet: Record<string, unknown> | null) {
   return packet.supporting_evidence_json.filter(isRecord)
     .filter((item) => Boolean(readString(item.id)))
     .slice(0, MAX_MANAGER_PACKET_EVIDENCE_ITEMS)
-    .map((item) => compactRecord(item, ["id", "metric", "value", "source", "interpretation"]));
-}
-
-function compactEvidence(item: Record<string, unknown>) {
-  return compactRecord(item, [
-    "id", "source", "evidence_type", "subject_type", "subject_id", "subject_label",
-    "metric_name", "metric_value", "confidence", "created_at",
-  ]);
+    .map((item) => compactRecord(item, ["id", "metric", "value", "interpretation"]));
 }
 
 async function generateInitialManagerRead(
@@ -562,7 +581,7 @@ async function validateAndRepairManagerRead(
   const firstValidation = parseAndValidate(initial.outputText, context);
   if (firstValidation.output) {
     return {
-      output: firstValidation.output,
+      output: materializeManagerRead(firstValidation.output, context),
       usage: { ...ledger.usage },
       responseId: initial.responseId,
       requestCount: ledger.providerRequestCount,
@@ -584,17 +603,19 @@ async function validateAndRepairManagerRead(
   });
   const repairedValidation = parseAndValidate(repaired.outputText, context);
   if (!repairedValidation.output) {
-    throw new Error(`OpenAI Music Manager Read repair failed validation: ${repairedValidation.violations.join("; ")}`);
+    throw new MusicManagerReadFailure("invalid_output", {
+      diagnostic: repairedValidation.violations.join(" | "),
+    });
   }
   return {
-    output: repairedValidation.output,
+    output: materializeManagerRead(repairedValidation.output, context),
     usage: { ...ledger.usage },
     responseId: repaired.responseId,
     requestCount: ledger.providerRequestCount,
   };
 }
 
-function parseAndValidate(outputText: string, context: ManagerReadContext): { output?: MusicManagerReadV2; violations: string[] } {
+function parseAndValidate(outputText: string, context: ManagerReadContext): { output?: MusicManagerReadModelOutput; violations: string[] } {
   try {
     const output = parseMusicManagerReadOutput(JSON.parse(outputText));
     const violations = validateMusicManagerReadOutput(output, {
@@ -603,11 +624,22 @@ function parseAndValidate(outputText: string, context: ManagerReadContext): { ou
         : "music_item",
       subjectTitle: context.subjectTitle,
       allowedEvidenceIds: context.allowedEvidenceIds,
+      allowedMetricEvidenceIds: context.allowedMetricEvidenceIds,
     });
     return violations.length === 0 ? { output, violations } : { violations };
   } catch (error) {
     return { violations: [describeError(error, "Output is not valid JSON.")] };
   }
+}
+
+function materializeManagerRead(output: MusicManagerReadModelOutput, context: ManagerReadContext): MusicManagerReadV2 {
+  return {
+    position: output.position,
+    managementRole: output.managementRole,
+    body: output.body,
+    metrics: resolveSelectedManagerReadMetrics(output.metricEvidenceIds, context.metricCandidates),
+    evidenceIds: output.evidenceIds,
+  };
 }
 
 async function requestOpenAI({
@@ -623,35 +655,42 @@ async function requestOpenAI({
 }) {
   const apiKey = requireEnv("OPENAI_API_KEY");
   ledger.providerRequestCount += 1;
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      reasoning: { effort: "medium" },
-      store: false,
-      max_output_tokens: 6000,
-      instructions,
-      input,
-      text: {
-        verbosity: "medium",
-        format: { type: "json_schema", ...musicManagerReadJsonSchema },
+  let response: Response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
       },
-    }),
-  });
+      body: JSON.stringify({
+        model,
+        reasoning: { effort: "medium" },
+        store: false,
+        max_output_tokens: 6000,
+        instructions,
+        input,
+        text: {
+          verbosity: "medium",
+          format: { type: "json_schema", ...musicManagerReadJsonSchema },
+        },
+      }),
+    });
+  } catch (error) {
+    throw new MusicManagerReadFailure("openai_http", { diagnostic: "network_error", cause: error });
+  }
   if (!response.ok) {
-    const body = (await response.text()).slice(0, 500);
-    throw new Error(`OpenAI Music Manager Read request failed (${response.status}): ${body}`);
+    throw new MusicManagerReadFailure("openai_http", {
+      providerStatus: response.status,
+      diagnostic: `http_${response.status}`,
+    });
   }
   const payload = await response.json();
-  if (!isRecord(payload)) throw new Error("OpenAI Music Manager Read returned an invalid response.");
+  if (!isRecord(payload)) throw new MusicManagerReadFailure("openai_response", { diagnostic: "invalid_payload" });
   const usage = readResponsesUsage(payload.usage);
   accumulateOpenAIUsage(ledger, usage);
   const responseId = readString(payload.id);
-  if (!responseId) throw new Error("OpenAI Music Manager Read response did not include an ID.");
+  if (!responseId) throw new MusicManagerReadFailure("openai_response", { diagnostic: "missing_response_id" });
   return {
     outputText: readResponsesOutputText(payload),
     usage,
@@ -673,11 +712,11 @@ function readResponsesOutputText(payload: Record<string, unknown>) {
     }
   }
   if (texts.length) return texts.join("");
-  throw new Error("OpenAI response did not include output text.");
+  throw new MusicManagerReadFailure("openai_response", { diagnostic: "missing_output_text" });
 }
 
 function readResponsesUsage(value: unknown): OpenAIUsage {
-  if (!isRecord(value)) throw new Error("OpenAI Music Manager Read response did not include usage.");
+  if (!isRecord(value)) throw new MusicManagerReadFailure("openai_response", { diagnostic: "missing_usage" });
   const usage = value;
   const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
   const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
@@ -725,9 +764,9 @@ async function stageManagerOutput(
     subject_type: input.subjectType,
     subject_id: input.subjectId,
     summary: output.position,
-    primary_recommendation_json: { decision: output.decision, watch: output.watch },
-    avoid_json: [output.avoid],
-    confidence_json: { level: output.confidence, reason: output.confidenceReason },
+    primary_recommendation_json: { managerRead: output.body },
+    avoid_json: [],
+    confidence_json: {},
     supporting_evidence_json: output.evidenceIds.map((id) => ({ id })),
     render_json: output,
     schema_version: MUSIC_MANAGER_READ_SCHEMA_VERSION,

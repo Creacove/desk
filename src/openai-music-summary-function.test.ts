@@ -59,6 +59,11 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
       expect(functionSource).toContain(field);
     }
     expect(functionSource).not.toContain("sourcePanelInstruction");
+    expect(functionSource).toContain("projectMusicManagerReadEvidence");
+    expect(functionSource).toContain("reasoningEvidence");
+    expect(functionSource).toContain("metricCandidates");
+    expect(functionSource).toContain("allowedMetricEvidenceIds");
+    expect(functionSource).toContain("metric_unit,freshness,confidence,limitation,created_at");
   });
 
   it("uses a bounded saved packet-evidence fallback without synthesizing evidence IDs", () => {
@@ -90,7 +95,7 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
   });
 
   it("persists request and token truth when failures terminalize usage", () => {
-    expect(functionSource).toContain("markUsageFailedSafe(db, usageId, runId, input, message, requestLedger)");
+    expect(functionSource).toContain("markUsageFailedSafe(db, usageId, runId, input, failure.message, requestLedger)");
     expect(functionSource).toContain("provider_request_count: requestLedger.providerRequestCount");
     expect(functionSource).toContain("reasoning_tokens: requestLedger.usage.reasoningTokens");
   });
@@ -99,6 +104,13 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain('schema_version: MUSIC_MANAGER_READ_SCHEMA_VERSION');
     expect(functionSource).toContain("source_packet_id: context.sourcePacketId");
     expect(functionSource).toContain("summary: output.position");
+    expect(functionSource).toContain("primary_recommendation_json: { managerRead: output.body }");
+    expect(functionSource).toContain("avoid_json: []");
+    expect(functionSource).toContain("confidence_json: {}");
+    expect(functionSource).not.toContain("output.decision");
+    expect(functionSource).not.toContain("output.avoid");
+    expect(functionSource).not.toContain("output.watch");
+    expect(functionSource).not.toContain("output.confidence");
     expect(functionSource).toContain("is_current: false");
     expect(functionSource).toContain('.rpc("finalize_music_manager_read_v2"');
   });
@@ -115,6 +127,13 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).not.toMatch(/openaiManagerRead|stripBannedVisibleMusicTerms|checkBannedVisibleMusicTerms|checkSourceLine/);
     expect(functionSource).not.toContain("hero_json");
     expect(functionSource).not.toContain("blocks_json");
+  });
+
+  it("never persists or returns raw OpenAI response bodies", () => {
+    expect(functionSource).toContain("toPublicMusicManagerReadFailure");
+    expect(functionSource).toContain("logMusicManagerReadDiagnostic");
+    expect(functionSource).not.toContain("const body = (await response.text()).slice");
+    expect(functionSource).not.toMatch(/OpenAI Music Manager Read request failed.*\$\{body\}/);
   });
 });
 
