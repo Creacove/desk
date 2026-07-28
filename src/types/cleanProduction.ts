@@ -268,16 +268,10 @@ export type MusicManagerReadViewModel = {
   position: string;
   managementRole: string;
   body: string;
-  decision: string;
-  avoid: string;
-  watch: string;
-  confidence: "low" | "medium" | "high";
-  confidenceReason: string;
-  signals: Array<{
+  metrics: Array<{
     label: string;
     value: string;
-    meaning: string;
-    evidenceIds: string[];
+    evidenceId: string;
   }>;
   evidenceIds: string[];
 };

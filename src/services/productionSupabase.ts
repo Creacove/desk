@@ -3254,54 +3254,37 @@ function parseMusicManagerReadViewModel(value: unknown): MusicManagerReadViewMod
     "position",
     "managementRole",
     "body",
-    "decision",
-    "avoid",
-    "watch",
-    "confidence",
-    "confidenceReason",
-    "signals",
+    "metrics",
     "evidenceIds",
   ])) return undefined;
 
   const position = readStrictManagerReadString(value.position);
   const managementRole = readStrictManagerReadString(value.managementRole);
   const body = readStrictManagerReadString(value.body);
-  const decision = readStrictManagerReadString(value.decision);
-  const avoid = readStrictManagerReadString(value.avoid);
-  const watch = readStrictManagerReadString(value.watch);
-  const confidenceReason = readStrictManagerReadString(value.confidenceReason);
-  const confidence = value.confidence;
   const evidenceIds = readStrictManagerReadStringArray(value.evidenceIds);
   if (
-    !position || !managementRole || !body || !decision || !avoid || !watch || !confidenceReason ||
-    (confidence !== "low" && confidence !== "medium" && confidence !== "high") ||
-    !evidenceIds?.length || !Array.isArray(value.signals) || value.signals.length < 3 || value.signals.length > 6
+    !position || !managementRole || !body || !evidenceIds?.length ||
+    !Array.isArray(value.metrics) || value.metrics.length < 1 || value.metrics.length > 5
   ) return undefined;
 
-  const signals = value.signals.map(parseMusicManagerReadSignal);
-  if (signals.some((signal) => !signal)) return undefined;
+  const metrics = value.metrics.map(parseMusicManagerReadMetric);
+  if (metrics.some((metric) => !metric)) return undefined;
   return {
     position,
     managementRole,
     body,
-    decision,
-    avoid,
-    watch,
-    confidence,
-    confidenceReason,
-    signals: signals as MusicManagerReadViewModel["signals"],
+    metrics: metrics as MusicManagerReadViewModel["metrics"],
     evidenceIds,
   };
 }
 
-function parseMusicManagerReadSignal(value: unknown): MusicManagerReadViewModel["signals"][number] | undefined {
-  if (!isPlainRecord(value) || !hasExactKeys(value, ["label", "value", "meaning", "evidenceIds"])) return undefined;
+function parseMusicManagerReadMetric(value: unknown): MusicManagerReadViewModel["metrics"][number] | undefined {
+  if (!isPlainRecord(value) || !hasExactKeys(value, ["label", "value", "evidenceId"])) return undefined;
   const label = readStrictManagerReadString(value.label);
-  const signalValue = readStrictManagerReadString(value.value);
-  const meaning = readStrictManagerReadString(value.meaning);
-  const evidenceIds = readStrictManagerReadStringArray(value.evidenceIds);
-  if (!label || !signalValue || !meaning || !evidenceIds?.length) return undefined;
-  return { label, value: signalValue, meaning, evidenceIds };
+  const metricValue = readStrictManagerReadString(value.value);
+  const evidenceId = readStrictManagerReadString(value.evidenceId);
+  if (!label || !metricValue || !evidenceId) return undefined;
+  return { label, value: metricValue, evidenceId };
 }
 
 function hasExactKeys(value: Record<string, unknown>, expected: string[]) {

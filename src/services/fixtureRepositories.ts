@@ -616,15 +616,10 @@ export const productionFixtureData: ProductionFixtureData = {
         position: "Night Bus is the clearest current focus asset.",
         managementRole: "Lead validation record",
         body: "Night Bus has the strongest aligned response in the current fixture catalog. Listening, hook response, and release intent point to the same record.\n\nUse it for one focused validation cycle before widening spend or making broader campaign commitments.",
-        decision: "Use Night Bus for the next focused validation test.",
-        avoid: "Do not widen campaign spend before the validation window closes.",
-        watch: "Watch whether listening and hook response remain aligned.",
-        confidence: "high",
-        confidenceReason: "Three current evidence families agree on the same record.",
-        signals: [
-          { label: "Recent streams", value: "5.2M", meaning: "Current listening pressure", evidenceIds: ["fixture-ev-streams"] },
-          { label: "Hook response", value: "19M", meaning: "Short-form discovery scale", evidenceIds: ["fixture-ev-hook"] },
-          { label: "Lagos", value: "#14", meaning: "A market lane worth testing", evidenceIds: ["fixture-ev-market"] },
+        metrics: [
+          { label: "Spotify streams (7d)", value: "5.2M", evidenceId: "fixture-ev-streams" },
+          { label: "TikTok video creates", value: "19M", evidenceId: "fixture-ev-hook" },
+          { label: "Lagos rank", value: "#14", evidenceId: "fixture-ev-market" },
         ],
         evidenceIds: ["fixture-ev-streams", "fixture-ev-hook", "fixture-ev-market"],
       },
@@ -745,7 +740,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
     ...item,
     managerRead: item.managerRead ? {
       ...item.managerRead,
-      signals: item.managerRead.signals.map((signal) => ({ ...signal, evidenceIds: [...signal.evidenceIds] })),
+      metrics: item.managerRead.metrics.map((metric) => ({ ...metric })),
       evidenceIds: [...item.managerRead.evidenceIds],
     } : undefined,
     files: item.files?.map((file) => ({ ...file })),

@@ -72,18 +72,13 @@ const workspace = {
 
 const completeSongManagerRead: NonNullable<MusicObjectViewModel["managerRead"]> = {
   position: "Jam is the clearest public-pressure record in the current catalog.",
-  managementRole: "Lead attention asset",
+  managementRole: "Lead attention asset — phase A.",
   body:
     "Jam is carrying the strongest aligned public response in the current catalog. Its recent streams, short-form reach, and Lagos response point to the same record rather than three disconnected spikes.\n\nUse Jam to test whether this attention can become repeatable audience behavior before widening spend.",
-  decision: "Make Jam the lead validation record for the next focused audience test.",
-  avoid: "Do not spread equal campaign weight across weaker catalog records.",
-  watch: "Watch whether Lagos response and repeat public discovery remain aligned.",
-  confidence: "high",
-  confidenceReason: "Three current evidence families agree on the same song and market direction.",
-  signals: [
-    { label: "Recent streams", value: "5.2M", meaning: "Current listening pressure", evidenceIds: ["ev-song-streams"] },
-    { label: "Top TikTok clip", value: "19M", meaning: "Short-form discovery scale", evidenceIds: ["ev-song-tiktok"] },
-    { label: "Lagos rank", value: "#14", meaning: "A market lane worth testing", evidenceIds: ["ev-song-market"] },
+  metrics: [
+    { label: "Spotify streams (7d)", value: "5.2M", evidenceId: "ev-song-streams" },
+    { label: "TikTok video creates", value: "19M", evidenceId: "ev-song-tiktok" },
+    { label: "Lagos rank", value: "#14", evidenceId: "ev-song-market" },
   ],
   evidenceIds: ["ev-song-streams", "ev-song-tiktok", "ev-song-market"],
 };
@@ -93,15 +88,10 @@ const completeProjectManagerRead: NonNullable<MusicObjectViewModel["managerRead"
   managementRole: "Focused project campaign",
   body:
     "Blue Rooms works best as a release-level system led by Jam, not as four songs receiving equal weight. The project has enough aligned listening and market response to support a focused sequence.\n\nKeep the campaign centered on the carrying track while the next reporting window tests whether attention travels into the wider release.",
-  decision: "Lead the Blue Rooms campaign with Jam and sequence the remaining tracks behind it.",
-  avoid: "Do not market every track as an equal focus.",
-  watch: "Watch whether project listening grows beyond Jam in the next reporting window.",
-  confidence: "medium",
-  confidenceReason: "The lead-track and market signals agree, while project-wide conversion is still developing.",
-  signals: [
-    { label: "Project streams", value: "8.4M", meaning: "Current release-level listening", evidenceIds: ["ev-project-streams"] },
-    { label: "Carrying track", value: "Jam", meaning: "The song leading project attention", evidenceIds: ["ev-project-track"] },
-    { label: "Lagos rank", value: "#9", meaning: "The strongest current market lane", evidenceIds: ["ev-project-market"] },
+  metrics: [
+    { label: "Spotify streams (28d)", value: "8.4M", evidenceId: "ev-project-streams" },
+    { label: "Project tracks", value: "4", evidenceId: "ev-project-track" },
+    { label: "Lagos rank", value: "#9", evidenceId: "ev-project-market" },
   ],
   evidenceIds: ["ev-project-streams", "ev-project-track", "ev-project-market"],
 };
@@ -4022,10 +4012,15 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const songRoom = screen.getByTestId("music-song-detail");
     expect(songRoom).toHaveTextContent(completeSongManagerRead.position);
-    expect(songRoom).toHaveTextContent("Lead attention asset");
+    expect(songRoom).toHaveTextContent("Lead attention asset — phase A.");
+    expect(songRoom).toHaveTextContent("Spotify streams (7d)");
     expect(songRoom).toHaveTextContent("5.2M");
     expect(songRoom).toHaveTextContent("Jam is carrying the strongest aligned public response");
     expect(songRoom).not.toHaveTextContent("ev-song-streams");
+    expect(songRoom).not.toHaveTextContent("Decision");
+    expect(songRoom).not.toHaveTextContent("Avoid");
+    expect(songRoom).not.toHaveTextContent("Watch");
+    expect(songRoom).not.toHaveTextContent("Confidence");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Catalog" }));
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
@@ -4034,8 +4029,13 @@ describe("Clean production prototype-match shell", () => {
     expect(projectRoom).toHaveTextContent(completeProjectManagerRead.position);
     expect(projectRoom).toHaveTextContent("Focused project campaign");
     expect(projectRoom).toHaveTextContent("8.4M");
+    expect(projectRoom).toHaveTextContent("Spotify streams (28d)");
     expect(projectRoom).toHaveTextContent("Blue Rooms works best as a release-level system");
     expect(projectRoom).not.toHaveTextContent("ev-project-streams");
+    expect(projectRoom).not.toHaveTextContent("Decision");
+    expect(projectRoom).not.toHaveTextContent("Avoid");
+    expect(projectRoom).not.toHaveTextContent("Watch");
+    expect(projectRoom).not.toHaveTextContent("Confidence");
   }, 20000);
 
   it.each([

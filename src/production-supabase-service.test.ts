@@ -40,15 +40,10 @@ const musicManagerReadV2 = {
   position: "Jam is the current lead validation record.",
   managementRole: "Lead attention asset",
   body: "Jam has aligned public pressure across the current evidence. The listening, short-form, and market signals point to the same record.\n\nUse the next reporting window to test whether that attention can become repeatable audience behavior before widening spend.",
-  decision: "Use Jam for the next focused validation test.",
-  avoid: "Do not spread spend equally across the catalog.",
-  watch: "Watch whether Lagos discovery remains aligned.",
-  confidence: "high",
-  confidenceReason: "Three current evidence families agree.",
-  signals: [
-    { label: "Recent streams", value: "5.2M", meaning: "Current listening pressure", evidenceIds: ["ev-1"] },
-    { label: "TikTok", value: "19M", meaning: "Short-form discovery scale", evidenceIds: ["ev-2"] },
-    { label: "Lagos", value: "#14", meaning: "A market lane worth testing", evidenceIds: ["ev-3"] },
+  metrics: [
+    { label: "Spotify streams (7d)", value: "5.2M", evidenceId: "ev-1" },
+    { label: "TikTok video creates", value: "19M", evidenceId: "ev-2" },
+    { label: "Lagos rank", value: "#14", evidenceId: "ev-3" },
   ],
   evidenceIds: ["ev-1", "ev-2", "ev-3"],
 } as const;
@@ -1071,6 +1066,8 @@ describe("production Supabase services", () => {
     ["partial", { ...musicManagerReadV2, evidenceIds: undefined }],
     ["legacy", { headline: "Jam is moving", nextMove: "Spend now" }],
     ["unknown-key", { ...musicManagerReadV2, sourceLine: "Internal source" }],
+    ["legacy-judgments", { ...musicManagerReadV2, decision: "Spend now" }],
+    ["invalid-metric", { ...musicManagerReadV2, metrics: [{ label: "Streams", value: "5.2M", evidenceIds: ["ev-1"] }] }],
   ])("rejects %s payloads instead of filling v2 fields with fallback copy", async (_case, renderJson) => {
     const tables = musicManagerReadTables({
       manager_outputs: [musicManagerOutputRow({ render_json: renderJson })],
