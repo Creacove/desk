@@ -529,13 +529,13 @@ describe("Music Manager Read v2 contract", () => {
     expect(validateMusicManagerReadOutput(output, context)).toEqual([]);
   });
 
-  it.each([120, 320])("accepts a body containing exactly %i words", (wordCount) => {
+  it.each([80, 400])("accepts a body containing exactly %i words", (wordCount) => {
     expect(validateMusicManagerReadOutput(outputWithBodyWords(wordCount), validationContext)).toEqual([]);
   });
 
-  it.each([119, 321])("rejects a body containing %i words", (wordCount) => {
+  it.each([79, 401])("rejects a body containing %i words", (wordCount) => {
     expect(validateMusicManagerReadOutput(outputWithBodyWords(wordCount), validationContext)).toContain(
-      `body must contain 120–320 words; received ${wordCount}.`,
+      `body must contain 80–400 words; received ${wordCount}.`,
     );
   });
 
@@ -582,15 +582,17 @@ describe("Music Manager Read v2 contract", () => {
 
     expect(instructions).toContain("artist's senior Manager");
     expect(countOccurrences(instructions, "senior Manager")).toBe(1);
-    expect(instructions).toContain("current position");
-    expect(instructions).toContain("Put the conclusion first");
-    expect(instructions).toContain("two or three natural paragraphs");
-    expect(instructions).toContain("plain, direct English");
+    expect(instructions).toContain("skeptical of vanity metrics");
+    expect(instructions).toContain("silently ask yourself");
+    expect(instructions).toContain("most distinctive");
+    expect(instructions).toContain("Let the data dictate the structure");
+    expect(instructions).toContain("Interpret direction, not just scale");
+    expect(instructions).toContain("attention driver");
+    expect(instructions).toContain("catalog anchor");
     expect(instructions).toContain("exact requested subject, artist, markets, comparisons, and numbers");
     expect(instructions).toContain("5.2M");
     expect(instructions).toContain("decision, avoid, and watch");
-    expect(instructions).toContain("Do not substitute a comparison");
-    expect(instructions).toContain("attention, discovery, conversion, and durable fandom");
+    expect(instructions).toContain("Do not substitute a comparison artist");
     expect(instructions).toContain("missions");
     expect(instructions).toContain("tasks");
     expect(instructions).toContain("fake commitments");
@@ -602,8 +604,7 @@ describe("Music Manager Read v2 contract", () => {
     expect(instructions).not.toContain("headline");
     expect(instructions).not.toContain("watchNext");
     for (const ruleFragment of [
-      "two or three natural paragraphs",
-      "Do not substitute a comparison",
+      "Do not substitute a comparison artist",
       "5.2M",
       "supplied evidence IDs",
     ]) {
@@ -618,9 +619,9 @@ describe("Music Manager Read v2 contract", () => {
     const withoutPlaybook = buildMusicManagerReadInstructions("music_project", "   ");
 
     expect(withPlaybook.match(/Give priority to Lagos before wider market expansion\./g)).toHaveLength(1);
-    expect(withPlaybook).toContain("reason across the release");
+    expect(withPlaybook).toContain("reason across the full release");
     expect(withPlaybook).toContain("carrying tracks");
-    expect(itemInstructions).not.toContain("reason across the release");
+    expect(itemInstructions).not.toContain("reason across the full release");
     expect(itemInstructions).not.toContain("carrying tracks");
     expect(itemInstructions.match(/Give priority to Lagos before wider market expansion\./g)).toHaveLength(1);
     expect(withoutPlaybook).not.toContain("Playbook");
