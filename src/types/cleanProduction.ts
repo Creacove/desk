@@ -277,6 +277,7 @@ export type MusicManagerReadViewModel = {
 };
 
 export type MusicManagerReadStatus =
+  | "unknown"
   | "not_generated"
   | "stale"
   | "running"

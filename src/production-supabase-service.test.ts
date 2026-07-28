@@ -1135,6 +1135,88 @@ describe("production Supabase services", () => {
     }
   });
 
+  it("does not starve returned Music subjects behind global output or run history limits", async () => {
+    const songs = Array.from({ length: 100 }, (_, index) => ({
+      id: `song-${String(index).padStart(3, "0")}`,
+      account_id: "account-1",
+      artist_workspace_id: "workspace-1",
+      artist_id: "artist-1",
+      status: "active",
+      title: `Song ${index}`,
+      item_type: "released_track",
+      lifecycle_stage: "released",
+      source_kind: "spotify_public_catalog",
+      source_limit: "Public catalog metadata only.",
+      created_at: "2026-07-27T08:00:00.000Z",
+      metadata: {},
+    }));
+    const projects = Array.from({ length: 50 }, (_, index) => ({
+      id: `project-${String(index).padStart(3, "0")}`,
+      account_id: "account-1",
+      artist_workspace_id: "workspace-1",
+      artist_id: "artist-1",
+      status: "active",
+      title: `Project ${index}`,
+      project_type: "album",
+      lifecycle_stage: "released",
+      source_kind: "spotify_public_catalog",
+      source_limit: "Public catalog metadata only.",
+      created_at: "2026-07-27T08:00:00.000Z",
+      metadata: {},
+    }));
+    const currentOutputs = [
+      ...songs.map((song, index) => musicManagerOutputRow({
+        id: `song-output-${index}`,
+        subject_id: song.id,
+        created_from_run_id: `song-run-${index}`,
+      })),
+      ...projects.map((project, index) => musicManagerOutputRow({
+        id: `project-output-${index}`,
+        subject_type: "music_project",
+        subject_id: project.id,
+        output_type: "project_manager_read",
+        created_from_run_id: `project-run-${index}`,
+      })),
+    ];
+    const historicalRuns = Array.from({ length: 101 }, (_, index) => musicManagerRunRow({
+      id: `historical-run-${index}`,
+      subject_id: songs[0].id,
+      status: "completed",
+      created_at: `2026-07-26T${String(index % 24).padStart(2, "0")}:00:00.000Z`,
+    }));
+    const activeTargetId = projects.at(-1)!.id;
+    const tables = musicManagerReadTables({
+      music_items: songs,
+      music_projects: projects,
+      manager_outputs: currentOutputs,
+      manager_synthesis_runs: [
+        ...historicalRuns,
+        musicManagerRunRow({
+          id: "active-target-run",
+          subject_type: "music_project",
+          subject_id: activeTargetId,
+          status: "running",
+          created_at: "2026-07-28T10:00:00.000Z",
+        }),
+      ],
+    });
+    const { client, calls } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicList();
+
+    expect(result).toHaveLength(150);
+    expect(result.every((subject) => subject.managerReadStatus !== "not_generated" && subject.managerReadStatus !== "stale")).toBe(true);
+    expect(result.find((subject) => subject.id === activeTargetId && subject.kind === "project")).toMatchObject({
+      managerReadStatus: "refreshing",
+      managerReadRunId: "active-target-run",
+    });
+    expect(calls.find((call) => call.table === "manager_outputs")?.limit).toBe(150);
+    expect(calls.find((call) => call.table === "manager_synthesis_runs")?.inFilters).toContainEqual([
+      "status",
+      ["queued", "running"],
+    ]);
+  });
+
   it.each([
     ["music_item", "song-jam", "music_item_id"],
     ["music_project", "project-jam", "music_project_id"],

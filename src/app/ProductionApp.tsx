@@ -931,7 +931,9 @@ function CleanProductionWorkspace({
     const refreshed = await repositories.music.loadMusicObject(subjectId, subjectType);
     const expectedKind = subjectType === "music_project" ? "project" : "song";
     if (!refreshed || refreshed.id !== subjectId || refreshed.kind !== expectedKind) return null;
-    setMusic((current) => current.map((item) => item.id === subjectId ? refreshed : item));
+    setMusic((current) => current.map((item) =>
+      item.id === subjectId && item.kind === expectedKind ? refreshed : item
+    ));
     return refreshed;
   }, [repositories.music]);
 

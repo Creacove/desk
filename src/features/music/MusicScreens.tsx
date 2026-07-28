@@ -19,6 +19,10 @@ type DetailMode = "library" | "songDetail" | "projectDetail";
 type SongRoomTab = "overview" | "files" | "details" | "rights";
 type MusicStatus = "Missing" | "Draft" | "Uploaded" | "Confirmed" | "Pending" | "Cleared" | string;
 type MusicDetailField = { label: string; value: string; status: string };
+type FocusedMusicOverlay = {
+  object: MusicObjectViewModel;
+  parentManagerRevision: string;
+};
 
 export function MusicWorkspace({
   music,
@@ -46,9 +50,13 @@ export function MusicWorkspace({
   onDetailModeChange?: (detailOpen: boolean) => void;
   listRequestKey?: number;
 }) {
+  const initialSelected = music.find((item) => item.id === targetMusicObjectId)
+    ?? music.find((item) => item.kind === "song")
+    ?? music[0];
   const [tab, setTab] = useState<MusicTab>("songs");
   const [mode, setMode] = useState<DetailMode>("library");
-  const [selectedId, setSelectedId] = useState<string>(targetMusicObjectId ?? music.find((item) => item.kind === "song")?.id ?? music[0]?.id ?? "");
+  const [selectedId, setSelectedId] = useState<string>(initialSelected?.id ?? "");
+  const [selectedKind, setSelectedKind] = useState<MusicObjectViewModel["kind"]>(initialSelected?.kind ?? "song");
   const [returnTab, setReturnTab] = useState<MusicTab>("songs");
   const [songRoomTab, setSongRoomTab] = useState<SongRoomTab>("overview");
   const [createKind, setCreateKind] = useState<MusicTab | null>(null);
@@ -60,26 +68,31 @@ export function MusicWorkspace({
   const [actionPending, setActionPending] = useState(false);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
-  const [focusedMusicById, setFocusedMusicById] = useState<Record<string, MusicObjectViewModel>>({});
+  const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
   const managerReadPollInFlight = useRef(false);
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
   const currentMusic = useMemo(
-    () => music.map((item) => focusedMusicById[item.id] ?? item),
+    () => music.map((item) => {
+      const overlay = focusedMusicById[musicObjectKey(item)];
+      if (!overlay || overlay.parentManagerRevision !== managerReadRevision(item)) return item;
+      return mergeFocusedManagerState(item, overlay.object);
+    }),
     [focusedMusicById, music],
   );
-  const getMusicObject = (id: string) => currentMusic.find((object) => object.id === id);
+  const getMusicObject = (id: string, kind?: MusicObjectViewModel["kind"]) =>
+    currentMusic.find((object) => object.id === id && (!kind || object.kind === kind));
   const songs = currentMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
   const projects = currentMusic.filter((object) => object.kind === "project");
-  const selected = getMusicObject(selectedId) ?? songs[0] ?? projects[0] ?? null;
-  const tracklist = selected?.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
+  const selected = getMusicObject(selectedId, selectedKind) ?? songs[0] ?? projects[0] ?? null;
+  const tracklist = selected?.songIds?.map((id) => getMusicObject(id, "song")).filter(Boolean) as MusicObjectViewModel[] | undefined;
   const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
 
   // Single source of truth for "active work" in the list: reuse the exact linkage
   // logic the song/project rooms use, so the catalog list can never disagree with
   // what you see after opening an item.
   const linkedMissionCountById = useMemo(() => {
-    const resolve = (id: string) => currentMusic.find((object) => object.id === id);
+    const resolve = (id: string) => currentMusic.find((object) => object.id === id && object.kind === "song");
     const map: Record<string, number> = {};
     for (const object of currentMusic) {
       const resolved = object;
@@ -87,7 +100,7 @@ export function MusicWorkspace({
         resolved.kind === "project"
           ? ((resolved.songIds?.map(resolve).filter(Boolean) as MusicObjectViewModel[] | undefined) ?? [])
           : [];
-      map[resolved.id] = findCatalogLinkedMissions(resolved, missions, objectTracklist).length;
+      map[musicObjectKey(resolved)] = findCatalogLinkedMissions(resolved, missions, objectTracklist).length;
     }
     return map;
   }, [currentMusic, missions]);
@@ -122,7 +135,7 @@ export function MusicWorkspace({
           selected.kind === "project" ? "music_project" : "music_item",
         );
         if (!cancelled && refreshed) {
-          setFocusedMusicById((current) => ({ ...current, [refreshed.id]: refreshed }));
+          rememberFocusedUpdate(refreshed);
         }
       } catch {
         // A transient reload failure must not discard the persisted read or stop later polls.
@@ -144,6 +157,7 @@ export function MusicWorkspace({
 
   function openObject(object: MusicObjectViewModel, origin: MusicTab = tab) {
     setSelectedId(object.id);
+    setSelectedKind(object.kind);
     setReturnTab(origin);
     if (object.kind === "song") setSongRoomTab("overview");
     setMode(object.kind === "song" ? "songDetail" : "projectDetail");
@@ -172,7 +186,7 @@ export function MusicWorkspace({
       setBriefError(null);
       setBriefPending(true);
       const updated = await musicRepository.startManagerRead(subjectId, subjectType);
-      setFocusedMusicById((current) => ({ ...current, [updated.id]: updated }));
+      rememberFocusedUpdate(updated);
     } catch {
       setBriefError("Manager Read could not start. Try again.");
     } finally {
@@ -185,12 +199,14 @@ export function MusicWorkspace({
       if (createKind === "songs") {
         const created = await musicRepository.createSong({ title: input.title, itemType: input.type, lifecycleStage: input.lifecycleStage });
         setSelectedId(created.id);
+        setSelectedKind("song");
         setReturnTab("songs");
         setSongRoomTab("overview");
         setMode("songDetail");
       } else {
         const created = await musicRepository.createProject({ title: input.title, projectType: input.type, lifecycleStage: input.lifecycleStage });
         setSelectedId(created.id);
+        setSelectedKind("project");
         setReturnTab("projects");
         setMode("projectDetail");
       }
@@ -202,13 +218,27 @@ export function MusicWorkspace({
     setImportKind(null);
     setSelectedId(result.subjectId);
     if (result.subjectType === "music_project") {
+      setSelectedKind("project");
       setReturnTab("projects");
       setMode("projectDetail");
     } else {
+      setSelectedKind("song");
       setReturnTab("songs");
       setSongRoomTab("overview");
       setMode("songDetail");
     }
+  }
+
+  function rememberFocusedUpdate(updated: MusicObjectViewModel) {
+    const parent = music.find((item) => item.id === updated.id && item.kind === updated.kind);
+    if (!parent) return;
+    setFocusedMusicById((current) => ({
+      ...current,
+      [musicObjectKey(updated)]: {
+        object: updated,
+        parentManagerRevision: managerReadRevision(parent),
+      },
+    }));
   }
 
   async function saveMusicDetail(value: string) {
@@ -308,7 +338,7 @@ export function MusicWorkspace({
             {tab === "songs" ? (
               <div className="hidden gap-3 lg:grid">
                 {songs.map((song, index) => (
-                  <MusicSongRow key={song.id} song={song} index={index} activeMissionCount={linkedMissionCountById[song.id] ?? 0} onOpen={() => openObject(song, "songs")} />
+                  <MusicSongRow key={song.id} song={song} index={index} activeMissionCount={linkedMissionCountById[musicObjectKey(song)] ?? 0} onOpen={() => openObject(song, "songs")} />
                 ))}
               </div>
             ) : (
@@ -1090,6 +1120,7 @@ function managerReadStatusLabel(status: MusicObjectViewModel["managerReadStatus"
   if (status === "refresh_failed") return "Refresh failed";
   if (status === "failed") return "Read failed";
   if (status === "stale") return "Refresh required";
+  if (status === "unknown") return "Status available when opened";
   return "Not generated";
 }
 
@@ -1102,6 +1133,7 @@ function managerReadButtonLabel(kind: MusicObjectViewModel["kind"], status: Musi
   if (status === "refreshing") return "Refreshing Manager Read";
   if (status === "failed" || status === "refresh_failed") return "Retry Manager Read";
   if (status === "not_generated" || !status) return kind === "project" ? "Ask Manager for a project read" : "Ask Manager for a read";
+  if (status === "unknown") return "Check Manager Read";
   return "Refresh Manager Read";
 }
 
@@ -2194,5 +2226,30 @@ function getProjectReadiness(project: MusicObjectViewModel, getMusicObject: (id:
   const tracks = project.songIds?.map(getMusicObject).filter(Boolean) as MusicObjectViewModel[] | undefined;
   return {
     trackCount: tracks?.length ?? project.songs?.length ?? 0,
+  };
+}
+
+function musicObjectKey(object: Pick<MusicObjectViewModel, "id" | "kind">) {
+  return `${object.kind}:${object.id}`;
+}
+
+function managerReadRevision(object: MusicObjectViewModel) {
+  return JSON.stringify([
+    object.managerReadStatus,
+    object.managerReadRunId,
+    object.managerReadError,
+    object.managerReadSummary,
+    object.managerRead,
+  ]);
+}
+
+function mergeFocusedManagerState(parent: MusicObjectViewModel, focused: MusicObjectViewModel): MusicObjectViewModel {
+  return {
+    ...parent,
+    managerRead: focused.managerRead,
+    managerReadSummary: focused.managerReadSummary,
+    managerReadStatus: focused.managerReadStatus,
+    managerReadRunId: focused.managerReadRunId,
+    managerReadError: focused.managerReadError,
   };
 }

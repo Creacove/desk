@@ -815,8 +815,6 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       { data: itemRows, error: itemError },
       { data: projectRows, error: projectError },
       { data: projectItemRows, error: projectItemError },
-      { data: managerOutputRows, error: managerOutputError },
-      { data: managerRunRows, error: managerRunError },
     ] = await Promise.all([
       ownerFilters(client
         .from("music_items")
@@ -845,32 +843,11 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .order("order_index", { ascending: true })
         .order("music_item_id", { ascending: true })
         .limit(150),
-      ownerFilters(client
-        .from("manager_outputs")
-        .select("id,created_from_run_id,output_type,subject_type,subject_id,is_current,schema_version,summary,created_at")
-      )
-        .eq("is_current", true)
-        .in("subject_type", ["music_item", "music_project"])
-        .in("output_type", ["song_manager_read", "project_manager_read"])
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(100),
-      ownerFilters(client
-        .from("manager_synthesis_runs")
-        .select("id,subject_type,subject_id,status,error,created_at,completed_at")
-      )
-        .eq("classification", "music_manager_read_v2")
-        .in("subject_type", ["music_item", "music_project"])
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(100),
     ]);
 
     if (itemError) throw itemError;
     if (projectError) throw projectError;
     if (projectItemError) throw projectItemError;
-    if (managerOutputError) throw managerOutputError;
-    if (managerRunError) throw managerRunError;
 
     const library = mapMusicLibrary({
       itemRows: (itemRows ?? []) as MusicItemRow[],
@@ -882,8 +859,44 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       splitRows: [],
       splitContributorRows: [],
     });
+    const models = musicViewModelsFromLibrary(library);
+    const subjectIds = [...new Set(models.map((model) => model.id))];
+    if (subjectIds.length === 0) return applyMusicListManagerState(models, [], []);
+
+    const statusRowLimit = models.length;
+    const [
+      { data: managerOutputRows, error: managerOutputError },
+      { data: managerRunRows, error: managerRunError },
+    ] = await Promise.all([
+      ownerFilters(client
+        .from("manager_outputs")
+        .select("id,created_from_run_id,output_type,subject_type,subject_id,is_current,schema_version,summary,created_at")
+      )
+        .eq("is_current", true)
+        .in("subject_id", subjectIds)
+        .in("subject_type", ["music_item", "music_project"])
+        .in("output_type", ["song_manager_read", "project_manager_read"])
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(statusRowLimit),
+      ownerFilters(client
+        .from("manager_synthesis_runs")
+        .select("id,subject_type,subject_id,status,error,created_at,completed_at")
+      )
+        .eq("classification", "music_manager_read_v2")
+        .in("subject_id", subjectIds)
+        .in("subject_type", ["music_item", "music_project"])
+        .in("status", ["queued", "running"])
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(statusRowLimit),
+    ]);
+
+    if (managerOutputError) throw managerOutputError;
+    if (managerRunError) throw managerRunError;
+
     return applyMusicListManagerState(
-      musicViewModelsFromLibrary(library),
+      models,
       (managerOutputRows ?? []) as ManagerOutputRow[],
       (managerRunRows ?? []) as ManagerSynthesisRunRow[],
     );
@@ -4710,7 +4723,7 @@ function applyMusicListManagerState(
     const output = outputsBySubject.get(key);
     const run = latestRuns.get(key);
     const outputIsCurrentV2 = output?.schema_version === "music-manager-read-v2";
-    let managerReadStatus: MusicManagerReadStatus = "not_generated";
+    let managerReadStatus: MusicManagerReadStatus = "unknown";
     if (run?.status === "queued" || run?.status === "running") {
       managerReadStatus = outputIsCurrentV2 ? "refreshing" : "running";
     } else if (

@@ -4249,7 +4249,7 @@ describe("Clean production prototype-match shell", () => {
     const repositories = repositoriesFor("Nova Vale");
     const loadMusic = vi.fn(repositories.music.loadMusic);
 
-    render(
+    const { rerender } = render(
       <MusicWorkspace
         music={[subject]}
         missions={[]}
@@ -4267,6 +4267,32 @@ describe("Clean production prototype-match shell", () => {
     expect(onMusicChanged).not.toHaveBeenCalled();
     expect(loadMusic).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByTestId("music-song-detail")).toHaveTextContent("The last good read remains visible"));
+
+    const durableParent = {
+      ...subject,
+      title: "Durable parent title",
+      managerReadStatus: "fresh" as const,
+      managerReadRunId: "run-new",
+      managerRead: {
+        ...completeSongManagerRead,
+        body: "The durable parent read supersedes the temporary focused overlay.",
+      },
+    };
+    rerender(
+      <MusicWorkspace
+        music={[durableParent]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, loadMusic, startManagerRead }}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Durable parent title");
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("The durable parent read supersedes");
+    expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The last good read remains visible");
   });
 
   it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
@@ -4402,6 +4428,72 @@ describe("Clean production prototype-match shell", () => {
     expect(directRepositoryRefresh).not.toHaveBeenCalled();
     expect(loadMusic).not.toHaveBeenCalled();
     expect(screen.getByTestId("music-song-detail")).toHaveTextContent(previousBody.split("\n\n")[0]);
+  });
+
+  it("keeps focused song and project refreshes isolated when their UUIDs collide", async () => {
+    vi.useFakeTimers();
+    const repositories = repositoriesFor("Nova Vale");
+    const sharedId = "shared-music-uuid";
+    const song = {
+      ...musicReadSubject("song", "running"),
+      id: sharedId,
+      title: "Shared UUID song",
+      managerRead: undefined,
+    };
+    const project = {
+      ...musicReadSubject("project", "running"),
+      id: sharedId,
+      title: "Shared UUID project",
+      managerRead: undefined,
+    };
+    const refreshedSong = {
+      ...musicReadSubject("song", "fresh"),
+      id: sharedId,
+      title: "Shared UUID song",
+      managerRead: {
+        ...completeSongManagerRead,
+        body: "The focused song refresh stayed attached to the song.",
+      },
+    };
+    const refreshedProject = {
+      ...musicReadSubject("project", "fresh"),
+      id: sharedId,
+      title: "Shared UUID project",
+      managerRead: {
+        ...completeProjectManagerRead,
+        body: "The focused project refresh stayed attached to the project.",
+      },
+    };
+    const onRefreshObject = vi.fn(async (_id: string, subjectType: "music_item" | "music_project") =>
+      subjectType === "music_item" ? refreshedSong : refreshedProject
+    );
+
+    render(
+      <MusicWorkspace
+        music={[song, project]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={onRefreshObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(onRefreshObject).toHaveBeenNthCalledWith(1, sharedId, "music_item");
+
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open project Shared UUID project" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(2000); });
+    expect(onRefreshObject).toHaveBeenNthCalledWith(2, sharedId, "music_project");
+    expect(screen.getByTestId("music-project-detail")).toHaveTextContent("The focused project refresh stayed attached");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Catalog" }));
+    fireEvent.click(screen.getByRole("button", { name: "Songs" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open song Shared UUID song" }));
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("The focused song refresh stayed attached");
+    expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The focused project refresh stayed attached");
   });
 
   it("uses the production split ledger flow in the Music rights tab", async () => {
