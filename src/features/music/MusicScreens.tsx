@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
@@ -695,7 +695,7 @@ function MusicSongDetail({
                   disabled={readBusy}
                   className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 font-ui text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:px-4 sm:text-[11px]"
                 >
-                  {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+                  {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
                   <span>{briefPending ? "Manager is reading" : generateReadLabel}</span>
                 </button>
               </div>
@@ -992,7 +992,7 @@ function MusicProjectBrief({
           aria-label={briefPending ? "Manager is reading" : generateReadLabel}
           className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 font-ui text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40"
         >
-          {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />}
+          {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
           {briefPending ? "Manager is reading" : generateReadLabel}
         </button>
       </div>
@@ -1099,6 +1099,12 @@ function managerReadButtonLabel(kind: MusicObjectViewModel["kind"], status: Musi
   if (status === "failed" || status === "refresh_failed") return "Retry Manager Read";
   if (status === "not_generated" || !status) return kind === "project" ? "Ask Manager for a project read" : "Ask Manager for a read";
   return "Refresh Manager Read";
+}
+
+function managerReadButtonIcon(status: MusicObjectViewModel["managerReadStatus"]) {
+  if (status === "not_generated" || !status) return <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />;
+  if (status === "failed" || status === "refresh_failed") return <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />;
+  return <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />;
 }
 
 function isLockedReleasedStage(stage?: string) {
