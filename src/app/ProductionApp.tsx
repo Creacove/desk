@@ -36,6 +36,7 @@ import {
   createSupabaseWorkspaceLoader,
 } from "../services/productionSupabase";
 import { createActiveRunFallback } from "../services/activeRunFallback";
+import { createResourceRequestCoordinator } from "../services/resourceRequestCoordinator";
 import { useTheme } from "./theme";
 import type {
   AgentViewModel,
@@ -521,6 +522,10 @@ function CleanProductionWorkspace({
   const [conversationDetailPending, setConversationDetailPending] = useState(false);
   const [missionDetailPending, setMissionDetailPending] = useState(false);
   const [evidencePending, setEvidencePending] = useState(false);
+  const resourceRequestsRef = useRef<ReturnType<typeof createResourceRequestCoordinator> | null>(null);
+  if (!resourceRequestsRef.current) resourceRequestsRef.current = createResourceRequestCoordinator();
+  const resourceRequests = resourceRequestsRef.current;
+  const resourceWorkspaceId = workspace?.artistWorkspaceId ?? `setup:${analyticsUser.id}`;
   const evidenceLoaded = useRef(false);
   const evidenceLoadInFlight = useRef(false);
   const evidenceRequest = useRef(0);
@@ -559,6 +564,22 @@ function CleanProductionWorkspace({
   const [managerSendPending, setManagerSendPending] = useState(false);
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
   const [discoverySteps, setDiscoverySteps] = useState<string[]>([]);
+
+  const loadDeskAggregate = () => resourceRequests.load(resourceWorkspaceId, "workspace", () => repositories.desk.loadDesk());
+  const loadActivityResource = () => resourceRequests.load(resourceWorkspaceId, "activity", () =>
+    repositories.desk.loadActivity?.()
+      ?? loadDeskAggregate().then(({ priority, attention, movement }) => ({ priority, attention, movement }))
+  );
+  const loadBriefResource = () => resourceRequests.load(resourceWorkspaceId, "desk-brief", () =>
+    repositories.desk.loadBrief?.() ?? loadDeskAggregate().then((snapshot) => snapshot.todayBrief)
+  );
+  const loadMusicListResource = () => resourceRequests.load(resourceWorkspaceId, "music-list", () => repositories.music.loadMusicList());
+  const loadMissionListResource = () => resourceRequests.load(resourceWorkspaceId, "mission-list", () =>
+    repositories.missions.loadMissionList?.() ?? repositories.missions.loadMissions()
+  );
+  const loadConversationListResource = () => resourceRequests.load(resourceWorkspaceId, "conversation-list", () =>
+    repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations()
+  );
 
   useEffect(() => {
     if (!shouldPollManagerDiscoveryEvents({
@@ -608,6 +629,8 @@ function CleanProductionWorkspace({
     evidenceLoaded.current = false;
     evidenceLoadInFlight.current = false;
     evidenceRequest.current += 1;
+    conversationDetailRequest.current += 1;
+    missionDetailRequest.current += 1;
     conversationListLoaded.current = false;
     setEvidence([]);
     setConversations([]);
@@ -615,18 +638,12 @@ function CleanProductionWorkspace({
     async function loadViewModels() {
       try {
         setViewModelError(null);
-        const deskSnapshotPromise = repositories.desk.loadActivity && repositories.desk.loadBrief
-          ? Promise.all([repositories.desk.loadActivity(), repositories.desk.loadBrief()])
-          : repositories.desk.loadDesk().then((snapshot) => [
-              { priority: snapshot.priority, attention: snapshot.attention, movement: snapshot.movement },
-              snapshot.todayBrief,
-            ] as const);
         const [nextProfile, [nextActivity, nextBrief], nextAgents, nextMusic, nextMissions] = await Promise.all([
           repositories.artistProfile.loadProfile(),
-          deskSnapshotPromise,
+          Promise.all([loadActivityResource(), loadBriefResource()]),
           repositories.staff.loadAgents(),
-          repositories.music.loadMusicList(),
-          repositories.missions.loadMissionList?.() ?? repositories.missions.loadMissions(),
+          loadMusicListResource(),
+          loadMissionListResource(),
         ]);
 
         if (!isMounted) {
@@ -658,13 +675,14 @@ function CleanProductionWorkspace({
 
     return () => {
       isMounted = false;
+      resourceRequests.clearWorkspace(resourceWorkspaceId);
     };
-  }, [repositories]);
+  }, [repositories, resourceRequests, resourceWorkspaceId]);
 
   useEffect(() => {
     if (view !== "managerOffice" || conversationListLoaded.current) return;
     let cancelled = false;
-    void (repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations())
+    void loadConversationListResource()
       .then((nextConversations) => {
         if (!cancelled) {
           conversationListLoaded.current = true;
@@ -677,7 +695,7 @@ function CleanProductionWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [repositories.manager, view]);
+  }, [repositories.manager, resourceWorkspaceId, view]);
 
   useEffect(() => {
     if (view !== "labelHQ" || !todayBrief || !workspace) return;
@@ -760,9 +778,10 @@ function CleanProductionWorkspace({
     const request = ++conversationDetailRequest.current;
     setConversationDetailPending(true);
     try {
-      const detail = repositories.manager.loadConversation
-        ? await repositories.manager.loadConversation(conversation.id)
-        : (await repositories.manager.loadConversations()).find((item) => item.id === conversation.id) ?? null;
+      const detail = await resourceRequests.load(resourceWorkspaceId, `conversation:${conversation.id}`, () =>
+        repositories.manager.loadConversation?.(conversation.id)
+          ?? repositories.manager.loadConversations().then((items) => items.find((item) => item.id === conversation.id) ?? null)
+      );
       if (request !== conversationDetailRequest.current || !detail) return;
       setSelectedConversation(detail);
       setConversations((current) => [detail, ...current.filter((item) => item.id !== detail.id)]);
@@ -776,13 +795,15 @@ function CleanProductionWorkspace({
     }
   }
 
-  async function hydrateMission(missionId: string) {
+  async function hydrateMission(missionId: string, force = false) {
     const request = ++missionDetailRequest.current;
     setMissionDetailPending(true);
     try {
-      const detail = repositories.missions.loadMission
-        ? await repositories.missions.loadMission(missionId)
-        : (await repositories.missions.loadMissions()).find((mission) => mission.id === missionId) ?? null;
+      if (force) resourceRequests.invalidate(resourceWorkspaceId, `mission:${missionId}`);
+      const detail = await resourceRequests.load(resourceWorkspaceId, `mission:${missionId}`, () =>
+        repositories.missions.loadMission?.(missionId)
+          ?? repositories.missions.loadMissions().then((items) => items.find((mission) => mission.id === missionId) ?? null)
+      );
       if (request !== missionDetailRequest.current || !detail) return;
       setMissions((current) => [detail, ...current.filter((mission) => mission.id !== detail.id)]);
     } catch (loadError) {
@@ -792,6 +813,11 @@ function CleanProductionWorkspace({
     } finally {
       if (request === missionDetailRequest.current) setMissionDetailPending(false);
     }
+  }
+
+  async function reloadMissionList() {
+    resourceRequests.invalidate(resourceWorkspaceId, "mission-list");
+    return loadMissionListResource();
   }
 
   function selectMissionForDetail(missionId: string) {
@@ -888,7 +914,7 @@ function CleanProductionWorkspace({
       setSelectedConversation(mergedConversation);
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       if (conversationHasMissionWork(conversation)) {
-        const nextMissions = await repositories.missions.loadMissions();
+        const nextMissions = await reloadMissionList();
         setMissions(nextMissions);
         setSelectedMissionId(selectCreatedMissionId(conversation, nextMissions));
       }
@@ -1016,12 +1042,14 @@ function CleanProductionWorkspace({
   async function refreshFromManagerHint(hint?: ManagerConversationRefreshHint) {
     if (!hint) return;
     if (hint.conversations) {
-      const nextConversations = await (repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations());
+      resourceRequests.invalidate(resourceWorkspaceId, "conversation-list");
+      const nextConversations = await loadConversationListResource();
       setConversations(nextConversations);
       setSelectedConversation((current) => current ? nextConversations.find((conversation) => conversation.id === current.id) ?? current : current);
     }
     if (hint.missions) {
-      const nextMissions = await repositories.missions.loadMissions();
+      resourceRequests.invalidate(resourceWorkspaceId, "mission-list");
+      const nextMissions = await loadMissionListResource();
       setMissions(nextMissions);
       setSelectedMissionId((current) => selectTargetMissionId(hint, nextMissions) || current || nextMissions[0]?.id || "");
     }
@@ -1029,12 +1057,10 @@ function CleanProductionWorkspace({
       await reloadMusic();
     }
     if (hint.desk) {
-      const [nextActivity, nextBrief] = repositories.desk.loadActivity && repositories.desk.loadBrief
-        ? await Promise.all([repositories.desk.loadActivity(), repositories.desk.loadBrief()])
-        : await repositories.desk.loadDesk().then((snapshot) => [
-            { priority: snapshot.priority, attention: snapshot.attention, movement: snapshot.movement },
-            snapshot.todayBrief,
-          ] as const);
+      resourceRequests.invalidate(resourceWorkspaceId, "activity");
+      resourceRequests.invalidate(resourceWorkspaceId, "desk-brief");
+      resourceRequests.invalidate(resourceWorkspaceId, "workspace");
+      const [nextActivity, nextBrief] = await Promise.all([loadActivityResource(), loadBriefResource()]);
       setAttention(nextActivity.attention);
       setMovement(nextActivity.movement);
       setTodayBrief(nextBrief);
@@ -1049,7 +1075,7 @@ function CleanProductionWorkspace({
     }
 
     if (type === "mission" || type === "task") {
-      const nextMissions = await repositories.missions.loadMissions();
+      const nextMissions = await reloadMissionList();
       setMissions(nextMissions);
       const targetMissionId = type === "task"
         ? selectMissionIdForTask(id, nextMissions) ?? selectMissionId(id, nextMissions)
@@ -1059,6 +1085,7 @@ function CleanProductionWorkspace({
       setMissionRoomOpenTaskId(type === "task" ? id ?? null : null);
       if (targetMissionId) {
         setMissionRoomOpenRequestKey((current) => current + 1);
+        void hydrateMission(targetMissionId);
       } else {
         setMissionListOpenRequestKey((current) => current + 1);
       }
@@ -1076,7 +1103,8 @@ function CleanProductionWorkspace({
   }
 
   async function reloadMusic() {
-    const nextMusic = await repositories.music.loadMusic();
+    resourceRequests.invalidate(resourceWorkspaceId, "music-list");
+    const nextMusic = await resourceRequests.load(resourceWorkspaceId, "music-list", () => repositories.music.loadMusic());
     setMusic(nextMusic);
     return nextMusic;
   }
@@ -1085,14 +1113,16 @@ function CleanProductionWorkspace({
     subjectId: string,
     subjectType: "music_item" | "music_project",
   ) => {
-    const refreshed = await repositories.music.loadMusicObject(subjectId, subjectType);
+    const resourceKey = `music-object:${subjectId}` as const;
+    resourceRequests.invalidate(resourceWorkspaceId, resourceKey);
+    const refreshed = await resourceRequests.load(resourceWorkspaceId, resourceKey, () => repositories.music.loadMusicObject(subjectId, subjectType));
     const expectedKind = subjectType === "music_project" ? "project" : "song";
     if (!refreshed || refreshed.id !== subjectId || refreshed.kind !== expectedKind) return null;
     setMusic((current) => current.map((item) =>
       item.id === subjectId && item.kind === expectedKind ? refreshed : item
     ));
     return refreshed;
-  }, [repositories.music]);
+  }, [repositories.music, resourceRequests, resourceWorkspaceId]);
 
   async function generateTodaysBrief(mode: TodayBriefGenerationMode = "operating") {
     try {
@@ -1100,6 +1130,7 @@ function CleanProductionWorkspace({
       setTodayBriefError(null);
       const result = await repositories.desk.generateTodaysBrief(mode);
       const nextBrief = briefFromGenerationResult(result);
+      resourceRequests.invalidate(resourceWorkspaceId, "desk-brief");
       setTodayBrief(nextBrief);
       trackBriefGenerated(nextBrief, mode);
       return result;
@@ -1213,10 +1244,12 @@ function CleanProductionWorkspace({
       }
       if (shouldOpenMissionGenesisMissions(result)) {
         clearMissionGenesisAttention();
-        const nextMissions = await repositories.missions.loadMissions();
+        const nextMissions = await reloadMissionList();
         trackCreatedMissions(result, nextMissions);
         setMissions(nextMissions);
-        setSelectedMissionId(selectMissionGenesisMissionId(result, nextMissions));
+        const missionId = selectMissionGenesisMissionId(result, nextMissions);
+        setSelectedMissionId(missionId);
+        if (missionId) void hydrateMission(missionId);
         setMissionListOpenRequestKey((current) => current + 1);
         navigate("missionsWorkspace");
       }
@@ -1245,12 +1278,13 @@ function CleanProductionWorkspace({
         })),
       });
       setMissionGenesisResult(result);
-      const nextMissions = await repositories.missions.loadMissions();
+      const nextMissions = await reloadMissionList();
       trackCreatedMissions(result, nextMissions);
       setMissions(nextMissions);
       const selectedMissionId = selectMissionGenesisMissionId(result, nextMissions);
       setSelectedMissionId(selectedMissionId);
       if (selectedMissionId) {
+        void hydrateMission(selectedMissionId);
         clearMissionGenesisAttention();
         setMissionListOpenRequestKey((current) => current + 1);
         navigate("missionsWorkspace");
@@ -1296,9 +1330,10 @@ function CleanProductionWorkspace({
 
   async function approveMissionTask(taskId: string) {
     await repositories.missions.approveTask(taskId);
-    const nextMissions = await repositories.missions.loadMissions();
+    const nextMissions = await reloadMissionList();
     setMissions(nextMissions);
     setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
+    if (selectedMissionId) await hydrateMission(selectedMissionId, true);
   }
 
   async function uploadMissionTaskDeliverable(taskId: string, input: { title: string; file: File }) {
@@ -1306,9 +1341,10 @@ function CleanProductionWorkspace({
       throw new Error("Document upload is not available for this workspace.");
     }
     const deliverable = await repositories.missions.uploadTaskDeliverable(taskId, input);
-    const nextMissions = await repositories.missions.loadMissions();
+    const nextMissions = await reloadMissionList();
     setMissions(nextMissions);
     setSelectedMissionId((current) => current || nextMissions[0]?.id || "");
+    if (selectedMissionId) await hydrateMission(selectedMissionId, true);
     return deliverable;
   }
 
