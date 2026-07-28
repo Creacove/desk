@@ -370,8 +370,8 @@ Observed wall times were 45.1s, 46.9s, 46.1s, and 42.2s respectively.
   are green before implementation.
 - The build already emits one large-chunk warning; later work must not present
   that warning as a new regression.
-- The deployed Edge Function inventory is captured, but linked migration drift
-  remains unmeasured until the linked-checkout protocol is run.
+- The deployed Edge Function inventory is captured, and the linked migration
+  inventory shows all 46 local and remote versions match with no drift.
 - Cost and production-network values remain explicitly unknown. No rollout
   should claim an egress/compute reduction until the deferred measurements are
   collected using the protocols above.
