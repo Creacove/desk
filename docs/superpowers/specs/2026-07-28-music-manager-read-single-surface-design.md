@@ -110,7 +110,23 @@ If fewer than two usable exact metrics exist, the workflow may return the availa
 
 ## Prompt Design
 
-The prompt is subject-aware and lean. Song instructions refer to a song or track; project instructions refer to a project or release and reason across the tracklist.
+The Antigravity prompt is the quality baseline for this revision, not legacy text to replace wholesale. Its strongest behavior is preserved:
+
+- the senior Manager and experienced A&R/operator perspective;
+- skepticism toward vanity metrics and preference for what is materially true;
+- silent pre-writing consideration of the most distinctive evidence pattern, the artist's stage and goal, and the read's core argument;
+- data-led structure rather than a fixed template;
+- a specific opening rather than a generic introduction;
+- calibration of the same number differently for emerging and established artists;
+- interpretation of direction as well as scale;
+- judgment about the role the song or project is becoming in the artist's system;
+- one concrete move, one tempting wrong move, and one decision-changing indicator;
+- exact subject, artist, market, comparison, and number usage when supported;
+- varied sentence structure and non-repetitive openings.
+
+The revision improves that prompt in place. It removes only instructions that conflict with the simplified product contract, repeat another instruction, cause song/project ambiguity, forbid useful calibrated context, or ask the model to generate metric presentation that the backend can produce exactly. Strong wording is retained unless a representative regression test demonstrates a reason to change it.
+
+The prompt is subject-aware and focused. Song instructions refer to a song or track; project instructions refer to a project or release and reason across the tracklist.
 
 It states once that the Manager must:
 
@@ -124,6 +140,8 @@ It states once that the Manager must:
 - avoid generic advice, fake commitments, missions, tasks, and comparison-subject substitution.
 
 The prompt does not ask the model to expose chain-of-thought or confidence. It asks for the final judgment and its visible evidence only. One initial request and at most one focused semantic repair remain the global request ceiling.
+
+Prompt changes are evaluated against representative successful reads from the current implementation. The revised prompt must retain their specificity, management usefulness, evidence grounding, and natural voice while moving recommendation, wrong-move, and watch-condition content into the single body. A shorter prompt is not considered an improvement if the reads become more generic, less decisive, or less artist-specific.
 
 ## Validation
 
@@ -214,6 +232,8 @@ The endpoint returns safe status-specific responses for authentication, authoriz
 - removed fields are rejected;
 - song and project prompts use correct subject terminology;
 - body requirements include recommendation, wrong move, and change condition;
+- Antigravity prompt quality anchors remain present and non-contradictory;
+- representative song and project fixtures retain specificity, decisive management judgment, evidence grounding, and natural voice;
 - internal/provider leakage fails validation;
 - unsupported and duplicate evidence IDs fail;
 - exact metric candidates are resolved without model-written values;
@@ -274,6 +294,7 @@ The work is complete only when:
 
 - the Music UI shows one Manager's Read and no separate judgment/confidence sections;
 - the prose contains the complete useful management judgment;
+- the revised prompt preserves the strongest Antigravity prompt behaviors and does not regress successful-read quality;
 - visible metrics are exact backend-formatted evidence facts selected for relevance;
 - reasoning context retains safe units, timeframes, freshness, and limitations without leaking internal machinery;
 - existing current reads survive the migration;
