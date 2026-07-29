@@ -66,6 +66,8 @@ describe("Chartmetric track enrichment edge function", () => {
     expect(functionSource).toContain("chartmetric_track_enrichment_failed");
     expect(functionSource).not.toContain('.from("music_items").update');
     expect(functionSource).not.toContain("manager_next_move");
+    expect(functionSource).toContain("created_from_source_sync_job_id");
+    expect(functionSource).toContain('code?: string }).code === "23505"');
   });
 
   it("records paid Chartmetric request usage for the enrichment job", () => {
@@ -89,7 +91,7 @@ describe("Chartmetric track enrichment edge function", () => {
   });
 
   it("finishes after normalized evidence without invoking OpenAI or Manager Read generation", () => {
-    const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, evidenceItems)");
+    const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, jobId, evidenceItems)");
     expect(evidenceIndex).toBeGreaterThan(-1);
     expect(functionSource).not.toContain("invokeManagerReadGeneration");
     expect(functionSource).not.toContain("generate-music-summary");

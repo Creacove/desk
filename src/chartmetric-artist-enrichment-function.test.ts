@@ -65,6 +65,8 @@ describe("Chartmetric artist enrichment edge function", () => {
     expect(functionSource).toContain("chartmetric_artist_enrichment_failed");
     expect(functionSource).not.toContain('.from("artists").update');
     expect(functionSource).not.toContain('.from("artist_profiles").update');
+    expect(functionSource).toContain("created_from_source_sync_job_id");
+    expect(functionSource).toContain('code?: string }).code === "23505"');
   });
 
   it("hands saved artist intelligence to Today's Brief generation without blocking enrichment", () => {

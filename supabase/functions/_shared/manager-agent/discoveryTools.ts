@@ -18,7 +18,41 @@ export type DiscoveryToolInput = {
   artistWorkspaceId: string;
   artistId: string;
   reuseExistingSnapshots?: boolean;
+  managerRunId?: string;
+  managerActionId?: string;
 };
+
+export type FrozenDiscoveryContext = {
+  setupRunId: string | null;
+  selectedMusicItemIds: string[];
+  selectedMusicProjectId: string | null;
+  selectionAlgorithmVersion: "recent-catalog-v1";
+  selectedAt: string;
+};
+
+export function freezeDiscoveryTargets(
+  setupRunId: string | undefined,
+  tracks: Array<{ id: string }>,
+  projects: Array<{ id: string }>,
+  selectedAt = new Date().toISOString(),
+): FrozenDiscoveryContext {
+  return {
+    setupRunId: setupRunId ?? null,
+    selectedMusicItemIds: tracks.slice(0, 5).map(({ id }) => id),
+    selectedMusicProjectId: projects[0]?.id ?? null,
+    selectionAlgorithmVersion: "recent-catalog-v1",
+    selectedAt,
+  };
+}
+
+export function selectFrozenRows<T extends { id: string }>(rows: T[], ids: string[]): T[] {
+  const rowById = new Map(rows.map((row) => [row.id, row]));
+  return ids.flatMap((id) => rowById.has(id) ? [rowById.get(id)!] : []);
+}
+
+export function buildDiscoveryActionKey(name: string, args: Record<string, unknown>) {
+  return `${name}:${stableJson(args)}`;
+}
 
 type NormalizedIdentifier = {
   identifierType: string;
@@ -37,7 +71,7 @@ async function checkCachedSnapshot(
 ) {
   let query = db
     .from("source_snapshots")
-    .select("id,raw_payload,created_at")
+    .select("id,raw_payload,created_at,provider_id,raw_ref,metadata")
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("snapshot_type", snapshotType)
     .order("created_at", { ascending: false })
@@ -48,6 +82,9 @@ async function checkCachedSnapshot(
   }
   if (metadataMatch) {
     query = query.contains("metadata", metadataMatch);
+  }
+  if (input.managerActionId) {
+    query = query.eq("created_from_action_id", input.managerActionId);
   }
 
   const { data, error } = await query;
@@ -96,7 +133,20 @@ async function chartmetricArtistEnrich(db: any, input: DiscoveryToolInput, args:
   // Check Cache
   const cached = await checkCachedSnapshot(db, input, "chartmetric_artist_enrichment");
   if (cached) {
-    const items = await getCachedEvidenceItems(db, cached.id);
+    let items = await getCachedEvidenceItems(db, cached.id);
+    if (!items.length && cached.provider_id) {
+      items = normalizeChartmetricArtistEvidence(cached.raw_payload, {
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        subjectId: input.artistId,
+        sourceSnapshotId: cached.id,
+        providerId: cached.provider_id,
+        subjectLabel: String(cached.raw_payload?.name ?? "artist"),
+        rawRef: String(cached.raw_ref ?? ""),
+      });
+      await writeEvidenceItems(db, input, items);
+    }
     return {
       status: "cached",
       snapshotId: cached.id,
@@ -140,7 +190,7 @@ async function chartmetricArtistEnrich(db: any, input: DiscoveryToolInput, args:
     rawRef: cmId,
   });
 
-  await writeEvidenceItems(db, evidenceItems);
+  await writeEvidenceItems(db, input, evidenceItems);
 
   return {
     status: "completed",
@@ -163,7 +213,20 @@ async function chartmetricTrackEnrich(db: any, input: DiscoveryToolInput, args: 
     musicItemId ? { music_item_id: musicItemId } : undefined,
   );
   if (cached) {
-    const items = await getCachedEvidenceItems(db, cached.id);
+    let items = await getCachedEvidenceItems(db, cached.id);
+    if (!items.length && cached.provider_id) {
+      items = normalizeChartmetricTrackEvidence(cached.raw_payload, {
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        musicItemId,
+        sourceSnapshotId: cached.id,
+        providerId: cached.provider_id,
+        subjectLabel: subjectLabel || "track",
+        rawRef: String(cached.raw_ref ?? ""),
+      });
+      await writeEvidenceItems(db, input, items);
+    }
     return {
       status: "cached",
       snapshotId: cached.id,
@@ -219,7 +282,7 @@ async function chartmetricTrackEnrich(db: any, input: DiscoveryToolInput, args: 
     rawRef: cmId,
   });
 
-  await writeEvidenceItems(db, evidenceItems);
+  await writeEvidenceItems(db, input, evidenceItems);
 
   return {
     status: "completed",
@@ -242,7 +305,20 @@ async function chartmetricProjectEnrich(db: any, input: DiscoveryToolInput, args
     musicProjectId ? { music_project_id: musicProjectId } : undefined,
   );
   if (cached) {
-    const items = await getCachedEvidenceItems(db, cached.id);
+    let items = await getCachedEvidenceItems(db, cached.id);
+    if (!items.length && cached.provider_id) {
+      items = normalizeChartmetricProjectEvidence(cached.raw_payload, {
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        musicProjectId,
+        sourceSnapshotId: cached.id,
+        providerId: cached.provider_id,
+        subjectLabel: subjectLabel || "project",
+        rawRef: String(cached.raw_ref ?? ""),
+      });
+      await writeEvidenceItems(db, input, items);
+    }
     return {
       status: "cached",
       snapshotId: cached.id,
@@ -298,7 +374,7 @@ async function chartmetricProjectEnrich(db: any, input: DiscoveryToolInput, args
     rawRef: cmId,
   });
 
-  await writeEvidenceItems(db, evidenceItems);
+  await writeEvidenceItems(db, input, evidenceItems);
 
   return {
     status: "completed",
@@ -330,10 +406,18 @@ async function writeStrategicMemory(db: any, input: DiscoveryToolInput, args: Re
       content,
       confidence,
       source_type: "manager_reasoning",
+      created_from_run_id: input.managerRunId ?? null,
+      created_from_action_id: input.managerActionId ?? null,
     })
     .select("id")
     .single();
 
+  if (error && (error as { code?: string }).code === "23505" && input.managerActionId) {
+    const existing = await db.from("memory_entries").select("id")
+      .eq("created_from_action_id", input.managerActionId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return { status: "saved", memoryId: existing.data.id };
+  }
   if (error) throw new Error(readErrorMessage(error));
   return { status: "saved", memoryId: data.id };
 }
@@ -369,10 +453,18 @@ async function savePublicEvidence(db: any, input: DiscoveryToolInput, args: Reco
       provenance: url,
       limitation: "Public context only; not private performance metrics.",
       raw_ref: url,
+      created_from_run_id: input.managerRunId ?? null,
+      created_from_action_id: input.managerActionId ?? null,
     })
     .select("id")
     .single();
 
+  if (error && (error as { code?: string }).code === "23505" && input.managerActionId) {
+    const existing = await db.from("evidence_items").select("id")
+      .eq("created_from_action_id", input.managerActionId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return { status: "saved", evidenceId: existing.data.id };
+  }
   if (error) throw new Error(readErrorMessage(error));
   return { status: "saved", evidenceId: data.id };
 }
@@ -431,17 +523,37 @@ async function writeSourceSnapshot(db: any, input: DiscoveryToolInput, draft: an
       raw_ref: draft.rawRef,
       raw_payload: draft.rawPayload,
       metadata: draft.metadata,
+      created_from_run_id: input.managerRunId ?? null,
+      created_from_action_id: input.managerActionId ?? null,
     })
     .select("id")
     .single();
+  if (error && (error as { code?: string }).code === "23505" && input.managerActionId) {
+    const existing = await db.from("source_snapshots").select("id")
+      .eq("created_from_action_id", input.managerActionId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return existing.data.id as string;
+  }
   if (error) throw error;
   return data.id as string;
 }
 
-async function writeEvidenceItems(db: any, items: any[]) {
+async function writeEvidenceItems(db: any, input: DiscoveryToolInput, items: any[]) {
   if (!items.length) return;
-  const { error } = await db.from("evidence_items").insert(items);
-  if (error) throw error;
+  const rows = items.map((item) => ({
+    ...item,
+    created_from_run_id: input.managerRunId ?? item.created_from_run_id ?? null,
+    created_from_action_id: input.managerActionId ?? item.created_from_action_id ?? null,
+  }));
+  const { error } = await db.from("evidence_items").insert(rows);
+  if (!error) return;
+  if ((error as { code?: string }).code === "23505" && input.managerActionId) {
+    const existing = await db.from("evidence_items").select("id")
+      .eq("created_from_action_id", input.managerActionId).limit(1);
+    if (existing.error) throw existing.error;
+    if (existing.data?.length) return;
+  }
+  throw error;
 }
 
 async function resolveArtistId(spotifyArtistId: string, chartmetric: any) {
@@ -725,4 +837,13 @@ function readErrorMessage(error: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${stableJson(nested)}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }

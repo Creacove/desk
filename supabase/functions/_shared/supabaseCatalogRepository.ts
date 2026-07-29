@@ -287,11 +287,21 @@ async function writeSourceSnapshot(supabase: SupabaseLike, draft: SourceSnapshot
     raw_ref: draft.rawRef,
     raw_payload: draft.rawPayload,
     metadata: draft.metadata,
+    created_from_source_sync_job_id: draft.sourceSyncJobId ?? null,
   };
 
   const { data, error } = await supabase.from("source_snapshots").insert(payload).select("id").single();
   if (!error) {
     return data.id as string;
+  }
+  if ((error as { code?: string }).code === "23505" && draft.sourceSyncJobId) {
+    const { data: existing, error: existingError } = await supabase.from("source_snapshots").select("id")
+      .eq("created_from_source_sync_job_id", draft.sourceSyncJobId)
+      .eq("snapshot_type", draft.snapshotType)
+      .eq("raw_ref", draft.rawRef)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing?.id) return existing.id as string;
   }
 
   const { data: retryData, error: retryError } = await supabase

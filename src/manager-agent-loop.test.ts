@@ -40,7 +40,8 @@ describe("Manager Agent Responses loop", () => {
 
   it("executes local tool calls, returns function_call_output by call_id, and continues with previous_response_id", async () => {
     const requests: unknown[] = [];
-    const toolCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const toolCalls: Array<{ name: string; args: Record<string, unknown>; callId: string }> = [];
+    const modelHeartbeats: string[] = [];
     const finalJson = JSON.stringify({
       actionPolicy: "answer_only",
       topic: "Playlist conversion",
@@ -92,13 +93,16 @@ describe("Manager Agent Responses loop", () => {
       tools: managerConversationTools,
       jsonSchema: managerConversationJsonSchema,
       fetchImpl,
-      executeTool: async (name, args) => {
-        toolCalls.push({ name, args });
+      beforeModelRequest: async () => { modelHeartbeats.push("before"); },
+      afterModelRequest: async () => { modelHeartbeats.push("after"); },
+      executeTool: async (name, args, call) => {
+        toolCalls.push({ name, args, callId: call.callId });
         return { items: [{ id: "ev-playlist", read: "High reach, conversion unproven." }] };
       },
     });
 
-    expect(toolCalls).toEqual([{ name: "query_evidence_items", args: { category: "playlist", limit: 5 } }]);
+    expect(toolCalls).toEqual([{ name: "query_evidence_items", args: { category: "playlist", limit: 5 }, callId: "call-evidence" }]);
+    expect(modelHeartbeats).toEqual(["before", "after", "before", "after"]);
     expect(requests).toHaveLength(2);
     expect(requests[1]).toMatchObject({
       previous_response_id: "resp-tool",

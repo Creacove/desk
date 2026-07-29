@@ -2,9 +2,12 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  buildDiscoveryActionKey,
   classifyDiscoveryCompletion,
+  freezeDiscoveryTargets,
   normalizeDiscoveryMemoryScope,
   readChartmetricEntityId,
+  selectFrozenRows,
 } from "../supabase/functions/_shared/manager-agent/discoveryTools";
 
 const discoveryFunctionSource = readFileSync(join(process.cwd(), "supabase", "functions", "manager-artist-discovery", "index.ts"), "utf8");
@@ -20,6 +23,37 @@ function readToolBlock(toolName: string) {
 }
 
 describe("Manager artist discovery edge function", () => {
+  it("persists one frozen discovery run and reuses its selected catalog targets", () => {
+    expect(discoveryFunctionSource).toContain('classification: "manager_artist_discovery_v1"');
+    expect(discoveryFunctionSource).toContain("loadOrCreateDiscoveryRun");
+    expect(discoveryFunctionSource).toContain("selectedMusicItemIds");
+    expect(discoveryFunctionSource).toContain("selectedMusicProjectId");
+    expect(discoveryToolsSource).toContain("selectionAlgorithmVersion");
+    expect(discoveryToolsSource).toContain("selectedAt");
+    expect(discoveryFunctionSource).toContain("loadFrozenCatalogContext");
+
+    const frozen = freezeDiscoveryTargets(
+      "setup-1",
+      [{ id: "track-a" }, { id: "track-b" }, { id: "track-c" }, { id: "track-d" }, { id: "track-e" }, { id: "track-f" }],
+      [{ id: "project-a" }, { id: "project-b" }],
+      "2026-07-29T00:00:00.000Z",
+    );
+    const changedCatalog = [{ id: "track-new" }, { id: "track-e" }, { id: "track-a" }, { id: "track-b" }];
+    expect(frozen.selectedMusicItemIds).toEqual(["track-a", "track-b", "track-c", "track-d", "track-e"]);
+    expect(frozen.selectedMusicProjectId).toBe("project-a");
+    expect(selectFrozenRows(changedCatalog, frozen.selectedMusicItemIds).map(({ id }) => id))
+      .toEqual(["track-a", "track-b", "track-e"]);
+  });
+
+  it("replays completed discovery actions and heartbeats around paid and model calls", () => {
+    expect(discoveryFunctionSource).toContain('from("manager_run_actions")');
+    expect(discoveryFunctionSource).toContain("executeReplaySafeDiscoveryAction");
+    expect(discoveryFunctionSource).toContain("result_payload");
+    expect(discoveryFunctionSource).toContain("heartbeatManagerSynthesisRun");
+    expect(discoveryFunctionSource).toContain("beforeModelRequest");
+    expect(discoveryFunctionSource).toContain("afterModelRequest");
+    expect(buildDiscoveryActionKey("tool", { b: 2, a: 1 })).toBe(buildDiscoveryActionKey("tool", { a: 1, b: 2 }));
+  });
   it("claims discovery before provider work and uses the lease token for terminal updates", () => {
     expect(discoveryFunctionSource).toContain("claimWorkspaceSetupStage");
     expect(discoveryFunctionSource).toContain("mergeWorkspaceSetupStage");
@@ -251,6 +285,8 @@ describe("Manager discovery shared tools", () => {
     expect(discoveryToolsSource).toContain("24 * 60 * 60 * 1000");
     expect(discoveryToolsSource).toContain('snapshot_type", snapshotType');
     expect(discoveryToolsSource).toContain("getCachedEvidenceItems");
+    expect(discoveryToolsSource).toContain("created_from_action_id");
+    expect(discoveryToolsSource).toContain("created_from_run_id");
 
     const cacheIndex = discoveryToolsSource.indexOf("const cached = await checkCachedSnapshot");
     const clientIndex = discoveryToolsSource.indexOf("const chartmetric = createChartmetricClient");

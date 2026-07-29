@@ -114,6 +114,7 @@ Deno.serve(async (request) => {
     );
     const rawRef = resolvedChartmetricArtistId ?? readChartmetricArtistRef(input, queuedJob, artistProfile);
     const snapshotId = await writeSourceSnapshot(authClient, input, {
+      sourceSyncJobId: jobId,
       providerId,
       sourceConnectionId,
       snapshotType: "chartmetric_artist_enrichment",
@@ -139,7 +140,7 @@ Deno.serve(async (request) => {
       subjectLabel: readArtistName(input, queuedJob, artistProfile),
       rawRef,
     });
-    await writeEvidenceItems(authClient, evidenceItems);
+    await writeEvidenceItems(authClient, jobId, evidenceItems);
 
     await updateSourceSyncJob(authClient, jobId, { status: "completed", snapshotIds: [snapshotId] });
     await writeOperatingEvent(authClient, input, {
@@ -359,6 +360,7 @@ async function writeSourceSnapshot(
   supabase: any,
   input: ArtistEnrichmentInput,
   draft: {
+    sourceSyncJobId: string;
     providerId: string;
     sourceConnectionId: string;
     snapshotType: string;
@@ -380,17 +382,35 @@ async function writeSourceSnapshot(
       raw_ref: draft.rawRef,
       raw_payload: draft.rawPayload,
       metadata: draft.metadata,
+      created_from_source_sync_job_id: draft.sourceSyncJobId,
     })
     .select("id")
     .single();
+  if (error && (error as { code?: string }).code === "23505") {
+    const existing = await supabase.from("source_snapshots").select("id")
+      .eq("created_from_source_sync_job_id", draft.sourceSyncJobId)
+      .eq("snapshot_type", draft.snapshotType)
+      .eq("raw_ref", draft.rawRef)
+      .maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return existing.data.id as string;
+  }
   if (error) throw error;
   return data.id as string;
 }
 
-async function writeEvidenceItems(supabase: any, evidenceItems: Array<Record<string, unknown>>) {
+async function writeEvidenceItems(supabase: any, sourceSyncJobId: string, evidenceItems: Array<Record<string, unknown>>) {
   if (!evidenceItems.length) return;
-  const { error } = await supabase.from("evidence_items").insert(evidenceItems);
-  if (error) throw error;
+  const rows = evidenceItems.map((item) => ({ ...item, created_from_source_sync_job_id: sourceSyncJobId }));
+  const { error } = await supabase.from("evidence_items").insert(rows);
+  if (!error) return;
+  if ((error as { code?: string }).code === "23505") {
+    const existing = await supabase.from("evidence_items").select("id")
+      .eq("created_from_source_sync_job_id", sourceSyncJobId).limit(1);
+    if (existing.error) throw existing.error;
+    if (existing.data?.length) return;
+  }
+  throw error;
 }
 
 async function updateSourceSyncJob(

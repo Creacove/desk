@@ -20,8 +20,10 @@ type ManagerAgentLoopInput = ManagerAgentRequestInput & {
   apiKey: string;
   fetchImpl?: typeof fetch;
   maxToolCalls?: number;
-  executeTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  executeTool: (name: string, args: Record<string, unknown>, call: { callId: string }) => Promise<unknown>;
   onToolEvent?: (event: ManagerAgentToolTrace) => void | Promise<void>;
+  beforeModelRequest?: () => void | Promise<void>;
+  afterModelRequest?: () => void | Promise<void>;
 };
 
 type ManagerAgentLoopResult = {
@@ -136,7 +138,9 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
   let toolCallsUsed = 0;
 
   for (let iteration = 0; iteration <= (input.maxToolCalls ?? 8); iteration += 1) {
+    await input.beforeModelRequest?.();
     const payload = await postResponses(fetchImpl, input.endpoint, input.apiKey, requestBody);
+    await input.afterModelRequest?.();
     responseId = typeof payload.id === "string" ? payload.id : responseId;
     addUsage(usageTotals, payload.usage);
 
@@ -165,7 +169,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
       await input.onToolEvent?.(publicToolEvent(started));
 
       try {
-        const result = await input.executeTool(call.name, call.args);
+        const result = await input.executeTool(call.name, call.args, { callId: call.callId });
         const completed = {
           tool: call.name,
           callId: call.callId,

@@ -50,6 +50,20 @@ describe("production reliability v1 schema", () => {
     }
   });
 
+  it("adds replay keys for discovery actions, snapshots, evidence, and memory", () => {
+    for (const column of ["action_key", "created_from_action_id", "created_from_source_sync_job_id"]) {
+      expect(migration).toContain(`add column if not exists ${column}`);
+    }
+    for (const index of [
+      "manager_run_actions_action_key_idx",
+      "source_snapshots_action_idx",
+      "source_snapshots_sync_job_scope_idx",
+      "memory_entries_action_idx",
+      "evidence_items_action_fact_idx",
+      "evidence_items_sync_job_fact_idx",
+    ]) expect(migration).toContain(index);
+  });
+
   it("adds bounded recovery and active-scope uniqueness indexes", () => {
     expect(migration).toContain("manager_synthesis_runs_recovery_idx");
     expect(migration).toContain("source_sync_jobs_recovery_idx");
@@ -64,7 +78,7 @@ describe("production reliability v1 schema", () => {
 
   it("defines locked service-only claim, heartbeat, merge, and reap RPCs", () => {
     for (const fn of [
-      "claim_manager_synthesis_run", "claim_source_sync_job", "claim_workspace_setup_stage",
+      "claim_manager_synthesis_run", "finish_manager_synthesis_run", "claim_source_sync_job", "claim_workspace_setup_stage",
       "heartbeat_manager_synthesis_run", "heartbeat_source_sync_job", "merge_workspace_setup_stage",
       "reap_expired_workflows",
     ]) {

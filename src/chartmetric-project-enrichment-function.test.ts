@@ -69,6 +69,8 @@ describe("Chartmetric project enrichment edge function", () => {
     expect(functionSource).toContain("chartmetric_project_enrichment_completed");
     expect(functionSource).toContain("chartmetric_project_enrichment_failed");
     expect(functionSource).not.toContain('.from("music_projects").update');
+    expect(functionSource).toContain("created_from_source_sync_job_id");
+    expect(functionSource).toContain('code?: string }).code === "23505"');
   });
 
   it("records durable paid Chartmetric request usage for resolved and unresolved project enrichment", () => {
@@ -98,7 +100,7 @@ describe("Chartmetric project enrichment edge function", () => {
   });
 
   it("finishes after normalized evidence without invoking OpenAI or Manager Read generation", () => {
-    const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, evidenceItems)");
+    const evidenceIndex = functionSource.indexOf("await writeEvidenceItems(authClient, jobId, evidenceItems)");
     expect(evidenceIndex).toBeGreaterThan(-1);
     expect(functionSource).not.toContain("invokeManagerReadGeneration");
     expect(functionSource).not.toContain("generate-music-summary");

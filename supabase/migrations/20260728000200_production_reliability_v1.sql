@@ -47,6 +47,21 @@ update public.workspace_setup_runs
 set workflow_version = 'workspace_setup_v1'
 where workflow_version is null and status = 'queued';
 
+alter table public.manager_run_actions
+  add column if not exists action_key text;
+
+alter table public.source_snapshots
+  add column if not exists created_from_run_id uuid references public.manager_synthesis_runs(id) on delete set null,
+  add column if not exists created_from_action_id uuid references public.manager_run_actions(id) on delete set null,
+  add column if not exists created_from_source_sync_job_id uuid references public.source_sync_jobs(id) on delete set null;
+
+alter table public.evidence_items
+  add column if not exists created_from_action_id uuid references public.manager_run_actions(id) on delete set null,
+  add column if not exists created_from_source_sync_job_id uuid references public.source_sync_jobs(id) on delete set null;
+
+alter table public.memory_entries
+  add column if not exists created_from_action_id uuid references public.manager_run_actions(id) on delete set null;
+
 create index if not exists manager_synthesis_runs_recovery_idx
   on public.manager_synthesis_runs (status, available_at, lease_expires_at)
   where workflow_version is not null and status in ('queued', 'running');
@@ -87,8 +102,46 @@ create unique index if not exists source_sync_jobs_idempotency_idx
   on public.source_sync_jobs (account_id, artist_workspace_id, idempotency_key)
   where workflow_version is not null and idempotency_key is not null;
 
+create unique index if not exists manager_run_actions_action_key_idx
+  on public.manager_run_actions (manager_synthesis_run_id, action_key)
+  where action_key is not null;
+
+create unique index if not exists source_snapshots_action_idx
+  on public.source_snapshots (created_from_action_id)
+  where created_from_action_id is not null;
+
+create unique index if not exists source_snapshots_sync_job_scope_idx
+  on public.source_snapshots (created_from_source_sync_job_id, snapshot_type, raw_ref)
+  where created_from_source_sync_job_id is not null;
+
+create unique index if not exists memory_entries_action_idx
+  on public.memory_entries (created_from_action_id)
+  where created_from_action_id is not null;
+
+create unique index if not exists evidence_items_action_fact_idx
+  on public.evidence_items (
+    created_from_action_id,
+    evidence_type,
+    coalesce(subject_type, ''),
+    coalesce(subject_id::text, ''),
+    coalesce(metric_name, ''),
+    coalesce(raw_ref, '')
+  )
+  where created_from_action_id is not null;
+
+create unique index if not exists evidence_items_sync_job_fact_idx
+  on public.evidence_items (
+    created_from_source_sync_job_id,
+    evidence_type,
+    coalesce(subject_type, ''),
+    coalesce(subject_id::text, ''),
+    coalesce(metric_name, ''),
+    coalesce(raw_ref, '')
+  )
+  where created_from_source_sync_job_id is not null;
+
 create or replace function public.claim_manager_synthesis_run(run_id uuid, lease_seconds integer)
-returns uuid
+returns jsonb
 language plpgsql
 security definer
 set search_path = public
@@ -119,7 +172,44 @@ begin
     );
 
   if not found then return null; end if;
-  return claimed_token;
+  return jsonb_build_object(
+    'token', claimed_token,
+    'expires_at', now() + make_interval(secs => lease_seconds),
+    'attempt', (select attempt_count from public.manager_synthesis_runs where id = run_id)
+  );
+end;
+$$;
+
+create or replace function public.finish_manager_synthesis_run(
+  run_id uuid,
+  current_lease_token uuid,
+  next_status public.run_status,
+  result_steps jsonb default '[]'::jsonb,
+  result_limitations text[] default '{}',
+  public_error text default null
+)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if next_status not in ('completed', 'completed_with_limits', 'failed') then return false; end if;
+  update public.manager_synthesis_runs as target
+  set status = next_status,
+      steps_payload = result_steps,
+      limitations = result_limitations,
+      error = case when next_status = 'failed' then public_error else null end,
+      completed_at = now(),
+      lease_token = null,
+      lease_expires_at = null,
+      heartbeat_at = now()
+  where target.id = run_id
+    and target.workflow_version is not null
+    and target.status = 'running'
+    and target.lease_token = current_lease_token
+    and target.lease_expires_at > now();
+  return found;
 end;
 $$;
 
@@ -487,6 +577,8 @@ $$;
 
 revoke all on function public.claim_manager_synthesis_run(uuid, integer) from public, anon, authenticated;
 grant execute on function public.claim_manager_synthesis_run(uuid, integer) to service_role;
+revoke all on function public.finish_manager_synthesis_run(uuid, uuid, public.run_status, jsonb, text[], text) from public, anon, authenticated;
+grant execute on function public.finish_manager_synthesis_run(uuid, uuid, public.run_status, jsonb, text[], text) to service_role;
 revoke all on function public.claim_source_sync_job(uuid, integer) from public, anon, authenticated;
 grant execute on function public.claim_source_sync_job(uuid, integer) to service_role;
 revoke all on function public.claim_workspace_setup_stage(uuid, text, text, integer) from public, anon, authenticated;

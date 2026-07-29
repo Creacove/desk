@@ -64,6 +64,54 @@ export async function claimSourceSyncJob(
   return readLease(data);
 }
 
+export async function claimManagerSynthesisRun(
+  client: RpcClient,
+  input: { runId: string; leaseSeconds?: number },
+): Promise<DurableLease | null> {
+  const { data, error } = await client.rpc("claim_manager_synthesis_run", {
+    run_id: input.runId,
+    lease_seconds: input.leaseSeconds ?? DEFAULT_LEASE_SECONDS,
+  });
+  if (error) throw error;
+  return readLease(data);
+}
+
+export async function heartbeatManagerSynthesisRun(
+  client: RpcClient,
+  input: { runId: string; leaseToken: string; leaseSeconds?: number },
+): Promise<boolean> {
+  const { data, error } = await client.rpc("heartbeat_manager_synthesis_run", {
+    run_id: input.runId,
+    current_lease_token: input.leaseToken,
+    lease_seconds: input.leaseSeconds ?? DEFAULT_LEASE_SECONDS,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
+export async function finishManagerSynthesisRun(
+  client: RpcClient,
+  input: {
+    runId: string;
+    leaseToken: string;
+    status: "completed" | "completed_with_limits" | "failed";
+    steps?: unknown[];
+    limitations?: string[];
+    error?: string;
+  },
+): Promise<boolean> {
+  const { data, error } = await client.rpc("finish_manager_synthesis_run", {
+    run_id: input.runId,
+    current_lease_token: input.leaseToken,
+    next_status: input.status,
+    result_steps: input.steps ?? [],
+    result_limitations: input.limitations ?? [],
+    public_error: input.error ?? null,
+  });
+  if (error) throw error;
+  return data === true;
+}
+
 export async function heartbeatSourceSyncJob(
   client: RpcClient,
   input: { jobId: string; leaseToken: string; leaseSeconds?: number },

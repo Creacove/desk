@@ -141,6 +141,7 @@ export type SourceSnapshotDraft = {
   rawRef: string;
   rawPayload: unknown;
   metadata: Record<string, unknown>;
+  sourceSyncJobId?: string;
 };
 
 export type MusicItemDraft = {
@@ -612,6 +613,7 @@ async function writeSnapshot({
       snapshot_type: snapshotType,
       provider: "spotify",
     },
+    sourceSyncJobId: input.sourceSyncJobId,
   });
 }
 
