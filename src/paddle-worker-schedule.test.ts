@@ -12,4 +12,14 @@ describe("Paddle webhook recovery schedule", () => {
     expect(sql).toContain("/functions/v1/paddle-process-webhooks");
     expect(sql).not.toMatch(/x-billing-worker-secret'\s*,\s*'[^']{20,}'/);
   });
+
+  it("does not invoke the billing worker when no retryable Paddle event exists", () => {
+    const sql = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000500_schedule_workflow_recovery.sql"), "utf8");
+    expect(sql).toContain("billing-webhook-recovery");
+    expect(sql).toContain("billing_webhook_events_queue_idx");
+    expect(sql).toContain("processing_status in ('received', 'failed')");
+    expect(sql).toContain("next_attempt_at");
+    expect(sql).toContain("processing_status = 'processing'");
+    expect(sql).toContain("claimed_at < now() - interval '5 minutes'");
+  });
 });

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(join(process.cwd(), "supabase", "functions", "workflow-recovery", "index.ts"), "utf8");
 const config = readFileSync(join(process.cwd(), "supabase", "config.toml"), "utf8");
 const migration = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000200_production_reliability_v1.sql"), "utf8");
+const schedule = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000500_schedule_workflow_recovery.sql"), "utf8");
 
 describe("workflow recovery worker", () => {
   it("is secret-authenticated, observation-first, and bounded to four candidates", () => {
@@ -49,5 +50,19 @@ describe("workflow recovery worker", () => {
     expect(source).toContain("Math.min(300");
     expect(migration).toContain("workflow_retry_at");
     expect(migration).toContain("Maximum recovery attempts exhausted");
+  });
+
+  it("schedules observation only when indexed eligible work exists", () => {
+    expect(schedule).toContain("workflow-recovery-observer");
+    expect(schedule).toContain("'* * * * *'");
+    expect(schedule).toContain("workflow_worker_secret");
+    expect(schedule).toContain("cron.unschedule");
+    expect(schedule).toContain("exists (");
+    expect(schedule).toContain("workflow_version is not null");
+    expect(schedule).toContain("available_at <= now()");
+    expect(schedule).toContain("lease_expires_at <= now()");
+    expect(schedule).toContain("/functions/v1/workflow-recovery");
+    expect(schedule).toContain("jsonb_build_object('mode', 'observe')");
+    expect(schedule).not.toMatch(/x-workflow-worker-secret'\s*,\s*'[^']{20,}'/);
   });
 });
