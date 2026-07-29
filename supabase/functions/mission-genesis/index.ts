@@ -15,6 +15,11 @@ import {
 } from "../_shared/mission-patterns/missionPatternRegistry.ts";
 import { persistMissionGenesisGraphPlan } from "../_shared/missionGraphPersistence.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import {
+  claimManagerSynthesisRun,
+  finishManagerSynthesisRun,
+  heartbeatManagerSynthesisRun,
+} from "../_shared/durableWorkflow.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -50,7 +55,10 @@ type MissionGenesisInput = {
   mode: MissionGenesisMode;
   candidateMissionId?: string;
   answers?: Array<{ questionKey: string; answer: string }>;
+  requestKey?: string;
 };
+
+const MISSION_GENESIS_LEASE_SECONDS = 900;
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
@@ -59,6 +67,8 @@ Deno.serve(async (request) => {
   let input: MissionGenesisInput | null = null;
   let runId: string | null = null;
   let usageId: string | null = null;
+  let leaseToken: string | null = null;
+  let workflowDb: any = null;
 
   try {
     input = (await request.json()) as MissionGenesisInput;
@@ -79,6 +89,7 @@ Deno.serve(async (request) => {
     if (!membership) return json({ error: "Forbidden." }, 403);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
+    workflowDb = db;
     await assertActiveWorkspaceEntitlement(db, input);
     await assertWorkspace(db, input);
 
@@ -146,11 +157,22 @@ Deno.serve(async (request) => {
     let priorCandidate: Record<string, unknown> | null = null;
     if (input.mode === "continuation") {
       priorCandidate = await loadCandidate(db, input);
-      contextAnswers = await persistContextAnswers(db, input);
+      contextAnswers = await prepareContextAnswers(db, input);
     }
 
+    const identity = await buildMissionGenesisRunIdentity(input, contextAnswers);
+    const run = await createManagerRun(db, input, identity, contextAnswers, priorCandidate);
+    runId = run.runId;
+    if (!run.created) return json({ status: "processing", runId }, 202);
+
+    const lease = await claimManagerSynthesisRun(db as any, { runId, leaseSeconds: MISSION_GENESIS_LEASE_SECONDS });
+    if (!lease) return json({ status: "processing", runId }, 202);
+    leaseToken = lease.token;
+    if (input.mode === "continuation") {
+      await persistContextAnswers(db, input, runId, contextAnswers);
+    }
     const packet = await buildArtistOperatingPacket(db, input);
-    runId = await createManagerRun(db, input, packet, contextAnswers, priorCandidate);
+    await persistMissionGenesisRunAudit(db, input, runId, lease.token, packet, contextAnswers, priorCandidate);
     usageId = await createUsageEvent(db, input, runId);
 
     scheduleMissionGenesisBackgroundRun(
@@ -159,6 +181,7 @@ Deno.serve(async (request) => {
         input,
         runId,
         usageId,
+        leaseToken: lease.token,
         packet,
         contextAnswers,
         priorCandidate,
@@ -168,8 +191,16 @@ Deno.serve(async (request) => {
     return json({ status: "processing", runId }, 202);
   } catch (error) {
     const message = describeError(error, "Mission Genesis failed.");
-    if (runId) await markRunFailedSafe(runId, message);
-    if (usageId) await markUsageFailedSafe(usageId, message);
+    const failed = runId && leaseToken && workflowDb
+      ? await finishManagerSynthesisRun(workflowDb, {
+        runId,
+        leaseToken,
+        status: "failed",
+        steps: [{ step: "request_setup", status: "failed" }],
+        error: message,
+      }).catch(() => false)
+      : false;
+    if (failed && usageId) await markUsageFailedSafe(usageId, message);
     return json({ error: message }, 500);
   }
 });
@@ -189,6 +220,7 @@ async function completeMissionGenesisRun({
   input,
   runId,
   usageId,
+  leaseToken,
   packet,
   contextAnswers,
   priorCandidate,
@@ -197,19 +229,26 @@ async function completeMissionGenesisRun({
   input: MissionGenesisInput;
   runId: string;
   usageId: string;
+  leaseToken: string;
   packet: unknown;
   contextAnswers: Array<{ questionKey: string; answer: string }>;
   priorCandidate: Record<string, unknown> | null;
 }) {
   try {
+    await heartbeatMissionGenesisLease(db, runId, leaseToken);
     const { output, usage, requestCount } = await callOpenAIMissionGenesis({ packet, contextAnswers, priorCandidate }, input.mode);
-    const persisted = await persistDecision(db, input, runId, output);
-    await completeManagerRun(db, runId, output, persisted.missionId);
-    await completeUsageEvent(db, usageId, usage, requestCount);
+    await heartbeatMissionGenesisLease(db, runId, leaseToken);
+    await finalizeMissionGenesis(db, input, runId, leaseToken, usageId, output, usage, requestCount);
   } catch (error) {
     const message = describeError(error, "Mission Genesis failed.");
-    await markRunFailedSafe(runId, message);
-    await markUsageFailedSafe(usageId, message);
+    const failed = await finishManagerSynthesisRun(db, {
+      runId,
+      leaseToken,
+      status: "failed",
+      steps: [{ step: "packet_built", status: "completed" }, { step: "openai_synthesis", status: "failed" }],
+      error: message,
+    }).catch(() => false);
+    if (failed) await markUsageFailedSafe(usageId, message);
   }
 }
 
@@ -219,6 +258,9 @@ function validateInput(input: MissionGenesisInput) {
   if (input.mode === "continuation") {
     if (!input.candidateMissionId) throw new Error("Mission Genesis continuation requires a candidate mission.");
     if (!Array.isArray(input.answers) || input.answers.length < 2) throw new Error("Mission Genesis continuation requires the complete context answer batch.");
+  }
+  if (input.requestKey !== undefined && (!input.requestKey.trim() || input.requestKey.length > 128)) {
+    throw new Error("Mission Genesis request key is invalid.");
   }
 }
 
@@ -248,7 +290,7 @@ async function loadCandidate(db: any, input: MissionGenesisInput) {
   return data as Record<string, unknown>;
 }
 
-async function persistContextAnswers(db: any, input: MissionGenesisInput) {
+async function prepareContextAnswers(db: any, input: MissionGenesisInput) {
   const answers = (input.answers ?? []).map((item) => ({ questionKey: item.questionKey.trim(), answer: item.answer.trim() }));
   if (answers.some((item) => !item.questionKey || !item.answer)) throw new Error("Every Mission Genesis context question must be answered.");
 
@@ -266,11 +308,29 @@ async function persistContextAnswers(db: any, input: MissionGenesisInput) {
     throw new Error("Mission Genesis did not receive the complete context answer batch.");
   }
 
-  for (const question of questions) {
+  return questions.map((question) => ({ questionKey: question.question_key, answer: answerMap.get(question.question_key)! }));
+}
+
+async function persistContextAnswers(
+  db: any,
+  input: MissionGenesisInput,
+  runId: string,
+  answers: Array<{ questionKey: string; answer: string }>,
+) {
+  const prefix = questionPrefix(input.candidateMissionId!);
+  const { data: questionRows, error: questionError } = await db
+    .from("manager_context_questions")
+    .select("id,question_key,question")
+    .like("question_key", `${prefix}%`)
+    .eq("status", "active");
+  if (questionError) throw questionError;
+  const answerMap = new Map(answers.map((item) => [item.questionKey, item.answer]));
+
+  for (const question of questionRows ?? []) {
     const answer = answerMap.get(question.question_key)!;
     const { data: memory, error: memoryError } = await db
       .from("memory_entries")
-      .insert({
+      .upsert({
         account_id: input.accountId,
         artist_workspace_id: input.artistWorkspaceId,
         artist_id: input.artistId,
@@ -279,14 +339,23 @@ async function persistContextAnswers(db: any, input: MissionGenesisInput) {
         kind: memoryKind(question.question),
         content: `${question.question} ${answer}`,
         source_type: "manager_context_answer",
+        source_id: question.id,
         confidence: "high",
         reason: "Saved because this user-controlled context materially affects Mission Genesis decisions.",
-      })
+        created_from_run_id: runId,
+      }, { onConflict: "created_from_run_id,source_type,source_id" })
       .select("id")
       .single();
     if (memoryError) throw memoryError;
 
-    const { error: answerError } = await db.from("manager_context_answers").insert({
+    const { data: existingAnswer, error: existingAnswerError } = await db.from("manager_context_answers")
+      .select("id")
+      .eq("question_id", question.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingAnswerError) throw existingAnswerError;
+    const answerWrite = {
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
@@ -294,11 +363,12 @@ async function persistContextAnswers(db: any, input: MissionGenesisInput) {
       answer,
       source: "typed",
       memory_entry_id: memory.id,
-    });
+    };
+    const { error: answerError } = existingAnswer?.id
+      ? await db.from("manager_context_answers").update(answerWrite).eq("id", existingAnswer.id)
+      : await db.from("manager_context_answers").insert(answerWrite);
     if (answerError) throw answerError;
   }
-
-  return questions.map((question) => ({ questionKey: question.question_key, answer: answerMap.get(question.question_key)! }));
 }
 
 async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
@@ -545,7 +615,34 @@ function mergeOpenAIUsage(first: Record<string, unknown>, second: Record<string,
   };
 }
 
-async function createManagerRun(db: any, input: MissionGenesisInput, packet: unknown, contextAnswers: unknown[], priorCandidate: unknown) {
+async function buildMissionGenesisRunIdentity(
+  input: MissionGenesisInput,
+  contextAnswers: Array<{ questionKey: string; answer: string }>,
+) {
+  if (input.mode === "continuation") {
+    const answerHash = await hashMissionGenesisAnswerBatch(contextAnswers);
+    const scopeKey = `${input.candidateMissionId}:${answerHash}`;
+    return { scopeKey, idempotencyKey: `mission-genesis:continuation:${scopeKey}` };
+  }
+  const requestKey = input.requestKey?.trim() || crypto.randomUUID();
+  return { scopeKey: `initial:${requestKey}`, idempotencyKey: `mission-genesis:initial:${requestKey}` };
+}
+
+async function hashMissionGenesisAnswerBatch(answers: Array<{ questionKey: string; answer: string }>) {
+  const canonical = [...answers]
+    .sort((left, right) => left.questionKey.localeCompare(right.questionKey))
+    .map(({ questionKey, answer }) => [questionKey.trim(), answer.trim()]);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(canonical)));
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function createManagerRun(
+  db: any,
+  input: MissionGenesisInput,
+  identity: { scopeKey: string; idempotencyKey: string },
+  contextAnswers: unknown[],
+  priorCandidate: unknown,
+) {
   const { data, error } = await db
     .from("manager_synthesis_runs")
     .insert({
@@ -554,19 +651,54 @@ async function createManagerRun(db: any, input: MissionGenesisInput, packet: unk
       artist_id: input.artistId,
       trigger_type: "mission",
       mission_id: input.candidateMissionId ?? null,
-      status: "running",
-      classification: "mission_genesis_v2",
+      status: "queued",
+      classification: input.mode === "continuation" ? "mission_genesis_continue_v2" : "mission_genesis_v2",
       confidence: "unknown",
-      context_payload: buildMissionGenesisRunAudit(input, packet, contextAnswers, priorCandidate),
-      steps_payload: [{ step: "packet_built", status: "completed" }, { step: "openai_synthesis", status: "running" }],
+      context_payload: {
+        mode: input.mode,
+        candidateMissionId: input.candidateMissionId ?? null,
+        contextAnswers,
+        priorCandidateId: isRecord(priorCandidate) ? priorCandidate.id ?? null : null,
+      },
+      steps_payload: [{ step: "queued", status: "completed" }],
       action_plan: [],
       limitations: [],
-      started_at: new Date().toISOString(),
+      workflow_version: "mission-genesis-v2",
+      input_refs: input.candidateMissionId ? [{ type: "mission", id: input.candidateMissionId }] : [{ type: "artist", id: input.artistId }],
+      scope_key: identity.scopeKey,
+      idempotency_key: identity.idempotencyKey,
     })
-    .select("id")
+    .select("id,status")
     .single();
+  if (!error && data?.id) return { runId: data.id as string, status: data.status as string, created: true };
+  if (error?.code === "23505") {
+    const { data: existing, error: existingError } = await db.from("manager_synthesis_runs")
+      .select("id,status")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("idempotency_key", identity.idempotencyKey)
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing?.id) return { runId: existing.id as string, status: existing.status as string, created: false };
+  }
+  throw error ?? new Error("Mission Genesis run could not be queued.");
+}
+
+async function persistMissionGenesisRunAudit(
+  db: any,
+  input: MissionGenesisInput,
+  runId: string,
+  leaseToken: string,
+  packet: unknown,
+  contextAnswers: unknown[],
+  priorCandidate: unknown,
+) {
+  const { data, error } = await db.from("manager_synthesis_runs").update({
+    context_payload: buildMissionGenesisRunAudit(input, packet, contextAnswers, priorCandidate),
+    steps_payload: [{ step: "packet_built", status: "completed" }, { step: "openai_synthesis", status: "running" }],
+  }).eq("id", runId).eq("lease_token", leaseToken).gt("lease_expires_at", new Date().toISOString()).select("id").maybeSingle();
   if (error) throw error;
-  return data.id as string;
+  if (!data?.id) throw new Error("Mission Genesis lease is no longer active.");
 }
 
 function buildMissionGenesisRunAudit(input: MissionGenesisInput, packet: unknown, contextAnswers: unknown[], priorCandidate: unknown) {
@@ -620,8 +752,52 @@ async function createUsageEvent(db: any, input: MissionGenesisInput, runId: stri
     })
     .select("id")
     .single();
+  if (error?.code === "23505") {
+    const { data: existing, error: existingError } = await db.from("ai_run_usage_events")
+      .select("id")
+      .eq("manager_synthesis_run_id", runId)
+      .in("operation_key", ["mission_genesis_initial_v2", "mission_genesis_continue_v2"])
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing?.id) return existing.id as string;
+  }
   if (error) throw error;
   return data.id as string;
+}
+
+async function heartbeatMissionGenesisLease(db: any, runId: string, leaseToken: string) {
+  const active = await heartbeatManagerSynthesisRun(db, {
+    runId,
+    leaseToken,
+    leaseSeconds: MISSION_GENESIS_LEASE_SECONDS,
+  });
+  if (!active) throw new Error("Mission Genesis lease is no longer active.");
+}
+
+async function finalizeMissionGenesis(
+  db: any,
+  input: MissionGenesisInput,
+  runId: string,
+  leaseToken: string,
+  usageId: string,
+  output: MissionGenesisOutput,
+  usage: Record<string, unknown>,
+  requestCount: number,
+) {
+  const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  const { error } = await db.rpc("finalize_mission_genesis_v2", {
+    run_id: runId,
+    current_lease_token: leaseToken,
+    usage_id: usageId,
+    result_output: output,
+    actual_provider_request_count: requestCount,
+    actual_input_tokens: numberOrNull(usage.input_tokens) ?? 0,
+    actual_cached_input_tokens: numberOrNull(inputDetails.cached_tokens) ?? 0,
+    actual_output_tokens: numberOrNull(usage.output_tokens) ?? 0,
+    actual_reasoning_tokens: numberOrNull(outputDetails.reasoning_tokens) ?? 0,
+  });
+  if (error) throw error;
 }
 
 async function persistDecision(db: any, input: MissionGenesisInput, runId: string, output: MissionGenesisOutput) {

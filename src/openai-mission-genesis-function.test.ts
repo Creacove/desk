@@ -10,6 +10,9 @@ import {
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "mission-genesis", "index.ts"), "utf8");
 const graphPersistenceSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "missionGraphPersistence.ts"), "utf8");
+const finalizerMigration = readFileSync(join(
+  process.cwd(), "supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql",
+), "utf8");
 const serviceRoleGrantMigrationPath = join(
   process.cwd(),
   "supabase",
@@ -270,6 +273,30 @@ describe("OpenAI Mission Genesis", () => {
     expect(functionSource).toContain('status: "processing"');
     expect(functionSource).toContain("runId");
     expect(functionSource).toContain("202");
+  });
+
+  it("claims an idempotent run before continuation answers or memories are written", () => {
+    expect(functionSource).toContain("requestKey");
+    expect(functionSource).toContain("hashMissionGenesisAnswerBatch");
+    expect(functionSource).toContain('workflow_version: "mission-genesis-v2"');
+    expect(functionSource).toContain("claimManagerSynthesisRun");
+    expect(functionSource.indexOf("claimManagerSynthesisRun")).toBeLessThan(functionSource.indexOf("persistContextAnswers"));
+    expect(functionSource).toContain("mission_genesis_continue_v2");
+    expect(functionSource).toContain("idempotency_key");
+  });
+
+  it("finishes the validated mission graph through one lease-owned replay-safe transaction", () => {
+    expect(functionSource).toContain('.rpc("finalize_mission_genesis_v2"');
+    expect(functionSource).not.toContain("await persistDecision(");
+    expect(finalizerMigration).toContain("finalize_mission_genesis_v2");
+    expect(finalizerMigration).toContain("run_row.lease_token is distinct from current_lease_token");
+    expect(finalizerMigration).toContain("Conflicting Mission Genesis finalizer replay");
+    for (const table of [
+      "manager_run_actions", "missions", "mission_plan_versions", "checkpoints", "tasks", "task_steps",
+      "permission_requests", "manager_context_questions", "operating_events", "ai_run_usage_events",
+    ]) expect(finalizerMigration).toContain(`public.${table}`);
+    expect(finalizerMigration).toContain("action_key = 'mission-genesis-result'");
+    expect(finalizerMigration).toContain("to service_role");
   });
 
   it("loads the latest Manager Intelligence packet as the strategic source for mission generation", () => {

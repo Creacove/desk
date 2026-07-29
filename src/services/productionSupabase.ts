@@ -31,6 +31,7 @@ import type {
   TodayBriefViewModel,
 } from "../types/cleanProduction";
 import { consumeManagerConversationEventStream } from "./managerConversationStream";
+import { createActiveRunFallback } from "./activeRunFallback";
 import type {
   ProductionAuthAdapter,
   ProductionBillingCheckoutPreview,
@@ -60,8 +61,6 @@ const PUBLIC_SPOTIFY_CATALOG_LIMITATION =
 const MUSIC_UPLOADS_BUCKET = "music-uploads";
 const WORKSPACE_DOCUMENTS_BUCKET = "workspace-documents";
 const RESUMABLE_UPLOAD_THRESHOLD_BYTES = 6 * 1024 * 1024;
-const MISSION_GENESIS_POLL_INTERVAL_MS = 1500;
-const MISSION_GENESIS_POLL_ATTEMPTS = 240;
 
 function supabaseFunctionUrl(functionName: string) {
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -2327,6 +2326,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             artistWorkspaceId: workspace.artistWorkspaceId,
             artistId: workspace.artistId,
             mode: "initial",
+            requestKey: createClientRequestId(),
           },
         });
         if (error) await throwFunctionInvokeError(error, "Mission Genesis failed.");
@@ -2862,7 +2862,7 @@ async function waitForMissionGenesisRun(
   workspace: ProductionWorkspace,
   runId: string,
 ): Promise<MissionGenesisResultViewModel> {
-  for (let attempt = 0; attempt < MISSION_GENESIS_POLL_ATTEMPTS; attempt += 1) {
+  const readCompletion = async () => {
     const { data: run, error: runError } = await client
       .from("manager_synthesis_runs")
       .select("id,status,error")
@@ -2873,17 +2873,73 @@ async function waitForMissionGenesisRun(
     if (runError) throw runError;
 
     const runRow = isPlainRecord(run) ? run : null;
-    if (runRow?.status === "failed") {
-      throw new Error(readConversationString(runRow.error, "Mission Genesis failed."));
-    }
-
     const result = await loadPersistedMissionGenesisResult(client, runId);
-    if (result) return result;
+    if (result) return { state: "completed" as const, result };
+    if (runRow?.status === "failed") {
+      return { state: "failed" as const, error: readConversationString(runRow.error, "Mission Genesis failed.") };
+    }
+    return { state: "active" as const };
+  };
 
-    await sleep(MISSION_GENESIS_POLL_INTERVAL_MS);
-  }
+  const immediate = await readCompletion();
+  if (immediate.state === "completed") return immediate.result;
+  if (immediate.state === "failed") throw new Error(immediate.error);
 
-  throw new Error("Mission Genesis is still processing. Try again in a moment.");
+  return new Promise<MissionGenesisResultViewModel>((resolve, reject) => {
+    let settled = false;
+    let channel: ReturnType<SupabaseClient["channel"]> | null = null;
+    let resumeFallback: (() => void) | null = null;
+    const cleanup = () => {
+      fallback.stop();
+      if (channel && typeof client.removeChannel === "function") void client.removeChannel(channel);
+      channel = null;
+      if (resumeFallback && typeof document !== "undefined") document.removeEventListener("visibilitychange", resumeFallback);
+      if (resumeFallback && typeof window !== "undefined") window.removeEventListener("online", resumeFallback);
+    };
+    const settle = (result: MissionGenesisResultViewModel | Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (result instanceof Error) reject(result); else resolve(result);
+    };
+    const check = async () => {
+      const completion = await readCompletion();
+      if (completion.state === "completed") {
+        settle(completion.result);
+        return "terminal" as const;
+      }
+      if (completion.state === "failed") {
+        settle(new Error(completion.error));
+        return "terminal" as const;
+      }
+      return "active" as const;
+    };
+    const fallback = createActiveRunFallback({
+      delaysMs: [15_000, 30_000, 60_000],
+      deadlineMs: 5 * 60_000,
+      isVisible: () => typeof document === "undefined" || document.visibilityState !== "hidden",
+      isOnline: () => typeof navigator === "undefined" || navigator.onLine !== false,
+      check,
+      onTerminal: () => undefined,
+      onError: (error) => settle(error instanceof Error ? error : new Error("Mission Genesis status check failed.")),
+      onDeadline: () => settle(new Error("Mission Genesis is still processing. It will appear in the workspace when ready.")),
+    });
+
+    if (typeof client.channel === "function") {
+      channel = client.channel(`mission-genesis:${runId}`)
+        .on("postgres_changes", {
+          event: "*",
+          schema: "public",
+          table: "operating_events",
+          filter: `manager_synthesis_run_id=eq.${runId}`,
+        }, () => { void check(); })
+        .subscribe();
+    }
+    resumeFallback = () => fallback.resume();
+    if (typeof document !== "undefined") document.addEventListener("visibilitychange", resumeFallback);
+    if (typeof window !== "undefined") window.addEventListener("online", resumeFallback);
+    fallback.start();
+  });
 }
 
 async function loadPersistedMissionGenesisResult(client: SupabaseClient, runId: string) {

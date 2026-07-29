@@ -1872,6 +1872,7 @@ describe("production Supabase services", () => {
           artistWorkspaceId: workspace.artistWorkspaceId,
           artistId: workspace.artistId,
           mode: "initial",
+          requestKey: expect.any(String),
         },
       },
     ]);
@@ -2018,7 +2019,11 @@ describe("production Supabase services", () => {
     expect(missions[1].checkpoints[0]).toMatchObject({ title: "Feature leverage quality" });
   });
 
-  it("polls a background Mission Genesis run until the persisted action result is ready", async () => {
+  it("resolves a background Mission Genesis run without the old fixed polling loop", async () => {
+    expect(productionSupabaseSource).not.toContain("MISSION_GENESIS_POLL_INTERVAL_MS");
+    expect(productionSupabaseSource).not.toContain("MISSION_GENESIS_POLL_ATTEMPTS");
+    expect(productionSupabaseSource).toContain("createActiveRunFallback");
+    expect(productionSupabaseSource).toContain("postgres_changes");
     const tables: Record<string, Array<Record<string, unknown>>> = {
       manager_synthesis_runs: [
         {

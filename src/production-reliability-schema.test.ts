@@ -16,6 +16,15 @@ const finalizerMigration = readFileSync(join(
 ), "utf8").toLowerCase();
 
 describe("production reliability v1 schema", () => {
+  it("defines replay-safe Mission Genesis identity, answer, usage, and graph finalization", () => {
+    expect(finalizerMigration).toContain("finalize_mission_genesis_v2");
+    expect(finalizerMigration).toContain("memory_entries_mission_genesis_answer_unique_idx");
+    expect(finalizerMigration).toContain("ai_run_usage_events_mission_genesis_unique_idx");
+    expect(finalizerMigration).toContain("manager_run_actions_mission_genesis_result_unique_idx");
+    expect(finalizerMigration).toContain("for update");
+    expect(finalizerMigration).toContain("replayed");
+    expect(finalizerMigration).toContain("conflicting mission genesis finalizer replay");
+  });
   it("defines an atomic Today’s Brief finalizer and run-keyed staging constraints", () => {
     expect(finalizerMigration).toContain("finalize_todays_brief_v1");
     expect(finalizerMigration).toContain("manager_intelligence_packets_run_unique_idx");
