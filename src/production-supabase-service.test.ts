@@ -538,6 +538,7 @@ describe("production Supabase services", () => {
           artistId: "artist-1",
           trigger: "manual",
           generationMode: "operating",
+          requestId: expect.any(String),
         },
       },
     ]);
@@ -598,6 +599,7 @@ describe("production Supabase services", () => {
         artistId: "artist-1",
         trigger: "setup",
         generationMode: "setup-map",
+        requestId: expect.any(String),
       },
     });
   });
@@ -1095,6 +1097,17 @@ describe("production Supabase services", () => {
     expect(invoked).toEqual(["generate-music-summary"]);
     expect(result.managerReadRunId).toBe("run-1");
     expect(result.managerReadStatus).toBe("running");
+  });
+
+  it("returns a durable processing handle without polling when Today's Brief continues in the background", async () => {
+    const client = createMutableSupabaseClient(
+      { source_sync_jobs: [], operating_events: [], manager_synthesis_runs: [] },
+      { invoke: async () => ({ data: { status: "processing", runId: "brief-run-processing" }, error: null }) },
+    );
+
+    const result = await createSupabaseProductionRepositories(client, workspace).desk.generateTodaysBrief();
+
+    expect(result).toEqual({ status: "processing", runId: "brief-run-processing", setupMusicReadTargets: [] });
   });
 
   it("loads a bounded Music list without detail payloads or full Manager Read renders", async () => {

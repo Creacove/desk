@@ -1305,6 +1305,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             artistId: workspace.artistId,
             trigger: mode === "setup-map" ? "setup" : "manual",
             generationMode: mode,
+            requestId: createClientRequestId(),
           },
         });
 
@@ -1312,7 +1313,14 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           await throwFunctionInvokeError(error, "Today's Brief generation failed.");
         }
 
-        const payload = data as { status?: unknown; brief?: unknown; setupMusicReadTargets?: unknown } | null;
+        const payload = data as { status?: unknown; runId?: unknown; brief?: unknown; setupMusicReadTargets?: unknown } | null;
+        if (payload?.status === "processing" && typeof payload.runId === "string" && payload.runId.trim()) {
+          return {
+            status: "processing" as const,
+            runId: payload.runId,
+            setupMusicReadTargets: readSetupMusicReadTargets(payload.setupMusicReadTargets),
+          };
+        }
         const brief = todayBriefFromPayload(payload?.brief);
         if (!brief) {
           throw new Error("Today's Brief generation did not return a usable brief.");
@@ -1324,6 +1332,15 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           brief: freshBrief,
           setupMusicReadTargets: readSetupMusicReadTargets(payload?.setupMusicReadTargets),
         };
+      },
+      async loadTodaysBriefRunStatus(runId: string) {
+        const { data, error } = await ownerFilters(client.from("manager_synthesis_runs").select("id,status,error"))
+          .eq("id", runId)
+          .in("classification", ["setup_todays_brief_v1", "recurring_todays_brief_v1"])
+          .maybeSingle();
+        if (error) throw error;
+        if (!data?.id) throw new Error("Today's Brief run was not found.");
+        return { status: String(data.status ?? "queued"), ...(data.error ? { error: String(data.error) } : {}) };
       },
       async refreshPublicContext() {
         const { data, error } = await client.functions.invoke("refresh-public-context", {

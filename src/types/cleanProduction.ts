@@ -109,7 +109,13 @@ export type TodayBriefGenerationResult = {
   setupMusicReadTargets?: MusicReadTarget[];
 };
 
-export type TodayBriefGenerationResponse = TodayBriefViewModel | TodayBriefGenerationResult;
+export type TodayBriefProcessingResult = {
+  status: "processing";
+  runId: string;
+  setupMusicReadTargets?: MusicReadTarget[];
+};
+
+export type TodayBriefGenerationResponse = TodayBriefViewModel | TodayBriefGenerationResult | TodayBriefProcessingResult;
 
 export type PublicContextRefreshResult = {
   findingsInserted: number;
@@ -567,6 +573,7 @@ export type DeskRepository = {
   loadActivity?(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement">>;
   loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement" | "todayBrief">>;
   generateTodaysBrief(mode?: TodayBriefGenerationMode): Promise<TodayBriefGenerationResponse>;
+  loadTodaysBriefRunStatus?(runId: string): Promise<{ status: string; error?: string }>;
   refreshPublicContext?(): Promise<PublicContextRefreshResult>;
 };
 

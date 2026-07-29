@@ -5,10 +5,63 @@ import { buildTodaysBriefInstructions, parseTodaysBriefOutput } from "../supabas
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "generate-todays-brief", "index.ts"), "utf8");
 const promptSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "openaiTodaysBrief.ts"), "utf8");
+const finalizerMigration = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql"), "utf8").toLowerCase();
 
 const bannedVisibleTerms = ["Chartmetric", "provider", "API", "normalized", "database", "evidence row", "third-party"];
 
 describe("OpenAI Today's Brief generation function", () => {
+  it("persists a durable run and returns processing before background generation", () => {
+    expect(functionSource).toContain('status: "processing"');
+    expect(functionSource).toContain("runId");
+    expect(functionSource).toContain("scheduleBackgroundTask(executeTodaysBriefRun");
+    expect(functionSource).toContain("evidenceCutoff");
+    expect(functionSource).toContain("packetRefs");
+    expect(functionSource).toContain("targetRefs");
+    expect(functionSource).toContain("readFrozenTodaysBriefContext");
+    expect(functionSource).toContain("managerIntelligencePacket");
+    expect(functionSource).toContain("setupMusicReadTargets");
+    expect(functionSource).toContain("loadCompletedTodaysBriefRun");
+    expect(functionSource).toContain("setupRunId");
+    expect(functionSource).toContain("workflow_version");
+    expect(functionSource).toContain("idempotency_key");
+    expect(functionSource).toContain("scope_key");
+  });
+
+  it("stages one replay-safe packet and output then activates them through one lease-guarded finalizer", () => {
+    expect(functionSource).toContain("claimManagerSynthesisRun");
+    expect(functionSource).toContain("heartbeatManagerSynthesisRun");
+    expect(functionSource).toContain('is_current: false');
+    expect(functionSource).toContain('status: "running"');
+    expect(functionSource).toContain('rpc("finalize_todays_brief_v1"');
+    expect(functionSource).not.toContain("retireCurrentManagerOutput");
+    expect(finalizerMigration).toContain("create or replace function public.finalize_todays_brief_v1");
+    expect(finalizerMigration).toContain("current_lease_token");
+    expect(finalizerMigration).toContain("target.lease_token = current_lease_token");
+    expect(finalizerMigration).toContain("set is_current = false");
+    expect(finalizerMigration).toContain("set is_current = true");
+    expect(finalizerMigration).toContain("and render_json = result_output");
+    expect(finalizerMigration).toContain("set status = 'completed',");
+    expect(finalizerMigration).toContain("completed_at = now()");
+    expect(finalizerMigration).toContain("on conflict (artist_workspace_id, dedupe_key)");
+    expect(finalizerMigration).toContain("provider_request_count");
+    expect(finalizerMigration).toContain("cached_input_tokens");
+  });
+
+  it("publishes a deduplicated terminal failure and releases the matching setup stage", () => {
+    expect(functionSource).toContain("writeWorkspaceEvent");
+    expect(functionSource).toContain('eventType: "todays_brief_failed"');
+    expect(functionSource).toContain('dedupeKey: `todays-brief:${args.runId}:failed`');
+    expect(functionSource).toContain('refreshScope: ["desk-brief", "activity", "workspace"]');
+    expect(functionSource).toContain("mergeWorkspaceSetupStage");
+    expect(functionSource).toContain('stage: "setup_brief"');
+    expect(functionSource).toContain('status: "failed"');
+  });
+
+  it("verifies replayed evidence and memory seeds instead of treating every uniqueness conflict as success", () => {
+    expect(functionSource).toContain("verifyPersistedPacketEvidenceLinks");
+    expect(functionSource).toContain("verifyPersistedPacketMemorySeeds");
+    expect(functionSource).not.toContain('if (error && (error as { code?: string }).code !== "23505") throw error;');
+  });
   it("authenticates users and builds the packet from all saved artist and music intelligence", () => {
     expect(functionSource).toContain("Deno.serve");
     expect(functionSource).toContain("Authorization");
@@ -38,7 +91,8 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("manager_synthesis_runs");
     expect(functionSource).toContain("ai_run_usage_events");
     expect(functionSource).toContain("operating_events");
-    expect(functionSource).toContain('classification: "setup_todays_brief_v1"');
+    expect(functionSource).toContain('"setup_todays_brief_v1"');
+    expect(functionSource).toContain('"recurring_todays_brief_v1"');
     expect(functionSource).toContain("claimAudit");
     expect(functionSource).not.toContain("assertNoBannedVisibleTerms(completed)");
     expect(functionSource).toContain("assertSignalsHaveEvidenceIds");
@@ -72,7 +126,7 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("setup_first_manager_read");
     expect(functionSource).toContain("recurring_todays_brief");
     expect(functionSource).toContain("manager_outputs");
-    expect(functionSource).toContain("retireCurrentManagerOutput");
+    expect(functionSource).not.toContain("retireCurrentManagerOutput");
     expect(functionSource).toContain("is_current: false");
   });
 
@@ -88,8 +142,8 @@ describe("OpenAI Today's Brief generation function", () => {
   it("selects separate setup-map and operating prompt modes", () => {
     expect(functionSource).toContain('generationMode?: "operating" | "setup-map"');
     expect(functionSource).toContain("readGenerationMode(input)");
-    expect(functionSource).toContain("buildTodaysBriefModelPacket(packet, managerIntelligencePacket)");
-    expect(functionSource).toContain("appendManagerEvidenceReads(output, managerIntelligencePacket)");
+    expect(functionSource).toContain("buildTodaysBriefModelPacket(args.packet, args.managerIntelligencePacket)");
+    expect(functionSource).toContain("appendManagerEvidenceReads(modelResult.output, args.managerIntelligencePacket)");
 
     const setupMapPrompt = buildTodaysBriefInstructions("setup-map");
     const operatingPrompt = buildTodaysBriefInstructions("operating");
@@ -112,7 +166,7 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently");
     expect(functionSource).toContain("Promise.allSettled");
     expect(functionSource).not.toContain("dispatchSetupMusicReadsSequentially");
-    expect(functionSource).toContain("EdgeRuntime.waitUntil");
+    expect(functionSource).toContain("scheduleBackgroundTask");
     expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, serviceRoleKey");
     expect(functionSource).not.toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey");
     expect(functionSource).toContain("finalizeSetupMusicReadWave");

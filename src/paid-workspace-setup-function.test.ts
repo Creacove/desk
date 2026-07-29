@@ -132,7 +132,7 @@ describe("paid workspace setup orchestration", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
     const briefText = source("supabase", "functions", "generate-todays-brief", "index.ts");
 
-    expect(briefText).toContain("EdgeRuntime.waitUntil");
+    expect(briefText).toContain("scheduleBackgroundTask");
     expect(briefText).toContain("Promise.allSettled");
     expect(text).toContain('status: hasMusicReadTargets ? "running" : "completed"');
     expect(text).toContain("next_stage_patch: proposedMusicReadStage");

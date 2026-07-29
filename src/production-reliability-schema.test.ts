@@ -11,8 +11,20 @@ const migration = readFileSync(join(
 const eventMigration = readFileSync(join(
   process.cwd(), "supabase", "migrations", "20260728000300_operating_events_realtime.sql",
 ), "utf8").toLowerCase();
+const finalizerMigration = readFileSync(join(
+  process.cwd(), "supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql",
+), "utf8").toLowerCase();
 
 describe("production reliability v1 schema", () => {
+  it("defines an atomic Today’s Brief finalizer and run-keyed staging constraints", () => {
+    expect(finalizerMigration).toContain("finalize_todays_brief_v1");
+    expect(finalizerMigration).toContain("manager_intelligence_packets_run_unique_idx");
+    expect(finalizerMigration).toContain("manager_outputs_run_type_unique_idx");
+    expect(finalizerMigration).toContain("evidence_links_run_target_unique_idx");
+    expect(finalizerMigration).toContain("memory_entries_run_seed_unique_idx");
+    expect(finalizerMigration).toContain("security definer");
+    expect(finalizerMigration).toContain("to service_role");
+  });
   it("adds the narrow durable workspace-event outbox without replacing existing access policies", () => {
     for (const field of ["workspace_setup_run_id uuid", "dedupe_key text", "display_mode text", "refresh_scope text[]", "recipient_user_id uuid"]) {
       expect(eventMigration).toContain(`add column if not exists ${field}`);

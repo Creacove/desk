@@ -22,6 +22,8 @@ const supabaseDiscoveryPoll = vi.hoisted(() => ({
   responses: [] as Array<{ data: Array<{ summary: string; created_at: string }>; error: null }>,
 }));
 
+const productionAppSource = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
+
 const analyticsMock = vi.hoisted(() => ({
   identifyAnalyticsUser: vi.fn(),
   isTestUserEmail: vi.fn((email?: string) => email?.toLowerCase().includes("+test") ?? false),
@@ -133,6 +135,14 @@ afterEach(() => {
 });
 
 describe("Clean production prototype-match shell", () => {
+  it("keeps the generation mode attached to a background Today's Brief run", () => {
+    expect(productionAppSource).toContain("activeTodayBriefRun");
+    expect(productionAppSource).toContain("{ id: result.runId, mode }");
+    expect(productionAppSource).toContain("trackBriefGenerated(brief, activeTodayBriefRun.mode)");
+    expect(productionAppSource).toContain('event.eventType === "todays_brief_failed"');
+    expect(productionAppSource).toContain("event.targetId === activeTodayBriefRun.id");
+  });
+
   it("rehydrates the active persisted setup run on reload", async () => {
     const runningSetupWorkspace = {
       ...workspace,

@@ -566,6 +566,7 @@ function CleanProductionWorkspace({
   const [setupActivityError, setSetupActivityError] = useState<string | null>(null);
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
+  const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
   const [publicContextPending, setPublicContextPending] = useState(false);
   const [activityCenterOpen, setActivityCenterOpen] = useState(false);
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceOperatingEvent[]>([]);
@@ -603,7 +604,33 @@ function CleanProductionWorkspace({
     if (!event.displayMode) return;
     setWorkspaceEvents((current) => mergeWorkspaceEvents(current, [event]));
     if (event.displayMode === "toast") setActivityToast(event.summary);
-  }, []);
+    if (event.eventType === "todays_brief_failed" && activeTodayBriefRun && event.targetId === activeTodayBriefRun.id) {
+      setTodayBriefError(event.summary || "Today's Brief could not be generated.");
+      setTodayBriefPending(false);
+      setActiveTodayBriefRun(null);
+    }
+  }, [activeTodayBriefRun]);
+
+  const activeWorkspaceRuns = useMemo(() => {
+    if (!activeTodayBriefRun || !repositories.desk.loadTodaysBriefRunStatus) return [];
+    return [{
+      id: activeTodayBriefRun.id,
+      check: async () => {
+        const run = await repositories.desk.loadTodaysBriefRunStatus!(activeTodayBriefRun.id);
+        if (["queued", "running"].includes(run.status)) return "active" as const;
+        if (run.status === "failed" || run.status === "cancelled") {
+          setTodayBriefError(run.error ?? "Today's Brief could not be generated.");
+          setTodayBriefPending(false);
+          setActiveTodayBriefRun(null);
+          return "terminal" as const;
+        }
+        await handleWorkspaceInvalidations([{ scope: "desk-brief" }, { scope: "activity" }]);
+        setTodayBriefPending(false);
+        setActiveTodayBriefRun(null);
+        return "terminal" as const;
+      },
+    }];
+  }, [activeTodayBriefRun, repositories.desk]);
 
   const { status: liveUpdateStatus } = useWorkspaceLiveSync({
     enabled: liveUpdatesEnabled && Boolean(workspace?.artistWorkspaceId),
@@ -613,11 +640,14 @@ function CleanProductionWorkspace({
     coordinator: resourceRequests,
     onInvalidations: handleWorkspaceInvalidations,
     onEvent: handleWorkspaceEvent,
+    activeRuns: activeWorkspaceRuns,
   });
 
   useEffect(() => {
     const workspaceId = workspace?.artistWorkspaceId;
     activityLoadedWorkspace.current = null;
+    setActiveTodayBriefRun(null);
+    setTodayBriefPending(false);
     setWorkspaceEvents([]);
     setActivityError(null);
     setActivityHasMore(false);
@@ -1176,7 +1206,14 @@ function CleanProductionWorkspace({
       }));
     }
     if (scopes.has("desk-brief")) {
-      baseLoads.push(loadBriefResource().then(setTodayBrief));
+      baseLoads.push(loadBriefResource().then((brief) => {
+        setTodayBrief(brief);
+        if (activeTodayBriefRun && brief.managerSynthesisRunId === activeTodayBriefRun.id) {
+          setTodayBriefPending(false);
+          setActiveTodayBriefRun(null);
+          trackBriefGenerated(brief, activeTodayBriefRun.mode);
+        }
+      }));
     }
     if (scopes.has("music-list")) {
       baseLoads.push(loadMusicListResource().then(setMusic));
@@ -1288,10 +1325,16 @@ function CleanProductionWorkspace({
   }, [repositories.music, resourceRequests, resourceWorkspaceId]);
 
   async function generateTodaysBrief(mode: TodayBriefGenerationMode = "operating") {
+    let continuesInBackground = false;
     try {
       setTodayBriefPending(true);
       setTodayBriefError(null);
       const result = await repositories.desk.generateTodaysBrief(mode);
+      if (isTodayBriefProcessingResult(result)) {
+        continuesInBackground = true;
+        setActiveTodayBriefRun({ id: result.runId, mode });
+        return result;
+      }
       const nextBrief = briefFromGenerationResult(result);
       resourceRequests.invalidate(resourceWorkspaceId, "desk-brief");
       setTodayBrief(nextBrief);
@@ -1301,7 +1344,7 @@ function CleanProductionWorkspace({
       setTodayBriefError(readErrorMessage(error, "Today's Brief could not be generated."));
       throw error;
     } finally {
-      setTodayBriefPending(false);
+      if (!continuesInBackground) setTodayBriefPending(false);
     }
   }
 
@@ -1365,6 +1408,7 @@ function CleanProductionWorkspace({
         }
       }
       if (!setupGeneration) return;
+      if (isTodayBriefProcessingResult(setupGeneration)) return;
       const setupBrief = briefFromGenerationResult(setupGeneration);
       if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
         throw new Error("Setup map needs a live Manager read. Retry to regenerate it.");
@@ -2984,7 +3028,12 @@ function uniqueMissionGenesisIds(values: Array<string | undefined>) {
 }
 
 function briefFromGenerationResult(result: TodayBriefGenerationResponse): TodayBriefViewModel {
+  if (isTodayBriefProcessingResult(result)) throw new Error("Today's Brief is still processing.");
   return isTodayBriefGenerationResult(result) ? result.brief : result;
+}
+
+function isTodayBriefProcessingResult(result: TodayBriefGenerationResponse): result is { status: "processing"; runId: string; setupMusicReadTargets?: MusicReadTarget[] } {
+  return Boolean(result && typeof result === "object" && "status" in result && result.status === "processing" && "runId" in result && typeof result.runId === "string");
 }
 
 function briefAnalyticsId(brief: TodayBriefViewModel, artistWorkspaceId: string) {

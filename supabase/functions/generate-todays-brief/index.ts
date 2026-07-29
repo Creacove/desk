@@ -18,6 +18,15 @@ import { buildManagerIntelligencePacket } from "../_shared/manager-intelligence/
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import {
+  claimManagerSynthesisRun,
+  finishManagerSynthesisRun,
+  heartbeatManagerSynthesisRun,
+  heartbeatWorkspaceSetupStage,
+  mergeWorkspaceSetupStage,
+} from "../_shared/durableWorkflow.ts";
+import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
+import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -39,6 +48,8 @@ type GenerateTodaysBriefInput = {
   generationMode?: "operating" | "setup-map";
   dispatchMusicReads?: boolean;
   setupRunId?: string;
+  setupStageLeaseToken?: string;
+  requestId?: string;
 };
 
 type SetupMusicReadTarget = {
@@ -71,6 +82,7 @@ type EvidenceRow = {
   provenance?: string | null;
   limitation?: string | null;
   raw_ref?: string | null;
+  created_at?: string | null;
 };
 
 type MusicItemRow = {
@@ -95,12 +107,8 @@ Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
-  let runId: string | null = null;
-  let usageId: string | null = null;
-  let input: GenerateTodaysBriefInput | null = null;
-
   try {
-    input = (await request.json()) as GenerateTodaysBriefInput;
+    const input = (await request.json()) as GenerateTodaysBriefInput;
     validateInput(input);
     const generationMode = readGenerationMode(input);
 
@@ -137,57 +145,215 @@ Deno.serve(async (request) => {
     }
 
     const { packet, sourceAudit, managerIntelligencePacket, setupMusicReadTargets } = await buildArtistBriefPacket(authClient, input);
-    runId = await createManagerSynthesisRun(authClient, input, packet, sourceAudit, generationMode);
-    usageId = await createUsageEvent(authClient, input, runId);
-    const managerPacketId = await persistManagerIntelligencePacket(authClient, managerIntelligencePacket, runId);
-    await persistManagerPacketEvidenceLinks(authClient, input, runId, managerPacketId, managerIntelligencePacket);
-    await persistManagerPacketMemorySeeds(authClient, input, runId, managerPacketId, managerIntelligencePacket);
-    const modelPacket = buildTodaysBriefModelPacket(packet, managerIntelligencePacket);
-    const appliedPlaybooks = readAppliedPlaybooks(managerIntelligencePacket);
-    const playbookLensText = getPlaybooksInstructions(appliedPlaybooks);
-    let output = await callOpenAITodaysBriefWithRetry(modelPacket, generationMode, playbookLensText);
-    output = appendManagerEvidenceReads(output, managerIntelligencePacket);
+    const evidenceCutoff = readEvidenceCutoff(sourceAudit);
+    const packetRefs = sourceAudit.flatMap((row) => typeof row.id === "string" ? [row.id] : []);
+    const targetRefs = [
+      { subjectType: "artist", subjectId: input.artistId },
+      ...setupMusicReadTargets,
+    ];
+    const run = await createManagerSynthesisRun(authClient, input, packet, managerIntelligencePacket, setupMusicReadTargets, generationMode, {
+      evidenceCutoff,
+      packetRefs,
+      targetRefs,
+    });
+    const frozen = readFrozenTodaysBriefContext(run.context_payload);
+    if (run.status === "completed") {
+      const completed = await loadCompletedTodaysBriefRun(authClient, input, run.id);
+      return json({ status: "completed", brief: completed, setupMusicReadTargets: frozen.setupMusicReadTargets });
+    }
+    if (run.status === "failed" || run.status === "cancelled") {
+      return json({ error: run.error || "Today's Brief generation did not complete." }, 409);
+    }
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+    scheduleBackgroundTask(executeTodaysBriefRun({
+      db: serviceClient,
+      supabaseUrl,
+      serviceRoleKey,
+      input,
+      generationMode: frozen.generationMode,
+      packet: frozen.packet,
+      managerIntelligencePacket: frozen.managerIntelligencePacket,
+      setupMusicReadTargets: frozen.setupMusicReadTargets,
+      runId: run.id,
+    }));
+
+    return json({ status: "processing", runId: run.id, setupMusicReadTargets: frozen.generationMode === "setup-map" ? frozen.setupMusicReadTargets : [] });
+  } catch (error) {
+    console.error("generate-todays-brief failed before dispatch", { error });
+    return json(workflowFailureBody(error), 500);
+  }
+});
+
+async function executeTodaysBriefRun(args: {
+  db: any;
+  supabaseUrl: string;
+  serviceRoleKey: string;
+  input: GenerateTodaysBriefInput;
+  generationMode: TodaysBriefPromptMode;
+  packet: ArtistBriefPacket;
+  managerIntelligencePacket: Record<string, unknown>;
+  setupMusicReadTargets: SetupMusicReadTarget[];
+  runId: string;
+}) {
+  const lease = await claimManagerSynthesisRun(args.db, { runId: args.runId, leaseSeconds: 900 });
+  if (!lease) return;
+  let usageId: string | null = null;
+  try {
+    usageId = await createUsageEvent(args.db, args.input, args.runId);
+    const managerPacketId = await persistManagerIntelligencePacket(args.db, args.managerIntelligencePacket, args.runId);
+    await persistManagerPacketEvidenceLinks(args.db, args.input, args.runId, managerPacketId, args.managerIntelligencePacket);
+    await persistManagerPacketMemorySeeds(args.db, args.input, args.runId, managerPacketId, args.managerIntelligencePacket);
+    const heartbeat = () => heartbeatTodaysBriefLeases(args.db, args.input, args.runId, lease.token);
+    const modelPacket = buildTodaysBriefModelPacket(args.packet, args.managerIntelligencePacket);
+    const appliedPlaybooks = readAppliedPlaybooks(args.managerIntelligencePacket);
+    const modelResult = await callOpenAITodaysBriefWithRetry(
+      modelPacket,
+      args.generationMode,
+      getPlaybooksInstructions(appliedPlaybooks),
+      heartbeat,
+      heartbeat,
+    );
+    const output = appendManagerEvidenceReads(modelResult.output, args.managerIntelligencePacket);
     const completed = {
       ...output,
       generatedAt: new Date().toISOString(),
-      managerSynthesisRunId: runId,
+      managerSynthesisRunId: args.runId,
     };
     assertSignalsHaveEvidenceIds(completed);
-    await completeManagerSynthesisRun(authClient, runId, packet, sourceAudit, completed, generationMode);
-    const managerOutputId = await persistManagerOutput(authClient, input, runId, managerPacketId, completed);
-    await completeUsageEvent(authClient, usageId, completed);
-    await writeOperatingEventSafe(authClient, input, {
-      eventType: input.trigger === "setup"
-        ? "setup_todays_brief_generated"
-        : "setup_todays_brief_refreshed",
-      summary: `Generated Today's Brief for ${packet.profile.artistName}.`,
-      payload: {
-        manager_synthesis_run_id: runId,
-        manager_intelligence_packet_id: managerPacketId,
-        manager_output_id: managerOutputId,
-        confidence: completed.confidence,
-        intelligence_group_count: completed.intelligenceSnapshot.length,
-        generationMode,
-        claimAudit: completed.claimAudit,
-      },
+    const managerOutputId = await persistManagerOutput(args.db, args.input, args.runId, managerPacketId, completed);
+    const { data: finalized, error: finalizeError } = await args.db.rpc("finalize_todays_brief_v1", {
+      run_id: args.runId,
+      current_lease_token: lease.token,
+      packet_id: managerPacketId,
+      output_id: managerOutputId,
+      usage_id: usageId,
+      result_output: completed,
+      result_confidence: completed.confidence === "limited" ? "low" : completed.confidence,
+      result_limitations: args.packet.sourceLimits,
+      actual_provider_request_count: modelResult.usage.providerRequestCount,
+      actual_input_tokens: modelResult.usage.inputTokens,
+      actual_cached_input_tokens: modelResult.usage.cachedInputTokens,
+      actual_output_tokens: modelResult.usage.outputTokens,
+      actual_reasoning_tokens: modelResult.usage.reasoningTokens,
+      setup_run_id: args.input.setupRunId ?? null,
+      setup_stage_lease_token: args.input.setupStageLeaseToken ?? null,
+      setup_music_read_targets: args.generationMode === "setup-map" ? args.setupMusicReadTargets : [],
+      terminal_event_type: args.input.trigger === "setup" ? "setup_todays_brief_generated" : "todays_brief_refreshed",
+      terminal_summary: `Today's Brief is ready for ${args.packet.profile.artistName}.`,
     });
+    if (finalizeError) throw finalizeError;
+    if (!finalized) throw new Error("Today's Brief finalizer returned no result.");
 
-    if (generationMode === "setup-map" && input.dispatchMusicReads !== false && setupMusicReadTargets.length) {
-      EdgeRuntime.waitUntil(finalizeSetupMusicReadWave(authClient, supabaseUrl, serviceRoleKey, input, setupMusicReadTargets));
+    if (args.generationMode === "setup-map" && args.input.dispatchMusicReads !== false && args.setupMusicReadTargets.length) {
+      scheduleBackgroundTask(finalizeSetupMusicReadWave(args.db, args.supabaseUrl, args.serviceRoleKey, args.input, args.setupMusicReadTargets));
     }
-
-    return json({
-      status: "completed",
-      managerSynthesisRunId: runId,
-      brief: completed,
-      setupMusicReadTargets: generationMode === "setup-map" ? setupMusicReadTargets : [],
-    });
   } catch (error) {
-    if (runId && input) await markRunFailedSafe(runId, input, error);
-    if (usageId) await markUsageFailedSafe(usageId, error);
-    return json({ error: describeError(error, "Today's Brief generation failed.") }, 500);
+    const failure = publicWorkflowFailure(error);
+    console.error("Today's Brief background generation failed", { error, runId: args.runId });
+    const runFinished = await finishManagerSynthesisRun(args.db, {
+      runId: args.runId,
+      leaseToken: lease.token,
+      status: "failed",
+      error: failure.message,
+    }).catch(() => false);
+    if (!runFinished) return;
+    if (usageId) await markUsageFailedSafe(args.db, usageId, failure.message);
+    if (args.input.setupRunId && args.input.setupStageLeaseToken) {
+      await mergeWorkspaceSetupStage(args.db, {
+        setupRunId: args.input.setupRunId,
+        stage: "setup_brief",
+        leaseToken: args.input.setupStageLeaseToken,
+        patch: {
+          status: "failed",
+          error: failure.message,
+          failure,
+          failed_at: new Date().toISOString(),
+        },
+      }).catch(() => false);
+    }
+    await writeWorkspaceEvent(args.db, {
+      accountId: args.input.accountId,
+      artistWorkspaceId: args.input.artistWorkspaceId,
+      artistId: args.input.artistId,
+      eventType: "todays_brief_failed",
+      summary: failure.message,
+      targetType: "manager_synthesis_run",
+      targetId: args.runId,
+      workspaceSetupRunId: args.input.setupRunId,
+      dedupeKey: `todays-brief:${args.runId}:failed`,
+      displayMode: "toast",
+      refreshScope: ["desk-brief", "activity", "workspace"],
+      payload: { run_id: args.runId, status: "failed", code: failure.code },
+    }).catch(() => undefined);
   }
-});
+}
+
+async function heartbeatTodaysBriefLeases(db: any, input: GenerateTodaysBriefInput, runId: string, leaseToken: string) {
+  const runActive = await heartbeatManagerSynthesisRun(db, { runId, leaseToken, leaseSeconds: 900 });
+  if (!runActive) throw new Error("Today's Brief run lease expired.");
+  if (input.setupRunId && input.setupStageLeaseToken) {
+    const setupActive = await heartbeatWorkspaceSetupStage(db, {
+      setupRunId: input.setupRunId,
+      stage: "setup_brief",
+      leaseToken: input.setupStageLeaseToken,
+      leaseSeconds: 900,
+    });
+    if (!setupActive) throw new Error("Today's Brief setup lease expired.");
+  }
+}
+
+function scheduleBackgroundTask(task: Promise<unknown>) {
+  const edgeRuntime = (globalThis as { EdgeRuntime?: { waitUntil?: (task: Promise<unknown>) => void } }).EdgeRuntime;
+  if (typeof edgeRuntime?.waitUntil === "function") edgeRuntime.waitUntil(task);
+  else void task;
+}
+
+function readEvidenceCutoff(sourceAudit: Array<Record<string, unknown>>) {
+  const cutoff = sourceAudit.flatMap((row) => typeof row.created_at === "string" ? [row.created_at] : []).sort().at(-1);
+  return cutoff ?? "no-evidence";
+}
+
+function readFrozenTodaysBriefContext(value: unknown): {
+  packet: ArtistBriefPacket;
+  managerIntelligencePacket: Record<string, unknown>;
+  setupMusicReadTargets: SetupMusicReadTarget[];
+  generationMode: TodaysBriefPromptMode;
+} {
+  if (!isRecord(value) || !isRecord(value.packet) || !isRecord(value.managerIntelligencePacket)) {
+    throw new Error("Today's Brief run is missing its frozen generation context.");
+  }
+  const generationMode = value.generationMode;
+  if (generationMode !== "operating" && generationMode !== "setup-map") {
+    throw new Error("Today's Brief run has an invalid frozen generation mode.");
+  }
+  const setupMusicReadTargets = arrayValue(value.setupMusicReadTargets).flatMap((target) => {
+    if (!isRecord(target)) return [];
+    const subjectType = target.subjectType;
+    const subjectId = readString(target.subjectId);
+    return (subjectType === "music_item" || subjectType === "music_project") && subjectId
+      ? [{ subjectType, subjectId } satisfies SetupMusicReadTarget]
+      : [];
+  });
+  return {
+    packet: value.packet as unknown as ArtistBriefPacket,
+    managerIntelligencePacket: value.managerIntelligencePacket,
+    setupMusicReadTargets,
+    generationMode,
+  };
+}
+
+async function loadCompletedTodaysBriefRun(supabase: any, input: GenerateTodaysBriefInput, runId: string) {
+  const { data, error } = await supabase.from("manager_outputs")
+    .select("render_json")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("created_from_run_id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!isRecord(data?.render_json)) throw new Error("Completed Today's Brief run has no saved output.");
+  return data.render_json;
+}
 
 async function buildArtistBriefPacket(
   supabase: any,
@@ -272,6 +438,7 @@ async function buildArtistBriefPacket(
       confidence: row.confidence,
       limitation: row.limitation,
       raw_ref: row.raw_ref,
+      created_at: row.created_at,
     })),
   };
 }
@@ -476,13 +643,21 @@ async function callOpenAITodaysBriefWithRetry(
   packet: unknown,
   generationMode: TodaysBriefPromptMode,
   playbookLensText?: string,
-): Promise<TodaysBriefOutput> {
+  beforeRequest?: () => Promise<unknown>,
+  afterRequest?: () => Promise<unknown>,
+): Promise<{ output: TodaysBriefOutput; usage: OpenAITodaysBriefUsage }> {
   const maxAttempts = 3;
   let lastError: unknown = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      return await callOpenAITodaysBrief(packet, generationMode, playbookLensText);
+      await beforeRequest?.();
+      try {
+        const result = await callOpenAITodaysBrief(packet, generationMode, playbookLensText);
+        return { ...result, usage: { ...result.usage, providerRequestCount: attempt + 1 } };
+      } finally {
+        await afterRequest?.();
+      }
     } catch (error) {
       lastError = error;
       if (!isRetryableOpenAIError(error) || attempt === maxAttempts - 1) throw error;
@@ -497,7 +672,7 @@ async function callOpenAITodaysBrief(
   packet: unknown,
   generationMode: TodaysBriefPromptMode,
   playbookLensText?: string,
-): Promise<TodaysBriefOutput> {
+): Promise<{ output: TodaysBriefOutput; usage: OpenAITodaysBriefUsage }> {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -524,7 +699,35 @@ async function callOpenAITodaysBrief(
   }
 
   const payload = await response.json();
-  return parseTodaysBriefOutput(readOutputText(payload));
+  return {
+    output: parseTodaysBriefOutput(readOutputText(payload)),
+    usage: readOpenAITodaysBriefUsage(payload),
+  };
+}
+
+type OpenAITodaysBriefUsage = {
+  providerRequestCount: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+};
+
+function readOpenAITodaysBriefUsage(payload: unknown): OpenAITodaysBriefUsage {
+  const usage = isRecord(payload) && isRecord(payload.usage) ? payload.usage : {};
+  const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  return {
+    providerRequestCount: 1,
+    inputTokens: readNonNegativeInteger(usage.input_tokens),
+    cachedInputTokens: readNonNegativeInteger(inputDetails.cached_tokens),
+    outputTokens: readNonNegativeInteger(usage.output_tokens),
+    reasoningTokens: readNonNegativeInteger(outputDetails.reasoning_tokens),
+  };
+}
+
+function readNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
 }
 
 async function loadArtistProfile(supabase: any, input: GenerateTodaysBriefInput) {
@@ -570,7 +773,7 @@ async function loadMusicProjects(supabase: any, input: GenerateTodaysBriefInput)
 async function loadArtistEvidence(supabase: any, input: GenerateTodaysBriefInput): Promise<EvidenceRow[]> {
   const { data, error } = await supabase
     .from("evidence_items")
-    .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref")
+    .select("id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref,created_at")
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -597,9 +800,24 @@ async function createManagerSynthesisRun(
   supabase: any,
   input: GenerateTodaysBriefInput,
   packet: ArtistBriefPacket,
-  sourceAudit: Array<Record<string, unknown>>,
+  managerIntelligencePacket: Record<string, unknown>,
+  setupMusicReadTargets: SetupMusicReadTarget[],
   generationMode: TodaysBriefPromptMode,
+  durableContext: { evidenceCutoff: string; packetRefs: string[]; targetRefs: Array<Record<string, string>> },
 ) {
+  const classification = input.trigger === "setup" ? "setup_todays_brief_v1" : "recurring_todays_brief_v1";
+  const scopeKey = input.setupRunId ?? `${input.artistId}:${generationMode}`;
+  const requestKey = input.setupRunId ?? input.requestId ?? durableContext.evidenceCutoff;
+  const idempotencyKey = `${classification}:${scopeKey}:${requestKey}`;
+  const { data: existing, error: existingError } = await supabase.from("manager_synthesis_runs")
+    .select("id,status,error,context_payload")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (existing?.id) return existing as { id: string; status: string; error?: string | null; context_payload: unknown };
+
   const { data, error } = await supabase
     .from("manager_synthesis_runs")
     .insert({
@@ -607,37 +825,47 @@ async function createManagerSynthesisRun(
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
       trigger_type: input.trigger === "setup" ? "evidence_triggered" : "manual",
-      status: "running",
-      classification: "setup_todays_brief_v1",
-      context_payload: { packet, sourceAudit, generationMode },
-      started_at: new Date().toISOString(),
+      status: "queued",
+      classification,
+      context_payload: {
+        packet,
+        managerIntelligencePacket,
+        setupMusicReadTargets,
+        generationMode,
+        setupRunId: input.setupRunId ?? null,
+        evidenceCutoff: durableContext.evidenceCutoff,
+        packetRefs: durableContext.packetRefs,
+        targetRefs: durableContext.targetRefs,
+      },
+      workflow_version: "todays_brief_v1",
+      scope_key: scopeKey,
+      idempotency_key: idempotencyKey,
+      input_refs: durableContext.packetRefs.map((id) => ({ type: "evidence_item", id })),
     })
-    .select("id")
+    .select("id,status,error,context_payload")
     .single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function completeManagerSynthesisRun(
-  supabase: any,
-  runId: string,
-  packet: ArtistBriefPacket,
-  sourceAudit: Array<Record<string, unknown>>,
-  output: TodaysBriefOutput,
-  generationMode: TodaysBriefPromptMode,
-) {
-  const { error } = await supabase
-    .from("manager_synthesis_runs")
-    .update({
-      status: "completed",
-      confidence: output.confidence === "limited" ? "low" : output.confidence,
-      context_payload: { packet, sourceAudit, generationMode },
-      action_plan: [output],
-      limitations: packet.sourceLimits,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", runId);
-  if (error) throw error;
+  if (!error && data) return data as { id: string; status: string; error?: string | null; context_payload: unknown };
+  if ((error as { code?: string } | null)?.code !== "23505") throw error;
+  let { data: raced, error: racedError } = await supabase.from("manager_synthesis_runs")
+    .select("id,status,error,context_payload")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+  if (racedError) throw racedError;
+  if (!raced?.id) {
+    const active = await supabase.from("manager_synthesis_runs").select("id,status,error,context_payload")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("classification", classification)
+      .eq("scope_key", scopeKey)
+      .in("status", ["queued", "running"])
+      .maybeSingle();
+    if (active.error) throw active.error;
+    raced = active.data;
+  }
+  if (!raced?.id) throw new Error("Today's Brief run could not be recovered after concurrent creation.");
+  return raced as { id: string; status: string; error?: string | null; context_payload: unknown };
 }
 
 async function createUsageEvent(supabase: any, input: GenerateTodaysBriefInput, runId: string) {
@@ -656,34 +884,18 @@ async function createUsageEvent(supabase: any, input: GenerateTodaysBriefInput, 
       model_or_tool: Deno.env.get("OPENAI_TODAYS_BRIEF_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
       operation_key: "setup_todays_brief_v1",
       status: "started",
-      provider_request_count: 1,
+      provider_request_count: 0,
     })
     .select("id")
     .single();
+  if (error && (error as { code?: string }).code === "23505") {
+    const existing = await supabase.from("ai_run_usage_events").select("id")
+      .eq("manager_synthesis_run_id", runId).eq("operation_key", "setup_todays_brief_v1").maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return existing.data.id as string;
+  }
   if (error) throw error;
   return data.id as string;
-}
-
-async function completeUsageEvent(supabase: any, usageId: string, output: TodaysBriefOutput) {
-  const { error } = await supabase
-    .from("ai_run_usage_events")
-    .update({
-      status: "succeeded",
-      output_tokens: [
-        output.headlineRead,
-        output.snapshotSummary,
-        output.managerRead,
-        output.sourceLine,
-        ...output.intelligenceSnapshot.flatMap((group) => [
-          group.title,
-          group.insight,
-          ...group.metrics.flatMap((metric) => [metric.label, metric.value, metric.context ?? ""]),
-        ]),
-      ].join(" ").split(/\s+/).length,
-      completed_at: new Date().toISOString(),
-    })
-    .eq("id", usageId);
-  if (error) throw error;
 }
 
 async function writeOperatingEvent(
@@ -717,30 +929,11 @@ async function writeOperatingEventSafe(
   }
 }
 
-async function markRunFailedSafe(runId: string, input: GenerateTodaysBriefInput, error: unknown) {
+async function markUsageFailedSafe(db: any, usageId: string, failureMessage: string) {
   try {
-    const serviceClient = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    const failureMessage = describeError(error, "Today's Brief generation failed.");
-    await serviceClient.from("manager_synthesis_runs").update({
+    await db.from("ai_run_usage_events").update({
       status: "failed",
-      error: failureMessage,
-      completed_at: new Date().toISOString(),
-    }).eq("id", runId);
-    await writeOperatingEventSafe(serviceClient, input, {
-      eventType: "setup_todays_brief_failed",
-      summary: failureMessage,
-    });
-  } catch {
-    // Preserve the original response when failure logging fails.
-  }
-}
-
-async function markUsageFailedSafe(usageId: string, error: unknown) {
-  try {
-    const serviceClient = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    await serviceClient.from("ai_run_usage_events").update({
-      status: "failed",
-      failure_reason: describeError(error, "Today's Brief generation failed."),
+      failure_reason: failureMessage,
       completed_at: new Date().toISOString(),
     }).eq("id", usageId);
   } catch {
@@ -778,7 +971,7 @@ async function persistManagerIntelligencePacket(supabase: any, packet: Record<st
       artist_id: packet.artist_id,
       packet_date: packet.packet_date,
       packet_type: packet.packet_type,
-      status: packet.status,
+      status: "running",
       profile_projection_json: packet.profile_projection_json,
       signal_snapshot_json: packet.signal_snapshot_json,
       data_freshness_json: packet.data_freshness_json,
@@ -802,6 +995,12 @@ async function persistManagerIntelligencePacket(supabase: any, packet: Record<st
     })
     .select("id")
     .single();
+  if (error && (error as { code?: string }).code === "23505") {
+    const existing = await supabase.from("manager_intelligence_packets").select("id")
+      .eq("created_from_run_id", runId).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return existing.data.id as string;
+  }
   if (error) throw error;
   return data.id as string;
 }
@@ -828,7 +1027,30 @@ async function persistManagerPacketEvidenceLinks(
       created_from_run_id: runId,
     })),
   );
+  if (error && (error as { code?: string }).code === "23505") {
+    await verifyPersistedPacketEvidenceLinks(supabase, runId, managerPacketId, evidenceIds);
+    return;
+  }
   if (error) throw error;
+}
+
+async function verifyPersistedPacketEvidenceLinks(
+  supabase: any,
+  runId: string,
+  managerPacketId: string,
+  expectedEvidenceIds: string[],
+) {
+  const { data, error } = await supabase.from("evidence_links")
+    .select("evidence_item_id")
+    .eq("created_from_run_id", runId)
+    .eq("target_type", "manager_intelligence_packet")
+    .eq("target_id", managerPacketId)
+    .eq("usage", "supports_claim");
+  if (error) throw error;
+  const persisted = new Set((data ?? []).flatMap((row: any) => typeof row.evidence_item_id === "string" ? [row.evidence_item_id] : []));
+  if (expectedEvidenceIds.some((id) => !persisted.has(id))) {
+    throw new Error("Today's Brief evidence replay did not match the frozen packet.");
+  }
 }
 
 async function persistManagerPacketMemorySeeds(
@@ -887,7 +1109,31 @@ async function persistManagerPacketMemorySeeds(
       created_from_run_id: runId,
     })),
   );
+  if (error && (error as { code?: string }).code === "23505") {
+    await verifyPersistedPacketMemorySeeds(supabase, runId, managerPacketId, rows);
+    return;
+  }
   if (error) throw error;
+}
+
+async function verifyPersistedPacketMemorySeeds(
+  supabase: any,
+  runId: string,
+  managerPacketId: string,
+  expectedRows: Array<{ kind: string; content: string }>,
+) {
+  const { data, error } = await supabase.from("memory_entries")
+    .select("kind,content")
+    .eq("created_from_run_id", runId)
+    .eq("source_type", "manager_intelligence_packet")
+    .eq("source_id", managerPacketId);
+  if (error) throw error;
+  const persisted = new Set((data ?? []).flatMap((row: any) =>
+    typeof row.kind === "string" && typeof row.content === "string" ? [`${row.kind}\u0000${row.content}`] : []
+  ));
+  if (expectedRows.some((row) => !persisted.has(`${row.kind}\u0000${row.content}`))) {
+    throw new Error("Today's Brief memory replay did not match the frozen packet.");
+  }
 }
 
 async function persistManagerOutput(
@@ -898,15 +1144,6 @@ async function persistManagerOutput(
   output: TodaysBriefOutput,
 ) {
   const outputType = input.trigger === "setup" ? "setup_first_manager_read" : "recurring_todays_brief";
-  await retireCurrentManagerOutput(supabase, {
-    accountId: input.accountId,
-    artistWorkspaceId: input.artistWorkspaceId,
-    artistId: input.artistId,
-    subjectType: "artist",
-    subjectId: input.artistId,
-    outputType,
-  });
-
   const { data, error } = await supabase
     .from("manager_outputs")
     .insert({
@@ -944,36 +1181,18 @@ async function persistManagerOutput(
       render_json: output,
       schema_version: "manager-output-v1",
       created_from_run_id: runId,
-      is_current: true,
+      is_current: false,
     })
     .select("id")
     .single();
+  if (error && (error as { code?: string }).code === "23505") {
+    const existing = await supabase.from("manager_outputs").select("id")
+      .eq("created_from_run_id", runId).eq("output_type", outputType).maybeSingle();
+    if (existing.error) throw existing.error;
+    if (existing.data?.id) return existing.data.id as string;
+  }
   if (error) throw error;
   return data.id as string;
-}
-
-async function retireCurrentManagerOutput(
-  supabase: any,
-  input: {
-    accountId: string;
-    artistWorkspaceId: string;
-    artistId: string;
-    subjectType: string;
-    subjectId: string;
-    outputType: string;
-  },
-) {
-  const { error } = await supabase
-    .from("manager_outputs")
-    .update({ is_current: false })
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("subject_type", input.subjectType)
-    .eq("subject_id", input.subjectId)
-    .eq("output_type", input.outputType)
-    .eq("is_current", true);
-  if (error) throw error;
 }
 
 function buildIntelligenceSnapshotInputs(

@@ -240,6 +240,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     setupRunId: setupRun.id,
     stage: "setup_brief",
     expectedStatus: setupBriefState === "not_started" ? "queued" : setupBriefState,
+    leaseSeconds: 900,
   });
   if (!briefLease) return { status: "running", phase: "contextualize" };
 
@@ -257,6 +258,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
         generationMode: "setup-map",
         dispatchMusicReads: true,
         setupRunId: setupRun.id,
+        setupStageLeaseToken: briefLease.token,
       },
     });
   } catch (error) {
@@ -268,6 +270,9 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
       patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
     }).catch(() => false);
     throw error;
+  }
+  if (result?.status === "processing" && result.runId) {
+    return { status: "processing", phase: "contextualize", runId: result.runId };
   }
   if (result?.status !== "completed" || !result.brief) {
     const error = new Error("Contextual setup brief did not produce a live Manager read.");
