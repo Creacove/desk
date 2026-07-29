@@ -42,14 +42,26 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain("assertActiveWorkspaceEntitlement");
   });
 
-  it("reuses an exact active run, expires only stale exact-subject v2 runs, and handles the unique race", () => {
-    expect(functionSource).toContain("ACTIVE_RUN_STALE_MS = 5 * 60 * 1000");
+  it("reuses an exact active run and leaves expired work to lease recovery", () => {
+    expect(functionSource).not.toContain("ACTIVE_RUN_STALE_MS");
+    expect(functionSource).not.toContain('.lt("created_at"');
+    expect(functionSource).not.toContain("Music Manager Read run expired before completion.");
     expect(functionSource).toContain('.eq("classification", MUSIC_MANAGER_READ_CLASSIFICATION)');
     expect(functionSource).toContain('.eq("subject_type", input.subjectType)');
     expect(functionSource).toContain('.eq("subject_id", input.subjectId)');
     expect(functionSource).toContain('.in("status", ["queued", "running"])');
     expect(functionSource).toContain('error.code === "23505"');
     expect(functionSource).toMatch(/return \{ runId: active\.id(?: as string)?, status: active\.status(?: as string)?, created: false \}/);
+  });
+
+  it("claims one lease and heartbeats only around expensive boundaries", () => {
+    expect(functionSource).toContain("claimManagerSynthesisRun");
+    expect(functionSource).toContain("heartbeatManagerSynthesisRun");
+    expect(functionSource).toContain("finishManagerSynthesisRun");
+    expect(functionSource).toContain("heartbeatMusicManagerReadLease");
+    expect(functionSource).toContain("withMusicManagerReadHeartbeat");
+    expect(functionSource).not.toMatch(/setInterval|heartbeatTimer/);
+    expect(functionSource).toContain('workflow_version: "music_manager_read_v2"');
   });
 
   it("checks Chartmetric freshness and enriches before building context or calling OpenAI", () => {
@@ -121,7 +133,8 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).not.toContain("output.watch");
     expect(functionSource).not.toContain("output.confidence");
     expect(functionSource).toContain("is_current: false");
-    expect(functionSource).toContain('.rpc("finalize_music_manager_read_v2"');
+    expect(functionSource).toContain('.rpc("finalize_leased_music_manager_read_v2"');
+    expect(functionSource).toContain("target_lease_token");
   });
 
   it("reconciles ambiguous finalization and scopes cleanup to active rows", () => {

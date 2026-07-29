@@ -266,6 +266,18 @@ describe("Music Manager Read v2 schema", () => {
       /create or replace function public\.finalize_music_manager_read_v2[\s\S]*?security invoker\s+set search_path = public/i,
     );
   });
+
+  it("keeps the existing finalizer behind a service-only lease guard", () => {
+    const reliability = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000200_production_reliability_v1.sql"), "utf8");
+    expect(reliability).toContain("finalize_leased_music_manager_read_v2");
+    expect(reliability).toContain("target.lease_token = target_lease_token");
+    expect(reliability).toContain("target.lease_expires_at > now()");
+    expect(reliability).toContain("synthesis_run.status in ('completed', 'completed_with_limits')");
+    expect(reliability).toContain("public.finalize_music_manager_read_v2(");
+    expect(reliability).toContain("revoke execute on function public.finalize_music_manager_read_v2");
+    expect(reliability).toContain("grant execute on function public.finalize_leased_music_manager_read_v2");
+    expect(reliability).toContain("to service_role");
+  });
 });
 
 describe("Music Manager Read single-surface conversion", () => {

@@ -106,6 +106,11 @@ create unique index if not exists manager_run_actions_action_key_idx
   on public.manager_run_actions (manager_synthesis_run_id, action_key)
   where action_key is not null;
 
+create unique index if not exists ai_run_usage_events_music_manager_read_unique_idx
+  on public.ai_run_usage_events (manager_synthesis_run_id, operation_key)
+  where manager_synthesis_run_id is not null
+    and operation_key = 'music_manager_read_v2';
+
 create unique index if not exists source_snapshots_action_idx
   on public.source_snapshots (created_from_action_id)
   where created_from_action_id is not null;
@@ -210,6 +215,79 @@ begin
     and target.lease_token = current_lease_token
     and target.lease_expires_at > now();
   return found;
+end;
+$$;
+
+create or replace function public.finalize_leased_music_manager_read_v2(
+  target_run_id uuid,
+  target_lease_token uuid,
+  target_output_id uuid,
+  target_usage_id uuid,
+  target_run_status public.run_status,
+  target_steps_payload jsonb,
+  target_input_tokens integer,
+  target_cached_input_tokens integer,
+  target_output_tokens integer,
+  target_reasoning_tokens integer,
+  target_provider_request_count integer,
+  target_usage_metadata jsonb
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  synthesis_run public.manager_synthesis_runs%rowtype;
+  finalized_output_id uuid;
+begin
+  select *
+  into synthesis_run
+  from public.manager_synthesis_runs
+  where id = target_run_id
+  for update;
+
+  if not found then
+    raise exception 'Music Manager Read run was not found.';
+  end if;
+
+  if synthesis_run.status in ('completed', 'completed_with_limits') then
+    null; -- The existing finalizer below accepts exact replay and rejects conflicts.
+  elsif synthesis_run.workflow_version is distinct from 'music_manager_read_v2'
+    or synthesis_run.classification is distinct from 'music_manager_read_v2'
+    or not exists (
+      select 1
+      from public.manager_synthesis_runs as target
+      where target.id = target_run_id
+        and target.status = 'running'
+        and target.lease_token = target_lease_token
+        and target.lease_expires_at > now()
+    )
+  then
+    raise exception 'Music Manager Read lease is no longer active.';
+  end if;
+
+  finalized_output_id := public.finalize_music_manager_read_v2(
+    target_output_id,
+    target_usage_id,
+    target_run_status,
+    target_steps_payload,
+    target_input_tokens,
+    target_cached_input_tokens,
+    target_output_tokens,
+    target_reasoning_tokens,
+    target_provider_request_count,
+    target_usage_metadata
+  );
+
+  update public.manager_synthesis_runs as target
+  set lease_token = null,
+      lease_expires_at = null,
+      heartbeat_at = now()
+  where target.id = target_run_id
+    and target.status in ('completed', 'completed_with_limits');
+
+  return finalized_output_id;
 end;
 $$;
 
@@ -577,6 +655,12 @@ $$;
 
 revoke all on function public.claim_manager_synthesis_run(uuid, integer) from public, anon, authenticated;
 grant execute on function public.claim_manager_synthesis_run(uuid, integer) to service_role;
+revoke execute on function public.finalize_music_manager_read_v2(uuid, uuid, public.run_status, jsonb, integer, integer, integer, integer, integer, jsonb)
+from public, anon, authenticated, service_role;
+revoke all on function public.finalize_leased_music_manager_read_v2(uuid, uuid, uuid, uuid, public.run_status, jsonb, integer, integer, integer, integer, integer, jsonb)
+from public, anon, authenticated;
+grant execute on function public.finalize_leased_music_manager_read_v2(uuid, uuid, uuid, uuid, public.run_status, jsonb, integer, integer, integer, integer, integer, jsonb)
+to service_role;
 revoke all on function public.finish_manager_synthesis_run(uuid, uuid, public.run_status, jsonb, text[], text) from public, anon, authenticated;
 grant execute on function public.finish_manager_synthesis_run(uuid, uuid, public.run_status, jsonb, text[], text) to service_role;
 revoke all on function public.claim_source_sync_job(uuid, integer) from public, anon, authenticated;

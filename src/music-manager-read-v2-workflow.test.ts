@@ -114,6 +114,13 @@ function createDependencies(options: FactoryOptions = {}) {
 }
 
 describe("Music Manager Read v2 workflow", () => {
+  it("keeps staging before the single atomic finalizer boundary", async () => {
+    const { dependencies, events } = createDependencies();
+    await runMusicManagerReadWorkflow(dependencies);
+    expect(events.indexOf("stageOutput")).toBeLessThan(events.indexOf("finalizeOutput"));
+    expect(events.filter((event) => event === "finalizeOutput")).toHaveLength(1);
+  });
+
   it("skips enrichment for fresh evidence and completes one output", async () => {
     const { dependencies } = createDependencies();
 

@@ -28,6 +28,11 @@ import {
   type WorkflowStep,
   type WorkflowStepStatus,
 } from "../_shared/music-manager-read/workflow.ts";
+import {
+  claimManagerSynthesisRun,
+  finishManagerSynthesisRun,
+  heartbeatManagerSynthesisRun,
+} from "../_shared/durableWorkflow.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 
 const corsHeaders = {
@@ -37,7 +42,7 @@ const corsHeaders = {
 };
 
 const MUSIC_MANAGER_READ_CLASSIFICATION = "music_manager_read_v2";
-const ACTIVE_RUN_STALE_MS = 5 * 60 * 1000;
+const MUSIC_MANAGER_READ_LEASE_SECONDS = 900;
 const CHARTMETRIC_EVIDENCE_FRESH_MS = 24 * 60 * 60 * 1000;
 const MAX_MANAGER_READ_CONTEXT_CHARS = 45_000;
 const MAX_MANAGER_PACKET_EVIDENCE_ITEMS = 12;
@@ -172,33 +177,6 @@ async function assertWorkspace(db: any, input: GenerateMusicSummaryInput) {
 }
 
 async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) {
-  const staleBefore = new Date(Date.now() - ACTIVE_RUN_STALE_MS).toISOString();
-  const { data: staleRuns, error: staleError } = await exactActiveRunQuery(
-    db.from("manager_synthesis_runs").update({
-      status: "failed",
-      error: "Music Manager Read run expired before completion.",
-      completed_at: new Date().toISOString(),
-    }),
-    input,
-  ).lt("created_at", staleBefore).select("id");
-  if (staleError) throw staleError;
-  const staleRunIds = Array.isArray(staleRuns) ? staleRuns.map((run) => run.id).filter(Boolean) : [];
-  if (staleRunIds.length > 0) {
-    const { error: staleUsageError } = await exactOwnedQuery(
-      db.from("ai_run_usage_events").update({
-        status: "failed",
-        failure_reason: "Music Manager Read run expired before completion.",
-        completed_at: new Date().toISOString(),
-      }),
-      input,
-    ).in("manager_synthesis_run_id", staleRunIds)
-      .eq("operation_key", "music_manager_read_v2")
-      .eq("subject_type", input.subjectType)
-      .eq("subject_id", input.subjectId)
-      .eq("status", "started");
-    if (staleUsageError) throw staleUsageError;
-  }
-
   const active = await findActiveManagerReadRun(db, input);
   if (active) return { runId: active.id as string, status: active.status as string, created: false };
 
@@ -216,6 +194,9 @@ async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) 
       subjectType: input.subjectType,
       subjectId: input.subjectId,
     },
+    workflow_version: "music_manager_read_v2",
+    scope_key: `${input.subjectType}:${input.subjectId}`,
+    input_refs: [{ type: input.subjectType, id: input.subjectId }],
     steps_payload: [queuedStep],
   }).select("id").single();
 
@@ -263,24 +244,32 @@ async function completeManagerReadInBackground({
   const requestLedger = createOpenAIRequestLedger();
   const steps = new Map<StepName, WorkflowStepStatus>([["queued", "completed"]]);
   let builtContext: ManagerReadContext | null = null;
+  const lease = await claimManagerSynthesisRun(db, { runId, leaseSeconds: MUSIC_MANAGER_READ_LEASE_SECONDS });
+  if (!lease) return;
+  const heartbeat = () => heartbeatMusicManagerReadLease(db, runId, lease.token);
 
   try {
-    await setRunRunning(db, runId, input);
     usageId = await createUsageEvent(db, input, runId, model);
 
     const result = await runMusicManagerReadWorkflow<ManagerReadContext, MusicManagerReadV2, OpenAIUsage>({
       markStep: async (step, status) => {
         steps.set(step, status);
-        await persistActiveSteps(db, runId, orderedSteps(steps));
+        await persistActiveSteps(db, runId, lease.token, orderedSteps(steps));
       },
       inspectEvidence: () => inspectChartmetricEvidence(db, input),
-      enrichEvidence: () => enrichChartmetricEvidence(db, input, serviceRoleKey),
+      enrichEvidence: () => withMusicManagerReadHeartbeat(heartbeat, () => enrichChartmetricEvidence(db, input, serviceRoleKey)),
       buildContext: async () => {
         builtContext = await buildManagerReadContext(db, input);
         return builtContext;
       },
-      generateInitial: (context) => generateInitialManagerRead(context, input.subjectType, model, requestLedger),
-      validateAndRepair: (context, initial) => validateAndRepairManagerRead(context, input.subjectType, model, initial, requestLedger),
+      generateInitial: (context) => withMusicManagerReadHeartbeat(
+        heartbeat,
+        () => generateInitialManagerRead(context, input.subjectType, model, requestLedger),
+      ),
+      validateAndRepair: (context, initial) => withMusicManagerReadHeartbeat(
+        heartbeat,
+        () => validateAndRepairManagerRead(context, input.subjectType, model, initial, requestLedger),
+      ),
       stageOutput: async (output) => {
         if (!builtContext) throw new Error("Music Manager Read context was not built before output staging.");
         return stageManagerOutput(db, input, runId, builtContext, output);
@@ -289,7 +278,8 @@ async function completeManagerReadInBackground({
         if (!usageId) throw new Error("Music Manager Read usage event is missing.");
         const terminalStatus = workflowResult.completedWithLimits ? "completed_with_limits" : "completed";
         const terminalSteps = orderedSteps(new Map(steps).set("output_activation", "completed"));
-        await finalizeManagerRead(db, input, runId, usageId, model, terminalStatus, terminalSteps, workflowResult);
+        await heartbeat();
+        await finalizeManagerRead(db, input, runId, lease.token, usageId, model, terminalStatus, terminalSteps, workflowResult);
       },
     });
 
@@ -303,9 +293,18 @@ async function completeManagerReadInBackground({
   } catch (error) {
     const failure = toPublicMusicManagerReadFailure(error);
     logMusicManagerReadDiagnostic("Music Manager Read background run failed", error, { runId });
-    const failed = await markRunFailedSafe(db, runId, input, failure.message);
-    if (usageId) await markUsageFailedSafe(db, usageId, runId, input, failure.message, requestLedger);
+    const failed = await finishManagerSynthesisRun(db, {
+      runId,
+      leaseToken: lease.token,
+      status: "failed",
+      steps: orderedSteps(steps),
+      error: boundedString(failure.message, 1000),
+    }).catch((bookkeepingError) => {
+      console.error("Music Manager Read failure bookkeeping failed:", bookkeepingError);
+      return false;
+    });
     if (failed) {
+      if (usageId) await markUsageFailedSafe(db, usageId, runId, input, failure.message, requestLedger);
       await reconcileParentSetupMusicReads(db, input, runId, "failed");
       await writeManagerReadTerminalEventSafe(db, input, runId, "failed", {
         eventType: "music_manager_read_failed",
@@ -391,16 +390,6 @@ async function writeManagerReadTerminalEventSafe(
   }
 }
 
-async function setRunRunning(db: any, runId: string, input: GenerateMusicSummaryInput) {
-  const { data, error } = await exactRunQuery(
-    db.from("manager_synthesis_runs").update({ status: "running", started_at: new Date().toISOString() }),
-    runId,
-    input,
-  ).eq("status", "queued").select("id").maybeSingle();
-  if (error) throw error;
-  if (!data?.id) throw new Error("Music Manager Read run is no longer queued.");
-}
-
 async function createUsageEvent(db: any, input: GenerateMusicSummaryInput, runId: string, model: string) {
   const { data, error } = await db.from("ai_run_usage_events").insert({
     account_id: input.accountId,
@@ -417,15 +406,46 @@ async function createUsageEvent(db: any, input: GenerateMusicSummaryInput, runId
     status: "started",
     provider_request_count: 0,
   }).select("id").single();
+  if (error?.code === "23505") {
+    const { data: existing, error: existingError } = await exactOwnedQuery(
+      db.from("ai_run_usage_events").select("id"),
+      input,
+    ).eq("manager_synthesis_run_id", runId)
+      .eq("operation_key", "music_manager_read_v2")
+      .maybeSingle();
+    if (existingError) throw existingError;
+    if (existing?.id) return existing.id as string;
+  }
   if (error) throw error;
   return data.id as string;
 }
 
-async function persistActiveSteps(db: any, runId: string, steps: StepState[]) {
-  const { error } = await db.from("manager_synthesis_runs").update({ steps_payload: steps })
+async function persistActiveSteps(db: any, runId: string, leaseToken: string, steps: StepState[]) {
+  const { data, error } = await db.from("manager_synthesis_runs").update({ steps_payload: steps })
     .eq("id", runId)
-    .in("status", ["queued", "running"]);
+    .eq("lease_token", leaseToken)
+    .gt("lease_expires_at", new Date().toISOString())
+    .eq("status", "running")
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  if (!data?.id) throw new Error("Music Manager Read lease is no longer active.");
+}
+
+async function heartbeatMusicManagerReadLease(db: any, runId: string, leaseToken: string) {
+  const active = await heartbeatManagerSynthesisRun(db, {
+    runId,
+    leaseToken,
+    leaseSeconds: MUSIC_MANAGER_READ_LEASE_SECONDS,
+  });
+  if (!active) throw new Error("Music Manager Read lease is no longer active.");
+}
+
+async function withMusicManagerReadHeartbeat<T>(heartbeat: () => Promise<void>, operation: () => Promise<T>): Promise<T> {
+  await heartbeat();
+  const result = await operation();
+  await heartbeat();
+  return result;
 }
 
 function orderedSteps(steps: Map<StepName, WorkflowStepStatus>): StepState[] {
@@ -861,6 +881,15 @@ async function stageManagerOutput(
     created_from_run_id: runId,
     is_current: false,
   }).select("id").single();
+  if (error?.code === "23505") {
+    const { data: existing, error: existingError } = await exactOutputScopeQuery(
+      db.from("manager_outputs").select("id,render_json"),
+      input,
+    ).eq("created_from_run_id", runId).maybeSingle();
+    if (existingError) throw existingError;
+    if (existing?.id && jsonEqual(existing.render_json, output)) return existing.id as string;
+    throw new Error("Music Manager Read staged output conflicts with an earlier attempt.");
+  }
   if (error) throw error;
   return data.id as string;
 }
@@ -869,6 +898,7 @@ async function finalizeManagerRead(
   db: any,
   input: GenerateMusicSummaryInput,
   runId: string,
+  leaseToken: string,
   usageId: string,
   model: string,
   runStatus: "completed" | "completed_with_limits",
@@ -877,6 +907,8 @@ async function finalizeManagerRead(
 ) {
   const metadata = { response_id: boundedString(result.responseId, 180), model: boundedString(model, 180) };
   const rpcArguments = {
+    target_run_id: runId,
+    target_lease_token: leaseToken,
     target_output_id: result.outputId,
     target_usage_id: usageId,
     target_run_status: runStatus,
@@ -888,7 +920,7 @@ async function finalizeManagerRead(
     target_provider_request_count: result.requestCount,
     target_usage_metadata: metadata,
   };
-  const { error: rpcError } = await db.rpc("finalize_music_manager_read_v2", rpcArguments);
+  const { error: rpcError } = await db.rpc("finalize_leased_music_manager_read_v2", rpcArguments);
   if (!rpcError) return;
   const reconciled = await reconcileFinalization(db, input, runId, usageId, runStatus, steps, result, metadata);
   if (!reconciled) throw rpcError;
@@ -938,21 +970,6 @@ function outputIsInCurrentLineage(outputs: Array<Record<string, unknown>>, outpu
     cursor = previousId ? outputs.find((row) => row.id === previousId) : undefined;
   }
   return false;
-}
-
-async function markRunFailedSafe(db: any, runId: string, input: GenerateMusicSummaryInput, message: string) {
-  try {
-    const { data, error } = await exactRunQuery(db.from("manager_synthesis_runs").update({
-      status: "failed",
-      error: boundedString(message, 1000),
-      completed_at: new Date().toISOString(),
-    }), runId, input).in("status", ["queued", "running"]).select("id");
-    if (error) throw error;
-    return Array.isArray(data) && data.length > 0;
-  } catch (bookkeepingError) {
-    console.error("Music Manager Read failure bookkeeping failed:", bookkeepingError);
-    return false;
-  }
 }
 
 async function markUsageFailedSafe(
