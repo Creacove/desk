@@ -1,12 +1,39 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { nextAvailableAt } from "../supabase/functions/_shared/durableWorkflow";
+import { publicWorkflowFailure } from "../supabase/functions/_shared/workflowErrors";
 
 function source(...parts: string[]) {
   return readFileSync(join(process.cwd(), ...parts), "utf8");
 }
 
 describe("paid workspace setup orchestration", () => {
+  it("uses database-owned stage leases and token-guarded merges", () => {
+    const setupText = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+    const migration = source("supabase", "migrations", "20260728000200_production_reliability_v1.sql");
+
+    expect(setupText).toContain("claimWorkspaceSetupStage");
+    expect(setupText).toContain("mergeWorkspaceSetupStage");
+    expect(setupText).not.toContain("claimFailedDiscoveryRetry");
+    expect(setupText).not.toContain("claimContextualPhase");
+    expect(migration).toContain("current_stage_state ->> 'lease_token' is distinct from current_lease_token::text");
+    expect(migration).toContain("nullif(current_stage_state ->> 'lease_expires_at', '')::timestamptz > now()");
+    expect(migration).toContain("in ('completed', 'completed_with_limits', 'failed')");
+    expect(migration).toContain("heartbeat_workspace_setup_stage");
+  });
+
+  it("backs retries off deterministically without exposing internal failures", () => {
+    const now = new Date("2026-07-29T08:00:00.000Z");
+    expect(nextAvailableAt(1, now)).toBe("2026-07-29T08:00:05.000Z");
+    expect(nextAvailableAt(4, now)).toBe("2026-07-29T08:00:40.000Z");
+    expect(publicWorkflowFailure(new Error("postgres password=secret provider body"))).toEqual({
+      code: "workflow_temporarily_unavailable",
+      message: "We couldn't finish this work right now. Your completed work is safe.",
+      retryable: true,
+    });
+  });
+
   it("defines discovery and contextualize phases with durable setup-run updates", () => {
     const path = join(process.cwd(), "supabase", "functions", "paid-workspace-setup", "index.ts");
     expect(existsSync(path)).toBe(true);
@@ -80,7 +107,7 @@ describe("paid workspace setup orchestration", () => {
       billingText.indexOf("function selectSetupRetryPhase") + 900,
     );
 
-    expect(billingText).toContain('select("status,current_stage,stage_status,last_error")');
+    expect(billingText).toContain('select("id,status,current_stage,stage_status,last_error")');
     expect(retrySelector).toContain('stageState(stageStatus, "manager_discovery") === "failed"');
     expect(retrySelector).toContain('return "discovery"');
     expect(retrySelector).toContain('currentStage === "setup_brief"');
@@ -95,18 +122,10 @@ describe("paid workspace setup orchestration", () => {
       setupText.indexOf("async function runDiscoveryPhase"),
       setupText.indexOf("async function runContextualizePhase"),
     );
-    const retryClaim = setupText.slice(
-      setupText.indexOf("async function claimFailedDiscoveryRetry"),
-      setupText.indexOf("async function claimFailedDiscoveryRetry") + 1300,
-    );
-
-    expect(discoveryPhase).toContain("claimFailedDiscoveryRetry");
-    expect(discoveryPhase).toContain("stageAlreadyClaimed: true");
-    expect(setupText).toContain("reuseExistingSnapshots: stageAlreadyClaimed");
-    expect(retryClaim).toContain('.eq("status", "failed")');
-    expect(retryClaim).toContain('.contains("stage_status", { manager_discovery: { status: "failed" } })');
-    expect(retryClaim).toContain('status: "running"');
-    expect(retryClaim).toContain('manager_discovery: { status: "running"');
+    expect(discoveryPhase).toContain("claimWorkspaceSetupStage");
+    expect(discoveryPhase).toContain('expectedStatus: existing === "not_started" ? "queued" : existing');
+    expect(discoveryPhase).toContain("setupStageLeaseToken");
+    expect(setupText).toContain("reuseExistingSnapshots: existing === \"failed\"");
   });
 
   it("opens Desk HQ after the brief while music reads continue in the background", () => {
@@ -116,28 +135,24 @@ describe("paid workspace setup orchestration", () => {
     expect(briefText).toContain("EdgeRuntime.waitUntil");
     expect(briefText).toContain("Promise.allSettled");
     expect(text).toContain('status: hasMusicReadTargets ? "running" : "completed"');
-    expect(text).toContain("music_reads: mergeSetupMusicReadStage");
+    expect(text).toContain("next_stage_patch: proposedMusicReadStage");
     expect(text).toContain('status: "completed"');
     expect(text).toContain("setupRunId: setupRun.id");
-    expect(text).toContain("mergeSetupMusicReadStage");
-    expect(text).toContain('latestMusicReadStatus === "completed"');
-    expect(text).toContain('latestMusicReadStatus === "completed_with_limits"');
+    expect(text).toContain("mergeWorkspaceSetupStage");
   });
 
-  it("reconciles a stuck running brief from its persisted Manager output", () => {
+  it("does not reconcile a running brief with an unguarded artifact lookup", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
 
-    expect(text).toContain("reconcileCompletedSetupBrief");
-    expect(text).toContain('output_type", "setup_first_manager_read"');
-    expect(text).toContain('setup_brief: { status: "completed"');
+    expect(text).not.toContain("reconcileCompletedSetupBrief");
+    expect(text).not.toContain('output_type", "setup_first_manager_read"');
   });
 
-  it("reconciles a completed discovery event when the setup stage was left running", () => {
+  it("does not let historical discovery events complete the active setup stage", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
 
-    expect(text).toContain("reconcileCompletedDiscoveryStage");
-    expect(text).toContain('event_type", "manager_discovery_completed"');
-    expect(text).toContain('manager_discovery: { status: "completed"');
+    expect(text).not.toContain("reconcileCompletedDiscoveryStage");
+    expect(text).not.toContain('.eq("event_type", "manager_discovery_completed")');
   });
 
   it("re-enters catalog bootstrap when contextual setup observes a failed or incomplete catalog", () => {
@@ -150,9 +165,7 @@ describe("paid workspace setup orchestration", () => {
     expect(contextualize).toContain("recoverCatalogBeforeContextualize");
     expect(contextualize).toContain('status: "waiting_for_catalog"');
     expect(contextualize).toContain("return runDiscoveryPhase");
-    expect(contextualize.indexOf("recoverCatalogBeforeContextualize")).toBeLessThan(
-      contextualize.indexOf('current_stage: "manager_discovery"'),
-    );
+    expect(contextualize).not.toContain('current_stage: "manager_discovery"');
   });
 
   it("returns the persisted contextual brief and music targets when setup already completed", () => {

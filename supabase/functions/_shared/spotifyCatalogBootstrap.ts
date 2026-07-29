@@ -122,7 +122,12 @@ export type SourceSyncJobDraft = {
   sourceConnectionId: string;
   jobType: "spotify_catalog_bootstrap";
   triggerType: "setup";
-  status: "running";
+  status: "queued" | "running";
+  workflowVersion?: string;
+  scopeKey?: string;
+  inputRefs?: Array<Record<string, unknown>>;
+  targetPayload?: Record<string, unknown>;
+  workspaceSetupRunId?: string;
 };
 
 export type SourceSnapshotDraft = {

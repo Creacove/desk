@@ -54,20 +54,38 @@ export function createSupabaseCatalogRepository(
     },
 
     async createSourceSyncJob(draft) {
+      const payload = {
+        account_id: draft.accountId,
+        artist_workspace_id: draft.artistWorkspaceId,
+        artist_id: draft.artistId,
+        source_connection_id: draft.sourceConnectionId,
+        job_type: draft.jobType,
+        trigger_type: draft.triggerType,
+        status: draft.status,
+        started_at: draft.status === "running" ? new Date().toISOString() : null,
+        workflow_version: draft.workflowVersion,
+        scope_key: draft.scopeKey,
+        input_refs: draft.inputRefs,
+        target_payload: draft.targetPayload,
+        workspace_setup_run_id: draft.workspaceSetupRunId,
+      };
       const { data, error } = await supabase
         .from("source_sync_jobs")
-        .insert({
-          account_id: draft.accountId,
-          artist_workspace_id: draft.artistWorkspaceId,
-          artist_id: draft.artistId,
-          source_connection_id: draft.sourceConnectionId,
-          job_type: draft.jobType,
-          trigger_type: draft.triggerType,
-          status: draft.status,
-          started_at: new Date().toISOString(),
-        })
+        .insert(payload)
         .select("id")
         .single();
+      if (error && (error as { code?: string }).code === "23505" && draft.scopeKey) {
+        const { data: active, error: activeError } = await supabase.from("source_sync_jobs")
+          .select("id")
+          .eq("account_id", draft.accountId)
+          .eq("artist_workspace_id", draft.artistWorkspaceId)
+          .eq("job_type", draft.jobType)
+          .eq("scope_key", draft.scopeKey)
+          .in("status", ["queued", "running"])
+          .maybeSingle();
+        if (activeError) throw activeError;
+        if (active?.id) return active.id as string;
+      }
       if (error) throw error;
       return data.id as string;
     },

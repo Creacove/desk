@@ -20,6 +20,14 @@ function readToolBlock(toolName: string) {
 }
 
 describe("Manager artist discovery edge function", () => {
+  it("claims discovery before provider work and uses the lease token for terminal updates", () => {
+    expect(discoveryFunctionSource).toContain("claimWorkspaceSetupStage");
+    expect(discoveryFunctionSource).toContain("mergeWorkspaceSetupStage");
+    expect(discoveryFunctionSource).toContain("heartbeatWorkspaceSetupStage");
+    expect(discoveryFunctionSource).toContain("setupStageLeaseToken");
+    expect(discoveryFunctionSource).not.toContain('from("workspace_setup_runs").update');
+  });
+
   it("replaces the deprecated Chartmetric setup enrichment function", () => {
     expect(existsSync(join(process.cwd(), "supabase", "functions", "chartmetric-setup-enrichment", "index.ts"))).toBe(false);
     expect(spotifyBootstrapSource).toContain("dispatchManagerArtistDiscovery");
@@ -101,7 +109,7 @@ describe("Manager artist discovery edge function", () => {
     expect(discoveryFunctionSource).not.toContain("assetResults.some");
 
     const failedToolsIndex = discoveryFunctionSource.indexOf("const failedTools = result.toolTrace.filter");
-    const completionIndex = discoveryFunctionSource.indexOf("completeDiscoverySetupStage");
+    const completionIndex = discoveryFunctionSource.indexOf("mergeWorkspaceSetupStage", failedToolsIndex);
     expect(failedToolsIndex).toBeGreaterThan(-1);
     expect(completionIndex).toBeGreaterThan(failedToolsIndex);
   });
@@ -120,7 +128,7 @@ describe("Manager artist discovery edge function", () => {
     expect(discoveryFunctionSource).not.toContain("manager_discovery_brief_generated");
     expect(discoveryFunctionSource).not.toContain("generate-todays-brief");
 
-    const completionIndex = discoveryFunctionSource.indexOf("await completeDiscoverySetupStage");
+    const completionIndex = discoveryFunctionSource.indexOf("await mergeWorkspaceSetupStage");
     const contextualizeIndex = discoveryFunctionSource.indexOf("scheduleBackgroundTask(dispatchContextualizePhase");
     expect(completionIndex).toBeGreaterThan(-1);
     expect(contextualizeIndex).toBeGreaterThan(completionIndex);

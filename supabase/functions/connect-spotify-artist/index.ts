@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSupabaseCatalogRepository } from "../_shared/supabaseCatalogRepository.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { workflowFailureBody } from "../_shared/workflowErrors.ts";
 
 const publicCatalogLimit =
   "Spotify public catalog supports identity, catalog, and public metadata only; it does not prove private analytics, saves, source-of-stream, revenue, conversion, or campaign ROI.";
@@ -115,7 +116,14 @@ Deno.serve(async (request) => {
       sourceConnectionId,
       jobType: "spotify_catalog_bootstrap",
       triggerType: "setup",
-      status: "running",
+      status: "queued",
+      workflowVersion: "spotify_catalog_bootstrap_v1",
+      scopeKey: `spotify_catalog:${input.artistWorkspaceId}:${input.selectedArtist.spotifyArtistId}`,
+      inputRefs: [{ type: "artist_workspace", id: input.artistWorkspaceId }],
+      targetPayload: {
+        spotify_artist_id: input.selectedArtist.spotifyArtistId,
+        market: input.market ?? "US",
+      },
     });
 
     scheduleCatalogBootstrap(
@@ -123,7 +131,6 @@ Deno.serve(async (request) => {
         supabaseUrl,
         anonKey,
         authHeader,
-        authClient,
         input,
         sourceConnectionId,
         sourceSyncJobId,
@@ -146,9 +153,8 @@ Deno.serve(async (request) => {
       latest_catalog_sync_status: "running",
     });
   } catch (error) {
-    const message = errorMessage(error, "Spotify artist could not be connected.");
-    console.error("connect-spotify-artist failed", { message, error });
-    return json({ error: message }, 500);
+    console.error("connect-spotify-artist failed", { error });
+    return json(workflowFailureBody(error), 500);
   }
 });
 
@@ -170,7 +176,6 @@ async function startCatalogBootstrap({
   supabaseUrl,
   anonKey,
   authHeader,
-  authClient,
   input,
   sourceConnectionId,
   sourceSyncJobId,
@@ -178,7 +183,6 @@ async function startCatalogBootstrap({
   supabaseUrl: string;
   anonKey: string;
   authHeader: string;
-  authClient: any;
   input: ConnectInput;
   sourceConnectionId: string;
   sourceSyncJobId: string;
@@ -207,15 +211,7 @@ async function startCatalogBootstrap({
       throw new Error(body || `Spotify catalog bootstrap failed with ${response.status}.`);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Spotify catalog bootstrap could not be started.";
-    await authClient
-      .from("source_sync_jobs")
-      .update({
-        status: "failed",
-        completed_at: new Date().toISOString(),
-        error: message,
-      })
-      .eq("id", sourceSyncJobId);
+    console.error("spotify catalog dispatch failed; queued job remains recoverable", { error, sourceSyncJobId });
   }
 }
 
@@ -250,21 +246,6 @@ function requireEnv(key: string) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message) {
-      return message;
-    }
-  }
-
-  return fallback;
 }
 
 function json(body: unknown, status = 200) {

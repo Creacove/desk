@@ -1,4 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { claimWorkspaceSetupStage, mergeWorkspaceSetupStage } from "../_shared/durableWorkflow.ts";
+import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -68,9 +70,8 @@ Deno.serve(async (request) => {
     }
     return json(await runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }));
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Paid workspace setup failed.";
-    if (db && setupRun && input) await markSetupFailed(db, setupRun, input.phase, message).catch(() => undefined);
-    return json({ error: message }, 500);
+    console.error("paid-workspace-setup failed", { error, setupRunId: setupRun?.id, phase: input?.phase });
+    return json(workflowFailureBody(error), 500);
   }
 });
 
@@ -134,72 +135,69 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
   }
 
   if (existing === "failed" && !input.explicitRetry) {
-    return { status: "failed", phase: "discovery", error: readDiscoveryStageError(stages) };
-  }
-
-  if (catalogState === "running") {
-    return { status: "running", phase: "discovery" };
+    const failure = readDiscoveryStageFailure(stages);
+    return { status: "failed", phase: "discovery", error: failure.message, failure };
   }
 
   if (catalogState === "completed" || catalogState === "completed_with_limits") {
-    const dispatchFailed = await hasDiscoveryDispatchFailure(db, workspace, stages);
-    if (existing === "running" && !dispatchFailed) {
-      return { status: "running", phase: "discovery" };
-    }
-
-    if (existing === "failed") {
-      const claimedStages = await claimFailedDiscoveryRetry(db, setupRun.id, stages);
-      if (!claimedStages) return { status: "running", phase: "discovery" };
-      await dispatchManagerDiscoveryPhase({
-        db,
-        supabaseUrl,
-        serviceRoleKey,
-        checkout,
-        workspace,
-        setupRun,
-        stages: claimedStages,
-        stageAlreadyClaimed: true,
-      });
-      return { status: "running", phase: "discovery" };
-    }
-
-    await dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages });
+    if (existing === "running") return { status: "running", phase: "discovery" };
+    const discoveryLease = await claimWorkspaceSetupStage(db, {
+      setupRunId: setupRun.id,
+      stage: "manager_discovery",
+      expectedStatus: existing === "not_started" ? "queued" : existing,
+      leaseSeconds: 900,
+    });
+    if (!discoveryLease) return { status: "running", phase: "discovery" };
+    await dispatchManagerDiscoveryPhase({
+      db,
+      supabaseUrl,
+      serviceRoleKey,
+      checkout,
+      workspace,
+      setupRun,
+      setupStageLeaseToken: discoveryLease.token,
+      reuseExistingSnapshots: existing === "failed",
+    });
     return { status: "running", phase: "discovery" };
   }
 
-  if (setupRun.status === "running" && ["queued", "running"].includes(existing)) {
-    return { status: existing, phase: "discovery" };
-  }
-
-  const startedAt = new Date().toISOString();
-  const nextStages = {
-    ...stages,
-    catalog_bootstrap: { status: "running", started_at: startedAt },
-    manager_discovery: { status: "queued" },
-  };
-  const claimed = await claimSetupRun(db, setupRun.id, setupRun.status, {
-    status: "running",
-    current_stage: "catalog_bootstrap",
-    stage_status: nextStages,
-    last_error: null,
+  if (catalogState === "running") return { status: "running", phase: "discovery" };
+  const catalogLease = await claimWorkspaceSetupStage(db, {
+    setupRunId: setupRun.id,
+    stage: "catalog_bootstrap",
+    expectedStatus: catalogState === "not_started" ? "queued" : catalogState,
+    leaseSeconds: 900,
   });
-  if (!claimed) return { status: "running", phase: "discovery" };
+  if (!catalogLease) return { status: "running", phase: "discovery" };
 
   const selectedArtist = checkout.selected_artist;
-  const result = await invokeFunctionWithRetries({
-    supabaseUrl,
-    serviceRoleKey,
-    functionName: "spotify-catalog-bootstrap",
-    body: {
-      accountId: workspace.account_id,
-      artistWorkspaceId: workspace.id,
-      artistId: workspace.artist_id,
-      selectedArtist,
-      market: "US",
+  let result: any;
+  try {
+    result = await invokeFunctionWithRetries({
+      supabaseUrl,
+      serviceRoleKey,
+      functionName: "spotify-catalog-bootstrap",
+      body: {
+        accountId: workspace.account_id,
+        artistWorkspaceId: workspace.id,
+        artistId: workspace.artist_id,
+        selectedArtist,
+        market: "US",
+        setupRunId: setupRun.id,
+        checkoutSessionId: checkout.id,
+        setupStageLeaseToken: catalogLease.token,
+      },
+    });
+  } catch (error) {
+    const failure = publicWorkflowFailure(error);
+    await mergeWorkspaceSetupStage(db, {
       setupRunId: setupRun.id,
-      checkoutSessionId: checkout.id,
-    },
-  });
+      stage: "catalog_bootstrap",
+      leaseToken: catalogLease.token,
+      patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+    }).catch(() => false);
+    throw error;
+  }
 
   return { status: "running", phase: "discovery", catalog: result };
 }
@@ -223,39 +221,14 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     return { status: "waiting_for_context", phase: "contextualize" };
   }
 
-  contextStages = await reconcileCompletedDiscoveryStage(db, workspace, contextStages);
   const discoveryState = stageState(contextStages, "manager_discovery");
   if (discoveryState === "failed") {
     throw new Error(readDiscoveryStageError(contextStages) || "Manager discovery failed. Retry setup after repairing the reported provider error.");
   }
   if (!["completed", "completed_with_limits"].includes(discoveryState)) {
-    const catalogState = stageState(contextStages, "catalog_bootstrap");
-    if (!["completed", "completed_with_limits"].includes(catalogState)) {
-      return recoverCatalogBeforeContextualize({
-        db,
-        supabaseUrl,
-        serviceRoleKey,
-        checkout,
-        workspace,
-        setupRun,
-      });
-    }
-    if (catalogState === "completed" || catalogState === "completed_with_limits") {
-      const dispatchFailed = await hasDiscoveryDispatchFailure(db, workspace, contextStages);
-      if (discoveryState !== "running" || dispatchFailed) {
-        contextStages = await dispatchManagerDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun, stages: contextStages });
-      }
-    }
-
-    await updateSetupRun(db, setupRun.id, {
-      status: "running",
-      current_stage: "manager_discovery",
-      stage_status: { ...contextStages, setup_brief: { status: "queued" } },
-    });
-    return { status: "waiting_for_discovery", phase: "contextualize" };
+    return recoverCatalogBeforeContextualize({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun });
   }
 
-  contextStages = await reconcileCompletedSetupBrief(db, workspace, setupRun, contextStages);
   const setupBriefState = stageState(contextStages, "setup_brief");
   if (setupBriefState === "completed") {
     return loadCompletedSetupResult(db, workspace);
@@ -263,33 +236,53 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
   if (setupBriefState === "running") return { status: "running", phase: "contextualize" };
 
   const startedAt = new Date().toISOString();
-  const claimed = await claimContextualPhase(db, setupRun.id, setupBriefState, {
-    status: "running",
-    current_stage: "setup_brief",
-    stage_status: { ...contextStages, setup_brief: { status: "running", started_at: startedAt } },
-    last_error: null,
+  const briefLease = await claimWorkspaceSetupStage(db, {
+    setupRunId: setupRun.id,
+    stage: "setup_brief",
+    expectedStatus: setupBriefState === "not_started" ? "queued" : setupBriefState,
   });
-  if (!claimed) return { status: "running", phase: "contextualize" };
+  if (!briefLease) return { status: "running", phase: "contextualize" };
 
-  const result = await invokeFunctionWithRetries({
-    supabaseUrl,
-    serviceRoleKey,
-    functionName: "generate-todays-brief",
-    body: {
-      accountId: workspace.account_id,
-      artistWorkspaceId: workspace.id,
-      artistId: workspace.artist_id,
-      trigger: "setup",
-      generationMode: "setup-map",
-      dispatchMusicReads: true,
+  let result: any;
+  try {
+    result = await invokeFunctionWithRetries({
+      supabaseUrl,
+      serviceRoleKey,
+      functionName: "generate-todays-brief",
+      body: {
+        accountId: workspace.account_id,
+        artistWorkspaceId: workspace.id,
+        artistId: workspace.artist_id,
+        trigger: "setup",
+        generationMode: "setup-map",
+        dispatchMusicReads: true,
+        setupRunId: setupRun.id,
+      },
+    });
+  } catch (error) {
+    const failure = publicWorkflowFailure(error);
+    await mergeWorkspaceSetupStage(db, {
       setupRunId: setupRun.id,
-    },
-  });
-  if (result?.status !== "completed" || !result.brief) throw new Error("Contextual setup brief did not produce a live Manager read.");
+      stage: "setup_brief",
+      leaseToken: briefLease.token,
+      patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+    }).catch(() => false);
+    throw error;
+  }
+  if (result?.status !== "completed" || !result.brief) {
+    const error = new Error("Contextual setup brief did not produce a live Manager read.");
+    const failure = publicWorkflowFailure(error);
+    await mergeWorkspaceSetupStage(db, {
+      setupRunId: setupRun.id,
+      stage: "setup_brief",
+      leaseToken: briefLease.token,
+      patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+    }).catch(() => false);
+    throw error;
+  }
 
   const completedAt = new Date().toISOString();
   const hasMusicReadTargets = Array.isArray(result.setupMusicReadTargets) && result.setupMusicReadTargets.length > 0;
-  const latestStages = await loadLatestSetupStages(db, setupRun.id);
   const proposedMusicReadStage = {
     status: hasMusicReadTargets ? "running" : "completed",
     target_count: Array.isArray(result.setupMusicReadTargets) ? result.setupMusicReadTargets.length : 0,
@@ -297,62 +290,19 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     started_at: completedAt,
     ...(hasMusicReadTargets ? {} : { completed_at: completedAt }),
   };
-  await updateSetupRun(db, setupRun.id, {
-    status: "completed",
-    current_stage: "music_reads",
-    stage_status: {
-      ...latestStages,
-      setup_brief: { status: "completed", started_at: startedAt, completed_at: completedAt },
-      music_reads: mergeSetupMusicReadStage(latestStages.music_reads, proposedMusicReadStage),
+  const merged = await mergeWorkspaceSetupStage(db, {
+    setupRunId: setupRun.id,
+    stage: "setup_brief",
+    leaseToken: briefLease.token,
+    patch: {
+      status: "completed",
+      started_at: startedAt,
+      completed_at: completedAt,
+      next_stage_patch: proposedMusicReadStage,
     },
-    completed_at: completedAt,
-    last_error: null,
   });
+  if (!merged) throw new Error("Setup brief lease expired before completion could be saved.");
   return { status: "completed", phase: "contextualize", ...result };
-}
-
-async function reconcileCompletedSetupBrief(db: any, workspace: any, setupRun: any, stages: StageStatus) {
-  if (stageState(stages, "setup_brief") !== "running") return stages;
-  const setupBrief = stages.setup_brief;
-  const startedAt = typeof setupBrief === "object" && typeof setupBrief.started_at === "string"
-    ? setupBrief.started_at
-    : null;
-  let query = db.from("manager_outputs")
-    .select("created_at")
-    .eq("account_id", workspace.account_id)
-    .eq("artist_workspace_id", workspace.id)
-    .eq("artist_id", workspace.artist_id)
-    .eq("output_type", "setup_first_manager_read")
-    .eq("is_current", true)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (startedAt) query = query.gte("created_at", startedAt);
-  const { data, error } = await query.maybeSingle();
-  if (error) throw error;
-  if (!data?.created_at) return stages;
-
-  const targets = await loadSetupMusicReadTargets(db, workspace);
-  const latestStages = await loadLatestSetupStages(db, setupRun.id);
-  const proposedMusicReadStage = {
-    status: targets.length ? "running" : "completed",
-    target_count: targets.length,
-    targets,
-    started_at: data.created_at,
-    ...(targets.length ? {} : { completed_at: data.created_at }),
-  };
-  const completedStages = {
-    ...latestStages,
-    setup_brief: { status: "completed", started_at: startedAt, completed_at: data.created_at },
-    music_reads: mergeSetupMusicReadStage(latestStages.music_reads, proposedMusicReadStage),
-  };
-  await updateSetupRun(db, setupRun.id, {
-    status: "completed",
-    current_stage: "music_reads",
-    stage_status: completedStages,
-    completed_at: data.created_at,
-    last_error: null,
-  });
-  return completedStages;
 }
 
 async function recoverCatalogBeforeContextualize(args: any) {
@@ -361,29 +311,6 @@ async function recoverCatalogBeforeContextualize(args: any) {
     status: "waiting_for_catalog",
     phase: "contextualize",
   }));
-}
-
-async function reconcileCompletedDiscoveryStage(db: any, workspace: any, stages: StageStatus) {
-  if (stageState(stages, "manager_discovery") !== "running") return stages;
-  const discoveryStage = stages.manager_discovery;
-  const startedAt = typeof discoveryStage === "object" && typeof discoveryStage.started_at === "string"
-    ? discoveryStage.started_at
-    : null;
-  let query = db
-    .from("operating_events")
-    .select("created_at")
-    .eq("artist_workspace_id", workspace.id)
-    .eq("event_type", "manager_discovery_completed")
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (startedAt) query = query.gte("created_at", startedAt);
-  const { data, error } = await query.maybeSingle();
-  if (error) throw error;
-  if (!data?.created_at) return stages;
-  return {
-    ...stages,
-    manager_discovery: { status: "completed", completed_at: data.created_at },
-  };
 }
 
 async function loadCompletedSetupResult(db: any, workspace: any) {
@@ -481,27 +408,6 @@ async function loadCheckoutForSetupRun(db: any, checkoutSessionId: string) {
   return data;
 }
 
-async function claimFailedDiscoveryRetry(db: any, setupRunId: string, stages: StageStatus) {
-  const startedAt = new Date().toISOString();
-  const nextStages = {
-    ...stages,
-    manager_discovery: { status: "running", started_at: startedAt },
-  };
-  const { data, error } = await db.from("workspace_setup_runs").update({
-    status: "running",
-    current_stage: "manager_discovery",
-    stage_status: nextStages,
-    last_error: null,
-  })
-    .eq("id", setupRunId)
-    .eq("status", "failed")
-    .contains("stage_status", { manager_discovery: { status: "failed" } })
-    .select("id")
-    .maybeSingle();
-  if (error) throw error;
-  return data?.id ? nextStages : null;
-}
-
 async function dispatchManagerDiscoveryPhase({
   db,
   supabaseUrl,
@@ -509,24 +415,9 @@ async function dispatchManagerDiscoveryPhase({
   checkout,
   workspace,
   setupRun,
-  stages,
-  stageAlreadyClaimed = false,
+  setupStageLeaseToken,
+  reuseExistingSnapshots = false,
 }: any) {
-  let nextStages = stages;
-  if (!stageAlreadyClaimed) {
-    const startedAt = new Date().toISOString();
-    nextStages = {
-      ...stages,
-      manager_discovery: { status: "running", started_at: startedAt },
-    };
-    await updateSetupRun(db, setupRun.id, {
-      status: "running",
-      current_stage: "manager_discovery",
-      stage_status: nextStages,
-      last_error: null,
-    });
-  }
-
   scheduleBackgroundTask(invokeFunctionWithRetries({
     supabaseUrl,
     serviceRoleKey,
@@ -539,41 +430,20 @@ async function dispatchManagerDiscoveryPhase({
       artistName: checkout.selected_artist.name,
       setupRunId: setupRun.id,
       checkoutSessionId: checkout.id,
-      reuseExistingSnapshots: stageAlreadyClaimed,
+      setupStageLeaseToken,
+      reuseExistingSnapshots,
     },
   }).catch(async (error) => {
-    const message = error instanceof Error ? error.message : "Manager artist discovery dispatch failed.";
-    await recordDiscoveryDispatchFailure(db, checkout, workspace, message).catch(() => undefined);
-    await updateSetupRun(db, setupRun.id, {
-      status: "failed",
-      current_stage: "manager_discovery",
-      stage_status: {
-        ...stages,
-        manager_discovery: { status: "failed", error: message, failed_at: new Date().toISOString() },
-      },
-      last_error: message,
-      retry_count: Number(setupRun.retry_count ?? 0) + 1,
+    const failure = publicWorkflowFailure(error);
+    console.error("manager discovery dispatch failed", { error, setupRunId: setupRun.id });
+    await recordDiscoveryDispatchFailure(db, checkout, workspace, failure.message).catch(() => undefined);
+    await mergeWorkspaceSetupStage(db, {
+      setupRunId: setupRun.id,
+      stage: "manager_discovery",
+      leaseToken: setupStageLeaseToken,
+      patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
     }).catch(() => undefined);
   }));
-
-  return nextStages;
-}
-
-async function hasDiscoveryDispatchFailure(db: any, workspace: any, stages: StageStatus) {
-  const discoveryStage = stages.manager_discovery;
-  const startedAt = typeof discoveryStage === "object" && typeof discoveryStage.started_at === "string" ? discoveryStage.started_at : null;
-  let query = db
-    .from("operating_events")
-    .select("id")
-    .eq("artist_workspace_id", workspace.id)
-    .eq("event_type", "manager_artist_discovery_dispatch_failed")
-    .limit(1);
-  if (startedAt) {
-    query = query.gte("created_at", startedAt);
-  }
-  const { data, error } = await query;
-  if (error) throw error;
-  return Array.isArray(data) && data.length > 0;
 }
 
 async function recordDiscoveryDispatchFailure(db: any, checkout: any, workspace: any, message: string) {
@@ -618,65 +488,9 @@ async function invokeFunctionWithRetries({ supabaseUrl, serviceRoleKey, function
   throw lastError;
 }
 
-async function markSetupFailed(db: any, run: any, phase: string, message: string) {
-  const stages = stageStatus(run.stage_status);
-  const key = phase === "discovery" ? "catalog_bootstrap" : "setup_brief";
-  await updateSetupRun(db, run.id, {
-    status: "failed",
-    current_stage: key,
-    stage_status: { ...stages, [key]: { status: "failed", error: message, failed_at: new Date().toISOString() } },
-    last_error: message,
-    retry_count: Number(run.retry_count ?? 0) + 1,
-  });
-}
-
 async function updateSetupRun(db: any, id: string, patch: Record<string, unknown>) {
   const { error } = await db.from("workspace_setup_runs").update(patch).eq("id", id);
   if (error) throw error;
-}
-
-async function loadLatestSetupStages(db: any, setupRunId: string): Promise<StageStatus> {
-  const { data, error } = await db.from("workspace_setup_runs")
-    .select("stage_status")
-    .eq("id", setupRunId)
-    .maybeSingle();
-  if (error) throw error;
-  return stageStatus(data?.stage_status);
-}
-
-function mergeSetupMusicReadStage(latest: unknown, proposed: Record<string, unknown>) {
-  const latestStage = latest && typeof latest === "object" && !Array.isArray(latest)
-    ? latest as Record<string, unknown>
-    : null;
-  const latestMusicReadStatus = typeof latestStage?.status === "string" ? latestStage.status : "";
-  if (latestMusicReadStatus === "completed" || latestMusicReadStatus === "completed_with_limits") {
-    return latestStage as Record<string, unknown>;
-  }
-  if (latestMusicReadStatus === "running" && Array.isArray(latestStage?.targets)) {
-    return { ...proposed, ...latestStage };
-  }
-  return proposed;
-}
-
-async function claimSetupRun(db: any, id: string, expectedStatus: string, patch: Record<string, unknown>) {
-  const { data, error } = await db.from("workspace_setup_runs")
-    .update(patch)
-    .eq("id", id)
-    .eq("status", expectedStatus)
-    .select("id")
-    .maybeSingle();
-  if (error) throw error;
-  return Boolean(data?.id);
-}
-
-async function claimContextualPhase(db: any, id: string, expectedStage: string, patch: Record<string, unknown>) {
-  let query = db.from("workspace_setup_runs").update(patch).eq("id", id);
-  if (expectedStage !== "not_started") {
-    query = query.contains("stage_status", { setup_brief: { status: expectedStage } });
-  }
-  const { data, error } = await query.select("id").maybeSingle();
-  if (error) throw error;
-  return Boolean(data?.id);
 }
 
 function stageStatus(value: unknown): StageStatus {
@@ -704,6 +518,11 @@ function delay(ms: number) {
 function readDiscoveryStageError(stages: StageStatus) {
   const stage = stages.manager_discovery;
   return typeof stage === "object" && typeof stage.error === "string" ? stage.error : "";
+}
+
+function readDiscoveryStageFailure(stages: StageStatus) {
+  const stage = stages.manager_discovery;
+  return publicWorkflowFailure(typeof stage === "object" ? stage.failure : undefined);
 }
 
 function scheduleBackgroundTask(task: Promise<unknown>) {

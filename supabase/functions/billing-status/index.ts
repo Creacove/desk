@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
 import { fulfillVerifiedPaystackCheckout } from "../_shared/paystackFulfillment.ts";
 
@@ -85,7 +86,7 @@ Deno.serve(async (request) => {
       checkout.artist_workspace_id
         ? serviceClient
             .from("workspace_setup_runs")
-            .select("status,current_stage,stage_status,last_error")
+            .select("id,status,current_stage,stage_status,last_error")
             .eq("checkout_session_id", checkout.id)
             .maybeSingle()
         : Promise.resolve({ data: null, error: null }),
@@ -96,7 +97,29 @@ Deno.serve(async (request) => {
     if (setupResult.error) throw setupResult.error;
 
     let retryDispatched = false;
-    if (input.retrySetup && checkout.status === "paid" && checkout.artist_workspace_id) {
+    let retryAuthorized = checkout.status === "paid";
+    if (input.retrySetup && !retryAuthorized && checkout.artist_workspace_id) {
+      const { data: grant, error: grantError } = await serviceClient.from("workspace_access_grants")
+        .select("id")
+        .eq("checkout_session_id", checkout.id)
+        .eq("artist_workspace_id", checkout.artist_workspace_id)
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .lte("starts_at", new Date().toISOString())
+        .gt("ends_at", new Date().toISOString())
+        .maybeSingle();
+      if (grantError) throw grantError;
+      retryAuthorized = Boolean(grant?.id);
+    }
+    if (input.retrySetup && retryAuthorized && checkout.artist_workspace_id) {
+      if (setupResult.data?.status === "failed" && setupResult.data?.id) {
+        const { error: adoptError } = await serviceClient.from("workspace_setup_runs")
+          .update({ workflow_version: "workspace_setup_v1", available_at: new Date().toISOString() })
+          .eq("id", setupResult.data.id)
+          .eq("status", "failed")
+          .is("lease_token", null);
+        if (adoptError) throw adoptError;
+      }
       await invokeSetupFunction({
         supabaseUrl,
         serviceRoleKey,
@@ -130,13 +153,14 @@ Deno.serve(async (request) => {
       workspace: workspaceResult,
       authorizationUrl: checkout.authorization_url,
       accessCode: checkout.access_code,
-      message: setupResult.data?.last_error ?? undefined,
+      message: setupResult.data?.last_error ? publicWorkflowFailure(setupResult.data?.stage_status?.[setupResult.data?.current_stage]?.failure).message : undefined,
       preview: toPreview(checkout),
     };
 
     return json(request, response);
   } catch (error) {
-    return json(request, { error: error instanceof Error ? error.message : "Billing status could not be loaded." }, 500);
+    console.error("billing-status failed", { error });
+    return json(request, workflowFailureBody(error), 500);
   }
 });
 

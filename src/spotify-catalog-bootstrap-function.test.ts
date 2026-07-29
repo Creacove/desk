@@ -8,6 +8,16 @@ const functionSource = readFileSync(join(process.cwd(), "supabase", "functions",
 const clientSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "spotifyCatalogClient.ts"), "utf8");
 
 describe("Spotify catalog bootstrap edge function", () => {
+  it("claims one durable source job and guards setup-stage completion with its lease", () => {
+    expect(functionSource).toContain("ensureDurableSourceJob");
+    expect(functionSource).toContain("claimSourceSyncJob");
+    expect(functionSource).toContain("finishSourceSyncJob");
+    expect(functionSource).toContain("heartbeatWorkspaceSetupStage");
+    expect(functionSource).toContain("mergeWorkspaceSetupStage");
+    expect(functionSource).toContain("setupStageLeaseToken");
+    expect(functionSource).not.toContain('from("workspace_setup_runs").update');
+  });
+
   it("uses the shared catalog importer and avoids deprecated top-tracks fallback", () => {
     expect(functionSource).toContain("../_shared/spotifyCatalogBootstrap.ts");
     expect(functionSource).toContain("bootstrapSpotifyCatalog");
@@ -23,7 +33,7 @@ describe("Spotify catalog bootstrap edge function", () => {
 
   it("dispatches manager artist discovery after the Spotify catalog import without failing setup", () => {
     const bootstrapIndex = functionSource.indexOf("const result = await bootstrapSpotifyCatalog");
-    const dispatchIndex = functionSource.indexOf("scheduleBackgroundTask(dispatchManagerArtistDiscovery");
+    const dispatchIndex = functionSource.indexOf("scheduleBackgroundTask(dispatchManagerArtistDiscovery(");
     const returnIndex = functionSource.indexOf("return json(result");
 
     expect(dispatchIndex).toBeGreaterThan(bootstrapIndex);

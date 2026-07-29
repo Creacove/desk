@@ -3,6 +3,15 @@ import { bootstrapSpotifyCatalog } from "../_shared/spotifyCatalogBootstrap.ts";
 import { createSpotifyCatalogClient } from "../_shared/spotifyCatalogClient.ts";
 import { createSupabaseCatalogRepository } from "../_shared/supabaseCatalogRepository.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import {
+  claimSourceSyncJob,
+  claimWorkspaceSetupStage,
+  finishSourceSyncJob,
+  heartbeatWorkspaceSetupStage,
+  mergeWorkspaceSetupStage,
+  type DurableLease,
+} from "../_shared/durableWorkflow.ts";
+import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,7 +20,6 @@ const corsHeaders = {
 };
 
 const sourceSyncJobType = "spotify_catalog_bootstrap";
-const normalizedCatalogTables = ["source_snapshots", "music_items", "music_identifiers"];
 
 type BootstrapInput = {
   accountId: string;
@@ -28,6 +36,7 @@ type BootstrapInput = {
   sourceSyncJobId?: string;
   setupRunId?: string;
   checkoutSessionId?: string;
+  setupStageLeaseToken?: string;
 };
 
 Deno.serve(async (request) => {
@@ -41,6 +50,10 @@ Deno.serve(async (request) => {
 
   let input: BootstrapInput | null = null;
   let authClient: any | null = null;
+  let workflowClient: any | null = null;
+  let sourceJobId: string | null = null;
+  let sourceJobLease: DurableLease | null = null;
+  let setupStageLeaseToken: string | null = null;
   try {
     input = (await request.json()) as BootstrapInput;
     validateInput(input);
@@ -60,6 +73,9 @@ Deno.serve(async (request) => {
     authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
       global: { headers: { Authorization: isServiceRoleInvocation ? `Bearer ${serviceRoleKey}` : authHeader } },
     });
+    workflowClient = createClient(supabaseUrl, serviceRoleKey, {
+      global: { headers: { Authorization: `Bearer ${serviceRoleKey}` } },
+    });
 
     if (!isServiceRoleInvocation) {
       const { data: { user }, error: userError } = await authClient.auth.getUser();
@@ -75,44 +91,132 @@ Deno.serve(async (request) => {
       await assertActiveWorkspaceEntitlement(authClient, input);
     }
 
+    setupStageLeaseToken = bootstrapInput.setupStageLeaseToken ?? null;
+    if (bootstrapInput.setupRunId && !setupStageLeaseToken) {
+      const setupLease = await claimWorkspaceSetupStage(workflowClient, {
+        setupRunId: bootstrapInput.setupRunId,
+        stage: "catalog_bootstrap",
+        expectedStatus: "queued",
+      });
+      if (!setupLease) return json({ status: "running", setupRunId: bootstrapInput.setupRunId });
+      setupStageLeaseToken = setupLease.token;
+    } else if (bootstrapInput.setupRunId && setupStageLeaseToken) {
+      const active = await heartbeatWorkspaceSetupStage(workflowClient, {
+        setupRunId: bootstrapInput.setupRunId,
+        stage: "catalog_bootstrap",
+        leaseToken: setupStageLeaseToken,
+        leaseSeconds: 900,
+      });
+      if (!active) return json({ status: "running", setupRunId: bootstrapInput.setupRunId });
+    }
+
+    sourceJobId = await ensureDurableSourceJob(workflowClient, bootstrapInput);
+    sourceJobLease = await claimSourceSyncJob(workflowClient, { jobId: sourceJobId, leaseSeconds: 900 });
+    if (!sourceJobLease) return json(await loadSourceJobState(workflowClient, sourceJobId));
+
+    const baseRepository = createSupabaseCatalogRepository(authClient, {
+      accountId: bootstrapInput.accountId,
+      artistWorkspaceId: bootstrapInput.artistWorkspaceId,
+      artistId: bootstrapInput.artistId,
+    });
     const result = await bootstrapSpotifyCatalog({
-      input: bootstrapInput,
+      input: { ...bootstrapInput, sourceSyncJobId: sourceJobId },
       spotify: await createSpotifyCatalogClient(),
-      repository: createSupabaseCatalogRepository(authClient, {
-        accountId: bootstrapInput.accountId,
-        artistWorkspaceId: bootstrapInput.artistWorkspaceId,
-        artistId: bootstrapInput.artistId,
-      }),
+      repository: {
+        ...baseRepository,
+        async updateSourceSyncJob(id, patch) {
+          const saved = await finishSourceSyncJob(workflowClient, {
+            jobId: id,
+            leaseToken: sourceJobLease!.token,
+            status: patch.status,
+            error: patch.error ? publicWorkflowFailure(new Error(patch.error)).message : undefined,
+          });
+          if (!saved) throw new Error("Source job lease expired before completion could be saved.");
+        },
+      },
     });
 
-    if (bootstrapInput.setupRunId && result.status !== "failed") {
-      await updateSetupRunStage(authClient, bootstrapInput.setupRunId, {
-        status: "running",
-        currentStage: "manager_discovery",
-        completedStage: "catalog_bootstrap",
-        nextStage: "manager_discovery",
-        limitation: result.status === "completed_with_limits" ? "Spotify catalog completed with limits." : undefined,
+    if (result.status === "failed") {
+      const failure = publicWorkflowFailure(result);
+      if (bootstrapInput.setupRunId && setupStageLeaseToken) {
+        await mergeWorkspaceSetupStage(workflowClient, {
+          setupRunId: bootstrapInput.setupRunId,
+          stage: "catalog_bootstrap",
+          leaseToken: setupStageLeaseToken,
+          patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+        });
+      }
+      return json({ status: "failed", ...workflowFailureBody(failure) }, 502);
+    }
+
+    if (bootstrapInput.setupRunId && setupStageLeaseToken) {
+      const merged = await mergeWorkspaceSetupStage(workflowClient, {
+        setupRunId: bootstrapInput.setupRunId,
+        stage: "catalog_bootstrap",
+        leaseToken: setupStageLeaseToken,
+        patch: {
+          status: result.status === "completed_with_limits" ? "completed_with_limits" : "completed",
+          completed_at: new Date().toISOString(),
+          ...(result.status === "completed_with_limits" ? { limitation: "Music catalogue completed with limits." } : {}),
+          next_stage_patch: { status: "queued" },
+        },
       });
+      if (!merged) throw new Error("Setup catalog lease expired before completion could be saved.");
     }
 
     const functionApiKey = isServiceRoleInvocation ? serviceRoleKey : anonKey;
-    scheduleBackgroundTask(dispatchManagerArtistDiscovery(supabaseUrl, functionApiKey, authHeader, bootstrapInput, result).catch(async (error) => {
-      const message = errorMessage(error, "Manager artist discovery dispatch failed.");
-      console.warn("manager artist discovery dispatch failed", { message });
-      await recordDiscoveryFailure(authClient, bootstrapInput, message).catch(() => undefined);
-      if (bootstrapInput.setupRunId) {
-        await markSetupRunDiscoveryFailed(authClient, bootstrapInput.setupRunId, message).catch(() => undefined);
-      }
-    }));
-
-    return json(result, result.status === "failed" ? 502 : 200);
-  } catch (error) {
-    const message = errorMessage(error, "Spotify catalog bootstrap failed.");
-    console.error("spotify-catalog-bootstrap failed", { message, error });
-    if (input?.sourceSyncJobId && authClient) {
-      await markExistingJobFailed(authClient, input.sourceSyncJobId, message).catch(() => undefined);
+    const discoveryLease = bootstrapInput.setupRunId
+      ? await claimWorkspaceSetupStage(workflowClient, {
+          setupRunId: bootstrapInput.setupRunId,
+          stage: "manager_discovery",
+          expectedStatus: "queued",
+          leaseSeconds: 900,
+        })
+      : null;
+    if (!bootstrapInput.setupRunId || discoveryLease) {
+      scheduleBackgroundTask(dispatchManagerArtistDiscovery(
+        supabaseUrl,
+        functionApiKey,
+        authHeader,
+        bootstrapInput,
+        result,
+        discoveryLease?.token,
+      ).catch(async (error) => {
+        const failure = publicWorkflowFailure(error);
+        console.error("manager artist discovery dispatch failed", { error, setupRunId: bootstrapInput.setupRunId });
+        await recordDiscoveryFailure(authClient, bootstrapInput, failure.message).catch(() => undefined);
+        if (bootstrapInput.setupRunId && discoveryLease) {
+          await mergeWorkspaceSetupStage(workflowClient, {
+            setupRunId: bootstrapInput.setupRunId,
+            stage: "manager_discovery",
+            leaseToken: discoveryLease.token,
+            patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+          }).catch(() => false);
+        }
+      }));
     }
-    return json({ error: message }, 500);
+
+    return json(result);
+  } catch (error) {
+    const failure = publicWorkflowFailure(error);
+    console.error("spotify-catalog-bootstrap failed", { error, sourceJobId, setupRunId: input?.setupRunId });
+    if (sourceJobId && sourceJobLease && workflowClient) {
+      await finishSourceSyncJob(workflowClient, {
+        jobId: sourceJobId,
+        leaseToken: sourceJobLease.token,
+        status: "failed",
+        error: failure.message,
+      }).catch(() => false);
+    }
+    if (input?.setupRunId && setupStageLeaseToken && workflowClient) {
+      await mergeWorkspaceSetupStage(workflowClient, {
+        setupRunId: input.setupRunId,
+        stage: "catalog_bootstrap",
+        leaseToken: setupStageLeaseToken,
+        patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+      }).catch(() => false);
+    }
+    return json(workflowFailureBody(error), 500);
   }
 });
 
@@ -122,6 +226,7 @@ async function dispatchManagerArtistDiscovery(
   authHeader: string,
   input: BootstrapInput,
   result: { status?: string },
+  setupStageLeaseToken?: string,
 ) {
   if (result.status === "failed") {
     return;
@@ -142,6 +247,7 @@ async function dispatchManagerArtistDiscovery(
       artistName: input.selectedArtist.name,
       setupRunId: input.setupRunId,
       checkoutSessionId: input.checkoutSessionId,
+      setupStageLeaseToken,
     }),
   });
 
@@ -150,25 +256,49 @@ async function dispatchManagerArtistDiscovery(
   }
 }
 
-async function updateSetupRunStage(
-  client: any,
-  setupRunId: string,
-  input: { status: string; currentStage: string; completedStage: string; nextStage: string; limitation?: string },
-) {
-  const { data: run, error } = await client.from("workspace_setup_runs").select("stage_status").eq("id", setupRunId).maybeSingle();
-  if (error) throw error;
-  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
-  const now = new Date().toISOString();
-  const { error: updateError } = await client.from("workspace_setup_runs").update({
-    status: input.status,
-    current_stage: input.currentStage,
-    stage_status: {
-      ...stages,
-      [input.completedStage]: { status: input.limitation ? "completed_with_limits" : "completed", completed_at: now, limitation: input.limitation },
-      [input.nextStage]: { status: "running", started_at: now },
+async function ensureDurableSourceJob(client: any, input: BootstrapInput): Promise<string> {
+  if (input.sourceSyncJobId) return input.sourceSyncJobId;
+  const scopeKey = `spotify_catalog:${input.setupRunId ?? input.artistWorkspaceId}:${input.selectedArtist.spotifyArtistId}`;
+  const payload = {
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    source_connection_id: input.sourceConnectionId ?? null,
+    job_type: sourceSyncJobType,
+    trigger_type: "setup",
+    status: "queued",
+    workflow_version: "spotify_catalog_bootstrap_v1",
+    scope_key: scopeKey,
+    input_refs: input.setupRunId ? [{ type: "workspace_setup_run", id: input.setupRunId }] : [],
+    target_payload: {
+      spotify_artist_id: input.selectedArtist.spotifyArtistId,
+      market: input.market ?? "US",
     },
-  }).eq("id", setupRunId);
-  if (updateError) throw updateError;
+    workspace_setup_run_id: input.setupRunId ?? null,
+  };
+  const { data, error } = await client.from("source_sync_jobs").insert(payload).select("id").maybeSingle();
+  if (!error && data?.id) return data.id as string;
+  if ((error as { code?: string } | null)?.code !== "23505") throw error;
+  const { data: active, error: activeError } = await client.from("source_sync_jobs")
+    .select("id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("job_type", sourceSyncJobType)
+    .eq("scope_key", scopeKey)
+    .in("status", ["queued", "running"])
+    .maybeSingle();
+  if (activeError) throw activeError;
+  if (!active?.id) throw error;
+  return active.id as string;
+}
+
+async function loadSourceJobState(client: any, sourceSyncJobId: string) {
+  const { data, error } = await client.from("source_sync_jobs")
+    .select("id,status,attempt_count,available_at,completed_at,error")
+    .eq("id", sourceSyncJobId)
+    .maybeSingle();
+  if (error) throw error;
+  return { status: data?.status ?? "queued", sourceSyncJobId, job: data ?? undefined };
 }
 
 function readBearerJwtRole(authHeader: string) {
@@ -187,17 +317,6 @@ function scheduleBackgroundTask(task: Promise<unknown>) {
     return;
   }
   void task;
-}
-
-async function markExistingJobFailed(authClient: any, sourceSyncJobId: string, message: string) {
-  await authClient
-    .from("source_sync_jobs")
-    .update({
-      status: "failed",
-      completed_at: new Date().toISOString(),
-      error: message,
-    })
-    .eq("id", sourceSyncJobId);
 }
 
 async function recordDiscoveryFailure(authClient: any, input: BootstrapInput, message: string) {
@@ -219,22 +338,6 @@ async function recordDiscoveryFailure(authClient: any, input: BootstrapInput, me
   });
 }
 
-async function markSetupRunDiscoveryFailed(authClient: any, setupRunId: string, message: string) {
-  const { data: run, error } = await authClient.from("workspace_setup_runs").select("stage_status,retry_count").eq("id", setupRunId).maybeSingle();
-  if (error) throw error;
-  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
-  await authClient.from("workspace_setup_runs").update({
-    status: "failed",
-    current_stage: "manager_discovery",
-    stage_status: {
-      ...stages,
-      manager_discovery: { status: "failed", error: message, failed_at: new Date().toISOString() },
-    },
-    last_error: message,
-    retry_count: Number(run?.retry_count ?? 0) + 1,
-  }).eq("id", setupRunId);
-}
-
 function validateInput(input: BootstrapInput | null): asserts input is BootstrapInput {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.selectedArtist?.spotifyArtistId) {
     throw new Error("Missing required Spotify bootstrap input.");
@@ -247,21 +350,6 @@ function requireEnv(key: string) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
   return value;
-}
-
-function errorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  if (typeof error === "object" && error !== null && "message" in error) {
-    const message = (error as { message?: unknown }).message;
-    if (typeof message === "string" && message) {
-      return message;
-    }
-  }
-
-  return fallback;
 }
 
 function json(body: unknown, status = 200) {

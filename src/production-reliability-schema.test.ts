@@ -79,7 +79,9 @@ describe("production reliability v1 schema", () => {
   it("keeps setup-stage writes path-local and rejects stale leases", () => {
     expect(migration).toContain("jsonb_set(setup_run.stage_status, array[stage_key]");
     expect(migration).toContain("current_stage_state ->> 'lease_token' is distinct from current_lease_token::text");
-    expect(migration).toContain("setup_run.status in ('completed', 'failed')");
+    expect(migration).toContain("setup_run.status = 'completed' and stage_key <> 'music_reads'");
+    expect(migration).toContain("target.lease_expires_at is not null and target.lease_expires_at <= now()");
+    expect(migration).toContain("finish_source_sync_job");
   });
 
   it("limits automated recovery to explicitly versioned workflows", () => {

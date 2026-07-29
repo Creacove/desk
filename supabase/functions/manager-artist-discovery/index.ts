@@ -3,6 +3,8 @@ import { runManagerAgentLoop } from "../_shared/manager-conversation/agentLoop.t
 import type { ManagerAgentToolDefinition } from "../_shared/manager-conversation/agentLoop.ts";
 import { classifyDiscoveryCompletion, executeDiscoveryTool } from "../_shared/manager-agent/discoveryTools.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { claimWorkspaceSetupStage, heartbeatWorkspaceSetupStage, mergeWorkspaceSetupStage } from "../_shared/durableWorkflow.ts";
+import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -21,6 +23,7 @@ type DiscoveryInput = {
   setupRunId?: string;
   checkoutSessionId?: string;
   reuseExistingSnapshots?: boolean;
+  setupStageLeaseToken?: string;
 };
 
 const discoveryCompleteSchema = {
@@ -124,6 +127,8 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   let input: DiscoveryInput | null = null;
+  let db: any | null = null;
+  let setupStageLeaseToken: string | null = null;
   try {
     input = (await request.json()) as DiscoveryInput;
     validateInput(input);
@@ -151,9 +156,34 @@ Deno.serve(async (request) => {
       if (!membership) return json({ error: "Forbidden." }, 403);
     }
 
-    const db = createClient(supabaseUrl, serviceRoleKey);
+    db = createClient(supabaseUrl, serviceRoleKey);
     if (!isServiceRoleInvocation) {
       await assertActiveWorkspaceEntitlement(db, input);
+    }
+
+    setupStageLeaseToken = input.setupStageLeaseToken ?? null;
+    if (input.setupRunId && setupStageLeaseToken) {
+      const active = await heartbeatWorkspaceSetupStage(db, {
+        setupRunId: input.setupRunId,
+        stage: "manager_discovery",
+        leaseToken: setupStageLeaseToken,
+        leaseSeconds: 900,
+      });
+      if (!active) return json({ status: "running", setupRunId: input.setupRunId });
+    } else if (input.setupRunId) {
+      const currentState = await loadSetupStageState(db, input.setupRunId, "manager_discovery");
+      if (["completed", "completed_with_limits"].includes(currentState)) {
+        return json({ status: currentState, setupRunId: input.setupRunId });
+      }
+      if (currentState === "failed") return json({ status: "failed", setupRunId: input.setupRunId });
+      const lease = await claimWorkspaceSetupStage(db, {
+        setupRunId: input.setupRunId,
+        stage: "manager_discovery",
+        expectedStatus: currentState === "not_started" ? "queued" : currentState,
+        leaseSeconds: 900,
+      });
+      if (!lease) return json({ status: "running", setupRunId: input.setupRunId });
+      setupStageLeaseToken = lease.token;
     }
 
     // Write starting operating event
@@ -236,8 +266,19 @@ Deno.serve(async (request) => {
     // Write completion operating event
     await writeOperatingEvent(db, input, "manager_discovery_completed", `Autonomous onboarding discovery completed for ${input.artistName}.`, discoveryOutput);
 
-    if (input.setupRunId) {
-      await completeDiscoverySetupStage(db, input.setupRunId, completion.status === "completed_with_limits");
+    if (input.setupRunId && setupStageLeaseToken) {
+      const merged = await mergeWorkspaceSetupStage(db, {
+        setupRunId: input.setupRunId,
+        stage: "manager_discovery",
+        leaseToken: setupStageLeaseToken,
+        patch: {
+          status: completion.status,
+          completed_at: new Date().toISOString(),
+          limitations: completion.limitations,
+          next_stage_patch: { status: "queued" },
+        },
+      });
+      if (!merged) throw new Error("Discovery lease expired before completion could be saved.");
     }
     if (input.checkoutSessionId) {
       scheduleBackgroundTask(dispatchContextualizePhase(supabaseUrl, serviceRoleKey, input.checkoutSessionId));
@@ -250,20 +291,22 @@ Deno.serve(async (request) => {
     });
 
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Autonomous artist discovery failed.";
-    console.error("manager-artist-discovery failed", { message, error });
-    if (input) {
+    const failure = publicWorkflowFailure(error);
+    console.error("manager-artist-discovery failed", { error, setupRunId: input?.setupRunId });
+    if (input && db) {
       try {
-        const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        if (serviceRoleKey && supabaseUrl) {
-          const failDb = createClient(supabaseUrl, serviceRoleKey);
-          await writeOperatingEvent(failDb, input, "manager_discovery_failed", `Autonomous onboarding discovery failed: ${message}`);
-          if (input.setupRunId) await failDiscoverySetupStage(failDb, input.setupRunId, message);
+        await writeOperatingEvent(db, input, "manager_discovery_failed", failure.message, { failure });
+        if (input.setupRunId && setupStageLeaseToken) {
+          await mergeWorkspaceSetupStage(db, {
+            setupRunId: input.setupRunId,
+            stage: "manager_discovery",
+            leaseToken: setupStageLeaseToken,
+            patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
+          });
         }
       } catch { /* best-effort logging */ }
     }
-    return json({ error: message }, 500);
+    return json(workflowFailureBody(error), 500);
   }
 });
 
@@ -279,34 +322,12 @@ function validateInput(input: DiscoveryInput) {
   }
 }
 
-async function completeDiscoverySetupStage(db: any, setupRunId: string, limited: boolean) {
-  const { data: run, error } = await db.from("workspace_setup_runs").select("stage_status").eq("id", setupRunId).maybeSingle();
+async function loadSetupStageState(db: any, setupRunId: string, stage: string) {
+  const { data, error } = await db.from("workspace_setup_runs").select("stage_status").eq("id", setupRunId).maybeSingle();
   if (error) throw error;
-  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
-  const now = new Date().toISOString();
-  const { error: updateError } = await db.from("workspace_setup_runs").update({
-    status: "running",
-    current_stage: "setup_brief",
-    stage_status: {
-      ...stages,
-      manager_discovery: { status: limited ? "completed_with_limits" : "completed", completed_at: now },
-      setup_brief: { status: "waiting_for_context" },
-    },
-    last_error: null,
-  }).eq("id", setupRunId);
-  if (updateError) throw updateError;
-}
-
-async function failDiscoverySetupStage(db: any, setupRunId: string, message: string) {
-  const { data: run } = await db.from("workspace_setup_runs").select("stage_status,retry_count").eq("id", setupRunId).maybeSingle();
-  const stages = run?.stage_status && typeof run.stage_status === "object" ? run.stage_status : {};
-  await db.from("workspace_setup_runs").update({
-    status: "failed",
-    current_stage: "manager_discovery",
-    stage_status: { ...stages, manager_discovery: { status: "failed", error: message, failed_at: new Date().toISOString() } },
-    last_error: message,
-    retry_count: Number(run?.retry_count ?? 0) + 1,
-  }).eq("id", setupRunId);
+  const stages = data?.stage_status && typeof data.stage_status === "object" ? data.stage_status : {};
+  const value = stages[stage];
+  return typeof value === "string" ? value : typeof value?.status === "string" ? value.status : "not_started";
 }
 
 async function dispatchContextualizePhase(supabaseUrl: string, serviceRoleKey: string, checkoutSessionId: string) {
