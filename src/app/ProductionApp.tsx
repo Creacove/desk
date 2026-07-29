@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Check, CreditCard, Loader2, X } from "lucide-react";
 import { BorderBeam } from "border-beam";
-import { cn } from "../lib/utils";
 import { AppThinkingOrb } from "../design-system/AppThinkingOrb";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
 import { splitAttentionItems } from "../features/desk/deskAttention";
@@ -22,6 +21,7 @@ import {
 import { MissionsWorkspace } from "../features/missions/MissionScreens";
 import { MusicWorkspace } from "../features/music/MusicScreens";
 import { ConnectArtistScreen, PaywallPreviewScreen, SetupScreen } from "../features/onboarding/OnboardingScreens";
+import { SetupActivityScreen } from "../features/onboarding/SetupActivityScreen";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { LockedAgentWorkspace, StaffWorkspace } from "../features/staff/StaffScreens";
 import {
@@ -105,25 +105,12 @@ type ProductionAppProps = {
   fixtureMode?: boolean;
 };
 
-type DiscoveryPollingInput = {
-  fixtureRuntime: boolean;
-  view: CleanProductionView;
-  artistWorkspaceId?: string | null;
-};
-
-type SetupActivityStep = "setup-map" | "music-reads";
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "activity";
 type PaymentReturnState = {
   reference: string;
   status: "checking" | "waiting" | "ready" | "mismatch" | "error" | "timed-out";
   message?: string;
 };
-
-const SUPABASE_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-export function shouldPollManagerDiscoveryEvents({ fixtureRuntime, view, artistWorkspaceId }: DiscoveryPollingInput) {
-  return !fixtureRuntime && view === "setup" && Boolean(artistWorkspaceId && SUPABASE_UUID_PATTERN.test(artistWorkspaceId));
-}
 
 export function ProductionApp({
   authAdapter,
@@ -577,8 +564,6 @@ function CleanProductionWorkspace({
   const [setupError, setSetupError] = useState<string | null>(null);
   const [setupActivityPending, setSetupActivityPending] = useState(false);
   const [setupActivityError, setSetupActivityError] = useState<string | null>(null);
-  const [setupActivityWorkspace, setSetupActivityWorkspace] = useState<ProductionWorkspace | null>(null);
-  const [setupActivityStep, setSetupActivityStep] = useState<SetupActivityStep>("setup-map");
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [publicContextPending, setPublicContextPending] = useState(false);
@@ -597,7 +582,6 @@ function CleanProductionWorkspace({
   const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
   const [managerSendPending, setManagerSendPending] = useState(false);
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
-  const [discoverySteps, setDiscoverySteps] = useState<string[]>([]);
 
   const loadDeskAggregate = () => resourceRequests.load(resourceWorkspaceId, "workspace", () => repositories.desk.loadDesk());
   const loadActivityResource = () => resourceRequests.load(resourceWorkspaceId, "activity", () =>
@@ -649,48 +633,20 @@ function CleanProductionWorkspace({
   }, [activityToast]);
 
   useEffect(() => {
-    if (liveUpdatesEnabled) return;
-    if (!shouldPollManagerDiscoveryEvents({
-      fixtureRuntime,
-      view,
-      artistWorkspaceId: workspace?.artistWorkspaceId,
-    })) {
-      return;
+    if (view !== "setup" || !workspace?.contextComplete || isWorkspaceReadyForDesk(workspace)) return;
+    let disposed = false;
+    async function rehydrateAfterReconnect() {
+      const refreshed = await workspaceLoader.loadActiveWorkspace(analyticsUser);
+      if (disposed || !refreshed) return;
+      onWorkspaceChange?.(refreshed);
+      if (isWorkspaceReadyForDesk(refreshed)) setView("labelHQ");
     }
-
-    const client = createBrowserSupabaseClient();
-    let timerId: number;
-
-    async function pollDiscoveryEvents() {
-      try {
-        const { data, error } = await client
-          .from("operating_events")
-          .select("summary,created_at")
-          .eq("artist_workspace_id", workspace!.artistWorkspaceId)
-          .like("event_type", "manager_discovery_%")
-          .order("created_at", { ascending: true });
-
-        if (error) {
-          console.warn("Error polling discovery events:", error);
-          return;
-        }
-
-        if (data) {
-          const steps = data.map((row: any) => row.summary);
-          setDiscoverySteps(steps);
-        }
-      } catch (e) {
-        console.warn("Failed to query discovery events:", e);
-      }
-    }
-
-    pollDiscoveryEvents();
-    timerId = window.setInterval(pollDiscoveryEvents, 2000);
-
+    window.addEventListener("online", rehydrateAfterReconnect);
     return () => {
-      window.clearInterval(timerId);
+      disposed = true;
+      window.removeEventListener("online", rehydrateAfterReconnect);
     };
-  }, [fixtureRuntime, liveUpdatesEnabled, view, workspace]);
+  }, [analyticsUser, onWorkspaceChange, view, workspace, workspaceLoader]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1208,7 +1164,9 @@ function CleanProductionWorkspace({
 
     if (scopes.has("workspace")) {
       baseLoads.push(workspaceLoader.loadActiveWorkspace(analyticsUser).then((nextWorkspace) => {
-        if (nextWorkspace) onWorkspaceChange?.(nextWorkspace);
+        if (!nextWorkspace) return;
+        onWorkspaceChange?.(nextWorkspace);
+        if (isWorkspaceReadyForDesk(nextWorkspace)) setView("labelHQ");
       }));
     }
     if (scopes.has("activity")) {
@@ -1378,11 +1336,35 @@ function CleanProductionWorkspace({
   async function completeSetupActivity(nextWorkspace: ProductionWorkspace) {
     const generationStartedAt = Date.now();
     try {
-      setSetupActivityWorkspace(nextWorkspace);
       setSetupActivityPending(true);
       setSetupActivityError(null);
-      setSetupActivityStep("setup-map");
-      const setupGeneration = await generateContextualSetup(nextWorkspace);
+      let setupGeneration: TodayBriefGenerationResponse | null = null;
+      const checkoutSessionId = nextWorkspace.billingCheckoutSessionId;
+      if (!checkoutSessionId || !billingService?.runSetupPhase) {
+        setupGeneration = await generateTodaysBrief("setup-map");
+      } else {
+        const result = await billingService.runSetupPhase({ checkoutSessionId, phase: "contextualize" });
+        if (result.brief) {
+          setTodayBrief(result.brief);
+          trackBriefGenerated(result.brief, "setup-map");
+          setupGeneration = { brief: result.brief, setupMusicReadTargets: result.setupMusicReadTargets ?? [] };
+          onWorkspaceChange?.({
+            ...nextWorkspace,
+            setupStatus: "completed",
+            setupStage: "music_reads",
+            setupStageStatus: {
+              ...nextWorkspace.setupStageStatus,
+              setup_brief: { status: "completed" },
+              music_reads: { status: result.setupMusicReadTargets?.length ? "running" : "completed" },
+            },
+          });
+        } else {
+          const refreshedWorkspace = await workspaceLoader.loadActiveWorkspace(analyticsUser);
+          if (refreshedWorkspace) onWorkspaceChange?.(refreshedWorkspace);
+          return;
+        }
+      }
+      if (!setupGeneration) return;
       const setupBrief = briefFromGenerationResult(setupGeneration);
       if (setupBrief.state === "fallback" || setupBrief.state === "failed") {
         throw new Error("Setup map needs a live Manager read. Retry to regenerate it.");
@@ -1403,7 +1385,6 @@ function CleanProductionWorkspace({
         { artist_id: nextWorkspace.artistId, setup_mode: "setup-map", is_test_user: isTestUser },
         `${analyticsUser.id}:${nextWorkspace.artistWorkspaceId}`,
       );
-      setSetupActivityWorkspace(null);
       setView("labelHQ");
     } catch (error) {
       setSetupActivityError(readErrorMessage(error, "Setup map could not be generated."));
@@ -1412,27 +1393,23 @@ function CleanProductionWorkspace({
     }
   }
 
-  async function generateContextualSetup(nextWorkspace: ProductionWorkspace): Promise<TodayBriefGenerationResponse> {
-    const checkoutSessionId = nextWorkspace.billingCheckoutSessionId;
-    if (!checkoutSessionId || !billingService?.runSetupPhase) {
-      return generateTodaysBrief("setup-map");
-    }
-
-    for (;;) {
-      const result = await billingService.runSetupPhase({ checkoutSessionId, phase: "contextualize" });
-      if (result.status === "completed" || result.status === "completed_with_limits") {
-        if (!result.brief) {
-          // A just-completed setup can race the persisted brief read during deploys or retries.
-          // Keep polling rather than surfacing a false failure that a manual retry would repair.
-          await delay(500);
-          continue;
-        }
-        setTodayBrief(result.brief);
-        trackBriefGenerated(result.brief, "setup-map");
-        onWorkspaceChange?.({ ...nextWorkspace, setupStatus: "completed", setupStage: "music_reads" });
-        return { brief: result.brief, setupMusicReadTargets: result.setupMusicReadTargets ?? [] };
+  async function retryPersistedSetup() {
+    if (!workspace) return;
+    try {
+      setSetupActivityPending(true);
+      setSetupActivityError(null);
+      if (workspace.billingCheckoutSessionId && billingService?.retrySetup) {
+        const result = await billingService.retrySetup({ checkoutSessionId: workspace.billingCheckoutSessionId });
+        if (result.workspace) onWorkspaceChange?.(result.workspace);
+        const refreshedWorkspace = await workspaceLoader.loadActiveWorkspace(analyticsUser);
+        if (refreshedWorkspace) onWorkspaceChange?.(refreshedWorkspace);
+        return;
       }
-      await delay(2000);
+      await completeSetupActivity(workspace);
+    } catch (error) {
+      setSetupActivityError(readErrorMessage(error, "Setup could not be retried."));
+    } finally {
+      setSetupActivityPending(false);
     }
   }
 
@@ -1646,17 +1623,16 @@ function CleanProductionWorkspace({
   }
 
   if (view === "setup") {
-    if (setupActivityPending || setupActivityError) {
+    const showPersistedSetup = Boolean(workspace?.contextComplete && !isWorkspaceReadyForDesk(workspace));
+    if (showPersistedSetup || setupActivityPending || setupActivityError) {
       return (
-        <SetupManagerActivityScreen
-          artistName={profile.name}
-          discoverySteps={discoverySteps}
-          step={setupActivityStep}
-          pending={setupActivityPending}
-          error={setupActivityError}
-          onRetry={() => {
-            if (setupActivityWorkspace) void completeSetupActivity(setupActivityWorkspace);
-          }}
+        <SetupActivityScreen
+          status={setupActivityError ? "failed" : workspace?.setupStatus ?? "running"}
+          stage={workspace?.setupStage}
+          stageStatus={workspace?.setupStageStatus}
+          error={setupActivityError ?? workspace?.setupLastError}
+          retrying={setupActivityPending}
+          onRetry={() => void retryPersistedSetup()}
         />
       );
     }
@@ -1670,7 +1646,6 @@ function CleanProductionWorkspace({
           pending={setupPending}
           catalogSyncStatus={workspace?.latestCatalogSyncStatus}
           onSignOut={onSignOut}
-          discoverySteps={discoverySteps}
           onContinue={async (nextProfile) => {
             if (!workspace || !profileSetupService) {
               navigate("labelHQ");
@@ -1877,266 +1852,6 @@ function CleanProductionWorkspace({
       {liveUpdatesEnabled ? <span className="sr-only" aria-live="polite">{liveUpdateStatus}</span> : null}
     </div>
   );
-}
-
-function SetupManagerActivityScreen({
-  artistName,
-  discoverySteps,
-  step,
-  pending,
-  error,
-  onRetry,
-}: {
-  artistName: string;
-  discoverySteps: string[];
-  step: SetupActivityStep;
-  pending: boolean;
-  error: string | null;
-  onRetry: () => void;
-}) {
-  const liveDiscoverySteps = normalizeDiscoverySteps(discoverySteps);
-  const latestDiscoveryStep = liveDiscoverySteps[liveDiscoverySteps.length - 1];
-  const waitingText =
-    step === "music-reads"
-      ? "Almost there — finishing up…"
-      : `Getting things started…`;
-  const statusText = error
-    ? "Something interrupted setup. You can retry."
-    : latestDiscoveryStep ?? waitingText;
-
-  // Track real steps starting with standard initial text
-  const displaySteps = ["Getting things started…", ...liveDiscoverySteps];
-  const visibleSteps = displaySteps.slice(-3);
-
-  return (
-    <main className="app-theme relative min-h-screen overflow-hidden bg-background text-foreground">
-      {/* Background Skeleton grid - Sidebar-free, styled with native cards */}
-      <div className="absolute inset-0 z-0 p-5 opacity-40 select-none pointer-events-none sm:p-7 lg:p-9">
-        <div className="mx-auto w-full max-w-[1760px] space-y-6">
-          {/* Header Skeleton */}
-          <div className="flex items-center justify-between">
-            <div className="h-8 w-32 bg-foreground/10 rounded-lg animate-pulse" />
-            <div className="h-6 w-20 bg-foreground/10 rounded-md animate-pulse" />
-          </div>
-
-          {/* Cards Row Skeleton */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="flex h-16 items-center gap-3 rounded-xl border border-foreground/5 bg-white p-3.5 shadow-sm animate-pulse">
-                <div className="h-9 w-9 shrink-0 rounded-lg bg-foreground/5" />
-                <div className="space-y-1.5 flex-1">
-                  <div className="h-2 w-12 bg-foreground/10 rounded" />
-                  <div className="h-3.5 w-24 bg-foreground/10 rounded" />
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Main Content Split Skeleton */}
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-            <div className="space-y-6">
-              {/* Today's Brief Container Skeleton */}
-              <div className="rounded-[18px] border border-foreground/10 bg-white p-5 shadow-sm animate-pulse space-y-4">
-                <div className="h-4 w-32 bg-foreground/10 rounded" />
-                <div className="space-y-3 pt-2">
-                  <div className="h-3 w-11/12 bg-foreground/5 rounded" />
-                  <div className="h-3 w-full bg-foreground/5 rounded" />
-                  <div className="h-3 w-4/5 bg-foreground/5 rounded" />
-                  <div className="h-3 w-5/6 bg-foreground/5 rounded" />
-                  <div className="h-3 w-2/3 bg-foreground/5 rounded" />
-                </div>
-              </div>
-            </div>
-            <div className="hidden lg:block space-y-6">
-              {/* Today Attention Skeleton */}
-              <div className="rounded-[18px] border border-foreground/10 bg-white p-5 shadow-sm animate-pulse space-y-4">
-                <div className="h-4 w-28 bg-foreground/10 rounded" />
-                <div className="space-y-3 pt-2">
-                  <div className="h-3 w-full bg-foreground/5 rounded" />
-                  <div className="h-3 w-5/6 bg-foreground/5 rounded" />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Centered Modal Overlay */}
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80">
-        <div className="w-full max-w-[420px] rounded-[18px] border border-foreground/10 bg-white p-6 md:p-8 text-foreground shadow-[0_24px_70px_rgba(17,19,24,0.12)] relative overflow-hidden transition-all duration-300">
-          
-          {/* Logo Brand Badge */}
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[18px] border border-foreground/10 bg-white shadow-sm">
-            <BrandMark size="md" className={pending ? "ordersounds-loader-logo" : undefined} />
-          </div>
-
-          {/* Modal Header */}
-          <h1 className="font-display mt-6 text-center text-[22px] font-bold leading-tight tracking-tight text-foreground sm:text-[24px]">
-            Manager is preparing Desk HQ
-          </h1>
-          <p className="mt-2 text-center text-[13px] font-semibold text-muted-foreground">
-            Manager is turning catalog signals into today's brief.
-          </p>
-
-          {/* Dynamic Activity checklist */}
-          <div className="mt-6 space-y-3 border-t border-foreground/5 pt-5">
-            {visibleSteps.map((stepText) => {
-              const originalIndex = displaySteps.indexOf(stepText);
-              const isLast = originalIndex === displaySteps.length - 1;
-              const isCompleted = originalIndex < displaySteps.length - 1;
-              const isFailed = isLast && !!error;
-              const isRunning = isLast && pending && !error;
-
-              const status: "completed" | "running" | "failed" = isCompleted
-                ? "completed"
-                : isFailed
-                ? "failed"
-                : "running";
-
-              return (
-                <div
-                  key={stepText}
-                  className={cn(
-                    "flex items-center justify-between rounded-xl border p-3.5 text-[13px] font-bold transition-all duration-300 animate-in fade-in slide-in-from-bottom-2",
-                    status === "completed"
-                      ? "border-foreground/8 bg-foreground/[0.005] text-foreground/80"
-                      : status === "running"
-                      ? "border-brand-accent/20 bg-brand-accent/[0.015] text-foreground ring-1 ring-brand-accent/5"
-                      : "border-destructive/20 bg-destructive/[0.015] text-destructive"
-                  )}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <span className="flex h-5 w-5 shrink-0 items-center justify-center">
-                      {status === "completed" ? (
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-accent/10 text-brand-accent animate-in zoom-in duration-300">
-                          <Check className="h-3 w-3 stroke-[3]" />
-                        </div>
-                      ) : status === "running" ? (
-                        <AppThinkingOrb state="working" size={20} />
-                      ) : (
-                        <div className="flex h-5 w-5 items-center justify-center rounded-full bg-destructive/10 text-destructive animate-in zoom-in duration-300">
-                          <X className="h-3 w-3 stroke-[3]" />
-                        </div>
-                      )}
-                    </span>
-                    <span className="truncate">{stepText}</span>
-                  </div>
-                  {status === "completed" && (
-                    <Check className="h-4 w-4 text-brand-accent/60 stroke-[2.5] animate-in fade-in duration-300" />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Integrated Error State */}
-          {error ? (
-            <div className="mt-5 space-y-4">
-              <div className="rounded-[12px] border border-warning/20 bg-warning/5 p-4 text-left text-[12px] font-semibold leading-relaxed text-warning animate-in fade-in slide-in-from-bottom-2">
-                {error}
-              </div>
-              <button
-                type="button"
-                onClick={onRetry}
-                disabled={pending}
-                className="group flex h-10 w-full items-center justify-center gap-2 rounded-[10px] bg-foreground text-[12px] font-bold text-background shadow-sm transition-colors hover:bg-foreground/90 disabled:opacity-40"
-              >
-                Retry setup
-              </button>
-            </div>
-          ) : null}
-
-          {/* Dynamic Progress Footer (with test IDs for automated checks) */}
-          {error ? (
-            <p className="mt-5 text-center text-[12px] font-semibold text-muted-foreground" aria-live="polite">
-              {statusText}
-            </p>
-          ) : pending ? (
-            <p className="mt-5 text-center text-[12px] font-semibold text-muted-foreground animate-pulse" aria-live="polite">
-              This may take a moment.
-            </p>
-          ) : null}
-
-          {/* Hidden/Subtle progress container to satisfy test expectations */}
-          <div data-testid="setup-activity-progress" className="sr-only">
-            <div className="relative h-[3px] overflow-hidden rounded-full bg-foreground/[0.07]">
-              {pending && !error ? (
-                <div className="ordersounds-loader-shimmer absolute inset-y-0 left-0 w-full rounded-full" />
-              ) : (
-                <div className="h-full w-full rounded-full bg-warning/35" />
-              )}
-            </div>
-          </div>
-
-        </div>
-      </div>
-    </main>
-  );
-}
-
-function normalizeDiscoverySteps(discoverySteps: string[]) {
-  const seen = new Set<string>();
-  return discoverySteps.reduce<string[]>((steps, rawStep) => {
-    const step = humanizeDiscoveryStep(rawStep);
-    if (!step || seen.has(step)) return steps;
-    seen.add(step);
-    steps.push(step);
-    return steps;
-  }, []);
-}
-
-function humanizeDiscoveryStep(rawStep: string) {
-  const step = rawStep.trim();
-  if (!step) return "";
-
-  // Raw strings from edge functions (format written to operating_events)
-  if (/^running\s+chartmetric_artist_enrich/i.test(step)) return "Building your artist profile…";
-  if (/^running\s+chartmetric_track_enrich/i.test(step)) return "Searching through your track data…";
-  if (/^running\s+chartmetric_project_enrich/i.test(step)) return "Scanning your projects…";
-  if (/chartmetric_artist_enrich\s+cached/i.test(step)) return "Reviewing your artist profile…";
-  if (/chartmetric_track_enrich\s+cached/i.test(step)) return "Checking your track history…";
-  if (/chartmetric_project_enrich\s+cached/i.test(step)) return "Checking your project data…";
-  if (/chartmetric_artist_enrich\s+completed/i.test(step)) return "Finalising your artist profile…";
-  if (/chartmetric_track_enrich\s+completed/i.test(step)) return "Finishing up your track data…";
-  if (/chartmetric_project_enrich\s+completed/i.test(step)) return "Wrapping up your projects…";
-  if (/chartmetric_(?:artist|track|project)_enrich\s+unresolved/i.test(step)) return "Some of your music couldn't be matched yet…";
-  if (/^save_public_evidence\b/i.test(step)) return "Gathering public information…";
-  if (/^write_strategic_memory\b/i.test(step)) return "Setting up your Manager's memory…";
-  if (/started autonomous onboarding discovery loop/i.test(step)) return "Starting your discovery…";
-  if (/autonomous onboarding discovery completed/i.test(step)) return "Putting your setup together…";
-  if (/generating initial setup operating map brief/i.test(step)) return "Building your setup overview…";
-  if (/initial setup operating map brief generated/i.test(step)) return "Finishing your setup overview…";
-
-  // Already-humanized strings written by agentLoop.ts (e.g. from older runs stored in DB)
-  if (/^enriching (the|a focus) artist profile/i.test(step)) return "Building your artist profile…";
-  if (/^enriching (a focus )?track/i.test(step)) return "Searching through your track data…";
-  if (/^enriching (a focus )?project/i.test(step)) return "Scanning your projects…";
-  if (/artist intelligence is (already up to date|ready)/i.test(step)) return "Finalising your artist profile…";
-  if (/music intelligence is (already up to date|ready)/i.test(step)) return "Finishing up your track data…";
-  if (/project intelligence is (already up to date|ready)/i.test(step)) return "Wrapping up your projects…";
-  if (/artist intelligence could not be matched/i.test(step)) return "Some of your music couldn't be matched yet…";
-  if (/music intelligence could not be matched/i.test(step)) return "Some of your music couldn't be matched yet…";
-  if (/saved? a (public context signal|public context)/i.test(step)) return "Gathering public information…";
-  if (/saved? (a )?manager memory/i.test(step)) return "Setting up your Manager's memory…";
-  if (/saving (a )?public context signal/i.test(step)) return "Gathering public information…";
-  if (/saving manager memory/i.test(step)) return "Setting up your Manager's memory…";
-
-  return sanitizeDiscoveryStep(step);
-}
-
-function sanitizeDiscoveryStep(step: string) {
-  const sanitized = step
-    .replace(/\bchartmetric\b/gi, "source")
-    .replace(/\bchartmetric_(?:artist|track|project)_enrich\b/gi, "music intelligence")
-    .replace(/\bsave_public_evidence\b/gi, "public context")
-    .replace(/\bwrite_strategic_memory\b/gi, "Manager memory")
-    .replace(/\b(?:snapshot|evidence|memory)\s+[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
-    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "")
-    .replace(/[_-]+/g, " ")
-    .replace(/\s*;\s*/g, ". ")
-    .replace(/\s{2,}/g, " ")
-    .trim();
-  return sanitized || "Working on your setup…";
 }
 
 function AuthScreen({

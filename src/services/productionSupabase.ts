@@ -44,6 +44,7 @@ import type {
   ProductionProfileSetupService,
   ProductionSetupProfile,
   ProductionSetupPhaseResult,
+  ProductionSetupStageStatus,
   ProductionSpotifyArtistAdapter,
   ProductionSpotifyArtistCandidate,
   ProductionSpotifyBootstrapResult,
@@ -186,7 +187,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "source_sync_jobs(status,created_at)",
             "billing_subscriptions(provider,status,current_period_end,provider_customer_code)",
             "workspace_access_grants(access_type,status,starts_at,ends_at)",
-            "workspace_setup_runs(status,current_stage,checkout_session_id,updated_at)",
+            "workspace_setup_runs(id,status,current_stage,stage_status,last_error,checkout_session_id,updated_at)",
           ].join(", "),
         )
         .eq("account_id", accountId)
@@ -234,6 +235,8 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
           : undefined,
         setupStatus: readLatestSetupStatus(workspace.workspace_setup_runs),
         setupStage: readLatestSetupStage(workspace.workspace_setup_runs),
+        setupStageStatus: readLatestSetupStageStatus(workspace.workspace_setup_runs),
+        setupLastError: latestSetupRun(workspace.workspace_setup_runs)?.last_error ?? undefined,
         billingCheckoutSessionId: readLatestSetupCheckoutSessionId(workspace.workspace_setup_runs),
       } satisfies ProductionWorkspace;
     },
@@ -2366,7 +2369,15 @@ type WorkspaceRow = {
     provider_customer_code?: string | null;
   }> | null;
   workspace_access_grants?: Array<{ access_type?: string | null; status?: string | null; starts_at?: string | null; ends_at?: string | null }> | null;
-  workspace_setup_runs?: Array<{ status?: ProductionWorkspace["setupStatus"] | null; current_stage?: ProductionWorkspace["setupStage"] | null; checkout_session_id?: string | null; updated_at?: string | null }> | null;
+  workspace_setup_runs?: Array<{
+    id?: string | null;
+    status?: ProductionWorkspace["setupStatus"] | null;
+    current_stage?: ProductionWorkspace["setupStage"] | null;
+    stage_status?: ProductionSetupStageStatus | null;
+    last_error?: string | null;
+    checkout_session_id?: string | null;
+    updated_at?: string | null;
+  }> | null;
 };
 
 type WorkspaceRpcRow = {
@@ -4185,6 +4196,10 @@ function readLatestSetupStatus(rows: WorkspaceRow["workspace_setup_runs"]) {
 
 function readLatestSetupStage(rows: WorkspaceRow["workspace_setup_runs"]) {
   return latestSetupRun(rows)?.current_stage ?? undefined;
+}
+
+function readLatestSetupStageStatus(rows: WorkspaceRow["workspace_setup_runs"]) {
+  return latestSetupRun(rows)?.stage_status ?? undefined;
 }
 
 function readLatestSetupCheckoutSessionId(rows: WorkspaceRow["workspace_setup_runs"]) {

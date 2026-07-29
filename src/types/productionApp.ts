@@ -15,6 +15,15 @@ export type ProductionSession = {
   user: ProductionUser | null;
 };
 
+export type ProductionSetupStage = "checkout" | "workspace_created" | "spotify_connected" | "catalog_bootstrap" | "manager_discovery" | "setup_brief" | "music_reads";
+export type ProductionSetupStageState = "queued" | "running" | "waiting" | "waiting_for_context" | "completed" | "completed_with_limits" | "failed";
+export type ProductionSetupStageStatus = Partial<Record<ProductionSetupStage | "context_received", {
+  status: ProductionSetupStageState;
+  error?: string;
+  started_at?: string;
+  completed_at?: string;
+}>>;
+
 export type ProductionWorkspace = {
   accountId: string;
   artistWorkspaceId: string;
@@ -33,7 +42,9 @@ export type ProductionWorkspace = {
   subscriptionStatus?: "none" | "open" | "active" | "trialing" | "non-renewing" | "attention" | "completed" | "cancelled" | "canceled" | "paused" | "past_due" | "inactive";
   billingProvider?: "paddle" | "paystack";
   setupStatus?: "not_started" | "queued" | "running" | "completed" | "failed";
-  setupStage?: "checkout" | "workspace_created" | "spotify_connected" | "catalog_bootstrap" | "manager_discovery" | "setup_brief" | "music_reads";
+  setupStage?: ProductionSetupStage;
+  setupStageStatus?: ProductionSetupStageStatus;
+  setupLastError?: string;
   billingCheckoutSessionId?: string;
   accessType?: "paid_subscription" | "private_beta" | "none";
   accessStatus?: "active" | "expired" | "inactive";

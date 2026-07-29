@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ProductionApp, shouldPollManagerDiscoveryEvents } from "./app/ProductionApp";
+import { ProductionApp } from "./app/ProductionApp";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { MusicWorkspace } from "./features/music/MusicScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
@@ -133,12 +133,38 @@ afterEach(() => {
 });
 
 describe("Clean production prototype-match shell", () => {
-  it("only polls manager discovery events for real Supabase workspace ids in setup", () => {
-    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "setup", artistWorkspaceId: "workspace-1" })).toBe(false);
-    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "setup", artistWorkspaceId: "fixture-workspace" })).toBe(false);
-    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: true, view: "setup", artistWorkspaceId: "11111111-1111-4111-8111-111111111111" })).toBe(false);
-    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "labelHQ", artistWorkspaceId: "11111111-1111-4111-8111-111111111111" })).toBe(false);
-    expect(shouldPollManagerDiscoveryEvents({ fixtureRuntime: false, view: "setup", artistWorkspaceId: "11111111-1111-4111-8111-111111111111" })).toBe(true);
+  it("rehydrates the active persisted setup run on reload", async () => {
+    const runningSetupWorkspace = {
+      ...workspace,
+      status: "active",
+      contextComplete: true,
+      entitlementActive: true,
+      subscriptionStatus: "active",
+      setupStatus: "running",
+      setupStage: "manager_discovery",
+      billingCheckoutSessionId: "checkout-1",
+    } satisfies ProductionWorkspace;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(runningSetupWorkspace)}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
+    expect(screen.getAllByText("Learning about your artist profile").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("heading", { name: "Manager Basics" })).not.toBeInTheDocument();
+  });
+
+  it("does not turn discovery history into a browser-side setup workflow", () => {
+    const source = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
+    expect(source).not.toContain("shouldPollManagerDiscoveryEvents");
+    expect(source).not.toContain('.select("summary,created_at")');
+    expect(source).not.toContain("setInterval(pollDiscoveryEvents");
+    expect(source).not.toContain("for (;;)");
   });
 
   it("renders auth in the Ordersounds visual system without loading workspace data", async () => {
@@ -763,7 +789,7 @@ describe("Clean production prototype-match shell", () => {
     );
   }, 20000);
 
-  it("keeps polling when setup reports completion before the live brief payload is available", async () => {
+  it("does not spin when setup completion races the persisted brief payload", async () => {
     const paidSetupWorkspace = {
       ...workspace,
       status: "setup",
@@ -776,6 +802,13 @@ describe("Clean production prototype-match shell", () => {
       latestCatalogSyncStatus: "completed",
     } satisfies ProductionWorkspace;
     let contextualizeCalls = 0;
+    let workspaceLoads = 0;
+    const setupWorkspaceLoader: ProductionWorkspaceLoader = {
+      async loadActiveWorkspace() {
+        workspaceLoads += 1;
+        return workspaceLoads === 1 ? paidSetupWorkspace : { ...paidSetupWorkspace, status: "active", contextComplete: true };
+      },
+    };
     const profileSetupService: ProductionProfileSetupService = {
       async saveSetupContext() {
         return { ...paidSetupWorkspace, status: "active", contextComplete: true };
@@ -786,31 +819,14 @@ describe("Clean production prototype-match shell", () => {
       async loadBillingStatus() { throw new Error("not used"); },
       async runSetupPhase() {
         contextualizeCalls += 1;
-        if (contextualizeCalls === 1) {
-          return { status: "completed", phase: "contextualize", setupMusicReadTargets: [] };
-        }
-        return {
-          status: "completed",
-          phase: "contextualize",
-          setupMusicReadTargets: [],
-          brief: {
-            headlineRead: "Nova Vale has a context-aware opening read.",
-            intelligenceSnapshot: [],
-            snapshotSummary: "The opening setup packet is ready.",
-            managerRead: "The saved direction and budget now shape the opening management focus.",
-            sourceLine: "Based on saved setup context and discovery evidence.",
-            confidence: "medium",
-            generatedAt: "2026-07-10T12:00:00.000Z",
-            state: "fresh",
-          },
-        };
+        return { status: "completed", phase: "contextualize", setupMusicReadTargets: [] };
       },
     };
 
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
-        workspaceLoader={workspaceLoaderWith(paidSetupWorkspace)}
+        workspaceLoader={setupWorkspaceLoader}
         billingService={billingService}
         profileSetupService={profileSetupService}
         repositories={repositoriesFor("Nova Vale")}
@@ -821,12 +837,13 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
-    await screen.findByRole("heading", { name: "Desk HQ" }, { timeout: 5000 });
-    expect(contextualizeCalls).toBe(2);
+    await screen.findByRole("heading", { name: "Preparing your workspace" });
+    expect(contextualizeCalls).toBe(1);
+    expect(workspaceLoads).toBe(2);
     expect(screen.queryByRole("button", { name: "Retry setup" })).not.toBeInTheDocument();
   }, 20000);
 
-  it("keeps setup in progress beyond the old 30-poll deadline and completes without a manual retry", async () => {
+  it("dispatches setup once and leaves long discovery work in the background", async () => {
     const paidSetupWorkspace = {
       ...workspace,
       status: "setup",
@@ -839,6 +856,13 @@ describe("Clean production prototype-match shell", () => {
       latestCatalogSyncStatus: "completed",
     } satisfies ProductionWorkspace;
     let contextualizeCalls = 0;
+    let workspaceLoads = 0;
+    const setupWorkspaceLoader: ProductionWorkspaceLoader = {
+      async loadActiveWorkspace() {
+        workspaceLoads += 1;
+        return workspaceLoads === 1 ? paidSetupWorkspace : { ...paidSetupWorkspace, status: "active", contextComplete: true };
+      },
+    };
     const profileSetupService: ProductionProfileSetupService = {
       async saveSetupContext() {
         return { ...paidSetupWorkspace, status: "active", contextComplete: true };
@@ -849,31 +873,14 @@ describe("Clean production prototype-match shell", () => {
       async loadBillingStatus() { throw new Error("not used"); },
       async runSetupPhase() {
         contextualizeCalls += 1;
-        if (contextualizeCalls <= 30) {
-          return { status: "waiting_for_discovery", phase: "contextualize" };
-        }
-        return {
-          status: "completed",
-          phase: "contextualize",
-          setupMusicReadTargets: [],
-          brief: {
-            headlineRead: "Nova Vale has a context-aware opening read.",
-            intelligenceSnapshot: [],
-            snapshotSummary: "The opening setup packet is ready.",
-            managerRead: "The saved direction and budget now shape the opening management focus.",
-            sourceLine: "Based on saved setup context and discovery evidence.",
-            confidence: "medium",
-            generatedAt: "2026-07-10T12:00:00.000Z",
-            state: "fresh",
-          },
-        };
+        return { status: "waiting_for_discovery", phase: "contextualize" };
       },
     };
 
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
-        workspaceLoader={workspaceLoaderWith(paidSetupWorkspace)}
+        workspaceLoader={setupWorkspaceLoader}
         billingService={billingService}
         profileSetupService={profileSetupService}
         repositories={repositoriesFor("Nova Vale")}
@@ -882,19 +889,14 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    vi.useFakeTimers();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(65_000);
-    });
-    vi.useRealTimers();
-
-    expect(contextualizeCalls).toBe(31);
-    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
+    expect(contextualizeCalls).toBe(1);
+    expect(workspaceLoads).toBe(2);
     expect(screen.queryByRole("button", { name: "Retry setup" })).not.toBeInTheDocument();
   }, 20000);
 
-  it("shows Manager setup activity until the setup map and queued song/project reads are ready", async () => {
+  it("shows stable workspace setup activity until the first brief is ready", async () => {
     const setupWorkspace = {
       ...workspace,
       artistWorkspaceId: "11111111-1111-4111-8111-111111111111",
@@ -981,26 +983,6 @@ describe("Clean production prototype-match shell", () => {
         return activeWorkspace;
       },
     };
-    supabaseDiscoveryPoll.responses = [
-      {
-        data: [
-          {
-            summary: "Running chartmetric_track_enrich.",
-            created_at: "2026-07-06T08:00:00.000Z",
-          },
-          {
-            summary: "save_public_evidence saved; evidence 3225fdc2-c4e7-4072-8593-9ab9586c4915.",
-            created_at: "2026-07-06T08:00:02.000Z",
-          },
-          {
-            summary: "chartmetric_track_enrich completed; 18 evidence items; snapshot ecc65292-152a-4a75-b6ec-01f035df7b11.",
-            created_at: "2026-07-06T08:00:04.000Z",
-          },
-        ],
-        error: null,
-      },
-    ];
-
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
@@ -1014,10 +996,11 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
-    expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
-    expect(await screen.findByText("Finishing up your track data…")).toBeInTheDocument();
-    expect(screen.getByTestId("setup-activity-progress")).toBeInTheDocument();
+    expect(screen.getByText("Your Manager is reviewing your music and preparing your first brief. This work will continue if you close this page.")).toBeInTheDocument();
+    expect(screen.getAllByTestId("setup-stage-icon")).toHaveLength(5);
+    expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.queryByText(/earlier update/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/chartmetric/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/snapshot/i)).not.toBeInTheDocument();
@@ -1194,9 +1177,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
-    expect(await screen.findByRole("heading", { name: "Manager is preparing Desk HQ" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Setup paused" })).toBeInTheDocument();
     expect(await screen.findByText("OpenAI setup map failed")).toBeInTheDocument();
-    expect(screen.getByText("Something interrupted setup. You can retry.")).toBeInTheDocument();
+    expect(screen.getByText("Setup paused while preparing your workspace. Your completed work is safe.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry setup" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
     expect(analyticsMock.trackEventOnce.mock.calls.some(([name]) => name === "manager memory generated")).toBe(false);
@@ -1257,7 +1240,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
 
     expect(await screen.findByText("Setup map needs a live Manager read. Retry to regenerate it.")).toBeInTheDocument();
-    expect(screen.getByText("Something interrupted setup. You can retry.")).toBeInTheDocument();
+    expect(screen.getByText("Setup paused while preparing your workspace. Your completed work is safe.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Retry setup" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   }, 20000);
@@ -2034,7 +2017,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
   });
 
