@@ -4,9 +4,15 @@ import { BorderBeam } from "border-beam";
 import { cn } from "../lib/utils";
 import { AppThinkingOrb } from "../design-system/AppThinkingOrb";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
-import { compactMovementTitle, movementKey, splitAttentionItems } from "../features/desk/deskAttention";
+import { splitAttentionItems } from "../features/desk/deskAttention";
 import { DeskHQScreen } from "../features/desk/DeskHQ";
 import { ProductionDrawers } from "../features/drawers/ProductionDrawers";
+import {
+  activityCursorKey,
+  countUnreadActivity,
+  readActivityCursor,
+  WorkspaceActivityCenter,
+} from "../features/notifications/WorkspaceActivityCenter";
 import {
   ConversationWorkspace,
   DecisionPackageScreen,
@@ -38,7 +44,12 @@ import {
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
 import { invalidationsFromManagerRefreshHint } from "../services/managerConversationStream";
-import type { WorkspaceInvalidation } from "../services/workspaceLiveSync";
+import {
+  loadWorkspaceActivityPage,
+  type WorkspaceEventCursor,
+  type WorkspaceInvalidation,
+  type WorkspaceOperatingEvent,
+} from "../services/workspaceLiveSync";
 import { useWorkspaceLiveSync } from "./useWorkspaceLiveSync";
 import { useTheme } from "./theme";
 import type {
@@ -571,7 +582,15 @@ function CleanProductionWorkspace({
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [publicContextPending, setPublicContextPending] = useState(false);
-  const [mobileNotificationsOpen, setMobileNotificationsOpen] = useState(false);
+  const [activityCenterOpen, setActivityCenterOpen] = useState(false);
+  const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceOperatingEvent[]>([]);
+  const [activitySeenCursor, setActivitySeenCursor] = useState<WorkspaceEventCursor | null>(null);
+  const [activityError, setActivityError] = useState<string | null>(null);
+  const [activityHistoryPending, setActivityHistoryPending] = useState(false);
+  const [activityHasMore, setActivityHasMore] = useState(false);
+  const [activityToast, setActivityToast] = useState<string | null>(null);
+  const activityLoadedWorkspace = useRef<string | null>(null);
+  const legacyActivityEpoch = useRef(Date.now());
   const [missionGenesisResult, setMissionGenesisResult] = useState<MissionGenesisResultViewModel | null>(null);
   const [missionGenesisAnswers, setMissionGenesisAnswers] = useState<Record<string, string>>({});
   const [missionGenesisPending, setMissionGenesisPending] = useState(false);
@@ -596,6 +615,12 @@ function CleanProductionWorkspace({
     repositories.manager.loadConversationList?.() ?? repositories.manager.loadConversations()
   );
 
+  const handleWorkspaceEvent = useCallback((event: WorkspaceOperatingEvent) => {
+    if (!event.displayMode) return;
+    setWorkspaceEvents((current) => mergeWorkspaceEvents(current, [event]));
+    if (event.displayMode === "toast") setActivityToast(event.summary);
+  }, []);
+
   const { status: liveUpdateStatus } = useWorkspaceLiveSync({
     enabled: liveUpdatesEnabled && Boolean(workspace?.artistWorkspaceId),
     client: supabaseClient,
@@ -603,7 +628,25 @@ function CleanProductionWorkspace({
     workspaceId: workspace?.artistWorkspaceId ?? "",
     coordinator: resourceRequests,
     onInvalidations: handleWorkspaceInvalidations,
+    onEvent: handleWorkspaceEvent,
   });
+
+  useEffect(() => {
+    const workspaceId = workspace?.artistWorkspaceId;
+    activityLoadedWorkspace.current = null;
+    setWorkspaceEvents([]);
+    setActivityError(null);
+    setActivityHasMore(false);
+    setActivitySeenCursor(workspaceId
+      ? readActivityCursor(window.localStorage, analyticsUser.id, workspaceId)
+      : null);
+  }, [analyticsUser.id, workspace?.artistWorkspaceId]);
+
+  useEffect(() => {
+    if (!activityToast) return;
+    const timer = window.setTimeout(() => setActivityToast(null), 4_500);
+    return () => window.clearTimeout(timer);
+  }, [activityToast]);
 
   useEffect(() => {
     if (liveUpdatesEnabled) return;
@@ -745,6 +788,14 @@ function CleanProductionWorkspace({
     activeSection === "missions" ? "Missions" :
     "Settings";
   const mobileAttentionCount = splitAttentionItems(attention).actionable.length;
+  const legacyWorkspaceEvents = useMemo(
+    () => buildLegacyWorkspaceEvents(attention, movement, resourceWorkspaceId, legacyActivityEpoch.current),
+    [attention, movement, resourceWorkspaceId],
+  );
+  const visibleWorkspaceEvents = liveUpdatesEnabled ? workspaceEvents : legacyWorkspaceEvents;
+  const notificationCount = liveUpdatesEnabled
+    ? countUnreadActivity(workspaceEvents, activitySeenCursor)
+    : mobileAttentionCount + movement.length;
   const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0] ?? null;
   const activeAgent = selectedAgent ?? agents[1] ?? agents[0] ?? null;
   const activeConversation = selectedConversation ?? conversations[0] ?? null;
@@ -770,7 +821,89 @@ function CleanProductionWorkspace({
     if (nextView !== "missionsWorkspace") setMissionRoomOpen(false);
     setView(nextView);
     setDrawer(null);
-    setMobileNotificationsOpen(false);
+    setActivityCenterOpen(false);
+  }
+
+  const markActivitySeen = useCallback((cursor: WorkspaceEventCursor) => {
+    const workspaceId = workspace?.artistWorkspaceId;
+    if (!workspaceId) return;
+    setActivitySeenCursor((current) => {
+      if (current && (current.createdAt > cursor.createdAt || (current.createdAt === cursor.createdAt && current.id >= cursor.id))) {
+        return current;
+      }
+      window.localStorage.setItem(activityCursorKey(analyticsUser.id, workspaceId), JSON.stringify(cursor));
+      return cursor;
+    });
+  }, [analyticsUser.id, workspace?.artistWorkspaceId]);
+
+  function openActivityCenter() {
+    setActivityCenterOpen(true);
+    const workspaceId = workspace?.artistWorkspaceId;
+    if (!liveUpdatesEnabled || !supabaseClient || !workspaceId || activityLoadedWorkspace.current === workspaceId) return;
+    activityLoadedWorkspace.current = workspaceId;
+    setActivityHistoryPending(true);
+    setActivityError(null);
+    void loadWorkspaceActivityPage(supabaseClient, workspaceId)
+      .then((events) => {
+        setWorkspaceEvents((current) => mergeWorkspaceEvents(current, events));
+        setActivityHasMore(events.length === 20);
+      })
+      .catch((error) => {
+        activityLoadedWorkspace.current = null;
+        setActivityError(readErrorMessage(error, "Activity could not load."));
+      })
+      .finally(() => setActivityHistoryPending(false));
+  }
+
+  function loadOlderActivity() {
+    const workspaceId = workspace?.artistWorkspaceId;
+    const oldest = workspaceEvents.at(-1);
+    if (!liveUpdatesEnabled || !supabaseClient || !workspaceId || !oldest || activityHistoryPending) return;
+    setActivityHistoryPending(true);
+    setActivityError(null);
+    void loadWorkspaceActivityPage(supabaseClient, workspaceId, { createdAt: oldest.createdAt, id: oldest.id })
+      .then((events) => {
+        setWorkspaceEvents((current) => mergeWorkspaceEvents(current, events));
+        setActivityHasMore(events.length === 20);
+      })
+      .catch((error) => setActivityError(readErrorMessage(error, "Earlier activity could not load.")))
+      .finally(() => setActivityHistoryPending(false));
+  }
+
+  async function openWorkspaceEvent(event: WorkspaceOperatingEvent) {
+    setActivityCenterOpen(false);
+    if (!event.targetId) {
+      if (event.targetType === "view" && isCleanProductionView(event.eventType)) navigate(event.eventType);
+      return;
+    }
+    if (event.targetType === "mission") {
+      openMissionRoom(event.targetId);
+      return;
+    }
+    if (event.targetType === "task") {
+      await openCreatedWork("task", event.targetId);
+      return;
+    }
+    if (event.targetType === "music_item" || event.targetType === "music_project") {
+      setTargetMusicObjectId(event.targetId);
+      navigate("musicWorkspace");
+      return;
+    }
+    if (event.targetType === "conversation") {
+      const existing = conversations.find((conversation) => conversation.id === event.targetId);
+      if (existing) {
+        await openConversation(existing);
+        return;
+      }
+      const loaded = await repositories.manager.loadConversation?.(event.targetId);
+      if (loaded) await openConversation(loaded);
+      return;
+    }
+    if (event.targetType === "drawer" && event.targetId === "evidence") {
+      openDrawer("evidence");
+      return;
+    }
+    if (event.targetType === "view" && isCleanProductionView(event.targetId)) navigate(event.targetId);
   }
 
   function navigateFromMenu(nextView: CleanProductionView) {
@@ -1581,8 +1714,8 @@ function CleanProductionWorkspace({
             active={activeSection}
             title={mobileTitle}
             activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
-            notificationCount={mobileAttentionCount + movement.length}
-            onOpenNotifications={() => setMobileNotificationsOpen(true)}
+            notificationCount={notificationCount}
+            onOpenNotifications={openActivityCenter}
             onNavigate={navigateFromMenu}
             showTopbar={showMobileTopbar}
             showTabbar={showMobileTabbar}
@@ -1607,6 +1740,8 @@ function CleanProductionWorkspace({
               onDrawer={openDrawer}
               onOpenMusicFocus={openMusicFocus}
               onAskManager={(body) => void sendManagerMessage(body)}
+              activityCount={notificationCount}
+              onOpenActivityCenter={openActivityCenter}
             />
           ) : null}
           {view === "musicWorkspace" ? (
@@ -1726,14 +1861,18 @@ function CleanProductionWorkspace({
       <div aria-busy={evidencePending}>
         <ProductionDrawers drawer={drawer} evidence={evidence} mission={selectedMission} onClose={() => setDrawer(null)} />
       </div>
-      <MobileNotificationSheet
-        open={mobileNotificationsOpen}
-        attention={attention}
-        movement={movement}
-        onNavigate={navigate}
-        onDrawer={openDrawer}
-        onClose={() => setMobileNotificationsOpen(false)}
+      <WorkspaceActivityCenter
+        open={activityCenterOpen}
+        events={visibleWorkspaceEvents}
+        error={activityError}
+        hasMore={liveUpdatesEnabled && activityHasMore}
+        loadingOlder={activityHistoryPending}
+        onOpenChange={setActivityCenterOpen}
+        onSelect={(event) => void openWorkspaceEvent(event)}
+        onLoadOlder={loadOlderActivity}
+        onSeen={markActivitySeen}
       />
+      {activityToast ? <SuccessToast message={activityToast} onClose={() => setActivityToast(null)} /> : null}
       <span className="sr-only">{workspace?.workspaceName ?? "Ordersounds workspace"}</span>
       {liveUpdatesEnabled ? <span className="sr-only" aria-live="polite">{liveUpdateStatus}</span> : null}
     </div>
@@ -1998,120 +2137,6 @@ function sanitizeDiscoveryStep(step: string) {
     .replace(/\s{2,}/g, " ")
     .trim();
   return sanitized || "Working on your setup…";
-}
-
-function MobileNotificationSheet({
-  open,
-  attention,
-  movement,
-  onNavigate,
-  onDrawer,
-  onClose,
-}: {
-  open: boolean;
-  attention: AttentionItem[];
-  movement: MovementItem[];
-  onNavigate: (view: CleanProductionView) => void;
-  onDrawer: (drawer: DrawerKind) => void;
-  onClose: () => void;
-}) {
-  const [activityHistoryOpen, setActivityHistoryOpen] = useState(false);
-  const { actionable, sourceContext } = splitAttentionItems(attention);
-
-  if (!open) {
-    return null;
-  }
-
-  return (
-    <div className="fixed inset-0 z-[70] flex items-end bg-foreground/20 px-3 pb-3 lg:hidden" role="presentation">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-label="Activity Center"
-        className="max-h-[82svh] w-full overflow-y-auto rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)]"
-      >
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-foreground/8 bg-background px-4 py-3">
-          <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Activity Center</p>
-            <h2 className="font-display mt-1 text-[18px] font-semibold leading-tight text-foreground">What needs attention now</h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="h-8 rounded-lg border border-foreground/10 px-3 text-[12px] font-bold text-muted-foreground"
-          >
-            Close
-          </button>
-        </div>
-
-        <div className="grid gap-5 px-4 py-4">
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Needs You</p>
-              <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{actionable.length}</span>
-            </div>
-            <div className="grid gap-2">
-              {actionable.length ? actionable.slice(0, 3).map((item) => (
-                <button
-                  key={item.title}
-                  type="button"
-                  className="rounded-[14px] border border-foreground/8 bg-foreground px-3.5 py-3 text-left text-background"
-                  onClick={() => {
-                    onClose();
-                    if (item.target) {
-                      onNavigate(item.target);
-                    } else if (item.tone === "accent") {
-                      onDrawer("evidence");
-                    } else {
-                      onNavigate("missionsWorkspace");
-                    }
-                  }}
-                >
-                  <span className="block text-[13px] font-semibold">{item.title}</span>
-                  <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-background/76">{item.body}</span>
-                </button>
-              )) : (
-                <div className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
-                  <p className="text-[13px] font-bold text-foreground">No action needed</p>
-                  <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground/82">No decisions, approvals, or blockers are waiting on you.</p>
-                </div>
-              )}
-            </div>
-            {sourceContext.length ? (
-              <div className="mt-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Source context</p>
-                <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{sourceContext[0].body}</p>
-              </div>
-            ) : null}
-          </section>
-
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.04em] text-muted-foreground">Autopilot Log</p>
-              <button type="button" className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground" onClick={() => setActivityHistoryOpen((value) => !value)}>
-                {activityHistoryOpen ? "Hide history" : "View activity history"}
-              </button>
-            </div>
-            <div className="grid gap-2">
-              {movement.length ? (activityHistoryOpen ? movement : movement.slice(0, 3)).map((item, index) => (
-                <div key={movementKey(item, index)} className="grid grid-cols-[8px_minmax(0,1fr)] gap-3 rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3">
-                  <span className="mt-1.5 h-2 w-2 rounded-full bg-foreground/20" aria-hidden="true" />
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-semibold leading-tight text-foreground">{activityHistoryOpen ? item.title : compactMovementTitle(item.title)}</span>
-                    <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-                      {item.label} / {item.time}
-                    </span>
-                  </span>
-                </div>
-              )) : (
-                <p className="rounded-[14px] border border-foreground/8 bg-white px-3.5 py-3 text-[12px] font-medium text-muted-foreground">No new activity yet.</p>
-              )}
-            </div>
-          </section>
-        </div>
-      </section>
-    </div>
-  );
 }
 
 function AuthScreen({
@@ -3257,6 +3282,65 @@ function isTodayBriefGenerationResult(result: TodayBriefGenerationResponse): res
 
 function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function mergeWorkspaceEvents(current: WorkspaceOperatingEvent[], next: WorkspaceOperatingEvent[]) {
+  const byId = new Map(current.map((event) => [event.id, event]));
+  for (const event of next) {
+    if (event.id && event.createdAt && event.displayMode) byId.set(event.id, event);
+  }
+  return [...byId.values()]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id))
+    .slice(0, 150);
+}
+
+function buildLegacyWorkspaceEvents(
+  attention: AttentionItem[],
+  movement: MovementItem[],
+  workspaceId: string,
+  epoch: number,
+): WorkspaceOperatingEvent[] {
+  const actionable = splitAttentionItems(attention).actionable;
+  const actionEvents = actionable.map((item, index): WorkspaceOperatingEvent => ({
+    id: `legacy-action:${workspaceId}:${index}:${item.title}`,
+    artistWorkspaceId: workspaceId,
+    eventType: "legacy_attention",
+    createdAt: new Date(epoch - index * 1_000).toISOString(),
+    targetType: item.target || item.tone !== "accent" ? "view" : "drawer",
+    targetId: item.target ?? (item.tone === "accent" ? "evidence" : "missionsWorkspace"),
+    displayMode: "action",
+    refreshScope: [],
+    summary: item.title,
+  }));
+  const activityEvents = movement.map((item, index): WorkspaceOperatingEvent => ({
+    id: `legacy-activity:${workspaceId}:${index}:${item.label}:${item.title}`,
+    artistWorkspaceId: workspaceId,
+    eventType: "legacy_activity",
+    createdAt: new Date(epoch - (actionEvents.length + index) * 1_000).toISOString(),
+    displayMode: "activity",
+    refreshScope: [],
+    summary: item.title,
+  }));
+  return [...actionEvents, ...activityEvents];
+}
+
+const CLEAN_PRODUCTION_VIEWS = new Set<CleanProductionView>([
+  "connectArtist",
+  "setup",
+  "labelHQ",
+  "musicWorkspace",
+  "staffWorkspace",
+  "managerOffice",
+  "conversationWorkspace",
+  "investigation",
+  "decisionPackage",
+  "missionsWorkspace",
+  "artistProfileWorkspace",
+  "lockedAgentWorkspace",
+]);
+
+function isCleanProductionView(value: string): value is CleanProductionView {
+  return CLEAN_PRODUCTION_VIEWS.has(value as CleanProductionView);
 }
 
 

@@ -1324,7 +1324,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
     expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Manager Update");
     expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Spotify public catalog connected");
-    expect(screen.getByRole("button", { name: /Open Activity Center/i })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /Open Activity Center/i })).toHaveLength(2);
     expect(screen.queryByText("Today's Attention")).not.toBeInTheDocument();
     expect(screen.queryByText("Activity log")).not.toBeInTheDocument();
     expect(screen.queryByText("Private analytics missing")).not.toBeInTheDocument();
@@ -1340,13 +1340,14 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Open Activity Center/i }));
-    const activityCenter = await screen.findByRole("dialog", { name: "Activity Center" });
-    expect(activityCenter).toHaveTextContent("Needs You");
-    expect(activityCenter).toHaveTextContent("Autopilot Log");
-    expect(activityCenter).toHaveTextContent("No action needed");
+    fireEvent.click(screen.getAllByRole("button", { name: /Open Activity Center/i })[1]);
+    const activityCenter = await screen.findByRole("dialog", { name: "Your workspace, as it happens" });
+    expect(activityCenter).toHaveTextContent("Needs you");
+    expect(activityCenter).toHaveTextContent("Background activity");
+    expect(activityCenter).toHaveTextContent("Nothing is waiting on you");
     expect(activityCenter).toHaveTextContent("Spotify public catalog connected");
 
+    fireEvent.click(within(activityCenter).getByRole("button", { name: "Close Activity Center" }));
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
@@ -1619,10 +1620,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("mobile-tab-label-Settings")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
-    const notificationSheet = await screen.findByRole("dialog", { name: "Activity Center" });
-    expect(notificationSheet).toHaveTextContent("Needs You");
-    expect(notificationSheet).toHaveTextContent("Autopilot Log");
-    expect(notificationSheet).toHaveTextContent("No action needed");
+    const notificationSheet = await screen.findByRole("dialog", { name: "Your workspace, as it happens" });
+    expect(notificationSheet).toHaveTextContent("Needs you");
+    expect(notificationSheet).toHaveTextContent("Background activity");
+    expect(notificationSheet).toHaveTextContent("Nothing is waiting on you");
     expect(notificationSheet).not.toHaveTextContent("Private analytics missing");
     expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
   }, 20000);
@@ -1666,10 +1667,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText(longMovement)).not.toBeInTheDocument();
     expect(screen.queryByText("Started Chartmetric enrichment for GBESUNMO.")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Open Activity Center/i }));
-    const activityCenter = await screen.findByRole("dialog", { name: "Activity Center" });
-    expect(activityCenter).toHaveTextContent("Needs You");
-    expect(activityCenter).toHaveTextContent("Autopilot Log");
+    fireEvent.click(screen.getAllByRole("button", { name: /Open Activity Center/i })[1]);
+    const activityCenter = await screen.findByRole("dialog", { name: "Your workspace, as it happens" });
+    expect(activityCenter).toHaveTextContent("Needs you");
+    expect(activityCenter).toHaveTextContent("Background activity");
     expect(activityCenter).toHaveTextContent(longMovement);
     expect(activityCenter).toHaveTextContent("Started Chartmetric enrichment for GBESUNMO.");
   }, 20000);

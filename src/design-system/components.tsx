@@ -391,7 +391,7 @@ export function MobileChrome({
             <button
               type="button"
               data-testid="mobile-notification-trigger"
-              aria-label="Open desk notifications"
+              aria-label={notificationCount ? `Open Activity Center, ${notificationCount} unread` : "Open Activity Center"}
               onClick={onOpenNotifications}
               className="relative flex h-8 w-8 items-center justify-center rounded-[10px] border border-foreground/10 bg-foreground/[0.035] text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
             >

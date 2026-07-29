@@ -34,6 +34,7 @@ export function useWorkspaceLiveSync({
   workspaceId,
   coordinator,
   onInvalidations,
+  onEvent,
   activeRuns = NO_ACTIVE_RUNS,
 }: {
   enabled: boolean;
@@ -42,6 +43,7 @@ export function useWorkspaceLiveSync({
   workspaceId: string;
   coordinator: Coordinator;
   onInvalidations: (invalidations: WorkspaceInvalidation[]) => void | Promise<void>;
+  onEvent?: Parameters<typeof createWorkspaceLiveSync>[0]["onEvent"];
   activeRuns?: ActiveWorkspaceRun[];
 }) {
   const [status, setStatus] = useState<WorkspaceLiveStatus>(() => navigator.onLine
@@ -62,6 +64,7 @@ export function useWorkspaceLiveSync({
       client,
       userId,
       workspaceId,
+      onEvent,
       onInvalidations: (invalidations) => {
         if (!canConnect()) {
           deferredInvalidations = mergeWorkspaceInvalidations(deferredInvalidations, invalidations);
@@ -152,7 +155,7 @@ export function useWorkspaceLiveSync({
       sync.stop();
       coordinator.clearWorkspace(workspaceId);
     };
-  }, [client, coordinator, enabled, userId, workspaceId]);
+  }, [client, coordinator, enabled, onEvent, userId, workspaceId]);
 
   useEffect(() => {
     if (!enabled || status !== "Updates delayed — Retry" || !stableRuns.length) return;

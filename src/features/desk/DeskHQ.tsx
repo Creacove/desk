@@ -7,10 +7,9 @@ import {
   SendHorizontal,
   Sparkles,
   Upload,
-  X,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { compactMovementTitle, movementKey, splitAttentionItems } from "./deskAttention";
+import { splitAttentionItems } from "./deskAttention";
 import type {
   AgentViewModel,
   ArtistProfileViewModel,
@@ -49,6 +48,8 @@ export function DeskHQScreen({
   onDrawer,
   onOpenMusicFocus,
   onAskManager,
+  activityCount,
+  onOpenActivityCenter,
 }: {
   profile: ArtistProfileViewModel;
   todayBrief: TodayBriefViewModel | null;
@@ -65,9 +66,10 @@ export function DeskHQScreen({
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
   onAskManager: (body: string) => void;
+  activityCount?: number;
+  onOpenActivityCenter?: () => void;
 }) {
-  const [activityCenterOpen, setActivityCenterOpen] = useState(false);
-  const { actionable, sourceContext } = splitAttentionItems(attention);
+  const { actionable } = splitAttentionItems(attention);
   const brief = todayBrief ?? buildVisibleFallbackBrief(profile);
   const focusLead = selectTodaysFocusLead({ actionable, movement });
 
@@ -75,8 +77,8 @@ export function DeskHQScreen({
     <section className="desk-hq-v2 relative isolate">
       <div className="hidden lg:block">
         <DeskHQHeader
-          activityCount={actionable.length + movement.length}
-          onOpenActivityCenter={() => setActivityCenterOpen(true)}
+          activityCount={activityCount ?? actionable.length + movement.length}
+          onOpenActivityCenter={onOpenActivityCenter ?? (() => undefined)}
           onAskManager={onAskManager}
         />
       </div>
@@ -119,15 +121,6 @@ export function DeskHQScreen({
         />
       </div>
 
-      <ActivityCenterDialog
-        open={activityCenterOpen}
-        actionable={actionable}
-        sourceContext={sourceContext}
-        movement={movement}
-        onNavigate={onNavigate}
-        onDrawer={onDrawer}
-        onClose={() => setActivityCenterOpen(false)}
-      />
     </section>
   );
 }
@@ -188,7 +181,7 @@ function DeskHQHeader({
         </form>
         <button
           type="button"
-          aria-label={`Open Activity Center with ${activityCount} updates`}
+          aria-label={activityCount ? `Open Activity Center, ${activityCount} unread` : "Open Activity Center"}
           onClick={onOpenActivityCenter}
           className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-[13px] border border-foreground/8 bg-background/86 text-foreground shadow-[0_12px_36px_rgba(17,19,24,0.045)] backdrop-blur-xl transition-all hover:-translate-y-0.5 hover:border-foreground/18 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
         >
@@ -392,111 +385,6 @@ function TodayFocusPanel({
         )}
       </div>
     </aside>
-  );
-}
-
-// Theme-aware Activity Center — respects light and dark mode via CSS variables
-function ActivityCenterDialog({
-  open,
-  actionable,
-  sourceContext,
-  movement,
-  onNavigate,
-  onDrawer,
-  onClose,
-}: {
-  open: boolean;
-  actionable: AttentionItem[];
-  sourceContext: AttentionItem[];
-  movement: MovementItem[];
-  onNavigate: (view: CleanProductionView) => void;
-  onDrawer: (drawer: DrawerKind) => void;
-  onClose: () => void;
-}) {
-  if (!open) return null;
-
-  return (
-    <div className="fixed inset-0 z-[75] flex justify-end bg-foreground/25 backdrop-blur-[3px]" role="presentation">
-      <aside
-        role="dialog"
-        aria-modal="true"
-        aria-label="Activity Center"
-        className="h-full w-[min(100%,34rem)] overflow-y-auto border-l border-foreground/10 bg-background p-5 text-foreground shadow-[0_32px_90px_rgba(17,19,24,0.25)]"
-      >
-        <div className="sticky top-0 z-10 -mx-5 -mt-5 flex items-start justify-between gap-4 border-b border-foreground/10 bg-background/95 px-5 py-4 backdrop-blur">
-          <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Activity Center</p>
-            <h2 className="mt-1 font-display text-[24px] font-semibold leading-tight text-foreground">What needs attention now</h2>
-          </div>
-          <button
-            type="button"
-            aria-label="Close Activity Center"
-            className="flex h-9 w-9 items-center justify-center rounded-[10px] border border-foreground/10 bg-foreground/[0.06] text-muted-foreground hover:bg-foreground/[0.1] hover:text-foreground"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" aria-hidden="true" />
-          </button>
-        </div>
-
-        <div className="grid gap-6 pt-5">
-          <section>
-            <div className="mb-3 flex items-center justify-between">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Needs You</p>
-              <span className="rounded-full bg-foreground/[0.08] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{actionable.length}</span>
-            </div>
-            <div className="grid gap-2.5">
-              {actionable.length ? (
-                actionable.map((item) => (
-                  <button
-                    key={item.title}
-                    type="button"
-                    className="rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3 text-left transition-colors hover:border-foreground/18 hover:bg-foreground/[0.07]"
-                    onClick={() => { openAttentionItem(item, onNavigate, onDrawer); onClose(); }}
-                  >
-                    <span className="block text-[14px] font-semibold leading-tight text-foreground">{item.title}</span>
-                    <span className="mt-1.5 block text-[12px] font-medium leading-relaxed text-muted-foreground">{item.body}</span>
-                  </button>
-                ))
-              ) : (
-                <div className="rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3">
-                  <p className="text-[13px] font-semibold text-foreground">No action needed</p>
-                  <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">No decisions, approvals, or blockers are waiting on you.</p>
-                </div>
-              )}
-            </div>
-            {sourceContext.length ? (
-              <div className="mt-3 rounded-[16px] border border-foreground/10 bg-foreground/[0.03] px-3.5 py-3">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/60">Source context</p>
-                <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">{sourceContext[0].body}</p>
-              </div>
-            ) : null}
-          </section>
-
-          <section>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Autopilot Log</p>
-            <div className="mt-3 grid gap-2.5">
-              {movement.length ? (
-                movement.map((item, index) => (
-                  <div key={movementKey(item, index)} className="grid grid-cols-[10px_minmax(0,1fr)] gap-3 rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3">
-                    <span className="mt-1.5 h-2.5 w-2.5 rounded-full bg-brand-accent" aria-hidden="true" />
-                    <span className="min-w-0">
-                      <span className="block text-[13px] font-semibold leading-tight text-foreground">{item.title}</span>
-                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
-                        {item.label} / {item.time}
-                      </span>
-                    </span>
-                  </div>
-                ))
-              ) : (
-                <p className="rounded-[16px] border border-foreground/10 bg-foreground/[0.04] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
-                  No autopilot activity has been recorded yet.
-                </p>
-              )}
-            </div>
-          </section>
-        </div>
-      </aside>
-    </div>
   );
 }
 

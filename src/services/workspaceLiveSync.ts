@@ -21,7 +21,8 @@ export type WorkspaceInvalidation =
   | { scope: "conversation-list" }
   | { scope: "conversation"; id: string };
 
-type Cursor = { createdAt: string; id: string };
+export type WorkspaceEventCursor = { createdAt: string; id: string };
+type Cursor = WorkspaceEventCursor;
 
 type WorkspaceLiveSyncOptions = {
   client: any;
@@ -94,7 +95,6 @@ export function createWorkspaceLiveSync(options: WorkspaceLiveSyncOptions) {
     if (!active && defer) return;
     if (nextEvent.artistWorkspaceId !== options.workspaceId || !isAfterCursor(nextEvent, cursor)) return;
     cursor = { createdAt: nextEvent.createdAt, id: nextEvent.id };
-    storage.setItem(cursorKey, JSON.stringify(cursor));
     options.onEvent?.(nextEvent);
     pendingInvalidations = mergeWorkspaceInvalidations(pendingInvalidations, classifyWorkspaceEvent(nextEvent));
     if (defer) scheduleFlush();
@@ -136,7 +136,10 @@ export function createWorkspaceLiveSync(options: WorkspaceLiveSyncOptions) {
       if (pagesRead === MAX_PAGES - 1) shouldReconcile = true;
     }
     flush();
-    if (shouldReconcile) await options.onReconcile?.();
+    if (shouldReconcile) {
+      if (cursor) storage.setItem(cursorKey, JSON.stringify(cursor));
+      await options.onReconcile?.();
+    }
   }
 
   return {
@@ -168,6 +171,27 @@ export function createWorkspaceLiveSync(options: WorkspaceLiveSyncOptions) {
     catchUp,
     flush,
   };
+}
+
+export async function loadWorkspaceActivityPage(
+  client: any,
+  workspaceId: string,
+  before?: Cursor,
+): Promise<WorkspaceOperatingEvent[]> {
+  let query = client
+    .from("operating_events")
+    .select(EVENT_COLUMNS)
+    .eq("artist_workspace_id", workspaceId)
+    .not("display_mode", "is", null);
+  if (before) {
+    query = query.or(`created_at.lt.${before.createdAt},and(created_at.eq.${before.createdAt},id.lt.${before.id})`);
+  }
+  const { data, error } = await query
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return ((data ?? []) as Record<string, unknown>[]).map(eventFromRow);
 }
 
 function invalidationsForScope(scopeValue: string, event: WorkspaceOperatingEvent): WorkspaceInvalidation[] {
