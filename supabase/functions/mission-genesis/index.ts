@@ -56,6 +56,7 @@ type MissionGenesisInput = {
   candidateMissionId?: string;
   answers?: Array<{ questionKey: string; answer: string }>;
   requestKey?: string;
+  recoveryRunId?: string;
 };
 
 const MISSION_GENESIS_LEASE_SECONDS = 900;
@@ -80,20 +81,24 @@ Deno.serve(async (request) => {
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
-    const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
-    const { data: { user }, error: userError } = await authClient.auth.getUser();
-    if (userError || !user) return json({ error: "Unauthorized." }, 401);
+    const isServiceRoleInvocation = authHeader === `Bearer ${serviceRoleKey}`;
+    if (!isServiceRoleInvocation) {
+      const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
+      const { data: { user }, error: userError } = await authClient.auth.getUser();
+      if (userError || !user) return json({ error: "Unauthorized." }, 401);
 
-    const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", { target_account_id: input.accountId });
-    if (membershipError) throw membershipError;
-    if (!membership) return json({ error: "Forbidden." }, 403);
+      const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", { target_account_id: input.accountId });
+      if (membershipError) throw membershipError;
+      if (!membership) return json({ error: "Forbidden." }, 403);
+    }
+    if (input.recoveryRunId && !isServiceRoleInvocation) return json({ error: "Forbidden." }, 403);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
     workflowDb = db;
-    await assertActiveWorkspaceEntitlement(db, input);
+    if (!isServiceRoleInvocation) await assertActiveWorkspaceEntitlement(db, input);
     await assertWorkspace(db, input);
 
-    if (input.mode === "initial") {
+    if (input.mode === "initial" && !input.recoveryRunId) {
       const { data: existingCandidate } = await db
         .from("missions")
         .select("id,title,objective,reason,summary,pattern_name,current_recommendation,change_conditions,status")
@@ -160,26 +165,33 @@ Deno.serve(async (request) => {
       contextAnswers = await prepareContextAnswers(db, input);
     }
 
-    const identity = await buildMissionGenesisRunIdentity(input, contextAnswers);
-    const run = await createManagerRun(db, input, identity, contextAnswers, priorCandidate);
-    runId = run.runId;
-    if (!run.created) return json({ status: "processing", runId }, 202);
+    if (input.recoveryRunId) {
+      const recoveryRun = await loadRecoveryMissionGenesisRun(db, input, input.recoveryRunId);
+      runId = recoveryRun.id;
+    } else {
+      const identity = await buildMissionGenesisRunIdentity(input, contextAnswers);
+      const run = await createManagerRun(db, input, identity, contextAnswers, priorCandidate);
+      runId = run.runId;
+      if (!run.created) return json({ status: "processing", runId }, 202);
+    }
 
-    const lease = await claimManagerSynthesisRun(db as any, { runId, leaseSeconds: MISSION_GENESIS_LEASE_SECONDS });
-    if (!lease) return json({ status: "processing", runId }, 202);
+    if (!runId) throw new Error("Mission Genesis run identity is missing.");
+    const activeRunId = runId;
+    const lease = await claimManagerSynthesisRun(db as any, { runId: activeRunId, leaseSeconds: MISSION_GENESIS_LEASE_SECONDS });
+    if (!lease) return json({ status: "processing", runId: activeRunId }, 202);
     leaseToken = lease.token;
     if (input.mode === "continuation") {
-      await persistContextAnswers(db, input, runId, contextAnswers);
+      await persistContextAnswers(db, input, activeRunId, contextAnswers);
     }
     const packet = await buildArtistOperatingPacket(db, input);
-    await persistMissionGenesisRunAudit(db, input, runId, lease.token, packet, contextAnswers, priorCandidate);
-    usageId = await createUsageEvent(db, input, runId);
+    await persistMissionGenesisRunAudit(db, input, activeRunId, lease.token, packet, contextAnswers, priorCandidate);
+    usageId = await createUsageEvent(db, input, activeRunId);
 
     scheduleMissionGenesisBackgroundRun(
       completeMissionGenesisRun({
         db,
         input,
-        runId,
+        runId: activeRunId,
         usageId,
         leaseToken: lease.token,
         packet,
@@ -188,7 +200,7 @@ Deno.serve(async (request) => {
       }),
     );
 
-    return json({ status: "processing", runId }, 202);
+    return json({ status: "processing", runId: activeRunId }, 202);
   } catch (error) {
     const message = describeError(error, "Mission Genesis failed.");
     const failed = runId && leaseToken && workflowDb
@@ -262,6 +274,24 @@ function validateInput(input: MissionGenesisInput) {
   if (input.requestKey !== undefined && (!input.requestKey.trim() || input.requestKey.length > 128)) {
     throw new Error("Mission Genesis request key is invalid.");
   }
+}
+
+async function loadRecoveryMissionGenesisRun(db: any, input: MissionGenesisInput, recoveryRunId: string) {
+  const { data, error } = await db.from("manager_synthesis_runs")
+    .select("id,status,workflow_version,classification")
+    .eq("id", recoveryRunId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("workflow_version", "mission-genesis-v2")
+    .in("classification", ["mission_genesis_v2", "mission_genesis_continue_v2"])
+    .in("status", ["queued", "running"])
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.id) throw new Error("Mission Genesis recovery run does not match the requested owner and mode.");
+  const expected = input.mode === "continuation" ? "mission_genesis_continue_v2" : "mission_genesis_v2";
+  if (data.classification !== expected) throw new Error("Mission Genesis recovery mode conflicts with the persisted run.");
+  return data;
 }
 
 async function assertWorkspace(db: any, input: MissionGenesisInput) {

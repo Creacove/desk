@@ -65,6 +65,7 @@ type GenerateMusicSummaryInput = {
   subjectType: MusicManagerReadSubjectType;
   subjectId: string;
   setupRunId?: string;
+  recoveryRunId?: string;
 };
 
 type OpenAIUsage = {
@@ -134,11 +135,14 @@ Deno.serve(async (request) => {
     if (!isServiceRoleInvocation) {
       await assertActiveWorkspaceEntitlement(db, input);
     }
+    if (input.recoveryRunId && !isServiceRoleInvocation) return json({ error: "Forbidden." }, 403);
 
-    const run = await acquireManagerReadRun(db, input);
+    const run = input.recoveryRunId
+      ? await loadRecoveryManagerReadRun(db, input, input.recoveryRunId)
+      : await acquireManagerReadRun(db, input);
     const runId = run.runId;
     if (input.setupRunId) await registerParentSetupMusicRead(db, input, runId, run.status);
-    if (run.created) {
+    if (run.created || input.recoveryRunId) {
       scheduleBackgroundRun(completeManagerReadInBackground({
         db,
         input,
@@ -312,6 +316,17 @@ async function completeManagerReadInBackground({
       });
     }
   }
+}
+
+async function loadRecoveryManagerReadRun(db: any, input: GenerateMusicSummaryInput, recoveryRunId: string) {
+  const { data, error } = await exactRunQuery(
+    db.from("manager_synthesis_runs").select("id,status,workflow_version"),
+    recoveryRunId,
+    input,
+  ).eq("workflow_version", "music_manager_read_v2").in("status", ["queued", "running"]).maybeSingle();
+  if (error) throw error;
+  if (!data?.id) throw new Error("Music Manager Read recovery run does not match the requested owner and subject.");
+  return { runId: data.id as string, status: data.status as string, created: false };
 }
 
 async function registerParentSetupMusicRead(

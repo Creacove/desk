@@ -571,6 +571,18 @@ begin
 end;
 $$;
 
+create or replace function public.workflow_retry_at(attempt integer)
+returns timestamptz
+language sql
+volatile
+set search_path = public
+as $$
+  select now() + make_interval(secs => (
+    least(300, 5 * power(2, greatest(coalesce(attempt, 1) - 1, 0)))
+    + floor(random() * greatest(1, least(60, 5 * power(2, greatest(coalesce(attempt, 1) - 1, 0))) * 0.2))
+  )::integer);
+$$;
+
 create or replace function public.reap_expired_workflows(batch_size integer)
 returns integer
 language plpgsql
@@ -590,26 +602,42 @@ begin
   )
   update public.manager_synthesis_runs as target
   set status = case when target.attempt_count >= target.max_attempts then 'failed'::public.run_status else 'queued'::public.run_status end,
-      available_at = case when target.attempt_count >= target.max_attempts then target.available_at else now() end,
+      available_at = case when target.attempt_count >= target.max_attempts then target.available_at else public.workflow_retry_at(target.attempt_count) end,
       error = case when target.attempt_count >= target.max_attempts then coalesce(target.error, 'Maximum attempts exhausted.') else target.error end,
       lease_token = null, lease_expires_at = null, heartbeat_at = null
   where target.id in (select id from expired);
   get diagnostics row_count_value = row_count;
   affected := affected + row_count_value;
 
+  update public.ai_run_usage_events as usage
+  set status = 'failed', failure_reason = 'Maximum recovery attempts exhausted.', completed_at = now()
+  where usage.status = 'started' and exists (
+    select 1 from public.manager_synthesis_runs as run
+    where run.id = usage.manager_synthesis_run_id
+      and run.workflow_version is not null and run.status = 'failed' and run.attempt_count >= run.max_attempts
+  );
+
   with expired as (
     select id from public.source_sync_jobs
     where workflow_version is not null and status = 'running' and lease_expires_at <= now()
-    order by lease_expires_at for update skip locked limit batch_size
+    order by lease_expires_at for update skip locked limit greatest(batch_size - affected, 0)
   )
   update public.source_sync_jobs as target
   set status = case when target.attempt_count >= target.max_attempts then 'failed'::public.run_status else 'queued'::public.run_status end,
-      available_at = case when target.attempt_count >= target.max_attempts then target.available_at else now() end,
+      available_at = case when target.attempt_count >= target.max_attempts then target.available_at else public.workflow_retry_at(target.attempt_count) end,
       error = case when target.attempt_count >= target.max_attempts then coalesce(target.error, 'Maximum attempts exhausted.') else target.error end,
       lease_token = null, lease_expires_at = null, heartbeat_at = null
   where target.id in (select id from expired);
   get diagnostics row_count_value = row_count;
   affected := affected + row_count_value;
+
+  update public.ai_run_usage_events as usage
+  set status = 'failed', failure_reason = 'Maximum recovery attempts exhausted.', completed_at = now()
+  where usage.status = 'started' and exists (
+    select 1 from public.source_sync_jobs as job
+    where job.id = usage.source_sync_job_id
+      and job.workflow_version is not null and job.status = 'failed' and job.attempt_count >= job.max_attempts
+  );
 
   with expired as (
     select id, current_stage, stage_status,
@@ -620,7 +648,7 @@ begin
       and (status = 'running' or (status = 'completed' and current_stage = 'music_reads'))
       and lease_expires_at is not null
       and lease_expires_at <= now()
-    order by lease_expires_at for update skip locked limit batch_size
+    order by lease_expires_at for update skip locked limit greatest(batch_size - affected, 0)
   )
   update public.workspace_setup_runs as target
   set status = case
@@ -638,7 +666,7 @@ begin
           'lease_token', null,
           'lease_expires_at', null
         ), true),
-      available_at = case when expired.stage_attempt >= expired.max_attempts then target.available_at else now() end,
+      available_at = case when expired.stage_attempt >= expired.max_attempts then target.available_at else public.workflow_retry_at(expired.stage_attempt) end,
       last_error = case
         when expired.current_stage = 'music_reads' then target.last_error
         when expired.stage_attempt >= expired.max_attempts then coalesce(target.last_error, 'Maximum attempts exhausted.')
@@ -651,6 +679,69 @@ begin
 
   return affected;
 end;
+$$;
+
+create or replace function public.list_workflow_recovery_candidates(batch_size integer)
+returns setof jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with candidates as (
+    select
+      'manager_synthesis_run'::text as entity_type,
+      run.id, run.workflow_version, run.account_id, run.artist_workspace_id, run.artist_id,
+      run.status::text, run.attempt_count, run.max_attempts, run.available_at, run.lease_expires_at,
+      jsonb_build_object(
+        'classification', run.classification, 'subject_type', run.subject_type, 'subject_id', run.subject_id,
+        'mission_id', run.mission_id, 'context_payload', run.context_payload, 'input_refs', run.input_refs
+      ) as payload
+    from public.manager_synthesis_runs as run
+    where run.workflow_version is not null
+      and (
+        (run.status = 'queued' and run.available_at <= now())
+        or (run.status = 'running' and run.lease_expires_at is not null and run.lease_expires_at <= now())
+      )
+    union all
+    select
+      'source_sync_job', job.id, job.workflow_version, job.account_id, job.artist_workspace_id, job.artist_id,
+      job.status::text, job.attempt_count, job.max_attempts, job.available_at, job.lease_expires_at,
+      jsonb_build_object(
+        'job_type', job.job_type, 'subject_type', job.subject_type, 'subject_id', job.subject_id,
+        'target_payload', job.target_payload, 'input_refs', job.input_refs,
+        'workspace_setup_run_id', job.workspace_setup_run_id
+      )
+    from public.source_sync_jobs as job
+    where job.workflow_version is not null
+      and (
+        (job.status = 'queued' and job.available_at <= now())
+        or (job.status = 'running' and job.lease_expires_at is not null and job.lease_expires_at <= now())
+      )
+    union all
+    select
+      'workspace_setup_run', setup.id, setup.workflow_version, setup.account_id, setup.artist_workspace_id, setup.artist_id,
+      setup.status, setup.retry_count, setup.max_attempts, setup.available_at, setup.lease_expires_at,
+      jsonb_build_object(
+        'checkout_session_id', setup.checkout_session_id, 'current_stage', setup.current_stage,
+        'stage_status', setup.stage_status, 'input_refs', setup.input_refs
+      )
+    from public.workspace_setup_runs as setup
+    where setup.workflow_version is not null
+      and setup.status in ('queued', 'running')
+      and setup.available_at <= now()
+      and (setup.status = 'queued' or (setup.lease_expires_at is not null and setup.lease_expires_at <= now()))
+  )
+  select jsonb_build_object(
+    'entity_type', candidate.entity_type, 'id', candidate.id, 'workflow_version', candidate.workflow_version,
+    'account_id', candidate.account_id, 'artist_workspace_id', candidate.artist_workspace_id,
+    'artist_id', candidate.artist_id, 'status', candidate.status, 'attempt_count', candidate.attempt_count,
+    'max_attempts', candidate.max_attempts, 'available_at', candidate.available_at,
+    'lease_expires_at', candidate.lease_expires_at, 'payload', candidate.payload
+  )
+  from candidates as candidate
+  order by coalesce(candidate.lease_expires_at, candidate.available_at), candidate.id
+  limit least(greatest(batch_size, 1), 5);
 $$;
 
 revoke all on function public.claim_manager_synthesis_run(uuid, integer) from public, anon, authenticated;
@@ -679,3 +770,6 @@ revoke all on function public.heartbeat_workspace_setup_stage(uuid, text, uuid, 
 grant execute on function public.heartbeat_workspace_setup_stage(uuid, text, uuid, integer) to service_role;
 revoke all on function public.reap_expired_workflows(integer) from public, anon, authenticated;
 grant execute on function public.reap_expired_workflows(integer) to service_role;
+revoke all on function public.workflow_retry_at(integer) from public, anon, authenticated, service_role;
+revoke all on function public.list_workflow_recovery_candidates(integer) from public, anon, authenticated;
+grant execute on function public.list_workflow_recovery_candidates(integer) to service_role;

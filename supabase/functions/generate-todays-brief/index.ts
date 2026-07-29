@@ -50,6 +50,7 @@ type GenerateTodaysBriefInput = {
   setupRunId?: string;
   setupStageLeaseToken?: string;
   requestId?: string;
+  recoveryRunId?: string;
 };
 
 type SetupMusicReadTarget = {
@@ -138,6 +139,40 @@ Deno.serve(async (request) => {
 
     if (!isServiceRoleInvocation) {
       await assertActiveWorkspaceEntitlement(authClient, input);
+    }
+    if (input.recoveryRunId) {
+      if (!isServiceRoleInvocation) return json({ error: "Forbidden." }, 403);
+      const { data: recoveryRun, error: recoveryError } = await authClient.from("manager_synthesis_runs")
+        .select("id,status,classification,context_payload")
+        .eq("id", input.recoveryRunId)
+        .eq("account_id", input.accountId)
+        .eq("artist_workspace_id", input.artistWorkspaceId)
+        .eq("artist_id", input.artistId)
+        .eq("workflow_version", "todays_brief_v1")
+        .in("status", ["queued", "running"])
+        .maybeSingle();
+      if (recoveryError) throw recoveryError;
+      if (!recoveryRun?.id) throw new Error("Today's Brief recovery run does not match the requested owner.");
+      const frozen = readFrozenTodaysBriefContext(recoveryRun.context_payload);
+      const recoveryInput: GenerateTodaysBriefInput = {
+        ...input,
+        trigger: recoveryRun.classification === "setup_todays_brief_v1" ? "setup" : "manual",
+        generationMode: frozen.generationMode,
+        setupRunId: frozen.setupRunId ?? undefined,
+      };
+      const serviceClient = createClient(supabaseUrl, serviceRoleKey);
+      scheduleBackgroundTask(executeTodaysBriefRun({
+        db: serviceClient,
+        supabaseUrl,
+        serviceRoleKey,
+        input: recoveryInput,
+        generationMode: frozen.generationMode,
+        packet: frozen.packet,
+        managerIntelligencePacket: frozen.managerIntelligencePacket,
+        setupMusicReadTargets: frozen.setupMusicReadTargets,
+        runId: recoveryRun.id,
+      }));
+      return json({ status: "processing", runId: recoveryRun.id, setupMusicReadTargets: [] });
     }
 
     const { packet, sourceAudit, managerIntelligencePacket, setupMusicReadTargets } = await buildArtistBriefPacket(authClient, input);
@@ -316,6 +351,7 @@ function readFrozenTodaysBriefContext(value: unknown): {
   managerIntelligencePacket: Record<string, unknown>;
   setupMusicReadTargets: SetupMusicReadTarget[];
   generationMode: TodaysBriefPromptMode;
+  setupRunId: string | null;
 } {
   if (!isRecord(value) || !isRecord(value.packet) || !isRecord(value.managerIntelligencePacket)) {
     throw new Error("Today's Brief run is missing its frozen generation context.");
@@ -337,6 +373,7 @@ function readFrozenTodaysBriefContext(value: unknown): {
     managerIntelligencePacket: value.managerIntelligencePacket,
     setupMusicReadTargets,
     generationMode,
+    setupRunId: readString(value.setupRunId) ?? null,
   };
 }
 

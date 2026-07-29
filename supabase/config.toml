@@ -373,6 +373,9 @@ verify_jwt = false
 [functions.paddle-process-webhooks]
 verify_jwt = false
 
+[functions.workflow-recovery]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
