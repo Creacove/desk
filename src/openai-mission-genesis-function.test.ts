@@ -7,7 +7,6 @@ import {
   buildMissionGenesisInstructions,
   buildMissionGenesisRepairInstructions,
   parseMissionGenesisOutput,
-  parseMissionGenesisOutputSafe,
 } from "../supabase/functions/_shared/openaiMissionGenesis";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "mission-genesis", "index.ts"), "utf8");
@@ -282,7 +281,8 @@ describe("OpenAI Mission Genesis", () => {
     }
     expect(functionSource).toContain("/v1/responses");
     expect(functionSource).toContain("missionGenesisJsonSchema");
-    expect(functionSource).toContain("manager_run_actions");
+    expect(functionSource).toContain('.rpc("finalize_mission_genesis_v2"');
+    expect(finalizerMigration).toContain("public.manager_run_actions");
     expect(functionSource).toContain("ai_run_usage_events");
     expect(functionSource).not.toContain("runMissionGenesisDecision");
     expect(functionSource).not.toContain("draftMissionPlan");
@@ -589,8 +589,11 @@ describe("OpenAI Mission Genesis", () => {
   });
 
   it("persists multiple mission candidates instead of dropping every candidate after the first", () => {
-    expect(functionSource).toContain("persistMissionCandidate");
-    expect(functionSource).toContain("for (const [index, candidate] of output.missionCandidates.entries())");
+    expect(functionSource).toContain('.rpc("finalize_mission_genesis_v2"');
+    expect(finalizerMigration).toContain("for candidate in select value from jsonb_array_elements(result_output -> 'missionCandidates') loop");
+    expect(finalizerMigration).toContain("mission_ids := mission_ids || coalesce(candidate_result -> 'missionIds'");
+    expect(finalizerMigration).toContain("activated_ids := activated_ids || coalesce(candidate_result -> 'activatedMissionIds'");
+    expect(finalizerMigration).toContain("candidate_ids := candidate_ids || coalesce(candidate_result -> 'candidateMissionIds'");
     expect(functionSource).toContain("missionIds");
     expect(functionSource).toContain("activatedMissionIds");
     expect(functionSource).toContain("candidateMissionIds");
@@ -808,7 +811,7 @@ describe("OpenAI Mission Genesis", () => {
     expect(() => parseMissionGenesisOutput(output, packet, "continuation")).toThrow(/another round/i);
   });
 
-  it("does not auto-invent generic campaign questions or strategy-review tasks during safe repair", () => {
+  it("fails closed instead of auto-inventing missing mission work", () => {
     const candidate = activeOutput();
     candidate.outcome = "candidate_needs_context";
     candidate.questions = [
@@ -824,17 +827,12 @@ describe("OpenAI Mission Genesis", () => {
     candidate.tasks = [];
     candidate.permissionRequests = [];
 
-    const repairedCandidate = parseMissionGenesisOutputSafe(candidate, packet, "initial");
-    expect(repairedCandidate.questions.map((question) => question.key)).not.toEqual(
-      expect.arrayContaining(["target_campaign_focus", "campaign_budget_boundary"]),
-    );
-    expect(JSON.stringify(repairedCandidate)).not.toMatch(/campaign targets|DSP streaming growth|Live concert ticket sales|Social media engagement/i);
+    expect(parseMissionGenesisOutput(candidate, packet, "initial").questions.map((question) => question.key)).toEqual(["london_owner"]);
 
     const activeWithoutPlan = activeOutput();
     activeWithoutPlan.checkpoints = [];
     activeWithoutPlan.tasks = [];
-    const repairedActive = parseMissionGenesisOutputSafe(activeWithoutPlan, packet, "initial");
-    expect(JSON.stringify(repairedActive)).not.toMatch(/Initial Strategy Review|Review and align on manager recommendations|Strategy alignment confirmed/i);
+    expect(() => parseMissionGenesisOutput(activeWithoutPlan, packet, "initial")).toThrow(/requires checkpoints and tasks/i);
   });
 
   it("rejects update_existing_mission if it lacks checkpoints, tasks, or mission identity", () => {

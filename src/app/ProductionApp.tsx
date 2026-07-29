@@ -3044,10 +3044,6 @@ function isTodayBriefGenerationResult(result: TodayBriefGenerationResponse): res
   return Boolean(result && typeof result === "object" && "brief" in result);
 }
 
-function delay(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
 function mergeWorkspaceEvents(current: WorkspaceOperatingEvent[], next: WorkspaceOperatingEvent[]) {
   const byId = new Map(current.map((event) => [event.id, event]));
   for (const event of next) {

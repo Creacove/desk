@@ -3,7 +3,6 @@ import type {
   ManagerConversationOutput,
   ManagerMissionGraphDecision,
 } from "./openaiManagerConversation.ts";
-import type { MissionGenesisOutput } from "./openaiMissionGenesis.ts";
 
 type MissionGraphInput = {
   accountId: string;
@@ -85,34 +84,6 @@ export async function persistManagerMissionGraphDecisions(
   }
 
   return persisted;
-}
-
-export async function persistMissionGenesisGraphPlan(
-  db: any,
-  input: MissionGraphInput,
-  context: { runId: string; actionId: string },
-  missionId: string,
-  output: MissionGenesisOutput,
-) {
-  const decision: ManagerMissionGraphDecision = {
-    outcome: output.outcome === "update_existing_mission" ? "update_existing_mission" : "activate_mission",
-    confidence: output.confidence,
-    decisionSummary: output.decisionSummary,
-    existingMissionId: output.existingMissionId,
-    reasons: output.reasons,
-    evidenceNeeded: output.evidenceNeeded,
-    mission: output.mission,
-    checkpoints: output.checkpoints,
-    tasks: output.tasks,
-    permissionRequests: output.permissionRequests,
-  };
-
-  return writeMissionPlan(db, input, {
-    runId: context.runId,
-    actionId: context.actionId,
-    sourceType: "mission_genesis",
-    trigger: "mission_genesis",
-  }, missionId, decision);
 }
 
 async function createMission(db: any, input: MissionGraphInput, context: ManagerGraphContext, decision: ManagerMissionGraphDecision) {

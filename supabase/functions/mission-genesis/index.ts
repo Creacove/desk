@@ -7,7 +7,6 @@ import {
   buildMissionGenesisRepairInstructions,
   missionGenesisJsonSchema,
   parseMissionGenesisOutput,
-  type MissionGenesisCandidate,
   type MissionGenesisMode,
   type MissionGenesisOutput,
   type MissionGenesisQuestion,
@@ -16,7 +15,6 @@ import {
   getMissionPatternRegistry,
   selectMissionPatternsForPacket,
 } from "../_shared/mission-patterns/missionPatternRegistry.ts";
-import { persistMissionGenesisGraphPlan } from "../_shared/missionGraphPersistence.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import {
   claimManagerSynthesisRun,
@@ -859,292 +857,6 @@ async function finalizeMissionGenesis(
   if (error) throw error;
 }
 
-async function persistDecision(db: any, input: MissionGenesisInput, runId: string, output: MissionGenesisOutput) {
-  let missionId: string | undefined;
-  let questions = output.questions;
-  let missionIds: string[] = [];
-  let activatedMissionIds: string[] = [];
-  let candidateMissionIds: string[] = [];
-
-  const { data: action, error: actionError } = await db
-    .from("manager_run_actions")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      manager_synthesis_run_id: runId,
-      order_index: 1,
-      action_type: output.outcome,
-      target_type: output.outcome === "no_mission" || output.outcome === "request_evidence" ? "artist" : "mission",
-      target_id: output.existingMissionId || input.candidateMissionId || null,
-      status: output.outcome === "request_evidence" ? "skipped" : "pending",
-      approval_required: false,
-      payload: output,
-      result_payload: {},
-    })
-    .select("id")
-    .single();
-  if (actionError) throw actionError;
-
-  const shouldPersistMultipleCandidates = !input.candidateMissionId && output.missionCandidates.length > 1;
-  if (output.outcome === "update_existing_mission") {
-    missionId = output.existingMissionId;
-    missionIds = [missionId];
-    activatedMissionIds = [missionId];
-    const { error } = await db.from("missions").update({
-      title: output.mission.title,
-      objective: output.mission.objective,
-      reason: output.mission.reason,
-      summary: output.mission.summary,
-      pattern_name: output.mission.patternName,
-      status: "active",
-      priority: 1,
-      current_recommendation: output.mission.currentRecommendation || output.decisionSummary,
-      change_conditions: output.mission.changeConditions,
-      review_point: output.checkpoints[0]?.title ?? "Manager review",
-      required_evidence: unique(output.checkpoints.flatMap((c) => c.requiredEvidence)),
-      missing_evidence: unique([...output.evidenceNeeded, ...output.checkpoints.flatMap((c) => c.missingEvidence)]),
-      originating_trigger: "manual_mission_genesis_openai",
-      updated_at: new Date().toISOString(),
-    }).eq("id", missionId).eq("artist_workspace_id", input.artistWorkspaceId);
-    if (error) throw error;
-
-    await persistMissionGenesisGraphPlan(db, input, { runId, actionId: action.id }, missionId, output);
-
-    if (output.missionCandidates.length > 0) {
-      const allQuestions: MissionGenesisQuestion[] = [];
-      for (const [index, candidate] of output.missionCandidates.entries()) {
-        if (candidate.key === output.existingMissionId) continue;
-        const persistedCandidate = await persistMissionCandidate(db, input, runId, action.id, output, candidate, index);
-        if (persistedCandidate.missionId) {
-          missionIds.push(persistedCandidate.missionId);
-        }
-        if (persistedCandidate.outcome === "activate_mission" && persistedCandidate.missionId) {
-          activatedMissionIds.push(persistedCandidate.missionId);
-        }
-        if (persistedCandidate.outcome === "candidate_needs_context" && persistedCandidate.missionId) {
-          candidateMissionIds.push(persistedCandidate.missionId);
-        }
-        allQuestions.push(...persistedCandidate.questions);
-      }
-      questions = [...output.questions, ...allQuestions];
-    }
-  } else if (shouldPersistMultipleCandidates) {
-    const allQuestions: MissionGenesisQuestion[] = [];
-    for (const [index, candidate] of output.missionCandidates.entries()) {
-      const persistedCandidate = await persistMissionCandidate(db, input, runId, action.id, output, candidate, index);
-      if (persistedCandidate.missionId) {
-        missionIds.push(persistedCandidate.missionId);
-      }
-      if (persistedCandidate.outcome === "activate_mission" && persistedCandidate.missionId) {
-        activatedMissionIds.push(persistedCandidate.missionId);
-      }
-      if (persistedCandidate.outcome === "candidate_needs_context" && persistedCandidate.missionId) {
-        candidateMissionIds.push(persistedCandidate.missionId);
-      }
-      allQuestions.push(...persistedCandidate.questions);
-    }
-    missionId = activatedMissionIds[0] ?? candidateMissionIds[0] ?? missionIds[0];
-    questions = allQuestions;
-  } else if (output.outcome === "candidate_needs_context") {
-    missionId = await createCandidate(db, input, runId, action.id, output);
-    missionIds = [missionId];
-    candidateMissionIds = [missionId];
-    questions = await persistQuestions(db, missionId, output.questions);
-  } else if (output.outcome === "activate_mission") {
-    missionId = input.candidateMissionId
-      ? await activateCandidate(db, input, runId, action.id, output)
-      : await createActiveMission(db, input, runId, action.id, output);
-    missionIds = [missionId];
-    activatedMissionIds = [missionId];
-    await persistMissionGenesisGraphPlan(db, input, { runId, actionId: action.id }, missionId, output);
-    await finalizeMissionActivation(db, input, missionId);
-  } else if (input.candidateMissionId) {
-    const { error } = await db.from("missions").update({
-      status: "archived",
-      archived_at: new Date().toISOString(),
-      current_recommendation: output.decisionSummary,
-      updated_at: new Date().toISOString(),
-    }).eq("id", input.candidateMissionId).eq("artist_workspace_id", input.artistWorkspaceId).eq("status", "candidate");
-    if (error) throw error;
-  }
-
-  if (!shouldPersistMultipleCandidates) {
-    await writeOperatingEvent(db, input, runId, missionId, output);
-  }
-  const { error: completeActionError } = await db.from("manager_run_actions").update({
-    target_id: missionId || output.existingMissionId || null,
-    status: output.outcome === "request_evidence" ? "skipped" : "applied",
-    result_payload: { outcome: output.outcome, missionId: missionId ?? null, missionIds, activatedMissionIds, candidateMissionIds, questions },
-  }).eq("id", action.id);
-  if (completeActionError) throw completeActionError;
-
-  return { missionId, primaryMissionId: missionId, missionIds, activatedMissionIds, candidateMissionIds, questions };
-}
-
-async function persistMissionCandidate(
-  db: any,
-  input: MissionGenesisInput,
-  runId: string,
-  actionId: string,
-  output: MissionGenesisOutput,
-  candidate: MissionGenesisCandidate,
-  index: number,
-) {
-  const candidateOutput = outputFromCandidate(output, candidate, index);
-  let missionId: string | undefined;
-  let questions: MissionGenesisQuestion[] = [];
-  if (candidate.outcome === "candidate_needs_context") {
-    missionId = await createCandidate(db, input, runId, actionId, candidateOutput);
-    questions = await persistQuestions(db, missionId, candidate.questions);
-    await writeOperatingEvent(db, input, runId, missionId, candidateOutput);
-  } else if (candidate.outcome === "activate_mission") {
-    missionId = await createActiveMission(db, input, runId, actionId, candidateOutput);
-    await persistMissionGenesisGraphPlan(db, input, { runId, actionId }, missionId, candidateOutput);
-    await finalizeMissionActivation(db, input, missionId);
-    await writeOperatingEvent(db, input, runId, missionId, candidateOutput);
-  }
-  return { missionId, questions, outcome: candidate.outcome };
-}
-
-function outputFromCandidate(output: MissionGenesisOutput, candidate: MissionGenesisCandidate, index: number): MissionGenesisOutput {
-  return {
-    ...output,
-    outcome: candidate.outcome,
-    confidence: candidate.confidence,
-    decisionSummary: candidate.mission.summary || output.decisionSummary,
-    reasons: candidate.reasons.length ? candidate.reasons : output.reasons,
-    evidenceNeeded: candidate.evidenceNeeded,
-    existingMissionId: "",
-    questions: candidate.questions,
-    mission: candidate.mission,
-    checkpoints: candidate.checkpoints,
-    tasks: candidate.tasks,
-    permissionRequests: candidate.permissionRequests,
-    missionCandidates: [candidate],
-    stage: { ...output.stage, label: `${output.stage.label} candidate ${index + 1}` },
-  };
-}
-
-async function createCandidate(db: any, input: MissionGenesisInput, runId: string, actionId: string, output: MissionGenesisOutput) {
-  const { data, error } = await db.from("missions").insert(missionRow(input, runId, actionId, output, "candidate")).select("id").single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function createActiveMission(db: any, input: MissionGenesisInput, runId: string, actionId: string, output: MissionGenesisOutput) {
-  const { data, error } = await db.from("missions").insert(missionRow(input, runId, actionId, output, "candidate")).select("id").single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function activateCandidate(db: any, input: MissionGenesisInput, runId: string, actionId: string, output: MissionGenesisOutput) {
-  const { data, error } = await db.from("missions").update({
-    ...missionRow(input, runId, actionId, output, "candidate"),
-    updated_at: new Date().toISOString(),
-  }).eq("id", input.candidateMissionId).eq("artist_workspace_id", input.artistWorkspaceId).eq("status", "candidate").select("id").single();
-  if (error) throw error;
-  return data.id as string;
-}
-
-async function finalizeMissionActivation(db: any, input: MissionGenesisInput, missionId: string) {
-  const { error } = await db.from("missions").update({
-    status: "active",
-    priority: 1,
-    updated_at: new Date().toISOString(),
-  }).eq("id", missionId).eq("artist_workspace_id", input.artistWorkspaceId).eq("status", "candidate");
-  if (error) throw error;
-}
-
-function missionRow(input: MissionGenesisInput, runId: string, actionId: string, output: MissionGenesisOutput, status: "candidate" | "active") {
-  return {
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    title: output.mission.title,
-    objective: output.mission.objective,
-    reason: output.mission.reason,
-    status,
-    priority: status === "active" ? 1 : 0,
-    progress: 0,
-    summary: output.mission.summary,
-    pattern_name: output.mission.patternName,
-    pattern_confidence: output.confidence === "limited" ? "low" : output.confidence,
-    originating_trigger: "manual_mission_genesis_openai",
-    required_evidence: unique(output.checkpoints.flatMap((checkpoint) => checkpoint.requiredEvidence)),
-    missing_evidence: unique([...output.evidenceNeeded, ...output.checkpoints.flatMap((checkpoint) => checkpoint.missingEvidence)]),
-    current_recommendation: output.mission.currentRecommendation,
-    change_conditions: output.mission.changeConditions,
-    review_point: output.checkpoints[0]?.title ?? (status === "candidate" ? "Awaiting Manager context" : "Manager review"),
-    created_from_run_id: runId,
-    created_from_action_id: actionId,
-  };
-}
-
-async function persistQuestions(db: any, missionId: string, questions: MissionGenesisQuestion[]) {
-  const prefix = questionPrefix(missionId);
-  const rows = questions.map((question, index) => ({
-    question_key: `${prefix}${slug(question.key || `question_${index + 1}`)}`,
-    question: question.question,
-    suggested_answer: null,
-    required_for: ["mission_genesis"],
-    order_index: index + 1,
-    status: "active",
-  }));
-  const { data, error } = await db.from("manager_context_questions").insert(rows).select("question_key,question,order_index");
-  if (error) throw error;
-  return (data ?? []).sort((a: any, b: any) => a.order_index - b.order_index).map((row: any, index: number) => ({ ...questions[index], key: row.question_key }));
-}
-
-async function writeOperatingEvent(db: any, input: MissionGenesisInput, runId: string, missionId: string | undefined, output: MissionGenesisOutput) {
-  const eventType = output.outcome === "activate_mission" ? "mission_activated" : output.outcome === "candidate_needs_context" ? "mission_candidate_created" : `mission_genesis_${output.outcome}`;
-  const { error } = await db.from("operating_events").insert({
-    account_id: input.accountId,
-    artist_workspace_id: input.artistWorkspaceId,
-    artist_id: input.artistId,
-    event_type: eventType,
-    actor_type: "manager",
-    target_type: missionId ? "mission" : "artist",
-    target_id: missionId ?? input.artistId,
-    source_type: "manager_synthesis_run",
-    source_id: runId,
-    manager_synthesis_run_id: runId,
-    mission_id: missionId ?? null,
-    summary: output.decisionSummary,
-    payload: { outcome: output.outcome, reasons: output.reasons, evidenceNeeded: output.evidenceNeeded },
-  });
-  if (error) throw error;
-}
-
-async function completeManagerRun(db: any, runId: string, output: MissionGenesisOutput, missionId?: string) {
-  const { error } = await db.from("manager_synthesis_runs").update({
-    mission_id: missionId ?? null,
-    status: "completed",
-    classification: `mission_genesis_v2_${output.outcome}`,
-    confidence: output.confidence === "limited" ? "low" : output.confidence,
-    steps_payload: [{ step: "packet_built", status: "completed" }, { step: "openai_synthesis", status: "completed" }, { step: "decision_persisted", status: "completed" }],
-    action_plan: output.tasks,
-    limitations: output.evidenceNeeded,
-    completed_at: new Date().toISOString(),
-  }).eq("id", runId);
-  if (error) throw error;
-}
-
-async function completeUsageEvent(db: any, usageId: string, usage: Record<string, unknown>, requestCount: number) {
-  const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
-  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
-  const { error } = await db.from("ai_run_usage_events").update({
-    status: "succeeded",
-    provider_request_count: requestCount,
-    input_tokens: numberOrNull(usage.input_tokens),
-    cached_input_tokens: numberOrNull(inputDetails.cached_tokens),
-    output_tokens: numberOrNull(usage.output_tokens),
-    reasoning_tokens: numberOrNull(outputDetails.reasoning_tokens),
-    completed_at: new Date().toISOString(),
-  }).eq("id", usageId);
-  if (error) throw error;
-}
-
 function toViewModel(output: MissionGenesisOutput, persisted: { missionId?: string; primaryMissionId?: string; missionIds?: string[]; activatedMissionIds?: string[]; candidateMissionIds?: string[]; questions: MissionGenesisQuestion[] }) {
   const titles: Record<MissionGenesisOutput["outcome"], string> = {
     activate_mission: "Mission activated",
@@ -1165,13 +877,6 @@ function toViewModel(output: MissionGenesisOutput, persisted: { missionId?: stri
     ...(output.outcome === "candidate_needs_context" ? { candidateMissionId: persisted.candidateMissionIds?.[0] ?? persisted.missionId } : {}),
     ...((output.outcome === "activate_mission" || output.outcome === "update_existing_mission") ? { activatedMissionId: persisted.activatedMissionIds?.[0] ?? persisted.primaryMissionId ?? persisted.missionId } : {}),
   };
-}
-
-async function markRunFailedSafe(runId: string, message: string) {
-  try {
-    const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    await db.from("manager_synthesis_runs").update({ status: "failed", error: message, completed_at: new Date().toISOString() }).eq("id", runId);
-  } catch { /* preserve original error */ }
 }
 
 async function markUsageFailedSafe(usageId: string, message: string) {
@@ -1201,16 +906,8 @@ function questionPrefix(missionId: string) {
   return `mission_genesis_${missionId.replaceAll("-", "_")}_`;
 }
 
-function slug(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "context";
-}
-
 function compact(values: unknown[]) {
   return values.filter((value): value is string => typeof value === "string" && Boolean(value.trim())).map((value) => value.trim());
-}
-
-function unique(values: string[]) {
-  return [...new Set(values.filter(Boolean))];
 }
 
 function numberOrNull(value: unknown) {
