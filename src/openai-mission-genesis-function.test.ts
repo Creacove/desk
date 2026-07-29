@@ -2,6 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  MISSION_GENESIS_PACKET_VERSION,
+  MISSION_GENESIS_PROMPT_VERSION,
   buildMissionGenesisInstructions,
   buildMissionGenesisRepairInstructions,
   parseMissionGenesisOutput,
@@ -9,6 +11,25 @@ import {
 } from "../supabase/functions/_shared/openaiMissionGenesis";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "mission-genesis", "index.ts"), "utf8");
+
+describe("Mission Genesis grounding contract", () => {
+  it("separates frozen evidence, user context, persisted state, inference, and limitations", () => {
+    const prompt = buildMissionGenesisInstructions("initial");
+    for (const boundary of ["VERIFIED_EVIDENCE", "USER_CONTEXT", "PERSISTED_WORKSPACE_STATE", "PERMITTED_INFERENCE", "MISSING_OR_STALE_INFORMATION"]) {
+      expect(prompt).toContain(boundary);
+    }
+    expect(prompt).toContain(MISSION_GENESIS_PROMPT_VERSION);
+    expect(MISSION_GENESIS_PACKET_VERSION).toBe("mission-genesis-packet-v2");
+    expect(prompt).toContain("must not become a sourced workspace fact");
+  });
+
+  it("persists prompt, packet, and output schema versions on the durable run", () => {
+    expect(functionSource).toContain("promptVersion: MISSION_GENESIS_PROMPT_VERSION");
+    expect(functionSource).toContain("packetVersion: MISSION_GENESIS_PACKET_VERSION");
+    expect(functionSource).toContain("schemaVersion: MISSION_GENESIS_SCHEMA_VERSION");
+    expect(functionSource).toContain("buildMissionGenesisModelInput");
+  });
+});
 const graphPersistenceSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "missionGraphPersistence.ts"), "utf8");
 const finalizerMigration = readFileSync(join(
   process.cwd(), "supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql",

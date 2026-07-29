@@ -1,4 +1,10 @@
-import type { ArtistBriefPacket, TodaysBriefOutput } from "../../openaiTodaysBrief.ts";
+import {
+  TODAYS_BRIEF_PACKET_VERSION,
+  TODAYS_BRIEF_PROMPT_VERSION,
+  TODAYS_BRIEF_SCHEMA_VERSION,
+  type ArtistBriefPacket,
+  type TodaysBriefOutput,
+} from "../../openaiTodaysBrief.ts";
 
 export type ManagerEvidenceRead = {
   label: string;
@@ -16,11 +22,31 @@ export function buildTodaysBriefModelPacket(
   managerIntelligencePacket: ManagerPacketRecord,
 ) {
   const compactPacket = compactArtistBriefPacket(packet);
+  const managerEvidenceReads = buildManagerEvidenceReads(managerIntelligencePacket).slice(0, 8);
   return {
     ...compactPacket,
+    promptVersion: TODAYS_BRIEF_PROMPT_VERSION,
+    packetVersion: TODAYS_BRIEF_PACKET_VERSION,
+    schemaVersion: TODAYS_BRIEF_SCHEMA_VERSION,
+    groundingContract: {
+      VERIFIED_EVIDENCE: "intelligenceSnapshotInputs, derivedInsights, managerEvidenceReads",
+      USER_CONTEXT: "profile.artistDirection, profile.budgetContext",
+      PERSISTED_WORKSPACE_STATE: "profile, workingCatalog, managerIntelligence",
+      PERMITTED_INFERENCE: "arithmetic, comparison, ranking, and explicitly framed management judgment from supplied fields",
+      MISSING_OR_STALE_INFORMATION: "sourceLimits and per-evidence limitations",
+    },
     managerIntelligence: projectManagerIntelligenceForBrief(managerIntelligencePacket),
-    managerEvidenceReads: buildManagerEvidenceReads(managerIntelligencePacket).slice(0, 8),
+    managerEvidenceReads,
+    allowedEvidenceIds: uniqueStrings([
+      ...compactPacket.intelligenceSnapshotInputs.flatMap((group) => group.metrics.flatMap((metric) => [metric.id, ...metric.evidenceIds])),
+      ...compactPacket.derivedInsights.flatMap((insight) => insight.evidenceIds),
+      ...managerEvidenceReads.flatMap((read) => read.evidenceIds),
+    ]),
   };
+}
+
+function uniqueStrings(values: string[]) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 export function appendManagerEvidenceReads<T extends TodaysBriefOutput>(

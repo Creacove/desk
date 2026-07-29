@@ -106,6 +106,19 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain("...musicManagerReadJsonSchema");
   });
 
+  it("uses explicit grounding boundaries while keeping the v2 output schema unchanged", () => {
+    const instructions = buildMusicManagerReadInstructions("music_item", "");
+    for (const boundary of ["VERIFIED_EVIDENCE", "USER_CONTEXT", "PERSISTED_WORKSPACE_STATE", "PERMITTED_INFERENCE", "MISSING_OR_STALE_INFORMATION"]) {
+      expect(instructions).toContain(boundary);
+    }
+    expect(instructions).toContain("must not become a sourced workspace fact");
+    expect(functionSource).toContain("groundingContract");
+    expect(functionSource).toContain("promptVersion: MUSIC_MANAGER_READ_PROMPT_VERSION");
+    expect(Object.keys(musicManagerReadJsonSchema.schema.properties)).toEqual([
+      "position", "managementRole", "body", "metricEvidenceIds", "evidenceIds",
+    ]);
+  });
+
   it("allows exactly one semantic repair and owns one request ledger", () => {
     expect(functionSource).toContain("buildMusicManagerReadRepairInstructions");
     expect(functionSource).toContain("<invalid_output_json>");

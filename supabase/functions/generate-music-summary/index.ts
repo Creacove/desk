@@ -3,6 +3,8 @@ import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
+  MUSIC_MANAGER_READ_PACKET_VERSION,
+  MUSIC_MANAGER_READ_PROMPT_VERSION,
   MUSIC_MANAGER_READ_SCHEMA_VERSION,
   buildMusicManagerReadInstructions,
   buildMusicManagerReadRepairInstructions,
@@ -195,6 +197,9 @@ async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) 
     subject_type: input.subjectType,
     subject_id: input.subjectId,
     context_payload: {
+      promptVersion: MUSIC_MANAGER_READ_PROMPT_VERSION,
+      packetVersion: MUSIC_MANAGER_READ_PACKET_VERSION,
+      schemaVersion: MUSIC_MANAGER_READ_SCHEMA_VERSION,
       subjectType: input.subjectType,
       subjectId: input.subjectId,
     },
@@ -540,6 +545,16 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
   const packetProjection = projectManagerPacket(packet, input.subjectId);
   const managerPacketEvidence = projectManagerPacketEvidence(packet);
   const modelContext: Record<string, unknown> = {
+    promptVersion: MUSIC_MANAGER_READ_PROMPT_VERSION,
+    packetVersion: MUSIC_MANAGER_READ_PACKET_VERSION,
+    schemaVersion: MUSIC_MANAGER_READ_SCHEMA_VERSION,
+    groundingContract: {
+      VERIFIED_EVIDENCE: "reasoningEvidence, metricCandidates, managerPacketEvidence",
+      USER_CONTEXT: "artistProfile goals, direction, stage, and budget",
+      PERSISTED_WORKSPACE_STATE: "requestedSubject, identifiers, relatedRecords, projectTracklist, managerPacket",
+      PERMITTED_INFERENCE: "comparison and management judgment derived from supplied fields",
+      MISSING_OR_STALE_INFORMATION: "evidence freshness, confidence, and limitations",
+    },
     requestedSubject: {
       subjectType: input.subjectType,
       ...compactRecord(subject, ["id", "title", "item_type", "project_type", "lifecycle_stage", "released_at"]),

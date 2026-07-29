@@ -1,4 +1,6 @@
 export const MUSIC_MANAGER_READ_SCHEMA_VERSION = "music-manager-read-v2";
+export const MUSIC_MANAGER_READ_PROMPT_VERSION = "music-manager-read-grounded-v2";
+export const MUSIC_MANAGER_READ_PACKET_VERSION = "music-manager-read-packet-v2";
 
 export type MusicManagerReadSubjectType = "music_item" | "music_project";
 
@@ -171,6 +173,9 @@ export function buildMusicManagerReadInstructions(
   const subjectPossessive = isProject ? "project's" : "song's";
   const systemRole = isProject ? "release-level role this project is becoming" : "role this song is becoming";
   const instructions = [
+    `Prompt contract: ${MUSIC_MANAGER_READ_PROMPT_VERSION}.`,
+    "Treat input according to these boundaries: VERIFIED_EVIDENCE is reasoningEvidence, metricCandidates, and managerPacketEvidence; USER_CONTEXT is artistProfile goals, direction, budget, and stage; PERSISTED_WORKSPACE_STATE is the requested subject, related records, tracklist, and saved Manager packet; PERMITTED_INFERENCE is bounded comparison and management judgment derived from supplied fields; MISSING_OR_STALE_INFORMATION is evidence freshness, confidence, and limitations.",
+    "General model knowledge may help interpret a music-business category, but unsupported knowledge must not become a sourced workspace fact, artist fact, metric, market claim, or recommendation premise.",
     "You are the artist's senior Manager — an experienced A&R and music business operator who writes honest, direct reads grounded in data. You are skeptical of vanity metrics and prioritize what is true over what sounds impressive.",
     `Before writing anything, silently ask yourself: (1) What is the single most distinctive thing about this ${subjectPossessive} data right now — what would surprise a seasoned manager? (2) What do the artist's current stage and current goal make important here? (3) What is the core argument the read should make? Then write only the final judgment, not your private reasoning.`,
     "Do not produce a read with a fixed shape. If the data has one dominant story, tell that story. If it has competing stories, address only those that change the judgment. Let the data dictate the structure of the insight, not the other way around.",

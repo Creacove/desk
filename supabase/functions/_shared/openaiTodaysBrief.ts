@@ -96,6 +96,10 @@ export type TodaysBriefOutput = {
 
 export type TodaysBriefPromptMode = "operating" | "setup-map";
 
+export const TODAYS_BRIEF_PROMPT_VERSION = "todays-brief-grounded-v2";
+export const TODAYS_BRIEF_PACKET_VERSION = "todays-brief-packet-v2";
+export const TODAYS_BRIEF_SCHEMA_VERSION = "setup_todays_brief_v1";
+
 export const bannedVisibleTerms = [
   "Chartmetric",
   "provider",
@@ -207,6 +211,9 @@ export const todaysBriefJsonSchema = {
 };
 
 const sharedTodaysBriefInstructions = [
+    `Prompt contract: ${TODAYS_BRIEF_PROMPT_VERSION}.`,
+    "Treat input according to these boundaries: VERIFIED_EVIDENCE contains saved facts with allowed evidence IDs; USER_CONTEXT contains artist-stated goals and preferences; PERSISTED_WORKSPACE_STATE contains saved catalog and prior Manager state; PERMITTED_INFERENCE allows only calculations, comparisons, and clearly framed judgment derived from those inputs; MISSING_OR_STALE_INFORMATION contains limitations that must constrain confidence.",
+    "General model knowledge may help interpret a category, but unsupported knowledge must not become a sourced workspace fact, named artist fact, metric, event, biography, market claim, or recommendation premise.",
     "Write as the artist's senior Manager and elite music strategy analyst. The Manager is decisive, commercial, culturally aware, and specific.",
     "Do not pretend a campaign, mission, rollout, or release plan already exists. Do not use the word campaign, mission, or rollout in visible output.",
     "Visible output has only two product surfaces: Artist Intelligence and Manager's Read. The JSON still includes sourceLine and claimAudit for product/audit use.",
@@ -222,7 +229,7 @@ const sharedTodaysBriefInstructions = [
     "derive ratios, contrasts, and ranking insights from the data: biggest city vs. second city, combined secondary markets, one social platform compared to the others, playlist reach compared to follower scale, current records with stronger evidence than others.",
     "Every snapshot group insight must say what the numbers mean, not merely repeat the numbers.",
     "Write headlineRead as a very concise, punchy title for the day's brief (strictly under 120 characters). It must never contain long lists of tracks, numbers, or detailed context that would cause text clipping. Push all detailed numbers and context into snapshotSummary or managerRead.",
-    "Write snapshotSummary as a very rich, dense, and comprehensive synthesis (250-500 characters) explaining who the artist is, where their career/brand stands right now, and their general positioning or public context (news, social presence, or background). Rely on both the packet signals and your broad knowledge to explain who this artist is to a new member of the management team. This must focus on the artist themselves, not just their song metrics, and must satisfy the character length requirements to feel robust and highly utilized.",
+    "Write snapshotSummary as a rich, dense synthesis (250-500 characters) explaining who the artist is, where their career or brand stands now, and the positioning supported by the frozen packet. Do not add news, biography, social facts, or background that is absent from the packet.",
     "The Manager's Read is the desk's core output. It has exactly 4 sections — no more, no fewer. Separate each section with a blank line. Each section must start with its label in title case followed by a colon, then the section body. Format for every section: 'Label: Body text here.'",
     "Use complete sentences throughout. Do not stop mid-sentence, and do not let any visible field read like clipped copy.",
     "For long visible prose fields that are not otherwise constrained to the 4 labeled Manager's Read sections, write 3-5 short paragraphs separated by blank lines when that gives the artist a fuller read.",
@@ -299,6 +306,35 @@ export function assertSignalsHaveEvidenceIds(output: TodaysBriefOutput) {
   for (const group of output.intelligenceSnapshot) {
     if (!group.metrics.length) throw new Error("Today's Brief intelligence group is missing metrics.");
   }
+}
+
+export function assertTodaysBriefEvidenceIsGrounded(output: TodaysBriefOutput, packet: unknown) {
+  const allowed = collectAllowedEvidenceIds(packet);
+  const referenced = [
+    ...output.intelligenceSnapshot.flatMap((group) => group.metrics.flatMap((metric) => metric.evidenceIds)),
+    ...output.claimAudit.flatMap((claim) => claim.evidenceIds),
+  ];
+  for (const evidenceId of referenced) {
+    if (!allowed.has(evidenceId)) {
+      throw new Error(`OpenAI Today's Brief returned unsupported evidence ID: ${evidenceId}.`);
+    }
+  }
+}
+
+function collectAllowedEvidenceIds(value: unknown, into = new Set<string>()): Set<string> {
+  if (Array.isArray(value)) {
+    for (const item of value) collectAllowedEvidenceIds(item, into);
+    return into;
+  }
+  if (!isRecord(value)) return into;
+  for (const [key, item] of Object.entries(value)) {
+    if ((key === "id" || key === "evidenceId") && typeof item === "string" && item.trim()) into.add(item.trim());
+    if (key === "evidenceIds" && Array.isArray(item)) {
+      for (const id of item) if (typeof id === "string" && id.trim()) into.add(id.trim());
+    }
+    collectAllowedEvidenceIds(item, into);
+  }
+  return into;
 }
 
 export function sanitizeTodaysBriefVisibleCopy(output: TodaysBriefOutput): TodaysBriefOutput {

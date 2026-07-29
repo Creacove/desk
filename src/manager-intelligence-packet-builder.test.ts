@@ -192,6 +192,11 @@ describe("Manager Intelligence packet builder", () => {
       generatedFor: "setup",
     }, managerPacket);
 
+    expect(modelPacket.promptVersion).toBe("todays-brief-grounded-v2");
+    expect(modelPacket.packetVersion).toBe("todays-brief-packet-v2");
+    expect(modelPacket.groundingContract.VERIFIED_EVIDENCE).toContain("managerEvidenceReads");
+    expect(modelPacket.allowedEvidenceIds).toEqual(expect.arrayContaining(["ev_artist_score", "ev_city", "ev_call_me"]));
+
     expect(modelPacket.managerIntelligence.kpiRead.artistScore.read).toContain("broad artist strength");
     expect(modelPacket.managerEvidenceReads.length).toBeGreaterThanOrEqual(4);
     expect(modelPacket.managerIntelligence.internalPlaybooksApplied).toEqual(

@@ -1,6 +1,10 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  TODAYS_BRIEF_PACKET_VERSION,
+  TODAYS_BRIEF_PROMPT_VERSION,
+  TODAYS_BRIEF_SCHEMA_VERSION,
   assertSignalsHaveEvidenceIds,
+  assertTodaysBriefEvidenceIsGrounded,
   buildTodaysBriefInstructions,
   parseTodaysBriefOutput,
   todaysBriefJsonSchema,
@@ -245,6 +249,7 @@ async function executeTodaysBriefRun(args: {
       heartbeat,
     );
     const output = appendManagerEvidenceReads(modelResult.output, args.managerIntelligencePacket);
+    assertTodaysBriefEvidenceIsGrounded(output, modelPacket);
     const completed = {
       ...output,
       generatedAt: new Date().toISOString(),
@@ -777,6 +782,9 @@ async function createManagerSynthesisRun(
       status: "queued",
       classification,
       context_payload: {
+        promptVersion: TODAYS_BRIEF_PROMPT_VERSION,
+        packetVersion: TODAYS_BRIEF_PACKET_VERSION,
+        schemaVersion: TODAYS_BRIEF_SCHEMA_VERSION,
         packet,
         managerIntelligencePacket,
         setupMusicReadTargets,

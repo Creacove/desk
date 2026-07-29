@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildTodaysBriefInstructions, parseTodaysBriefOutput } from "../supabase/functions/_shared/openaiTodaysBrief";
+import {
+  TODAYS_BRIEF_PACKET_VERSION,
+  TODAYS_BRIEF_PROMPT_VERSION,
+  assertTodaysBriefEvidenceIsGrounded,
+  buildTodaysBriefInstructions,
+  parseTodaysBriefOutput,
+} from "../supabase/functions/_shared/openaiTodaysBrief";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "generate-todays-brief", "index.ts"), "utf8");
 const promptSource = readFileSync(join(process.cwd(), "supabase", "functions", "_shared", "openaiTodaysBrief.ts"), "utf8");
@@ -438,5 +444,35 @@ describe("OpenAI Today's Brief generation function", () => {
     for (const term of bannedVisibleTerms) {
       expect(promptSource).toContain(term);
     }
+  });
+
+  it("separates frozen evidence from context and forbids unsupported model knowledge", () => {
+    const prompt = buildTodaysBriefInstructions("setup-map");
+    for (const boundary of [
+      "VERIFIED_EVIDENCE",
+      "USER_CONTEXT",
+      "PERSISTED_WORKSPACE_STATE",
+      "PERMITTED_INFERENCE",
+      "MISSING_OR_STALE_INFORMATION",
+    ]) expect(prompt).toContain(boundary);
+    expect(prompt).toContain(TODAYS_BRIEF_PROMPT_VERSION);
+    expect(TODAYS_BRIEF_PACKET_VERSION).toBe("todays-brief-packet-v2");
+    expect(prompt).not.toContain("Rely on both the packet signals and your broad knowledge");
+    expect(prompt).toContain("must not become a sourced workspace fact");
+  });
+
+  it("rejects visible evidence references outside the frozen packet", () => {
+    const output = parseTodaysBriefOutput({
+      headlineRead: "London leads",
+      intelligenceSnapshot: [{ title: "Market", insight: "London is strongest.", metrics: [{ label: "London", value: "42K", context: "listeners", evidenceIds: ["invented-id"] }] }],
+      snapshotSummary: "London is the clearest saved market.",
+      managerRead: "Artist Intelligence: London is the clearest saved market.\n\nMarket Focus: Keep the read bounded.\n\nCatalog: Use the saved record.\n\nToday: Review the London evidence.",
+      sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
+      confidence: "medium",
+      claimAudit: [{ claim: "London leads.", evidenceIds: ["ev-london"], limitation: "Public signal only." }],
+    });
+    expect(() => assertTodaysBriefEvidenceIsGrounded(output, {
+      intelligenceSnapshotInputs: [{ metrics: [{ id: "ev-london", evidenceIds: ["ev-london"] }] }],
+    })).toThrow(/invented-id/);
   });
 });

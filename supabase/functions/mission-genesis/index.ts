@@ -1,5 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  MISSION_GENESIS_PACKET_VERSION,
+  MISSION_GENESIS_PROMPT_VERSION,
+  MISSION_GENESIS_SCHEMA_VERSION,
   buildMissionGenesisInstructions,
   buildMissionGenesisRepairInstructions,
   missionGenesisJsonSchema,
@@ -580,7 +583,8 @@ async function callOpenAIMissionGenesis(
   context: { packet: unknown; contextAnswers: unknown[]; priorCandidate: Record<string, unknown> | null },
   mode: MissionGenesisMode,
 ) {
-  const first = await requestOpenAIMissionGenesis(buildMissionGenesisInstructions(mode), context);
+  const modelInput = buildMissionGenesisModelInput(context);
+  const first = await requestOpenAIMissionGenesis(buildMissionGenesisInstructions(mode), modelInput);
   try {
     return {
       output: parseMissionGenesisOutput(first.outputText, context.packet, mode),
@@ -591,7 +595,7 @@ async function callOpenAIMissionGenesis(
     const validationError = describeError(error, "OpenAI Mission Genesis returned an invalid structured decision.");
     const repaired = await requestOpenAIMissionGenesis(
       buildMissionGenesisRepairInstructions(mode, validationError),
-      { ...context, invalidOutput: first.outputText, validationError },
+      { ...modelInput, invalidOutput: first.outputText, validationError },
     );
     try {
       return {
@@ -658,6 +662,26 @@ async function buildMissionGenesisRunIdentity(
   return { scopeKey: `initial:${requestKey}`, idempotencyKey: `mission-genesis:initial:${requestKey}` };
 }
 
+function buildMissionGenesisModelInput(
+  context: { packet: unknown; contextAnswers: unknown[]; priorCandidate: Record<string, unknown> | null },
+) {
+  return {
+    promptVersion: MISSION_GENESIS_PROMPT_VERSION,
+    packetVersion: MISSION_GENESIS_PACKET_VERSION,
+    schemaVersion: MISSION_GENESIS_SCHEMA_VERSION,
+    groundingContract: {
+      VERIFIED_EVIDENCE: "packet.evidence and evidence-backed packet.managerIntelligence",
+      USER_CONTEXT: "packet.artist goals and constraints, plus contextAnswers",
+      PERSISTED_WORKSPACE_STATE: "remaining packet fields and priorCandidate",
+      PERMITTED_INFERENCE: "management judgment derived from supplied packet fields",
+      MISSING_OR_STALE_INFORMATION: "packet limitations, freshness, and explicit evidence gaps",
+    },
+    packet: context.packet,
+    contextAnswers: context.contextAnswers,
+    priorCandidate: context.priorCandidate,
+  };
+}
+
 async function hashMissionGenesisAnswerBatch(answers: Array<{ questionKey: string; answer: string }>) {
   const canonical = [...answers]
     .sort((left, right) => left.questionKey.localeCompare(right.questionKey))
@@ -685,6 +709,9 @@ async function createManagerRun(
       classification: input.mode === "continuation" ? "mission_genesis_continue_v2" : "mission_genesis_v2",
       confidence: "unknown",
       context_payload: {
+        promptVersion: MISSION_GENESIS_PROMPT_VERSION,
+        packetVersion: MISSION_GENESIS_PACKET_VERSION,
+        schemaVersion: MISSION_GENESIS_SCHEMA_VERSION,
         mode: input.mode,
         candidateMissionId: input.candidateMissionId ?? null,
         contextAnswers,
@@ -737,7 +764,9 @@ function buildMissionGenesisRunAudit(input: MissionGenesisInput, packet: unknown
   const managerIntelligence = isRecord(record.managerIntelligence) ? record.managerIntelligence : {};
   return {
     mode: input.mode,
-    packetVersion: record.packetVersion ?? "mission_genesis_v2",
+    promptVersion: MISSION_GENESIS_PROMPT_VERSION,
+    packetVersion: MISSION_GENESIS_PACKET_VERSION,
+    schemaVersion: MISSION_GENESIS_SCHEMA_VERSION,
     generatedAt: record.generatedAt ?? new Date().toISOString(),
     candidateMissionId: input.candidateMissionId ?? null,
     counts: {
