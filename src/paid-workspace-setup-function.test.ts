@@ -176,6 +176,16 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain('select("render_json")');
     expect(text).toContain("setupMusicReadTargets");
     expect(text).not.toContain('return { status: "completed", phase: "contextualize" };');
+    expect(text).toContain("reconcileCompletedSetupMusicReads");
+    expect(text).toContain('rpc("merge_setup_music_read_target_v1"');
+  });
+
+  it("never makes workspace access wait for setup music reads", () => {
+    const migration = source("supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql");
+    expect(migration).toContain("set status = 'completed'");
+    expect(migration).toContain("current_stage = 'music_reads'");
+    expect(migration).toContain("merge_setup_music_read_target_v1");
+    expect(migration).not.toMatch(/set status = case[\s\S]{0,300}music_reads/);
   });
 
   it("dispatches paid setup only after the active subscription is stored", () => {

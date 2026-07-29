@@ -169,19 +169,24 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("scheduleBackgroundTask");
     expect(functionSource).toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, serviceRoleKey");
     expect(functionSource).not.toContain("dispatchSetupMusicReadsConcurrently(supabaseUrl, anonKey");
-    expect(functionSource).toContain("finalizeSetupMusicReadWave");
-    expect(functionSource).toContain("readSetupMusicManagerRunId");
-    expect(functionSource).toContain("waitForSetupMusicReadRuns");
-    expect(functionSource).toContain('.eq("account_id", input.accountId)');
-    expect(functionSource).toContain('.eq("artist_workspace_id", input.artistWorkspaceId)');
-    expect(functionSource).toContain('.eq("artist_id", input.artistId)');
-    expect(functionSource).toContain('.eq("classification", "music_manager_read_v2")');
-    expect(functionSource).toContain('.in("id", runIds)');
-    expect(functionSource).toContain('"completed_with_limits"');
-    expect(functionSource).toContain("run_id: dispatch.runId");
+    expect(functionSource).toContain("dispatchSetupMusicReadWave");
+    expect(functionSource).toContain("markSetupMusicReadDispatchFailed");
+    expect(functionSource).not.toContain("waitForSetupMusicReadRuns");
+    expect(functionSource).not.toContain("SETUP_MUSIC_READ_POLL_MS");
+    expect(functionSource).not.toContain("SETUP_MUSIC_READ_TIMEOUT_MS");
+    expect(functionSource).toContain("setupRunId: input.setupRunId");
     expect(functionSource).toContain("generate-music-summary");
     expect(functionSource).toContain('subjectType: "music_project"');
     expect(functionSource).toContain('subjectType: "music_item"');
+  });
+
+  it("persists the full queued target tuples before any child dispatch", () => {
+    expect(functionSource).toContain('args.setupMusicReadTargets.map((target) => ({ ...target, status: "queued" }))');
+    expect(finalizerMigration).toContain("setup_music_read_targets");
+    expect(finalizerMigration).toContain("'targets', coalesce(setup_music_read_targets");
+    expect(functionSource.indexOf('rpc("finalize_todays_brief_v1"')).toBeLessThan(
+      functionSource.indexOf("dispatchSetupMusicReadWave("),
+    );
   });
 
   it("uses low reasoning effort for the latency-sensitive setup brief", () => {

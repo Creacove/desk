@@ -25,6 +25,15 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain("runMusicManagerReadWorkflow");
   });
 
+  it("registers its exact setup parent and reconciles that parent once on terminalization", () => {
+    expect(functionSource).toContain("setupRunId?: string");
+    expect(functionSource).toContain('rpc("merge_setup_music_read_target_v1"');
+    expect(functionSource).toContain("reconcileParentSetupMusicReads");
+    expect(functionSource).toContain("setupRunIds");
+    expect(functionSource).toContain("writeWorkspaceEvent");
+    expect(functionSource).toContain('refreshScope: ["music-object"]');
+  });
+
   it("authenticates before constructing its service-role database and verifies the exact workspace tuple", () => {
     expect(functionSource.indexOf("auth.getUser")).toBeLessThan(functionSource.indexOf("const db = createClient(supabaseUrl, serviceRoleKey)"));
     expect(functionSource).toContain('from("artist_workspaces")');
@@ -40,7 +49,7 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain('.eq("subject_id", input.subjectId)');
     expect(functionSource).toContain('.in("status", ["queued", "running"])');
     expect(functionSource).toContain('error.code === "23505"');
-    expect(functionSource).toMatch(/return \{ runId: active\.id(?: as string)?, created: false \}/);
+    expect(functionSource).toMatch(/return \{ runId: active\.id(?: as string)?, status: active\.status(?: as string)?, created: false \}/);
   });
 
   it("checks Chartmetric freshness and enriches before building context or calling OpenAI", () => {

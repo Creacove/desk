@@ -62,10 +62,6 @@ type SetupMusicReadDispatch = {
   runId: string;
 };
 
-const SETUP_MUSIC_READ_POLL_MS = 2_000;
-const SETUP_MUSIC_READ_TIMEOUT_MS = 3 * 60 * 1_000;
-const TERMINAL_MUSIC_READ_STATUSES = new Set(["completed", "completed_with_limits", "failed", "cancelled"]);
-
 type EvidenceRow = {
   id: string;
   source?: string | null;
@@ -237,7 +233,9 @@ async function executeTodaysBriefRun(args: {
       actual_reasoning_tokens: modelResult.usage.reasoningTokens,
       setup_run_id: args.input.setupRunId ?? null,
       setup_stage_lease_token: args.input.setupStageLeaseToken ?? null,
-      setup_music_read_targets: args.generationMode === "setup-map" ? args.setupMusicReadTargets : [],
+      setup_music_read_targets: args.generationMode === "setup-map"
+        ? args.setupMusicReadTargets.map((target) => ({ ...target, status: "queued" }))
+        : [],
       terminal_event_type: args.input.trigger === "setup" ? "setup_todays_brief_generated" : "todays_brief_refreshed",
       terminal_summary: `Today's Brief is ready for ${args.packet.profile.artistName}.`,
     });
@@ -245,7 +243,7 @@ async function executeTodaysBriefRun(args: {
     if (!finalized) throw new Error("Today's Brief finalizer returned no result.");
 
     if (args.generationMode === "setup-map" && args.input.dispatchMusicReads !== false && args.setupMusicReadTargets.length) {
-      scheduleBackgroundTask(finalizeSetupMusicReadWave(args.db, args.supabaseUrl, args.serviceRoleKey, args.input, args.setupMusicReadTargets));
+      scheduleBackgroundTask(dispatchSetupMusicReadWave(args.db, args.supabaseUrl, args.serviceRoleKey, args.input, args.setupMusicReadTargets));
     }
   } catch (error) {
     const failure = publicWorkflowFailure(error);
@@ -491,7 +489,7 @@ async function dispatchSetupMusicReadsConcurrently(
   return results;
 }
 
-async function finalizeSetupMusicReadWave(
+async function dispatchSetupMusicReadWave(
   db: any,
   supabaseUrl: string,
   serviceRoleKey: string,
@@ -500,107 +498,20 @@ async function finalizeSetupMusicReadWave(
 ) {
   const results = await dispatchSetupMusicReadsConcurrently(supabaseUrl, serviceRoleKey, input, targets);
   if (!input.setupRunId) return;
-  const dispatches = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-  const dispatchFailures = results.flatMap((result, index) => result.status === "rejected"
-    ? [{ target: targets[index], code: "dispatch_failed" }]
-    : []);
-  await persistSetupMusicReadDispatches(db, input.setupRunId, dispatches, dispatchFailures);
-  const terminal = await waitForSetupMusicReadRuns(db, input, dispatches);
-  const failures = [...dispatchFailures, ...terminal.failures];
-  const { data: run, error: runError } = await db.from("workspace_setup_runs")
-    .select("stage_status")
-    .eq("id", input.setupRunId)
-    .maybeSingle();
-  if (runError || !run) return;
-  const stages = isRecord(run.stage_status) ? run.stage_status : {};
-  await db.from("workspace_setup_runs").update({
-    stage_status: {
-      ...stages,
-      music_reads: {
-        ...((isRecord(stages.music_reads) ? stages.music_reads : {}) as Record<string, unknown>),
-        status: failures.length ? "completed_with_limits" : "completed",
-        completed_at: new Date().toISOString(),
-        targets: terminal.runs,
-        failures,
-      },
-    },
-  }).eq("id", input.setupRunId);
+  await Promise.all(results.flatMap((result, index) => result.status === "rejected"
+    ? [markSetupMusicReadDispatchFailed(db, input.setupRunId!, targets[index])]
+    : []));
 }
 
-async function persistSetupMusicReadDispatches(
-  db: any,
-  setupRunId: string,
-  dispatches: SetupMusicReadDispatch[],
-  failures: Array<Record<string, unknown>>,
-) {
-  const { data: run, error } = await db.from("workspace_setup_runs")
-    .select("stage_status")
-    .eq("id", setupRunId)
-    .maybeSingle();
-  if (error || !run) return;
-  const stages = isRecord(run.stage_status) ? run.stage_status : {};
-  await db.from("workspace_setup_runs").update({
-    stage_status: {
-      ...stages,
-      music_reads: {
-        ...((isRecord(stages.music_reads) ? stages.music_reads : {}) as Record<string, unknown>),
-        status: "running",
-        targets: dispatches.map((dispatch) => ({
-          ...dispatch.target,
-          run_id: dispatch.runId,
-        })),
-        failures,
-      },
-    },
-  }).eq("id", setupRunId);
-}
-
-async function waitForSetupMusicReadRuns(
-  db: any,
-  input: GenerateTodaysBriefInput,
-  dispatches: SetupMusicReadDispatch[],
-) {
-  const runIds = dispatches.map((dispatch) => dispatch.runId);
-  if (!runIds.length) return { runs: [], failures: [] };
-
-  const deadline = Date.now() + SETUP_MUSIC_READ_TIMEOUT_MS;
-  const statuses = new Map<string, string>();
-  while (Date.now() < deadline) {
-    const { data, error } = await db.from("manager_synthesis_runs")
-      .select("id,status")
-      .eq("account_id", input.accountId)
-      .eq("artist_workspace_id", input.artistWorkspaceId)
-      .eq("artist_id", input.artistId)
-      .eq("classification", "music_manager_read_v2")
-      .in("id", runIds);
-    if (error) {
-      return {
-        runs: dispatches.map((dispatch) => ({ ...dispatch.target, run_id: dispatch.runId, status: "unknown" })),
-        failures: dispatches.map((dispatch) => ({ target: dispatch.target, run_id: dispatch.runId, code: "status_check_failed" })),
-      };
-    }
-    for (const row of data ?? []) {
-      if (typeof row.id === "string" && typeof row.status === "string") statuses.set(row.id, row.status);
-    }
-    if (runIds.every((runId) => TERMINAL_MUSIC_READ_STATUSES.has(statuses.get(runId) ?? ""))) break;
-    await delay(SETUP_MUSIC_READ_POLL_MS);
-  }
-
-  const runs = dispatches.map((dispatch) => ({
-    ...dispatch.target,
-    run_id: dispatch.runId,
-    status: statuses.get(dispatch.runId) ?? "missing",
-  }));
-  const failures = runs.flatMap((run) => {
-    if (run.status === "failed" || run.status === "cancelled") {
-      return [{ target: { subjectType: run.subjectType, subjectId: run.subjectId }, run_id: run.run_id, code: "run_failed" }];
-    }
-    if (!TERMINAL_MUSIC_READ_STATUSES.has(run.status)) {
-      return [{ target: { subjectType: run.subjectType, subjectId: run.subjectId }, run_id: run.run_id, code: "run_timeout" }];
-    }
-    return [];
+async function markSetupMusicReadDispatchFailed(db: any, setupRunId: string, target: SetupMusicReadTarget) {
+  const { error } = await db.rpc("merge_setup_music_read_target_v1", {
+    setup_run_id: setupRunId,
+    target_subject_type: target.subjectType,
+    target_subject_id: target.subjectId,
+    child_run_id: null,
+    target_status: "failed",
   });
-  return { runs, failures };
+  if (error) console.error("setup music Manager Read failure could not be reconciled", { error, setupRunId, target });
 }
 
 async function dispatchSetupMusicRead(
@@ -622,6 +533,7 @@ async function dispatchSetupMusicRead(
       artistId: input.artistId,
       subjectType: target.subjectType,
       subjectId: target.subjectId,
+      setupRunId: input.setupRunId,
     }),
   });
   const payload = await response.json().catch(() => ({}));

@@ -203,6 +203,118 @@ begin
 end;
 $$;
 
+create or replace function public.merge_setup_music_read_target_v1(
+  setup_run_id uuid,
+  target_subject_type text,
+  target_subject_id uuid,
+  child_run_id uuid,
+  target_status public.run_status
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  setup_row public.workspace_setup_runs%rowtype;
+  child_row public.manager_synthesis_runs%rowtype;
+  music_stage jsonb;
+  current_targets jsonb;
+  merged_targets jsonb;
+  existing_setup_ids jsonb;
+  effective_status public.run_status := target_status;
+  all_terminal boolean;
+  any_limited boolean;
+  matching_targets integer;
+  failures jsonb;
+begin
+  if target_subject_type not in ('music_item', 'music_project') then
+    raise exception 'Unsupported setup music-read subject type.';
+  end if;
+  if target_status not in ('queued', 'running', 'completed', 'completed_with_limits', 'failed', 'cancelled') then
+    raise exception 'Unsupported setup music-read status.';
+  end if;
+
+  select * into setup_row from public.workspace_setup_runs where id = setup_run_id for update;
+  if not found then raise exception 'Setup run was not found for music-read reconciliation.'; end if;
+  music_stage := coalesce(setup_row.stage_status -> 'music_reads', '{}'::jsonb);
+  current_targets := coalesce(music_stage -> 'targets', '[]'::jsonb);
+  if jsonb_typeof(current_targets) <> 'array' then
+    raise exception 'Setup music-read targets are not an array.';
+  end if;
+
+  select count(*) into matching_targets
+  from jsonb_array_elements(current_targets) as target
+  where target ->> 'subjectType' = target_subject_type
+    and target ->> 'subjectId' = target_subject_id::text;
+  if matching_targets <> 1 then
+    raise exception 'Setup music-read target tuple was not found exactly once.';
+  end if;
+
+  if child_run_id is not null then
+    select * into child_row from public.manager_synthesis_runs where id = child_run_id for update;
+    if not found
+      or child_row.account_id is distinct from setup_row.account_id
+      or child_row.artist_workspace_id is distinct from setup_row.artist_workspace_id
+      or child_row.artist_id is distinct from setup_row.artist_id
+      or child_row.classification <> 'music_manager_read_v2'
+      or child_row.subject_type is distinct from target_subject_type
+      or child_row.subject_id is distinct from target_subject_id
+    then raise exception 'Music Manager Read child does not match its setup target.'; end if;
+    effective_status := child_row.status;
+    existing_setup_ids := coalesce(child_row.context_payload -> 'setupRunIds', '[]'::jsonb);
+    if jsonb_typeof(existing_setup_ids) <> 'array' then existing_setup_ids := '[]'::jsonb; end if;
+    if not existing_setup_ids @> jsonb_build_array(setup_run_id::text) then
+      update public.manager_synthesis_runs as target
+      set context_payload = jsonb_set(
+        coalesce(target.context_payload, '{}'::jsonb),
+        '{setupRunIds}',
+        existing_setup_ids || jsonb_build_array(setup_run_id::text),
+        true
+      )
+      where target.id = child_run_id;
+    end if;
+  elsif target_status <> 'failed' then
+    raise exception 'Only a dispatch failure may omit the child run ID.';
+  end if;
+
+  select jsonb_agg(
+    case
+      when target ->> 'subjectType' = target_subject_type and target ->> 'subjectId' = target_subject_id::text
+      then target || jsonb_strip_nulls(jsonb_build_object(
+        'runId', child_run_id,
+        'status', effective_status::text,
+        'updatedAt', now()
+      ))
+      else target
+    end
+    order by ordinality
+  ) into merged_targets
+  from jsonb_array_elements(current_targets) with ordinality as items(target, ordinality);
+
+  select
+    bool_and(coalesce(target ->> 'status', 'queued') in ('completed', 'completed_with_limits', 'failed', 'cancelled')),
+    bool_or(coalesce(target ->> 'status', 'queued') in ('completed_with_limits', 'failed', 'cancelled')),
+    coalesce(jsonb_agg(target) filter (
+      where coalesce(target ->> 'status', 'queued') in ('completed_with_limits', 'failed', 'cancelled')
+    ), '[]'::jsonb)
+  into all_terminal, any_limited, failures
+  from jsonb_array_elements(merged_targets) as target;
+
+  music_stage := music_stage || jsonb_build_object(
+    'status', case when all_terminal then case when any_limited then 'completed_with_limits' else 'completed' end else 'running' end,
+    'targets', merged_targets,
+    'failures', failures,
+    'completed_at', case when all_terminal then to_jsonb(now()) else 'null'::jsonb end
+  );
+  update public.workspace_setup_runs as target
+  set stage_status = jsonb_set(target.stage_status, '{music_reads}', music_stage, true),
+      heartbeat_at = now()
+  where target.id = setup_run_id;
+  return music_stage;
+end;
+$$;
+
 revoke all on function public.finalize_todays_brief_v1(
   uuid, uuid, uuid, uuid, uuid, jsonb, public.evidence_confidence, text[],
   integer, integer, integer, integer, integer, uuid, uuid, jsonb, text, text
@@ -210,6 +322,13 @@ revoke all on function public.finalize_todays_brief_v1(
 grant execute on function public.finalize_todays_brief_v1(
   uuid, uuid, uuid, uuid, uuid, jsonb, public.evidence_confidence, text[],
   integer, integer, integer, integer, integer, uuid, uuid, jsonb, text, text
+) to service_role;
+
+revoke all on function public.merge_setup_music_read_target_v1(
+  uuid, text, uuid, uuid, public.run_status
+) from public, anon, authenticated;
+grant execute on function public.merge_setup_music_read_target_v1(
+  uuid, text, uuid, uuid, public.run_status
 ) to service_role;
 
 notify pgrst, 'reload schema';

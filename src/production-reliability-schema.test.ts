@@ -115,4 +115,16 @@ describe("production reliability v1 schema", () => {
     expect(migration).not.toContain("update public.manager_synthesis_runs set workflow_version");
     expect(migration).not.toContain("update public.source_sync_jobs set workflow_version");
   });
+
+  it("merges concurrent setup music-read children under one locked setup row", () => {
+    expect(finalizerMigration).toContain("function public.merge_setup_music_read_target_v1");
+    expect(finalizerMigration).toMatch(/merge_setup_music_read_target_v1[\s\S]*?security definer[\s\S]*?set search_path = public/);
+    expect(finalizerMigration).toContain("workspace_setup_runs where id = setup_run_id for update");
+    expect(finalizerMigration).toContain("manager_synthesis_runs where id = child_run_id for update");
+    expect(finalizerMigration).toContain("bool_and");
+    expect(finalizerMigration).toContain("bool_or");
+    expect(finalizerMigration).toContain("'completed_with_limits'");
+    expect(finalizerMigration).toContain("revoke all on function public.merge_setup_music_read_target_v1");
+    expect(finalizerMigration).toContain("to service_role");
+  });
 });

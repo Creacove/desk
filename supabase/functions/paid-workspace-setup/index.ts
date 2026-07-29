@@ -231,6 +231,7 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
 
   const setupBriefState = stageState(contextStages, "setup_brief");
   if (setupBriefState === "completed") {
+    await reconcileCompletedSetupMusicReads(db, setupRun);
     return loadCompletedSetupResult(db, workspace);
   }
   if (setupBriefState === "running") return { status: "running", phase: "contextualize" };
@@ -449,6 +450,47 @@ async function dispatchManagerDiscoveryPhase({
       patch: { status: "failed", error: failure.message, failure, failed_at: new Date().toISOString() },
     }).catch(() => undefined);
   }));
+}
+
+async function reconcileCompletedSetupMusicReads(db: any, setupRun: any) {
+  try {
+    const stages = stageStatus(setupRun?.stage_status);
+    const musicStage = typeof stages.music_reads === "object" ? stages.music_reads : {};
+    const targets = Array.isArray(musicStage.targets) ? musicStage.targets : [];
+    const targetByRunId = new Map<string, { subjectType: string; subjectId: string }>();
+    for (const target of targets) {
+      if (!target || typeof target !== "object" || Array.isArray(target)) continue;
+      const runId = typeof target.runId === "string" ? target.runId : typeof target.run_id === "string" ? target.run_id : "";
+      if (!runId || typeof target.subjectType !== "string" || typeof target.subjectId !== "string") continue;
+      targetByRunId.set(runId, { subjectType: target.subjectType, subjectId: target.subjectId });
+    }
+    const runIds = [...targetByRunId.keys()];
+    if (!runIds.length) return;
+    const { data, error } = await db.from("manager_synthesis_runs")
+      .select("id,status")
+      .eq("account_id", setupRun.account_id)
+      .eq("artist_workspace_id", setupRun.artist_workspace_id)
+      .eq("artist_id", setupRun.artist_id)
+      .eq("classification", "music_manager_read_v2")
+      .in("id", runIds);
+    if (error) throw error;
+    const terminal = new Set(["completed", "completed_with_limits", "failed", "cancelled"]);
+    await Promise.all((data ?? []).flatMap((run: any) => {
+      const target = targetByRunId.get(run.id);
+      if (!target || !terminal.has(run.status)) return [];
+      return [db.rpc("merge_setup_music_read_target_v1", {
+        setup_run_id: setupRun.id,
+        target_subject_type: target.subjectType,
+        target_subject_id: target.subjectId,
+        child_run_id: run.id,
+        target_status: run.status,
+      }).then(({ error: mergeError }: any) => {
+        if (mergeError) throw mergeError;
+      })];
+    }));
+  } catch (error) {
+    console.error("setup music Manager Read recovery reconciliation failed", { error, setupRunId: setupRun?.id });
+  }
 }
 
 async function recordDiscoveryDispatchFailure(db: any, checkout: any, workspace: any, message: string) {

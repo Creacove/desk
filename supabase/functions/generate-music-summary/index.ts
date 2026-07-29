@@ -28,6 +28,7 @@ import {
   type WorkflowStep,
   type WorkflowStepStatus,
 } from "../_shared/music-manager-read/workflow.ts";
+import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -58,6 +59,7 @@ type GenerateMusicSummaryInput = {
   artistId: string;
   subjectType: MusicManagerReadSubjectType;
   subjectId: string;
+  setupRunId?: string;
 };
 
 type OpenAIUsage = {
@@ -130,6 +132,7 @@ Deno.serve(async (request) => {
 
     const run = await acquireManagerReadRun(db, input);
     const runId = run.runId;
+    if (input.setupRunId) await registerParentSetupMusicRead(db, input, runId, run.status);
     if (run.created) {
       scheduleBackgroundRun(completeManagerReadInBackground({
         db,
@@ -197,7 +200,7 @@ async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) 
   }
 
   const active = await findActiveManagerReadRun(db, input);
-  if (active) return { runId: active.id as string, created: false };
+  if (active) return { runId: active.id as string, status: active.status as string, created: false };
 
   const queuedStep = { step: "queued", status: "completed" };
   const { data, error } = await db.from("manager_synthesis_runs").insert({
@@ -216,10 +219,10 @@ async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) 
     steps_payload: [queuedStep],
   }).select("id").single();
 
-  if (!error && data?.id) return { runId: data.id as string, created: true };
+  if (!error && data?.id) return { runId: data.id as string, status: "queued", created: true };
   if (error && error.code === "23505") {
     const winner = await findActiveManagerReadRun(db, input);
-    if (winner) return { runId: winner.id as string, created: false };
+    if (winner) return { runId: winner.id as string, status: winner.status as string, created: false };
   }
   throw error ?? new Error("Music Manager Read run could not be queued.");
 }
@@ -290,7 +293,9 @@ async function completeManagerReadInBackground({
       },
     });
 
-    await writeOperatingEventSafe(db, input, {
+    const terminalStatus = result.completedWithLimits ? "completed_with_limits" : "completed";
+    await reconcileParentSetupMusicReads(db, input, runId, terminalStatus);
+    await writeManagerReadTerminalEventSafe(db, input, runId, terminalStatus, {
       eventType: "music_manager_read_generated",
       summary: `Generated Manager Read for ${result.output.position}.`,
       payload: { manager_synthesis_run_id: runId, manager_output_id: result.outputId },
@@ -298,8 +303,91 @@ async function completeManagerReadInBackground({
   } catch (error) {
     const failure = toPublicMusicManagerReadFailure(error);
     logMusicManagerReadDiagnostic("Music Manager Read background run failed", error, { runId });
-    await markRunFailedSafe(db, runId, input, failure.message);
+    const failed = await markRunFailedSafe(db, runId, input, failure.message);
     if (usageId) await markUsageFailedSafe(db, usageId, runId, input, failure.message, requestLedger);
+    if (failed) {
+      await reconcileParentSetupMusicReads(db, input, runId, "failed");
+      await writeManagerReadTerminalEventSafe(db, input, runId, "failed", {
+        eventType: "music_manager_read_failed",
+        summary: boundedString(failure.message, 500),
+      });
+    }
+  }
+}
+
+async function registerParentSetupMusicRead(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  runId: string,
+  status: string,
+) {
+  const { error } = await db.rpc("merge_setup_music_read_target_v1", {
+    setup_run_id: input.setupRunId,
+    target_subject_type: input.subjectType,
+    target_subject_id: input.subjectId,
+    child_run_id: runId,
+    target_status: status,
+  });
+  if (error) throw error;
+}
+
+async function reconcileParentSetupMusicReads(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  runId: string,
+  status: "completed" | "completed_with_limits" | "failed",
+) {
+  try {
+    const { data, error } = await exactRunQuery(
+      db.from("manager_synthesis_runs").select("context_payload"),
+      runId,
+      input,
+    ).maybeSingle();
+    if (error) throw error;
+    const context = isRecord(data?.context_payload) ? data.context_payload : {};
+    const setupRunIds = new Set([
+      ...stringArray(context.setupRunIds),
+      ...(input.setupRunId ? [input.setupRunId] : []),
+    ]);
+    for (const setupRunId of setupRunIds) {
+      const { error: mergeError } = await db.rpc("merge_setup_music_read_target_v1", {
+        setup_run_id: setupRunId,
+        target_subject_type: input.subjectType,
+        target_subject_id: input.subjectId,
+        child_run_id: runId,
+        target_status: status,
+      });
+      if (mergeError) throw mergeError;
+    }
+  } catch (error) {
+    console.error("Music Manager Read parent setup reconciliation failed", { error, runId });
+  }
+}
+
+async function writeManagerReadTerminalEventSafe(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  runId: string,
+  status: "completed" | "completed_with_limits" | "failed",
+  draft: { eventType: string; summary: string; payload?: Record<string, unknown> },
+) {
+  try {
+    await writeWorkspaceEvent(db, {
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      eventType: draft.eventType,
+      summary: draft.summary,
+      targetType: input.subjectType,
+      targetId: input.subjectId,
+      workspaceSetupRunId: input.setupRunId,
+      dedupeKey: `music-manager-read:${runId}:${status}`,
+      displayMode: status === "failed" ? "toast" : "activity",
+      refreshScope: ["music-object"],
+      payload: { ...draft.payload, manager_synthesis_run_id: runId, status },
+    });
+  } catch (error) {
+    console.error("Music Manager Read terminal event write failed", { error, runId });
   }
 }
 
@@ -860,11 +948,10 @@ async function markRunFailedSafe(db: any, runId: string, input: GenerateMusicSum
       completed_at: new Date().toISOString(),
     }), runId, input).in("status", ["queued", "running"]).select("id");
     if (error) throw error;
-    if (Array.isArray(data) && data.length > 0) {
-      await writeOperatingEventSafe(db, input, { eventType: "music_manager_read_failed", summary: boundedString(message, 500) });
-    }
+    return Array.isArray(data) && data.length > 0;
   } catch (bookkeepingError) {
     console.error("Music Manager Read failure bookkeeping failed:", bookkeepingError);
+    return false;
   }
 }
 
@@ -890,29 +977,6 @@ async function markUsageFailedSafe(
     if (error) throw error;
   } catch (bookkeepingError) {
     console.error("Music Manager Read usage failure bookkeeping failed:", bookkeepingError);
-  }
-}
-
-async function writeOperatingEventSafe(
-  db: any,
-  input: GenerateMusicSummaryInput,
-  event: { eventType: string; summary: string; payload?: Record<string, unknown> },
-) {
-  try {
-    const { error } = await db.from("operating_events").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      event_type: event.eventType,
-      actor_type: "manager",
-      target_type: input.subjectType,
-      target_id: input.subjectId,
-      summary: event.summary,
-      payload: event.payload ?? {},
-    });
-    if (error) console.error("Music Manager Read operating event write failed:", error);
-  } catch (error) {
-    console.error("Music Manager Read operating event write failed:", error);
   }
 }
 
@@ -1012,6 +1076,12 @@ function stableJson(value: unknown): string {
 
 function readString(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
+    : [];
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
