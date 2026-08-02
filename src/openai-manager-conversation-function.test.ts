@@ -73,6 +73,14 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(graphPersistenceSource).toContain('refresh_scope: ["missions", "activity"]');
   });
 
+  it("never reuses a mission-creation conversation for task Manager work", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain("ensureTaskConversation");
+      expect(source).not.toContain("conversationId = mission?.originating_conversation_id");
+      expect(source).not.toContain("conversationId = mission?.originating_conversation_id ?? \"\"");
+    }
+  });
+
   it("persists durable decision packages as manager_outputs instead of static Manager Office UI", () => {
     expect(functionSource).toContain("persistDecisionPackageOutput");
     expect(streamFunctionSource).toContain("persistDecisionPackageOutput");

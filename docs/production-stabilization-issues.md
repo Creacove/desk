@@ -201,6 +201,26 @@
 - Mission-only sections are labeled `Missions`.
 - Activity/update sections are not labeled like mission focus.
 
+### P2. Manager Read presentation is repetitive and inefficient on small screens
+
+**Symptom:** Song and project rooms repeat the song/project name and an extra read label before the metrics. On mobile, metrics stack in one long column instead of using the available width.
+
+**Impact:** The room spends too much vertical space on framing instead of the Manager's actual read and makes scanning metrics unnecessarily slow.
+
+**Files to inspect/fix:**
+- `src/features/music/MusicScreens.tsx`
+- `src/production-app-shell.test.tsx`
+
+**Fix direction:**
+- Keep the room title as the single subject identifier; remove duplicate Manager Read title/subtitle framing above metrics.
+- Use a responsive metric grid: two columns on mobile when there is room, then expand naturally on larger screens.
+- Preserve readable metric labels and avoid changing the Manager Read data contract.
+
+**Acceptance criteria:**
+- A song/project name appears once in the Manager Read header area.
+- Mobile shows a compact two-column metric grid rather than one metric per row.
+- Desktop retains a balanced, scannable metric layout.
+
 ### P2. Scheduler recovery migration remains pending
 
 **Symptom:** `20260728000500_schedule_workflow_recovery.sql` is still not applied.

@@ -204,7 +204,17 @@ async function ensureTaskConversation(db: any, input: ManagerConversationInput) 
   if (taskError) throw taskError;
   if (!task) throw new Error("Manager task context was not found.");
 
-  if (input.conversationId) {
+  let originatingConversationId = "";
+  if (task.mission_id) {
+    const { data: mission, error: missionError } = await db.from("missions")
+      .select("originating_conversation_id")
+      .eq("id", task.mission_id)
+      .maybeSingle();
+    if (missionError) throw missionError;
+    originatingConversationId = mission?.originating_conversation_id ?? "";
+  }
+
+  if (input.conversationId && input.conversationId !== originatingConversationId) {
     const { data: conversation, error } = await db.from("conversations")
       .select("id")
       .eq("id", input.conversationId)
@@ -226,33 +236,25 @@ async function ensureTaskConversation(db: any, input: ManagerConversationInput) 
     .eq("target_type", "task")
     .eq("target_id", input.taskId)
     .eq("relationship", "references")
-    .limit(1);
+    .limit(20);
   if (linkError) throw linkError;
-  if (links?.[0]?.source_id) return links[0].source_id as string;
+  const taskConversationId = links?.find((link: { source_id?: string | null }) =>
+    Boolean(link.source_id) && link.source_id !== originatingConversationId,
+  )?.source_id;
+  if (taskConversationId) return taskConversationId as string;
 
-  let conversationId = "";
-  if (task.mission_id) {
-    const { data: mission, error: missionError } = await db.from("missions")
-      .select("originating_conversation_id")
-      .eq("id", task.mission_id)
-      .maybeSingle();
-    if (missionError) throw missionError;
-    conversationId = mission?.originating_conversation_id ?? "";
-  }
-  if (!conversationId) {
-    const { data: conversation, error } = await db.from("conversations").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      topic: `Task: ${task.title}`,
-      status: "active",
-      summary: `Manager working session for ${task.title}.`,
-      linked_mission_id: task.mission_id,
-      last_update_at: new Date().toISOString(),
-    }).select("id").single();
-    if (error) throw error;
-    conversationId = conversation.id;
-  }
+  const { data: conversation, error } = await db.from("conversations").insert({
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    topic: `Task: ${task.title}`,
+    status: "active",
+    summary: `Manager working session for ${task.title}.`,
+    linked_mission_id: task.mission_id,
+    last_update_at: new Date().toISOString(),
+  }).select("id").single();
+  if (error) throw error;
+  const conversationId = conversation.id as string;
   await ensureTaskConversationLink(db, input, conversationId);
   return conversationId;
 }
