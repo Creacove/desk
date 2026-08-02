@@ -347,7 +347,7 @@ function TodayFocusPanel({
       )}
 
       <div className="mt-5">
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Top Focus</p>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground">Missions</p>
         {visibleMissions.length ? (
           <div className="mt-3 grid gap-2.5">
             {visibleMissions.map((mission) => (

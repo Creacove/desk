@@ -72,4 +72,11 @@ describe("Desk HQ editorial presentation", () => {
     expect(within(mobileBrief).queryByRole("button", { name: "View supporting evidence" })).not.toBeInTheDocument();
     expect(within(mobileBrief).queryByText(/^Prepared /)).not.toBeInTheDocument();
   });
+
+  it("names the mission rail plainly instead of reusing the workspace update label", () => {
+    renderDeskHQ();
+
+    expect(screen.getByText("Missions")).toBeInTheDocument();
+    expect(screen.queryByText("Top Focus")).not.toBeInTheDocument();
+  });
 });

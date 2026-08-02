@@ -1147,12 +1147,7 @@ function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectView
             {statusMessage}
           </p>
         ) : null}
-        {read ? (
-          <>
-            <h3 className="mt-4 font-display text-[22px] font-bold leading-tight tracking-tight text-foreground">{read.position}</h3>
-            <p className="mt-2 font-ui text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{read.managementRole}</p>
-          </>
-        ) : (
+        {!read ? (
           <div className="mt-4">
             <p className="text-[15px] font-semibold text-foreground">No Manager Read yet</p>
             <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
@@ -1161,14 +1156,14 @@ function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectView
                 : "Ask Manager for a clear view of this song before making a move."}
             </p>
           </div>
-        )}
+        ) : null}
       </div>
 
       {read ? (
         <>
-          <div className="grid sm:grid-cols-2 xl:grid-cols-3">
+          <div data-testid="manager-read-metrics" className="grid grid-cols-2 xl:grid-cols-3">
             {read.metrics.map((metric) => (
-              <div key={metric.evidenceId} className="min-w-0 border-b border-foreground/8 px-4 py-4 sm:px-5 xl:border-r xl:last:border-r-0">
+              <div key={metric.evidenceId} className="min-w-0 border-b border-foreground/8 px-4 py-4 max-xl:odd:border-r sm:px-5 xl:border-r xl:last:border-r-0">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{metric.label}</p>
                 <p className="mt-1 break-words font-display text-[22px] font-semibold leading-none text-foreground">{metric.value}</p>
               </div>

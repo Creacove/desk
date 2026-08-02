@@ -4113,7 +4113,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
   }, 20000);
 
-  it("renders the complete Manager Read v2 contract for songs and projects without internal evidence IDs", async () => {
+  it("renders the Manager Read body and metrics without repeating the song or project framing", async () => {
     const music = [
       musicReadSubject("song", "fresh"),
       musicReadSubject("project", "fresh"),
@@ -4133,8 +4133,9 @@ describe("Clean production prototype-match shell", () => {
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const songRoom = screen.getByTestId("music-song-detail");
-    expect(songRoom).toHaveTextContent(completeSongManagerRead.position);
-    expect(songRoom).toHaveTextContent("Lead attention asset — phase A.");
+    const songRead = within(songRoom).getByTestId("manager-read-copy");
+    expect(songRead).not.toHaveTextContent(completeSongManagerRead.position);
+    expect(songRead).not.toHaveTextContent("Lead attention asset — phase A.");
     expect(songRoom).toHaveTextContent("Spotify streams (7d)");
     expect(songRoom).toHaveTextContent("5.2M");
     expect(songRoom).toHaveTextContent("Jam is carrying the strongest aligned public response");
@@ -4148,8 +4149,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
     fireEvent.click(screen.getByRole("button", { name: "Open project Blue Rooms" }));
     const projectRoom = screen.getByTestId("music-project-detail");
-    expect(projectRoom).toHaveTextContent(completeProjectManagerRead.position);
-    expect(projectRoom).toHaveTextContent("Focused project campaign");
+    const projectRead = within(projectRoom).getByTestId("project-manager-read-copy");
+    expect(projectRead).not.toHaveTextContent(completeProjectManagerRead.position);
+    expect(projectRead).not.toHaveTextContent("Focused project campaign");
     expect(projectRoom).toHaveTextContent("8.4M");
     expect(projectRoom).toHaveTextContent("Spotify streams (28d)");
     expect(projectRoom).toHaveTextContent("Blue Rooms works best as a release-level system");
@@ -4159,6 +4161,28 @@ describe("Clean production prototype-match shell", () => {
     expect(projectRoom).not.toHaveTextContent("Watch");
     expect(projectRoom).not.toHaveTextContent("Confidence");
   }, 20000);
+
+  it.each(["song", "project"] as const)("keeps %s Manager Read metrics in a two-column mobile grid", async (kind) => {
+    const subject = musicReadSubject(kind, "fresh");
+    const repositories = repositoriesFor("Nova Vale");
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
+    const read = screen.getByTestId(kind === "song" ? "manager-read-copy" : "project-manager-read-copy");
+    expect(within(read).getByTestId("manager-read-metrics")).toHaveClass("grid-cols-2");
+  });
 
   it.each([
     ["song", "not_generated", "Not generated", "Ask Manager for a read", false],
