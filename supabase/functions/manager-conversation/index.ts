@@ -18,6 +18,10 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import {
+  buildManagerConversationModelContext,
+  classifyManagerConversationError,
+} from "../_shared/manager-conversation/context.ts";
 import { qualifyManagerMemoryCandidates } from "../_shared/manager-conversation/memory.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
@@ -80,7 +84,13 @@ Deno.serve(async (request) => {
     usageId = await createUsageEvent(db, input, runId);
 
     const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
-    const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(db, input, managerConversationModelContext(input, packet, previousResponseId), previousResponseId);
+    const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(
+      db,
+      input,
+      buildManagerConversationModelContext(input, packet, conversationId, previousResponseId),
+      previousResponseId,
+      managerConversationPlaybookKeys(packet),
+    );
     const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {
       conversationId,
       runId,
@@ -125,10 +135,10 @@ Deno.serve(async (request) => {
       last_update_at: new Date().toISOString(),
     }, messages.length ? messages : [artistMessage, managerMessage], input.taskId));
   } catch (error) {
-    const message = describeError(error, "Manager conversation failed.");
-    if (runId) await markRunFailedSafe(runId, message);
-    if (usageId) await markUsageFailedSafe(usageId, message);
-    return json({ error: message }, 500);
+    const failure = classifyManagerConversationError(error);
+    if (runId) await markRunFailedSafe(runId, failure.internalMessage);
+    if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage);
+    return json({ error: failure.publicMessage }, 500);
   }
 });
 
@@ -392,8 +402,8 @@ async function insertConversationMessage(db: any, input: ManagerConversationInpu
   return data;
 }
 
-async function callOpenAIManagerConversation(db: any, input: ManagerConversationInput, context: unknown, previousResponseId: string) {
-  const playbookInstructions = getPlaybooksInstructions(managerConversationPlaybookKeys(context));
+async function callOpenAIManagerConversation(db: any, input: ManagerConversationInput, context: unknown, previousResponseId: string, playbookKeys: PlaybookKey[]) {
+  const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -404,6 +414,10 @@ async function callOpenAIManagerConversation(db: any, input: ManagerConversation
     tools: managerConversationTools,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: "medium",
+    maxOutputTokens: 6000,
+    contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
+    promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
+    promptCacheMode: "explicit",
     executeTool: (name, args) => executeManagerConversationTool(db, input, name, args),
   });
   return {
@@ -426,7 +440,7 @@ async function createManagerRun(db: any, input: ManagerConversationInput, conver
       status: "running",
       classification: "manager_conversation_router_v1",
       confidence: "unknown",
-      context_payload: managerConversationModelContext(input, packet),
+      context_payload: buildManagerConversationModelContext(input, packet, conversationId),
       steps_payload: [{ step: "packet_built", status: "completed" }, { step: "manager_synthesis", status: "running" }],
       action_plan: [],
       limitations: [],
@@ -774,26 +788,6 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
   };
 }
 
-function managerConversationModelContext(input: ManagerConversationInput, packet: unknown, previousResponseId = "") {
-  const modelPacket = isRecord(packet)
-    ? {
-        ...packet,
-        conversationHistory: previousResponseId
-          ? []
-          : Array.isArray(packet.conversationHistory)
-            ? packet.conversationHistory.filter((message) => !isRecord(message) || message.id !== packet.newMessageId)
-            : [],
-      }
-    : packet;
-  return {
-    packet: modelPacket,
-    userMessage: input.body.trim(),
-    contextRequestId: input.contextRequestId ?? "",
-    contextAnswers: normalizeContextAnswers(input.contextAnswers),
-    taskId: input.taskId ?? "",
-  };
-}
-
 async function loadPreviousOpenAIResponseId(db: any, input: ManagerConversationInput, conversationId: string) {
   const { data, error } = await db
     .from("conversation_messages")
@@ -810,12 +804,12 @@ async function loadPreviousOpenAIResponseId(db: any, input: ManagerConversationI
   return typeof metadata.openaiResponseId === "string" ? metadata.openaiResponseId : "";
 }
 
-function managerConversationPlaybookKeys(context: unknown): PlaybookKey[] {
-  if (!isRecord(context) || !isRecord(context.packet)) return [];
-  const directKeys = readPlaybookKeyList(context.packet.activePlaybookKeys);
+function managerConversationPlaybookKeys(packet: unknown): PlaybookKey[] {
+  if (!isRecord(packet)) return [];
+  const directKeys = readPlaybookKeyList(packet.activePlaybookKeys);
   if (directKeys.length) return directKeys;
-  const latestPacket = isRecord(context.packet.latestManagerIntelligencePacket)
-    ? context.packet.latestManagerIntelligencePacket
+  const latestPacket = isRecord(packet.latestManagerIntelligencePacket)
+    ? packet.latestManagerIntelligencePacket
     : {};
   return readActivePlaybookKeys(latestPacket.internal_only_json);
 }

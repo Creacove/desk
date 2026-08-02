@@ -156,8 +156,14 @@ describe("OpenAI Manager Conversation Router", () => {
     for (const source of [functionSource, streamFunctionSource]) {
       expect(source).toContain("runManagerAgentLoop");
       expect(source).toContain("executeManagerConversationTool");
+      expect(source).toContain("buildManagerConversationModelContext");
+      expect(source).toContain("classifyManagerConversationError");
+      expect(source).toContain('maxOutputTokens: 6000');
+      expect(source).toContain('compact_threshold: 64000');
+      expect(source).toContain('promptCacheMode: "explicit"');
       expect(source).toContain("loadPreviousOpenAIResponseId");
       expect(source).toContain("openaiResponseId");
+      expect(source).not.toContain("function managerConversationModelContext");
       expect(source).not.toContain('selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 240)');
       expect(source).not.toContain('selectMany(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata", input, 120)');
       expect(source).not.toContain('selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, 160)');
