@@ -103,19 +103,21 @@ describe("simplified mission room", () => {
     expect(screen.queryByText(/Review artist portfolio/)).not.toBeInTheDocument();
   });
 
-  it("expands checkpoint reviews inline on mobile and preserves desktop master-detail", () => {
+  it("uses one progressive checkpoint view at every viewport", () => {
     renderMission("checkpoints");
 
-    expect(screen.getByTestId("checkpoint-accordion")).toHaveClass("xl:hidden");
-    expect(screen.getByTestId("checkpoint-workspace-grid")).toHaveClass("hidden", "xl:grid");
+    expect(screen.getByTestId("checkpoint-accordion")).not.toHaveClass("xl:hidden");
+    expect(screen.queryByTestId("checkpoint-workspace-grid")).not.toBeInTheDocument();
 
     const toggle = screen.getByTestId("checkpoint-accordion-toggle-checkpoint-2");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     const expandedCheckpoint = screen.getByTestId("checkpoint-accordion-item-checkpoint-2");
+    expect(within(expandedCheckpoint).getByText("Success condition")).toBeInTheDocument();
     expect(within(expandedCheckpoint).getByText("Listener response is promising.")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getByText("Run listener interviews")).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getByRole("button", { name: "View tasks" })).toBeInTheDocument();
+    expect(within(expandedCheckpoint).queryByText("Run listener interviews")).not.toBeInTheDocument();
   });
 
   it("combines agent notes and mission changes into one concise activity feed", () => {

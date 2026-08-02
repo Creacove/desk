@@ -4904,7 +4904,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getAllByText("Tasks under this checkpoint").length).toBeGreaterThan(0);
     expect(screen.getByText("Confirm split sheet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
-    expect(screen.getByTestId("checkpoint-inspector")).toBeInTheDocument();
+    expect(screen.getByTestId("checkpoint-accordion")).toBeInTheDocument();
+    expect(screen.queryByTestId("checkpoint-inspector")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Activity/ }));
     expect(screen.getByTestId("mission-activity-feed")).toBeInTheDocument();
 

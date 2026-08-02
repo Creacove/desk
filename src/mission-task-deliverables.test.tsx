@@ -59,7 +59,8 @@ describe("mission task deliverables", () => {
     expect(screen.getByText("Uploaded")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Submit evidence" }));
-    const reviewBox = screen.getByTestId("task-completion-panel-task-thesis");
+    const reviewBox = screen.getByRole("dialog", { name: "Mark \u201cProvide 90-day thesis\u201d as done" });
+    expect(screen.queryByTestId("task-completion-panel-task-thesis")).not.toBeInTheDocument();
     fireEvent.change(within(reviewBox).getByLabelText("Task result note"), {
       target: { value: "Uploaded the 90-day thesis for Manager review." },
     });
@@ -114,8 +115,8 @@ describe("mission task deliverables", () => {
     expect(screen.queryByRole("button", { name: "Mark done" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Work with Manager" }));
     expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
-    expect(screen.getByText("Manager drafts:")).toBeInTheDocument();
-    expect(screen.getByText("You confirm:")).toBeInTheDocument();
+    expect(screen.queryByText("Manager drafts:")).not.toBeInTheDocument();
+    expect(screen.queryByText("You confirm:")).not.toBeInTheDocument();
   });
 
   it("shows the saved Manager draft before offering submission for review", () => {
@@ -151,6 +152,42 @@ describe("mission task deliverables", () => {
     expect(screen.getByText("Choose Lagos as the first proof market, then measure repeat listening.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
+  });
+
+  it("presents a saved Manager draft as a readable document instead of raw markdown", () => {
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      completionMode: "manager_draft",
+      managerDraft: {
+        id: "draft-thesis-1",
+        title: "90-day positioning plan",
+        summary: "## Position\nChoose **Lagos** as the proof market.\n\n- Test repeat listening\n- Review the response",
+        status: "draft",
+      },
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    expect(screen.getByText("Current Manager draft")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Position" })).toBeInTheDocument();
+    expect(screen.getByText("Lagos")).toHaveClass("font-bold");
+    expect(screen.queryByText(/## Position/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Task 1")).not.toBeInTheDocument();
   });
 
   it("returns a revised Manager draft to the Manager instead of allowing stale submission", () => {

@@ -1,7 +1,5 @@
-import { ArrowLeft, Check, ChevronDown, Lock } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
-import { BorderBeam } from "border-beam";
 import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type {
@@ -303,7 +301,7 @@ function MissionRoom({
       <div className="min-h-[400px] min-w-0 max-w-full">
         {tab === "pulse" ? <MissionPulse mission={mission} checkpoints={checkpoints} onTab={onTab} /> : null}
         {tab === "tasks" ? <TasksPanel checkpoints={checkpoints} tasks={tasks} targetTaskId={targetTaskId} onApproveTask={onApproveTask} onCompleteTask={onCompleteTask} onUploadTaskDeliverable={onUploadTaskDeliverable} onWorkWithManager={onWorkWithManager} /> : null}
-        {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} /> : null}
+        {tab === "checkpoints" ? <CheckpointsPanel checkpoints={checkpoints} tasks={tasks} onViewTasks={() => onTab("tasks")} /> : null}
         {tab === "activity" ? <ActivityPanel notes={notes} events={events} /> : null}
       </div>
     </section>
@@ -396,6 +394,7 @@ function TasksPanel({
   const [deliverableErrors, setDeliverableErrors] = useState<Record<string, string>>({});
   const [completionPending, setCompletionPending] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const completionTask = completionNote ? tasks.find((task) => task.id === completionNote.taskId) : undefined;
 
   useEffect(() => {
     if (targetTask?.checkpointId) {
@@ -571,7 +570,6 @@ function TasksPanel({
                       const deliverables = resolveTaskDeliverables(task, taskDeliverables[task.id]);
                       const hasBlockingDeliverable = deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
                       const completionBlocked = task.approvalState === "needs approval" && !approved;
-                      const isConfirmingCompletion = completionNote?.taskId === task.id;
                       const completionMode = resolveTaskCompletionMode(task);
 
                       return (
@@ -586,7 +584,6 @@ function TasksPanel({
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className={cn("inline-flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold", blocked ? "bg-[#f97316] text-white" : done ? "bg-brand-accent text-background" : "bg-foreground/[0.07] text-foreground")}>{taskIndex + 1}</span>
-                              <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Task {taskIndex + 1}</span>
                               <p className="text-[15px] font-bold leading-snug text-foreground">{task.title}</p>
                               <span className="rounded-full bg-foreground/[0.045] px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{getTaskStatusLabel(task, approved, done)}</span>
                             </div>
@@ -609,65 +606,6 @@ function TasksPanel({
                                 Approval is required before this task can be marked done.
                               </p>
                             ) : null}
-                            {isConfirmingCompletion ? (
-                              completionPending ? (
-                                <div className="relative mt-4 overflow-hidden rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04]">
-                                  <BorderBeam size="md" colorVariant="mono" active={true} />
-                                  <div className="p-5 flex flex-col items-center justify-center text-center gap-3">
-                                    <AppThinkingOrb state="shaping" size={64} />
-                                    <div>
-                                      <p className="text-[13px] font-bold text-foreground">Manager is reviewing task results</p>
-                                      <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
-                                        Analyzing outcome notes, updating checkpoint states, and re-routing active directives.
-                                      </p>
-                                    </div>
-                                  </div>
-                                </div>
-                              ) : (
-                                <div data-testid={`task-completion-panel-${task.id}`} className="mt-4 grid gap-3 rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.04] p-4">
-                                  <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-brand-accent">
-                                    {completionNote.status === "blocked"
-                                      ? "Why is this task blocked?"
-                                      : completionMode === "manager_draft"
-                                        ? "Submit this Manager draft for review?"
-                                        : "What did you do? What was the result?"}
-                                  </p>
-                                  <p className="text-[12px] font-semibold leading-relaxed text-foreground/80">
-                                    {completionMode === "manager_draft" && completionNote.status === "completed"
-                                      ? "The exact draft version shown on this task will be reviewed. A note is optional."
-                                      : "Record a specific outcome note. The Manager uses this to update checkpoints and shape the next recommendation."}
-                                  </p>
-                                  <textarea
-                                    id={`task-note-${task.id}`}
-                                    aria-label="Task result note"
-                                    rows={3}
-                                    value={completionNote.note}
-                                    onChange={(e) => setCompletionNote((current) => current ? { ...current, note: e.target.value } : null)}
-                                    placeholder={completionNote.status === "blocked" ? "e.g. The distributor rejected the submission — missing ISRC codes. Waiting on the label admin team." : "e.g. Submitted the editorial pitch for 'Night Drive' with genre context, release story, and target playlist. Confirmation received."}
-                                    className="w-full resize-none rounded-[10px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:border-brand-accent/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-                                  />
-                                  {completionError ? (
-                                    <p role="alert" className="text-[12px] font-semibold text-red-600">{completionError}</p>
-                                  ) : null}
-                                  <div className="flex gap-2">
-                                    <button
-                                      type="button"
-                                      onClick={confirmCompletion}
-                                      className="rounded-[10px] bg-foreground px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90"
-                                    >
-                                      {completionNote.status === "blocked" ? "Mark blocked" : "Confirm done"}
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => { setCompletionNote(null); setCompletionError(null); }}
-                                      className="rounded-[10px] border border-foreground/10 px-4 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5"
-                                    >
-                                      Cancel
-                                    </button>
-                                  </div>
-                                </div>
-                              )
-                            ) : null}
                           </div>
                           <div className="flex min-w-0 flex-col items-start justify-start gap-2 lg:items-end">
                             {task.approvalState === "needs approval" ? (
@@ -688,7 +626,7 @@ function TasksPanel({
                             {completionMode === "manager_draft" && (!task.managerDraft || task.result?.status === "revised") ? (
                               <button
                                 type="button"
-                                disabled={done || completionBlocked || blocked || isConfirmingCompletion}
+                                disabled={done || completionBlocked || blocked || completionNote !== null}
                                 onClick={() => onWorkWithManager?.(task.id)}
                                 className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
                               >
@@ -697,7 +635,7 @@ function TasksPanel({
                             ) : (
                               <button
                                 type="button"
-                                disabled={done || completionBlocked || blocked || isConfirmingCompletion || (completionMode === "evidence" && hasBlockingDeliverable)}
+                                disabled={done || completionBlocked || blocked || completionNote !== null || (completionMode === "evidence" && hasBlockingDeliverable)}
                                 onClick={() => startCompletion(task.id, "completed")}
                                 className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
                               >
@@ -720,7 +658,85 @@ function TasksPanel({
           })}
         </div>
       </div>
+      {completionNote && completionTask ? (
+        <TaskCompletionDialog
+          task={completionTask}
+          completion={completionNote}
+          pending={completionPending}
+          error={completionError}
+          onChangeNote={(note) => setCompletionNote((current) => current ? { ...current, note } : null)}
+          onConfirm={confirmCompletion}
+          onCancel={() => { setCompletionNote(null); setCompletionError(null); }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function TaskCompletionDialog({
+  task,
+  completion,
+  pending,
+  error,
+  onChangeNote,
+  onConfirm,
+  onCancel,
+}: {
+  task: MissionTaskViewModel;
+  completion: { status: "completed" | "blocked"; note: string };
+  pending: boolean;
+  error: string | null;
+  onChangeNote: (note: string) => void;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const completionMode = resolveTaskCompletionMode(task);
+  const isBlocked = completion.status === "blocked";
+  const actionLabel = isBlocked ? "Report blocker" : completionMode === "manager_draft" ? "Submit for review" : completionMode === "evidence" ? "Confirm done" : "Mark done";
+
+  useEffect(() => {
+    noteRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/35 p-3 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={onCancel}>
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-completion-title"
+        onMouseDown={(event) => event.stopPropagation()}
+        className="w-full max-w-[520px] rounded-[22px] border border-foreground/10 bg-background p-5 shadow-2xl sm:p-6"
+      >
+        <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Task completion</p>
+        <h3 id="task-completion-title" className="mt-2 font-display text-[24px] font-bold leading-tight text-foreground">Mark “{task.title}” as done</h3>
+        <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/90">
+          {isBlocked
+            ? "Tell the Manager what is preventing progress so the mission can be rerouted."
+            : completionMode === "manager_draft"
+              ? "The Manager will review the draft shown on this task. A note is optional."
+              : "Record the outcome so the Manager can update the mission and open the right next work."}
+        </p>
+        <div className="mt-5 grid gap-2">
+          <label htmlFor="task-result-note" className="text-[11px] font-bold uppercase tracking-[0.08em] text-foreground">{isBlocked ? "What is blocking this?" : "What changed?"}</label>
+          <textarea
+            ref={noteRef}
+            id="task-result-note"
+            aria-label="Task result note"
+            rows={4}
+            value={completion.note}
+            onChange={(event) => onChangeNote(event.target.value)}
+            placeholder={isBlocked ? "e.g. The distributor rejected the submission because ISRC codes are missing." : "e.g. Submitted the editorial pitch and received confirmation."}
+            className="w-full resize-none rounded-[12px] border border-foreground/12 bg-foreground/[0.02] px-3 py-2.5 text-[13px] font-semibold leading-relaxed text-foreground placeholder:text-muted-foreground/50 focus:border-brand-accent/40 focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
+          />
+        </div>
+        {error ? <p role="alert" className="mt-3 text-[12px] font-semibold text-red-600">{error}</p> : null}
+        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <button type="button" onClick={onCancel} disabled={pending} className="rounded-[10px] border border-foreground/10 px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-40">Cancel</button>
+          <button type="button" onClick={onConfirm} disabled={pending} className="rounded-[10px] bg-foreground px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:opacity-40">{pending ? "Saving…" : actionLabel}</button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -795,23 +811,46 @@ function TaskDetails({ task }: { task: MissionTaskViewModel }) {
           ))}
         </div>
       ) : null}
-      {task.managerResponsibility ? (
-        <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Manager drafts:</span> {task.managerResponsibility}</p>
-      ) : null}
-      {task.userResponsibility ? (
-        <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">You confirm:</span> {task.userResponsibility}</p>
-      ) : null}
       {task.managerDraft ? (
-        <div className="grid gap-2 rounded-[12px] border border-brand-accent/20 bg-brand-accent/[0.035] p-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Current Manager draft</p>
-          <p className="text-[13px] font-bold leading-relaxed text-foreground">{task.managerDraft.title}</p>
-          <p className="max-h-80 overflow-y-auto whitespace-pre-wrap pr-1 text-[12px] leading-relaxed text-foreground/88">{task.managerDraft.summary}</p>
+        <div className="overflow-hidden rounded-[14px] border border-brand-accent/20 bg-brand-accent/[0.025]">
+          <div className="flex items-center justify-between gap-3 border-b border-brand-accent/15 px-4 py-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Current Manager draft</p>
+              <p className="mt-1 text-[13px] font-bold leading-relaxed text-foreground">{task.managerDraft.title}</p>
+            </div>
+            <span className="rounded-full bg-brand-accent/[0.09] px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-brand-accent">Draft</span>
+          </div>
+          <TaskDraftDocument content={task.managerDraft.summary} />
         </div>
       ) : null}
-      <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
       {task.result ? <TaskResult result={task.result} /> : null}
     </div>
   );
+}
+
+function TaskDraftDocument({ content }: { content: string }) {
+  return (
+    <div className="max-h-80 overflow-y-auto px-4 py-4 text-[13px] leading-relaxed text-foreground/90">
+      {content.split(/\r?\n/).map((line, index) => {
+        const heading = line.match(/^#{1,3}\s+(.+)$/);
+        const unordered = line.match(/^[-*]\s+(.+)$/);
+        const ordered = line.match(/^\d+[.)]\s+(.+)$/);
+        if (!line.trim()) return <div key={`space-${index}`} className="h-3" aria-hidden="true" />;
+        if (/^(---|\*\*\*)$/.test(line.trim())) return <hr key={`rule-${index}`} className="my-4 border-foreground/10" />;
+        if (heading) return <h4 key={`heading-${index}`} className="font-display text-[17px] font-bold leading-tight text-foreground">{renderTaskDraftInline(heading[1])}</h4>;
+        if (unordered) return <div key={`unordered-${index}`} className="flex gap-2"><span className="mt-[0.7em] h-1 w-1 shrink-0 rounded-full bg-brand-accent" aria-hidden="true" /><span>{renderTaskDraftInline(unordered[1])}</span></div>;
+        if (ordered) return <div key={`ordered-${index}`} className="flex gap-2"><span className="shrink-0 font-bold text-foreground">{index + 1}.</span><span>{renderTaskDraftInline(ordered[1])}</span></div>;
+        return <p key={`paragraph-${index}`}>{renderTaskDraftInline(line)}</p>;
+      })}
+    </div>
+  );
+}
+
+function renderTaskDraftInline(text: string) {
+  return text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean).map((part, index) => {
+    const bold = part.match(/^\*\*(.+)\*\*$/);
+    return bold ? <strong key={index} className="font-bold text-foreground">{bold[1]}</strong> : <span key={index}>{part}</span>;
+  });
 }
 
 function TaskResult({ result }: { result: MissionTaskResultViewModel }) {
@@ -827,267 +866,76 @@ function TaskResult({ result }: { result: MissionTaskResultViewModel }) {
   );
 }
 
-function CheckpointsPanel({ checkpoints, tasks }: { checkpoints: MissionCheckpointViewModel[]; tasks: MissionTaskViewModel[] }) {
+function CheckpointsPanel({
+  checkpoints,
+  tasks,
+  onViewTasks,
+}: {
+  checkpoints: MissionCheckpointViewModel[];
+  tasks: MissionTaskViewModel[];
+  onViewTasks: () => void;
+}) {
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision") ?? checkpoints[0];
-  const [selectedCheckpointId, setSelectedCheckpointId] = useState(activeBlocker?.id ?? checkpoints[0]?.id ?? "");
-  const selectedCheckpoint = checkpoints.find((checkpoint) => checkpoint.id === selectedCheckpointId) ?? activeBlocker;
   const clearedCount = checkpoints.filter((checkpoint) => checkpoint.status === "Met" || checkpoint.status === "Ready for AI review").length;
-
-  // Mobile/tablet uses an in-place accordion: tapping a checkpoint expands its
-  // manager review inline instead of dumping every review at the bottom of the list.
   const firstUnlockedId = checkpoints.find((checkpoint) => !getBlockingDependency(checkpoint, checkpoints))?.id;
   const [expandedCheckpointId, setExpandedCheckpointId] = useState(
     (activeBlocker && !getBlockingDependency(activeBlocker, checkpoints) ? activeBlocker.id : firstUnlockedId) ?? "",
   );
 
-  useEffect(() => {
-    document.querySelector('[data-testid="checkpoint-inspector"]')?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
-  }, [selectedCheckpointId]);
-
-  if (!selectedCheckpoint) return null;
+  if (!checkpoints.length) return null;
 
   return (
     <section className="surface-elevated min-w-0 max-w-full overflow-x-clip rounded-[22px] p-4 shadow-sm sm:p-5">
-      <div className="min-w-0 space-y-5">
-        <span className="sr-only">mission checkpoints</span>
-
-        {/* MOBILE + TABLET: progressive-disclosure accordion */}
-        <div data-testid="checkpoint-accordion" className="xl:hidden">
-          <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission checkpoints</p>
-              <p className="mt-1 text-[13px] font-semibold text-foreground/88">Tap a checkpoint to see the manager&apos;s read.</p>
-            </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Cleared {clearedCount}/{checkpoints.length}</span>
-            </div>
+      <div data-testid="checkpoint-accordion">
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission progress</p>
+            <p className="mt-1 text-[13px] font-semibold text-foreground/88">See what this mission needs to clear next.</p>
           </div>
-          <div data-testid="mobile-checkpoint-list" className="sr-only">Mobile checkpoint list</div>
-          <div className="space-y-3">
-            {checkpoints.map((checkpoint) => {
-              const locked = Boolean(getBlockingDependency(checkpoint, checkpoints));
-              const isOpen = expandedCheckpointId === checkpoint.id;
-              const phaseTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
-              return (
-                <div
-                  key={checkpoint.id}
-                  data-testid={`checkpoint-accordion-item-${checkpoint.id}`}
-                  className={cn(
-                    "overflow-hidden rounded-[20px] border transition-all",
-                    isOpen ? "border-brand-accent/40 bg-brand-accent/[0.02] shadow-lg shadow-brand-accent/5" : "border-foreground/8 bg-background/82",
-                    locked ? "opacity-70" : "",
-                  )}
-                >
-                  <button
-                    type="button"
-                    aria-expanded={isOpen}
-                    data-testid={`checkpoint-accordion-toggle-${checkpoint.id}`}
-                    onClick={() => setExpandedCheckpointId((current) => (current === checkpoint.id ? "" : checkpoint.id))}
-                    className="w-full p-4 text-left"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-background" : "bg-foreground/10 text-muted-foreground")}>
-                          {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-3 w-3" aria-hidden="true" /> : checkpoint.phase}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Checkpoint {checkpoint.phase}</span>
-                          <span className="mt-0.5 block text-[15px] font-bold leading-tight text-foreground">{checkpoint.title}</span>
-                          <span className="mt-1 block text-[12px] font-semibold leading-relaxed text-muted-foreground/90">{checkpoint.question}</span>
-                        </span>
-                      </div>
-                      <div className="flex shrink-0 flex-col items-end gap-2">
-                        <CheckpointStatusBadge status={checkpoint.status} />
-                        {locked ? (
-                          <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/80">
-                            <Lock className="h-3 w-3" aria-hidden="true" /> Locked
-                          </span>
-                        ) : (
-                          <ChevronDown className={cn("h-4 w-4 text-muted-foreground/70 transition-transform", isOpen ? "rotate-180" : "")} aria-hidden="true" />
-                        )}
-                      </div>
-                    </div>
-                    {!isOpen && phaseTasks.length ? (
-                      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-9">
-                        {phaseTasks.map((task) => (
-                          <span key={task.id} className="flex items-center gap-1.5">
-                            <span className={cn("h-1.5 w-1.5 rounded-full", task.result?.status === "blocked" || task.approvalState === "blocked" ? "bg-[#f97316]" : task.result?.status === "completed" ? "bg-brand-accent" : "bg-foreground/20")} />
-                            <span className={cn("text-[11px] font-semibold", task.result?.status === "completed" ? "text-muted-foreground line-through" : "text-foreground/80")}>{task.title}</span>
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </button>
-                  {isOpen ? (
-                    <div className="border-t border-foreground/8 px-4 pb-4 pt-4">
-                      <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager review</p>
-                      <CheckpointReviewBody checkpoint={checkpoint} checkpoints={checkpoints} tasks={tasks} />
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
+          <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Cleared {clearedCount}/{checkpoints.length}</span>
         </div>
-
-        {/* DESKTOP: master-detail */}
-        <div data-testid="checkpoint-workspace-grid" className="hidden gap-5 xl:grid xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)] xl:items-start">
-          <section data-testid="checkpoint-ledger-panel" className="min-w-0 overflow-hidden rounded-[24px] border border-foreground/8 bg-background/76 p-3 shadow-sm xl:sticky xl:top-6 xl:self-start">
-            <div className="mb-3 flex flex-wrap items-end justify-between gap-3 px-1">
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/80">Mission checkpoints</p>
-                <p className="mt-1 text-[13px] font-semibold text-foreground/88">Complete tasks to unlock downstream phases.</p>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <span className="rounded-full bg-foreground/[0.045] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">Cleared {clearedCount}/{checkpoints.length}</span>
-                <span className="rounded-full border border-[#f97316]/20 bg-[#f97316]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-[#c2410c]">Active blocker: {activeBlocker?.title ?? "None"}</span>
-              </div>
-            </div>
-            <div data-testid="checkpoint-scroll-region" className="scrollbar-soft space-y-4 pr-1 xl:max-h-[calc(100vh-160px)] xl:overflow-y-auto xl:pr-2">
-              {checkpoints.map((checkpoint) => {
-                const isSelected = selectedCheckpoint.id === checkpoint.id;
-                const locked = Boolean(getBlockingDependency(checkpoint, checkpoints));
-                const phaseTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
-                return (
-                  <div key={checkpoint.id} className={cn("relative overflow-hidden rounded-[20px] border transition-all", isSelected ? "border-brand-accent/40 bg-brand-accent/[0.02] shadow-lg shadow-brand-accent/5" : "border-foreground/8 bg-background/82 hover:border-foreground/16", locked ? "opacity-75" : "opacity-100")}>
-                    <button type="button" aria-current={isSelected ? "true" : undefined} onClick={() => setSelectedCheckpointId(checkpoint.id)} className="w-full p-4 text-left">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-start gap-3">
-                          <span className={cn("mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-background" : "bg-foreground/10 text-muted-foreground")}>
-                            {checkpoint.status === "Needs revision" ? "!" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-3 w-3" aria-hidden="true" /> : checkpoint.phase}
-                          </span>
-                          <span>
-                            <span className="block text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Checkpoint {checkpoint.phase}</span>
-                            <span className={cn("mt-0.5 block text-[15px] font-bold leading-tight", isSelected ? "text-foreground" : "text-foreground/80")}>{checkpoint.title}</span>
-                            <span className="mt-1 block text-[12px] font-semibold leading-relaxed text-muted-foreground/90">{checkpoint.question}</span>
-                          </span>
-                        </div>
-                        <div className="flex shrink-0 flex-col items-end gap-2">
-                          <CheckpointStatusBadge status={checkpoint.status} />
-                          {locked ? (
-                            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest text-muted-foreground/80">
-                              <Lock className="h-3 w-3" aria-hidden="true" /> Locked
-                            </span>
-                          ) : null}
-                        </div>
+        <div className="space-y-2">
+          {checkpoints.map((checkpoint) => {
+            const locked = Boolean(getBlockingDependency(checkpoint, checkpoints));
+            const isOpen = expandedCheckpointId === checkpoint.id;
+            const taskCount = tasks.filter((task) => task.checkpointId === checkpoint.id).length;
+            const managerRead = checkpoint.resultSummary || getCheckpointReviewCopy(checkpoint, checkpoints);
+            const blockerCopy = getCheckpointBlockerCopy(checkpoint, checkpoints, tasks);
+            return (
+              <article key={checkpoint.id} data-testid={`checkpoint-accordion-item-${checkpoint.id}`} className={cn("overflow-hidden rounded-[16px] border bg-background/78 transition-colors", isOpen ? "border-brand-accent/35" : "border-foreground/8", locked && "opacity-70")}>
+                <button type="button" aria-expanded={isOpen} data-testid={`checkpoint-accordion-toggle-${checkpoint.id}`} onClick={() => setExpandedCheckpointId((current) => current === checkpoint.id ? "" : checkpoint.id)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
+                  <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-background" : "bg-foreground/10 text-muted-foreground")}>{checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-3 w-3" aria-hidden="true" /> : checkpoint.phase}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Phase {checkpoint.phase} · {taskCount} {taskCount === 1 ? "task" : "tasks"}</span>
+                    <span className="mt-0.5 block text-[15px] font-bold leading-tight text-foreground">{checkpoint.title}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2"><CheckpointStatusBadge status={checkpoint.status} /><ChevronDown className={cn("h-4 w-4 text-muted-foreground/70 transition-transform", isOpen && "rotate-180")} aria-hidden="true" /></span>
+                </button>
+                {isOpen ? (
+                  <div className="border-t border-foreground/8 px-4 py-4">
+                    <div className="grid gap-4">
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Success condition</p>
+                        <p className="mt-1 text-[14px] font-semibold leading-relaxed text-foreground">{checkpoint.question}</p>
                       </div>
-                      <div className="mt-4 space-y-2 pl-9">
-                        {phaseTasks.map((task) => (
-                          <div key={task.id} className="flex items-center gap-2">
-                            <span className={cn("h-1.5 w-1.5 rounded-full", task.result?.status === "blocked" || task.approvalState === "blocked" ? "bg-[#f97316]" : task.result?.status === "completed" ? "bg-brand-accent" : "bg-foreground/20")} />
-                            <span className={cn("truncate text-[12px] font-semibold", task.result?.status === "completed" ? "text-muted-foreground line-through" : "text-foreground/88")}>{task.title}</span>
-                          </div>
-                        ))}
+                      <div className="border-l-2 border-brand-accent/45 pl-3">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager&apos;s read</p>
+                        <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground/90">{managerRead}</p>
                       </div>
-                    </button>
+                      <div className={cn("rounded-[12px] px-3 py-3", blockerCopy ? "bg-[#fff8f3] text-[#9a3412]" : "bg-brand-accent/[0.055] text-foreground")}>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-75">{blockerCopy ? "What needs attention" : "What opens next"}</p>
+                        <p className="mt-1 text-[13px] font-semibold leading-relaxed">{blockerCopy || checkpoint.unlocks[0] || checkpoint.nextAction}</p>
+                      </div>
+                      <div><button type="button" onClick={onViewTasks} className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent hover:underline">View tasks</button></div>
+                    </div>
                   </div>
-                );
-              })}
-            </div>
-          </section>
-          <CheckpointInspector checkpoint={selectedCheckpoint} checkpoints={checkpoints} tasks={tasks} />
+                ) : null}
+              </article>
+            );
+          })}
         </div>
       </div>
     </section>
-  );
-}
-
-function CheckpointInspector({
-  checkpoint,
-  checkpoints,
-  tasks,
-}: {
-  checkpoint: MissionCheckpointViewModel;
-  checkpoints: MissionCheckpointViewModel[];
-  tasks: MissionTaskViewModel[];
-}) {
-  return (
-    <aside data-testid="checkpoint-inspector" className="min-w-0 rounded-[24px] border border-foreground/8 bg-background/88 p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Manager review</p>
-          <h3 className="mt-2 font-display text-[24px] font-bold leading-tight text-foreground">{checkpoint.title}</h3>
-        </div>
-        <CheckpointStatusBadge status={checkpoint.status} />
-      </div>
-      <div className="mt-4">
-        <CheckpointReviewBody checkpoint={checkpoint} checkpoints={checkpoints} tasks={tasks} />
-      </div>
-    </aside>
-  );
-}
-
-// Shared manager-review content rendered by both the desktop inspector and the
-// mobile accordion so the two surfaces never drift apart.
-function CheckpointReviewBody({
-  checkpoint,
-  checkpoints,
-  tasks,
-}: {
-  checkpoint: MissionCheckpointViewModel;
-  checkpoints: MissionCheckpointViewModel[];
-  tasks: MissionTaskViewModel[];
-}) {
-  const requiredTasks = checkpoint.requiredTaskIds.map((taskId) => tasks.find((task) => task.id === taskId)).filter(Boolean) as MissionTaskViewModel[];
-  const resolvedCount = requiredTasks.filter((task) => task.result?.status && task.result.status !== "pending").length;
-  const blockerCopy = getCheckpointBlockerCopy(checkpoint, checkpoints, tasks);
-  const decision = getCheckpointDecision(checkpoint, checkpoints);
-
-  return (
-    <div className="space-y-5">
-      <div className="rounded-[18px] border border-foreground/8 bg-foreground/[0.025] p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Manager recommendation / Current decision</p>
-          <span className={cn("rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em]", decision === "Needs fix" ? "border-[#f97316]/25 bg-[#fff8f3] text-[#9a3412]" : "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent")}>{decision}</span>
-        </div>
-        <p className="mt-3 text-[15px] font-semibold leading-relaxed text-foreground">{getCheckpointReviewCopy(checkpoint, checkpoints)}</p>
-        <p className="mt-2 text-[13px] leading-relaxed text-foreground/88">{checkpoint.resultSummary}</p>
-      </div>
-
-      <div>
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Required task results</p>
-          <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80">{resolvedCount}/{requiredTasks.length}</span>
-        </div>
-        <div className="mt-3 divide-y divide-foreground/7 overflow-hidden rounded-[16px] border border-foreground/8 bg-background">
-          {requiredTasks.map((task) => (
-            <div key={task.id} className="grid gap-2 p-3 sm:grid-cols-[minmax(0,0.8fr)_minmax(0,1fr)]">
-              <div className="min-w-0">
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-[13px] font-bold leading-snug text-foreground">{task.title}</p>
-                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", task.result?.status === "blocked" ? "bg-[#f97316]/12 text-[#c2410c]" : task.result ? "bg-brand-accent/10 text-brand-accent" : "bg-foreground/5 text-muted-foreground/88")}>{task.result?.status ?? "pending"}</span>
-                </div>
-                <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground/89">{task.result?.userNote ?? "No review note yet."}</p>
-              </div>
-              <p className="text-[12px] font-semibold leading-relaxed text-foreground/89">{task.result?.interpretation ?? "Manager is waiting for this task result before judging the checkpoint."}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {blockerCopy ? (
-        <div className="rounded-[18px] border border-[#f97316]/18 bg-[#fff8f3] p-4 text-[#9a3412]">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em]">What is blocking this</p>
-          <p className="mt-2 text-[14px] font-bold leading-relaxed">{blockerCopy}</p>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">What to do next</p>
-              <p className="mt-1 text-[13px] font-semibold leading-relaxed">{checkpoint.nextAction}</p>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-70">What this holds back</p>
-              <p className="mt-1 text-[13px] font-semibold leading-relaxed">{checkpoint.unlocks.length ? checkpoint.unlocks.join(", ") : checkpoint.dependencyImpact}</p>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="rounded-[18px] border border-brand-accent/16 bg-brand-accent/[0.055] p-4">
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Checkpoint cleared</p>
-          <p className="mt-2 text-[14px] font-bold leading-relaxed text-foreground">Next phase opened: {checkpoint.unlocks[0] ?? checkpoint.nextAction}</p>
-          <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground/88">{checkpoint.nextAction}</p>
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1455,13 +1303,6 @@ function checkpointStatusClass(status: MissionCheckpointViewModel["status"]) {
   if (status === "Needs revision") return "border-[#f97316]/30 bg-[#fff8f3] text-[#9a3412]";
   if (status === "Met" || status === "Ready for AI review") return "border-brand-accent/25 bg-brand-accent/[0.07] text-brand-accent";
   return "border-foreground/8 bg-background text-muted-foreground";
-}
-
-function getCheckpointDecision(checkpoint: MissionCheckpointViewModel, checkpoints: MissionCheckpointViewModel[]) {
-  if (checkpoint.status === "Needs revision") return "Needs fix";
-  if (checkpoint.status === "Met" || checkpoint.status === "Ready for AI review") return "Continue";
-  if (checkpoint.status === "Watching signal") return "Wait";
-  return getBlockingDependency(checkpoint, checkpoints) ? "Wait" : "Create new work";
 }
 
 function getCheckpointReviewCopy(checkpoint: MissionCheckpointViewModel, checkpoints: MissionCheckpointViewModel[]) {
