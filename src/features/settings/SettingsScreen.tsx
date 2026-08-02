@@ -1,5 +1,5 @@
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Field, ProductButton, TextAreaField, WorkspaceShell, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
@@ -9,6 +9,7 @@ import type { ProductionWorkspace } from "../../types/productionApp";
 export function SettingsScreen({
   profile,
   onChange,
+  onSaveProfile,
   onBack,
   onSignOut,
   themeMode = "system",
@@ -20,6 +21,7 @@ export function SettingsScreen({
 }: {
   profile: ArtistProfileViewModel;
   onChange: (profile: ArtistProfileViewModel) => void;
+  onSaveProfile?: (profile: ArtistProfileViewModel) => Promise<void>;
   onBack: () => void;
   onSignOut?: () => void;
   themeMode?: ThemeMode;
@@ -29,7 +31,6 @@ export function SettingsScreen({
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
   onManageBilling?: () => Promise<void> | void;
 }) {
-  const update = (key: keyof ArtistProfileViewModel, value: string) => onChange({ ...profile, [key]: value });
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "profile", label: "Profile" },
@@ -44,7 +45,7 @@ export function SettingsScreen({
       </div>
 
       <div id={`settings-panel-${activeTab}`} role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-        {activeTab === "profile" ? <ProfileSettings profile={profile} update={update} /> : null}
+        {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
         {activeTab === "access" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
         {activeTab === "account" ? (
           <AccountSettings
@@ -62,38 +63,91 @@ export function SettingsScreen({
 
 type SettingsTab = "profile" | "access" | "account";
 
-function ProfileSettings({ profile, update }: { profile: ArtistProfileViewModel; update: (key: keyof ArtistProfileViewModel, value: string) => void }) {
+function ProfileSettings({
+  profile,
+  onChange,
+  onSaveProfile,
+}: {
+  profile: ArtistProfileViewModel;
+  onChange: (profile: ArtistProfileViewModel) => void;
+  onSaveProfile?: (profile: ArtistProfileViewModel) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState(profile);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [savePending, setSavePending] = useState(false);
+  useEffect(() => setDraft(profile), [profile]);
+
+  const update = (key: EditableProfileKey, value: string) => {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setSaveMessage(null);
+    setSaveError(null);
+  };
+  const dirty = !sameEditableProfile(profile, draft);
+
+  async function save() {
+    if (!onSaveProfile || !dirty) return;
+    try {
+      setSavePending(true);
+      setSaveMessage(null);
+      setSaveError(null);
+      await onSaveProfile(draft);
+      onChange(draft);
+      setSaveMessage("Changes saved.");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Changes could not be saved. Please try again.");
+    } finally {
+      setSavePending(false);
+    }
+  }
+
   return (
     <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm sm:p-5">
       <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
-        <ArtistSummary profile={profile} compact />
+        <ArtistSummary profile={draft} compact />
       </div>
       <div data-testid="settings-desktop-profile-summary" className="mb-6 hidden border-b border-foreground/8 pb-5 sm:flex">
-        <ArtistSummary profile={profile} />
+        <ArtistSummary profile={draft} />
       </div>
 
       <SettingsGroup title="Identity">
-        <Field label="Artist name" value={profile.name} onChange={(value) => update("name", value)} />
-        <Field label="Artist profile" value={profile.spotify} onChange={(value) => update("spotify", value)} />
+        <Field label="Artist name" value={draft.name} onChange={(value) => update("name", value)} disabled={savePending} />
+        <Field label="Connected artist" value={draft.spotify} onChange={() => undefined} disabled helper="Managed by your connected Spotify artist." />
       </SettingsGroup>
       <SettingsGroup title="Career context">
-        <Field label="Artist stage" value={profile.stage} onChange={(value) => update("stage", value)} />
-        <Field label="Home market" value={profile.market} onChange={(value) => update("market", value)} />
-        <Field label="Genre" value={profile.genre} onChange={(value) => update("genre", value)} />
-        <Field label="Active release" value={profile.release} onChange={(value) => update("release", value)} />
+        <Field label="Artist stage" value={draft.stage} onChange={(value) => update("stage", value)} disabled={savePending} />
+        <Field label="Home market" value={draft.market} onChange={(value) => update("market", value)} disabled={savePending} />
+        <Field label="Genre" value={draft.genre} onChange={(value) => update("genre", value)} disabled={savePending} />
       </SettingsGroup>
       <SettingsGroup title="Operating context">
-        <TextAreaField label="Artist goals" value={profile.goal} onChange={(value) => update("goal", value)} />
-        <Field label="Monthly budget" value={profile.budget} onChange={(value) => update("budget", value)} />
+        <TextAreaField label="Artist goals" value={draft.goal} onChange={(value) => update("goal", value)} />
+        <Field label="Monthly budget" value={draft.budget} onChange={(value) => update("budget", value)} disabled={savePending} />
       </SettingsGroup>
       <SettingsGroup title="Channels" last>
-        <Field label="TikTok" value={profile.tiktok} onChange={(value) => update("tiktok", value)} />
-        <Field label="Instagram" value={profile.instagram} onChange={(value) => update("instagram", value)} />
-        <Field label="YouTube" value={profile.youtube} onChange={(value) => update("youtube", value)} />
-        <Field label="X" value={profile.x} onChange={(value) => update("x", value)} />
+        <Field label="TikTok" value={draft.tiktok} onChange={(value) => update("tiktok", value)} disabled={savePending} />
+        <Field label="Instagram" value={draft.instagram} onChange={(value) => update("instagram", value)} disabled={savePending} />
+        <Field label="YouTube" value={draft.youtube} onChange={(value) => update("youtube", value)} disabled={savePending} />
+        <Field label="X" value={draft.x} onChange={(value) => update("x", value)} disabled={savePending} />
       </SettingsGroup>
+      {onSaveProfile ? (
+        <div className="flex flex-wrap items-center gap-3 pt-5">
+          <ProductButton onClick={() => void save()} disabled={!dirty || savePending}>
+            {savePending ? "Saving changes" : "Save changes"}
+          </ProductButton>
+          {saveMessage ? <p role="status" className="text-[12px] font-semibold text-emerald-700">{saveMessage}</p> : null}
+          {saveError ? <p role="alert" className="text-[12px] font-semibold text-red-600">{saveError}</p> : null}
+        </div>
+      ) : null}
     </section>
   );
+}
+
+type EditableProfileKey = "name" | "genre" | "market" | "goal" | "budget" | "stage" | "tiktok" | "instagram" | "youtube" | "x";
+
+const editableProfileKeys: EditableProfileKey[] = ["name", "genre", "market", "goal", "budget", "stage", "tiktok", "instagram", "youtube", "x"];
+
+function sameEditableProfile(a: ArtistProfileViewModel, b: ArtistProfileViewModel) {
+  return editableProfileKeys.every((key) => a[key] === b[key]);
 }
 
 function ArtistSummary({ profile, compact = false }: { profile: ArtistProfileViewModel; compact?: boolean }) {

@@ -32,7 +32,48 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText("Chartmetric shows Burna Boy has strong verified artist context.")).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Artist name"), { target: { value: "Burna" } });
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "Burna", market: "Lagos", budget: "$50,000" }));
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps a profile draft until the user explicitly saves it", async () => {
+    const onSaveProfile = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onSaveProfile={onSaveProfile}
+        onBack={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Artist name"), { target: { value: "Burna Boy International" } });
+    expect(onSaveProfile).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await vi.waitFor(() => expect(onSaveProfile).toHaveBeenCalledWith(expect.objectContaining({ name: "Burna Boy International" })));
+    expect(await screen.findByText("Changes saved.")).toBeInTheDocument();
+  });
+
+  it("keeps an unsaved profile draft after a save failure", async () => {
+    const onSaveProfile = vi.fn().mockRejectedValue(new Error("Profile service is unavailable."));
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onSaveProfile={onSaveProfile}
+        onBack={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Artist goals"), { target: { value: "Build a worldwide touring plan." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Profile service is unavailable.");
+    expect(screen.getByLabelText("Artist goals")).toHaveValue("Build a worldwide touring plan.");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
   });
 
   it("isolates appearance in Account and can override system mode", () => {

@@ -376,4 +376,5 @@ export type ProductionSetupProfile = {
 
 export type ProductionProfileSetupService = {
   saveSetupContext(workspace: ProductionWorkspace, profile: ProductionSetupProfile): Promise<ProductionWorkspace>;
+  updateArtistProfile?(workspace: ProductionWorkspace, profile: ProductionSetupProfile): Promise<void>;
 };

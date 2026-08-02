@@ -1346,6 +1346,36 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
   }, 20000);
 
+  it("saves Settings profile edits through the dedicated profile service without re-entering setup", async () => {
+    const savedProfiles: ArtistProfileViewModel[] = [];
+    const profileSetupService: ProductionProfileSetupService = {
+      async saveSetupContext() {
+        throw new Error("Settings must not use the setup completion path.");
+      },
+      async updateArtistProfile(_workspace, profile) {
+        savedProfiles.push(profile as ArtistProfileViewModel);
+      },
+    };
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        profileSetupService={profileSetupService}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Artist goals"), { target: { value: "Build a durable audience operating system." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(savedProfiles).toHaveLength(1));
+    expect(savedProfiles[0]).toMatchObject({ goal: "Build a durable audience operating system." });
+    expect(screen.getByText("Changes saved.")).toBeInTheDocument();
+  }, 20000);
+
   it("renders a generated Manager-language Today's Brief and refreshes it from saved sources", async () => {
     const initialBrief: TodayBriefViewModel = {
       headlineRead: "The UK is already behaving like Nova Vale's business center.",

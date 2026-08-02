@@ -814,6 +814,24 @@ export function createSupabaseProfileSetupService(client: SupabaseClient): Produ
         setupStage: updatedWorkspace.setupStage ?? workspace.setupStage,
       };
     },
+    async updateArtistProfile(workspace, profile) {
+      const { error } = await client.rpc("update_artist_profile", {
+        p_artist_workspace_id: workspace.artistWorkspaceId,
+        p_display_name: normalizeText(profile.name),
+        p_stage: normalizeText(profile.stage),
+        p_home_market: normalizeText(profile.market),
+        p_genres: normalizeGenres(profile.genre),
+        p_artist_direction: normalizeText(profile.goal),
+        p_budget_context: normalizeText(profile.budget),
+        p_social_handles: {
+          tiktok: normalizeText(profile.tiktok),
+          instagram: normalizeText(profile.instagram),
+          youtube: normalizeText(profile.youtube),
+          x: normalizeText(profile.x),
+        },
+      });
+      if (error) throw error;
+    },
   };
 }
 

@@ -1861,6 +1861,11 @@ function CleanProductionWorkspace({
             <SettingsScreen
               profile={profile}
               onChange={setProfile}
+              onSaveProfile={
+                workspace && profileSetupService?.updateArtistProfile
+                  ? (nextProfile) => profileSetupService.updateArtistProfile!(workspace, nextProfile)
+                  : undefined
+              }
               onBack={() => navigate("labelHQ")}
               onSignOut={onSignOut}
               workspace={workspace ?? undefined}

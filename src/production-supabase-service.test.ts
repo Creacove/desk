@@ -721,6 +721,52 @@ describe("production Supabase services", () => {
     expect(result.billingCheckoutSessionId).toBe("checkout-beta-1");
   });
 
+  it("saves an active workspace profile through the dedicated profile RPC without re-running setup", async () => {
+    const rpcCalls: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const client = {
+      rpc: async (name: string, args: Record<string, unknown>) => {
+        rpcCalls.push({ name, args });
+        return { data: null, error: null };
+      },
+    } as unknown as SupabaseClient;
+
+    await createSupabaseProfileSetupService(client).updateArtistProfile!(workspace, {
+      name: " Nova Vale ",
+      spotify: "Nova Vale - Spotify public catalog",
+      stage: " Independent ",
+      market: " Lagos ",
+      genre: "Afrobeats, Alté",
+      goal: " Build a release plan from verified catalog evidence. ",
+      release: "Not persisted here",
+      budget: " $3,000 ",
+      tiktok: " @novavale ",
+      instagram: " @nova ",
+      youtube: " ",
+      x: " @novavale ",
+    });
+
+    expect(rpcCalls).toEqual([
+      {
+        name: "update_artist_profile",
+        args: {
+          p_artist_workspace_id: "workspace-1",
+          p_display_name: "Nova Vale",
+          p_stage: "Independent",
+          p_home_market: "Lagos",
+          p_genres: ["Afrobeats", "Alté"],
+          p_artist_direction: "Build a release plan from verified catalog evidence.",
+          p_budget_context: "$3,000",
+          p_social_handles: {
+            tiktok: "@novavale",
+            instagram: "@nova",
+            youtube: "",
+            x: "@novavale",
+          },
+        },
+      },
+    ]);
+  });
+
   it("maps Supabase Music rows into songs, projects, tracklists, and Spotify links", async () => {
     const client = fakeSupabaseClient({
       music_items: [
