@@ -35,6 +35,14 @@
 - Provider 429 details are not shown raw to users.
 - Manager discovery and task conversations still have enough evidence to act.
 
+**Implementation and deployment verification (2026-08-02):**
+- Manager conversation requests now set `max_output_tokens: 6000` and server-side Responses compaction at `64000` tokens.
+- The first Manager turn receives a bounded opening brief; continued turns use the stored response chain plus only the new message, context answers, and workspace scope pointer.
+- Successful local-tool outputs are capped at 12,000 characters. Prior Manager documents are listed as metadata and retrieved only through a current-workspace section reader capped at 7,000 characters.
+- The cache key is stable per workspace (`manager:<workspace>:v1`) with explicit cache mode. This improves reuse without polling, extra database work, or a vector-store copy of existing Supabase documents.
+- Token/context-limit 429s and other provider failures now preserve diagnostics only in run/usage records; users receive a safe recovery message.
+- Before closing this issue in production: deploy both Manager conversation functions, run a long-existing-thread smoke test, confirm the user never receives a raw provider error, and inspect the resulting usage row to verify the initial request stays within the safe envelope.
+
 ### P0. Private-beta paywall depends on fragile build env
 
 **Symptom:** Paywall showed only `View artist source` instead of the private-beta code CTA.
