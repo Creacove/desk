@@ -326,3 +326,15 @@ Each fix should ship as a small patch with:
 - Production build.
 - Edge Function Deno check when an Edge Function changes.
 - One production smoke check after deploy.
+
+## 2026-08-02 Release Record
+
+The five-item release sequence above is implemented and deployed.
+
+1. **Settings persistence:** the dedicated `update_artist_profile` RPC is live and verified as authenticated, security-definer access. It was applied directly through the linked Supabase SQL path because the earlier scheduler migration remains intentionally blocked on Vault secrets; scheduler recovery was not activated.
+2. **Task CTA lifecycle:** saved Manager drafts are visible on the exact task, revised drafts return to the task-scoped Manager conversation, and returning from chat hydrates the mission before opening that task.
+3. **Activity Center:** each saved Manager task draft now creates one durable `manager_task_draft_ready` event with a task deep link plus `missions` and `activity` refresh scopes. Both standard and streaming Manager functions are deployed.
+4. **Private beta:** Netlify production builds now set `VITE_PRIVATE_BETA_ENABLED=true` in `netlify.toml`; local defaults remain disabled. The production bundle was checked for the beta CTA.
+5. **UI cleanup:** the Desk mission rail is labeled `Missions`; Manager Read framing no longer repeats the song/project context and mobile metrics use a two-column grid.
+
+**Verification:** focused regression tests passed for each item. The production bundle at `https://desk.ordersounds.com` contains the beta CTA, Settings Save action, current Manager draft surface, and two-column metric-grid class. A full-suite runner was also started locally, but the terminal integration did not return its final aggregate summary; do not treat that missing summary as a separate pass/fail signal.
