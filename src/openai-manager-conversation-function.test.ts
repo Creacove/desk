@@ -125,7 +125,8 @@ describe("OpenAI Manager Conversation Router", () => {
 
     expect(instructions).toContain("Manager Conversation Router");
     expect(instructions).toContain("prototype-style manager office");
-    expect(instructions).toContain("Use the supplied Manager Intelligence packet");
+    expect(instructions).toContain("supplied scoped opening brief");
+    expect(instructions).toContain("read_manager_output_section");
     expect(instructions).toContain("Do not create a separate evidence-read section");
     expect(instructions).toContain("createdWork");
     expect(instructions).not.toContain("OpenAI");

@@ -19,6 +19,7 @@ export async function executeManagerConversationTool(
   if (name === "query_music_catalog") return queryMusicCatalog(db, input, args);
   if (name === "query_durable_memory") return queryDurableMemory(db, input, args);
   if (name === "query_manager_outputs") return queryManagerOutputs(db, input, args);
+  if (name === "read_manager_output_section") return readManagerOutputSection(db, input, args);
   throw new Error(`Unsupported Manager tool: ${name}`);
 }
 
@@ -127,7 +128,7 @@ async function queryDurableMemory(db: SupabaseLike, input: ManagerToolInput, arg
 }
 
 async function queryManagerOutputs(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
-  const rows = await selectScoped(db, "manager_outputs", "id,output_type,subject_type,subject_id,summary,primary_recommendation_json,avoid_json,confidence_json,supporting_evidence_json,render_json,created_at", input, numberArg(args.limit, 10, 30));
+  const rows = await selectScoped(db, "manager_outputs", "id,output_type,subject_type,subject_id,summary,primary_recommendation_json,avoid_json,confidence_json,supporting_evidence_json,created_at", input, numberArg(args.limit, 10, 30));
   const outputType = stringArg(args.outputType);
   const subjectType = stringArg(args.subjectType);
   const subjectId = stringArg(args.subjectId);
@@ -135,7 +136,42 @@ async function queryManagerOutputs(db: SupabaseLike, input: ManagerToolInput, ar
     items: filterRows(rows, args)
       .filter((row: any) => !outputType || row.output_type === outputType)
       .filter((row: any) => !subjectType || row.subject_type === subjectType)
-      .filter((row: any) => !subjectId || row.subject_id === subjectId),
+      .filter((row: any) => !subjectId || row.subject_id === subjectId)
+      .map((row: any) => ({
+        id: row.id,
+        outputType: row.output_type,
+        subjectType: row.subject_type,
+        subjectId: row.subject_id,
+        summary: row.summary,
+        primaryRecommendation: row.primary_recommendation_json,
+        avoid: row.avoid_json,
+        confidence: row.confidence_json,
+        supportingEvidence: row.supporting_evidence_json,
+        createdAt: row.created_at,
+      })),
+  };
+}
+
+async function readManagerOutputSection(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const outputId = stringArg(args.outputId);
+  if (!outputId) return { status: "not_found", outputId: "" };
+  const { data, error } = await scopedQuery(
+    db,
+    "manager_outputs",
+    "id,summary,primary_recommendation_json,render_json",
+    input,
+  ).eq("id", outputId).maybeSingle();
+  if (error) throw error;
+  if (!data) return { status: "not_found", outputId };
+
+  const maxChars = numberArg(args.maxChars, 4_000, 7_000);
+  const content = selectOutputSection(readOutputText(data), stringArg(args.query));
+  const truncated = content.length > maxChars;
+  return {
+    status: "found",
+    outputId,
+    content: truncated ? content.slice(0, maxChars) : content,
+    truncated,
   };
 }
 
@@ -186,4 +222,24 @@ function numberArg(value: unknown, fallback: number, max: number) {
 
 function stringArg(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function readOutputText(row: any) {
+  const render = row?.render_json && typeof row.render_json === "object" ? row.render_json : {};
+  if (typeof render.content === "string" && render.content.trim()) return render.content.trim();
+  const recommendation = row?.primary_recommendation_json && typeof row.primary_recommendation_json === "object"
+    ? row.primary_recommendation_json.recommendation
+    : "";
+  if (typeof recommendation === "string" && recommendation.trim()) return recommendation.trim();
+  return typeof row?.summary === "string" ? row.summary.trim() : "";
+}
+
+function selectOutputSection(content: string, query: string) {
+  if (!content || !query) return content;
+  const index = content.toLowerCase().indexOf(query.toLowerCase());
+  if (index < 0) return content;
+  const sectionStart = Math.max(0, content.lastIndexOf("\n\n", index));
+  const firstBreak = content.indexOf("\n\n", index + query.length);
+  const nextBreak = firstBreak < 0 ? -1 : content.indexOf("\n\n", firstBreak + 2);
+  return content.slice(sectionStart, nextBreak < 0 ? content.length : nextBreak).trim();
 }

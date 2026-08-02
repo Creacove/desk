@@ -43,6 +43,7 @@ describe("Manager Agent Responses loop", () => {
       expect.objectContaining({ type: "function", name: "query_music_catalog" }),
       expect.objectContaining({ type: "function", name: "query_durable_memory" }),
       expect.objectContaining({ type: "function", name: "query_manager_outputs" }),
+      expect.objectContaining({ type: "function", name: "read_manager_output_section" }),
     ]);
   });
 
@@ -77,6 +78,13 @@ describe("Manager Agent Responses loop", () => {
     expect(toolOutput).toMatchObject({ truncated: true });
     expect(toolOutput.excerpt).toHaveLength(12000);
     expect(followUp.input[0].output).not.toContain("x".repeat(12001));
+  });
+
+  it("exposes a scoped Manager-output section reader", () => {
+    expect(managerConversationTools).toContainEqual(expect.objectContaining({
+      type: "function",
+      name: "read_manager_output_section",
+    }));
   });
 
   it("executes local tool calls, returns function_call_output by call_id, and continues with previous_response_id", async () => {

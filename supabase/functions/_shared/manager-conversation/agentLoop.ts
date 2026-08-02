@@ -79,6 +79,17 @@ const textProperties = {
   },
 };
 
+const managerOutputSectionProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["outputId", "query", "maxChars"],
+  properties: {
+    outputId: { type: "string" },
+    query: { type: "string" },
+    maxChars: { type: "number" },
+  },
+};
+
 export const managerConversationTools: ManagerAgentToolDefinition[] = [
   { type: "web_search" },
   {
@@ -112,9 +123,16 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "query_manager_outputs",
-    description: "Read prior Manager outputs such as decision packages, briefs, reviews, and song or project reads.",
+    description: "List metadata for prior Manager outputs such as decision packages, briefs, reviews, and song or project reads. Use the section reader only when document text is necessary.",
     strict: false,
     parameters: textProperties,
+  },
+  {
+    type: "function",
+    name: "read_manager_output_section",
+    description: "Read one bounded text section from a prior Manager output after identifying it with query_manager_outputs.",
+    strict: true,
+    parameters: managerOutputSectionProperties,
   },
 ];
 
@@ -301,6 +319,7 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "query_music_catalog") return `Checking catalog${query}.`;
   if (name === "query_durable_memory") return "Reading durable Manager memory.";
   if (name === "query_manager_outputs") return "Reviewing prior Manager outputs.";
+  if (name === "read_manager_output_section") return "Reading the relevant Manager document section.";
   return "Manager is checking the workspace.";
 }
 
