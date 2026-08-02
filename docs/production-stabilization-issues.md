@@ -158,6 +158,41 @@
 - Task context remains visible and pinned.
 - Drafts/files are grouped under the correct task.
 
+### P1. Settings profile edits are not durable, and account controls need a production contract
+
+**Symptom:** Settings exposes editable artist/context fields but has no Save action. Each keystroke only updates the in-memory React profile, so the screen gives no durable-save confirmation, error state, or way to discard a draft. A page refresh can therefore lose the changes.
+
+**Impact:** This is a direct trust problem: a workspace can look editable while silently not saving the user's work. Reusing the setup save path would be unsafe because that RPC also represents setup completion and may restart downstream setup behavior.
+
+**Confirmed audit (2026-08-02):**
+- `SettingsScreen` currently calls `onChange`, and `ProductionApp` passes `setProfile`; neither call persists profile edits.
+- Password recovery is wired through Supabase `resetPasswordForEmail` to `/update-password`, and password change calls Supabase `updateUser`. Unit coverage verifies the adapter calls and the UI validates an eight-character, confirmed password.
+- Appearance is durable per browser through `ordersounds-theme-mode` local storage.
+- Paddle's customer portal is only presented for a paid Paddle workspace and validates the returned HTTPS Paddle portal URL before navigation. It still needs one real paid-workspace smoke test; we should not create a test charge just to perform it.
+
+**Files to inspect/fix:**
+- `src/features/settings/SettingsScreen.tsx`
+- `src/app/ProductionApp.tsx`
+- `src/services/productionSupabase.ts`
+- `src/types/productionApp.ts`
+- `src/settings-screen.test.tsx`
+- `src/production-app-shell.test.tsx`
+- `src/production-supabase-service.test.ts`
+
+**Fix direction:**
+- Introduce a dedicated `updateArtistProfile` service/RPC scoped to the active workspace. Do not call `complete_artist_setup_context` from Settings.
+- Keep a local editable draft, show an explicit `Save changes` button only when dirty, and preserve the draft with an actionable error if saving fails.
+- On success, update the visible profile from the persisted value and show a quiet confirmation. Refreshing the page must show the same values.
+- Keep password, theme, billing, and sign-out as separate account actions; do not add unrelated account settings just to make the page look fuller.
+- Perform one controlled password-recovery smoke test with an authorized test account after confirming Supabase Auth redirect URLs include `https://desk.ordersounds.com/update-password`.
+
+**Acceptance criteria:**
+- Editing Settings does not write on every keystroke and cannot be lost after a successful save.
+- Save failure does not discard the user's unsaved values.
+- Saving Settings never changes setup/workflow state or restarts discovery/enrichment.
+- Password reset and in-app password change have clear success/error states; the recovery redirect returns to the intended page.
+- Billing self-service is shown only when the workspace and provider support it.
+
 ### P1. Task CTA lifecycle is unclear after Manager work
 
 **Symptom:** After working with Manager, the task still says `Work with Manager`, and the user may need to return to the task to press a separate submit button. The next action is unclear.
@@ -273,14 +308,13 @@
 
 ## Suggested Fix Sequence
 
-1. Fix P0 Manager token budget and raw provider error leakage.
-2. Make private-beta env deployment durable.
-3. Fix Music Manager Read hydration/display mismatch.
-4. Fix Activity Center event taxonomy and routing.
-5. Split task-scoped Manager conversations from mission-creation conversations.
-6. Fix task CTA lifecycle after Manager work.
-7. Clean up Desk HQ naming.
-8. Enable scheduler recovery after DB Vault is set.
+1. Fix Settings persistence and account-action contract (new P1): it currently permits silent data loss and needs no background work or new infrastructure.
+2. Fix the task CTA lifecycle: conversation isolation and review propagation are now in place, so this closes the user-visible handoff between Manager work and task submission.
+3. Complete the Activity Center event taxonomy/routing audit, starting with the remaining background producers rather than adding polling.
+4. Make the private-beta production environment check durable, so a normal frontend deploy cannot regress the redemption CTA.
+5. Complete the small UI-quality queue: Desk HQ naming and Manager Read mobile presentation.
+6. Run the controlled auth/billing smoke checks when an authorized test account/paid workspace is available.
+7. Enable scheduler recovery only after DB Vault secrets are deliberately configured.
 
 ## Deployment Rule For These Fixes
 
