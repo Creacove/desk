@@ -70,7 +70,7 @@ export function MusicWorkspace({
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
-  const unknownManagerReadChecks = useRef(new Set<string>());
+  const managerReadHydrationChecks = useRef(new Set<string>());
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
 
   const currentMusic = useMemo(
@@ -86,6 +86,7 @@ export function MusicWorkspace({
   const songs = currentMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
   const projects = currentMusic.filter((object) => object.kind === "project");
   const selected = getMusicObject(selectedId, selectedKind) ?? songs[0] ?? projects[0] ?? null;
+  const selectedManagerReadRevision = selected ? managerReadRevision(selected) : "";
   const tracklist = selected?.songIds?.map((id) => getMusicObject(id, "song")).filter(Boolean) as MusicObjectViewModel[] | undefined;
   const linkedMissions = selected ? findCatalogLinkedMissions(selected, missions, tracklist ?? []) : [];
 
@@ -138,22 +139,19 @@ export function MusicWorkspace({
 
   useEffect(() => {
     if (!selected) return;
-    const key = musicObjectKey(selected);
-    if (selected.managerReadStatus !== "unknown") {
-      unknownManagerReadChecks.current.delete(key);
-      return;
-    }
+    if (!needsManagerReadHydration(selected)) return;
     if (mode === "library") return;
-    if (unknownManagerReadChecks.current.has(key)) return;
-    unknownManagerReadChecks.current.add(key);
+    const hydrationKey = `${musicObjectKey(selected)}:${selectedManagerReadRevision}`;
+    if (managerReadHydrationChecks.current.has(hydrationKey)) return;
+    managerReadHydrationChecks.current.add(hydrationKey);
     void checkManagerReadStatus(
       selected.id,
       selected.kind === "project" ? "music_project" : "music_item",
     );
-    // The typed key and unknown status gate this exact read; callback identity changes
-    // must not turn visibility into recurring traffic.
+    // Subject and read revision gate this exact hydration; callback identity changes
+    // must not turn opening a room into recurring traffic.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode, selected?.id, selected?.kind, selected?.managerReadStatus]);
+  }, [mode, selected?.id, selected?.kind, selectedManagerReadRevision]);
 
   useEffect(() => {
     if (selected?.managerReadStatus !== "running" && selected?.managerReadStatus !== "refreshing") return;
@@ -2314,6 +2312,11 @@ function managerReadRevision(object: MusicObjectViewModel) {
     object.managerReadSummary,
     object.managerRead,
   ]);
+}
+
+function needsManagerReadHydration(object: MusicObjectViewModel) {
+  if (object.managerRead) return false;
+  return ["unknown", "fresh", "stale", "refreshing", "refresh_failed"].includes(object.managerReadStatus);
 }
 
 function mergeFocusedManagerState(parent: MusicObjectViewModel, focused: MusicObjectViewModel): MusicObjectViewModel {

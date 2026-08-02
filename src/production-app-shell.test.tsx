@@ -4210,6 +4210,39 @@ describe("Clean production prototype-match shell", () => {
     expect(room).not.toHaveTextContent("database internals");
   });
 
+  it.each(["song", "project"] as const)("hydrates the existing %s Manager Read once when opening from lightweight list state", async (kind) => {
+    const subject = musicReadSubject(kind, "fresh");
+    subject.managerRead = undefined;
+    const hydrated = {
+      ...subject,
+      managerRead: kind === "song"
+        ? { ...completeSongManagerRead, body: "The saved song Manager Read was loaded when this room opened." }
+        : { ...completeProjectManagerRead, body: "The saved project Manager Read was loaded when this room opened." },
+    };
+    const onRefreshObject = vi.fn(async () => hydrated);
+    const repositories = repositoriesFor("Nova Vale");
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={onRefreshObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
+
+    const room = screen.getByTestId(kind === "song" ? "music-song-detail" : "music-project-detail");
+    await waitFor(() => expect(room).toHaveTextContent("was loaded when this room opened."));
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
+    expect(room).not.toHaveTextContent("No Manager Read yet");
+  });
+
   it("exposes production Catalog create and upload actions in context", async () => {
     await enterDeskHq();
 

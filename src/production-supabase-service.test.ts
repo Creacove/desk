@@ -992,7 +992,8 @@ describe("production Supabase services", () => {
       outputs: [musicManagerOutputRow({ schema_version: "music-manager-read-v1", render_json: { managerRead: "Legacy copy" } })],
       runs: [],
       status: "stale",
-      hasRead: false,
+      hasRead: true,
+      readBody: "Legacy copy",
     },
     {
       name: "active first read",
@@ -1036,7 +1037,7 @@ describe("production Supabase services", () => {
       runId: "run-current",
       hasRead: true,
     },
-  ])("recovers $name as durable Manager Read state", async ({ outputs, runs, status, runId, error, hasRead }) => {
+  ])("recovers $name as durable Manager Read state", async ({ outputs, runs, status, runId, error, hasRead, readBody }) => {
     const tables = musicManagerReadTables({ manager_outputs: outputs, manager_synthesis_runs: runs });
     const [song] = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).music.loadMusic();
 
@@ -1047,7 +1048,10 @@ describe("production Supabase services", () => {
       ...(error ? { managerReadError: error } : {}),
     });
     expect(Boolean(song?.managerRead)).toBe(hasRead);
-    if (hasRead) expect(song?.managerRead).toEqual(musicManagerReadV2);
+    if (hasRead) {
+      expect(song?.managerRead?.body).toBe(readBody ?? musicManagerReadV2.body);
+      if (readBody) expect(song?.managerRead?.metrics).toEqual([]);
+    }
   });
 
   it("selects the newest subject run deterministically when database order is ambiguous", async () => {

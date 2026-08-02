@@ -3620,7 +3620,7 @@ function mapMusicLibrary({
     const spotify = readSpotifyMetadata(row.metadata);
     const manualDetails = readManualDetails(row.metadata);
     const managerOutput = managerOutputsByItem.get(row.id);
-    const managerRead = readMusicManagerReadV2(managerOutput);
+    const managerRead = readMusicManagerRead(managerOutput);
     const latestRun = latestManagerRuns.get(musicManagerRunKey("music_item", row.id));
     const managerReadStatus = resolveMusicManagerReadStatus(
       managerRead,
@@ -3705,7 +3705,7 @@ function mapMusicLibrary({
     const identifiers = identifiersByProject.get(row.id);
     const spotify = readSpotifyMetadata(row.metadata);
     const managerOutput = managerOutputsByProject.get(row.id);
-    const managerRead = readMusicManagerReadV2(managerOutput);
+    const managerRead = readMusicManagerRead(managerOutput);
     const latestRun = latestManagerRuns.get(musicManagerRunKey("music_project", row.id));
     const managerReadStatus = resolveMusicManagerReadStatus(
       managerRead,
@@ -3876,6 +3876,22 @@ function latestMusicManagerRunsBySubject(rows: ProductionMusicManagerRun[]) {
   return latest;
 }
 
+function readMusicManagerRead(row: ManagerOutputRow | undefined): MusicManagerReadViewModel | undefined {
+  const v2 = readMusicManagerReadV2(row);
+  if (v2) return v2;
+  if (!row || row.schema_version === "music-manager-read-v2" || !isPlainRecord(row.render_json)) return undefined;
+  const body = readStrictManagerReadString(row.render_json.managerRead);
+  return body
+    ? {
+      position: "Previous Manager Read",
+      managementRole: "Saved Manager assessment",
+      body,
+      metrics: [],
+      evidenceIds: [],
+    }
+    : undefined;
+}
+
 function readMusicManagerReadV2(row: ManagerOutputRow | undefined): MusicManagerReadViewModel | undefined {
   if (!row || row.schema_version !== "music-manager-read-v2") return undefined;
   return parseMusicManagerReadViewModel(row.render_json);
@@ -3949,8 +3965,8 @@ function resolveMusicManagerReadStatus(
     latestRun?.status === "failed" &&
     (!outputCreatedAt || validDateMilliseconds(latestRun.createdAt) > validDateMilliseconds(outputCreatedAt))
   ) return read ? "refresh_failed" : "failed";
-  if (read) return "fresh";
   if (hasLegacyCurrentOutput) return "stale";
+  if (read) return "fresh";
   return "not_generated";
 }
 
