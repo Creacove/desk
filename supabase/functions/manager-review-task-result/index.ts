@@ -271,6 +271,7 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     : outcome === "needs_revision"
       ? { status: "in_progress", resultStatus: "revised", eventType: "task_needs_revision" }
       : { status: "blocked", resultStatus: "blocked", eventType: "task_blocked" };
+  const checkpointStatus = resolveCheckpointStatus(context, checkpointId, input.taskId, outcome, review.checkpointStatus);
 
   const { error: taskError } = await db
     .from("tasks")
@@ -323,7 +324,7 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
 
   if (checkpointId) {
     const { error } = await db.from("checkpoints").update({
-      status: outcome === "needs_revision" ? "needs_revision" : outcome === "blocked" ? "blocked" : review.checkpointStatus,
+      status: checkpointStatus,
       recommendation: review.checkpointRecommendation,
       updated_at: now,
     }).eq("id", checkpointId).eq("artist_workspace_id", input.artistWorkspaceId);
@@ -385,6 +386,8 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     mission_id: context.task.mission_id,
     checkpoint_id: checkpointId,
     task_id: input.taskId,
+    display_mode: "activity",
+    refresh_scope: ["missions", "activity"],
     summary: review.managerInterpretation,
     payload: { review, permissionRequests: review.permissionRequests, followUpTasks: review.followUpTasks },
   }).select("id").single();
@@ -441,6 +444,26 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     is_current: true,
   });
   if (outputError) throw outputError;
+}
+
+function resolveCheckpointStatus(
+  context: any,
+  checkpointId: string | null,
+  taskId: string,
+  outcome: ManagerTaskReview["outcome"],
+  modelStatus: ManagerTaskReview["checkpointStatus"],
+) {
+  if (outcome === "needs_revision") return "needs_revision";
+  if (outcome === "blocked") return "blocked";
+  if (!checkpointId) return modelStatus;
+
+  const checkpointTasks = Array.isArray(context.missionTasks)
+    ? context.missionTasks.filter((task: any) => task.primary_checkpoint_id === checkpointId)
+    : [];
+  const allCheckpointTasksCompleted = checkpointTasks.length > 0 && checkpointTasks.every((task: any) =>
+    task.id === taskId || task.status === "completed",
+  );
+  return allCheckpointTasksCompleted ? "ready_for_manager_check" : modelStatus;
 }
 
 async function createManagerRun(db: any, input: ReviewInput, context: unknown) {

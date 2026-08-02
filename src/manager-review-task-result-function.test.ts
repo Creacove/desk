@@ -42,6 +42,13 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain("missingRequiredDeliverable");
   });
 
+  it("publishes a task review as live mission activity and deterministically clears a completed checkpoint", () => {
+    expect(functionSource).toContain('display_mode: "activity"');
+    expect(functionSource).toContain('refresh_scope: ["missions", "activity"]');
+    expect(functionSource).toContain("resolveCheckpointStatus");
+    expect(functionSource).toContain("allCheckpointTasksCompleted");
+  });
+
   it("has service-role access to the mission graph and review write tables", () => {
     expect(existsSync(serviceRoleGrantMigrationPath)).toBe(true);
     expect(existsSync(workspaceDocumentsMigrationPath)).toBe(true);

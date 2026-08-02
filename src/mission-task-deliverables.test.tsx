@@ -117,6 +117,34 @@ describe("mission task deliverables", () => {
     expect(screen.getByText("Manager drafts:")).toBeInTheDocument();
     expect(screen.getByText("You confirm:")).toBeInTheDocument();
   });
+
+  it("opens the exact task room when returning from Manager work", async () => {
+    render(
+      <MissionsWorkspace
+        missions={[missionWithRequiredThesis()]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onUploadTaskDeliverable={async () => ({
+          id: "deliverable-thesis",
+          title: "90-day thesis",
+          status: "uploaded",
+        })}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+        openTaskId="task-thesis"
+      />,
+    );
+
+    expect(await screen.findByTestId("task-group-checkpoint-1")).toBeInTheDocument();
+    expect(screen.getByText("Provide 90-day thesis")).toBeInTheDocument();
+    expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
+  });
 });
 
 function missionWithRequiredThesis(): MissionViewModel {
