@@ -35,6 +35,8 @@ export async function persistManagerMissionGraphDecisions(
         target_type: "mission",
         target_id: mission.id,
         mission_id: mission.id,
+        display_mode: "activity",
+        refresh_scope: ["missions", "activity"],
         summary: `Manager created mission: ${mission.title}`,
         payload: decision,
       });
@@ -69,6 +71,8 @@ export async function persistManagerMissionGraphDecisions(
         target_type: "mission",
         target_id: mission.id,
         mission_id: mission.id,
+        display_mode: "activity",
+        refresh_scope: ["missions", "activity"],
         summary: `Manager updated mission: ${mission.title}`,
         payload: decision,
       });

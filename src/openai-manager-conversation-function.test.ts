@@ -68,6 +68,11 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(functionSource).not.toContain("insertManagerTask");
   });
 
+  it("publishes Manager-created mission changes to the live workspace", () => {
+    expect(graphPersistenceSource).toContain('display_mode: "activity"');
+    expect(graphPersistenceSource).toContain('refresh_scope: ["missions", "activity"]');
+  });
+
   it("persists durable decision packages as manager_outputs instead of static Manager Office UI", () => {
     expect(functionSource).toContain("persistDecisionPackageOutput");
     expect(streamFunctionSource).toContain("persistDecisionPackageOutput");
