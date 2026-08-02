@@ -180,6 +180,35 @@
 - The chat has a clear next action back to the task or submit flow.
 - The task status matches persisted work.
 
+### P1. Task review state does not reliably propagate through checkpoints and the live workspace
+
+**Symptom:** After a task is reviewed, the user can need a manual reload before the task CTA, checkpoint blocker, downstream checkpoint, and locked/open states agree. Returning from Manager work can also appear to land on the mission list instead of the exact task.
+
+**Impact:** The system may have made the correct durable decision, while the visible workspace still describes the previous state. That breaks trust in task completion and makes the next action unclear.
+
+**Root cause found:** Direct task submission does re-read the reviewed mission, but background review completion writes an `operating_events` row without the live event fields (`display_mode`, `refresh_scope`). In addition, checkpoint unlocks are derived from persisted checkpoint statuses, while task review allows the model to return those statuses without a deterministic transition guard. The return-to-task path needs a regression test that proves the mission room opens to the highlighted task, not merely the mission list.
+
+**Files to inspect/fix:**
+- `supabase/functions/manager-review-task-result/index.ts`
+- `src/app/ProductionApp.tsx`
+- `src/services/productionSupabase.ts`
+- `src/features/missions/MissionScreens.tsx`
+- `src/workspace-live-sync.test.ts`
+- `src/production-supabase-service.test.ts`
+- `src/production-app-shell.test.tsx`
+
+**Fix direction:**
+- Publish a real live event for completed, revised, and blocked task reviews, scoped to the mission list and workspace activity.
+- Make accepted-task checkpoint progression deterministic from the task/checkpoint graph; do not leave a completed single-task checkpoint waiting because of an arbitrary model status.
+- On any task review completion, refresh the current mission detail and derive the visible blocker/next checkpoint from that persisted result.
+- Verify `Back to task` opens the task tab, selected mission, and highlighted task in one navigation.
+
+**Acceptance criteria:**
+- Completing/revising/blocking a task updates its CTA, result, checkpoint, mission recap, and activity without reload.
+- A cleared dependency immediately unlocks the downstream checkpoint; a real blocker remains clearly identified.
+- Background completions update an open workspace through the normal quiet live-sync path.
+- Returning from task Manager work lands on that task, not a generic mission list.
+
 ### P2. Desk HQ naming is inconsistent
 
 **Symptom:** The right panel uses `Top focus` for missions, while updates also use similar `Top focus` language.
