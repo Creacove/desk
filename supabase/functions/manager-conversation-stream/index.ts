@@ -24,6 +24,7 @@ import {
 } from "../_shared/manager-conversation/context.ts";
 import { qualifyManagerMemoryCandidates } from "../_shared/manager-conversation/memory.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -699,6 +700,18 @@ async function persistTaskDraftOutput(
     relationship: "response_to",
   });
   if (linkError) throw linkError;
+  await writeWorkspaceEvent(db, {
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    eventType: "manager_task_draft_ready",
+    summary: `${title} is ready to review.`,
+    targetType: "task",
+    targetId: input.taskId,
+    dedupeKey: `manager-task-draft:${draft.id}`,
+    displayMode: "toast",
+    refreshScope: ["missions", "activity"],
+  });
   return {
     type: "task" as const,
     artifactKind: "task_draft" as const,

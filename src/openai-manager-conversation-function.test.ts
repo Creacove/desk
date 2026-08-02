@@ -73,6 +73,16 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(graphPersistenceSource).toContain('refresh_scope: ["missions", "activity"]');
   });
 
+  it("records a durable Activity Center event whenever a Manager task draft is saved", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain('import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts"');
+      expect(source).toContain('eventType: "manager_task_draft_ready"');
+      expect(source).toContain('targetType: "task"');
+      expect(source).toContain('displayMode: "toast"');
+      expect(source).toContain('refreshScope: ["missions", "activity"]');
+    }
+  });
+
   it("never reuses a mission-creation conversation for task Manager work", () => {
     for (const source of [functionSource, streamFunctionSource]) {
       expect(source).toContain("ensureTaskConversation");
