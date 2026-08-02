@@ -1590,10 +1590,13 @@ function CleanProductionWorkspace({
     );
   }
 
-  function returnToManagerTask() {
+  async function returnToManagerTask() {
     if (!managerTaskContextId) return;
     const mission = missions.find((item) => item.tasks?.some((task) => task.id === managerTaskContextId));
-    if (mission) setSelectedMissionId(mission.id);
+    if (mission) {
+      setSelectedMissionId(mission.id);
+      await hydrateMission(mission.id, true);
+    }
     setMissionRoomOpenTaskId(managerTaskContextId);
     setMissionRoomOpenTab("tasks");
     setMissionRoomOpenRequestKey((current) => current + 1);

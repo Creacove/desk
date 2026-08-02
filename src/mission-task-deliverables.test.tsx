@@ -118,6 +118,73 @@ describe("mission task deliverables", () => {
     expect(screen.getByText("You confirm:")).toBeInTheDocument();
   });
 
+  it("shows the saved Manager draft before offering submission for review", () => {
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      completionMode: "manager_draft",
+      managerDraft: {
+        id: "draft-thesis-1",
+        title: "90-day positioning plan",
+        summary: "Choose Lagos as the first proof market, then measure repeat listening.",
+        status: "draft",
+      },
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    expect(screen.getByText("90-day positioning plan")).toBeInTheDocument();
+    expect(screen.getByText("Choose Lagos as the first proof market, then measure repeat listening.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
+  });
+
+  it("returns a revised Manager draft to the Manager instead of allowing stale submission", () => {
+    const onWorkWithManager = vi.fn();
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      completionMode: "manager_draft",
+      managerDraft: { id: "draft-thesis-1", title: "90-day positioning plan", summary: "Revise the market rationale.", status: "needs_revision" },
+      result: { status: "revised", summary: "Add a clearer validation plan.", userNote: "", interpretation: "", missionEffect: "", followUp: "" },
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        onWorkWithManager={onWorkWithManager}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue with Manager" }));
+    expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
+    expect(screen.queryByRole("button", { name: "Submit for review" })).not.toBeInTheDocument();
+  });
+
   it("opens the exact task room when returning from Manager work", async () => {
     render(
       <MissionsWorkspace

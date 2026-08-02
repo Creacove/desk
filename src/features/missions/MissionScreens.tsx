@@ -685,7 +685,7 @@ function TasksPanel({
                                 Approve
                               </button>
                             ) : null}
-                            {completionMode === "manager_draft" && !task.managerDraft ? (
+                            {completionMode === "manager_draft" && (!task.managerDraft || task.result?.status === "revised") ? (
                               <button
                                 type="button"
                                 disabled={done || completionBlocked || blocked || isConfirmingCompletion}
@@ -800,6 +800,13 @@ function TaskDetails({ task }: { task: MissionTaskViewModel }) {
       ) : null}
       {task.userResponsibility ? (
         <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">You confirm:</span> {task.userResponsibility}</p>
+      ) : null}
+      {task.managerDraft ? (
+        <div className="grid gap-2 rounded-[12px] border border-brand-accent/20 bg-brand-accent/[0.035] p-3">
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Current Manager draft</p>
+          <p className="text-[13px] font-bold leading-relaxed text-foreground">{task.managerDraft.title}</p>
+          <p className="max-h-80 overflow-y-auto whitespace-pre-wrap pr-1 text-[12px] leading-relaxed text-foreground/88">{task.managerDraft.summary}</p>
+        </div>
       ) : null}
       <p className="text-[12px] leading-relaxed text-muted-foreground/90"><span className="font-bold text-foreground">Risk if late:</span> {task.riskIfLate}</p>
       {task.result ? <TaskResult result={task.result} /> : null}
