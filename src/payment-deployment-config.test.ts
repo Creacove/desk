@@ -36,4 +36,11 @@ describe("payment deployment configuration", () => {
     expect(config).toContain("https://cdn.paddle.com");
     expect(config).not.toContain("unsafe-eval");
   });
+
+  it("keeps the private-beta entry point enabled in production builds without changing local defaults", () => {
+    const config = read("netlify.toml");
+    expect(config).toContain("[context.production.environment]");
+    expect(config).toContain('VITE_PRIVATE_BETA_ENABLED = "true"');
+    expect(config).not.toContain("[build.environment]\n  VITE_PRIVATE_BETA_ENABLED");
+  });
 });

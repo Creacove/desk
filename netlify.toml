@@ -5,6 +5,9 @@
 [build.environment]
   NODE_VERSION = "22"
 
+[context.production.environment]
+  VITE_PRIVATE_BETA_ENABLED = "true"
+
 [[edge_functions]]
   function = "billing-country"
   path = "/api/billing-country"
