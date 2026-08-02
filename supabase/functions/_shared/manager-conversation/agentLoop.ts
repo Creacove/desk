@@ -13,6 +13,10 @@ type ManagerAgentRequestInput = {
   previousResponseId?: string;
   parallelToolCalls?: boolean;
   reasoningEffort?: "minimal" | "low" | "medium" | "high";
+  maxOutputTokens?: number;
+  contextManagement?: Array<{ type: "compaction"; compact_threshold: number }>;
+  promptCacheKey?: string;
+  promptCacheMode?: "implicit" | "explicit";
 };
 
 type ManagerAgentLoopInput = ManagerAgentRequestInput & {
@@ -115,16 +119,28 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
 ];
 
 export function buildManagerAgentRequest(input: ManagerAgentRequestInput) {
+  return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId);
+}
+
+function buildManagerAgentRequestBody(
+  input: ManagerAgentRequestInput,
+  requestInput: unknown,
+  previousResponseId?: string,
+) {
   return {
     model: input.model,
     instructions: input.instructions,
-    input: JSON.stringify(input.context),
-    ...(input.previousResponseId ? { previous_response_id: input.previousResponseId } : {}),
+    input: requestInput,
+    ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
     store: true,
     tools: input.tools,
     tool_choice: "auto",
     parallel_tool_calls: input.parallelToolCalls ?? false,
     ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
+    ...(input.maxOutputTokens ? { max_output_tokens: input.maxOutputTokens } : {}),
+    ...(input.contextManagement?.length ? { context_management: input.contextManagement } : {}),
+    ...(input.promptCacheKey ? { prompt_cache_key: input.promptCacheKey } : {}),
+    ...(input.promptCacheMode ? { prompt_cache_options: { mode: input.promptCacheMode } } : {}),
     text: { format: { type: "json_schema", ...input.jsonSchema } },
   };
 }
@@ -178,7 +194,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
         };
         toolTrace.push(completed);
         await input.onToolEvent?.(publicToolEvent(completed));
-        return { type: "function_call_output", call_id: call.callId, output: JSON.stringify(result) };
+        return { type: "function_call_output", call_id: call.callId, output: serializeToolOutput(result) };
       } catch (error) {
         const failed = {
           tool: call.name,
@@ -195,21 +211,24 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
       ? await Promise.all(calls.map(executeCall))
       : await executeSequentially(calls, executeCall);
 
-    requestBody = {
-      model: input.model,
-      instructions: input.instructions,
-      input: outputs,
-      previous_response_id: responseId,
-      store: true,
-      tools: input.tools,
-      tool_choice: "auto",
-      parallel_tool_calls: input.parallelToolCalls ?? false,
-      ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
-      text: { format: { type: "json_schema", ...input.jsonSchema } },
-    };
+    requestBody = buildManagerAgentRequestBody(input, outputs, responseId);
   }
 
   throw new Error("Manager agent did not finish within the configured loop limit.");
+}
+
+const MAX_TOOL_OUTPUT_CHARS = 12_000;
+
+function serializeToolOutput(value: unknown) {
+  let serialized = "";
+  try {
+    serialized = JSON.stringify(value);
+  } catch {
+    serialized = JSON.stringify({ error: "Tool returned an unreadable result." });
+  }
+  if (!serialized) serialized = JSON.stringify({});
+  if (serialized.length <= MAX_TOOL_OUTPUT_CHARS) return serialized;
+  return JSON.stringify({ truncated: true, excerpt: serialized.slice(0, MAX_TOOL_OUTPUT_CHARS) });
 }
 
 async function postResponses(fetchImpl: typeof fetch, endpoint: string, apiKey: string, body: Record<string, unknown>) {

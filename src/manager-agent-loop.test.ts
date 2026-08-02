@@ -16,6 +16,10 @@ describe("Manager Agent Responses loop", () => {
       tools: managerConversationTools,
       jsonSchema: managerConversationJsonSchema,
       previousResponseId: "resp-prior",
+      maxOutputTokens: 6000,
+      contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
+      promptCacheKey: "manager:workspace-1:v1",
+      promptCacheMode: "explicit",
     });
 
     expect(request).toMatchObject({
@@ -25,6 +29,10 @@ describe("Manager Agent Responses loop", () => {
       previous_response_id: "resp-prior",
       tool_choice: "auto",
       parallel_tool_calls: false,
+      max_output_tokens: 6000,
+      context_management: [{ type: "compaction", compact_threshold: 64000 }],
+      prompt_cache_key: "manager:workspace-1:v1",
+      prompt_cache_options: { mode: "explicit" },
       text: { format: { type: "json_schema", name: "manager_conversation_router_v1" } },
     });
     expect(request.input).toBe(JSON.stringify({ artist: { name: "BNXN" }, userMessage: "What is the release strategy?" }));
@@ -36,6 +44,39 @@ describe("Manager Agent Responses loop", () => {
       expect.objectContaining({ type: "function", name: "query_durable_memory" }),
       expect.objectContaining({ type: "function", name: "query_manager_outputs" }),
     ]);
+  });
+
+  it("caps oversized tool output before continuing the Responses loop", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const finalJson = JSON.stringify({ summary: "done" });
+    const fetchImpl = async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body ?? "{}"));
+      requests.push(body);
+      return new Response(JSON.stringify(body.previous_response_id
+        ? { id: "resp-final", output_text: finalJson }
+        : {
+            id: "resp-tool",
+            output: [{ type: "function_call", call_id: "call-document", name: "read_manager_output_section", arguments: "{}" }],
+          }), { status: 200 });
+    };
+
+    await runManagerAgentLoop({
+      endpoint: "https://api.openai.com/v1/responses",
+      apiKey: "test-key",
+      model: "gpt-5-mini",
+      instructions: "Read the draft.",
+      context: { userMessage: "Improve the draft." },
+      tools: [{ type: "function", name: "read_manager_output_section", description: "Read a section", strict: false, parameters: {} }],
+      jsonSchema: managerConversationJsonSchema,
+      fetchImpl,
+      executeTool: async () => ({ content: "x".repeat(30000) }),
+    });
+
+    const followUp = requests[1] as { input: Array<{ output: string }> };
+    const toolOutput = JSON.parse(followUp.input[0].output);
+    expect(toolOutput).toMatchObject({ truncated: true });
+    expect(toolOutput.excerpt).toHaveLength(12000);
+    expect(followUp.input[0].output).not.toContain("x".repeat(12001));
   });
 
   it("executes local tool calls, returns function_call_output by call_id, and continues with previous_response_id", async () => {
