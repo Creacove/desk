@@ -234,7 +234,8 @@ export type MissionCheckpointViewModel = {
   watchedSignals: string[];
   decisionRule: string;
   recommendation: string;
-  resultSummary: string;
+  rationale: string;
+  managerRead: string;
   nextAction: string;
 };
 

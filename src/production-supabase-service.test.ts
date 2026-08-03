@@ -2538,6 +2538,42 @@ describe("production Supabase services", () => {
     ]);
   });
 
+  it("keeps checkpoint creation rationale separate from the live Manager read", async () => {
+    const client = fakeSupabaseClient({
+      missions: [{
+        id: "mission-checkpoint-projection",
+        title: "Validate the market signal",
+        status: "active",
+        summary: "Validate the evidence before scaling.",
+        current_recommendation: "Use the current evidence in the next decision.",
+        progress: 50,
+      }],
+      checkpoints: [{
+        id: "checkpoint-projection",
+        mission_id: "mission-checkpoint-projection",
+        title: "Market signal quality",
+        question: "Does the signal justify more work?",
+        status: "waiting",
+        reason_for_checkpoint: "The initial audience signal warranted a bounded validation step.",
+        recommendation: "Manager read: pause scaling until the source-backed read is complete.",
+      }],
+      tasks: [],
+      task_steps: [],
+      task_results: [],
+      operating_events: [],
+      memory_entries: [],
+    });
+
+    const [mission] = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+    const checkpoint = mission.checkpoints?.[0];
+
+    expect(checkpoint).toMatchObject({
+      rationale: "The initial audience signal warranted a bounded validation step.",
+      managerRead: "Manager read: pause scaling until the source-backed read is complete.",
+    });
+    expect(checkpoint).not.toHaveProperty("resultSummary");
+  });
+
   it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {
     const client = fakeSupabaseClient({
       missions: [

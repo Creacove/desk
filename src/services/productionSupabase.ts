@@ -5466,7 +5466,8 @@ function missionFromRow(
       watchedSignals: checkpoint.watched_signals ?? [],
       decisionRule: checkpoint.decision_rule ?? "Do not change the mission state without task results or source-backed context.",
       recommendation: checkpoint.recommendation ?? "No recommendation.",
-      resultSummary: checkpoint.reason_for_checkpoint ?? checkpoint.question,
+      rationale: checkpoint.reason_for_checkpoint ?? checkpoint.question,
+      managerRead: checkpoint.recommendation ?? "No recommendation.",
       nextAction: checkpoint.next_action ?? "Complete tasks under this checkpoint.",
     };
   });
