@@ -202,6 +202,9 @@ async function writeMissionPlan(
 
   const checkpointIds = new Map<string, string>();
   for (const [index, checkpoint] of decision.checkpoints.entries()) {
+    const hasArtistTask = decision.tasks.some((task) =>
+      task.primaryCheckpointKey === checkpoint.key && task.ownerRole.trim().toLowerCase() !== "manager"
+    );
     const { data, error } = await db.from("checkpoints").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
@@ -209,12 +212,13 @@ async function writeMissionPlan(
       mission_id: missionId,
       mission_plan_version_id: plan.id,
       title: checkpoint.title,
-      status: "waiting",
+      status: hasArtistTask ? "waiting" : "watching_signal",
       question: checkpoint.question,
       reason_for_checkpoint: checkpoint.question,
       watched_signals: checkpoint.sourceRefs,
       decision_rule: checkpoint.decisionRule,
-      recommendation: decision.mission.currentRecommendation,
+      recommendation: checkpoint.managerRead,
+      next_action: checkpoint.nextAction,
       required_evidence: checkpoint.requiredEvidence,
       missing_evidence: checkpoint.missingEvidence,
       custom_reason: `Manager-authored checkpoint grounded in packet refs: ${checkpoint.sourceRefs.join(", ")}`,

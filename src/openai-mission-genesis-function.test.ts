@@ -33,6 +33,12 @@ const graphPersistenceSource = readFileSync(join(process.cwd(), "supabase", "fun
 const finalizerMigration = readFileSync(join(
   process.cwd(), "supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql",
 ), "utf8");
+const autonomousCheckpointMigrationPath = join(
+  process.cwd(), "supabase", "migrations", "20260803000100_autonomous_checkpoint_work.sql",
+);
+const autonomousCheckpointMigration = existsSync(autonomousCheckpointMigrationPath)
+  ? readFileSync(autonomousCheckpointMigrationPath, "utf8")
+  : "";
 const serviceRoleGrantMigrationPath = join(
   process.cwd(),
   "supabase",
@@ -324,6 +330,18 @@ describe("OpenAI Mission Genesis", () => {
     ]) expect(finalizerMigration).toContain(`public.${table}`);
     expect(finalizerMigration).toContain("action_key = 'mission-genesis-result'");
     expect(finalizerMigration).toContain("to service_role");
+  });
+
+  it("persists checkpoint-specific reads and starts no-task checkpoints in watching state", () => {
+    expect(graphPersistenceSource).toContain("recommendation: checkpoint.managerRead");
+    expect(graphPersistenceSource).toContain("next_action: checkpoint.nextAction");
+    expect(graphPersistenceSource).toContain('status: hasArtistTask ? "waiting" : "watching_signal"');
+
+    expect(existsSync(autonomousCheckpointMigrationPath)).toBe(true);
+    expect(autonomousCheckpointMigration).toContain("create or replace function public._apply_mission_genesis_graph_v2");
+    expect(autonomousCheckpointMigration).toContain("checkpoint ->> 'managerRead'");
+    expect(autonomousCheckpointMigration).toContain("checkpoint ->> 'nextAction'");
+    expect(autonomousCheckpointMigration).toContain("'watching_signal'");
   });
 
   it("loads the latest Manager Intelligence packet as the strategic source for mission generation", () => {

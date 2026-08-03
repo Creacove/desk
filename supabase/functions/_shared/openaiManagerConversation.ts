@@ -82,12 +82,14 @@ const missionSchema = {
 const checkpointSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["key", "title", "question", "decisionRule", "requiredEvidence", "missingEvidence", "sourceRefs"],
+  required: ["key", "title", "question", "decisionRule", "managerRead", "nextAction", "requiredEvidence", "missingEvidence", "sourceRefs"],
   properties: {
     key: { type: "string" },
     title: { type: "string" },
     question: { type: "string" },
     decisionRule: { type: "string" },
+    managerRead: { type: "string" },
+    nextAction: { type: "string" },
     requiredEvidence: stringArraySchema,
     missingEvidence: stringArraySchema,
     sourceRefs: stringArraySchema,
@@ -404,11 +406,13 @@ function normalizeCheckpoint(value: unknown): MissionGenesisCheckpoint | null {
     title: cleanString(checkpoint.title, ""),
     question: cleanString(checkpoint.question, ""),
     decisionRule: cleanString(checkpoint.decisionRule, ""),
+    managerRead: cleanString(checkpoint.managerRead, ""),
+    nextAction: cleanString(checkpoint.nextAction, ""),
     requiredEvidence: cleanStringArray(checkpoint.requiredEvidence).slice(0, 12),
     missingEvidence: cleanStringArray(checkpoint.missingEvidence).slice(0, 12),
     sourceRefs: cleanStringArray(checkpoint.sourceRefs).slice(0, 24),
   };
-  return normalized.key && normalized.title && normalized.question && normalized.decisionRule ? normalized : null;
+  return normalized.key && normalized.title && normalized.question && normalized.decisionRule && normalized.managerRead && normalized.nextAction ? normalized : null;
 }
 
 function normalizeTask(value: unknown): MissionGenesisTask | null {

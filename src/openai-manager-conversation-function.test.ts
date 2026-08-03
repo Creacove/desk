@@ -315,6 +315,8 @@ describe("OpenAI Manager Conversation Router", () => {
               title: "London return signal",
               question: "Does North Star produce repeat or owned-audience behavior in London?",
               decisionRule: "Continue only if the agreed return or capture signal improves during the review window.",
+              managerRead: "London is the strongest public signal, but repeat behavior is not proven yet.",
+              nextAction: "Record the outcome of the next low-risk London audience test.",
               requiredEvidence: ["Dated London response baseline"],
               missingEvidence: [],
               sourceRefs: ["ev-city", "song-focus"],
