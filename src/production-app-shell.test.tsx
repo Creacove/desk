@@ -135,6 +135,10 @@ afterEach(() => {
 });
 
 describe("Clean production prototype-match shell", () => {
+  it("forces a fresh mission read before opening task work attached in a Manager conversation", () => {
+    expect(productionAppSource).toContain("await hydrateMission(targetMissionId, true)");
+  });
+
   it("keeps the generation mode attached to a background Today's Brief run", () => {
     expect(productionAppSource).toContain("activeTodayBriefRun");
     expect(productionAppSource).toContain("{ id: result.runId, mode }");
@@ -1557,7 +1561,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: /Music Focus.*Jam.*Open record read/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Mission Path.*1 active.*Turn read into work/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Top Focus");
+    expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Today's Focus");
     expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Push Jam");
 
     fireEvent.change(screen.getByPlaceholderText("Ask your manager anything..."), {
@@ -3733,7 +3737,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
     fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
     fireEvent.change(screen.getByLabelText("Task result note"), { target: { value: "Outcome captured without private content." } });
-    fireEvent.click(screen.getByRole("button", { name: "Confirm done" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark done" }));
 
     await waitFor(() => expect(repositories.missions.completeTask).toHaveBeenCalled());
     expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(
@@ -4752,10 +4756,10 @@ describe("Clean production prototype-match shell", () => {
     rerender(workspace([unknown]));
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     await act(async () => { await Promise.resolve(); });
-    expect(onRefreshObject).toHaveBeenCalledTimes(2);
+    expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Not generated");
-    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" })).toBeInTheDocument();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("No Manager Read yet");
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Check status" })).toBeInTheDocument();
   });
 
   it("preserves an inconclusive exact Manager Read status without exposing generation", async () => {

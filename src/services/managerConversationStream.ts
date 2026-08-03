@@ -6,6 +6,9 @@ export function invalidationsFromManagerRefreshHint(hint?: ManagerConversationRe
   const invalidations: WorkspaceInvalidation[] = [];
   if (hint.conversations) invalidations.push({ scope: "conversation-list" });
   if (hint.missions) invalidations.push({ scope: "mission-list" });
+  for (const missionId of new Set(hint.missionIds?.filter(Boolean) ?? [])) {
+    invalidations.push({ scope: "mission", id: missionId });
+  }
   if (hint.music) invalidations.push({ scope: "music-list" });
   if (hint.desk) invalidations.push({ scope: "activity" }, { scope: "desk-brief" });
   return invalidations;

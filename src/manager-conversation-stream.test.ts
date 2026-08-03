@@ -5,9 +5,17 @@ import { invalidationsFromManagerRefreshHint, parseManagerConversationEventStrea
 
 describe("Manager conversation stream parser", () => {
   it("maps stream refresh hints onto the shared workspace invalidation contract", () => {
-    expect(invalidationsFromManagerRefreshHint({ conversations: true, missions: true, music: true, desk: true })).toEqual([
+    expect(invalidationsFromManagerRefreshHint({
+      conversations: true,
+      missions: true,
+      missionIds: ["mission-1", "mission-2", "mission-1"],
+      music: true,
+      desk: true,
+    })).toEqual([
       { scope: "conversation-list" },
       { scope: "mission-list" },
+      { scope: "mission", id: "mission-1" },
+      { scope: "mission", id: "mission-2" },
       { scope: "music-list" },
       { scope: "activity" },
       { scope: "desk-brief" },

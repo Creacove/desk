@@ -1284,8 +1284,8 @@ function CleanProductionWorkspace({
       setMissionRoomOpenTab(type === "task" ? "tasks" : "pulse");
       setMissionRoomOpenTaskId(type === "task" ? id ?? null : null);
       if (targetMissionId) {
+        await hydrateMission(targetMissionId, true);
         setMissionRoomOpenRequestKey((current) => current + 1);
-        void hydrateMission(targetMissionId);
       } else {
         setMissionListOpenRequestKey((current) => current + 1);
       }
