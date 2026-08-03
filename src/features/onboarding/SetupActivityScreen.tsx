@@ -37,7 +37,7 @@ export function SetupActivityScreen({
       ? musicReadsRunning
         ? "Your workspace is ready. Some music insights are still being prepared."
         : "Your workspace is ready."
-      : "Your Manager is reviewing your music and preparing your first brief. This work will continue if you close this page.";
+      : null;
 
   return (
     <main className="app-theme grid min-h-screen place-items-center bg-background px-4 py-8 text-foreground">
@@ -48,7 +48,7 @@ export function SetupActivityScreen({
       >
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Workspace setup</p>
         <h1 id="setup-activity-title" className="mt-2 font-display text-[28px] font-semibold tracking-[-0.03em]">{heading}</h1>
-        <p className="mt-3 max-w-[30rem] text-[13px] font-medium leading-relaxed text-muted-foreground">{description}</p>
+        {description ? <p className="mt-3 max-w-[30rem] text-[13px] font-medium leading-relaxed text-muted-foreground">{description}</p> : null}
 
         <div className="mt-7 grid gap-2.5">
           {visibleStages.map((stageKey) => {

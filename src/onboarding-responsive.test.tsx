@@ -91,7 +91,7 @@ describe("mobile-first onboarding", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
-    expect(screen.getByText("Your Manager is reviewing your music and preparing your first brief. This work will continue if you close this page.")).toBeInTheDocument();
+    expect(screen.queryByText(/Manager is reviewing|close this page/i)).not.toBeInTheDocument();
     expect(screen.getAllByTestId("setup-stage-row").some((row) => row.textContent === expectedStage)).toBe(true);
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(container.textContent).not.toMatch(/Desk HQ|Chartmetric|OpenAI|GPT|edge function|%/i);

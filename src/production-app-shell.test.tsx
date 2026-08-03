@@ -1097,7 +1097,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Desk HQ" })).not.toBeInTheDocument();
-    expect(screen.getByText("Your Manager is reviewing your music and preparing your first brief. This work will continue if you close this page.")).toBeInTheDocument();
+    expect(screen.queryByText(/Manager is reviewing|close this page/i)).not.toBeInTheDocument();
     expect(screen.getAllByTestId("setup-stage-icon")).toHaveLength(5);
     expect(screen.getAllByRole("status")).toHaveLength(1);
     expect(screen.queryByText(/earlier update/i)).not.toBeInTheDocument();
