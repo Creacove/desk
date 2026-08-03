@@ -42,11 +42,27 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain("missingRequiredDeliverable");
   });
 
-  it("publishes a task review as live mission activity and deterministically clears a completed checkpoint", () => {
+  it("publishes a task review as live mission activity and preserves the Manager's valid checkpoint decision", () => {
     expect(functionSource).toContain('display_mode: "activity"');
     expect(functionSource).toContain('refresh_scope: ["missions", "activity"]');
     expect(functionSource).toContain("resolveCheckpointStatus");
     expect(functionSource).toContain("allCheckpointTasksCompleted");
+    expect(functionSource).toContain('if (modelStatus === "met" && !allCheckpointTasksCompleted) return "ready_for_manager_check";');
+    expect(functionSource).toContain("return modelStatus;");
+  });
+
+  it("stores a complete checkpoint evaluation so the artist can see the decision, impact, next action, and real blocking reason", () => {
+    expect(functionSource).toContain("status: checkpointStatus,");
+    expect(functionSource).toContain("recommendation: review.checkpointRecommendation,");
+    expect(functionSource).toContain("dependency_impact: review.checkpointEffect,");
+    expect(functionSource).toContain("next_action: review.recommendedFollowUp,");
+    expect(functionSource).toContain('blocked_reason: checkpointStatus === "needs_revision" || checkpointStatus === "blocked"');
+    expect(functionSource).toContain("? review.checkpointEffect : null,");
+    expect(functionSource).toContain("updated_at: now,");
+  });
+
+  it("directs the Manager to make a final checkpoint decision after all required task work is complete", () => {
+    expect(functionSource).toContain("After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.");
   });
 
   it("has service-role access to the mission graph and review write tables", () => {

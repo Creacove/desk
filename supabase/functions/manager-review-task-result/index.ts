@@ -175,6 +175,7 @@ async function callOpenAIManagerReview(context: unknown) {
         "When submittedDocuments are present, treat them as the user's task deliverables. If a required deliverable is missing, do not mark the checkpoint or mission complete.",
         "When submittedManagerDraft is present, review that exact immutable version against every deliverableRequirement and completionExpectation.",
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
+        "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
       ].join("\n"),
       input: JSON.stringify(context),
@@ -326,6 +327,10 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
     const { error } = await db.from("checkpoints").update({
       status: checkpointStatus,
       recommendation: review.checkpointRecommendation,
+      dependency_impact: review.checkpointEffect,
+      next_action: review.recommendedFollowUp,
+      blocked_reason: checkpointStatus === "needs_revision" || checkpointStatus === "blocked"
+        ? review.checkpointEffect : null,
       updated_at: now,
     }).eq("id", checkpointId).eq("artist_workspace_id", input.artistWorkspaceId);
     if (error) throw error;
@@ -463,7 +468,8 @@ function resolveCheckpointStatus(
   const allCheckpointTasksCompleted = checkpointTasks.length > 0 && checkpointTasks.every((task: any) =>
     task.id === taskId || task.status === "completed",
   );
-  return allCheckpointTasksCompleted ? "ready_for_manager_check" : modelStatus;
+  if (modelStatus === "met" && !allCheckpointTasksCompleted) return "ready_for_manager_check";
+  return modelStatus;
 }
 
 async function createManagerRun(db: any, input: ReviewInput, context: unknown) {
