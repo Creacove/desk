@@ -5390,6 +5390,10 @@ function mapTaskApprovalState(state: string | null | undefined): MissionTaskView
   return "not_required";
 }
 
+function isInternalManagerTask(task: Pick<TaskRow, "owner_role">) {
+  return task.owner_role?.trim().toLowerCase() === "manager";
+}
+
 function missionFromRow(
   row: MissionRow,
   checkpoints: CheckpointRow[] = [],
@@ -5401,9 +5405,10 @@ function missionFromRow(
   operatingEvents: any[] = [],
   memoryEntries: any[] = [],
 ): MissionViewModel {
-  const nextTask = tasks.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
+  const artistTaskRows = tasks.filter((task) => !isInternalManagerTask(task));
+  const nextTask = artistTaskRows.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
 
-  const mappedTasks: MissionTaskViewModel[] = tasks.map((task) => {
+  const mappedTasks: MissionTaskViewModel[] = artistTaskRows.map((task) => {
     const taskSteps = steps
       .filter((step) => step.task_id === task.id)
       .map((step) => step.body);
@@ -5445,9 +5450,13 @@ function missionFromRow(
   });
 
   const mappedCheckpoints: MissionCheckpointViewModel[] = checkpoints.map((checkpoint, index) => {
-    const requiredTaskIds = mappedTasks
-      .filter((t) => t.checkpointId === checkpoint.id)
-      .map((t) => t.id);
+    const checkpointTasks = mappedTasks.filter((task) => task.checkpointId === checkpoint.id);
+    const requiredTaskIds = checkpointTasks.map((task) => task.id);
+    const persistedStatus = mapCheckpointStatus(checkpoint.status);
+    const hasManagerRead = Boolean(checkpoint.recommendation?.trim()) && checkpoint.recommendation !== "No recommendation.";
+    const projectedStatus = persistedStatus === "Waiting on tasks" && checkpointTasks.length === 0 && hasManagerRead
+      ? "Watching signal"
+      : persistedStatus;
 
     const dependsOnCheckpointIds = index > 0 ? [checkpoints[index - 1].id] : [];
     const unlocks = index < checkpoints.length - 1 ? [checkpoints[index + 1].title] : [];
@@ -5456,7 +5465,7 @@ function missionFromRow(
       id: checkpoint.id,
       phase: index + 1,
       title: checkpoint.title,
-      status: mapCheckpointStatus(checkpoint.status),
+      status: projectedStatus,
       question: checkpoint.question,
       requiredTaskIds,
       dependsOnCheckpointIds,
@@ -5468,7 +5477,9 @@ function missionFromRow(
       recommendation: checkpoint.recommendation ?? "No recommendation.",
       rationale: checkpoint.reason_for_checkpoint ?? checkpoint.question,
       managerRead: checkpoint.recommendation ?? "No recommendation.",
-      nextAction: checkpoint.next_action ?? "Complete tasks under this checkpoint.",
+      nextAction: checkpoint.next_action ?? (checkpointTasks.length
+        ? "Complete tasks under this checkpoint."
+        : "Nothing needed from you. The Manager is watching the checkpoint signals."),
     };
   });
 
@@ -5494,7 +5505,7 @@ function missionFromRow(
     id: row.id,
     title: row.title,
     status: row.status ?? "active",
-    progress: row.progress ?? deriveMissionProgress(tasks),
+    progress: row.progress ?? deriveMissionProgress(artistTaskRows),
     review: row.review_point ?? mappedCheckpoints[0]?.title ?? "No review has run yet.",
     summary: row.summary ?? "No mission summary has been generated yet.",
     recommendation: row.current_recommendation ?? "No current recommendation.",

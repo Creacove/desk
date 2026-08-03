@@ -2019,7 +2019,7 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-position",
           title: "Choose the 90-day Blaqbonez position",
           status: "proposed",
-          owner_role: "Manager",
+          owner_role: "Artist / team",
           purpose: "Make the career thesis explicit before the team scales activity.",
         },
         {
@@ -2032,7 +2032,7 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-feature",
           title: "Measure whether the feature lifts Blaqbonez",
           status: "proposed",
-          owner_role: "Manager",
+          owner_role: "Marketing",
           purpose: "Separate song-level lift from Blaqbonez-owned career leverage.",
         },
       ],
@@ -2214,7 +2214,7 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-feature-leverage",
           title: "Map the feature attention back to Blaqbonez",
           status: "proposed",
-          owner_role: "Manager",
+          owner_role: "Artist / team",
           purpose: "Separate song-level momentum from Blaqbonez-owned audience and narrative gains.",
         },
       ],
@@ -2574,6 +2574,85 @@ describe("production Supabase services", () => {
     expect(checkpoint).not.toHaveProperty("resultSummary");
   });
 
+  it("projects exact Manager tasks as internal work without hiding mixed team ownership", async () => {
+    const baseTables = {
+      missions: [{
+        id: "mission-legacy-manager-work",
+        title: "Validate artist-owned leverage",
+        status: "active",
+        summary: "Separate song attention from durable artist attachment.",
+        current_recommendation: "Keep validation narrow until artist attachment improves.",
+        progress: 30,
+      }],
+      checkpoints: [{
+        id: "checkpoint-legacy-manager-work",
+        mission_id: "mission-legacy-manager-work",
+        title: "Artist attachment",
+        question: "Is discovery becoming artist-owned leverage?",
+        status: "waiting",
+        recommendation: "Public discovery is strong, but artist attachment is not proven yet.",
+      }],
+      task_steps: [],
+      task_results: [],
+      operating_events: [],
+      memory_entries: [],
+    };
+    const client = fakeSupabaseClient({
+      ...baseTables,
+      tasks: [
+        {
+          id: "task-manager-analysis",
+          mission_id: "mission-legacy-manager-work",
+          primary_checkpoint_id: "checkpoint-legacy-manager-work",
+          title: "Review discovery and attachment evidence",
+          owner_role: "Manager",
+          status: "proposed",
+          approval_state: "not_required",
+        },
+        {
+          id: "task-team-action",
+          mission_id: "mission-legacy-manager-work",
+          primary_checkpoint_id: "checkpoint-legacy-manager-work",
+          title: "Approve the campaign angle",
+          owner_role: "Manager / Marketing",
+          status: "proposed",
+          approval_state: "not_required",
+        },
+      ],
+    });
+
+    const [mission] = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+
+    expect(mission.tasks?.map((task) => task.id)).toEqual(["task-team-action"]);
+    expect(mission.nextTask).toBe("Approve the campaign angle");
+    expect(mission.checkpoints?.[0]).toMatchObject({
+      status: "Waiting on tasks",
+      requiredTaskIds: ["task-team-action"],
+      managerRead: "Public discovery is strong, but artist attachment is not proven yet.",
+    });
+
+    const managerOnlyClient = fakeSupabaseClient({
+      ...baseTables,
+      tasks: [{
+        id: "task-manager-analysis",
+        mission_id: "mission-legacy-manager-work",
+        primary_checkpoint_id: "checkpoint-legacy-manager-work",
+        title: "Review discovery and attachment evidence",
+        owner_role: " Manager ",
+        status: "proposed",
+        approval_state: "not_required",
+      }],
+    });
+    const [managerOnlyMission] = await createSupabaseProductionRepositories(managerOnlyClient, workspace).missions.loadMissions();
+
+    expect(managerOnlyMission.tasks).toEqual([]);
+    expect(managerOnlyMission.checkpoints?.[0]).toMatchObject({
+      status: "Watching signal",
+      requiredTaskIds: [],
+      nextAction: "Nothing needed from you. The Manager is watching the checkpoint signals.",
+    });
+  });
+
   it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {
     const client = fakeSupabaseClient({
       missions: [
@@ -2616,7 +2695,7 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-1",
           title: "Verify geography signal quality",
           status: "proposed",
-          owner_role: "Manager",
+          owner_role: "Artist / team",
           purpose: "Confirm whether the market signal is source-backed.",
         },
       ],
@@ -2675,7 +2754,7 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-1",
           title: "Verify geography signal quality",
           status: "approved",
-          owner_role: "Manager",
+          owner_role: "Artist / team",
           purpose: "Confirm whether the market signal is source-backed.",
         },
       ],
