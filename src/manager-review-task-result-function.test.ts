@@ -49,8 +49,9 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain('display_mode: "activity"');
     expect(functionSource).toContain('refresh_scope: ["missions", "activity"]');
     expect(functionSource).toContain("resolveCheckpointStatus");
-    expect(functionSource).toContain("isInternalManagerTask");
-    expect(functionSource).toContain("!isInternalManagerTask(task)");
+    expect(functionSource).toContain("isBlockingMissionTask");
+    expect(functionSource).toContain("isBlockingMissionTask(task)");
+    expect(functionSource).toContain("work_mode");
     expect(functionSource).toContain("allCheckpointTasksCompleted");
     expect(functionSource).toContain('if (modelStatus === "met" && !allCheckpointTasksCompleted) return "ready_for_manager_check";');
     expect(functionSource).toContain("return modelStatus;");

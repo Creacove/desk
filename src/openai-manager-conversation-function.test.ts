@@ -115,6 +115,8 @@ describe("OpenAI Manager Conversation Router", () => {
       expect(functionSource).toContain(`selectMany(db, "${table}"`);
     }
     expect(functionSource).toContain("selectConversationHistory");
+    expect(functionSource).toContain("owner_role,work_mode,status");
+    expect(streamFunctionSource).toContain("owner_role,work_mode,status");
     expect(functionSource).not.toContain('selectMany(db, "conversation_messages"');
   });
 
@@ -152,6 +154,8 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("read_manager_output_section");
     expect(instructions).toContain("Do not create a separate evidence-read section");
     expect(instructions).toContain("createdWork");
+    expect(instructions).toContain("workMode");
+    expect(JSON.stringify(managerConversationJsonSchema)).toContain("workMode");
     expect(instructions).not.toContain("OpenAI");
   });
 
@@ -326,11 +330,14 @@ describe("OpenAI Manager Conversation Router", () => {
             {
               title: "Define the London return-behavior baseline",
               ownerRole: "Manager",
+              workMode: "collaborative",
               primaryCheckpointKey: "london_return_signal",
               purpose: "Create the baseline needed to judge whether attention is becoming durable.",
               steps: ["Pull London streaming data for the last 30 days.", "Record the baseline and review threshold."],
               evidenceNeeded: ["London baseline"],
               completionExpectation: "A dated baseline and review threshold are saved.",
+              completionMode: "manager_draft",
+              userResponsibility: "Review and approve the proposed baseline.",
               riskIfLate: "The team cannot distinguish movement from noise.",
               sourceRefs: ["ev-city", "song-focus"],
             },
@@ -350,6 +357,7 @@ describe("OpenAI Manager Conversation Router", () => {
       checkpoints: [expect.objectContaining({ key: "london_return_signal" })],
       tasks: [expect.objectContaining({ primaryCheckpointKey: "london_return_signal" })],
     });
+    expect(output.missionGraphDecisions[0].tasks[0].workMode).toBe("collaborative");
   });
 
   it("parses Manager context questions without creating mission graph work", () => {

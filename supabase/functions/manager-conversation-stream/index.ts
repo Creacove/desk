@@ -364,7 +364,7 @@ async function buildManagerConversationPacket(db: any, input: ManagerConversatio
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 12),
     selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, 8),
     selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, 12),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,status,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, 20),
     selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 12),
     selectConversationHistory(db, input, conversationId, 12),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,signal_snapshot_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,internal_only_json,created_at", input, 1),

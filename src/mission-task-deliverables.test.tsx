@@ -130,6 +130,89 @@ describe("mission task deliverables", () => {
     expect(screen.getByText(/Manager is handling this read/i)).toBeInTheDocument();
     expect(screen.queryByText("0/0 tasks")).not.toBeInTheDocument();
     expect(screen.getByText("Manager watching")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Tasks 0/i })).toBeInTheDocument();
+    expect(screen.queryByText("Provide 90-day thesis")).not.toBeInTheDocument();
+  });
+
+  it("keeps Manager work visible without turning it into artist action", () => {
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      owner: "Manager",
+      workMode: "manager_work",
+      completionMode: "evidence",
+      title: "Review discovery and artist-attachment evidence",
+    };
+    mission.checkpoints![0] = {
+      ...mission.checkpoints![0],
+      status: "Watching signal",
+      requiredTaskIds: [],
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    expect(screen.getByText("Review discovery and artist-attachment evidence")).toBeInTheDocument();
+    expect(screen.getAllByText("Manager working")).not.toHaveLength(0);
+    expect(screen.getByRole("button", { name: /Tasks 0/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark done" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
+  });
+
+  it("keeps completed collaborative work expandable with its steps and result", async () => {
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      owner: "Manager",
+      workMode: "collaborative",
+      completionMode: "manager_draft",
+      title: "Draft the 90-day career thesis",
+      steps: ["Review the proposed thesis", "Confirm the audience priority"],
+      result: {
+        status: "completed",
+        summary: "The artist approved the career thesis.",
+        userNote: "Approved.",
+        interpretation: "The direction is specific enough.",
+        missionEffect: "Opportunity filtering can begin.",
+        followUp: "Use the thesis in the next checkpoint.",
+      },
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+        openTaskId="task-thesis"
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: /Tasks 0/i })).toBeInTheDocument();
+    const detailsToggle = screen.getByRole("button", { name: /^(Expand|Collapse) Draft the 90-day career thesis$/ });
+    if (detailsToggle.getAttribute("aria-label")?.startsWith("Expand")) fireEvent.click(detailsToggle);
+    expect(await screen.findByText(/Review the proposed thesis/)).toBeInTheDocument();
+    expect(screen.getByText("The artist approved the career thesis.")).toBeInTheDocument();
   });
 
   it("shows a checkpoint-specific Manager read before its artist task is complete", () => {

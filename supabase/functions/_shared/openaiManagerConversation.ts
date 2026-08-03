@@ -98,10 +98,11 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
+  required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
   properties: {
     title: { type: "string" },
     ownerRole: { type: "string" },
+    workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
     primaryCheckpointKey: { type: "string" },
     purpose: { type: "string" },
     steps: stringArraySchema,
@@ -276,7 +277,8 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "Use missionGraphDecisions only when the user is actually creating or changing mission work. Create or update at most one mission per user request: one durable objective, checkpoints as decision questions with rules, and tasks as concrete work that answers those questions.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan.",
-    "Every new task must declare its completion contract: result_note for an observable user-reported outcome, manager_draft when you can produce the substantive artifact in this chat, or evidence only when external proof truly must be uploaded. Never make the user upload a document you can draft with them.",
+    "Every new task must declare workMode: artist_action for work the artist/team performs or reports, or collaborative for work the artist/team and Manager build or approve together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put Manager-only analysis in checkpoint.managerRead. Tasks may be empty when nothing is needed from the artist.",
+    "Every new task must declare its completion contract: result_note for an observable user-reported outcome or manager_draft when you can produce the substantive artifact in this chat. The legacy evidence value is compatibility-only; uploads are optional context and must never gate work.",
     "When taskContext is present, work on that task inside this conversation. Produce a usable draft in responseBody, cover its deliverable requirements, state assumptions, and ask at most one question that materially changes the draft.",
     "If user-controlled context is missing, return at most one context question and no missionGraphDecisions. Include recommendedAnswer and recommendationReason so an inexperienced artist can accept your best judgment or say they are unsure.",
     "Return createdWork only for already-known concrete non-mission artifacts. For mission/task creates and updates, prefer missionGraphDecisions and let the server emit canonical createdWork after persistence. Use proposedActions for internal next steps that the app can later approve or execute.",
@@ -362,9 +364,10 @@ function normalizeMissionGraphDecision(value: unknown): ManagerMissionGraphDecis
   const mission = normalizeMission(decision.mission);
   const checkpoints = Array.isArray(decision.checkpoints) ? decision.checkpoints.map(normalizeCheckpoint).filter(Boolean) as MissionGenesisCheckpoint[] : [];
   const tasks = Array.isArray(decision.tasks) ? decision.tasks.map(normalizeTask).filter(Boolean) as MissionGenesisTask[] : [];
-  if (!mission || !checkpoints.length || !tasks.length) return null;
+  if (!mission || !checkpoints.length) return null;
   const checkpointKeys = new Set(checkpoints.map((checkpoint) => checkpoint.key));
   if (tasks.some((task) => !checkpointKeys.has(task.primaryCheckpointKey))) return null;
+  if (tasks.some((task) => task.workMode === "manager_work" || task.completionMode === "evidence" || (task.completionMode === "manager_draft" && task.workMode !== "collaborative"))) return null;
   return {
     outcome: decision.outcome,
     confidence: ["high", "medium", "low", "limited"].includes(String(decision.confidence)) ? decision.confidence as ManagerMissionGraphDecision["confidence"] : "medium",
@@ -421,6 +424,13 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
   const normalized = {
     title: cleanString(task.title, ""),
     ownerRole: cleanString(task.ownerRole, "Manager"),
+    workMode: ["artist_action", "collaborative", "manager_work"].includes(String(task.workMode))
+      ? task.workMode as MissionGenesisTask["workMode"]
+      : task.completionMode === "manager_draft"
+        ? "collaborative"
+        : cleanString(task.ownerRole, "Manager").trim().toLowerCase() === "manager"
+          ? "manager_work"
+          : "artist_action",
     primaryCheckpointKey: cleanString(task.primaryCheckpointKey, ""),
     purpose: cleanString(task.purpose, ""),
     steps: cleanStringArray(task.steps).slice(0, 6),

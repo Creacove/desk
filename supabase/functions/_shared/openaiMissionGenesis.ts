@@ -41,6 +41,7 @@ export type MissionGenesisCheckpoint = {
 export type MissionGenesisTask = {
   title: string;
   ownerRole: string;
+  workMode: "artist_action" | "collaborative" | "manager_work";
   primaryCheckpointKey: string;
   purpose: string;
   steps: string[];
@@ -213,10 +214,11 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
+          required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
           properties: {
             title: { type: "string" },
             ownerRole: { type: "string" },
+            workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
             primaryCheckpointKey: { type: "string" },
             purpose: { type: "string" },
             steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
@@ -320,10 +322,11 @@ export const missionGenesisJsonSchema = {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["title", "ownerRole", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
+                required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
                 properties: {
                   title: { type: "string" },
                   ownerRole: { type: "string" },
+                  workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
                   primaryCheckpointKey: { type: "string" },
                   purpose: { type: "string" },
                   steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
@@ -389,6 +392,7 @@ const sharedInstructions = [
   "Every task MUST include a 'steps' array with 2–6 plain-language sequential actions. Steps describe exactly what to do — specific enough that someone could execute them without needing a meeting. No vague steps like 'do the research' or 'complete the task'. Good step examples: 'Pull city-level streaming breakdown from Spotify for Artists for the last 90 days', 'Build a creator brief with hook timestamp, posting window, and niche context for each target', 'Draft contract term sheet and send to entertainment attorney for review by [week 2]'.",
   "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: weeks or months based on the actual scope of the work involved.",
   "Every visible task must declare exactly one completionMode: result_note when the user can report an observable outcome or manager_draft when the Manager can prepare the substantive artifact in chat. The legacy evidence value exists for compatibility but must not be generated.",
+  "Every visible task must declare workMode: artist_action when the artist or team performs or reports the work, or collaborative when the artist/team and Manager build or approve it together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put immediate Manager analysis in checkpoint.managerRead instead.",
   "Every task must state completionExpectation, deliverableRequirements, managerResponsibility, and userResponsibility so an independent artist knows what happens next without a meeting.",
   "Ask at most one decision-changing user question at a time. Include a recommendedAnswer and recommendationReason so the user can accept the Manager's judgment or say they are unsure. Do not ask anything already answered by profile, memory, evidence, or prior context answers.",
   "Missing source proof is a limitation, not an upload gate. Use request_evidence only when no responsible recommendation can be made at all; otherwise proceed with a limited or conservative recommendation.",
@@ -404,7 +408,7 @@ const sharedInstructions = [
   "External outreach, spend, publishing, submission, scheduling, release-plan changes, sensitive commitments, and legal/finance/rights conclusions require a permission request.",
   "For no_mission or request_evidence, leave mission text fields empty and return empty checkpoints, tasks, and permissionRequests.",
   "For candidate_needs_context, provide a grounded candidate mission identity and questions, but leave checkpoints, tasks, and permissionRequests empty until the answers are synthesized.",
-  "For activate_mission, return a complete mission with at least one checkpoint and at least one task. The plan must be executable and specific, not advice-shaped prose.",
+  "For activate_mission, return a complete mission with at least one checkpoint. Tasks may be empty when no artist or collaborative action is needed. The plan must be executable and specific, not advice-shaped prose.",
 ];
 
 export function buildMissionGenesisInstructions(mode: MissionGenesisMode) {
@@ -728,8 +732,14 @@ function validateMissionJudgeSurface(
 
 function validateHumanTaskContract(tasks: MissionGenesisTask[], label: string) {
   for (const task of tasks) {
-    if (task.ownerRole.trim().toLowerCase() === "manager") {
+    if (task.workMode === "manager_work") {
       throw new Error(`${label} returned Manager analysis as a visible task; put the result in the checkpoint read.`);
+    }
+    if (task.ownerRole.trim().toLowerCase() === "manager" && task.workMode !== "collaborative") {
+      throw new Error(`${label} returned Manager analysis as a visible task; put the result in the checkpoint read.`);
+    }
+    if (task.completionMode === "manager_draft" && task.workMode !== "collaborative") {
+      throw new Error(`${label} returned a Manager draft without collaborative participation.`);
     }
     if (task.completionMode === "evidence") {
       throw new Error(`${label} returned a required upload even though uploads must remain optional context.`);
@@ -835,6 +845,7 @@ function readTasks(value: unknown): MissionGenesisTask[] {
   return value.filter(isRecord).map((item) => ({
     title: readString(item.title, "tasks.title", true),
     ownerRole: readString(item.ownerRole, "tasks.ownerRole", true),
+    workMode: readOptionalEnum(item.workMode, ["artist_action", "collaborative", "manager_work"], item.completionMode === "manager_draft" ? "collaborative" : "artist_action") as MissionGenesisTask["workMode"],
     primaryCheckpointKey: readString(item.primaryCheckpointKey, "tasks.primaryCheckpointKey", true),
     purpose: readString(item.purpose, "tasks.purpose", true),
     steps: readStringArray(item.steps),

@@ -274,7 +274,7 @@ function MissionRoom({
   const notes = missionNotes(mission);
   const events = missionEvents(mission);
   const activeBlocker = checkpoints.find((checkpoint) => checkpoint.status === "Needs revision");
-  const openTaskCount = tasks.filter((task) => task.result?.status !== "completed").length;
+  const openTaskCount = tasks.filter(isOpenActionableTask).length;
 
   return (
     <section className="app-workspace app-workspace-reveal grid min-w-0 max-w-full gap-4 overflow-x-clip lg:gap-6">
@@ -586,6 +586,7 @@ function TasksPanel({
                       const deliverables = resolveTaskDeliverables(task, taskDeliverables[task.id]);
                       const completionBlocked = task.approvalState === "needs approval" && !approved;
                       const completionMode = resolveTaskCompletionMode(task);
+                      const workMode = resolveTaskWorkMode(task);
                       const managerReviewPending = reviewingTaskIds.includes(task.id);
                       const managerReviewError = taskReviewErrors[task.id];
 
@@ -625,7 +626,11 @@ function TasksPanel({
                             ) : null}
                           </div>
                           <div className="flex min-w-0 flex-col items-start justify-start gap-2 lg:items-end">
-                            {task.approvalState === "needs approval" ? (
+                            {workMode === "manager_work" ? (
+                              <p className="w-full rounded-[10px] border border-foreground/8 bg-foreground/[0.035] px-3 py-2 text-right text-[11px] font-bold text-muted-foreground/85">
+                                Manager working
+                              </p>
+                            ) : task.approvalState === "needs approval" ? (
                               <button
                                 type="button"
                                 onClick={() => {
@@ -640,7 +645,7 @@ function TasksPanel({
                                 Approve
                               </button>
                             ) : null}
-                            {managerReviewPending ? (
+                            {workMode === "manager_work" ? null : managerReviewPending ? (
                               <p role="status" aria-live="polite" className="flex w-full items-center justify-end gap-2 rounded-[10px] border border-brand-accent/25 bg-brand-accent/10 px-3 py-2 text-[11px] font-bold text-foreground">
                                 <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-accent" aria-hidden="true" />
                                 Manager reviewing
@@ -1143,7 +1148,7 @@ function getMissionProgressClass(status: MissionViewModel["status"]) {
 }
 
 function getOpenTaskCount(mission: MissionViewModel) {
-  return missionTasks(mission).filter((task) => task.result?.status !== "completed").length;
+  return missionTasks(mission).filter(isOpenActionableTask).length;
 }
 
 function formatOpenTaskCount(count: number) {
@@ -1151,7 +1156,7 @@ function formatOpenTaskCount(count: number) {
 }
 
 function missionTasks(mission: MissionViewModel): MissionTaskViewModel[] {
-  if (mission.tasks?.length) return mission.tasks;
+  if (mission.tasks !== undefined) return mission.tasks;
   return [
     {
       id: `${mission.id}-next-task`,
@@ -1239,6 +1244,7 @@ function missionEvents(mission: MissionViewModel): MissionEventViewModel[] {
 
 function getTaskStatusLabel(task: MissionTaskViewModel, approved: boolean, done: boolean) {
   if (done) return "Done";
+  if (resolveTaskWorkMode(task) === "manager_work") return "Manager working";
   if (task.result?.status === "blocked" || task.approvalState === "blocked") return "Blocked";
   if (approved) return "Approved";
   if (task.approvalState === "not_required") return "No approval needed";
@@ -1332,6 +1338,16 @@ function checkpointStatusClass(status: MissionCheckpointViewModel["status"]) {
 function checkpointHasManagerRead(checkpoint: MissionCheckpointViewModel) {
   const read = checkpoint.managerRead.trim();
   return Boolean(read) && read !== "No recommendation.";
+}
+
+function resolveTaskWorkMode(task: MissionTaskViewModel): NonNullable<MissionTaskViewModel["workMode"]> {
+  if (task.workMode) return task.workMode;
+  if (task.completionMode === "manager_draft") return "collaborative";
+  return task.owner.trim().toLowerCase() === "manager" ? "manager_work" : "artist_action";
+}
+
+function isOpenActionableTask(task: MissionTaskViewModel) {
+  return resolveTaskWorkMode(task) !== "manager_work" && task.result?.status !== "completed";
 }
 
 function getCheckpointPrimary(checkpoint: MissionCheckpointViewModel) {

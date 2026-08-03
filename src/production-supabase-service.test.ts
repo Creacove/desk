@@ -2574,7 +2574,7 @@ describe("production Supabase services", () => {
     expect(checkpoint).not.toHaveProperty("resultSummary");
   });
 
-  it("projects exact Manager tasks as internal work without hiding mixed team ownership", async () => {
+  it("projects every Manager task and classifies participation without hiding collaborative work", async () => {
     const baseTables = {
       missions: [{
         id: "mission-legacy-manager-work",
@@ -2606,6 +2606,8 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-legacy-manager-work",
           title: "Review discovery and attachment evidence",
           owner_role: "Manager",
+          work_mode: "manager_work",
+          completion_mode: "evidence",
           status: "proposed",
           approval_state: "not_required",
         },
@@ -2615,6 +2617,7 @@ describe("production Supabase services", () => {
           primary_checkpoint_id: "checkpoint-legacy-manager-work",
           title: "Approve the campaign angle",
           owner_role: "Manager / Marketing",
+          work_mode: "collaborative",
           status: "proposed",
           approval_state: "not_required",
         },
@@ -2623,7 +2626,11 @@ describe("production Supabase services", () => {
 
     const [mission] = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
 
-    expect(mission.tasks?.map((task) => task.id)).toEqual(["task-team-action"]);
+    expect(mission.tasks?.map((task) => task.id)).toEqual(["task-manager-analysis", "task-team-action"]);
+    expect(mission.tasks?.map((task) => [task.id, task.workMode])).toEqual([
+      ["task-manager-analysis", "manager_work"],
+      ["task-team-action", "collaborative"],
+    ]);
     expect(mission.nextTask).toBe("Approve the campaign angle");
     expect(mission.checkpoints?.[0]).toMatchObject({
       status: "Waiting on tasks",
@@ -2639,18 +2646,74 @@ describe("production Supabase services", () => {
         primary_checkpoint_id: "checkpoint-legacy-manager-work",
         title: "Review discovery and attachment evidence",
         owner_role: " Manager ",
+        work_mode: "manager_work",
+        completion_mode: "evidence",
         status: "proposed",
         approval_state: "not_required",
       }],
     });
     const [managerOnlyMission] = await createSupabaseProductionRepositories(managerOnlyClient, workspace).missions.loadMissions();
 
-    expect(managerOnlyMission.tasks).toEqual([]);
+    expect(managerOnlyMission.tasks).toEqual([
+      expect.objectContaining({ id: "task-manager-analysis", workMode: "manager_work" }),
+    ]);
     expect(managerOnlyMission.checkpoints?.[0]).toMatchObject({
       status: "Watching signal",
       requiredTaskIds: [],
       nextAction: "Nothing needed from you. The Manager is watching the checkpoint signals.",
     });
+  });
+
+  it("infers legacy Manager drafts as collaborative and preserves their completed history", async () => {
+    const client = fakeSupabaseClient({
+      missions: [{
+        id: "mission-legacy-draft",
+        title: "Define the artist position",
+        status: "active",
+        summary: "Build the position with the Manager.",
+        current_recommendation: "Use the approved position.",
+        progress: 35,
+      }],
+      checkpoints: [{
+        id: "checkpoint-legacy-draft",
+        mission_id: "mission-legacy-draft",
+        title: "Career thesis guides choices",
+        question: "Is the thesis specific enough?",
+        status: "ready_for_manager_check",
+        recommendation: "The thesis is ready for the next decision.",
+      }],
+      tasks: [{
+        id: "task-legacy-draft",
+        mission_id: "mission-legacy-draft",
+        primary_checkpoint_id: "checkpoint-legacy-draft",
+        title: "Draft the 90-day career thesis",
+        owner_role: "Manager",
+        completion_mode: "manager_draft",
+        status: "completed",
+        user_responsibility: "Approve, correct, or reject the proposed direction.",
+        approval_state: "not_required",
+      }],
+      task_steps: [{ task_id: "task-legacy-draft", body: "Review the proposed thesis.", order_index: 1 }],
+      task_results: [{
+        task_id: "task-legacy-draft",
+        status: "completed",
+        summary: "The artist approved the thesis.",
+      }],
+      operating_events: [],
+      memory_entries: [],
+    });
+
+    const [mission] = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+
+    expect(mission.tasks).toEqual([
+      expect.objectContaining({
+        id: "task-legacy-draft",
+        workMode: "collaborative",
+        steps: ["Review the proposed thesis."],
+        result: expect.objectContaining({ status: "completed", summary: "The artist approved the thesis." }),
+      }),
+    ]);
+    expect(mission.checkpoints?.[0].requiredTaskIds).toEqual(["task-legacy-draft"]);
   });
 
   it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {

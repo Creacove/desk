@@ -39,6 +39,12 @@ const autonomousCheckpointMigrationPath = join(
 const autonomousCheckpointMigration = existsSync(autonomousCheckpointMigrationPath)
   ? readFileSync(autonomousCheckpointMigrationPath, "utf8")
   : "";
+const taskWorkModeMigrationPath = join(
+  process.cwd(), "supabase", "migrations", "20260803000200_task_work_modes.sql",
+);
+const taskWorkModeMigration = existsSync(taskWorkModeMigrationPath)
+  ? readFileSync(taskWorkModeMigrationPath, "utf8")
+  : "";
 const serviceRoleGrantMigrationPath = join(
   process.cwd(),
   "supabase",
@@ -126,6 +132,7 @@ function activeOutput() {
       {
         title: "Report the London listening-session response for After Midnight",
         ownerRole: "Artist / team",
+        workMode: "artist_action",
         primaryCheckpointKey: "london_return_signal",
         purpose: "Give the Manager an observable London response that is not already available in the packet.",
         steps: [
@@ -335,13 +342,26 @@ describe("OpenAI Mission Genesis", () => {
   it("persists checkpoint-specific reads and starts no-task checkpoints in watching state", () => {
     expect(graphPersistenceSource).toContain("recommendation: checkpoint.managerRead");
     expect(graphPersistenceSource).toContain("next_action: checkpoint.nextAction");
-    expect(graphPersistenceSource).toContain('status: hasArtistTask ? "waiting" : "watching_signal"');
+    expect(graphPersistenceSource).toContain('status: hasBlockingTask ? "waiting" : "watching_signal"');
 
     expect(existsSync(autonomousCheckpointMigrationPath)).toBe(true);
     expect(autonomousCheckpointMigration).toContain("create or replace function public._apply_mission_genesis_graph_v2");
     expect(autonomousCheckpointMigration).toContain("checkpoint ->> 'managerRead'");
     expect(autonomousCheckpointMigration).toContain("checkpoint ->> 'nextAction'");
     expect(autonomousCheckpointMigration).toContain("'watching_signal'");
+  });
+
+  it("persists task participation modes and derives checkpoint waiting state from blocking work", () => {
+    expect(graphPersistenceSource).toContain("work_mode: task.workMode");
+    expect(graphPersistenceSource).toContain('task.workMode !== "manager_work"');
+    expect(graphPersistenceSource).not.toContain('task.ownerRole.trim().toLowerCase() !== "manager"');
+
+    expect(existsSync(taskWorkModeMigrationPath)).toBe(true);
+    expect(taskWorkModeMigration).toContain("add column if not exists work_mode text");
+    expect(taskWorkModeMigration).toContain("tasks_work_mode_check");
+    expect(taskWorkModeMigration).toContain("'artist_action', 'collaborative', 'manager_work'");
+    expect(taskWorkModeMigration).toContain("completion_mode = 'manager_draft'");
+    expect(taskWorkModeMigration).toContain("new.work_mode <> 'manager_work'");
   });
 
   it("loads the latest Manager Intelligence packet as the strategic source for mission generation", () => {
@@ -369,6 +389,7 @@ describe("OpenAI Mission Genesis", () => {
 
   it("keeps Mission Genesis edge packets bounded instead of duplicating raw intelligence payloads", () => {
     expect(functionSource).toContain("MISSION_GENESIS_PACKET_LIMITS");
+    expect(functionSource).toContain("owner_role,work_mode,status");
     expect(functionSource).toContain("evidence: 36");
     expect(functionSource).toContain("musicItems: 24");
     expect(functionSource).toContain("tasks: 24");
@@ -432,6 +453,10 @@ describe("OpenAI Mission Genesis", () => {
     const parsed = parseMissionGenesisOutput(activeOutput(), packet, "initial");
     expect(parsed.mission.title).toContain("After Midnight");
     expect(parsed.tasks[0].primaryCheckpointKey).toBe("london_return_signal");
+    expect(parsed.tasks[0].workMode).toBe("artist_action");
+    const prompt = buildMissionGenesisInstructions("initial");
+    expect(prompt).toContain("workMode");
+    expect(prompt).not.toContain("at least one checkpoint and at least one task");
   });
 
   it("accepts a useful checkpoint with a Manager read and no artist task", () => {

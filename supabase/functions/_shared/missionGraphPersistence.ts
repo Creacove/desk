@@ -202,8 +202,8 @@ async function writeMissionPlan(
 
   const checkpointIds = new Map<string, string>();
   for (const [index, checkpoint] of decision.checkpoints.entries()) {
-    const hasArtistTask = decision.tasks.some((task) =>
-      task.primaryCheckpointKey === checkpoint.key && task.ownerRole.trim().toLowerCase() !== "manager"
+    const hasBlockingTask = decision.tasks.some((task) =>
+      task.primaryCheckpointKey === checkpoint.key && task.workMode !== "manager_work"
     );
     const { data, error } = await db.from("checkpoints").insert({
       account_id: input.accountId,
@@ -212,7 +212,7 @@ async function writeMissionPlan(
       mission_id: missionId,
       mission_plan_version_id: plan.id,
       title: checkpoint.title,
-      status: hasArtistTask ? "waiting" : "watching_signal",
+      status: hasBlockingTask ? "waiting" : "watching_signal",
       question: checkpoint.question,
       reason_for_checkpoint: checkpoint.question,
       watched_signals: checkpoint.sourceRefs,
@@ -255,6 +255,7 @@ async function writeMissionPlan(
       primary_checkpoint_id: checkpointId,
       title: task.title,
       owner_role: task.ownerRole || "Manager",
+      work_mode: task.workMode,
       priority: 1,
       status: "proposed",
       approval_state: "not_required",

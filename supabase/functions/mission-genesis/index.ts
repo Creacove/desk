@@ -411,7 +411,7 @@ async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,created_at", input, MISSION_GENESIS_PACKET_LIMITS.memory),
     selectMany(db, "agent_reports", "id,agent_key,mission_id,mission_pattern_key,summary,confidence,limitations,finding,evidence_missing,risk_or_opportunity,recommended_internal_action,permission_required,suggested_follow_up,created_at", input, MISSION_GENESIS_PACKET_LIMITS.agentReports),
     selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at", input, MISSION_GENESIS_PACKET_LIMITS.missions),
-    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, MISSION_GENESIS_PACKET_LIMITS.tasks),
+    selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, MISSION_GENESIS_PACKET_LIMITS.tasks),
     selectMany(db, "source_connections", "id,provider_id,handle_or_external_ref,status,last_sync_at,next_sync_at,freshness_target,limitations,created_at", input, MISSION_GENESIS_PACKET_LIMITS.sources),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,asset_reads_json,market_reads_json,domain_reads_json,public_context_json,open_decisions_json,do_not_do_json,mission_seed_json,created_at", input, 1),
   ]);

@@ -101,7 +101,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
 
   const { data: task, error: taskError } = await db
     .from("tasks")
-    .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+    .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
     .eq("id", input.taskId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -113,7 +113,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
-    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
+    selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
     selectMany(db, "task_steps", "id,task_id,order_index,body", input, 160),
     selectMany(db, "task_results", "id,task_id,mission_id,checkpoint_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up,created_at", input, 80),
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,mission_id,task_id,checkpoint_id,created_at", input, 120),
@@ -458,7 +458,7 @@ function resolveCheckpointStatus(
   if (!checkpointId) return modelStatus;
 
   const checkpointTasks = Array.isArray(context.missionTasks)
-    ? context.missionTasks.filter((task: any) => task.primary_checkpoint_id === checkpointId && !isInternalManagerTask(task))
+    ? context.missionTasks.filter((task: any) => task.primary_checkpoint_id === checkpointId && isBlockingMissionTask(task))
     : [];
   const allCheckpointTasksCompleted = checkpointTasks.length === 0 || checkpointTasks.every((task: any) =>
     task.id === taskId || task.status === "completed",
@@ -621,8 +621,14 @@ async function loadSubmittedDocuments(db: any, input: ReviewInput) {
   });
 }
 
-function isInternalManagerTask(task: Record<string, unknown>) {
-  return typeof task.owner_role === "string" && task.owner_role.trim().toLowerCase() === "manager";
+function isBlockingMissionTask(task: Record<string, unknown>) {
+  if (task.work_mode === "manager_work") return false;
+  if (task.work_mode === "artist_action" || task.work_mode === "collaborative") return true;
+  if (task.completion_mode === "manager_draft") return true;
+  const owner = typeof task.owner_role === "string" ? task.owner_role.trim().toLowerCase() : "";
+  const userResponsibility = typeof task.user_responsibility === "string" ? task.user_responsibility.trim() : "";
+  const hasUserParticipation = Boolean(userResponsibility) && !/^(none|n\/?a|nothing(?: needed|required)?\.?|not required)$/i.test(userResponsibility);
+  return owner !== "manager" || hasUserParticipation;
 }
 
 async function selectMany(db: any, table: string, columns: string, input: ReviewInput, limit: number) {

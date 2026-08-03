@@ -197,6 +197,8 @@ export type MissionTaskDraftViewModel = {
   createdAt?: string;
 };
 
+export type MissionTaskWorkMode = "artist_action" | "collaborative" | "manager_work";
+
 export type MissionTaskViewModel = {
   id: string;
   checkpointId: string;
@@ -208,6 +210,7 @@ export type MissionTaskViewModel = {
   steps: string[];
   evidenceIds: string[];
   deliverables?: MissionTaskDeliverableViewModel[];
+  workMode?: MissionTaskWorkMode;
   completionMode?: "result_note" | "manager_draft" | "evidence";
   completionExpectation?: string;
   deliverableTitle?: string;

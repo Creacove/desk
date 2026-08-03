@@ -90,7 +90,7 @@ async function queryActiveMissions(db: SupabaseLike, input: ManagerToolInput, ar
   const includeTasks = Boolean(args.includeTasks);
   const includeCheckpoints = Boolean(args.includeCheckpoints);
   const [tasks, checkpoints] = await Promise.all([
-    includeTasks && missionIds.length ? selectMissionChildren(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, missionIds) : Promise.resolve([]),
+    includeTasks && missionIds.length ? selectMissionChildren(db, "tasks", "id,mission_id,primary_checkpoint_id,title,owner_role,work_mode,status,purpose,evidence_needed,completion_expectation,risk_if_late", input, missionIds) : Promise.resolve([]),
     includeCheckpoints && missionIds.length ? selectMissionChildren(db, "checkpoints", "id,mission_id,title,question,status,recommendation,decision_rule,next_action,required_evidence,missing_evidence", input, missionIds) : Promise.resolve([]),
   ]);
   return {

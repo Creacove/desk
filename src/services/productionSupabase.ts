@@ -2102,7 +2102,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: true }),
           ownerFilters(client
             .from("tasks")
-            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
           )
             .eq("mission_id", missionId)
             .order("created_at", { ascending: true }),
@@ -2188,7 +2188,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: true }),
           client
             .from("tasks")
-            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: true }),
           client
@@ -2646,6 +2646,7 @@ type TaskRow = {
   title: string;
   status: string;
   owner_role?: string | null;
+  work_mode?: MissionTaskViewModel["workMode"] | null;
   purpose?: string | null;
   deadline?: string | null;
   priority?: number | null;
@@ -5390,8 +5391,19 @@ function mapTaskApprovalState(state: string | null | undefined): MissionTaskView
   return "not_required";
 }
 
-function isInternalManagerTask(task: Pick<TaskRow, "owner_role">) {
-  return task.owner_role?.trim().toLowerCase() === "manager";
+function resolveTaskWorkMode(task: Pick<TaskRow, "work_mode" | "owner_role" | "completion_mode" | "user_responsibility">): NonNullable<MissionTaskViewModel["workMode"]> {
+  if (task.work_mode === "artist_action" || task.work_mode === "collaborative" || task.work_mode === "manager_work") return task.work_mode;
+  if (task.completion_mode === "manager_draft") return "collaborative";
+  const exactManagerOwner = task.owner_role?.trim().toLowerCase() === "manager";
+  const userResponsibility = task.user_responsibility?.trim() ?? "";
+  const hasUserParticipation = Boolean(userResponsibility) && !/^(none|n\/?a|nothing(?: needed|required)?\.?|not required)$/i.test(userResponsibility);
+  if (exactManagerOwner && hasUserParticipation) return "collaborative";
+  if (exactManagerOwner) return "manager_work";
+  return "artist_action";
+}
+
+function isBlockingTask(task: Pick<TaskRow, "work_mode" | "owner_role" | "completion_mode" | "user_responsibility">) {
+  return resolveTaskWorkMode(task) !== "manager_work";
 }
 
 function missionFromRow(
@@ -5405,10 +5417,10 @@ function missionFromRow(
   operatingEvents: any[] = [],
   memoryEntries: any[] = [],
 ): MissionViewModel {
-  const artistTaskRows = tasks.filter((task) => !isInternalManagerTask(task));
-  const nextTask = artistTaskRows.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
+  const blockingTaskRows = tasks.filter(isBlockingTask);
+  const nextTask = blockingTaskRows.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
 
-  const mappedTasks: MissionTaskViewModel[] = artistTaskRows.map((task) => {
+  const mappedTasks: MissionTaskViewModel[] = tasks.map((task) => {
     const taskSteps = steps
       .filter((step) => step.task_id === task.id)
       .map((step) => step.body);
@@ -5436,6 +5448,7 @@ function missionFromRow(
       steps: taskSteps,
       evidenceIds: task.evidence_needed ?? [],
       deliverables: deliverablesByTask.get(task.id),
+      workMode: resolveTaskWorkMode(task),
       completionMode: task.completion_mode ?? undefined,
       completionExpectation: task.completion_expectation ?? undefined,
       deliverableTitle: task.deliverable_title ?? undefined,
@@ -5451,10 +5464,10 @@ function missionFromRow(
 
   const mappedCheckpoints: MissionCheckpointViewModel[] = checkpoints.map((checkpoint, index) => {
     const checkpointTasks = mappedTasks.filter((task) => task.checkpointId === checkpoint.id);
-    const requiredTaskIds = checkpointTasks.map((task) => task.id);
+    const requiredTaskIds = checkpointTasks.filter((task) => task.workMode !== "manager_work").map((task) => task.id);
     const persistedStatus = mapCheckpointStatus(checkpoint.status);
     const hasManagerRead = Boolean(checkpoint.recommendation?.trim()) && checkpoint.recommendation !== "No recommendation.";
-    const projectedStatus = persistedStatus === "Waiting on tasks" && checkpointTasks.length === 0 && hasManagerRead
+    const projectedStatus = persistedStatus === "Waiting on tasks" && requiredTaskIds.length === 0 && hasManagerRead
       ? "Watching signal"
       : persistedStatus;
 
@@ -5477,7 +5490,7 @@ function missionFromRow(
       recommendation: checkpoint.recommendation ?? "No recommendation.",
       rationale: checkpoint.reason_for_checkpoint ?? checkpoint.question,
       managerRead: checkpoint.recommendation ?? "No recommendation.",
-      nextAction: checkpoint.next_action ?? (checkpointTasks.length
+      nextAction: checkpoint.next_action ?? (requiredTaskIds.length
         ? "Complete tasks under this checkpoint."
         : "Nothing needed from you. The Manager is watching the checkpoint signals."),
     };
@@ -5505,7 +5518,7 @@ function missionFromRow(
     id: row.id,
     title: row.title,
     status: row.status ?? "active",
-    progress: row.progress ?? deriveMissionProgress(artistTaskRows),
+    progress: row.progress ?? deriveMissionProgress(blockingTaskRows),
     review: row.review_point ?? mappedCheckpoints[0]?.title ?? "No review has run yet.",
     summary: row.summary ?? "No mission summary has been generated yet.",
     recommendation: row.current_recommendation ?? "No current recommendation.",

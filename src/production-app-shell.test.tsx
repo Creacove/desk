@@ -4913,7 +4913,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Release Night Bus on June 12" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
     expect(screen.getAllByText("Tasks under this checkpoint").length).toBeGreaterThan(0);
-    expect(screen.getByText("Confirm split sheet")).toBeInTheDocument();
+    expect(await screen.findByText("Confirm split sheet")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
     expect(screen.getByTestId("checkpoint-accordion")).toBeInTheDocument();
     expect(screen.queryByTestId("checkpoint-inspector")).not.toBeInTheDocument();
@@ -5098,7 +5098,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     const missionCard = screen.getAllByRole("button", { name: /Define the first repeatable release lane/i })[0];
 
-    expect(within(missionCard).getByText("2 open tasks")).toBeInTheDocument();
+    expect(within(missionCard).getByText("1 open task")).toBeInTheDocument();
     expect(within(missionCard).getByText("35%")).toBeInTheDocument();
     expect(within(missionCard).queryByText("Checkpoints")).not.toBeInTheDocument();
     expect(within(missionCard).queryByText("Handoffs")).not.toBeInTheDocument();

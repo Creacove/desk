@@ -158,7 +158,7 @@ function compactTask(value: unknown) {
   const row = record(value);
   return {
     id: compactText(row.id, 120), missionId: compactText(row.mission_id ?? row.missionId, 120), title: compactText(row.title, 240),
-    ownerRole: compactText(row.owner_role ?? row.ownerRole, 120), status: compactText(row.status, 120), purpose: compactText(row.purpose, 1_000),
+    ownerRole: compactText(row.owner_role ?? row.ownerRole, 120), workMode: compactText(row.work_mode ?? row.workMode, 120), status: compactText(row.status, 120), purpose: compactText(row.purpose, 1_000),
     evidenceNeeded: compactStringList(row.evidence_needed ?? row.evidenceNeeded, 8, 400), completionExpectation: compactText(row.completion_expectation ?? row.completionExpectation, 700),
     completionMode: compactText(row.completion_mode ?? row.completionMode, 120), deliverableTitle: compactText(row.deliverable_title ?? row.deliverableTitle, 240),
     deliverableRequirements: compactStringList(row.deliverable_requirements ?? row.deliverableRequirements, 8, 400),
