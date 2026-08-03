@@ -33,19 +33,24 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain('output_type: "review_read"');
   });
 
-  it("loads submitted task documents before asking the Manager to review completion", () => {
+  it("uses submitted task documents as optional review context without gating completion", () => {
     expect(functionSource).toContain("documentIds?: string[]");
     expect(functionSource).toContain('"documents"');
     expect(functionSource).toContain('"document_versions"');
     expect(functionSource).toContain('"artifact_links"');
     expect(functionSource).toContain("submittedDocuments");
-    expect(functionSource).toContain("missingRequiredDeliverable");
+    expect(functionSource).toContain("Optional documents can raise confidence");
+    expect(functionSource).toContain("submittedDocumentsAreOptionalContext: true");
+    expect(functionSource).not.toContain("This task requires a submitted document");
+    expect(functionSource).not.toContain("requiredTaskDeliverablesMustBeSubmittedBeforeCompletion: true");
   });
 
   it("publishes a task review as live mission activity and preserves the Manager's valid checkpoint decision", () => {
     expect(functionSource).toContain('display_mode: "activity"');
     expect(functionSource).toContain('refresh_scope: ["missions", "activity"]');
     expect(functionSource).toContain("resolveCheckpointStatus");
+    expect(functionSource).toContain("isInternalManagerTask");
+    expect(functionSource).toContain("!isInternalManagerTask(task)");
     expect(functionSource).toContain("allCheckpointTasksCompleted");
     expect(functionSource).toContain('if (modelStatus === "met" && !allCheckpointTasksCompleted) return "ready_for_manager_check";');
     expect(functionSource).toContain("return modelStatus;");

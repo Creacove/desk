@@ -123,10 +123,6 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     loadSubmittedManagerDraft(db, input),
   ]);
 
-  const missingRequiredDeliverable = input.status === "completed" && taskRequiresDocument(task, taskSteps) && submittedDocuments.length === 0;
-  if (missingRequiredDeliverable) {
-    throw new Error("This task requires a submitted document before it can be marked complete.");
-  }
   if (input.status === "completed" && task.completion_mode === "manager_draft" && !submittedManagerDraft) {
     throw new Error("This task needs a Manager draft before it can be submitted for review.");
   }
@@ -151,13 +147,12 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     latestManagerIntelligencePacket: managerPackets[0] ?? null,
     submittedDocuments,
     submittedManagerDraft,
-    missingRequiredDeliverable,
     policy: {
       internalWorkspaceUpdatesAllowed: true,
       externalExpensiveLegalFinancialPublicActionsRequirePermission: true,
       reviewMustUpdateMissionState: true,
       memoryAfterMeaningfulResult: true,
-      requiredTaskDeliverablesMustBeSubmittedBeforeCompletion: true,
+      submittedDocumentsAreOptionalContext: true,
     },
   };
 }
@@ -172,7 +167,7 @@ async function callOpenAIManagerReview(context: unknown) {
       instructions: [
         "You are the AI Manager reviewing a completed or blocked mission task result.",
         "Decide what the task result means for the checkpoint and mission. Update internal workspace state only; permission-required external actions must be returned as permissionRequests.",
-        "When submittedDocuments are present, treat them as the user's task deliverables. If a required deliverable is missing, do not mark the checkpoint or mission complete.",
+        "Optional documents can raise confidence when present. Their absence must not prevent task completion; state the evidence limit and choose a safe recommendation from the available packet.",
         "When submittedManagerDraft is present, review that exact immutable version against every deliverableRequirement and completionExpectation.",
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
@@ -463,9 +458,9 @@ function resolveCheckpointStatus(
   if (!checkpointId) return modelStatus;
 
   const checkpointTasks = Array.isArray(context.missionTasks)
-    ? context.missionTasks.filter((task: any) => task.primary_checkpoint_id === checkpointId)
+    ? context.missionTasks.filter((task: any) => task.primary_checkpoint_id === checkpointId && !isInternalManagerTask(task))
     : [];
-  const allCheckpointTasksCompleted = checkpointTasks.length > 0 && checkpointTasks.every((task: any) =>
+  const allCheckpointTasksCompleted = checkpointTasks.length === 0 || checkpointTasks.every((task: any) =>
     task.id === taskId || task.status === "completed",
   );
   if (modelStatus === "met" && !allCheckpointTasksCompleted) return "ready_for_manager_check";
@@ -626,17 +621,8 @@ async function loadSubmittedDocuments(db: any, input: ReviewInput) {
   });
 }
 
-function taskRequiresDocument(task: Record<string, unknown>, steps: Array<Record<string, unknown>>) {
-  if (typeof task.completion_mode === "string") return task.completion_mode === "evidence";
-  const text = [
-    task.title,
-    task.purpose,
-    task.completion_expectation,
-    task.risk_if_late,
-    ...(Array.isArray(task.evidence_needed) ? task.evidence_needed : []),
-    ...steps.filter((step) => step.task_id === task.id).map((step) => step.body),
-  ].filter((item): item is string => typeof item === "string").join(" ");
-  return /\b(thesis|document|copy|sign[- ]?off|approval|written|split sheet|report|epk|pitch|confirmation|memo|brief)\b/i.test(text);
+function isInternalManagerTask(task: Record<string, unknown>) {
+  return typeof task.owner_role === "string" && task.owner_role.trim().toLowerCase() === "manager";
 }
 
 async function selectMany(db: any, table: string, columns: string, input: ReviewInput, limit: number) {
