@@ -173,6 +173,67 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("heading", { name: "Manager Basics" })).not.toBeInTheDocument();
   });
 
+  it("refreshes persisted setup progress and opens Desk HQ when background discovery completes", async () => {
+    vi.useFakeTimers();
+    const runningSetupWorkspace = {
+      ...workspace,
+      status: "active",
+      contextComplete: true,
+      entitlementActive: true,
+      subscriptionStatus: "active",
+      setupStatus: "running",
+      setupStage: "manager_discovery",
+      billingCheckoutSessionId: "checkout-beta-1",
+    } satisfies ProductionWorkspace;
+    const writingBriefWorkspace = {
+      ...runningSetupWorkspace,
+      setupStage: "setup_brief" as const,
+      setupStageStatus: {
+        manager_discovery: { status: "completed" },
+        setup_brief: { status: "running" },
+      },
+    };
+    const completedSetupWorkspace = {
+      ...writingBriefWorkspace,
+      setupStatus: "completed" as const,
+      setupStage: "music_reads" as const,
+      setupStageStatus: {
+        ...writingBriefWorkspace.setupStageStatus,
+        setup_brief: { status: "completed" as const },
+        music_reads: { status: "completed" as const },
+      },
+    };
+    const loadActiveWorkspace = vi.fn()
+      .mockResolvedValueOnce(runningSetupWorkspace)
+      .mockResolvedValueOnce(writingBriefWorkspace)
+      .mockResolvedValue(completedSetupWorkspace);
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={{ loadActiveWorkspace }}
+        repositories={repositoriesFor("Nova Vale")}
+        initialView="labelHQ"
+      />,
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(screen.getByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Writing your first Manager brief");
+    expect(loadActiveWorkspace).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(screen.getByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    expect(loadActiveWorkspace).toHaveBeenCalledTimes(3);
+  });
+
   it("does not turn discovery history into a browser-side setup workflow", () => {
     const source = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
     expect(source).not.toContain("shouldPollManagerDiscoveryEvents");
@@ -853,7 +914,7 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Preparing your workspace" });
     expect(contextualizeCalls).toBe(1);
-    expect(workspaceLoads).toBe(2);
+    expect(workspaceLoads).toBe(3);
     expect(screen.queryByRole("button", { name: "Retry setup" })).not.toBeInTheDocument();
   }, 20000);
 
@@ -906,7 +967,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
     expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(contextualizeCalls).toBe(1);
-    expect(workspaceLoads).toBe(2);
+    expect(workspaceLoads).toBe(3);
     expect(screen.queryByRole("button", { name: "Retry setup" })).not.toBeInTheDocument();
   }, 20000);
 

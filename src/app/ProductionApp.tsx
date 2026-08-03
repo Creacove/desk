@@ -387,6 +387,49 @@ export function ProductionApp({
     };
   }, [runtime.workspaceLoader, sessionUser, workspace, activeWorkspaceId, activeCatalogSyncStatus]);
 
+  useEffect(() => {
+    if (
+      !sessionUser ||
+      !workspace?.artistWorkspaceId ||
+      !workspace.contextComplete ||
+      !workspace.billingCheckoutSessionId ||
+      !["queued", "running"].includes(workspace.setupStatus ?? "")
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const targetWorkspaceId = workspace.artistWorkspaceId;
+    const fallback = createActiveRunFallback({
+      delaysMs: [3_000, 5_000, 8_000, 15_000, 30_000],
+      deadlineMs: 10 * 60_000,
+      isVisible: () => document.visibilityState !== "hidden",
+      isOnline: () => navigator.onLine !== false,
+      check: async () => {
+        const refreshed = await runtime.workspaceLoader.loadActiveWorkspace(sessionUser);
+        if (!refreshed || refreshed.artistWorkspaceId !== targetWorkspaceId) return "active";
+        if (!cancelled) setWorkspace(refreshed);
+        return refreshed.setupStatus === "completed" || refreshed.setupStatus === "failed" ? "terminal" : "active";
+      },
+      onTerminal: () => undefined,
+      onError: () => {
+        // Keep the setup activity visible and retry with bounded backoff.
+      },
+    });
+    const resume = () => fallback.resume();
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    fallback.start();
+    fallback.resume();
+
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+      fallback.stop();
+    };
+  }, [runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.billingCheckoutSessionId, workspace?.contextComplete, workspace?.setupStatus]);
+
   if (typeof window !== "undefined" && window.location.pathname === "/update-password") {
     return <UpdatePasswordScreen authAdapter={runtime.authAdapter} onComplete={() => { window.history.replaceState({}, "", "/"); void loadProductionState(); }} />;
   }
@@ -679,6 +722,17 @@ function CleanProductionWorkspace({
   }, [analyticsUser, onWorkspaceChange, view, workspace, workspaceLoader]);
 
   useEffect(() => {
+    if (
+      view === "setup" &&
+      workspace?.billingCheckoutSessionId &&
+      workspace.setupStatus === "completed" &&
+      isWorkspaceReadyForDesk(workspace)
+    ) {
+      setView("labelHQ");
+    }
+  }, [view, workspace?.contextComplete, workspace?.entitlementActive, workspace?.billingCheckoutSessionId, workspace?.setupStatus]);
+
+  useEffect(() => {
     let isMounted = true;
     evidenceLoaded.current = false;
     evidenceLoadInFlight.current = false;
@@ -731,7 +785,7 @@ function CleanProductionWorkspace({
       isMounted = false;
       resourceRequests.clearWorkspace(resourceWorkspaceId);
     };
-  }, [repositories, resourceRequests, resourceWorkspaceId]);
+  }, [repositories, resourceRequests, resourceWorkspaceId, workspace?.setupStatus]);
 
   useEffect(() => {
     if (view !== "managerOffice" || conversationListLoaded.current) return;
