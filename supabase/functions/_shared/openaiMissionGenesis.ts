@@ -31,6 +31,8 @@ export type MissionGenesisCheckpoint = {
   title: string;
   question: string;
   decisionRule: string;
+  managerRead: string;
+  nextAction: string;
   requiredEvidence: string[];
   missingEvidence: string[];
   sourceRefs: string[];
@@ -191,12 +193,14 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["key", "title", "question", "decisionRule", "requiredEvidence", "missingEvidence", "sourceRefs"],
+          required: ["key", "title", "question", "decisionRule", "managerRead", "nextAction", "requiredEvidence", "missingEvidence", "sourceRefs"],
           properties: {
             key: { type: "string" },
             title: { type: "string" },
             question: { type: "string" },
             decisionRule: { type: "string" },
+            managerRead: { type: "string" },
+            nextAction: { type: "string" },
             requiredEvidence: stringArraySchema,
             missingEvidence: stringArraySchema,
             sourceRefs: stringArraySchema,
@@ -296,12 +300,14 @@ export const missionGenesisJsonSchema = {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["key", "title", "question", "decisionRule", "requiredEvidence", "missingEvidence", "sourceRefs"],
+                required: ["key", "title", "question", "decisionRule", "managerRead", "nextAction", "requiredEvidence", "missingEvidence", "sourceRefs"],
                 properties: {
                   key: { type: "string" },
                   title: { type: "string" },
                   question: { type: "string" },
                   decisionRule: { type: "string" },
+                  managerRead: { type: "string" },
+                  nextAction: { type: "string" },
                   requiredEvidence: stringArraySchema,
                   missingEvidence: stringArraySchema,
                   sourceRefs: stringArraySchema,
@@ -374,15 +380,19 @@ const sharedInstructions = [
   "Use concrete artist anchors in every field: saved record/project titles, home market, current goal, streaming metrics, budget boundary, team capacity, named agent reports, constraints, or prior decisions from memory.",
   "Timeline must reflect the true scope of work. Use weeks or months for most tasks. A three-month market expansion is three months. A DSP pitch cycle is 6–8 weeks. A brand partnership is 2–4 months of outreach and negotiation. A release campaign is 8–12 weeks of coordinated work. Hardcoding '7 days' for every task is WRONG.",
   "Every sourceRefs value must be an exact id present in the packet. Never invent an id. User intent and preferences are context, not third-party factual proof.",
-  "A mission is a durable objective requiring coordinated work and review, not a to-do list. A task is an action that produces evidence for one checkpoint. A checkpoint is a decision question with a binary pass/fail rule, not a renamed task grouping.",
+  "A mission is a durable objective requiring coordinated work and review, not a to-do list. A visible task exists only when the artist or team must decide, approve, perform an external action, or report an offline outcome. A checkpoint is a decision question with a binary pass/fail rule, not a renamed task grouping.",
+  "Research, comparison, synthesis, monitoring, and recommendations are Manager work: put the result in checkpoint.managerRead and do not create a task.",
+  "A mission may contain zero tasks when the packet already supports the Manager read and nothing is needed from the artist. Every active mission still requires at least one checkpoint.",
+  "Uploads are optional context only. Never create completionMode evidence in a new plan, never make an upload a checkpoint gate, and proceed with a limited or conservative recommendation when private data is unavailable.",
+  "checkpoint.managerRead states what the available evidence means now. checkpoint.nextAction names one human action or explicitly says that nothing is needed from the artist while the Manager watches signals.",
   "Visible task steps must be human-facing only. Do not write system-support instructions such as retrieving the packet, attaching evidence refs, referencing mission.sourceRefs, or populating permission request queues.",
   "Every task MUST include a 'steps' array with 2–6 plain-language sequential actions. Steps describe exactly what to do — specific enough that someone could execute them without needing a meeting. No vague steps like 'do the research' or 'complete the task'. Good step examples: 'Pull city-level streaming breakdown from Spotify for Artists for the last 90 days', 'Build a creator brief with hook timestamp, posting window, and niche context for each target', 'Draft contract term sheet and send to entertainment attorney for review by [week 2]'.",
   "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: weeks or months based on the actual scope of the work involved.",
-  "Every task must declare exactly one completionMode: result_note when the user can report an observable outcome, manager_draft when the Manager can prepare the substantive artifact in chat, or evidence when an external file or proof must be supplied. Never require an upload for manager_draft.",
+  "Every visible task must declare exactly one completionMode: result_note when the user can report an observable outcome or manager_draft when the Manager can prepare the substantive artifact in chat. The legacy evidence value exists for compatibility but must not be generated.",
   "Every task must state completionExpectation, deliverableRequirements, managerResponsibility, and userResponsibility so an independent artist knows what happens next without a meeting.",
   "Ask at most one decision-changing user question at a time. Include a recommendedAnswer and recommendationReason so the user can accept the Manager's judgment or say they are unsure. Do not ask anything already answered by profile, memory, evidence, or prior context answers.",
-  "Missing source proof produces request_evidence. Missing user-controlled intent, capacity, budget, timing, or boundaries may produce candidate_needs_context.",
-  "If active work already owns the objective, return update_existing_mission with its exact mission id. You MUST still provide a complete revised plan, with the same rigour as activate_mission: all 7 mission identity fields (title, objective, reason, summary, patternName, currentRecommendation, timeline), changeConditions, at least 2 sourceRefs, at least one checkpoint with a binary decision rule grounded in evidence, and at least one task with 2–6 concrete steps. Author the update as if writing the mission fresh from the latest evidence. Do not return empty checkpoints or tasks.",
+  "Missing source proof is a limitation, not an upload gate. Use request_evidence only when no responsible recommendation can be made at all; otherwise proceed with a limited or conservative recommendation.",
+  "If active work already owns the objective, return update_existing_mission with its exact mission id. You MUST still provide a complete revised plan, with the same rigour as activate_mission: all 7 mission identity fields (title, objective, reason, summary, patternName, currentRecommendation, timeline), changeConditions, at least 2 sourceRefs, and at least one checkpoint with a binary decision rule grounded in evidence. Author the update as if writing the mission fresh from the latest evidence. Tasks may be empty when nothing is needed from the artist.",
   "Use packet.missionPatternRegistry as the runtime management-domain contract. It defines when patterns apply, evidence needs, task types, checkpoint questions, permission boundaries, review triggers, success states, blockage states, and change conditions.",
   "Ground a mission in at most two relevant patterns from packet.missionPatternRegistry. Pattern taskTypes are examples, not a skeleton or mandatory checklist. Author only tasks required by this artist's objective and current evidence.",
   "Use packet.recommendedMissionPatterns only when they fit the user's current request. An empty recommendation list is a valid signal; do not invent a career thesis or data-upload mission to fill it.",
@@ -537,7 +547,7 @@ function validateOutput(output: MissionGenesisOutput, packet: unknown, mode: Mis
     output.mission.reason,
     output.mission.summary,
     output.mission.currentRecommendation,
-    ...output.checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question]),
+    ...output.checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.managerRead, checkpoint.nextAction]),
     ...output.tasks.flatMap((task) => [task.title, task.purpose, ...task.steps]),
   ].join("\n");
   if (/test whether current attention is becoming repeatable audience behavior|prepare first manager read|objective quality/i.test(visiblePlan)) {
@@ -570,7 +580,7 @@ function validateOutput(output: MissionGenesisOutput, packet: unknown, mode: Mis
     if (output.mission.sourceRefs.length < Math.min(2, packetIds.size)) {
       throw new Error("Mission Genesis active mission is not grounded in enough packet sources.");
     }
-    if (!output.checkpoints.length || !output.tasks.length) throw new Error("Mission Genesis active mission requires checkpoints and tasks.");
+    if (!output.checkpoints.length) throw new Error("Mission Genesis active mission requires at least one checkpoint.");
     const keys = new Set<string>();
     for (const checkpoint of output.checkpoints) {
       if (keys.has(checkpoint.key)) throw new Error(`Mission Genesis returned duplicate checkpoint key: ${checkpoint.key}.`);
@@ -591,8 +601,8 @@ function validateOutput(output: MissionGenesisOutput, packet: unknown, mode: Mis
     if (output.mission.sourceRefs.length < Math.min(2, packetIds.size)) {
       throw new Error("Mission Genesis update is not grounded in enough packet sources.");
     }
-    if (!output.checkpoints.length || !output.tasks.length) {
-      throw new Error("Mission Genesis update requires a complete revised plan with checkpoints and tasks.");
+    if (!output.checkpoints.length) {
+      throw new Error("Mission Genesis update requires a complete revised plan with checkpoints.");
     }
     const keys = new Set<string>();
     for (const checkpoint of output.checkpoints) {
@@ -639,7 +649,7 @@ function validateMissionCandidate(candidate: MissionGenesisCandidate, packet: un
       candidate.mission.reason,
       candidate.mission.summary,
       candidate.mission.currentRecommendation,
-      ...candidate.checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question]),
+      ...candidate.checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.managerRead, checkpoint.nextAction]),
       ...candidate.tasks.flatMap((task) => [task.title, task.purpose, ...task.steps]),
     ].join("\n");
     validateMissionJudgeSurface(candidate.mission, candidate.checkpoints, candidate.tasks, `Mission candidate ${candidate.key}`);
@@ -652,7 +662,7 @@ function validateMissionCandidate(candidate: MissionGenesisCandidate, packet: un
     if (candidate.checkpoints.length || candidate.tasks.length || candidate.permissionRequests.length) throw new Error(`Mission candidate ${candidate.key} cannot create plan work before context is answered.`);
   }
   if (candidate.outcome === "activate_mission") {
-    if (!candidate.checkpoints.length || !candidate.tasks.length) throw new Error(`Mission candidate ${candidate.key} requires checkpoints and tasks.`);
+    if (!candidate.checkpoints.length) throw new Error(`Mission candidate ${candidate.key} requires at least one checkpoint.`);
     const keys = new Set(candidate.checkpoints.map((checkpoint) => checkpoint.key));
     for (const task of candidate.tasks) {
       if (!keys.has(task.primaryCheckpointKey)) throw new Error(`Mission candidate ${candidate.key} task references missing checkpoint: ${task.primaryCheckpointKey}.`);
@@ -673,7 +683,7 @@ function validateMissionJudgeSurface(
     mission.summary,
     mission.patternName,
     mission.currentRecommendation,
-    ...checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.decisionRule]),
+    ...checkpoints.flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.decisionRule, checkpoint.managerRead, checkpoint.nextAction]),
     ...tasks.flatMap((task) => [task.title, task.ownerRole, task.purpose, ...task.steps]),
   ].join("\n");
   const lower = text.toLowerCase();
@@ -704,6 +714,7 @@ function validateMissionJudgeSurface(
   }
 
   validateSourceCompletenessMission(mission, checkpoints, tasks, label);
+  validateHumanTaskContract(tasks, label);
 
   for (const checkpoint of checkpoints) {
     if (!/(if|only if|continue|stop|pause|change|reframe|approve|reject|pass|fail|otherwise|whether)/i.test(checkpoint.decisionRule)) {
@@ -712,6 +723,23 @@ function validateMissionJudgeSurface(
   }
   if (/build a stronger audience foundation|create a repeatable process for audience growth/i.test(lower)) {
     throw new Error(`${label} returned a generic mission that could apply to 100 artists and is missing artist-specific anchors.`);
+  }
+}
+
+function validateHumanTaskContract(tasks: MissionGenesisTask[], label: string) {
+  for (const task of tasks) {
+    if (task.ownerRole.trim().toLowerCase() === "manager") {
+      throw new Error(`${label} returned Manager analysis as a visible task; put the result in the checkpoint read.`);
+    }
+    if (task.completionMode === "evidence") {
+      throw new Error(`${label} returned a required upload even though uploads must remain optional context.`);
+    }
+    const taskText = [task.title, task.purpose, ...task.steps].join(" ");
+    const analysisOnly = /\b(review|analy[sz]e|compare|research|assess|validate|monitor|issue a recommendation)\b/i.test(taskText)
+      && !/\b(approve|choose|decide|publish|send|sign|perform|record|report|confirm|attend|schedule)\b/i.test(taskText);
+    if (analysisOnly) {
+      throw new Error(`${label} returned analysis-only work as a visible human task.`);
+    }
   }
 }
 
@@ -794,6 +822,8 @@ function readCheckpoints(value: unknown): MissionGenesisCheckpoint[] {
     title: readString(item.title, "checkpoints.title", true),
     question: readString(item.question, "checkpoints.question", true),
     decisionRule: readString(item.decisionRule, "checkpoints.decisionRule", true),
+    managerRead: readString(item.managerRead, "checkpoints.managerRead", true),
+    nextAction: readString(item.nextAction, "checkpoints.nextAction", true),
     requiredEvidence: readStringArray(item.requiredEvidence),
     missingEvidence: readStringArray(item.missingEvidence),
     sourceRefs: readStringArray(item.sourceRefs),

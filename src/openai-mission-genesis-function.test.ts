@@ -109,6 +109,8 @@ function activeOutput() {
         title: "London return signal",
         question: "Does After Midnight produce repeat or owned-audience behavior in London?",
         decisionRule: "Continue only if the agreed return or capture signal improves during the review window.",
+        managerRead: "London is the strongest available signal, but the packet does not yet prove repeat behavior.",
+        nextAction: "Record the agreed London response baseline after the next low-risk test.",
         requiredEvidence: ["A dated London response or capture measure"],
         missingEvidence: [],
         sourceRefs: ["evidence-london", "song-midnight"],
@@ -116,14 +118,14 @@ function activeOutput() {
     ],
     tasks: [
       {
-        title: "Define the London return-behavior baseline for After Midnight",
-        ownerRole: "Manager",
+        title: "Report the London listening-session response for After Midnight",
+        ownerRole: "Artist / team",
         primaryCheckpointKey: "london_return_signal",
-        purpose: "Create the baseline needed to judge whether attention is becoming durable.",
+        purpose: "Give the Manager an observable London response that is not already available in the packet.",
         steps: [
-          "Pull city-level streaming data from Spotify for Artists for the last 30 days filtered to London.",
-          "Identify the top-performing After Midnight stream dates and note any listener return patterns.",
-          "Record the agreed baseline metric and review threshold in the mission notes.",
+          "Run the agreed low-risk London listening session for After Midnight.",
+          "Record how many invited listeners attended and how they responded to the artist, not only the song.",
+          "Report the dated outcome to the Manager for checkpoint review.",
         ],
         evidenceNeeded: ["Current London response baseline"],
         completionExpectation: "A dated baseline and one agreed review metric are saved.",
@@ -162,6 +164,8 @@ function blaqbonezMixedOutput() {
         title: "Career thesis exists and is artist-signed",
         question: "Is the Career Thesis specific enough to guide which opportunities to accept, defer, or reject?",
         decisionRule: "Pass only if the signed thesis can decide accept, reject, delay, or pursue.",
+        managerRead: "Blaqbonez needs one clear 90-day position before the feature moment expands the opportunity set.",
+        nextAction: "Approve the 90-day position and its do-not-do rules.",
         requiredEvidence: ["Signed career thesis"],
         missingEvidence: [],
         sourceRefs: ["ev-public-identity", "memory-guardrail"],
@@ -171,6 +175,8 @@ function blaqbonezMixedOutput() {
         title: "Next career unlock improves leverage and fits budget",
         question: "Does the Nigeria creator-led market test improve leverage within budget?",
         decisionRule: "Pass only if the pilot budget and KPIs are approved.",
+        managerRead: "The proposed creator pilot is not ready until its budget and success boundary are explicit.",
+        nextAction: "Approve or reject the bounded pilot plan.",
         requiredEvidence: ["Pilot budget", "Creator shortlist"],
         missingEvidence: [],
         sourceRefs: ["ev-chanel", "ev-nigeria"],
@@ -410,6 +416,45 @@ describe("OpenAI Mission Genesis", () => {
     expect(parsed.tasks[0].primaryCheckpointKey).toBe("london_return_signal");
   });
 
+  it("accepts a useful checkpoint with a Manager read and no artist task", () => {
+    const output = activeOutput() as any;
+    output.checkpoints[0].managerRead = "London attention is credible, but the packet does not yet prove repeat artist attachment.";
+    output.checkpoints[0].nextAction = "Nothing needed from the artist; keep watching repeat listening and profile movement.";
+    output.tasks = [];
+
+    const parsed = parseMissionGenesisOutput(output, packet, "initial");
+
+    expect(parsed.tasks).toEqual([]);
+    expect(parsed.checkpoints[0]).toMatchObject({
+      managerRead: expect.stringContaining("does not yet prove"),
+      nextAction: expect.stringContaining("Nothing needed"),
+    });
+  });
+
+  it("rejects Manager analysis disguised as a visible task", () => {
+    const output = activeOutput() as any;
+    output.checkpoints[0].managerRead = "The existing packet supports a cautious hold.";
+    output.checkpoints[0].nextAction = "Nothing needed from the artist.";
+    output.tasks[0] = {
+      ...output.tasks[0],
+      ownerRole: "Manager",
+      completionMode: "evidence",
+      title: "Validate whether attention becomes artist leverage",
+      steps: ["Review stream and playlist evidence.", "Issue a continue, pause, or scale recommendation."],
+    };
+
+    expect(() => parseMissionGenesisOutput(output, packet, "initial")).toThrow(/Manager analysis.*checkpoint read/i);
+  });
+
+  it("rejects a generated upload gate", () => {
+    const output = activeOutput() as any;
+    output.checkpoints[0].managerRead = "Proceed with limited confidence from available evidence.";
+    output.checkpoints[0].nextAction = "Continue the low-risk validation path.";
+    output.tasks[0] = { ...output.tasks[0], ownerRole: "Artist / team", completionMode: "evidence" };
+
+    expect(() => parseMissionGenesisOutput(output, packet, "initial")).toThrow(/uploads.*optional/i);
+  });
+
   it("supports multiple mission candidates in one Manager-authored decision", () => {
     const first = activeOutput();
     const second = activeOutput();
@@ -645,8 +690,8 @@ describe("OpenAI Mission Genesis", () => {
     expect(() => parseMissionGenesisOutput(output, packet, "initial")).toThrow(/system support/i);
   });
 
-  it("rejects source-completeness missions unless a specific decision is blocked by the missing source", () => {
-    const output = activeOutput();
+  it("rejects source-completeness busywork and keeps uploads optional even when a decision is high stakes", () => {
+    const output = activeOutput() as any;
     output.mission.title = "Upload Nova Vale private analytics for After Midnight";
     output.mission.objective = "Collect Spotify for Artists and smart-link data for After Midnight before the Manager makes any new recommendation.";
     output.mission.reason = "Private analytics would improve confidence, but the output does not name a specific blocked decision.";
@@ -660,6 +705,8 @@ describe("OpenAI Mission Genesis", () => {
         title: "Private analytics uploaded",
         question: "Are the private analytics available?",
         decisionRule: "Pass if the source is uploaded; otherwise wait.",
+        managerRead: "Public London evidence is available, while private save and return data remain unavailable.",
+        nextAction: "Use a conservative spend decision unless the team chooses to add private context.",
         requiredEvidence: ["Spotify for Artists export"],
         missingEvidence: ["Spotify for Artists export"],
         sourceRefs: ["evidence-london", "song-midnight"],
@@ -677,6 +724,7 @@ describe("OpenAI Mission Genesis", () => {
         ],
         evidenceNeeded: ["Spotify for Artists export"],
         completionExpectation: "The export is uploaded.",
+        completionMode: "evidence",
         riskIfLate: "Manager confidence remains limited.",
         sourceRefs: ["evidence-london", "song-midnight"],
       },
@@ -689,10 +737,11 @@ describe("OpenAI Mission Genesis", () => {
     output.mission.currentRecommendation = "Request the source upload only because the London spend approval decision is blocked by missing proof.";
     output.checkpoints[0].question = "Is the missing source strong enough to approve or reject the $5,000 London validation spend?";
     output.checkpoints[0].decisionRule = "Approve the spend only if the uploaded source confirms save, return, or smart-link proof; otherwise reject or revise the spend plan.";
+    output.tasks[0].ownerRole = "Artist / team";
     output.tasks[0].purpose = "Produce the missing proof needed for the $5,000 London spend approval decision.";
     output.tasks[0].completionExpectation = "The Manager can approve, reject, or revise the $5,000 London spend decision from the uploaded proof.";
 
-    expect(parseMissionGenesisOutput(output, packet, "initial").mission.title).toContain("After Midnight");
+    expect(() => parseMissionGenesisOutput(output, packet, "initial")).toThrow(/uploads.*optional/i);
   });
 
   it("accepts split Blaqbonez missions for positioning and Asake-feature leverage", () => {
@@ -709,6 +758,8 @@ describe("OpenAI Mission Genesis", () => {
         title: "90-day position decides real opportunities",
         question: "Can Blaqbonez's 90-day thesis clearly decide what to accept, reject, delay, or pursue?",
         decisionRule: "Pass only if the thesis chooses between rap authority, mainstream crossover, personality-led ownership, and market expansion with accept/reject examples.",
+        managerRead: "The current identity evidence supports a clear positioning choice before Chanel activity scales.",
+        nextAction: "Approve one 90-day position and its accept/reject examples.",
         requiredEvidence: ["Signed 90-day positioning thesis"],
         missingEvidence: [],
         sourceRefs: ["ev-public-identity", "memory-guardrail"],
@@ -716,14 +767,14 @@ describe("OpenAI Mission Genesis", () => {
     ];
     positioning.tasks = [
       {
-        title: "Draft Blaqbonez's 90-day positioning thesis",
-        ownerRole: "Manager",
+        title: "Approve Blaqbonez's 90-day positioning thesis",
+        ownerRole: "Artist / team",
         primaryCheckpointKey: "positioning_thesis_decides",
         purpose: "Give the team a decision rule before scaling Chanel activity.",
         steps: [
-          "Write the 90-day thesis around rap authority, mainstream crossover, personality-led ownership, or market expansion.",
-          "Name three opportunities Blaqbonez should accept and three he should reject in this phase.",
-          "Get written artist and team sign-off on the chosen position.",
+          "Review the Manager's 90-day thesis across rap authority, mainstream crossover, personality-led ownership, and market expansion.",
+          "Choose the position that best matches Blaqbonez's intent and current opportunity set.",
+          "Approve the position and its three accept and three reject examples.",
         ],
         evidenceNeeded: ["Signed 90-day positioning thesis"],
         completionExpectation: "The team has a signed position that governs Chanel and the next opportunities.",
@@ -745,6 +796,8 @@ describe("OpenAI Mission Genesis", () => {
         title: "Feature attention strengthens Blaqbonez",
         question: "Is Chanel growth increasing Blaqbonez's profile, catalog movement, or fan language rather than only the song or Asake?",
         decisionRule: "Continue only if review evidence shows Blaqbonez-level attachment; otherwise stop scaling spend and reframe around artist identity.",
+        managerRead: "Chanel has attention, but the packet does not yet prove that the attention belongs to Blaqbonez rather than the song or feature.",
+        nextAction: "Approve the artist-centered narrative before any broader spend.",
         requiredEvidence: ["Attachment read separating Blaqbonez, Asake, hook, beat, humor, verse, and vibe"],
         missingEvidence: [],
         sourceRefs: ["ev-chanel", "ev-public-identity"],
@@ -752,14 +805,14 @@ describe("OpenAI Mission Genesis", () => {
     ];
     leverage.tasks = [
       {
-        title: "Map what people attach to in Chanel",
-        ownerRole: "Manager",
+        title: "Approve the Blaqbonez-centered Chanel narrative",
+        ownerRole: "Artist / team",
         primaryCheckpointKey: "feature_builds_blaqbonez",
         purpose: "Separate Blaqbonez-owned leverage from Asake-led or song-only attention.",
         steps: [
-          "Review public responses and label whether people mention Blaqbonez, Asake, the hook, beat, humor, verse, or overall vibe.",
-          "Create the content and narrative angle that makes Blaqbonez the center of the record.",
-          "Build a next-collaborator map from what the feature proves about Blaqbonez's leverage.",
+          "Review the Manager's read of what public responses attach to in Chanel.",
+          "Choose the narrative angle that keeps Blaqbonez at the center of the record.",
+          "Approve the narrative before the team uses it in content, press, or catalog routing.",
         ],
         evidenceNeeded: ["Feature attachment map"],
         completionExpectation: "The team knows whether Chanel is building Blaqbonez-level leverage.",
@@ -832,7 +885,7 @@ describe("OpenAI Mission Genesis", () => {
     const activeWithoutPlan = activeOutput();
     activeWithoutPlan.checkpoints = [];
     activeWithoutPlan.tasks = [];
-    expect(() => parseMissionGenesisOutput(activeWithoutPlan, packet, "initial")).toThrow(/requires checkpoints and tasks/i);
+    expect(() => parseMissionGenesisOutput(activeWithoutPlan, packet, "initial")).toThrow(/requires at least one checkpoint/i);
   });
 
   it("rejects update_existing_mission if it lacks checkpoints, tasks, or mission identity", () => {
