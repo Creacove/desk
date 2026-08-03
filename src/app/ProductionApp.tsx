@@ -187,6 +187,7 @@ export function ProductionApp({
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(
     paymentReturnReference ? { reference: paymentReturnReference, status: "checking" } : null,
   );
+  const setupResumeAttempts = useRef(new Set<string>());
   const sessionUser = session?.user ?? null;
   const activeWorkspaceId = workspace?.artistWorkspaceId ?? null;
   const activeCatalogSyncStatus = workspace?.latestCatalogSyncStatus;
@@ -400,6 +401,21 @@ export function ProductionApp({
 
     let cancelled = false;
     const targetWorkspaceId = workspace.artistWorkspaceId;
+    const setupResumeKey = `${sessionUser.id}:${targetWorkspaceId}:${workspace.billingCheckoutSessionId}`;
+    if (!setupResumeAttempts.current.has(setupResumeKey) && runtime.billingService?.retrySetup) {
+      setupResumeAttempts.current.add(setupResumeKey);
+      void runtime.billingService.retrySetup({ checkoutSessionId: workspace.billingCheckoutSessionId })
+        .then((result) => {
+          if (!cancelled && result.workspace) {
+            setWorkspace((currentWorkspace) => currentWorkspace?.artistWorkspaceId === targetWorkspaceId
+              ? { ...currentWorkspace, ...result.workspace }
+              : currentWorkspace);
+          }
+        })
+        .catch(() => {
+          // The persisted setup poll remains available if the resume request is interrupted.
+        });
+    }
     const fallback = createActiveRunFallback({
       delaysMs: [3_000, 5_000, 8_000, 15_000, 30_000],
       deadlineMs: 10 * 60_000,
@@ -428,7 +444,7 @@ export function ProductionApp({
       window.removeEventListener("online", resume);
       fallback.stop();
     };
-  }, [runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.billingCheckoutSessionId, workspace?.contextComplete, workspace?.setupStatus]);
+  }, [runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.billingCheckoutSessionId, workspace?.contextComplete, workspace?.setupStatus]);
 
   if (typeof window !== "undefined" && window.location.pathname === "/update-password") {
     return <UpdatePasswordScreen authAdapter={runtime.authAdapter} onComplete={() => { window.history.replaceState({}, "", "/"); void loadProductionState(); }} />;

@@ -103,6 +103,7 @@ describe("private-beta access backend contract", () => {
     expect(redeem).toContain('.rpc("activate_beta_artist_workspace"');
     expect(redeem).toContain('phase: "discovery"');
     expect(redeem).toContain('functionName: "paid-workspace-setup"');
+    expect(redeem).toContain("billingCheckoutSessionId: checkoutSessionId");
     expect(redeem).not.toContain("console.log");
   });
 

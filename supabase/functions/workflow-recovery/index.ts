@@ -2,6 +2,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const RECOVERY_BATCH_SIZE = 4;
 const PERMANENT_HTTP_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
+const SETUP_WORKFLOW_VERSIONS = new Set(["workspace-setup-v1", "workspace_setup_v1"]);
 
 type RecoveryMode = "observe" | "run";
 type WorkflowVersion =
@@ -52,23 +53,29 @@ Deno.serve(async (request) => {
   const supabaseUrl = requireEnv("SUPABASE_URL");
   const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
   const db = createClient(supabaseUrl, serviceRoleKey);
+  const enabledVersions = new Set(
+    (Deno.env.get("WORKFLOW_RECOVERY_ENABLED_VERSIONS") ?? "")
+      .split(",").map((value) => value.trim()).filter(Boolean),
+  );
+  const setupOnlyRecovery = enabledVersions.size > 0 &&
+    [...enabledVersions].every((version) => SETUP_WORKFLOW_VERSIONS.has(version));
 
-  if (mode === "run") {
-    const { error: reapError } = await db.rpc("reap_expired_workflows", { batch_size: RECOVERY_BATCH_SIZE });
+  if (mode === "run" && enabledVersions.size > 0) {
+    const { error: reapError } = setupOnlyRecovery
+      ? await db.rpc("reap_expired_workspace_setup_runs", { batch_size: RECOVERY_BATCH_SIZE })
+      : await db.rpc("reap_expired_workflows", { batch_size: RECOVERY_BATCH_SIZE });
     if (reapError) return json({ error: "Expired workflow leases could not be reconciled." }, 503);
   }
 
-  const { data, error } = await db.rpc("list_workflow_recovery_candidates", { batch_size: RECOVERY_BATCH_SIZE });
+  const { data, error } = mode === "run" && setupOnlyRecovery
+    ? await db.rpc("list_workspace_setup_recovery_candidates", { batch_size: RECOVERY_BATCH_SIZE })
+    : await db.rpc("list_workflow_recovery_candidates", { batch_size: RECOVERY_BATCH_SIZE });
   if (error) return json({ error: "Recovery candidates could not be listed." }, 503);
   const candidates = Array.isArray(data) ? data.filter(isRecoveryCandidate).slice(0, RECOVERY_BATCH_SIZE) : [];
   if (mode === "observe") {
     return json({ mode: "observe", candidates: candidates.map(candidateSummary) });
   }
 
-  const enabledVersions = new Set(
-    (Deno.env.get("WORKFLOW_RECOVERY_ENABLED_VERSIONS") ?? "")
-      .split(",").map((value) => value.trim()).filter(Boolean),
-  );
   const results: Array<Record<string, unknown>> = [];
   for (const candidate of candidates) {
     if (!isWorkflowVersion(candidate.workflow_version)) {

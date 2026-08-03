@@ -6,6 +6,7 @@ const source = readFileSync(join(process.cwd(), "supabase", "functions", "workfl
 const config = readFileSync(join(process.cwd(), "supabase", "config.toml"), "utf8");
 const migration = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000200_production_reliability_v1.sql"), "utf8");
 const schedule = readFileSync(join(process.cwd(), "supabase", "migrations", "20260728000500_schedule_workflow_recovery.sql"), "utf8");
+const durableSetup = readFileSync(join(process.cwd(), "supabase", "migrations", "20260803000300_durable_workspace_setup_resume.sql"), "utf8");
 
 describe("workflow recovery worker", () => {
   it("is secret-authenticated, observation-first, and bounded to four candidates", () => {
@@ -52,6 +53,17 @@ describe("workflow recovery worker", () => {
     expect(migration).toContain("Maximum recovery attempts exhausted");
   });
 
+  it("isolates automatic recovery to entitled workspace setup runs", () => {
+    expect(source).toContain("SETUP_WORKFLOW_VERSIONS");
+    expect(source).toContain('.rpc("reap_expired_workspace_setup_runs"');
+    expect(source).toContain('.rpc("list_workspace_setup_recovery_candidates"');
+    expect(durableSetup).toContain("reap_expired_workspace_setup_runs");
+    expect(durableSetup).toContain("list_workspace_setup_recovery_candidates");
+    expect(durableSetup).toContain("workflow_version in ('workspace_setup_v1', 'workspace-setup-v1')");
+    expect(durableSetup).toContain("has_active_workspace_entitlement");
+    expect(durableSetup).toContain("to service_role");
+  });
+
   it("schedules observation only when indexed eligible work exists", () => {
     expect(schedule).toContain("workflow-recovery-observer");
     expect(schedule).toContain("'* * * * *'");
@@ -64,5 +76,16 @@ describe("workflow recovery worker", () => {
     expect(schedule).toContain("/functions/v1/workflow-recovery");
     expect(schedule).toContain("jsonb_build_object('mode', 'observe')");
     expect(schedule).not.toMatch(/x-workflow-worker-secret'\s*,\s*'[^']{20,}'/);
+  });
+
+  it("supersedes observation with a setup-only run schedule", () => {
+    expect(durableSetup).toContain("workflow-recovery-worker");
+    expect(durableSetup).toContain("workflow-recovery-observer");
+    expect(durableSetup).toContain("cron.unschedule");
+    expect(durableSetup).toContain("'* * * * *'");
+    expect(durableSetup).toContain("workflow_worker_secret");
+    expect(durableSetup).toContain("workflow_version in ('workspace_setup_v1', 'workspace-setup-v1')");
+    expect(durableSetup).toContain("jsonb_build_object('mode', 'run')");
+    expect(durableSetup).not.toMatch(/x-workflow-worker-secret'\s*,\s*'[^']{20,}'/);
   });
 });

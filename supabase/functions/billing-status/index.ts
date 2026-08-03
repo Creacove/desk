@@ -97,6 +97,7 @@ Deno.serve(async (request) => {
     if (setupResult.error) throw setupResult.error;
 
     let retryDispatched = false;
+    let activeSetupRun = setupResult.data;
     let retryAuthorized = checkout.status === "paid";
     if (input.retrySetup && !retryAuthorized && checkout.artist_workspace_id) {
       const { data: grant, error: grantError } = await serviceClient.from("workspace_access_grants")
@@ -112,21 +113,22 @@ Deno.serve(async (request) => {
       retryAuthorized = Boolean(grant?.id);
     }
     if (input.retrySetup && retryAuthorized && checkout.artist_workspace_id) {
-      if (setupResult.data?.status === "failed" && setupResult.data?.id) {
-        const { error: adoptError } = await serviceClient.from("workspace_setup_runs")
-          .update({ workflow_version: "workspace_setup_v1", available_at: new Date().toISOString() })
-          .eq("id", setupResult.data.id)
-          .eq("status", "failed")
-          .is("lease_token", null);
-        if (adoptError) throw adoptError;
-      }
+      if (!setupResult.data?.id) throw new Error("Workspace setup run was not found for retry.");
+      const { data: preparedSetup, error: prepareError } = await serviceClient.rpc("prepare_workspace_setup_resume", {
+        setup_run_id: setupResult.data.id,
+        explicit_retry: true,
+      });
+      if (prepareError) throw prepareError;
+      const retrySetupRun = Array.isArray(preparedSetup) ? preparedSetup[0] : preparedSetup;
+      if (!retrySetupRun?.id) throw new Error("Workspace setup retry could not be prepared.");
+      activeSetupRun = retrySetupRun;
       await invokeSetupFunction({
         supabaseUrl,
         serviceRoleKey,
         functionName: "paid-workspace-setup",
         body: {
           checkoutSessionId: checkout.id,
-          phase: selectSetupRetryPhase(setupResult.data),
+          phase: selectSetupRetryPhase(retrySetupRun),
           explicitRetry: true,
         },
       });
@@ -148,12 +150,12 @@ Deno.serve(async (request) => {
       checkoutStatus: checkout.status,
       subscriptionStatus: subscription?.status ?? "none",
       entitlementActive,
-      setupStatus: retryDispatched || setupDispatched ? "running" : setupResult.data?.status ?? (checkout.status === "paid" ? "queued" : "not_started"),
-      setupStage: setupResult.data?.current_stage,
+      setupStatus: retryDispatched || setupDispatched ? "running" : activeSetupRun?.status ?? (checkout.status === "paid" ? "queued" : "not_started"),
+      setupStage: activeSetupRun?.current_stage,
       workspace: workspaceResult,
       authorizationUrl: checkout.authorization_url,
       accessCode: checkout.access_code,
-      message: setupResult.data?.last_error ? publicWorkflowFailure(setupResult.data?.stage_status?.[setupResult.data?.current_stage]?.failure).message : undefined,
+      message: activeSetupRun?.last_error ? publicWorkflowFailure(activeSetupRun?.stage_status?.[activeSetupRun?.current_stage]?.failure).message : undefined,
       preview: toPreview(checkout),
     };
 

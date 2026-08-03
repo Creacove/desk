@@ -223,7 +223,10 @@ describe("paid workspace setup orchestration", () => {
 
   it("routes manual setup retries back through the paid setup orchestrator", () => {
     const text = source("supabase", "functions", "billing-status", "index.ts");
+    expect(text).toContain('rpc("prepare_workspace_setup_resume"');
+    expect(text).toContain("setup_run_id: setupResult.data.id");
+    expect(text).toContain("explicit_retry: true");
     expect(text).toContain('functionName: "paid-workspace-setup"');
-    expect(text).toContain("phase: selectSetupRetryPhase(setupResult.data)");
+    expect(text).toContain("phase: selectSetupRetryPhase(retrySetupRun)");
   });
 });

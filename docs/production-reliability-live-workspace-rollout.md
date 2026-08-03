@@ -13,6 +13,7 @@ Apply these migrations in order:
 3. `20260728000300_workflow_recovery_candidates.sql`
 4. `20260728000400_todays_brief_and_mission_finalizers.sql`
 5. `20260728000500_schedule_workflow_recovery.sql`
+6. `20260803000300_durable_workspace_setup_resume.sql`
 
 The scheduling migration preflights Vault secrets and uses conditional `exists` checks before invoking workers. It should not create idle Edge Function traffic when no eligible work exists.
 
@@ -25,11 +26,13 @@ Set these before applying the scheduling migration:
 - Edge Function environment `WORKFLOW_WORKER_SECRET`
 - Edge Function environment `BILLING_WORKER_SECRET`
 
-Keep `WORKFLOW_RECOVERY_ENABLED_VERSIONS` empty during observation mode. Enable recovery later with an explicit comma-separated allowlist, for example:
+The durable setup migration replaces the observer with a setup-only execution schedule. Enable exactly the setup workflow version:
 
 ```text
-setup-todays-brief-v2,mission-genesis-v2,music-manager-read-v2
+WORKFLOW_RECOVERY_ENABLED_VERSIONS=workspace_setup_v1
 ```
+
+Do not add Manager, mission, source-sync, or music-read versions to this setting as part of the setup rollout.
 
 ## Functions To Deploy
 
@@ -51,8 +54,8 @@ The frontend should not busy-poll when idle. Live workspace updates use one Real
 Workflow recovery is intentionally conservative:
 
 - Cron runs every minute, but the SQL command calls the Edge Function only when indexed eligible work exists.
-- Recovery starts in observation mode.
-- Recovery execution is allowlisted by workflow version.
+- Automatic execution is isolated to entitled workspace setup runs.
+- Recovery execution is allowlisted to `workspace_setup_v1`.
 - Recovery batches are capped.
 - Hidden or offline browser tabs do not run fallback checks.
 - Setup and read status reconciliation uses exact workflow state, not broad reload loops.
@@ -74,7 +77,7 @@ Useful SQL checks:
 ```sql
 select jobname, schedule, active
 from cron.job
-where jobname in ('workflow-recovery-observer', 'billing-webhook-recovery');
+where jobname in ('workflow-recovery-worker', 'billing-webhook-recovery');
 
 select workflow_version, status, count(*)
 from public.manager_synthesis_runs
@@ -82,7 +85,7 @@ group by workflow_version, status
 order by workflow_version, status;
 
 select *
-from public.list_workflow_recovery_candidates(4);
+from public.list_workspace_setup_recovery_candidates(4);
 ```
 
 For egress/compute monitoring, compare Edge Function invocations before and after enabling the rollout. Idle minutes should show no recovery worker invocation unless an eligible queued, running-expired, or retryable row exists.
@@ -95,8 +98,8 @@ Rollback should first stop background invocation, then revert application code i
 2. Unschedule cron jobs if the scheduler is suspected:
 
 ```sql
-select cron.unschedule('workflow-recovery-observer')
-where exists (select 1 from cron.job where jobname = 'workflow-recovery-observer');
+select cron.unschedule('workflow-recovery-worker')
+where exists (select 1 from cron.job where jobname = 'workflow-recovery-worker');
 
 select cron.unschedule('billing-webhook-recovery')
 where exists (select 1 from cron.job where jobname = 'billing-webhook-recovery');

@@ -698,7 +698,10 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         throw new Error("Private-beta activation returned an incomplete response.");
       }
       return {
-        workspace: payload.workspace,
+        workspace: {
+          ...payload.workspace,
+          billingCheckoutSessionId: payload.workspace.billingCheckoutSessionId ?? checkoutSessionId,
+        },
         setupStatus: payload.setupStatus,
         accessEndsAt: payload.accessEndsAt,
         message: payload.message,

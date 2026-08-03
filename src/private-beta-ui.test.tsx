@@ -101,6 +101,7 @@ describe("private-beta product flow", () => {
 
     expect(calls).toEqual([{ name: "redeem-private-beta-code", body: { checkoutSessionId: "checkout-1", code: "BETA-ABCD-1234" } }]);
     expect(result.workspace.accessType).toBe("private_beta");
+    expect(result.workspace.billingCheckoutSessionId).toBe("checkout-1");
   });
 
   it("supports request and completion of password recovery", async () => {

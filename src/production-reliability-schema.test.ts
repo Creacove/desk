@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -14,8 +14,29 @@ const eventMigration = readFileSync(join(
 const finalizerMigration = readFileSync(join(
   process.cwd(), "supabase", "migrations", "20260728000400_todays_brief_and_mission_finalizers.sql",
 ), "utf8").toLowerCase();
+const durableSetupMigrationPath = join(
+  process.cwd(), "supabase", "migrations", "20260803000300_durable_workspace_setup_resume.sql",
+);
+const durableSetupMigration = existsSync(durableSetupMigrationPath)
+  ? readFileSync(durableSetupMigrationPath, "utf8").toLowerCase()
+  : "";
 
 describe("production reliability v1 schema", () => {
+  it("atomically queues setup after Manager Basics and exposes a service-only resume transition", () => {
+    expect(existsSync(durableSetupMigrationPath)).toBe(true);
+    expect(durableSetupMigration).toContain("function public.prepare_workspace_setup_resume");
+    expect(durableSetupMigration).toContain("function public.queue_setup_after_context_version");
+    expect(durableSetupMigration).toContain("after insert on public.artist_profile_versions");
+    expect(durableSetupMigration).toContain("when (new.source = 'setup')");
+    expect(durableSetupMigration).toContain("manager_discovery");
+    expect(durableSetupMigration).toContain("completed_with_limits");
+    expect(durableSetupMigration).toContain("setup_brief");
+    expect(durableSetupMigration).toContain("target.status <> 'completed'");
+    expect(durableSetupMigration).toContain("public.has_active_workspace_entitlement");
+    expect(durableSetupMigration).toContain("revoke all on function public.prepare_workspace_setup_resume");
+    expect(durableSetupMigration).toContain("grant execute on function public.prepare_workspace_setup_resume");
+    expect(durableSetupMigration).toContain("to service_role");
+  });
   it("defines replay-safe Mission Genesis identity, answer, usage, and graph finalization", () => {
     expect(finalizerMigration).toContain("finalize_mission_genesis_v2");
     expect(finalizerMigration).toContain("memory_entries_mission_genesis_answer_unique_idx");

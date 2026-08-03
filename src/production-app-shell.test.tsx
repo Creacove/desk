@@ -207,11 +207,25 @@ describe("Clean production prototype-match shell", () => {
       .mockResolvedValueOnce(runningSetupWorkspace)
       .mockResolvedValueOnce(writingBriefWorkspace)
       .mockResolvedValue(completedSetupWorkspace);
+    const retrySetup = vi.fn(async () => ({
+      checkoutSessionId: "checkout-beta-1",
+      checkoutStatus: "paid" as const,
+      subscriptionStatus: "active" as const,
+      entitlementActive: true,
+      setupStatus: "running" as const,
+      setupStage: "setup_brief" as const,
+    }));
+    const billingService = {
+      async createCheckoutPreview() { throw new Error("not used"); },
+      async loadBillingStatus() { throw new Error("not used"); },
+      retrySetup,
+    } satisfies ProductionBillingService;
 
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
         workspaceLoader={{ loadActiveWorkspace }}
+        billingService={billingService}
         repositories={repositoriesFor("Nova Vale")}
         initialView="labelHQ"
       />,
@@ -224,6 +238,8 @@ describe("Clean production prototype-match shell", () => {
     });
     expect(screen.getByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("Writing your first Manager brief");
+    expect(retrySetup).toHaveBeenCalledTimes(1);
+    expect(retrySetup).toHaveBeenCalledWith({ checkoutSessionId: "checkout-beta-1" });
     expect(loadActiveWorkspace).toHaveBeenCalledTimes(2);
 
     await act(async () => {
@@ -646,10 +662,17 @@ describe("Clean production prototype-match shell", () => {
   }, 20000);
 
   it("opens Desk HQ by default when the workspace setup is already complete", async () => {
+    const retrySetup = vi.fn();
+    const billingService = {
+      async createCheckoutPreview() { throw new Error("not used"); },
+      async loadBillingStatus() { throw new Error("not used"); },
+      retrySetup,
+    } satisfies ProductionBillingService;
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
         workspaceLoader={workspaceLoaderWith(workspace)}
+        billingService={billingService}
         repositories={repositoriesFor("Nova Vale")}
         initialView="connectArtist"
       />,
@@ -658,6 +681,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Connect artist profile" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Manager Basics" })).not.toBeInTheDocument();
+    expect(retrySetup).not.toHaveBeenCalled();
   }, 20000);
 
   it("blocks Desk HQ until required artist context is saved", async () => {

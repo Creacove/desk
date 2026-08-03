@@ -69,7 +69,7 @@ Deno.serve(async (request) => {
     }).catch(() => undefined);
 
     return json({
-      workspace: mapWorkspace(workspace),
+      workspace: mapWorkspace(workspace, checkoutSessionId),
       setupStatus,
       accessEndsAt: workspace.access_ends_at,
       message,
@@ -79,7 +79,7 @@ Deno.serve(async (request) => {
   }
 });
 
-function mapWorkspace(row: any) {
+function mapWorkspace(row: any, checkoutSessionId: string) {
   return {
     accountId: row.account_id,
     artistWorkspaceId: row.artist_workspace_id,
@@ -98,6 +98,7 @@ function mapWorkspace(row: any) {
     subscriptionStatus: row.subscription_status,
     setupStatus: row.setup_status,
     setupStage: row.setup_stage,
+    billingCheckoutSessionId: checkoutSessionId,
     accessType: row.access_type,
     accessStatus: row.access_status,
     accessStartsAt: row.access_starts_at,
