@@ -898,35 +898,37 @@ function CheckpointsPanel({
           {checkpoints.map((checkpoint) => {
             const locked = Boolean(getBlockingDependency(checkpoint, checkpoints));
             const isOpen = expandedCheckpointId === checkpoint.id;
-            const taskCount = tasks.filter((task) => task.checkpointId === checkpoint.id).length;
-            const managerRead = checkpoint.resultSummary || getCheckpointReviewCopy(checkpoint, checkpoints);
             const blockerCopy = getCheckpointBlockerCopy(checkpoint, checkpoints, tasks);
+            const primary = getCheckpointPrimary(checkpoint);
+            const summary = getCheckpointSummary(checkpoint, checkpoints, blockerCopy);
+            const next = getCheckpointNext(checkpoint, blockerCopy);
             return (
               <article key={checkpoint.id} data-testid={`checkpoint-accordion-item-${checkpoint.id}`} className={cn("overflow-hidden rounded-[16px] border bg-background/78 transition-colors", isOpen ? "border-brand-accent/35" : "border-foreground/8", locked && "opacity-70")}>
                 <button type="button" aria-expanded={isOpen} data-testid={`checkpoint-accordion-toggle-${checkpoint.id}`} onClick={() => setExpandedCheckpointId((current) => current === checkpoint.id ? "" : checkpoint.id)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
                   <span className={cn("flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold", checkpoint.status === "Needs revision" ? "bg-[#f97316] text-white" : checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? "bg-brand-accent text-background" : "bg-foreground/10 text-muted-foreground")}>{checkpoint.status === "Met" || checkpoint.status === "Ready for AI review" ? <Check className="h-3 w-3" aria-hidden="true" /> : checkpoint.phase}</span>
                   <span className="min-w-0 flex-1">
-                    <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Phase {checkpoint.phase} · {taskCount} {taskCount === 1 ? "task" : "tasks"}</span>
+                    <span className="block text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Checkpoint {checkpoint.phase}</span>
                     <span className="mt-0.5 block text-[15px] font-bold leading-tight text-foreground">{checkpoint.title}</span>
+                    <span className="mt-1 block max-w-2xl text-[12px] font-semibold leading-relaxed text-muted-foreground/88">{summary}</span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2"><CheckpointStatusBadge status={checkpoint.status} /><ChevronDown className={cn("h-4 w-4 text-muted-foreground/70 transition-transform", isOpen && "rotate-180")} aria-hidden="true" /></span>
                 </button>
                 {isOpen ? (
                   <div className="border-t border-foreground/8 px-4 py-4">
                     <div className="grid gap-4">
-                      <div>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">Success condition</p>
-                        <p className="mt-1 text-[14px] font-semibold leading-relaxed text-foreground">{checkpoint.question}</p>
-                      </div>
                       <div className="border-l-2 border-brand-accent/45 pl-3">
-                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Manager&apos;s read</p>
-                        <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground/90">{managerRead}</p>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">{primary.label}</p>
+                        <p className="mt-1 text-[14px] font-semibold leading-relaxed text-foreground">{primary.copy}</p>
                       </div>
-                      <div className={cn("rounded-[12px] px-3 py-3", blockerCopy ? "bg-[#fff8f3] text-[#9a3412]" : "bg-brand-accent/[0.055] text-foreground")}>
-                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-75">{blockerCopy ? "What needs attention" : "What opens next"}</p>
-                        <p className="mt-1 text-[13px] font-semibold leading-relaxed">{blockerCopy || checkpoint.unlocks[0] || checkpoint.nextAction}</p>
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/80">This clears when</p>
+                        <p className="mt-1 text-[13px] font-semibold leading-relaxed text-foreground/90">{checkpoint.decisionRule}</p>
                       </div>
-                      <div><button type="button" onClick={onViewTasks} className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent hover:underline">View tasks</button></div>
+                      <div className={cn("rounded-[12px] px-3 py-3", next.attention ? "bg-[#fff8f3] text-[#9a3412]" : "bg-brand-accent/[0.055] text-foreground")}>
+                        <p className="text-[10px] font-bold uppercase tracking-[0.1em] opacity-75">{next.label}</p>
+                        <p className="mt-1 text-[13px] font-semibold leading-relaxed">{next.copy}</p>
+                      </div>
+                      <div><button type="button" onClick={onViewTasks} className="text-[11px] font-bold uppercase tracking-[0.08em] text-brand-accent hover:underline">See supporting work</button></div>
                     </div>
                   </div>
                 ) : null}
@@ -1160,7 +1162,8 @@ function missionCheckpoints(mission: MissionViewModel): MissionCheckpointViewMod
       watchedSignals: [mission.musicSubject, mission.review].filter(Boolean),
       decisionRule: "Do not change the mission state without task results or source-backed context.",
       recommendation: mission.recommendation,
-      resultSummary: mission.summary,
+      rationale: mission.summary,
+      managerRead: mission.status === "complete" || mission.status === "blocked" ? mission.recommendation : "",
       nextAction: mission.nextTask,
     },
   ];
@@ -1305,14 +1308,37 @@ function checkpointStatusClass(status: MissionCheckpointViewModel["status"]) {
   return "border-foreground/8 bg-background text-muted-foreground";
 }
 
-function getCheckpointReviewCopy(checkpoint: MissionCheckpointViewModel, checkpoints: MissionCheckpointViewModel[]) {
+function checkpointHasManagerRead(checkpoint: MissionCheckpointViewModel) {
+  return ["Ready for AI review", "Needs revision", "Watching signal", "Met"].includes(checkpoint.status)
+    && Boolean(checkpoint.managerRead.trim());
+}
+
+function getCheckpointPrimary(checkpoint: MissionCheckpointViewModel) {
+  if (checkpointHasManagerRead(checkpoint)) {
+    return { label: "Manager’s read", copy: checkpoint.managerRead };
+  }
+  return { label: "What this checkpoint is deciding", copy: checkpoint.question };
+}
+
+function getCheckpointSummary(
+  checkpoint: MissionCheckpointViewModel,
+  checkpoints: MissionCheckpointViewModel[],
+  blockerCopy: string,
+) {
+  if (checkpointHasManagerRead(checkpoint)) return checkpoint.managerRead;
+  if (blockerCopy) return blockerCopy;
   const dependency = getBlockingDependency(checkpoint, checkpoints);
-  if (checkpoint.status === "Needs revision") return `${checkpoint.title} found a real hold: ${checkpoint.blockedReason}`;
-  if (dependency) return `${checkpoint.title} remains conditional because ${dependency.title} is not cleared.`;
-  if (checkpoint.status === "Met") return `${checkpoint.title} is clear. The Manager can move the mission into the next phase.`;
-  if (checkpoint.status === "Ready for AI review") return checkpoint.resultSummary;
-  if (checkpoint.status === "Watching signal") return "This review waits until the watched signals are available.";
-  return checkpoint.recommendation;
+  if (dependency) return `Waiting for ${dependency.title} to clear.`;
+  if (checkpoint.status === "Watching signal" && checkpoint.watchedSignals[0]) return `Watching ${checkpoint.watchedSignals[0]}.`;
+  return checkpoint.nextAction;
+}
+
+function getCheckpointNext(checkpoint: MissionCheckpointViewModel, blockerCopy: string) {
+  if (checkpoint.status === "Met") {
+    return { label: "What this opened", copy: checkpoint.unlocks[0] || checkpoint.nextAction, attention: false };
+  }
+  if (blockerCopy) return { label: "What needs attention", copy: blockerCopy, attention: true };
+  return { label: "Next", copy: checkpoint.nextAction, attention: false };
 }
 
 function getCheckpointBlockerCopy(checkpoint: MissionCheckpointViewModel, checkpoints: MissionCheckpointViewModel[], tasks?: MissionTaskViewModel[]) {

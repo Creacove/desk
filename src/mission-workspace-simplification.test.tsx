@@ -114,10 +114,24 @@ describe("simplified mission room", () => {
     expect(toggle).toHaveAttribute("aria-expanded", "true");
 
     const expandedCheckpoint = screen.getByTestId("checkpoint-accordion-item-checkpoint-2");
-    expect(within(expandedCheckpoint).getByText("Success condition")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getByText("Listener response is promising.")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getByRole("button", { name: "View tasks" })).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getByText("Manager’s read")).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getAllByText("Listener response is promising.")).toHaveLength(2);
+    expect(within(expandedCheckpoint).getByText("This clears when")).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getByText("At least three listeners must respond positively.")).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getByText("What this opened")).toBeInTheDocument();
+    expect(within(expandedCheckpoint).getByRole("button", { name: "See supporting work" })).toBeInTheDocument();
+    expect(within(expandedCheckpoint).queryByText("Success condition")).not.toBeInTheDocument();
+    expect(within(expandedCheckpoint).queryByText(/2 tasks/)).not.toBeInTheDocument();
     expect(within(expandedCheckpoint).queryByText("Run listener interviews")).not.toBeInTheDocument();
+  });
+
+  it("uses the decision question instead of pretending a waiting checkpoint has a Manager read", () => {
+    renderMission("checkpoints");
+
+    const waitingCheckpoint = screen.getByTestId("checkpoint-accordion-item-checkpoint-1");
+    expect(within(waitingCheckpoint).getByText("What this checkpoint is deciding")).toBeInTheDocument();
+    expect(within(waitingCheckpoint).getByText("Is the position clear?")).toBeInTheDocument();
+    expect(within(waitingCheckpoint).queryByText("Manager’s read")).not.toBeInTheDocument();
   });
 
   it("combines agent notes and mission changes into one concise activity feed", () => {
@@ -178,16 +192,16 @@ function mission(): MissionViewModel {
     nextTask: "Finish the positioning draft",
     checkpoints: [
       {
-        id: "checkpoint-1", phase: 1, title: "Positioning thesis", status: "Ready for AI review",
+        id: "checkpoint-1", phase: 1, title: "Positioning thesis", status: "Waiting on tasks",
         question: "Is the position clear?", requiredTaskIds: ["task-1"], dependsOnCheckpointIds: [], unlocks: ["Market validation"],
         blockedReason: "", dependencyImpact: "", watchedSignals: [], decisionRule: "The thesis must be specific.",
-        recommendation: "Approve the thesis.", resultSummary: "The thesis is specific and actionable.", nextAction: "Approve the thesis",
+        recommendation: "Approve the thesis.", rationale: "A defined position keeps validation focused.", managerRead: "", nextAction: "Draft the thesis",
       },
       {
-        id: "checkpoint-2", phase: 2, title: "Market validation", status: "Watching signal",
+        id: "checkpoint-2", phase: 2, title: "Market validation", status: "Met",
         question: "Does the market respond?", requiredTaskIds: ["task-2"], dependsOnCheckpointIds: ["checkpoint-1"], unlocks: [],
         blockedReason: "", dependencyImpact: "", watchedSignals: [], decisionRule: "At least three listeners must respond positively.",
-        recommendation: "Continue the test.", resultSummary: "Listener response is promising.", nextAction: "Complete interviews",
+        recommendation: "Continue the test.", rationale: "Listener interviews test whether the position travels.", managerRead: "Listener response is promising.", nextAction: "Prepare the next audience test",
       },
     ],
     tasks: [

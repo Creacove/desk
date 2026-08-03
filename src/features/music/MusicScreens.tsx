@@ -547,7 +547,7 @@ function isMissionLinkedToCatalogObject(mission: MissionViewModel, object: Music
     mission.summary,
     mission.recommendation,
     mission.nextTask,
-    ...(mission.checkpoints ?? []).flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.recommendation, checkpoint.resultSummary]),
+    ...(mission.checkpoints ?? []).flatMap((checkpoint) => [checkpoint.title, checkpoint.question, checkpoint.recommendation, checkpoint.managerRead]),
     ...(mission.tasks ?? []).flatMap((task) => [task.title, task.purpose]),
   ]
     .map(normalizeCatalogLinkText)
