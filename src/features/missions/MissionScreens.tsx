@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, ChevronDown } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
@@ -392,8 +392,9 @@ function TasksPanel({
   const [completionNote, setCompletionNote] = useState<{ taskId: string; status: "completed" | "blocked"; note: string } | null>(null);
   const [taskDeliverables, setTaskDeliverables] = useState<Record<string, MissionTaskDeliverableViewModel[]>>({});
   const [deliverableErrors, setDeliverableErrors] = useState<Record<string, string>>({});
-  const [completionPending, setCompletionPending] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [reviewingTaskIds, setReviewingTaskIds] = useState<string[]>([]);
+  const [taskReviewErrors, setTaskReviewErrors] = useState<Record<string, string>>({});
   const completionTask = completionNote ? tasks.find((task) => task.id === completionNote.taskId) : undefined;
 
   useEffect(() => {
@@ -418,6 +419,7 @@ function TasksPanel({
   function startCompletion(taskId: string, status: "completed" | "blocked") {
     setCompletionNote({ taskId, status, note: "" });
     setCompletionError(null);
+    setTaskReviewErrors((current) => ({ ...current, [taskId]: "" }));
   }
 
   async function confirmCompletion() {
@@ -430,22 +432,26 @@ function TasksPanel({
       return;
     }
     const deliverables = task ? resolveTaskDeliverables(task, taskDeliverables[task.id]) : [];
-    const missingDeliverable = completionNote.status === "completed" && deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
-    if (missingDeliverable) {
-      setCompletionError("Add the required deliverable before submitting this task as done.");
-      return;
-    }
+    const taskId = completionNote.taskId;
+    const status = completionNote.status;
+    const managerOutputId = task?.managerDraft?.id;
     const documentIds = deliverables.map((deliverable) => deliverable.documentId).filter(Boolean) as string[];
-    setCompletionPending(true);
     setCompletionError(null);
+    setCompletionNote(null);
+    setReviewingTaskIds((current) => [...new Set([...current, taskId])]);
+    setTaskReviewErrors((current) => ({ ...current, [taskId]: "" }));
     try {
-      await onCompleteTask(completionNote.taskId, completionNote.status, note, documentIds, task?.managerDraft?.id);
-      setCompletedTaskIds((current) => [...new Set([...current, completionNote.taskId])]);
-      setCompletionNote(null);
+      await onCompleteTask(taskId, status, note, documentIds, managerOutputId);
+      if (task?.completionMode !== "manager_draft") {
+        setCompletedTaskIds((current) => [...new Set([...current, taskId])]);
+      }
     } catch (err) {
-      setCompletionError(err instanceof Error ? err.message : "Task completion failed. Please try again.");
+      setTaskReviewErrors((current) => ({
+        ...current,
+        [taskId]: err instanceof Error ? err.message : "Task completion failed. Please try again.",
+      }));
     } finally {
-      setCompletionPending(false);
+      setReviewingTaskIds((current) => current.filter((id) => id !== taskId));
     }
   }
 
@@ -518,7 +524,9 @@ function TasksPanel({
                   </span>
                   <span className="min-w-0">
                     <span className={cn("block truncate text-[12px] font-bold", inView ? "text-background" : "text-foreground")}>{checkpoint.title}</span>
-                    <span className={cn("mt-0.5 block text-[10px] font-bold uppercase tracking-[0.08em]", inView ? "text-background/65" : "text-muted-foreground/80")}>{doneCount}/{phaseTasks.length} tasks</span>
+                    <span className={cn("mt-0.5 block text-[10px] font-bold uppercase tracking-[0.08em]", inView ? "text-background/65" : "text-muted-foreground/80")}>
+                      {phaseTasks.length ? `${doneCount}/${phaseTasks.length} tasks` : "Manager watching"}
+                    </span>
                   </span>
                 </button>
               );
@@ -559,18 +567,27 @@ function TasksPanel({
                 <div className="px-4 py-4">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
                     <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/78">Tasks under this checkpoint</p>
-                    <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{phaseTasks.length} tasks</span>
+                    {phaseTasks.length ? <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/85">{phaseTasks.length} tasks</span> : null}
                   </div>
                   <div className="grid gap-3">
+                    {!phaseTasks.length ? (
+                      <div className="rounded-[16px] border border-foreground/8 bg-foreground/[0.025] p-4">
+                        <p className="text-[13px] font-bold text-foreground">Nothing needed from you</p>
+                        <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground/80">
+                          The Manager is handling this read and will surface a decision or a specific action when one is needed.
+                        </p>
+                      </div>
+                    ) : null}
                     {phaseTasks.map((task, taskIndex) => {
                       const approved = approvedTaskIds.includes(task.id) || task.approvalState === "approved";
                       const done = completedTaskIds.includes(task.id) || task.result?.status === "completed";
                       const blocked = task.approvalState === "blocked" || task.result?.status === "blocked";
                       const detailsOpen = expandedTaskId === task.id;
                       const deliverables = resolveTaskDeliverables(task, taskDeliverables[task.id]);
-                      const hasBlockingDeliverable = deliverables.some((deliverable) => !isDeliverableSubmittable(deliverable));
                       const completionBlocked = task.approvalState === "needs approval" && !approved;
                       const completionMode = resolveTaskCompletionMode(task);
+                      const managerReviewPending = reviewingTaskIds.includes(task.id);
+                      const managerReviewError = taskReviewErrors[task.id];
 
                       return (
                         <div
@@ -623,7 +640,12 @@ function TasksPanel({
                                 Approve
                               </button>
                             ) : null}
-                            {completionMode === "manager_draft" && (!task.managerDraft || task.result?.status === "revised") ? (
+                            {managerReviewPending ? (
+                              <p role="status" aria-live="polite" className="flex w-full items-center justify-end gap-2 rounded-[10px] border border-brand-accent/25 bg-brand-accent/10 px-3 py-2 text-[11px] font-bold text-foreground">
+                                <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-accent" aria-hidden="true" />
+                                Manager reviewing
+                              </p>
+                            ) : completionMode === "manager_draft" && (!task.managerDraft || task.result?.status === "revised") ? (
                               <button
                                 type="button"
                                 disabled={done || completionBlocked || blocked || completionNote !== null}
@@ -635,16 +657,16 @@ function TasksPanel({
                             ) : (
                               <button
                                 type="button"
-                                disabled={done || completionBlocked || blocked || completionNote !== null || (completionMode === "evidence" && hasBlockingDeliverable)}
+                                disabled={done || completionBlocked || blocked || completionNote !== null}
                                 onClick={() => startCompletion(task.id, "completed")}
                                 className="w-full rounded-[10px] bg-foreground px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-all hover:opacity-90 disabled:opacity-35"
                               >
-                                {completionMode === "manager_draft" ? "Submit for review" : completionMode === "evidence" ? "Submit evidence" : "Mark done"}
+                                {completionMode === "manager_draft" ? "Submit for review" : "Mark done"}
                               </button>
                             )}
-                            {completionMode === "evidence" && hasBlockingDeliverable ? (
-                              <p className="text-right text-[11px] font-semibold leading-snug text-muted-foreground/78 lg:max-w-[180px]">
-                                Add deliverable to submit.
+                            {managerReviewError ? (
+                              <p role="alert" className="w-full text-right text-[11px] font-semibold leading-snug text-red-600">
+                                Manager review did not finish. Submit again to retry.
                               </p>
                             ) : null}
                           </div>
@@ -662,7 +684,6 @@ function TasksPanel({
         <TaskCompletionDialog
           task={completionTask}
           completion={completionNote}
-          pending={completionPending}
           error={completionError}
           onChangeNote={(note) => setCompletionNote((current) => current ? { ...current, note } : null)}
           onConfirm={confirmCompletion}
@@ -676,7 +697,6 @@ function TasksPanel({
 function TaskCompletionDialog({
   task,
   completion,
-  pending,
   error,
   onChangeNote,
   onConfirm,
@@ -684,7 +704,6 @@ function TaskCompletionDialog({
 }: {
   task: MissionTaskViewModel;
   completion: { status: "completed" | "blocked"; note: string };
-  pending: boolean;
   error: string | null;
   onChangeNote: (note: string) => void;
   onConfirm: () => void;
@@ -693,7 +712,7 @@ function TaskCompletionDialog({
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const completionMode = resolveTaskCompletionMode(task);
   const isBlocked = completion.status === "blocked";
-  const actionLabel = isBlocked ? "Report blocker" : completionMode === "manager_draft" ? "Submit for review" : completionMode === "evidence" ? "Confirm done" : "Mark done";
+  const actionLabel = isBlocked ? "Report blocker" : completionMode === "manager_draft" ? "Submit for review" : "Mark done";
 
   useEffect(() => {
     noteRef.current?.focus();
@@ -732,8 +751,8 @@ function TaskCompletionDialog({
         </div>
         {error ? <p role="alert" className="mt-3 text-[12px] font-semibold text-red-600">{error}</p> : null}
         <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onCancel} disabled={pending} className="rounded-[10px] border border-foreground/10 px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5 disabled:opacity-40">Cancel</button>
-          <button type="button" onClick={onConfirm} disabled={pending} className="rounded-[10px] bg-foreground px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:opacity-40">{pending ? "Saving…" : actionLabel}</button>
+          <button type="button" onClick={onCancel} className="rounded-[10px] border border-foreground/10 px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-muted-foreground/80 transition-colors hover:bg-foreground/5">Cancel</button>
+          <button type="button" onClick={onConfirm} className="rounded-[10px] bg-foreground px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90">{actionLabel}</button>
         </div>
       </section>
     </div>
@@ -753,11 +772,16 @@ function TaskDeliverables({
 }) {
   return (
     <div className="mt-3 grid gap-2 rounded-[12px] border border-foreground/8 bg-foreground/[0.022] p-3">
+      <div>
+        <p className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/78">Optional context</p>
+        <p className="mt-1 text-[11px] font-semibold text-muted-foreground/80">
+          Add a file only if it gives the Manager useful context. You can finish this task without one.
+        </p>
+      </div>
       {deliverables.map((deliverable) => {
         const inputId = `task-deliverable-${task.id}-${deliverable.id}`;
         return (
           <div key={deliverable.id} className="flex min-w-0 flex-wrap items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/78">Deliverable</span>
             <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">{deliverable.fileName ?? deliverable.title}</span>
             <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.08em]", deliverableStatusClass(deliverable.status))}>
               {deliverableStatusLabel(deliverable.status)}
@@ -766,7 +790,7 @@ function TaskDeliverables({
               htmlFor={inputId}
               className="cursor-pointer rounded-[8px] border border-foreground/10 px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
             >
-              {deliverable.status === "missing" || deliverable.status === "failed" ? "Upload" : "Replace"}
+              {deliverable.status === "missing" || deliverable.status === "failed" ? "Add file" : "Replace"}
             </label>
             <input
               id={inputId}
@@ -1254,18 +1278,19 @@ function taskNeedsDeliverable(task: MissionTaskViewModel) {
 }
 
 function inferDeliverableTitle(task: MissionTaskViewModel) {
+  if (task.deliverableTitle?.trim()) return task.deliverableTitle.trim();
   const explicitEvidence = task.evidenceIds.find((item) => !/^EV[-_]/i.test(item) && deliverableLanguagePattern.test(item));
   if (explicitEvidence) return cleanDeliverableTitle(explicitEvidence);
   const stepWithDeliverable = task.steps.find((step) => deliverableLanguagePattern.test(step));
   if (stepWithDeliverable) return cleanDeliverableTitle(stepWithDeliverable);
-  return cleanDeliverableTitle(task.title);
+  return "Supporting context";
 }
 
 function cleanDeliverableTitle(value: string) {
   return value
     .replace(/^(upload|submit|provide|prepare|confirm|write|create|send)\s+/i, "")
     .replace(/\s+(for manager review|for manager approval|to manager|before review)$/i, "")
-    .trim() || "Required document";
+    .trim() || "Supporting context";
 }
 
 function replaceDeliverable(deliverables: MissionTaskDeliverableViewModel[], next: MissionTaskDeliverableViewModel) {
@@ -1275,10 +1300,6 @@ function replaceDeliverable(deliverables: MissionTaskDeliverableViewModel[], nex
   return deliverables.map((deliverable) => deliverable.id === next.id ? { ...deliverable, ...next } : deliverable);
 }
 
-function isDeliverableSubmittable(deliverable: MissionTaskDeliverableViewModel) {
-  return Boolean(deliverable.documentId) && ["uploaded", "checking", "accepted"].includes(deliverable.status);
-}
-
 function deliverableStatusLabel(status: MissionTaskDeliverableViewModel["status"]) {
   if (status === "uploading") return "Uploading";
   if (status === "uploaded") return "Uploaded";
@@ -1286,7 +1307,7 @@ function deliverableStatusLabel(status: MissionTaskDeliverableViewModel["status"
   if (status === "accepted") return "Accepted";
   if (status === "needs_revision") return "Needs revision";
   if (status === "failed") return "Failed";
-  return "Missing";
+  return "Optional";
 }
 
 function deliverableStatusClass(status: MissionTaskDeliverableViewModel["status"]) {
@@ -1309,8 +1330,8 @@ function checkpointStatusClass(status: MissionCheckpointViewModel["status"]) {
 }
 
 function checkpointHasManagerRead(checkpoint: MissionCheckpointViewModel) {
-  return ["Ready for AI review", "Needs revision", "Watching signal", "Met"].includes(checkpoint.status)
-    && Boolean(checkpoint.managerRead.trim());
+  const read = checkpoint.managerRead.trim();
+  return Boolean(read) && read !== "No recommendation.";
 }
 
 function getCheckpointPrimary(checkpoint: MissionCheckpointViewModel) {

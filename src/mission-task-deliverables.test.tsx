@@ -11,7 +11,37 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe("mission task deliverables", () => {
-  it("keeps required documents in the task flow and passes uploaded document ids into completion", async () => {
+  it("lets an artist complete an evidence task without uploading a file", async () => {
+    const onCompleteTask = vi.fn(async () => undefined);
+
+    render(
+      <MissionsWorkspace
+        missions={[missionWithRequiredThesis()]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={onCompleteTask}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    expect(screen.getByText("Optional context")).toBeInTheDocument();
+    expect(screen.getByText("90-day thesis")).toBeInTheDocument();
+    expect(screen.queryByText("Missing")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark done" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark done" }));
+
+    await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
+  });
+
+  it("passes an optional uploaded document into Manager review when one is supplied", async () => {
     const onCompleteTask = vi.fn(async () => undefined);
     const onUploadTaskDeliverable = vi.fn(async () => ({
       id: "deliverable-thesis",
@@ -39,11 +69,6 @@ describe("mission task deliverables", () => {
       />,
     );
 
-    expect(screen.getByText("Deliverable")).toBeInTheDocument();
-    expect(screen.getByText("90-day thesis")).toBeInTheDocument();
-    expect(screen.getByText("Missing")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Submit evidence" })).toBeDisabled();
-
     fireEvent.change(screen.getByLabelText("Upload deliverable for Provide 90-day thesis"), {
       target: {
         files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })],
@@ -58,13 +83,13 @@ describe("mission task deliverables", () => {
     expect(await screen.findByText("thesis.pdf")).toBeInTheDocument();
     expect(screen.getByText("Uploaded")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Submit evidence" }));
+    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
     const reviewBox = screen.getByRole("dialog", { name: "Mark \u201cProvide 90-day thesis\u201d as done" });
     expect(screen.queryByTestId("task-completion-panel-task-thesis")).not.toBeInTheDocument();
     fireEvent.change(within(reviewBox).getByLabelText("Task result note"), {
       target: { value: "Uploaded the 90-day thesis for Manager review." },
     });
-    fireEvent.click(within(reviewBox).getByRole("button", { name: "Confirm done" }));
+    fireEvent.click(within(reviewBox).getByRole("button", { name: "Mark done" }));
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith(
       "task-thesis",
@@ -73,6 +98,62 @@ describe("mission task deliverables", () => {
       ["doc-thesis-1"],
       undefined,
     ));
+  });
+
+  it("shows a calm no-action state when a checkpoint has no artist tasks", () => {
+    const mission = missionWithRequiredThesis();
+    mission.tasks = [];
+    mission.checkpoints![0] = {
+      ...mission.checkpoints![0],
+      status: "Watching signal",
+      requiredTaskIds: [],
+      nextAction: "Nothing needed from you. The Manager is watching artist attachment.",
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    expect(screen.getByText("Nothing needed from you")).toBeInTheDocument();
+    expect(screen.getByText(/Manager is handling this read/i)).toBeInTheDocument();
+    expect(screen.queryByText("0/0 tasks")).not.toBeInTheDocument();
+    expect(screen.getByText("Manager watching")).toBeInTheDocument();
+  });
+
+  it("shows a checkpoint-specific Manager read before its artist task is complete", () => {
+    const mission = missionWithRequiredThesis();
+    mission.checkpoints![0].managerRead = "Public attention is real, but durable artist attachment is not proven yet.";
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => undefined}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="checkpoints"
+      />,
+    );
+
+    expect(screen.getByText("Manager’s read")).toBeInTheDocument();
+    expect(screen.getAllByText("Public attention is real, but durable artist attachment is not proven yet.")).toHaveLength(2);
   });
 
   it("routes a manager-draft task into the existing Manager chat without requiring an upload", () => {
@@ -152,6 +233,88 @@ describe("mission task deliverables", () => {
     expect(screen.getByText("Choose Lagos as the first proof market, then measure repeat listening.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
+  });
+
+  it("closes review submission immediately and keeps its waiting state inside the task", async () => {
+    let resolveManagerReview: (() => void) | undefined;
+    const onCompleteTask = vi.fn(() => new Promise<void>((resolve) => {
+      resolveManagerReview = resolve;
+    }));
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      completionMode: "manager_draft",
+      managerDraft: {
+        id: "draft-thesis-1",
+        title: "90-day positioning plan",
+        summary: "Choose Lagos as the first proof market, then measure repeat listening.",
+        status: "draft",
+      },
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={onCompleteTask}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+    const dialog = screen.getByRole("dialog", { name: "Mark \u201cProvide 90-day thesis\u201d as done" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
+
+    await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], "draft-thesis-1"));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
+
+    resolveManagerReview?.();
+    await waitFor(() => expect(screen.queryByText("Manager reviewing")).not.toBeInTheDocument());
+  });
+
+  it("keeps a failed Manager review actionable inside the submitted task", async () => {
+    const mission = missionWithRequiredThesis();
+    mission.tasks![0] = {
+      ...mission.tasks![0],
+      completionMode: "manager_draft",
+      managerDraft: {
+        id: "draft-thesis-1",
+        title: "90-day positioning plan",
+        summary: "Choose Lagos as the first proof market, then measure repeat listening.",
+        status: "draft",
+      },
+    };
+
+    render(
+      <MissionsWorkspace
+        missions={[mission]}
+        selectedMissionId="mission-1"
+        onSelectMission={() => undefined}
+        onCreateFirstMission={() => undefined}
+        onOpenManager={() => undefined}
+        firstMissionPending={false}
+        onApproveTask={async () => undefined}
+        onCompleteTask={async () => { throw new Error("Manager is unavailable"); }}
+        onDrawer={() => undefined}
+        openRoomRequestKey={1}
+        openRoomTab="tasks"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Submit for review" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Submit for review" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("Manager review did not finish");
+    expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
   });
 
   it("presents a saved Manager draft as a readable document instead of raw markdown", () => {
@@ -293,6 +456,8 @@ function missionWithRequiredThesis(): MissionViewModel {
         purpose: "Submit the written 90-day artist positioning thesis for Manager approval.",
         steps: ["Write the thesis", "Upload the document", "Submit it for Manager review"],
         evidenceIds: ["90-day thesis"],
+        completionMode: "evidence",
+        deliverableTitle: "90-day thesis",
         dependency: "Manager needs the document before checkpoint review.",
         riskIfLate: "The mission cannot move forward without the written thesis.",
       },
