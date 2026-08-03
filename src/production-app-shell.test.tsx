@@ -3111,10 +3111,15 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Open mobile song Night Bus" }));
     let songRoom = screen.getByTestId("music-song-detail");
-    expect(within(songRoom).getByTestId("music-detail-mobile-top")).toHaveClass("lg:hidden");
+    const mobileSongTop = within(songRoom).getByTestId("music-detail-mobile-top");
+    const desktopSongTop = within(songRoom).getByTestId("music-detail-desktop-top");
+    const mobileSongTitle = within(songRoom).getByTestId("music-detail-mobile-title");
+    expect(mobileSongTop).toHaveClass("lg:hidden");
     expect(within(songRoom).getByRole("combobox", { name: "Mobile song stage" })).toBeInTheDocument();
-    expect(within(songRoom).getByTestId("music-detail-mobile-title")).toHaveClass("min-w-0", "break-words", "[overflow-wrap:anywhere]");
-    expect(within(songRoom).getByTestId("music-detail-desktop-top")).toHaveClass("hidden", "lg:block");
+    expect(mobileSongTitle).toHaveClass("min-w-0", "break-words", "[overflow-wrap:anywhere]");
+    expect(desktopSongTop).toHaveClass("hidden", "lg:block");
+    expect(mobileSongTitle.nextElementSibling).toBeNull();
+    expect(within(desktopSongTop).queryByTestId("music-situation-line")).not.toBeInTheDocument();
     expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");

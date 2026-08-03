@@ -1216,7 +1216,6 @@ function isLockedReleasedStage(stage?: string) {
 
 function MusicDetailTop({ object, label, onBack, onStageChange }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void }) {
   const stageValue = object.lifecycleStage ?? object.lifecycle;
-  const subjectContext = object.sourceLimit;
   const lockedReleasedStage = object.kind === "song" && isLockedReleasedStage(stageValue);
 
   return (
@@ -1242,7 +1241,6 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
           <div className="min-w-0 flex-1">
             <p data-testid="music-detail-mobile-title" className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
-            {object.kind === "song" ? <p className="mt-1 line-clamp-2 text-[12px] font-medium leading-relaxed text-muted-foreground/82">{subjectContext}</p> : null}
           </div>
         </div>
         {object.kind === "song" && !lockedReleasedStage ? (
@@ -1272,7 +1270,6 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           <div className="min-w-0">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
             <h2 className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
-            {object.kind === "song" ? <p data-testid="music-situation-line" className="mt-3 max-w-3xl text-[14px] font-normal leading-relaxed text-muted-foreground/84">{subjectContext}</p> : null}
           </div>
           {object.kind === "song" && !lockedReleasedStage ? (
             <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
