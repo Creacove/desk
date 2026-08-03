@@ -70,4 +70,17 @@ describe("Mission pattern registry", () => {
 
     expect(selected).toEqual([]);
   });
+
+  it("keeps analysis in checkpoint reads and task hints limited to human actions", () => {
+    const registry = getMissionPatternRegistry();
+    for (const key of ["focus_asset_selection", "collaboration_strategy", "catalog_asset_narrative", "fan_ownership"]) {
+      const pattern = registry.find((candidate) => candidate.key === key);
+      expect(pattern?.taskTypes.join(" ")).not.toMatch(/\b(compare|map feature attachment|measure artist attachment|review fan language)\b/i);
+      expect(pattern?.taskTypes.join(" ")).toMatch(/\b(approve|choose|publish|report|authorize)\b/i);
+    }
+
+    const sourcePattern = registry.find((candidate) => candidate.key === "data_source_completeness");
+    expect(sourcePattern?.blockageState).toMatch(/limitation|conservative recommendation/i);
+    expect(sourcePattern?.taskTypes.join(" ")).not.toMatch(/upload CSV|upload file/i);
+  });
 });
