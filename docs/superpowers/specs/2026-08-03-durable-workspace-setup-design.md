@@ -1,0 +1,105 @@
+# Durable Workspace Setup Design
+
+## Objective
+
+Make beta, Paystack, and Paddle onboarding reliably reach Desk HQ after entitlement and Manager Basics, including after a reload, tab close, transient request failure, or an earlier failed setup attempt. Reuse the existing `workspace_setup_runs`, stage leases, setup Edge Function, billing status endpoint, and recovery worker. Do not introduce a second queue or a new orchestration service.
+
+## Root Cause
+
+The current workflow splits one logical handoff across the database and browser:
+
+1. `complete_artist_setup_context` saves Manager Basics.
+2. The browser separately calls `paid-workspace-setup` to create the first Manager brief.
+
+If the second operation is skipped or loses required state, the profile says context is complete while the persisted setup run remains `waiting_for_context`. Polling can display that contradiction but cannot advance it.
+
+Private-beta activation also returns a workspace without `billingCheckoutSessionId`. Until a full reload, the browser therefore bypasses the persisted setup orchestrator and starts an unlinked brief run. This produced repeated brief failures without moving the setup run.
+
+Finally, the recovery worker and leases exist, but workflow recovery remains observation-only. Interrupted setup work therefore has no server-owned path to resume.
+
+## Design
+
+### One persisted source of truth
+
+`workspace_setup_runs` remains the only setup progress record. Both paid and beta activation must return its checkout session ID, status, current stage, and stage state.
+
+Saving Manager Basics will also reconcile the matching unfinished setup run in the same database transaction:
+
+- mark `context_received` completed;
+- if discovery is complete, queue `setup_brief` immediately;
+- if discovery is still running, preserve its lease and let its existing completion dispatch continue;
+- never overwrite completed setup or completed stage output.
+
+The browser may invoke the queued phase immediately for low latency, but that invocation is an optimization rather than the only way setup can continue.
+
+### Reload and Retry
+
+When an entitled workspace loads with complete Manager Basics and unfinished setup, the app performs one idempotent resume request and then observes persisted progress with bounded backoff. It does not repeatedly regenerate Spotify data or AI output.
+
+The existing Retry action calls the same authorized resume path. That path will:
+
+- preserve completed stages;
+- clear only the failed or stale current-stage lease;
+- reset the current stage to a retryable queued state;
+- dispatch the correct phase;
+- return the refreshed persisted setup state.
+
+This makes reload sufficient for ordinary interruption and makes Retry effective for terminal failure.
+
+### Existing affected workspaces
+
+A one-time migration will reconcile only unfinished workspaces with active paid or private-beta entitlement:
+
+- profiles with completed Manager Basics and a setup run still waiting for context are queued at `setup_brief` when discovery is already complete;
+- failed catalogue, discovery, or brief stages are made retryable without deleting completed stages;
+- completed setup runs are untouched;
+- expired beta grants, abandoned checkouts, and users without entitlement are not activated.
+
+The provided account currently has no workspace, membership, payment, or beta grant, so it cannot be repaired as setup work. It must first complete payment or redeem valid beta access.
+
+### Targeted automatic recovery
+
+The existing recovery worker will execute only `workspace_setup_v1` candidates. The cron query remains conditional, the worker batch remains capped, and retries retain exponential backoff and maximum attempts. Other workflow families remain disabled.
+
+Before enabling execution, the migration reconciles active unfinished setup rows and excludes inactive or abandoned rows from automatic AI work. This keeps egress bounded while ensuring a paid or invited user is not dependent on an open browser tab.
+
+### User experience
+
+The phase screen continues to use persisted stage state. It must never display a spinner indefinitely for a state that needs user or recovery action:
+
+- `waiting_for_context`: show Manager Basics;
+- queued/running stage: show live phase progress;
+- failed stage: show the existing Retry action with the saved public error;
+- completed first brief: enter Desk HQ while optional music reads may continue in the background.
+
+No new onboarding screens or additional required inputs are introduced.
+
+## Failure Handling
+
+- Payment or beta entitlement remains committed independently from setup generation.
+- Transient Spotify, Chartmetric, OpenAI, or network failures use the persisted retry budget.
+- Permanent entitlement or ownership failures stop without consuming AI work.
+- Completed catalogue, discovery, and brief artifacts are replay-safe and are not regenerated by reload.
+- Once automatic attempts are exhausted, the run becomes failed and Retry provides a deliberate new attempt rather than an inert button.
+
+## Verification
+
+Automated coverage must prove:
+
+1. Beta activation returns and preserves the setup checkout ID.
+2. Saving Manager Basics durably queues the brief when discovery has finished.
+3. Saving Manager Basics during discovery preserves the active discovery lease.
+4. Reload resumes an unfinished setup once without duplicate generation.
+5. Retry repairs failed catalogue, discovery, and brief stages while preserving completed stages.
+6. Completed setup is never restarted.
+7. Paid Paystack, paid Paddle, and private-beta workspaces use the same persisted setup contract.
+8. The recovery schedule executes only setup workflow candidates with bounded batches.
+
+Production verification will inspect the affected active setup rows after migration, run one authorized resume, and confirm phase progression through the persisted setup record before inviting users to reload.
+
+## Non-goals
+
+- Building a new job queue or orchestration platform.
+- Enabling recovery for missions, recurring briefs, or general Manager Reads.
+- Automatically granting access to abandoned checkout accounts.
+- Blocking Desk HQ on optional music-read completion.
