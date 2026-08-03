@@ -2507,6 +2507,37 @@ describe("production Supabase services", () => {
     expect(missions.map((mission) => mission.title)).toContain("Visible mission 25");
   });
 
+  it("renders a persisted met checkpoint as Met", async () => {
+    const client = fakeSupabaseClient({
+      missions: [{
+        id: "mission-met",
+        title: "Validate the market signal",
+        status: "active",
+        summary: "The team has completed the required validation.",
+        current_recommendation: "Use the validated signal in the next mission decision.",
+        progress: 100,
+      }],
+      checkpoints: [{
+        id: "checkpoint-met",
+        mission_id: "mission-met",
+        title: "Market signal quality",
+        question: "Was the signal sufficient to support the mission?",
+        status: "met",
+      }],
+      tasks: [],
+      task_steps: [],
+      task_results: [],
+      operating_events: [],
+      memory_entries: [],
+    });
+
+    const [mission] = await createSupabaseProductionRepositories(client, workspace).missions.loadMissions();
+
+    expect(mission.checkpoints).toEqual([
+      expect.objectContaining({ id: "checkpoint-met", status: "Met" }),
+    ]);
+  });
+
   it("keeps candidate missions out of the active mission list and renders generated tasks/checkpoints", async () => {
     const client = fakeSupabaseClient({
       missions: [

@@ -5377,7 +5377,7 @@ function formatDuration(durationMs: number) {
 function mapCheckpointStatus(status: string): MissionCheckpointViewModel["status"] {
   if (status === "needs_revision" || status === "Needs revision") return "Needs revision";
   if (status === "ready_for_manager_check" || status === "Ready for AI review") return "Ready for AI review";
-  if (status === "cleared" || status === "Met") return "Met";
+  if (status === "cleared" || status === "met" || status === "Met") return "Met";
   if (status === "watching_signal" || status === "Watching signal") return "Watching signal";
   return "Waiting on tasks";
 }
