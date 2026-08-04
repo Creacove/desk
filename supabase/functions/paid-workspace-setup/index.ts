@@ -235,6 +235,13 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     return loadCompletedSetupResult(db, workspace);
   }
   if (setupBriefState === "running") return { status: "running", phase: "contextualize" };
+  if (setupBriefState === "failed") {
+    const resetStage = { status: "queued", error: null, failed_at: null, retry_at: null };
+    await updateSetupRun(db, setupRun.id, {
+      stage_status: { ...contextStages, setup_brief: resetStage },
+    }).catch(() => false);
+    return { status: "running", phase: "contextualize", retrying: true };
+  }
 
   const startedAt = new Date().toISOString();
   const briefLease = await claimWorkspaceSetupStage(db, {
