@@ -33,6 +33,13 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).toContain("scope_key");
   });
 
+  it("resets failed or cancelled synthesis runs to queued when setup or recovery retries", () => {
+    expect(functionSource).toContain('existing.status === "failed" || existing.status === "cancelled"');
+    expect(functionSource).toContain('status: "queued"');
+    expect(functionSource).toContain('in("status", ["queued", "running", "failed"])');
+    expect(functionSource).toContain('recoveryRun.status === "failed"');
+  });
+
   it("stages one replay-safe packet and output then activates them through one lease-guarded finalizer", () => {
     expect(functionSource).toContain("claimManagerSynthesisRun");
     expect(functionSource).toContain("heartbeatManagerSynthesisRun");

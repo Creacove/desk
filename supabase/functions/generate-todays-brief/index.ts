@@ -153,10 +153,15 @@ Deno.serve(async (request) => {
         .eq("artist_workspace_id", input.artistWorkspaceId)
         .eq("artist_id", input.artistId)
         .eq("workflow_version", "todays_brief_v1")
-        .in("status", ["queued", "running"])
+        .in("status", ["queued", "running", "failed"])
         .maybeSingle();
       if (recoveryError) throw recoveryError;
       if (!recoveryRun?.id) throw new Error("Today's Brief recovery run does not match the requested owner.");
+      if (recoveryRun.status === "failed") {
+        await authClient.from("manager_synthesis_runs")
+          .update({ status: "queued", error: null, lease_token: null, updated_at: new Date().toISOString() })
+          .eq("id", recoveryRun.id);
+      }
       const frozen = readFrozenTodaysBriefContext(recoveryRun.context_payload);
       const recoveryInput: GenerateTodaysBriefInput = {
         ...input,
@@ -763,6 +768,20 @@ async function createManagerSynthesisRun(
   const scopeKey = input.setupRunId ?? `${input.artistId}:${generationMode}`;
   const requestKey = input.setupRunId ?? input.requestId ?? durableContext.evidenceCutoff;
   const idempotencyKey = `${classification}:${scopeKey}:${requestKey}`;
+  const contextPayload = {
+    promptVersion: TODAYS_BRIEF_PROMPT_VERSION,
+    packetVersion: TODAYS_BRIEF_PACKET_VERSION,
+    schemaVersion: TODAYS_BRIEF_SCHEMA_VERSION,
+    packet,
+    managerIntelligencePacket,
+    setupMusicReadTargets,
+    generationMode,
+    setupRunId: input.setupRunId ?? null,
+    evidenceCutoff: durableContext.evidenceCutoff,
+    packetRefs: durableContext.packetRefs,
+    targetRefs: durableContext.targetRefs,
+  };
+
   const { data: existing, error: existingError } = await supabase.from("manager_synthesis_runs")
     .select("id,status,error,context_payload")
     .eq("account_id", input.accountId)
@@ -770,7 +789,24 @@ async function createManagerSynthesisRun(
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (existing?.id) return existing as { id: string; status: string; error?: string | null; context_payload: unknown };
+  if (existing?.id) {
+    if (existing.status === "failed" || existing.status === "cancelled") {
+      const { data: reset, error: resetError } = await supabase
+        .from("manager_synthesis_runs")
+        .update({
+          status: "queued",
+          error: null,
+          lease_token: null,
+          context_payload: contextPayload,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existing.id)
+        .select("id,status,error,context_payload")
+        .single();
+      if (!resetError && reset) return reset as { id: string; status: string; error?: string | null; context_payload: unknown };
+    }
+    return existing as { id: string; status: string; error?: string | null; context_payload: unknown };
+  }
 
   const { data, error } = await supabase
     .from("manager_synthesis_runs")
@@ -781,19 +817,7 @@ async function createManagerSynthesisRun(
       trigger_type: input.trigger === "setup" ? "evidence_triggered" : "manual",
       status: "queued",
       classification,
-      context_payload: {
-        promptVersion: TODAYS_BRIEF_PROMPT_VERSION,
-        packetVersion: TODAYS_BRIEF_PACKET_VERSION,
-        schemaVersion: TODAYS_BRIEF_SCHEMA_VERSION,
-        packet,
-        managerIntelligencePacket,
-        setupMusicReadTargets,
-        generationMode,
-        setupRunId: input.setupRunId ?? null,
-        evidenceCutoff: durableContext.evidenceCutoff,
-        packetRefs: durableContext.packetRefs,
-        targetRefs: durableContext.targetRefs,
-      },
+      context_payload: contextPayload,
       workflow_version: "todays_brief_v1",
       scope_key: scopeKey,
       idempotency_key: idempotencyKey,
@@ -822,6 +846,21 @@ async function createManagerSynthesisRun(
     raced = active.data;
   }
   if (!raced?.id) throw new Error("Today's Brief run could not be recovered after concurrent creation.");
+  if (raced.status === "failed" || raced.status === "cancelled") {
+    const { data: reset, error: resetError } = await supabase
+      .from("manager_synthesis_runs")
+      .update({
+        status: "queued",
+        error: null,
+        lease_token: null,
+        context_payload: contextPayload,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", raced.id)
+      .select("id,status,error,context_payload")
+      .single();
+    if (!resetError && reset) return reset as { id: string; status: string; error?: string | null; context_payload: unknown };
+  }
   return raced as { id: string; status: string; error?: string | null; context_payload: unknown };
 }
 
