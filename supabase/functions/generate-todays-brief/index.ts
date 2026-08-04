@@ -253,8 +253,8 @@ async function executeTodaysBriefRun(args: {
       heartbeat,
       heartbeat,
     );
-    const output = appendManagerEvidenceReads(modelResult.output, args.managerIntelligencePacket);
-    assertTodaysBriefEvidenceIsGrounded(output, modelPacket);
+    const rawOutput = appendManagerEvidenceReads(modelResult.output, args.managerIntelligencePacket);
+    const output = assertTodaysBriefEvidenceIsGrounded(rawOutput, modelPacket);
     const completed = {
       ...output,
       generatedAt: new Date().toISOString(),

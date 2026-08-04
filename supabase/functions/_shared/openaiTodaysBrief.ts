@@ -308,17 +308,35 @@ export function assertSignalsHaveEvidenceIds(output: TodaysBriefOutput) {
   }
 }
 
-export function assertTodaysBriefEvidenceIsGrounded(output: TodaysBriefOutput, packet: unknown) {
+export function assertTodaysBriefEvidenceIsGrounded(output: TodaysBriefOutput, packet: unknown): TodaysBriefOutput {
   const allowed = collectAllowedEvidenceIds(packet);
-  const referenced = [
-    ...output.intelligenceSnapshot.flatMap((group) => group.metrics.flatMap((metric) => metric.evidenceIds)),
-    ...output.claimAudit.flatMap((claim) => claim.evidenceIds),
-  ];
-  for (const evidenceId of referenced) {
-    if (!allowed.has(evidenceId)) {
-      throw new Error(`OpenAI Today's Brief returned unsupported evidence ID: ${evidenceId}.`);
-    }
+  let strippedCount = 0;
+  const sanitized: TodaysBriefOutput = {
+    ...output,
+    intelligenceSnapshot: output.intelligenceSnapshot.map((group) => ({
+      ...group,
+      metrics: group.metrics.map((metric) => {
+        const valid = (metric.evidenceIds ?? []).filter((id) => {
+          if (allowed.has(id)) return true;
+          strippedCount++;
+          return false;
+        });
+        return { ...metric, evidenceIds: valid };
+      }),
+    })),
+    claimAudit: output.claimAudit.map((claim) => {
+      const valid = (claim.evidenceIds ?? []).filter((id) => {
+        if (allowed.has(id)) return true;
+        strippedCount++;
+        return false;
+      });
+      return { ...claim, evidenceIds: valid };
+    }),
+  };
+  if (strippedCount > 0) {
+    console.warn(`Today's Brief grounding: stripped ${strippedCount} unsupported evidence ID(s) from model output.`);
   }
+  return sanitized;
 }
 
 function collectAllowedEvidenceIds(value: unknown, into = new Set<string>()): Set<string> {
