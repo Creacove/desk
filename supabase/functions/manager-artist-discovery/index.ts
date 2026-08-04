@@ -352,7 +352,8 @@ Deno.serve(async (request) => {
 
   } catch (error) {
     const failure = publicWorkflowFailure(error);
-    console.error("manager-artist-discovery failed", { error, setupRunId: input?.setupRunId });
+    const rawError = error instanceof Error ? error.message : String(error);
+    console.error("manager-artist-discovery failed", { error, rawError, setupRunId: input?.setupRunId });
     if (input && db) {
       try {
         await writeOperatingEvent(db, input, "manager_discovery_failed", failure.message, { failure }, synthesisRunId ?? undefined);
@@ -361,7 +362,7 @@ Deno.serve(async (request) => {
             runId: synthesisRunId,
             leaseToken: synthesisLeaseToken,
             status: "failed",
-            error: failure.message,
+            error: rawError, // TEMP: raw for diagnosis
           });
         }
         if (input.setupRunId && setupStageLeaseToken) {
@@ -374,7 +375,7 @@ Deno.serve(async (request) => {
         }
       } catch { /* best-effort logging */ }
     }
-    return json(workflowFailureBody(error), 500);
+    return json({ ...workflowFailureBody(error), rawError }, 500); // TEMP
   }
 });
 
@@ -450,6 +451,7 @@ async function loadOrCreateDiscoveryRun(db: any, input: DiscoveryInput): Promise
         .from("manager_synthesis_runs")
         .update({
           status: "queued",
+          attempt_count: 0,
           error: null,
           lease_token: null,
         })
@@ -493,6 +495,7 @@ async function loadOrCreateDiscoveryRun(db: any, input: DiscoveryInput): Promise
       .from("manager_synthesis_runs")
       .update({
         status: "queued",
+        attempt_count: 0,
         error: null,
         lease_token: null,
       })
