@@ -140,7 +140,9 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
   }
 
   if (catalogState === "completed" || catalogState === "completed_with_limits") {
-    if (existing === "running") return { status: "running", phase: "discovery" };
+    if (existing === "running" && isStageLeaseActive(stages, "manager_discovery")) {
+      return { status: "running", phase: "discovery" };
+    }
     const discoveryLease = await claimWorkspaceSetupStage(db, {
       setupRunId: setupRun.id,
       stage: "manager_discovery",
@@ -161,7 +163,9 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
     return { status: "running", phase: "discovery" };
   }
 
-  if (catalogState === "running") return { status: "running", phase: "discovery" };
+  if (catalogState === "running" && isStageLeaseActive(stages, "catalog_bootstrap")) {
+    return { status: "running", phase: "discovery" };
+  }
   const catalogLease = await claimWorkspaceSetupStage(db, {
     setupRunId: setupRun.id,
     stage: "catalog_bootstrap",
@@ -234,7 +238,9 @@ async function runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout
     await reconcileCompletedSetupMusicReads(db, setupRun);
     return loadCompletedSetupResult(db, workspace);
   }
-  if (setupBriefState === "running") return { status: "running", phase: "contextualize" };
+  if (setupBriefState === "running" && isStageLeaseActive(contextStages, "setup_brief")) {
+    return { status: "running", phase: "contextualize" };
+  }
   if (setupBriefState === "failed") {
     const resetStage = { status: "queued", error: null, failed_at: null, retry_at: null };
     await updateSetupRun(db, setupRun.id, {
@@ -596,4 +602,13 @@ function requireEnv(key: string) {
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
+
+function isStageLeaseActive(stages: StageStatus, key: string): boolean {
+  const stage = stages[key];
+  if (!stage || typeof stage !== "object") return false;
+  if (stage.status !== "running") return false;
+  if (typeof stage.lease_expires_at !== "string" || !stage.lease_expires_at) return false;
+  const expiresAt = Date.parse(stage.lease_expires_at);
+  return Number.isFinite(expiresAt) && expiresAt > Date.now();
 }
