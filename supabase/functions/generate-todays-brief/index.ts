@@ -159,7 +159,7 @@ Deno.serve(async (request) => {
       if (!recoveryRun?.id) throw new Error("Today's Brief recovery run does not match the requested owner.");
       if (recoveryRun.status === "failed") {
         await authClient.from("manager_synthesis_runs")
-          .update({ status: "queued", error: null, lease_token: null, updated_at: new Date().toISOString() })
+          .update({ status: "queued", error: null, lease_token: null })
           .eq("id", recoveryRun.id);
       }
       const frozen = readFrozenTodaysBriefContext(recoveryRun.context_payload);
@@ -798,7 +798,6 @@ async function createManagerSynthesisRun(
           error: null,
           lease_token: null,
           context_payload: contextPayload,
-          updated_at: new Date().toISOString(),
         })
         .eq("id", existing.id)
         .select("id,status,error,context_payload")
@@ -854,7 +853,6 @@ async function createManagerSynthesisRun(
         error: null,
         lease_token: null,
         context_payload: contextPayload,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", raced.id)
       .select("id,status,error,context_payload")
