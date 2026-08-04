@@ -444,7 +444,22 @@ async function loadOrCreateDiscoveryRun(db: any, input: DiscoveryInput): Promise
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
   if (existingError) throw existingError;
-  if (existing?.id) return existing as DiscoveryRunRow;
+  if (existing?.id) {
+    if (existing.status === "failed" || existing.status === "cancelled") {
+      const { data: reset, error: resetError } = await db
+        .from("manager_synthesis_runs")
+        .update({
+          status: "queued",
+          error: null,
+          lease_token: null,
+        })
+        .eq("id", existing.id)
+        .select("id,status,context_payload,steps_payload,limitations")
+        .single();
+      if (!resetError && reset) return reset as DiscoveryRunRow;
+    }
+    return existing as DiscoveryRunRow;
+  }
 
   const candidates = await loadCatalogCandidates(db, input);
   const contextPayload = freezeDiscoveryTargets(input.setupRunId, candidates.tracks, candidates.projects);
@@ -473,6 +488,19 @@ async function loadOrCreateDiscoveryRun(db: any, input: DiscoveryInput): Promise
     .maybeSingle();
   if (racedError) throw racedError;
   if (!raced?.id) throw new Error("Discovery run could not be recovered after concurrent creation.");
+  if (raced.status === "failed" || raced.status === "cancelled") {
+    const { data: reset, error: resetError } = await db
+      .from("manager_synthesis_runs")
+      .update({
+        status: "queued",
+        error: null,
+        lease_token: null,
+      })
+      .eq("id", raced.id)
+      .select("id,status,context_payload,steps_payload,limitations")
+      .single();
+    if (!resetError && reset) return reset as DiscoveryRunRow;
+  }
   return raced as DiscoveryRunRow;
 }
 
