@@ -229,6 +229,15 @@ describe("Music Manager Read v2 model contract", () => {
     expect(properties.evidenceIds.maxItems).toBe(MUSIC_MANAGER_READ_LIMITS.evidenceMaxItems);
   });
 
+  it("allows a grounded read without metrics when the subject has no resolved analytics", () => {
+    const withoutMetrics = { ...cloneValidOutput(), metricEvidenceIds: [] };
+    const noMetricContext = { ...validationContext, allowedMetricEvidenceIds: new Set<string>() };
+
+    expect(MUSIC_MANAGER_READ_LIMITS.metricMinItems).toBe(0);
+    expect(parseMusicManagerReadOutput(withoutMetrics)).toEqual(withoutMetrics);
+    expect(validateMusicManagerReadOutput(withoutMetrics, noMetricContext)).toEqual([]);
+  });
+
   it.each(["decision", "avoid", "watch", "confidence", "confidenceReason", "signals", "headline", "snapshotSummary", "claimAudit"])(
     "rejects removed root key %s",
     (removedKey) => {
@@ -376,9 +385,8 @@ describe("parseMusicManagerReadOutput", () => {
     expect(parsed.evidenceIds).toEqual(["ev-streams", "ev-market"]);
   });
 
-  it("rejects malformed or empty evidence arrays", () => {
+  it("rejects malformed or empty supporting-evidence arrays", () => {
     expect(() => parseMusicManagerReadOutput({ ...validOutput, evidenceIds: [] })).toThrow(/evidenceIds/);
-    expect(() => parseMusicManagerReadOutput({ ...validOutput, metricEvidenceIds: [] })).toThrow(/metricEvidenceIds/);
     expect(() => parseMusicManagerReadOutput({ ...validOutput, metricEvidenceIds: ["ev-streams", 12] })).toThrow(/metricEvidenceIds/);
   });
 

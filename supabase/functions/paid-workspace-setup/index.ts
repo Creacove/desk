@@ -141,6 +141,18 @@ async function runDiscoveryPhase({ db, supabaseUrl, serviceRoleKey, checkout, wo
 
   if (catalogState === "completed" || catalogState === "completed_with_limits") {
     if (existing === "running" && isStageLeaseActive(stages, "manager_discovery")) {
+      const existingToken = stageLeaseToken(stages, "manager_discovery");
+      if (existingToken) {
+        scheduleBackgroundTask(dispatchManagerDiscoveryPhase({
+          db,
+          supabaseUrl,
+          serviceRoleKey,
+          checkout,
+          workspace,
+          setupRun,
+          setupStageLeaseToken: existingToken,
+        }).catch(() => undefined));
+      }
       return { status: "running", phase: "discovery" };
     }
     const discoveryLease = await claimWorkspaceSetupStage(db, {
@@ -611,4 +623,10 @@ function isStageLeaseActive(stages: StageStatus, key: string): boolean {
   if (typeof stage.lease_expires_at !== "string" || !stage.lease_expires_at) return false;
   const expiresAt = Date.parse(stage.lease_expires_at);
   return Number.isFinite(expiresAt) && expiresAt > Date.now();
+}
+
+function stageLeaseToken(stages: StageStatus, key: string): string | null {
+  const stage = stages[key];
+  if (!stage || typeof stage !== "object") return null;
+  return typeof stage.lease_token === "string" && stage.lease_token ? stage.lease_token : null;
 }

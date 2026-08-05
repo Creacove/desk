@@ -10,7 +10,7 @@ export const MUSIC_MANAGER_READ_LIMITS = {
   bodyChars: 2400,
   bodyMinWords: 140,
   bodyMaxWords: 280,
-  metricMinItems: 1,
+  metricMinItems: 0,
   metricMaxItems: 5,
   evidenceMaxItems: 24,
 } as const;
@@ -92,8 +92,8 @@ export function parseMusicManagerReadOutput(value: unknown): MusicManagerReadMod
     position: readRequiredString(value.position, "position", MUSIC_MANAGER_READ_LIMITS.positionChars),
     managementRole: readRequiredString(value.managementRole, "managementRole", MUSIC_MANAGER_READ_LIMITS.managementRoleChars),
     body: readRequiredString(value.body, "body", MUSIC_MANAGER_READ_LIMITS.bodyChars),
-    metricEvidenceIds: readEvidenceIds(value.metricEvidenceIds, "metricEvidenceIds", false, MUSIC_MANAGER_READ_LIMITS.metricMaxItems),
-    evidenceIds: readEvidenceIds(value.evidenceIds, "evidenceIds", true, MUSIC_MANAGER_READ_LIMITS.evidenceMaxItems),
+    metricEvidenceIds: readEvidenceIds(value.metricEvidenceIds, "metricEvidenceIds", false, MUSIC_MANAGER_READ_LIMITS.metricMaxItems, MUSIC_MANAGER_READ_LIMITS.metricMinItems),
+    evidenceIds: readEvidenceIds(value.evidenceIds, "evidenceIds", true, MUSIC_MANAGER_READ_LIMITS.evidenceMaxItems, 1),
   };
 }
 
@@ -187,7 +187,7 @@ export function buildMusicManagerReadInstructions(
     "Use the exact requested subject, artist, markets, comparisons, and numbers supplied in context when they materially support the argument. Use supplied dates and ranks when they change the judgment. Interpret figures instead of dumping a list of metrics.",
     "Write body as 140–280 words in two to four short, natural paragraphs. Lead with the conclusion, keep every paragraph specific to this artist, and remove repetition before removing evidence or management judgment.",
     "Write managementRole as a short, complete 3–7 word executive status title. Never end it mid-sentence.",
-    "Select one to five metric candidate IDs supplied in context, preserving the order in which those exact metrics should appear. Select only metrics that materially support the read; never invent or rewrite a metric value. If only one usable candidate is supplied, select that one rather than adding filler.",
+    "Select up to five metric candidate IDs supplied in context, preserving the order in which those exact metrics should appear. Select only metrics that materially support the read; never invent or rewrite a metric value. If no metric candidates are supplied, return an empty metricEvidenceIds array rather than inventing a metric.",
     "Do not create missions, tasks, fake commitments, provider references, or descriptions of internal mechanics. Do not mention prompts, APIs, databases, evidence rows, source windows, ingestion, provider limits, internal IDs, or data pipelines.",
     "Do not substitute a comparison artist or comparison track for the requested subject; position must name the exact requested subject.",
     ...(isProject
@@ -216,8 +216,9 @@ function readEvidenceIds(
   field: string,
   deduplicate: boolean,
   maxItems: number,
+  minItems: number,
 ): string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > maxItems) {
+  if (!Array.isArray(value) || value.length < minItems || value.length > maxItems) {
     throw new Error(`OpenAI music manager read output ${field} must contain 1–${maxItems} evidence IDs.`);
   }
   const trimmed = value.map((evidenceId) => {

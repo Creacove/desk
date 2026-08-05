@@ -580,9 +580,6 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
   }
   if (allowedEvidenceIds.size === 0) throw new Error("Music Manager Read requires at least one saved evidence item.");
   const allowedMetricEvidenceIds = new Set(metricCandidates.map((candidate) => candidate.id));
-  if (allowedMetricEvidenceIds.size === 0) {
-    throw new MusicManagerReadFailure("workflow", { diagnostic: "no_metric_candidates" });
-  }
 
   return {
     modelContext,
