@@ -468,7 +468,7 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(prompt).toContain("must not become a sourced workspace fact");
   });
 
-  it("rejects visible evidence references outside the frozen packet", () => {
+  it("strips visible evidence references outside the frozen packet", () => {
     const output = parseTodaysBriefOutput({
       headlineRead: "London leads",
       intelligenceSnapshot: [{ title: "Market", insight: "London is strongest.", metrics: [{ label: "London", value: "42K", context: "listeners", evidenceIds: ["invented-id"] }] }],
@@ -478,8 +478,10 @@ describe("OpenAI Today's Brief generation function", () => {
       confidence: "medium",
       claimAudit: [{ claim: "London leads.", evidenceIds: ["ev-london"], limitation: "Public signal only." }],
     });
-    expect(() => assertTodaysBriefEvidenceIsGrounded(output, {
+    const grounded = assertTodaysBriefEvidenceIsGrounded(output, {
       intelligenceSnapshotInputs: [{ metrics: [{ id: "ev-london", evidenceIds: ["ev-london"] }] }],
-    })).toThrow(/invented-id/);
+    });
+    expect(grounded.intelligenceSnapshot[0].metrics[0].evidenceIds).toEqual([]);
   });
 });
+

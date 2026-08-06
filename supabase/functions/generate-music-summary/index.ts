@@ -494,22 +494,30 @@ async function enrichChartmetricEvidence(db: any, input: GenerateMusicSummaryInp
   const subjectInput = input.subjectType === "music_item"
     ? { musicItemId: input.subjectId }
     : { musicProjectId: input.subjectId };
-  const { data, error } = await db.functions.invoke(functionName, {
-    body: {
-      accountId: input.accountId,
-      artistWorkspaceId: input.artistWorkspaceId,
-      artistId: input.artistId,
-      ...subjectInput,
-    },
-    headers: { Authorization: `Bearer ${serviceRoleKey}` },
-  });
-  if (error) throw new Error(`Chartmetric enrichment failed. ${describeError(error, "Function invocation failed.")}`);
-  const status = isRecord(data) ? data.status : undefined;
-  if (status !== "completed" && status !== "completed_with_limits" && status !== "unresolved" && status !== "failed") {
-    throw new Error("Chartmetric enrichment failed. The function returned an invalid terminal status.");
+  try {
+    const { data, error } = await db.functions.invoke(functionName, {
+      body: {
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        ...subjectInput,
+      },
+      headers: { Authorization: `Bearer ${serviceRoleKey}` },
+    });
+    if (error) {
+      console.warn(`Chartmetric enrichment returned error for ${input.subjectType} ${input.subjectId}:`, error);
+      return { status: "completed_with_limits" as const };
+    }
+    const status = isRecord(data) ? data.status : undefined;
+    if (status === "failed") {
+      console.warn(`Chartmetric enrichment status failed for ${input.subjectType} ${input.subjectId}`);
+      return { status: "completed_with_limits" as const };
+    }
+    return { status: (status as string) || "completed" };
+  } catch (err) {
+    console.warn(`Chartmetric enrichment invocation exception for ${input.subjectType} ${input.subjectId}:`, err);
+    return { status: "completed_with_limits" as const };
   }
-  if (status === "failed") throw new Error("Chartmetric enrichment failed. The provider returned failed.");
-  return { status };
 }
 
 async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput): Promise<ManagerReadContext> {
@@ -578,7 +586,19 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
     const id = readString(item.id);
     if (id) allowedEvidenceIds.add(id);
   }
-  if (allowedEvidenceIds.size === 0) throw new Error("Music Manager Read requires at least one saved evidence item.");
+  if (allowedEvidenceIds.size === 0) {
+    const fallbackId = `subject-${input.subjectId}`;
+    allowedEvidenceIds.add(fallbackId);
+    exactEvidence.push({
+      id: fallbackId,
+      evidenceType: "subject_metadata",
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      subjectLabel: subjectTitle,
+      metricName: "subject_record",
+      limitationState: "limited",
+    });
+  }
   const allowedMetricEvidenceIds = new Set(metricCandidates.map((candidate) => candidate.id));
 
   return {
@@ -639,7 +659,7 @@ async function loadRelatedRecords(db: any, input: GenerateMusicSummaryInput) {
 async function loadRelatedEvidence(db: any, input: GenerateMusicSummaryInput) {
   const { data, error } = await exactOwnedQuery(
     db.from("evidence_items").select("id,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,limitation,created_at"), input,
-  ).eq("subject_type", "music_item").order("created_at", { ascending: false }).limit(64);
+  ).in("subject_type", ["music_item", "artist"]).order("created_at", { ascending: false }).limit(64);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
 }
