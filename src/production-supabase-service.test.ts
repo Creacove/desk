@@ -1042,6 +1042,13 @@ describe("production Supabase services", () => {
       readBody: "Legacy copy",
     },
     {
+      name: "current read without resolved metrics",
+      outputs: [musicManagerOutputRow({ render_json: { ...musicManagerReadV2, metrics: [] } })],
+      runs: [],
+      status: "fresh",
+      hasRead: true,
+    },
+    {
       name: "active first read",
       outputs: [],
       runs: [musicManagerRunRow({ id: "run-active", status: "running", created_at: "2026-07-27T10:00:00.000Z" })],

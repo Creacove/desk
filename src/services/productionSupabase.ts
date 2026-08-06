@@ -3934,7 +3934,7 @@ function parseMusicManagerReadViewModel(value: unknown): MusicManagerReadViewMod
   const evidenceIds = readStrictManagerReadStringArray(value.evidenceIds);
   if (
     !position || !managementRole || !body || !evidenceIds?.length ||
-    !Array.isArray(value.metrics) || value.metrics.length < 1 || value.metrics.length > 5
+    !Array.isArray(value.metrics) || value.metrics.length > 5
   ) return undefined;
 
   const metrics = value.metrics.map(parseMusicManagerReadMetric);
