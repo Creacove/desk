@@ -113,7 +113,7 @@ Deno.serve(async (request) => {
     const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const backfillToken = Deno.env.get("CHARTMETRIC_BACKFILL_TOKEN");
     const suppliedBackfillToken = request.headers.get("X-Chartmetric-Backfill-Token");
-    const isServiceRoleInvocation = authHeader === `Bearer ${serviceRoleKey}` || Boolean(
+    const isServiceRoleInvocation = authHeader === `Bearer ${serviceRoleKey}` || readBearerJwtRole(authHeader) === "service_role" || Boolean(
       backfillToken && suppliedBackfillToken && backfillToken === suppliedBackfillToken
     );
 
@@ -487,7 +487,11 @@ async function inspectChartmetricEvidence(db: any, input: GenerateMusicSummaryIn
   return { state: age <= CHARTMETRIC_EVIDENCE_FRESH_MS ? "fresh" as const : "stale" as const };
 }
 
-async function enrichChartmetricEvidence(db: any, input: GenerateMusicSummaryInput, serviceRoleKey: string) {
+async function enrichChartmetricEvidence(
+  db: any,
+  input: GenerateMusicSummaryInput,
+  serviceRoleKey: string,
+): Promise<{ status: "completed" | "completed_with_limits" | "unresolved" | "failed" }> {
   const functionName = input.subjectType === "music_item"
     ? "chartmetric-track-enrichment"
     : "chartmetric-project-enrichment";
@@ -513,7 +517,11 @@ async function enrichChartmetricEvidence(db: any, input: GenerateMusicSummaryInp
       console.warn(`Chartmetric enrichment status failed for ${input.subjectType} ${input.subjectId}`);
       return { status: "completed_with_limits" as const };
     }
-    return { status: (status as string) || "completed" };
+    if (status === "completed" || status === "completed_with_limits" || status === "unresolved") {
+      return { status };
+    }
+    console.warn(`Chartmetric enrichment returned an invalid status for ${input.subjectType} ${input.subjectId}`);
+    return { status: "completed_with_limits" as const };
   } catch (err) {
     console.warn(`Chartmetric enrichment invocation exception for ${input.subjectType} ${input.subjectId}:`, err);
     return { status: "completed_with_limits" as const };
@@ -1156,6 +1164,15 @@ function describeError(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) return error.message.trim();
   if (isRecord(error) && typeof error.message === "string" && error.message.trim()) return error.message.trim();
   return fallback;
+}
+
+function readBearerJwtRole(authHeader: string) {
+  try {
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    return JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")))?.role;
+  } catch {
+    return undefined;
+  }
 }
 
 function requireEnv(key: string) {

@@ -42,6 +42,10 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).toContain("assertActiveWorkspaceEntitlement");
   });
 
+  it("accepts the current trusted service-role JWT when the runtime service key differs after key rotation", () => {
+    expect(functionSource).toContain("readBearerJwtRole(authHeader) === \"service_role\"");
+  });
+
   it("reuses an exact active run and leaves expired work to lease recovery", () => {
     expect(functionSource).not.toContain("ACTIVE_RUN_STALE_MS");
     expect(functionSource).not.toContain('.lt("created_at"');
