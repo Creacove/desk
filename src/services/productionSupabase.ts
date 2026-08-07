@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClientRequestId } from "../lib/requestId";
 import {
   BadgeDollarSign,
   BriefcaseBusiness,
@@ -766,16 +767,6 @@ function paystackIntervalOptions(pricing: { currency: string; amountMinor: { mon
     monthly: { amount: pricing.amountMinor.monthly / 100, amountMinor: pricing.amountMinor.monthly, currency: pricing.currency },
     yearly: { amount: pricing.amountMinor.yearly / 100, amountMinor: pricing.amountMinor.yearly, currency: pricing.currency },
   };
-}
-
-function createClientRequestId() {
-  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
-  const bytes = new Uint8Array(16);
-  globalThis.crypto.getRandomValues(bytes);
-  bytes[6] = (bytes[6] & 0x0f) | 0x40;
-  bytes[8] = (bytes[8] & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
 export function createSupabaseProfileSetupService(client: SupabaseClient): ProductionProfileSetupService {
@@ -1588,7 +1579,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             accountId: workspace.accountId,
             artistWorkspaceId: workspace.artistWorkspaceId,
             artistId: workspace.artistId,
-            requestId: input.requestId ?? crypto.randomUUID(),
+            requestId: input.requestId ?? createClientRequestId(),
             title: input.title.trim(),
             itemType: input.itemType,
             lifecycleStage: input.lifecycleStage,

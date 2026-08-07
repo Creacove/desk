@@ -124,14 +124,12 @@ function musicReadSubject(
 
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
-  vi.stubGlobal("crypto", { randomUUID: () => "123e4567-e89b-42d3-a456-426614174000" });
 });
 
 afterEach(() => {
   cleanup();
   window.history.replaceState({}, "", "/");
   vi.useRealTimers();
-  vi.unstubAllGlobals();
   supabaseDiscoveryPoll.responses = [];
   vi.clearAllMocks();
 });

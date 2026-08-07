@@ -3,6 +3,7 @@ import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
+import { createClientRequestId } from "../../lib/requestId";
 import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
@@ -274,7 +275,7 @@ export function MusicWorkspace({
         title: input.title,
         itemType: input.type,
         lifecycleStage: input.lifecycleStage,
-        requestId: crypto.randomUUID(),
+        requestId: createClientRequestId(),
       };
       setCreateKind(null);
       await createSongWorkspace(songWorkspaceInput);
@@ -1847,13 +1848,13 @@ function MusicCreateDialog({
           </label>
           <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
             Lifecycle stage
-            <select value={lifecycleStage} onChange={(event) => setLifecycleStage(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none">
+            <select value={lifecycleStage} aria-describedby={kind === "songs" ? "song-lifecycle-stage-help" : undefined} onChange={(event) => setLifecycleStage(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none">
               {["idea", "recording", "production", "mixing", "mastering", "ready", "scheduled", "released", "catalog"].map((stage) => (
                 <option key={stage} value={stage}>{titleCaseStatus(stage)}</option>
               ))}
             </select>
-            {kind === "songs" ? <span className="normal-case text-[11px] font-medium tracking-normal text-muted-foreground">Choose the truest current stage. You can change it later.</span> : null}
           </label>
+          {kind === "songs" ? <p id="song-lifecycle-stage-help" className="-mt-1 normal-case text-[11px] font-medium tracking-normal text-muted-foreground">Choose the truest current stage. You can change it later.</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
