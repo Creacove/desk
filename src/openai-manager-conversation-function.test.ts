@@ -120,6 +120,28 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(functionSource).not.toContain('selectMany(db, "conversation_messages"');
   });
 
+  it("links a song or project Manager conversation through artifact_links and scopes the packet to that subject", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain("musicSubject?:");
+      expect(source).toContain("parseMusicConversationSubject");
+      expect(source).toContain("ensureMusicConversationSubjectLink");
+      expect(source).toContain("findLinkedMusicConversation");
+      expect(source).toContain('source_type: "conversation"');
+      expect(source).toContain('relationship: "references"');
+      expect(source).toContain("musicConversationSubjectTarget");
+      expect(source).toContain("focusedMusicSubject");
+      expect(source.indexOf("ensureMusicConversationSubjectLink")).toBeLessThan(source.indexOf("insertConversationMessage"));
+    }
+  });
+
+  it("passes the exact conversation and run provenance into every Manager tool execution", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain("runId: runId ?? undefined");
+      expect(source).toContain("conversationId");
+      expect(source).toContain("executeManagerConversationTool(db, toolInput, name, args)");
+    }
+  });
+
   it("grants the server-side router access to conversation, run, action, and memory tables", () => {
     expect(existsSync(serviceRoleGrantMigrationPath)).toBe(true);
     const migration = readFileSync(serviceRoleGrantMigrationPath, "utf8");
@@ -155,6 +177,10 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("Do not create a separate evidence-read section");
     expect(instructions).toContain("createdWork");
     expect(instructions).toContain("workMode");
+    expect(instructions).toContain("read_focused_release_readiness");
+    expect(instructions).toContain("ISO-8601 timestamp derived from a confirmed release date");
+    expect(instructions).toContain("Never reopen pre-release gates for released/catalog music");
+    expect(instructions).toContain("Never invent a contact name, email address, outlet, playlist, or result");
     expect(JSON.stringify(managerConversationJsonSchema)).toContain("workMode");
     expect(instructions).not.toContain("OpenAI");
   });

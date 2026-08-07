@@ -27,6 +27,17 @@ const oversizedPacket = {
   recommendedMissionPatterns: Array.from({ length: 10 }, (_, index) => ({ key: `pattern-${index}`, body: "x".repeat(10_000) })),
   managerOutput: { render_json: { content: "x".repeat(100_000) } },
   activePlaybookKeys: ["cultural_expansion"],
+  focusedMusicSubject: {
+    type: "music_item",
+    id: "song-focused",
+    title: "Night Bus",
+    kind: "single",
+    lifecycleStage: "mastering",
+    releasedAt: "",
+    sourceKind: "manual",
+    sourceLimit: "No delivery confirmation yet.",
+    metadata: { lyrics: "This should stay bounded." },
+  },
 };
 
 describe("Manager conversation context boundary", () => {
@@ -38,6 +49,14 @@ describe("Manager conversation context boundary", () => {
     expect(context).toHaveProperty("scope", expect.objectContaining({ conversationId: "conversation-1", taskId: "task-1" }));
     expect(context).not.toHaveProperty("latestManagerIntelligencePacket");
     expect(context).not.toHaveProperty("missionPatternRegistry");
+    expect(context.openingBrief).toMatchObject({
+      focusedMusicSubject: {
+        type: "music_item",
+        id: "song-focused",
+        title: "Night Bus",
+        lifecycleStage: "mastering",
+      },
+    });
     expect(serialized).not.toContain("render_json");
     expect(serialized).not.toContain("must not be copied");
     expect((context.openingBrief as { conversationHistory: unknown[] }).conversationHistory).toHaveLength(6);

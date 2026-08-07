@@ -68,6 +68,8 @@ type GenerateMusicSummaryInput = {
   subjectId: string;
   setupRunId?: string;
   recoveryRunId?: string;
+  triggerEventId?: string;
+  triggerReason?: string;
 };
 
 type OpenAIUsage = {
@@ -183,6 +185,10 @@ async function assertWorkspace(db: any, input: GenerateMusicSummaryInput) {
 }
 
 async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) {
+  if (input.triggerEventId) {
+    const prior = await findManagerReadForTriggerEvent(db, input, input.triggerEventId);
+    if (prior) return { runId: prior.id as string, status: prior.status as string, created: false };
+  }
   const active = await findActiveManagerReadRun(db, input);
   if (active) return { runId: active.id as string, status: active.status as string, created: false };
 
@@ -202,6 +208,8 @@ async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) 
       schemaVersion: MUSIC_MANAGER_READ_SCHEMA_VERSION,
       subjectType: input.subjectType,
       subjectId: input.subjectId,
+      triggerEventId: input.triggerEventId ?? "",
+      triggerReason: cleanTriggerReason(input.triggerReason),
     },
     workflow_version: "music_manager_read_v2",
     scope_key: `${input.subjectType}:${input.subjectId}`,
@@ -215,6 +223,25 @@ async function acquireManagerReadRun(db: any, input: GenerateMusicSummaryInput) 
     if (winner) return { runId: winner.id as string, status: winner.status as string, created: false };
   }
   throw error ?? new Error("Music Manager Read run could not be queued.");
+}
+
+async function findManagerReadForTriggerEvent(db: any, input: GenerateMusicSummaryInput, triggerEventId: string) {
+  const { data, error } = await exactActiveOrTerminalRunQuery(
+    db.from("manager_synthesis_runs").select("id,status"),
+    input,
+  ).contains("context_payload", { triggerEventId }).order("created_at", { ascending: false }).limit(1);
+  if (error) throw error;
+  return Array.isArray(data) ? data[0] ?? null : data ?? null;
+}
+
+function exactActiveOrTerminalRunQuery(query: any, input: GenerateMusicSummaryInput) {
+  return query
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("classification", MUSIC_MANAGER_READ_CLASSIFICATION)
+    .eq("subject_type", input.subjectType)
+    .eq("subject_id", input.subjectId);
 }
 
 function exactActiveRunQuery(query: any, input: GenerateMusicSummaryInput) {
@@ -1117,6 +1144,9 @@ function validateInput(input: GenerateMusicSummaryInput) {
   if (input.subjectType !== "music_item" && input.subjectType !== "music_project") {
     throw new Error("subjectType must be music_item or music_project.");
   }
+  if (input.triggerEventId !== undefined && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.triggerEventId)) {
+    throw new Error("triggerEventId must be a UUID when supplied.");
+  }
 }
 
 function nonnegativeInteger(value: unknown) {
@@ -1132,6 +1162,12 @@ function requiredTokenCount(value: unknown, field: string) {
 
 function boundedString(value: string, maxLength: number) {
   return value.length <= maxLength ? value : value.slice(0, maxLength);
+}
+
+function cleanTriggerReason(value: unknown) {
+  return typeof value === "string"
+    ? value.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 120)
+    : "";
 }
 
 function jsonEqual(left: unknown, right: unknown) {

@@ -903,6 +903,36 @@ describe("production Supabase services", () => {
           limitation: "Chartmetric public/social intelligence can report supported platform metrics, but does not prove private saves, source-of-stream, revenue, conversion, or campaign ROI.",
         },
         {
+          id: "audio-analysis-bpm",
+          source: "Audio analysis",
+          source_kind: "uploaded_file",
+          evidence_type: "audio_analysis",
+          subject_type: "music_item",
+          subject_id: "song-1",
+          subject_label: "North Star master",
+          metric_name: "tempo_bpm",
+          metric_value: 102.5,
+          metric_unit: "bpm",
+          freshness: "Current upload",
+          confidence: "medium",
+          limitation: "Automated estimate. Verify before delivery or release.",
+        },
+        {
+          id: "audio-analysis-key",
+          source: "Audio analysis",
+          source_kind: "uploaded_file",
+          evidence_type: "audio_analysis",
+          subject_type: "music_item",
+          subject_id: "song-1",
+          subject_label: "North Star master",
+          metric_name: "musical_key",
+          metric_value: null,
+          metric_unit: "F# minor",
+          freshness: "Current upload",
+          confidence: "medium",
+          limitation: "Automated estimate. Verify before delivery or release.",
+        },
+        {
           id: "evidence-project-1",
           source: "Chartmetric",
           source_kind: "third_party_provider",
@@ -970,8 +1000,11 @@ describe("production Supabase services", () => {
         linkedTaskCount: 0,
         fileAssets: expect.arrayContaining([
           expect.objectContaining({ label: "Spotify track page", status: "Confirmed", action: "Open Spotify URL" }),
-          expect.objectContaining({ label: "Cover artwork", status: "Confirmed" }),
-          expect.objectContaining({ label: "User-uploaded master", status: "Missing" }),
+          expect.objectContaining({ label: "Spotify cover artwork", status: "Confirmed" }),
+        ]),
+        metadataFields: expect.arrayContaining([
+          { label: "Tempo (BPM)", value: "102.5", status: "Draft" },
+          { label: "Musical key", value: "F# minor", status: "Draft" },
         ]),
         sourceSummary: expect.objectContaining({
           headline: "North Star is a Released catalog song backed by Spotify public catalog and Chartmetric evidence.",
@@ -981,7 +1014,7 @@ describe("production Supabase services", () => {
             { label: "ISRC", value: "USNV12600001", source: "Spotify", status: "Confirmed" },
             { label: "Popularity", value: "42", source: "Spotify", status: "Confirmed" },
           ]),
-          evidence: [
+          evidence: expect.arrayContaining([
             {
               label: "Spotify playlist reach",
               value: "12500 listeners",
@@ -989,13 +1022,14 @@ describe("production Supabase services", () => {
               window: "Last 7 days",
               limitation: "Chartmetric public/social intelligence can report supported platform metrics, but does not prove private saves, source-of-stream, revenue, conversion, or campaign ROI.",
             },
-          ],
+          ]),
           limitations: expect.arrayContaining([
             "Spotify public catalog supports identity, catalog, and public metadata only.",
           ]),
         }),
       }),
     );
+    expect(musicViewModels.find((item) => item.id === "song-1")?.fileAssets.some((asset) => asset.label === "User-uploaded master")).toBe(false);
     expect(library.projects).toEqual([
       expect.objectContaining({
         id: "project-1",
@@ -1183,6 +1217,7 @@ describe("production Supabase services", () => {
       "music_project_items",
       "manager_outputs",
       "manager_synthesis_runs",
+      "artifact_links",
     ]);
     expect(calls.some((call) => call.select.includes("render_json"))).toBe(false);
     expect(calls.some((call) => [
@@ -1203,6 +1238,33 @@ describe("production Supabase services", () => {
       expect(call.limit).toBeLessThan(200);
       expect(call.orders.length).toBeGreaterThan(0);
     }
+  });
+
+  it("hydrates the latest linked Manager conversation into the lightweight Music list", async () => {
+    const tables = musicManagerReadTables({
+      artifact_links: [{
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        source_type: "conversation",
+        source_id: "conversation-list-song",
+        target_type: "music_item",
+        target_id: "song-jam",
+        relationship: "references",
+        created_at: "2026-08-07T12:00:00.000Z",
+      }],
+    });
+    const { client, calls } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicList();
+
+    expect(result.find((subject) => subject.id === "song-jam")).toMatchObject({
+      managerConversationId: "conversation-list-song",
+    });
+    expect(calls.find((call) => call.table === "artifact_links")?.inFilters).toContainEqual([
+      "target_id",
+      expect.arrayContaining(["song-jam"]),
+    ]);
   });
 
   it("does not starve returned Music subjects behind global output or run history limits", async () => {
@@ -1352,6 +1414,51 @@ describe("production Supabase services", () => {
     const identityTable = subjectType === "music_item" ? "music_items" : "music_projects";
     expect(calls.find((call) => call.table === identityTable)?.filters).toContainEqual(["id", subjectId]);
     expect(Boolean(result?.identifiers?.some((identifier) => identifier.value === "FOREIGN"))).toBe(false);
+  });
+
+  it("returns the latest scoped Manager conversation linked to an exact music subject", async () => {
+    const tables = musicManagerReadTables({
+      artifact_links: [
+        {
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source_type: "conversation",
+          source_id: "conversation-song-current",
+          target_type: "music_item",
+          target_id: "song-jam",
+          relationship: "references",
+          created_at: "2026-08-07T12:00:00.000Z",
+        },
+        {
+          account_id: "account-other",
+          artist_workspace_id: "workspace-other",
+          artist_id: "artist-other",
+          source_type: "conversation",
+          source_id: "conversation-foreign",
+          target_type: "music_item",
+          target_id: "song-jam",
+          relationship: "references",
+          created_at: "2026-08-07T13:00:00.000Z",
+        },
+      ],
+    });
+    const { client, calls } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicObject("song-jam", "music_item");
+
+    expect(result).toMatchObject({ id: "song-jam", managerConversationId: "conversation-song-current" });
+    expect(calls.find((call) => call.table === "artifact_links")).toMatchObject({
+      filters: expect.arrayContaining([
+        ["account_id", "account-1"],
+        ["artist_workspace_id", "workspace-1"],
+        ["artist_id", "artist-1"],
+        ["source_type", "conversation"],
+        ["target_type", "music_item"],
+        ["target_id", "song-jam"],
+        ["relationship", "references"],
+      ]),
+    });
   });
 
   it("loads one Manager Read run by the exact owner tuple and run id", async () => {
@@ -1511,7 +1618,7 @@ describe("production Supabase services", () => {
     expect(calls.some((call) => call.table === "music_projects")).toBe(false);
     expect(calls.every((call) => call.filters.some(([key, value]) =>
       (key === "id" || key === "subject_id" || key === "music_item_id") && value === "song-jam",
-    ) || call.table === "music_project_items" || call.table === "music_split_contributors")).toBe(true);
+    ) || call.table === "music_project_items" || call.table === "music_split_contributors" || call.table === "artifact_links")).toBe(true);
   });
 
   it("rejects invalid backend Manager Read start responses", async () => {
@@ -1660,7 +1767,7 @@ describe("production Supabase services", () => {
     }
   });
 
-  it("keeps manual unreleased split proof blocking while ignoring split proof for released Spotify catalog imports", async () => {
+  it("keeps manual unreleased split proof blocking while treating every released song as post-release work", async () => {
     const client = fakeSupabaseClient({
       music_items: [
         {
@@ -1679,6 +1786,16 @@ describe("production Supabase services", () => {
           lifecycle_stage: "ready",
           source_kind: "manual",
           source_limit: "User-created record.",
+          metadata: {},
+        },
+        {
+          id: "song-manual-released",
+          title: "Manual Released Song",
+          item_type: "song",
+          lifecycle_stage: "released",
+          released_at: "2026-07-18T00:00:00.000Z",
+          source_kind: "manual",
+          source_limit: "User-created record released through a distributor.",
           metadata: {},
         },
       ],
@@ -1709,6 +1826,11 @@ describe("production Supabase services", () => {
           status: "Missing",
           summary: "Missing split proof",
         },
+        {
+          music_item_id: "song-manual-released",
+          status: "Missing",
+          summary: "Missing split proof",
+        },
       ],
       music_identifiers: [],
       evidence_items: [],
@@ -1717,6 +1839,7 @@ describe("production Supabase services", () => {
     const musicViewModels = await createSupabaseProductionRepositories(client, workspace).music.loadMusic();
     const spotifySong = musicViewModels.find((item) => item.id === "song-spotify-released");
     const manualSong = musicViewModels.find((item) => item.id === "song-manual-ready");
+    const manualReleasedSong = musicViewModels.find((item) => item.id === "song-manual-released");
     const spotifyProject = musicViewModels.find((item) => item.id === "project-spotify");
 
     expect(spotifySong).toMatchObject({
@@ -1735,6 +1858,14 @@ describe("production Supabase services", () => {
     expect(manualSong?.fileAssets).toEqual(expect.arrayContaining([
       expect.objectContaining({ group: "Splits", label: "Split sheet document", status: "Missing", canUpload: true }),
     ]));
+
+    expect(manualReleasedSong).toMatchObject({
+      status: "Released",
+      blocker: "No active blocker",
+      rightsState: "Rights were finalized before release",
+      managerReadStatus: "not_generated",
+    });
+    expect(manualReleasedSong?.fileAssets?.some((asset) => asset.status === "Missing")).toBe(false);
   });
 
   it("searches the connected artist's Spotify catalogue through the edge function", async () => {
@@ -1755,6 +1886,81 @@ describe("production Supabase services", () => {
 
     expect(result).toEqual({ mode: "releases", releases });
     expect(capturedBody).toMatchObject({ accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1", kind: "project" });
+  });
+
+  it("creates and explicitly delivers a Files-owned selected-asset share link through the server boundary", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const client = createMutableSupabaseClient({}, {
+      invoke: async (name: string, options: { body: unknown }) => {
+        calls.push({ name, body: options.body });
+        if ((options.body as { action?: string }).action === "create") {
+          return { data: { shareLink: { id: "share-1", label: "Jam package", preset: "delivery", url: "https://app.ordersounds.com/share?token=secret" } }, error: null };
+        }
+        return { data: { status: "sent", shareLinkId: "share-1", recipientEmail: "press@example.com" }, error: null };
+      },
+    });
+    const music = createSupabaseProductionRepositories(client, workspace).music;
+
+    const shareLink = await music.createShareLink({
+      musicSubject: { type: "music_item", id: "song-jam" },
+      assetIds: ["asset-master", "asset-cover"],
+      preset: "delivery",
+      recipientEmail: "press@example.com",
+    });
+    await music.sendShareLink({ shareLinkId: shareLink.id, url: shareLink.url, recipientEmail: "press@example.com" });
+
+    expect(calls).toEqual([
+      {
+        name: "music-share-links",
+        body: expect.objectContaining({
+          action: "create",
+          accountId: "account-1",
+          artistWorkspaceId: "workspace-1",
+          artistId: "artist-1",
+          musicSubject: { type: "music_item", id: "song-jam" },
+          assetIds: ["asset-master", "asset-cover"],
+          preset: "delivery",
+          recipientEmail: "press@example.com",
+        }),
+      },
+      {
+        name: "music-share-links",
+        body: expect.objectContaining({ action: "send", shareLinkId: "share-1", recipientEmail: "press@example.com" }),
+      },
+    ]);
+  });
+
+  it("lists prior Files-owned share packages without returning their capability tokens", async () => {
+    const calls: Array<{ name: string; body: unknown }> = [];
+    const client = createMutableSupabaseClient({}, {
+      invoke: async (name: string, options: { body: unknown }) => {
+        calls.push({ name, body: options.body });
+        return {
+          data: {
+            shareLinks: [{
+              id: "share-older",
+              label: "Jam press package",
+              preset: "epk_press",
+              state: "active",
+              recipientEmail: "editor@example.com",
+              assetCount: 3,
+              accessCount: 5,
+              createdAt: "2026-08-07T14:00:00.000Z",
+            }],
+          },
+          error: null,
+        };
+      },
+    });
+
+    const links = await createSupabaseProductionRepositories(client, workspace).music.listShareLinks!({ type: "music_item", id: "song-jam" });
+
+    expect(links).toEqual([expect.objectContaining({ id: "share-older", state: "active", assetCount: 3, accessCount: 5 })]);
+    expect(calls).toEqual([{
+      name: "music-share-links",
+      body: expect.objectContaining({ action: "list", musicSubject: { type: "music_item", id: "song-jam" } }),
+    }]);
+    expect(JSON.stringify(links)).not.toContain("token");
   });
 
   it("imports a Spotify selection through the edge function", async () => {
@@ -2379,6 +2585,7 @@ describe("production Supabase services", () => {
     const result = await createSupabaseProductionRepositories(client, workspace).manager.sendMessage({
       conversationId: "conversation-existing",
       body: "Should we move the release date?",
+      musicSubject: { type: "music_item", id: "music-item-1" },
     });
 
     expect(calls).toEqual([
@@ -2390,6 +2597,7 @@ describe("production Supabase services", () => {
           artistId: workspace.artistId,
           conversationId: "conversation-existing",
           body: "Should we move the release date?",
+          musicSubject: { type: "music_item", id: "music-item-1" },
         },
       },
     ]);
@@ -2424,6 +2632,7 @@ describe("production Supabase services", () => {
         {
           conversationId: "conversation-existing",
           body: "Should we move the release date?",
+          musicSubject: { type: "music_item", id: "music-item-1" },
         },
         {
           onEvent: (event) => {
@@ -2448,6 +2657,7 @@ describe("production Supabase services", () => {
       artistId: workspace.artistId,
       conversationId: "conversation-existing",
       body: "Should we move the release date?",
+      musicSubject: { type: "music_item", id: "music-item-1" },
     });
     expect(events).toEqual(["Streaming reply."]);
   });

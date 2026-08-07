@@ -3,6 +3,7 @@ type ManagerConversationContextInput = {
   artistWorkspaceId: string;
   artistId: string;
   taskId?: string;
+  musicSubject?: { type: "music_item" | "music_project"; id: string };
   body: string;
   contextRequestId?: string;
   contextAnswers?: unknown;
@@ -28,6 +29,7 @@ export function buildManagerConversationModelContext(
     artistId: input.artistId,
     conversationId,
     taskId: input.taskId ?? "",
+    musicSubject: compactMusicSubjectPointer(input.musicSubject),
   };
   const message = compactText(input.body, 6_000);
   const common = {
@@ -65,6 +67,7 @@ function compactOpeningPacket(packet: unknown) {
     version: "manager_opening_brief_v1",
     artist: compactArtist(source.artist),
     taskContext: compactTask(source.taskContext),
+    focusedMusicSubject: compactFocusedMusicSubject(source.focusedMusicSubject),
     evidence: compactEvidenceList(source.evidence, 8),
     music: compactMusic(source.music),
     durableMemory: compactMemoryList(source.memory, 6),
@@ -114,6 +117,30 @@ function compactMusic(value: unknown) {
   return {
     items: compactCatalogList(music.items, 8),
     projects: compactCatalogList(music.projects, 6),
+  };
+}
+
+function compactMusicSubjectPointer(value: unknown) {
+  const subject = record(value);
+  const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
+  const id = compactText(subject.id, 120);
+  return type && id ? { type, id } : null;
+}
+
+function compactFocusedMusicSubject(value: unknown) {
+  const subject = record(value);
+  const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
+  const id = compactText(subject.id, 120);
+  if (!type || !id) return null;
+  return {
+    type,
+    id,
+    title: compactText(subject.title, 240),
+    kind: compactText(subject.kind, 120),
+    lifecycleStage: compactText(subject.lifecycleStage ?? subject.lifecycle_stage, 120),
+    releasedAt: compactText(subject.releasedAt ?? subject.released_at, 120),
+    sourceKind: compactText(subject.sourceKind ?? subject.source_kind, 120),
+    sourceLimit: compactText(subject.sourceLimit ?? subject.source_limit, 600),
   };
 }
 

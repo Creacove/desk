@@ -53,6 +53,7 @@ export type MissionGenesisTask = {
   managerResponsibility: string;
   userResponsibility: string;
   riskIfLate: string;
+  deadline: string;
   sourceRefs: string[];
 };
 
@@ -214,7 +215,7 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
+          required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
           properties: {
             title: { type: "string" },
             ownerRole: { type: "string" },
@@ -230,6 +231,7 @@ export const missionGenesisJsonSchema = {
             managerResponsibility: { type: "string" },
             userResponsibility: { type: "string" },
             riskIfLate: { type: "string" },
+            deadline: { type: "string" },
             sourceRefs: stringArraySchema,
           },
         },
@@ -322,7 +324,7 @@ export const missionGenesisJsonSchema = {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
+                required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
                 properties: {
                   title: { type: "string" },
                   ownerRole: { type: "string" },
@@ -338,6 +340,7 @@ export const missionGenesisJsonSchema = {
                   managerResponsibility: { type: "string" },
                   userResponsibility: { type: "string" },
                   riskIfLate: { type: "string" },
+                  deadline: { type: "string" },
                   sourceRefs: stringArraySchema,
                 },
               },
@@ -394,6 +397,7 @@ const sharedInstructions = [
   "Every visible task must declare exactly one completionMode: result_note when the user can report an observable outcome or manager_draft when the Manager can prepare the substantive artifact in chat. The legacy evidence value exists for compatibility but must not be generated.",
   "Every visible task must declare workMode: artist_action when the artist or team performs or reports the work, or collaborative when the artist/team and Manager build or approve it together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put immediate Manager analysis in checkpoint.managerRead instead.",
   "Every task must state completionExpectation, deliverableRequirements, managerResponsibility, and userResponsibility so an independent artist knows what happens next without a meeting.",
+  "Every task must include deadline as an ISO-8601 timestamp only when a confirmed operating date supports it; otherwise use an empty string. Never invent a deadline or imply a distributor, playlist, press, or collaborator commitment exists.",
   "Ask at most one decision-changing user question at a time. Include a recommendedAnswer and recommendationReason so the user can accept the Manager's judgment or say they are unsure. Do not ask anything already answered by profile, memory, evidence, or prior context answers.",
   "Missing source proof is a limitation, not an upload gate. Use request_evidence only when no responsible recommendation can be made at all; otherwise proceed with a limited or conservative recommendation.",
   "If active work already owns the objective, return update_existing_mission with its exact mission id. You MUST still provide a complete revised plan, with the same rigour as activate_mission: all 7 mission identity fields (title, objective, reason, summary, patternName, currentRecommendation, timeline), changeConditions, at least 2 sourceRefs, and at least one checkpoint with a binary decision rule grounded in evidence. Author the update as if writing the mission fresh from the latest evidence. Tasks may be empty when nothing is needed from the artist.",
@@ -865,8 +869,16 @@ function readTasks(value: unknown): MissionGenesisTask[] {
       ? item.userResponsibility.trim()
       : "Complete the task steps and report the observable result.",
     riskIfLate: readString(item.riskIfLate, "tasks.riskIfLate", true),
+    deadline: readTaskDeadline(item.deadline),
     sourceRefs: readStringArray(item.sourceRefs),
   }));
+}
+
+function readTaskDeadline(value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) return "";
+  const timestamp = Date.parse(text);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
 }
 
 function readPermissions(value: unknown): MissionGenesisPermission[] {

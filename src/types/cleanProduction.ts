@@ -319,6 +319,7 @@ export type MusicObjectViewModel = {
   managerReadStatus: MusicManagerReadStatus;
   managerReadRunId?: string;
   managerReadError?: string;
+  managerConversationId?: string;
   rightsState?: string;
   assets?: string[];
   coverImageUrl?: string;
@@ -337,7 +338,7 @@ export type MusicObjectViewModel = {
   songIds?: string[];
   projectIds?: string[];
   files?: Array<{ label: string; status: string }>;
-  fileAssets?: Array<{ group: "Audio" | "Artwork" | "Splits"; label: string; status: string; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
+  fileAssets?: Array<{ assetId?: string; group: "Audio" | "Artwork" | "Splits"; label: string; status: string; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
   details?: Array<{ label: string; value: string; status: string }>;
   metadataFields?: Array<{ label: string; value: string; status: "Missing" | "Draft" | "Confirmed" }>;
   releaseFields?: Array<{ label: string; value: string; status: "Missing" | "Draft" | "Confirmed" }>;
@@ -544,6 +545,31 @@ export type ManagerConversationContextAnswer = {
   answer: string;
 };
 
+export type ManagerConversationMusicSubject = {
+  type: "music_item" | "music_project";
+  id: string;
+};
+
+export type MusicShareLinkViewModel = {
+  id: string;
+  label: string;
+  preset: "listen" | "epk_press" | "delivery" | "custom";
+  url: string;
+  recipientEmail?: string;
+  createdAt?: string;
+};
+
+export type MusicShareLinkHistoryViewModel = {
+  id: string;
+  label: string;
+  preset: "listen" | "epk_press" | "delivery" | "custom";
+  state: "active" | "revoked" | "expired";
+  recipientEmail?: string;
+  createdAt?: string;
+  assetCount: number;
+  accessCount: number;
+};
+
 export type EvidenceItemViewModel = {
   id: string;
   source: string;
@@ -644,6 +670,16 @@ export type MusicRepository = {
   sendSplitConfirmationLinks(musicItemId: string): Promise<void>;
   loadSplitConfirmation(token: string): Promise<SplitConfirmationViewModel>;
   submitSplitConfirmation(token: string, input: { decision: "confirmed" | "rejected"; confirmationText?: string }): Promise<void>;
+  createShareLink?(input: {
+    musicSubject: ManagerConversationMusicSubject;
+    assetIds: string[];
+    preset: MusicShareLinkViewModel["preset"];
+    recipientEmail?: string;
+    label?: string;
+  }): Promise<MusicShareLinkViewModel>;
+  listShareLinks?(musicSubject: ManagerConversationMusicSubject): Promise<MusicShareLinkHistoryViewModel[]>;
+  sendShareLink?(input: { shareLinkId: string; url: string; recipientEmail: string }): Promise<{ status: "sent"; shareLinkId: string; recipientEmail: string }>;
+  revokeShareLink?(shareLinkId: string): Promise<void>;
   uploadAsset(
     musicItemId: string,
     input: { assetType: string; title: string; file: File },
@@ -658,6 +694,7 @@ export type ManagerRepository = {
     conversationId?: string;
     body: string;
     taskId?: string;
+    musicSubject?: ManagerConversationMusicSubject;
     contextRequestId?: string;
     contextAnswers?: ManagerConversationContextAnswer[];
   }): Promise<ConversationViewModel>;
@@ -666,6 +703,7 @@ export type ManagerRepository = {
       conversationId?: string;
       body: string;
       taskId?: string;
+      musicSubject?: ManagerConversationMusicSubject;
       contextRequestId?: string;
       contextAnswers?: ManagerConversationContextAnswer[];
     },

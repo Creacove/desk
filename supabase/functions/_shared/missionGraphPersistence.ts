@@ -268,6 +268,7 @@ async function writeMissionPlan(
       manager_responsibility: task.managerResponsibility || null,
       user_responsibility: task.userResponsibility || null,
       risk_if_late: task.riskIfLate,
+      deadline: normalizedDeadline(task.deadline),
       created_from_run_id: context.runId,
       created_from_action_id: context.actionId ?? null,
     }).select("id").single();
@@ -314,6 +315,12 @@ async function writeMissionPlan(
   const { error: missionError } = await db.from("missions").update({ active_plan_version_id: plan.id }).eq("id", missionId);
   if (missionError) throw missionError;
   return taskWork;
+}
+
+function normalizedDeadline(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null;
 }
 
 async function writeOperatingEvent(db: any, input: MissionGraphInput, context: ManagerGraphContext, event: Record<string, unknown>) {

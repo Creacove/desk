@@ -376,6 +376,18 @@ verify_jwt = false
 [functions.workflow-recovery]
 verify_jwt = false
 
+# These endpoints validate their own capability or worker secret. The gateway
+# must allow them through so a public recipient or pg_cron can reach that
+# application-level check.
+[functions.public-music-share]
+verify_jwt = false
+
+[functions.music-manager-read-refresh-worker]
+verify_jwt = false
+
+[functions.music-audio-analysis-worker]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

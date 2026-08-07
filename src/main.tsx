@@ -3,9 +3,11 @@ import "./lib/posthog";
 import { ProductionApp } from "./app/ProductionApp";
 import { ThemeProvider } from "./app/theme";
 import { SplitConfirmationPortal } from "./features/music/SplitConfirmationPortal";
+import { PublicMusicSharePortal } from "./features/music/PublicMusicSharePortal";
 import { createBrowserSupabaseClient } from "./lib/supabaseClient";
 import AiLabelPrototype from "./prototype/AiLabelPrototype";
 import { createSupabaseProductionRepositories } from "./services/productionSupabase";
+import { loadPublicMusicShare } from "./services/publicMusicShare";
 import "./index.css";
 import type { CleanProductionView } from "./types/cleanProduction";
 import type { ProductionWorkspace } from "./types/productionApp";
@@ -26,6 +28,7 @@ const requestedView = params.get("view") as CleanProductionView | null;
 const initialView = requestedView && productionViews.includes(requestedView) ? requestedView : "connectArtist";
 const fixtureMode = params.get("fixtures") === "true";
 const splitConfirmationToken = window.location.pathname === "/split-confirmation" ? params.get("token") ?? "" : "";
+const publicShareToken = window.location.pathname === "/share" ? params.get("token") ?? "" : "";
 const publicSplitWorkspace = {
   accountId: "public-split-confirmation",
   artistWorkspaceId: "public-split-confirmation",
@@ -40,6 +43,11 @@ const app = splitConfirmationToken ? (
     <SplitConfirmationPortal
       token={splitConfirmationToken}
       musicRepository={createSupabaseProductionRepositories(createBrowserSupabaseClient(), publicSplitWorkspace).music}
+    />
+  ) : publicShareToken ? (
+    <PublicMusicSharePortal
+      token={publicShareToken}
+      loadShare={(token) => loadPublicMusicShare(createBrowserSupabaseClient(), token)}
     />
   ) : import.meta.env.VITE_APP_MODE === "prototype" ? (
     <AiLabelPrototype />

@@ -132,7 +132,7 @@ export type ProductionMusicItem = {
   managerReadStatus: MusicManagerReadStatus;
   managerReadRunId?: string;
   managerReadError?: string;
-  assets: Array<{ label: string; status: string; group: "Audio" | "Artwork" | "Splits"; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
+  assets: Array<{ assetId?: string; label: string; status: string; group: "Audio" | "Artwork" | "Splits"; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
   credits: Array<{ role: string; names: string; status: string }>;
   splits?: {
     status: string;

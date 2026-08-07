@@ -62,6 +62,7 @@ import type {
   DrawerKind,
   EvidenceItemViewModel,
   ManagerConversationContextAnswer,
+  ManagerConversationMusicSubject,
   ManagerConversationRefreshHint,
   ManagerConversationStreamEvent,
   ManagerRunStepViewModel,
@@ -980,6 +981,30 @@ function CleanProductionWorkspace({
     navigate("managerOffice");
   }
 
+  async function openMusicManagerConversation(subject: MusicObjectViewModel) {
+    const musicSubject: ManagerConversationMusicSubject = {
+      type: subject.kind === "project" ? "music_project" : "music_item",
+      id: subject.id,
+    };
+    const linkedConversationId = subject.managerConversationId;
+    if (linkedConversationId) {
+      const existing = conversations.find((conversation) => conversation.id === linkedConversationId)
+        ?? await repositories.manager.loadConversation?.(linkedConversationId)
+        ?? null;
+      if (existing) {
+        await openConversation(existing);
+        return;
+      }
+    }
+
+    await sendManagerMessage(
+      `Help me manage ${subject.title}. Start from its current state and give me the one most important next action or question.`,
+      undefined,
+      `Manage ${subject.title}`,
+      { musicSubject },
+    );
+  }
+
   function openMusicFocus(musicObjectId?: string) {
     setTargetMusicObjectId(musicObjectId ?? null);
     navigate("musicWorkspace");
@@ -1068,7 +1093,12 @@ function CleanProductionWorkspace({
     body: string,
     conversationId?: string,
     stableTopic?: string,
-    options: { contextRequestId?: string; contextAnswers?: ManagerConversationContextAnswer[]; taskId?: string } = {},
+    options: {
+      contextRequestId?: string;
+      contextAnswers?: ManagerConversationContextAnswer[];
+      taskId?: string;
+      musicSubject?: ManagerConversationMusicSubject;
+    } = {},
   ) {
     const trimmedBody = body.trim();
     if (!trimmedBody) return;
@@ -1099,6 +1129,7 @@ function CleanProductionWorkspace({
         ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
         ...(options.contextAnswers?.length ? { contextAnswers: options.contextAnswers } : {}),
         ...(options.taskId ? { taskId: options.taskId } : {}),
+        ...(options.musicSubject ? { musicSubject: options.musicSubject } : {}),
       };
 
       if (repositories.manager.sendMessageStream) {
@@ -1112,6 +1143,7 @@ function CleanProductionWorkspace({
                 conversationId,
                 lockedTopic,
                 userBody: trimmedBody,
+                musicSubject: options.musicSubject,
               });
               if (event.type === "conversation.completed") {
                 streamCompleted = true;
@@ -1126,6 +1158,9 @@ function CleanProductionWorkspace({
       const mergedConversation = lockedTopic ? { ...conversation, topic: lockedTopic } : conversation;
       setConversations((current) => [mergedConversation, ...current.filter((item) => item.id !== mergedConversation.id && item.id !== optimisticId)]);
       setSelectedConversation(mergedConversation);
+      if (options.musicSubject) {
+        setMusic((items) => applyManagerConversationLink(items, options.musicSubject!, mergedConversation.id));
+      }
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       if (conversationHasMissionWork(conversation)) {
         const nextMissions = await reloadMissionList();
@@ -1145,11 +1180,20 @@ function CleanProductionWorkspace({
 
   function handleManagerConversationStreamEvent(
     event: ManagerConversationStreamEvent,
-    context: { optimisticId?: string; conversationId?: string; lockedTopic?: string; userBody: string },
+    context: {
+      optimisticId?: string;
+      conversationId?: string;
+      lockedTopic?: string;
+      userBody: string;
+      musicSubject?: ManagerConversationMusicSubject;
+    },
   ) {
     if (event.type === "conversation.started") {
       const nextConversation = conversationFromStartedEvent(event, context);
       reconcileStartedConversationState(context.optimisticId, nextConversation);
+      if (context.musicSubject) {
+        setMusic((items) => applyManagerConversationLink(items, context.musicSubject!, nextConversation.id));
+      }
       return;
     }
 
@@ -1845,6 +1889,7 @@ function CleanProductionWorkspace({
               onRefreshObject={refreshMusicObject}
               onMusicChanged={reloadMusic}
               onOpenMission={openMissionRoom}
+              onOpenManager={(subject) => void openMusicManagerConversation(subject)}
               onBack={() => navigate("labelHQ")}
               onDetailModeChange={setMusicDetailOpen}
               listRequestKey={musicListOpenRequestKey}
@@ -2808,6 +2853,18 @@ function workspaceResourceKey(invalidation: WorkspaceInvalidation): ResourceKey 
     case "conversation": return `conversation:${invalidation.id}`;
     default: return invalidation.scope;
   }
+}
+
+function applyManagerConversationLink(
+  music: MusicObjectViewModel[],
+  subject: ManagerConversationMusicSubject,
+  conversationId: string,
+) {
+  const kind = subject.type === "music_project" ? "project" : "song";
+  return music.map((item) => item.id === subject.id && item.kind === kind
+    ? { ...item, managerConversationId: conversationId }
+    : item,
+  );
 }
 
 function createOptimisticManagerConversation(body: string): ConversationViewModel {

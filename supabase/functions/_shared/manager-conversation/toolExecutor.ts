@@ -1,7 +1,12 @@
+import { writeWorkspaceEvent } from "../workspaceEvents.ts";
+
 type ManagerToolInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
+  conversationId?: string;
+  runId?: string;
+  musicSubject?: { type: "music_item" | "music_project"; id: string };
 };
 
 type SupabaseLike = {
@@ -20,6 +25,11 @@ export async function executeManagerConversationTool(
   if (name === "query_durable_memory") return queryDurableMemory(db, input, args);
   if (name === "query_manager_outputs") return queryManagerOutputs(db, input, args);
   if (name === "read_manager_output_section") return readManagerOutputSection(db, input, args);
+  if (name === "read_focused_music_subject") return readFocusedMusicSubject(db, input);
+  if (name === "read_focused_release_readiness") return readFocusedReleaseReadiness(db, input);
+  if (name === "update_focused_music_metadata") return updateFocusedMusicMetadata(db, input, args);
+  if (name === "update_focused_music_lifecycle") return updateFocusedMusicLifecycle(db, input, args);
+  if (name === "create_music_song") return createMusicSong(db, input, args);
   throw new Error(`Unsupported Manager tool: ${name}`);
 }
 
@@ -173,6 +183,306 @@ async function readManagerOutputSection(db: SupabaseLike, input: ManagerToolInpu
     content: truncated ? content.slice(0, maxChars) : content,
     truncated,
   };
+}
+
+async function readFocusedMusicSubject(db: SupabaseLike, input: ManagerToolInput) {
+  const subject = requireFocusedMusicSubject(input);
+  const target = musicTarget(subject);
+  const identityColumns = subject.type === "music_item"
+    ? "id,title,item_type,lifecycle_stage,planned_release_date,released_at,source_kind,source_limit,metadata"
+    : "id,title,project_type,lifecycle_stage,planned_release_date,released_at,source_kind,source_limit,metadata";
+  const [identity, assets, identifiers, credits, splits] = await Promise.all([
+    scopedQuery(db, target.table, identityColumns, input)
+      .eq("id", subject.id).maybeSingle(),
+    scopedQuery(db, "music_assets", "id,asset_type,title,status,version_label,notes", input)
+      .eq(target.foreignKey, subject.id).limit(40),
+    scopedQuery(db, "music_identifiers", "id,identifier_type,identifier_value,confidence", input)
+      .eq(target.foreignKey, subject.id).limit(30),
+    scopedQuery(db, "music_credits", "id,role,name,status", input)
+      .eq(target.foreignKey, subject.id).limit(50),
+    subject.type === "music_item"
+      ? scopedQuery(db, "music_splits", "id,status,publishing_total,master_total,summary", input).eq("music_item_id", subject.id).limit(12)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (identity.error) throw identity.error;
+  if (assets.error) throw assets.error;
+  if (identifiers.error) throw identifiers.error;
+  if (credits.error) throw credits.error;
+  if (splits.error) throw splits.error;
+  if (!identity.data) return { status: "not_found", subject };
+  return {
+    status: "found",
+    subject: {
+      type: subject.type,
+      id: identity.data.id,
+      title: identity.data.title,
+      lifecycleStage: identity.data.lifecycle_stage,
+      plannedReleaseDate: identity.data.planned_release_date,
+      releasedAt: identity.data.released_at,
+      sourceKind: identity.data.source_kind,
+      sourceLimit: identity.data.source_limit,
+      metadata: manualDetails(identity.data.metadata),
+      assets: assets.data ?? [],
+      identifiers: identifiers.data ?? [],
+      credits: credits.data ?? [],
+      splits: splits.data ?? [],
+    },
+  };
+}
+
+async function readFocusedReleaseReadiness(db: SupabaseLike, input: ManagerToolInput) {
+  const subject = requireFocusedMusicSubject(input);
+  const target = musicTarget(subject);
+  const { data: identity, error: identityError } = await scopedQuery(
+    db,
+    target.table,
+    "id,title,lifecycle_stage,planned_release_date,released_at,metadata",
+    input,
+  ).eq("id", subject.id).maybeSingle();
+  if (identityError) throw identityError;
+  if (!identity?.id) return { status: "not_found", subject };
+
+  const mode = releaseManagementMode(identity);
+  if (mode === "post_release") {
+    return {
+      status: "ready",
+      mode,
+      subject: { type: subject.type, id: subject.id, title: identity.title },
+      blockers: [],
+      nextFocus: [
+        "Monitor response and choose the next post-release move.",
+        "Prepare approved press, playlist, or partner materials from existing assets when useful.",
+      ],
+    };
+  }
+
+  const [assets, identifiers, splits] = await Promise.all([
+    scopedQuery(db, "music_assets", "asset_type,status", input).eq(target.foreignKey, subject.id).limit(40),
+    scopedQuery(db, "music_identifiers", "identifier_type,identifier_value", input).eq(target.foreignKey, subject.id).limit(30),
+    subject.type === "music_item"
+      ? scopedQuery(db, "music_splits", "status", input).eq("music_item_id", subject.id).limit(12)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (assets.error) throw assets.error;
+  if (identifiers.error) throw identifiers.error;
+  if (splits.error) throw splits.error;
+
+  const assetRows = assets.data ?? [];
+  const identifierRows = identifiers.data ?? [];
+  const splitRows = splits.data ?? [];
+  const details = record(identity.metadata).manual_details;
+  const manual = record(details);
+  const blockers = [
+    !hasReadyAsset(assetRows, ["final_master", "demo", "rough_mix"]) ? "A usable audio version is not attached." : "",
+    !hasReadyAsset(assetRows, ["cover_art", "alternate_artwork"]) ? "Approved cover artwork is not attached." : "",
+    subject.type === "music_item" && !splitRows.some((split: any) => stringArg(split.status).toLowerCase() === "cleared")
+      ? "Split and rights confirmation is not cleared." : "",
+    !hasReleaseDate(identity.planned_release_date, manual) ? "A release date is not set." : "",
+    !hasIdentifier(identifierRows, "isrc") ? "ISRC is not recorded." : "",
+  ].filter(Boolean);
+  return {
+    status: blockers.length ? "blocked" : "ready",
+    mode,
+    subject: { type: subject.type, id: subject.id, title: identity.title },
+    blockers,
+    nextFocus: blockers.length
+      ? ["Resolve the listed release gates before planning external delivery or outreach."]
+      : ["Confirm the artist’s release approval, timing, and budget before activating the release mission."],
+  };
+}
+
+async function updateFocusedMusicMetadata(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  const group = requiredText(args.group, "Metadata group", 100);
+  const label = requiredText(args.label, "Metadata label", 120);
+  const value = requiredText(args.value, "Metadata value", 2_000);
+  const target = musicTarget(subject);
+  const { data: current, error: readError } = await scopedQuery(db, target.table, "id,metadata", input)
+    .eq("id", subject.id)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!current?.id) return { status: "not_found", subjectId: subject.id };
+
+  const key = normalizeManualDetailKey(label);
+  const metadata = record(current.metadata);
+  const manual = record(metadata.manual_details);
+  const groups = record(metadata.manual_detail_groups);
+  const nextMetadata = {
+    ...metadata,
+    manual_details: { ...manual, [key]: value },
+    manual_detail_groups: { ...groups, [key]: group },
+  };
+  const { error: updateError } = await scopedQuery(db, target.table, "id", input)
+    .update({ metadata: nextMetadata })
+    .eq("id", subject.id);
+  if (updateError) throw updateError;
+  await writeMusicManagerEvent(db, input, {
+    eventType: "music_metadata_updated",
+    subject,
+    summary: `Manager updated ${label} metadata.`,
+    payload: { group, label, value, key },
+  });
+  return { status: "updated", subjectId: subject.id, detail: { group, label, key, value } };
+}
+
+async function updateFocusedMusicLifecycle(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  const lifecycleStage = requiredLifecycleStage(args.lifecycleStage);
+  const target = musicTarget(subject);
+  const { data: current, error: readError } = await scopedQuery(db, target.table, "id,lifecycle_stage,released_at", input)
+    .eq("id", subject.id)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (!current?.id) return { status: "not_found", subjectId: subject.id };
+  if (current.released_at || isReleasedLifecycle(current.lifecycle_stage)) {
+    return { status: "not_allowed", reason: "Released and catalog music is managed through post-release work, not pre-release stage changes." };
+  }
+  const { error: updateError } = await scopedQuery(db, target.table, "id", input)
+    .update({ lifecycle_stage: lifecycleStage })
+    .eq("id", subject.id);
+  if (updateError) throw updateError;
+  await writeMusicManagerEvent(db, input, {
+    eventType: "music_lifecycle_updated",
+    subject,
+    summary: `Manager moved this ${subject.type === "music_item" ? "song" : "project"} to ${lifecycleStage}.`,
+    payload: { lifecycleStage },
+  });
+  return { status: "updated", subjectId: subject.id, lifecycleStage };
+}
+
+async function createMusicSong(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const title = requiredText(args.title, "Song title", 180);
+  const lifecycleStage = requiredLifecycleStage(args.lifecycleStage);
+  const { data: song, error } = await db.from("music_items")
+    .insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      title,
+      item_type: "song",
+      lifecycle_stage: lifecycleStage,
+      source_kind: "manual",
+      source_limit: "Manager-created record. Confirm files, credits, identifiers, rights, and release details before operational use.",
+      created_by_type: "manager",
+      created_from_run_id: input.runId ?? null,
+    })
+    .select("id,title,lifecycle_stage")
+    .single();
+  if (error) throw error;
+  if (!song?.id) throw new Error("Manager song creation returned no record.");
+  if (input.conversationId) {
+    const { error: linkError } = await db.from("artifact_links").insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      source_type: "conversation",
+      source_id: input.conversationId,
+      target_type: "music_item",
+      target_id: song.id,
+      relationship: "references",
+      created_from_run_id: input.runId ?? null,
+    });
+    if (linkError) throw linkError;
+  }
+  await writeMusicManagerEvent(db, input, {
+    eventType: "music_item_created",
+    subject: { type: "music_item", id: song.id },
+    summary: `Manager created song ${song.title}.`,
+    payload: { lifecycleStage, title: song.title },
+  });
+  return { status: "created", subject: { type: "music_item", id: song.id, title: song.title, lifecycleStage: song.lifecycle_stage } };
+}
+
+function requireFocusedMusicSubject(input: ManagerToolInput) {
+  if (input.musicSubject?.id && (input.musicSubject.type === "music_item" || input.musicSubject.type === "music_project")) {
+    return input.musicSubject;
+  }
+  throw new Error("This action requires a focused music conversation.");
+}
+
+function musicTarget(subject: NonNullable<ManagerToolInput["musicSubject"]>) {
+  return subject.type === "music_item"
+    ? { table: "music_items", foreignKey: "music_item_id" }
+    : { table: "music_projects", foreignKey: "music_project_id" };
+}
+
+async function writeMusicManagerEvent(
+  db: SupabaseLike,
+  input: ManagerToolInput,
+  value: { eventType: string; subject: NonNullable<ManagerToolInput["musicSubject"]>; summary: string; payload: Record<string, unknown> },
+) {
+  await writeWorkspaceEvent(db, {
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    eventType: value.eventType,
+    targetType: value.subject.type,
+    targetId: value.subject.id,
+    summary: value.summary,
+    refreshScope: ["music"],
+    payload: {
+      ...value.payload,
+      source: "manager_conversation",
+      conversationId: input.conversationId ?? "",
+      runId: input.runId ?? "",
+    },
+  });
+}
+
+function manualDetails(value: unknown) {
+  const metadata = record(value);
+  const details = record(metadata.manual_details);
+  const groups = record(metadata.manual_detail_groups);
+  return Object.entries(details).slice(0, 100).map(([key, detailValue]) => ({ key, value: stringArg(detailValue), group: stringArg(groups[key]) }));
+}
+
+function requiredText(value: unknown, label: string, maxLength: number) {
+  const text = stringArg(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!text) throw new Error(`${label} is required.`);
+  if (text.length > maxLength) throw new Error(`${label} is too long.`);
+  return text;
+}
+
+const SAFE_MANAGER_LIFECYCLE_STAGES = new Set(["idea", "recording", "production", "mixing", "mastering", "ready", "scheduled"]);
+
+function requiredLifecycleStage(value: unknown) {
+  const lifecycleStage = stringArg(value).toLowerCase();
+  if (!SAFE_MANAGER_LIFECYCLE_STAGES.has(lifecycleStage)) {
+    throw new Error("Manager can only set verified internal unreleased lifecycle stages.");
+  }
+  return lifecycleStage;
+}
+
+function isReleasedLifecycle(value: unknown) {
+  const lifecycleStage = stringArg(value).toLowerCase();
+  return lifecycleStage === "released" || lifecycleStage === "catalog";
+}
+
+function releaseManagementMode(value: { lifecycle_stage?: unknown; released_at?: unknown; planned_release_date?: unknown }) {
+  if (value.released_at || isReleasedLifecycle(value.lifecycle_stage)) return "post_release";
+  if (stringArg(value.lifecycle_stage).toLowerCase() === "scheduled" || stringArg(value.planned_release_date)) return "release_window";
+  return "pre_release";
+}
+
+function hasReadyAsset(rows: any[], types: string[]) {
+  return rows.some((row) => types.includes(stringArg(row.asset_type)) && ["uploaded", "confirmed", "cleared"].includes(stringArg(row.status).toLowerCase()));
+}
+
+function hasReleaseDate(plannedReleaseDate: unknown, manual: Record<string, unknown>) {
+  return Boolean(stringArg(plannedReleaseDate) || stringArg(manual.release_date) || stringArg(manual.planned_release_date));
+}
+
+function hasIdentifier(rows: any[], type: string) {
+  return rows.some((row) => stringArg(row.identifier_type) === type && Boolean(stringArg(row.identifier_value)));
+}
+
+function normalizeManualDetailKey(label: string) {
+  const normalized = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized || "detail";
+}
+
+function record(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 async function selectScoped(db: SupabaseLike, table: string, columns: string, input: ManagerToolInput, limit: number) {

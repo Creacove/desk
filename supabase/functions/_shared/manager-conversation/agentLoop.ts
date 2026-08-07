@@ -90,6 +90,43 @@ const managerOutputSectionProperties = {
   },
 };
 
+const focusedMusicReadProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {},
+};
+
+const focusedMusicMetadataProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["group", "label", "value"],
+  properties: {
+    group: { type: "string" },
+    label: { type: "string" },
+    value: { type: "string" },
+  },
+};
+
+const focusedMusicLifecycleProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["lifecycleStage"],
+  properties: {
+    lifecycleStage: { type: "string", enum: ["idea", "recording", "production", "mixing", "mastering", "ready", "scheduled"] },
+  },
+};
+
+const createMusicSongProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["title", "lifecycleStage"],
+  properties: {
+    title: { type: "string" },
+    lifecycleStage: { type: "string", enum: ["idea", "recording", "production", "mixing", "mastering", "ready", "scheduled"] },
+  },
+};
+
 export const managerConversationTools: ManagerAgentToolDefinition[] = [
   { type: "web_search" },
   {
@@ -133,6 +170,41 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
     description: "Read one bounded text section from a prior Manager output after identifying it with query_manager_outputs.",
     strict: true,
     parameters: managerOutputSectionProperties,
+  },
+  {
+    type: "function",
+    name: "read_focused_music_subject",
+    description: "Read the exact attached song or project packet, including its existing metadata, assets, credits, identifiers, and rights readiness. Use only when a song or project is attached to this conversation.",
+    strict: true,
+    parameters: focusedMusicReadProperties,
+  },
+  {
+    type: "function",
+    name: "read_focused_release_readiness",
+    description: "Read a deterministic release readiness view for the exact attached song or project. It reports pre-release gaps only before release; released/catalog music returns post-release priorities and never reopens master, split, or delivery gates.",
+    strict: true,
+    parameters: focusedMusicReadProperties,
+  },
+  {
+    type: "function",
+    name: "update_focused_music_metadata",
+    description: "Save one verified metadata field on the exact song or project attached to this conversation. This uses the same editable Details data that the user can correct in the app. Never invent values; ask if the value is not known.",
+    strict: true,
+    parameters: focusedMusicMetadataProperties,
+  },
+  {
+    type: "function",
+    name: "update_focused_music_lifecycle",
+    description: "Move the exact attached unreleased song or project to a verified internal production stage. Do not mark music released, catalogued, or archived; those require an explicit release handoff or a user action.",
+    strict: true,
+    parameters: focusedMusicLifecycleProperties,
+  },
+  {
+    type: "function",
+    name: "create_music_song",
+    description: "Create a new manual song record when the user has clearly asked to add a song. Use an internal unreleased stage only, then link it to this Manager conversation for continued work.",
+    strict: true,
+    parameters: createMusicSongProperties,
   },
 ];
 

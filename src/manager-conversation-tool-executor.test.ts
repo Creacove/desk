@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { executeManagerConversationTool } from "../supabase/functions/_shared/manager-conversation/toolExecutor";
 
-type QueryState = { table: string; columns: string; filters: Array<[string, unknown]> };
+type QueryState = { table: string; columns: string; filters: Array<[string, unknown]>; updates?: Record<string, unknown> };
 
 class QueryDouble {
   state: QueryState;
@@ -11,6 +11,8 @@ class QueryDouble {
   }
 
   select(columns: string) { this.state.columns = columns; return this; }
+  update(values: Record<string, unknown>) { this.state.updates = values; return this; }
+  insert(values: Record<string, unknown>) { this.state.updates = values; return this; }
   eq(column: string, value: unknown) { this.state.filters.push([column, value]); return this; }
   order() { return this; }
   limit() { return this; }
@@ -69,5 +71,84 @@ describe("Manager output tools", () => {
 
     await expect(executeManagerConversationTool(db, scope, "read_manager_output_section", { outputId: "other-workspace-output" }))
       .resolves.toEqual({ status: "not_found", outputId: "other-workspace-output" });
+  });
+
+  it("updates a focused song detail through the same metadata structure used by the Details surface", async () => {
+    const { db, states } = dbWith([{ id: "song-1", metadata: { manual_details: { bpm: "98" } } }]);
+
+    const result = await executeManagerConversationTool(db, {
+      ...scope,
+      musicSubject: { type: "music_item", id: "song-1" },
+      conversationId: "conversation-1",
+      runId: "run-1",
+    }, "update_focused_music_metadata", {
+      group: "Release metadata",
+      label: "Tempo (BPM)",
+      value: "102",
+    }) as { status: string; subjectId: string; detail: { key: string; value: string } };
+
+    expect(states.find((state) => state.table === "music_items")?.filters).toEqual(expect.arrayContaining([
+      ["account_id", "account-1"], ["artist_workspace_id", "workspace-1"], ["artist_id", "artist-1"], ["id", "song-1"],
+    ]));
+    expect([...states].reverse().find((state) => state.table === "music_items" && state.updates)?.updates).toMatchObject({
+      metadata: expect.objectContaining({
+        manual_details: expect.objectContaining({ bpm: "98", tempo_bpm: "102" }),
+        manual_detail_groups: expect.objectContaining({ tempo_bpm: "Release metadata" }),
+      }),
+    });
+    expect(states.find((state) => state.table === "operating_events")?.updates).toMatchObject({
+      event_type: "music_metadata_updated",
+      target_id: "song-1",
+      payload: expect.objectContaining({ source: "manager_conversation", conversationId: "conversation-1", runId: "run-1" }),
+    });
+    expect(result).toMatchObject({ status: "updated", subjectId: "song-1", detail: { key: "tempo_bpm", value: "102" } });
+  });
+
+  it("rejects a focused metadata write when no exact music subject is attached to the conversation", async () => {
+    const { db } = dbWith([]);
+
+    await expect(executeManagerConversationTool(db, scope, "update_focused_music_metadata", {
+      group: "Release metadata",
+      label: "Tempo (BPM)",
+      value: "102",
+    })).rejects.toThrow("focused music conversation");
+  });
+
+  it("does not treat a released manual song as an unfinished pre-release checklist", async () => {
+    const { db } = dbWith([{
+      id: "song-released",
+      title: "Already Out",
+      lifecycle_stage: "released",
+      released_at: "2026-07-18T00:00:00.000Z",
+      metadata: {},
+    }]);
+
+    await expect(executeManagerConversationTool(db, {
+      ...scope,
+      musicSubject: { type: "music_item", id: "song-released" },
+    }, "read_focused_release_readiness", {})).resolves.toMatchObject({
+      mode: "post_release",
+      blockers: [],
+      nextFocus: expect.arrayContaining(["Monitor response and choose the next post-release move."]),
+    });
+  });
+
+  it("queries only the identity columns that exist for the focused music record type", async () => {
+    const { db, states } = dbWith([{
+      id: "project-1",
+      title: "The Night Project",
+      project_type: "EP",
+      lifecycle_stage: "production",
+      metadata: {},
+    }]);
+
+    await executeManagerConversationTool(db, {
+      ...scope,
+      musicSubject: { type: "music_project", id: "project-1" },
+    }, "read_focused_music_subject", {});
+
+    const identityQuery = states.find((state) => state.table === "music_projects");
+    expect(identityQuery?.columns).toContain("project_type");
+    expect(identityQuery?.columns).not.toContain("item_type");
   });
 });

@@ -322,7 +322,7 @@ export function createSupabaseMusicLibraryLoader(client: SupabaseClient): Produc
 
       const { data: assetRows, error: assetError } = await client
         .from("music_assets")
-        .select("music_item_id,music_project_id,asset_type,title,status,uploaded_file_id")
+        .select("id,music_item_id,music_project_id,asset_type,title,status,uploaded_file_id")
         .eq("artist_workspace_id", workspace.artistWorkspaceId);
 
       if (assetError) {
@@ -905,6 +905,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     const [
       { data: managerOutputRows, error: managerOutputError },
       { data: managerRunRows, error: managerRunError },
+      { data: conversationLinkRows, error: conversationLinkError },
     ] = await Promise.all([
       ownerFilters(client
         .from("manager_outputs")
@@ -928,15 +929,30 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .limit(statusRowLimit),
+      ownerFilters(client
+        .from("artifact_links")
+        .select("source_id,target_id,target_type,relationship,created_at")
+      )
+        .eq("source_type", "conversation")
+        .in("target_type", ["music_item", "music_project"])
+        .in("target_id", subjectIds)
+        .eq("relationship", "references")
+        .order("created_at", { ascending: false })
+        .order("source_id", { ascending: false })
+        .limit(statusRowLimit),
     ]);
 
     if (managerOutputError) throw managerOutputError;
     if (managerRunError) throw managerRunError;
+    if (conversationLinkError) throw conversationLinkError;
 
-    return applyMusicListManagerState(
-      models,
-      (managerOutputRows ?? []) as ManagerOutputRow[],
-      (managerRunRows ?? []) as ManagerSynthesisRunRow[],
+    return applyMusicConversationLinks(
+      applyMusicListManagerState(
+        models,
+        (managerOutputRows ?? []) as ManagerOutputRow[],
+        (managerRunRows ?? []) as ManagerSynthesisRunRow[],
+      ),
+      (conversationLinkRows ?? []) as ArtifactLinkRow[],
     );
   };
 
@@ -980,6 +996,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       { data: evidenceRows, error: evidenceError },
       { data: managerOutputRows, error: managerOutputError },
       { data: managerRunRows, error: managerRunError },
+      { data: conversationLinkRows, error: conversationLinkError },
     ] = await Promise.all([
       identityQuery,
       projectItemsQuery,
@@ -993,7 +1010,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .limit(40),
       ownerFilters(client
         .from("music_assets")
-        .select("music_item_id,music_project_id,asset_type,title,status,uploaded_file_id")
+        .select("id,music_item_id,music_project_id,asset_type,title,status,uploaded_file_id")
       )
         .eq(subjectColumn, subjectId)
         .order("created_at", { ascending: false })
@@ -1047,6 +1064,17 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .order("created_at", { ascending: false })
         .order("id", { ascending: false })
         .limit(1),
+      ownerFilters(client
+        .from("artifact_links")
+        .select("source_id,target_id,target_type,relationship,created_at")
+      )
+        .eq("source_type", "conversation")
+        .eq("target_type", subjectType)
+        .eq("target_id", subjectId)
+        .eq("relationship", "references")
+        .order("created_at", { ascending: false })
+        .order("source_id", { ascending: false })
+        .limit(20),
     ]);
 
     if (identityError) throw identityError;
@@ -1059,6 +1087,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     if (evidenceError) throw evidenceError;
     if (managerOutputError) throw managerOutputError;
     if (managerRunError) throw managerRunError;
+    if (conversationLinkError) throw conversationLinkError;
 
     const links = (projectItemRows ?? []) as MusicProjectItemRow[];
     const relatedIds = links.map((row) => isSong ? row.music_project_id : row.music_item_id);
@@ -1103,7 +1132,10 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       managerOutputRows: (managerOutputRows ?? []) as ManagerOutputRow[],
       managerRunRows: (managerRunRows ?? []) as ManagerSynthesisRunRow[],
     });
-    return musicViewModelsFromLibrary(library).find((model) => model.id === subjectId) ?? null;
+    return applyMusicConversationLinks(
+      musicViewModelsFromLibrary(library),
+      (conversationLinkRows ?? []) as ArtifactLinkRow[],
+    ).find((model) => model.id === subjectId) ?? null;
   };
 
   const loadManagerRun = async (runId: string): Promise<{
@@ -1788,6 +1820,67 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           await throwFunctionInvokeError(error, "Split confirmation could not be submitted.");
         }
       },
+      async createShareLink(input) {
+        const { data, error } = await client.functions.invoke("music-share-links", {
+          body: {
+            action: "create",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            musicSubject: input.musicSubject,
+            assetIds: input.assetIds,
+            preset: input.preset,
+            recipientEmail: input.recipientEmail?.trim() || undefined,
+            label: input.label?.trim() || undefined,
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "Share link could not be created.");
+        return normalizeMusicShareLink(data);
+      },
+      async listShareLinks(musicSubject) {
+        const { data, error } = await client.functions.invoke("music-share-links", {
+          body: {
+            action: "list",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            musicSubject,
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "Share packages could not be loaded.");
+        return normalizeMusicShareLinkHistory(data);
+      },
+      async sendShareLink(input) {
+        const { data, error } = await client.functions.invoke("music-share-links", {
+          body: {
+            action: "send",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            shareLinkId: input.shareLinkId,
+            url: input.url,
+            recipientEmail: input.recipientEmail.trim(),
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "Share link email could not be sent.");
+        const result = data as { status?: unknown; shareLinkId?: unknown; recipientEmail?: unknown } | null;
+        if (result?.status !== "sent" || typeof result.shareLinkId !== "string" || typeof result.recipientEmail !== "string") {
+          throw new Error("Share link email returned an invalid response.");
+        }
+        return { status: "sent" as const, shareLinkId: result.shareLinkId, recipientEmail: result.recipientEmail };
+      },
+      async revokeShareLink(shareLinkId) {
+        const { error } = await client.functions.invoke("music-share-links", {
+          body: {
+            action: "revoke",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            shareLinkId,
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "Share link could not be revoked.");
+      },
       async uploadAsset(musicItemId, input) {
         const storagePath = buildMusicStoragePath(workspace, musicItemId, input.assetType, input.file.name);
         const uploadMethod = shouldUseResumableUpload(input.file, input.assetType) ? "resumable_tus" : "standard";
@@ -2021,6 +2114,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             conversationId: input.conversationId,
             body,
             ...(input.taskId ? { taskId: input.taskId } : {}),
+            ...(input.musicSubject ? { musicSubject: input.musicSubject } : {}),
             ...(input.contextRequestId ? { contextRequestId: input.contextRequestId } : {}),
             ...(input.contextAnswers?.length ? { contextAnswers: input.contextAnswers } : {}),
           },
@@ -2053,6 +2147,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             conversationId: input.conversationId,
             body,
             ...(input.taskId ? { taskId: input.taskId } : {}),
+            ...(input.musicSubject ? { musicSubject: input.musicSubject } : {}),
             ...(input.contextRequestId ? { contextRequestId: input.contextRequestId } : {}),
             ...(input.contextAnswers?.length ? { contextAnswers: input.contextAnswers } : {}),
           }),
@@ -2480,6 +2575,7 @@ type MusicIdentifierRow = {
 };
 
 type MusicAssetRow = {
+  id?: string;
   music_item_id?: string | null;
   music_project_id?: string | null;
   asset_type: string;
@@ -2684,7 +2780,9 @@ type TaskResultRow = {
 type ArtifactLinkRow = {
   source_id: string;
   target_id: string;
+  target_type?: string | null;
   relationship?: string | null;
+  created_at?: string | null;
 };
 
 type DocumentRow = {
@@ -3500,6 +3598,44 @@ function readSupabaseUrl() {
   return env.VITE_SUPABASE_URL?.replace(/\/$/, "");
 }
 
+function normalizeMusicShareLink(value: unknown) {
+  const payload = isPlainRecord(value) && isPlainRecord(value.shareLink) ? value.shareLink : null;
+  const id = payload && typeof payload.id === "string" ? payload.id.trim() : "";
+  const label = payload && typeof payload.label === "string" ? payload.label.trim() : "";
+  const url = payload && typeof payload.url === "string" ? payload.url.trim() : "";
+  const preset = payload?.preset;
+  if (!id || !label || !url || !["listen", "epk_press", "delivery", "custom"].includes(String(preset))) {
+    throw new Error("Share link returned an invalid response.");
+  }
+  const recipientEmail = typeof payload.recipientEmail === "string" && payload.recipientEmail.trim()
+    ? payload.recipientEmail.trim()
+    : undefined;
+  const createdAt = typeof payload.createdAt === "string" && payload.createdAt.trim()
+    ? payload.createdAt.trim()
+    : undefined;
+  return { id, label, url, preset: preset as "listen" | "epk_press" | "delivery" | "custom", recipientEmail, createdAt };
+}
+
+function normalizeMusicShareLinkHistory(value: unknown) {
+  const payload = isPlainRecord(value) && Array.isArray(value.shareLinks) ? value.shareLinks : null;
+  if (!payload) throw new Error("Share packages returned an invalid response.");
+  return payload.slice(0, 24).map((row) => {
+    const item = isPlainRecord(row) ? row : {};
+    const id = typeof item.id === "string" ? item.id.trim() : "";
+    const label = typeof item.label === "string" ? item.label.trim() : "";
+    const preset = item.preset;
+    const state = item.state;
+    if (!id || !label || !["listen", "epk_press", "delivery", "custom"].includes(String(preset)) || !["active", "revoked", "expired"].includes(String(state))) {
+      throw new Error("Share packages returned an invalid response.");
+    }
+    const recipientEmail = typeof item.recipientEmail === "string" && item.recipientEmail.trim() ? item.recipientEmail.trim() : undefined;
+    const createdAt = typeof item.createdAt === "string" && item.createdAt.trim() ? item.createdAt.trim() : undefined;
+    const assetCount = typeof item.assetCount === "number" && Number.isInteger(item.assetCount) && item.assetCount >= 0 ? item.assetCount : 0;
+    const accessCount = typeof item.accessCount === "number" && Number.isInteger(item.accessCount) && item.accessCount >= 0 ? item.accessCount : 0;
+    return { id, label, preset: preset as "listen" | "epk_press" | "delivery" | "custom", state: state as "active" | "revoked" | "expired", recipientEmail, createdAt, assetCount, accessCount };
+  });
+}
+
 function readErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message) return error.message;
   if (error && typeof error === "object" && "message" in error && typeof (error as { message?: unknown }).message === "string") {
@@ -4120,6 +4256,7 @@ function readFirstImageUrl(value: unknown) {
 
 function mapAssets(rows: MusicAssetRow[] | undefined): ProductionMusicItem["assets"] {
   return (rows ?? []).map((row) => ({
+    assetId: row.id,
     group: assetGroup(row.asset_type),
     label: row.title,
     status: titleCaseStatus(row.status),
@@ -5120,18 +5257,50 @@ function applyMusicListManagerState(
   });
 }
 
+function applyMusicConversationLinks(models: MusicObjectViewModel[], links: ArtifactLinkRow[]) {
+  const latestConversationBySubject = new Map<string, { conversationId: string; createdAt: string }>();
+  for (const link of links) {
+    if (
+      !link.source_id ||
+      !link.target_id ||
+      (link.target_type !== "music_item" && link.target_type !== "music_project") ||
+      link.relationship !== "references"
+    ) continue;
+    const key = musicManagerRunKey(link.target_type, link.target_id);
+    const previous = latestConversationBySubject.get(key);
+    const createdAt = link.created_at ?? "";
+    if (
+      !previous ||
+      validDateMilliseconds(createdAt) > validDateMilliseconds(previous.createdAt) ||
+      (validDateMilliseconds(createdAt) === validDateMilliseconds(previous.createdAt) && link.source_id > previous.conversationId)
+    ) {
+      latestConversationBySubject.set(key, { conversationId: link.source_id, createdAt });
+    }
+  }
+
+  return models.map((model) => {
+    const subjectType = model.kind === "project" ? "music_project" : "music_item";
+    const linkedConversation = latestConversationBySubject.get(musicManagerRunKey(subjectType, model.id));
+    return linkedConversation ? { ...model, managerConversationId: linkedConversation.conversationId } : model;
+  });
+}
+
 function buildAssetLabels(song: ProductionMusicItem) {
   return buildFileAssets(song).map((asset) => asset.label);
 }
 
-function isReleasedSpotifyCatalogMusic(song: Pick<ProductionMusicItem, "sourceKind" | "lifecycleStage" | "spotifyUrl" | "spotifyTrackId">) {
+function isReleasedMusic(song: Pick<ProductionMusicItem, "lifecycleStage" | "releasedAt">) {
   const lifecycle = song.lifecycleStage.toLowerCase();
-  const hasSpotifyCatalogSource = song.sourceKind === "spotify_public_catalog" || Boolean(song.spotifyUrl || song.spotifyTrackId);
-  return hasSpotifyCatalogSource && (lifecycle === "released" || lifecycle === "catalog");
+  return Boolean(song.releasedAt) || lifecycle === "released" || lifecycle === "catalog";
 }
 
-function requiresInAppSplitProof(song: Pick<ProductionMusicItem, "sourceKind" | "lifecycleStage" | "spotifyUrl" | "spotifyTrackId">) {
-  return !isReleasedSpotifyCatalogMusic(song);
+function isReleasedSpotifyCatalogMusic(song: Pick<ProductionMusicItem, "sourceKind" | "lifecycleStage" | "spotifyUrl" | "spotifyTrackId" | "releasedAt">) {
+  const hasSpotifyCatalogSource = song.sourceKind === "spotify_public_catalog" || Boolean(song.spotifyUrl || song.spotifyTrackId);
+  return hasSpotifyCatalogSource && isReleasedMusic(song);
+}
+
+function requiresInAppSplitProof(song: Pick<ProductionMusicItem, "lifecycleStage" | "releasedAt">) {
+  return !isReleasedMusic(song);
 }
 
 function buildSongSourceSummary(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["sourceSummary"]> {
@@ -5152,7 +5321,7 @@ function buildSongSourceSummary(song: ProductionMusicItem): NonNullable<MusicObj
   ].filter(Boolean).join(" and ");
 
   return {
-    headline: `${song.title} is a ${titleCaseStatus(song.lifecycleStage)}${song.sourceKind === "spotify_public_catalog" ? " catalog" : ""} song backed by ${sourceText || "stored Music records"}.`,
+    headline: `${song.title} is a ${titleCaseStatus(song.lifecycleStage)}${isReleasedSpotifyCatalogMusic(song) ? " catalog" : ""} song backed by ${sourceText || "stored Music records"}.`,
     badges,
     facts: buildSongSummaryFacts(song),
     evidence,
@@ -5265,6 +5434,7 @@ function formatCompactEvidenceNumber(value: number) {
 function buildRightsState(song: ProductionMusicItem) {
   if (song.splits?.status === "Cleared") return "Split sheet confirmed";
   if (isReleasedSpotifyCatalogMusic(song)) return "Released catalog rights attached outside this app";
+  if (isReleasedMusic(song)) return "Rights were finalized before release";
   if (song.splits?.status && song.splits.status !== "Missing") return `${song.splits.status} split proof`;
   return "Rights proof not connected";
 }
@@ -5272,6 +5442,14 @@ function buildRightsState(song: ProductionMusicItem) {
 function buildFileAssets(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["fileAssets"]> {
   const assets = [...song.assets];
   const hasSpotifyReference = Boolean(song.spotifyUrl);
+  if (isReleasedMusic(song)) {
+    return [
+      ...(hasSpotifyReference
+        ? [{ group: "Audio" as const, label: "Spotify track page", status: "Confirmed", action: "Open Spotify URL" }]
+        : []),
+      ...assets.filter((asset) => asset.status !== "Missing"),
+    ];
+  }
   const hasConfirmedAudioAsset = assets.some((asset) => asset.group === "Audio" && ["Uploaded", "Confirmed", "Cleared"].includes(asset.status));
   const hasSplitAsset = assets.some((asset) => asset.group === "Splits");
   const needsSplitProof = requiresInAppSplitProof(song);
@@ -5303,6 +5481,9 @@ function buildMetadataFields(song: ProductionMusicItem): NonNullable<MusicObject
     manualDetailField(song, "Mood", song.mood),
     manualDetailField(song, "Language", song.language),
     manualDetailField(song, "Mode", song.mode),
+    manualOrAudioAnalysisDetailField(song, "Tempo (BPM)", undefined, "tempo_bpm", (value) => `${value}`),
+    manualOrAudioAnalysisDetailField(song, "Musical key", undefined, "musical_key", (_value, unit) => unit),
+    manualDetailField(song, "Lyrics", undefined),
     manualDetailField(song, "Album / project", song.albumName),
     manualDetailField(song, "Explicit", typeof song.explicit === "boolean" ? (song.explicit ? "Yes" : "No") : undefined),
     { label: "Spotify track", value: song.spotifyUrl ?? "Missing", status: song.spotifyUrl ? "Confirmed" : "Missing" },
@@ -5318,7 +5499,7 @@ function buildReleaseFields(song: ProductionMusicItem): NonNullable<MusicObjectV
     { label: "Lifecycle", value: titleCaseStatus(song.lifecycleStage), status: "Confirmed" },
     manualDetailField(song, "Track number", song.trackNumber ? `${song.trackNumber}` : undefined),
     manualDetailField(song, "Disc number", song.discNumber ? `${song.discNumber}` : undefined),
-    manualDetailField(song, "Duration", song.durationMs ? formatDuration(song.durationMs) : undefined),
+    manualOrAudioAnalysisDetailField(song, "Duration", song.durationMs ? formatDuration(song.durationMs) : undefined, "duration_ms", (value) => formatDuration(value)),
     manualDetailField(song, "Popularity", typeof song.popularity === "number" ? `${song.popularity}` : undefined),
   ];
 }
@@ -5327,6 +5508,23 @@ function manualDetailField(song: ProductionMusicItem, label: string, providerVal
   if (providerValue) return { label, value: providerValue, status: "Confirmed" as const };
   const manualValue = song.manualDetails?.[normalizeManualDetailKey(label)];
   return manualValue ? { label, value: manualValue, status: "Draft" as const } : { label, value: "Missing", status: fallbackStatus };
+}
+
+function manualOrAudioAnalysisDetailField(
+  song: ProductionMusicItem,
+  label: string,
+  providerValue: string | undefined,
+  metricName: string,
+  formatValue: (value: number, unit: string) => string,
+) {
+  if (providerValue) return { label, value: providerValue, status: "Confirmed" as const };
+  const manualValue = song.manualDetails?.[normalizeManualDetailKey(label)];
+  if (manualValue) return { label, value: manualValue, status: "Draft" as const };
+  const detected = song.evidence.find((item) => item.evidenceType === "audio_analysis" && item.metricName === metricName);
+  if (!detected) return { label, value: "Missing", status: "Missing" as const };
+  const value = typeof detected.metricValue === "number" ? detected.metricValue : 0;
+  const formatted = formatValue(value, detected.metricUnit ?? "");
+  return formatted ? { label, value: formatted, status: "Draft" as const } : { label, value: "Missing", status: "Missing" as const };
 }
 
 function buildIdentifierFields(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["identifiers"]> {

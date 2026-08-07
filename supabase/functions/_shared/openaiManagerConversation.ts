@@ -98,7 +98,7 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "sourceRefs"],
+  required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
   properties: {
     title: { type: "string" },
     ownerRole: { type: "string" },
@@ -114,6 +114,7 @@ const taskSchema = {
     managerResponsibility: { type: "string" },
     userResponsibility: { type: "string" },
     riskIfLate: { type: "string" },
+    deadline: { type: "string" },
     sourceRefs: stringArraySchema,
   },
 };
@@ -272,6 +273,11 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "If evidence is incomplete, say what decision can still be made and what must be verified. Push back when the evidence does not justify the move.",
     "Do not create a separate evidence-read section. Evidence, H-score/H-strike style metrics, market concentration, ramp-versus-engagement, and packet signals must be synthesized into the Manager answer.",
     "Do not collapse every answer into promoting the strongest track. Use whichever management lenses fit: strategy, positioning, rights, release, market, team operations, reputation, finance, source completeness, or mission design.",
+    "When a song or project is attached and the user asks for a release decision, plan, checkpoint, stage, or next move, first read the exact current subject and call read_focused_release_readiness. Reuse known facts; ask at most one highest-leverage missing question instead of running the artist through a questionnaire.",
+    "For an unreleased song, turn an approved release plan into one release mission only when it is operationally warranted. Include only applicable checkpoints from release intent/date and budget, master/artwork delivery, rights and split confirmation, release metadata and distribution readiness, audience/playlist/press preparation, launch assets and communications, then post-release review. Do not manufacture tasks for a gate that is already satisfied or irrelevant to this artist's stage and budget. Set a task deadline only as an ISO-8601 timestamp derived from a confirmed release date or stated commitment; otherwise return an empty deadline.",
+    "Never reopen pre-release gates for released/catalog music. Treat release as a handoff: focus post-release evidence, audience response, approved outreach, reporting, and the next strategic move instead of claiming the master, splits, identifiers, or delivery must be redone.",
+    "The Manager may prepare copy, press angles, package recommendations, and outreach drafts, but never sends messages, submits to a distributor, commits spending, changes a release date, publishes, or performs legal/rights actions without an explicit permission request and user approval. Never invent a contact name, email address, outlet, playlist, or result; use verified workspace data or a cited public source and label any recommendation or draft clearly.",
+    "When proposing or writing metadata, preserve the existing song room as the source of truth, state what was inferred versus confirmed, and remind the user they can verify or edit the value directly in Details, Files, or Rights. Do not generate cover art, images, animation, or transformed media; use only user-provided assets.",
     "Set actionPolicy before any durable write is applied: answer_only for simple conversation; save_memory only when durableMemory is the only write; create_decision_package for a durable recommendation package; create_mission or update_mission for missionGraphDecisions; update_task or review_checkpoint for task/checkpoint state changes; request_permission for external, expensive, legal, financial, public, or reputational actions; request_evidence when missing evidence blocks a specific decision.",
     "When the user asks a conversational question, set actionPolicy to answer_only and do not generate missionGraphDecisions, createdWork, or proposedActions unless a concrete operational action is genuinely needed.",
     "Use missionGraphDecisions only when the user is actually creating or changing mission work. Create or update at most one mission per user request: one durable objective, checkpoints as decision questions with rules, and tasks as concrete work that answers those questions.",
@@ -444,11 +450,19 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     managerResponsibility: cleanString(task.managerResponsibility, ""),
     userResponsibility: cleanString(task.userResponsibility, ""),
     riskIfLate: cleanString(task.riskIfLate, ""),
+    deadline: normalizeTaskDeadline(task.deadline),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24),
   };
   return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length && normalized.completionExpectation && normalized.riskIfLate
     ? normalized
     : null;
+}
+
+function normalizeTaskDeadline(value: unknown) {
+  const text = cleanString(value, "");
+  if (!text) return "";
+  const timestamp = Date.parse(text);
+  return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
 }
 
 function normalizePermission(value: unknown): MissionGenesisPermission | null {

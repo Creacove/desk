@@ -1,14 +1,16 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
+import { managerReadControls } from "./managerReadPolicy";
 import type {
   MissionViewModel,
   MusicObjectViewModel,
   MusicRepository,
+  MusicShareLinkHistoryViewModel,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
   SpotifyReleaseCandidate,
@@ -33,6 +35,7 @@ export function MusicWorkspace({
   onRefreshObject,
   onMusicChanged,
   onOpenMission,
+  onOpenManager,
   onBack: _onBack,
   onDetailModeChange,
   listRequestKey = 0,
@@ -47,6 +50,7 @@ export function MusicWorkspace({
   ) => Promise<MusicObjectViewModel | null>;
   onMusicChanged: () => Promise<void>;
   onOpenMission: (missionId: string) => void;
+  onOpenManager?: (subject: MusicObjectViewModel) => void;
   onBack: () => void;
   onDetailModeChange?: (detailOpen: boolean) => void;
   listRequestKey?: number;
@@ -65,13 +69,14 @@ export function MusicWorkspace({
   const [importKind, setImportKind] = useState<MusicTab | null>(null);
   const [uploadTarget, setUploadTarget] = useState<{ song: MusicObjectViewModel; asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number] } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ song: MusicObjectViewModel; groupTitle: string; field: MusicDetailField } | null>(null);
+  const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
   const managerReadHydrationChecks = useRef(new Set<string>());
-  const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget);
+  const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget || shareTarget);
 
   const currentMusic = useMemo(
     () => music.map((item) => {
@@ -431,12 +436,14 @@ export function MusicWorkspace({
             setActionError(null);
             setUploadTarget({ song: selected, asset });
           }}
+          onShareFiles={musicRepository.createShareLink ? () => setShareTarget(selected) : undefined}
           onEditDetail={(groupTitle, field) => setDetailTarget({ song: selected, groupTitle, field })}
           onStageChange={(stage) => runMusicAction(() => musicRepository.updateLifecycleStage(selected.id, stage))}
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
           onRemoveSplitContributor={(contributorId) => removeSplitContributor(selected.id, contributorId)}
           onSendSplitConfirmationLinks={() => sendSplitConfirmationLinks(selected.id)}
           onGenerateBrief={() => handleManagerReadAction(selected)}
+          onContinueWithManager={() => onOpenManager?.(selected)}
           briefPending={briefPending}
           briefError={briefError}
           onBack={backToLibrary}
@@ -453,6 +460,7 @@ export function MusicWorkspace({
           onBack={backToLibrary}
           onOpenSong={(song) => openObject(song, "projects")}
           onGenerateBrief={() => handleManagerReadAction(selected)}
+          onContinueWithManager={() => onOpenManager?.(selected)}
           briefPending={briefPending}
           briefError={briefError}
           onOpenMission={onOpenMission}
@@ -515,6 +523,17 @@ export function MusicWorkspace({
           pending={actionPending}
           onCancel={() => setDetailTarget(null)}
           onSubmit={saveMusicDetail}
+        />
+      ) : null}
+
+      {shareTarget && musicRepository.createShareLink ? (
+        <MusicShareDialog
+          song={shareTarget}
+          onCancel={() => setShareTarget(null)}
+          onCreate={musicRepository.createShareLink}
+          onList={musicRepository.listShareLinks}
+          onSend={musicRepository.sendShareLink}
+          onRevoke={musicRepository.revokeShareLink}
         />
       ) : null}
     </section>
@@ -720,12 +739,14 @@ function MusicSongDetail({
   activeTab,
   onTabChange,
   onUploadAsset,
+  onShareFiles,
   onEditDetail,
   onStageChange,
   onSaveSplitContributor,
   onRemoveSplitContributor,
   onSendSplitConfirmationLinks,
   onGenerateBrief,
+  onContinueWithManager,
   briefPending,
   briefError,
   onBack,
@@ -737,12 +758,14 @@ function MusicSongDetail({
   activeTab: SongRoomTab;
   onTabChange: (tab: SongRoomTab) => void;
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
+  onShareFiles?: () => void;
   onEditDetail: (groupTitle: string, field: MusicDetailField) => void;
   onStageChange: (stage: string) => void;
   onSaveSplitContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => void;
   onRemoveSplitContributor: (contributorId: string) => void;
   onSendSplitConfirmationLinks: () => void;
   onGenerateBrief: () => void;
+  onContinueWithManager?: () => void;
   briefPending: boolean;
   briefError: string | null;
   onBack: () => void;
@@ -761,6 +784,7 @@ function MusicSongDetail({
   ].filter((section) => section.assets.length > 0);
   const fileReadyCount = countCompleteMusicItems(fileAssets);
   const fileMissingCount = fileAssets.filter((asset) => asset.status === "Missing").length;
+  const shareableAssets = fileAssets.filter(isShareableMusicAsset);
   const fallbackDetails = (song.details ?? []).map((field) => ({ label: field.label, value: field.value, status: normalizeFieldStatus(field.status) }));
   const identityFields = [...(song.metadataFields ?? []), ...(song.identifiers ?? [])];
   const detailGroups = [
@@ -775,6 +799,11 @@ function MusicSongDetail({
   const generateReadLabel = managerReadButtonLabel("song", song.managerReadStatus);
   const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
   const pendingReadLabel = song.managerReadStatus === "unknown" ? "Checking status" : "Manager is reading";
+  const readControls = managerReadControls({
+    status: song.managerReadStatus ?? "not_generated",
+    hasConversation: Boolean(song.managerConversationId),
+  });
+  const hasSecondaryReadAction = readControls.readActionPriority === "secondary";
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -809,10 +838,15 @@ function MusicSongDetail({
                   aria-label={briefPending ? pendingReadLabel : generateReadLabel}
                   onClick={onGenerateBrief}
                   disabled={readBusy}
-                  className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 bg-foreground px-3 py-2 font-ui text-[10px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:px-4 sm:text-[11px]"
+                  className={cn(
+                    "ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 font-ui text-[10px] font-semibold shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:text-[11px]",
+                    hasSecondaryReadAction
+                      ? "h-9 w-9 justify-center bg-background text-foreground"
+                      : "bg-foreground px-3 py-2 text-background sm:px-4",
+                  )}
                 >
-                  {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
-                  <span>{briefPending ? pendingReadLabel : generateReadLabel}</span>
+                  {readBusy ? <AppThinkingOrb surface={hasSecondaryReadAction ? "normal" : "inverse"} state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
+                  <span className={hasSecondaryReadAction ? "sr-only" : undefined}>{briefPending ? pendingReadLabel : generateReadLabel}</span>
                 </button>
               </div>
               {briefError ? (
@@ -821,7 +855,7 @@ function MusicSongDetail({
                 </p>
               ) : null}
             </div>
-            <MusicManagerReadContent subject={song} testId="manager-read-copy" />
+            <MusicManagerReadContent subject={song} testId="manager-read-copy" onContinueWithManager={onContinueWithManager} />
           </div>
           <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
         </div>
@@ -835,6 +869,17 @@ function MusicSongDetail({
               <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Assets</h4>
             </div>
             <div className="flex flex-wrap justify-end gap-2">
+              {onShareFiles && shareableAssets.length ? (
+                <button
+                  type="button"
+                  aria-label="Share files"
+                  onClick={onShareFiles}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-foreground/10 bg-background px-2.5 py-1 text-[11px] font-bold text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+                >
+                  <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
+                  Share
+                </button>
+              ) : null}
               <span className="rounded-md border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-semibold text-foreground/78">{fileReadyCount}/{fileAssets.length || 0} ready</span>
               {fileMissingCount ? <span className="rounded-md bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning">{fileMissingCount} missing</span> : null}
             </div>
@@ -999,6 +1044,7 @@ function MusicProjectDetail({
   onBack,
   onOpenSong,
   onGenerateBrief,
+  onContinueWithManager,
   briefPending,
   briefError,
   onOpenMission,
@@ -1010,6 +1056,7 @@ function MusicProjectDetail({
   onBack: () => void;
   onOpenSong: (song: MusicObjectViewModel) => void;
   onGenerateBrief: () => void;
+  onContinueWithManager?: () => void;
   briefPending: boolean;
   briefError: string | null;
   onOpenMission: (missionId: string) => void;
@@ -1071,7 +1118,7 @@ function MusicProjectDetail({
               ))}
             </div>
           </div>
-          <MusicProjectBrief project={project} onGenerateBrief={onGenerateBrief} briefPending={briefPending} briefError={briefError} />
+          <MusicProjectBrief project={project} onGenerateBrief={onGenerateBrief} onContinueWithManager={onContinueWithManager} briefPending={briefPending} briefError={briefError} />
         </div>
         <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
       </div>
@@ -1082,17 +1129,24 @@ function MusicProjectDetail({
 function MusicProjectBrief({
   project,
   onGenerateBrief,
+  onContinueWithManager,
   briefPending,
   briefError,
 }: {
   project: MusicObjectViewModel;
   onGenerateBrief: () => void;
+  onContinueWithManager?: () => void;
   briefPending: boolean;
   briefError: string | null;
 }) {
   const generateReadLabel = managerReadButtonLabel("project", project.managerReadStatus);
   const readBusy = briefPending || isActiveManagerRead(project.managerReadStatus);
   const pendingReadLabel = project.managerReadStatus === "unknown" ? "Checking status" : "Manager is reading";
+  const readControls = managerReadControls({
+    status: project.managerReadStatus ?? "not_generated",
+    hasConversation: Boolean(project.managerConversationId),
+  });
+  const hasSecondaryReadAction = readControls.readActionPriority === "secondary";
 
   return (
     <div className="surface-elevated overflow-hidden rounded-[22px] p-5 shadow-sm sm:p-6">
@@ -1107,10 +1161,15 @@ function MusicProjectBrief({
           onClick={onGenerateBrief}
           disabled={readBusy}
           aria-label={briefPending ? pendingReadLabel : generateReadLabel}
-          className="inline-flex items-center gap-2 rounded-full border border-foreground/12 bg-foreground px-4 py-2 font-ui text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40"
+          className={cn(
+            "inline-flex shrink-0 items-center rounded-full border border-foreground/12 font-ui text-[11px] font-semibold shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40",
+            hasSecondaryReadAction
+              ? "h-9 w-9 justify-center bg-background text-foreground"
+              : "gap-2 bg-foreground px-4 py-2 text-background",
+          )}
         >
-          {readBusy ? <AppThinkingOrb surface="inverse" state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
-          {briefPending ? pendingReadLabel : generateReadLabel}
+          {readBusy ? <AppThinkingOrb surface={hasSecondaryReadAction ? "normal" : "inverse"} state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
+          <span className={hasSecondaryReadAction ? "sr-only" : undefined}>{briefPending ? pendingReadLabel : generateReadLabel}</span>
         </button>
       </div>
 
@@ -1121,13 +1180,21 @@ function MusicProjectBrief({
       ) : null}
 
       <div className="mt-5">
-        <MusicManagerReadContent subject={project} testId="project-manager-read-copy" />
+        <MusicManagerReadContent subject={project} testId="project-manager-read-copy" onContinueWithManager={onContinueWithManager} />
       </div>
     </div>
   );
 }
 
-function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectViewModel; testId: string }) {
+function MusicManagerReadContent({
+  subject,
+  testId,
+  onContinueWithManager,
+}: {
+  subject: MusicObjectViewModel;
+  testId: string;
+  onContinueWithManager?: () => void;
+}) {
   const read = subject.managerRead;
   const statusMessage =
     subject.managerReadStatus === "refreshing"
@@ -1174,6 +1241,18 @@ function MusicManagerReadContent({ subject, testId }: { subject: MusicObjectView
             <p className="whitespace-pre-line text-[14px] font-semibold leading-[1.75] text-foreground/90">{read.body}</p>
           </div>
         </>
+      ) : null}
+
+      {onContinueWithManager ? (
+        <div className="border-t border-foreground/8 px-4 py-3 sm:px-5">
+          <button
+            type="button"
+            onClick={onContinueWithManager}
+            className="inline-flex items-center gap-1.5 font-ui text-[12px] font-semibold text-foreground transition-colors hover:text-brand-accent focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+          >
+            Continue with Manager <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
       ) : null}
     </section>
   );
@@ -2111,6 +2190,247 @@ function formatReleaseYear(releaseDate?: string) {
   return /^\d{4}$/.test(year) ? year : null;
 }
 
+function MusicShareDialog({
+  song,
+  onCancel,
+  onCreate,
+  onList,
+  onSend,
+  onRevoke,
+}: {
+  song: MusicObjectViewModel;
+  onCancel: () => void;
+  onCreate: NonNullable<MusicRepository["createShareLink"]>;
+  onList?: NonNullable<MusicRepository["listShareLinks"]>;
+  onSend?: NonNullable<MusicRepository["sendShareLink"]>;
+  onRevoke?: NonNullable<MusicRepository["revokeShareLink"]>;
+}) {
+  const assets = (song.fileAssets ?? []).filter(isShareableMusicAsset);
+  const [selectedAssetIds, setSelectedAssetIds] = useState(() => assets.flatMap((asset) => asset.assetId ? [asset.assetId] : []));
+  const [preset, setPreset] = useState<"listen" | "epk_press" | "delivery" | "custom">("delivery");
+  const [recipientEmail, setRecipientEmail] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [createdLink, setCreatedLink] = useState<{ id: string; url: string } | null>(null);
+  const [emailSent, setEmailSent] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [revoked, setRevoked] = useState(false);
+  const [shareHistory, setShareHistory] = useState<MusicShareLinkHistoryViewModel[]>([]);
+  const [historyPending, setHistoryPending] = useState(Boolean(onList));
+
+  useEffect(() => {
+    let active = true;
+    if (!onList) {
+      setHistoryPending(false);
+      return () => { active = false; };
+    }
+    setHistoryPending(true);
+    onList({ type: "music_item", id: song.id })
+      .then((links) => {
+        if (!active) return;
+        setShareHistory((current) => [
+          ...current,
+          ...links.filter((link) => !current.some((existing) => existing.id === link.id)),
+        ]);
+      })
+      .catch(() => { if (active) setShareHistory([]); })
+      .finally(() => { if (active) setHistoryPending(false); });
+    return () => { active = false; };
+  }, [onList, song.id]);
+
+  function toggleAsset(assetId: string) {
+    setSelectedAssetIds((current) => current.includes(assetId)
+      ? current.filter((id) => id !== assetId)
+      : [...current, assetId]);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedAssetIds.length || pending) return;
+    setPending(true);
+    setError(null);
+    setEmailSent(false);
+    setRevoked(false);
+    setCopied(false);
+    let linkWasCreated = false;
+    try {
+      const shareLink = await onCreate({
+        musicSubject: { type: "music_item", id: song.id },
+        assetIds: selectedAssetIds,
+        preset,
+        recipientEmail: recipientEmail.trim() || undefined,
+      });
+      setCreatedLink({ id: shareLink.id, url: shareLink.url });
+      setShareHistory((current) => [{
+        id: shareLink.id,
+        label: shareLink.label,
+        preset: shareLink.preset,
+        state: "active",
+        recipientEmail: shareLink.recipientEmail,
+        createdAt: shareLink.createdAt,
+        assetCount: selectedAssetIds.length,
+        accessCount: 0,
+      }, ...current.filter((link) => link.id !== shareLink.id)]);
+      linkWasCreated = true;
+      if (recipientEmail.trim() && onSend) {
+        await onSend({ shareLinkId: shareLink.id, url: shareLink.url, recipientEmail: recipientEmail.trim() });
+        setEmailSent(true);
+      }
+    } catch (submissionError) {
+      setError(linkWasCreated
+        ? "The secure link was created, but the email could not be sent. You can still copy the link below."
+        : readErrorMessage(submissionError, "Share link could not be created. Try again."));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function copyLink() {
+    if (!createdLink?.url) return;
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(createdLink.url);
+      setCopied(true);
+    } catch {
+      setError("Copy is unavailable here. Select the secure link and copy it manually.");
+    }
+  }
+
+  async function revokeLink() {
+    if (!createdLink || !onRevoke || pending || revoked) return;
+    setPending(true);
+    setError(null);
+    try {
+      await onRevoke(createdLink.id);
+      setRevoked(true);
+      setShareHistory((current) => current.map((link) => link.id === createdLink.id ? { ...link, state: "revoked" } : link));
+    } catch (revokeError) {
+      setError(readErrorMessage(revokeError, "Share link could not be revoked. Try again."));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function revokeHistoricalLink(shareLink: MusicShareLinkHistoryViewModel) {
+    if (!onRevoke || pending || shareLink.state !== "active") return;
+    setPending(true);
+    setError(null);
+    try {
+      await onRevoke(shareLink.id);
+      setShareHistory((current) => current.map((link) => link.id === shareLink.id ? { ...link, state: "revoked" } : link));
+    } catch (revokeError) {
+      setError(readErrorMessage(revokeError, "Share link could not be revoked. Try again."));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Share ${song.title} files`}
+        onSubmit={submit}
+        className="w-[min(100%,38rem)] overflow-hidden rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)] ring-1 ring-foreground/5"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
+          <div>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Private release package</p>
+            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">Share {song.title}</h3>
+            <p className="mt-2 max-w-lg text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Choose only the original files this person needs. The shared page never exposes your whole song room.</p>
+          </div>
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="max-h-[68vh] overflow-y-auto px-5 py-4">
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_180px]">
+            <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+              Package type
+              <select aria-label="Sharing preset" value={preset} onChange={(event) => setPreset(event.target.value as typeof preset)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none">
+                <option value="listen">Listen only</option>
+                <option value="epk_press">EPK / press</option>
+                <option value="delivery">Delivery</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
+              Send to email <span className="font-medium normal-case tracking-normal text-muted-foreground/60">optional</span>
+              <input aria-label="Send to email" type="email" value={recipientEmail} onChange={(event) => setRecipientEmail(event.target.value)} placeholder="name@company.com" className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground placeholder:text-muted-foreground/45 focus:border-foreground focus:outline-none" />
+            </label>
+          </div>
+
+          <fieldset className="mt-5">
+            <legend className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">Included files</legend>
+            <div className="mt-2 overflow-hidden rounded-[14px] border border-foreground/8">
+              {assets.map((asset) => (
+                <label key={asset.assetId} className="flex cursor-pointer items-center gap-3 border-b border-foreground/6 px-3 py-3 last:border-b-0 hover:bg-foreground/[0.025]">
+                  <input aria-label={asset.label} type="checkbox" checked={Boolean(asset.assetId && selectedAssetIds.includes(asset.assetId))} onChange={() => asset.assetId && toggleAsset(asset.assetId)} className="h-4 w-4 rounded border-foreground/20 accent-foreground" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold text-foreground">{asset.label}</span>
+                    <span className="mt-0.5 block text-[11px] font-semibold text-muted-foreground/75">{asset.group} · {asset.status}</span>
+                  </span>
+                  <MusicStatusPill value={asset.status} />
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {createdLink ? (
+            <div className="mt-4 rounded-[14px] border border-success/20 bg-success/[0.055] p-3.5">
+              <p className="text-[12px] font-bold text-foreground">{revoked ? "Link revoked." : <>Secure link ready{emailSent ? " — email sent" : ""}.</>}</p>
+              {!revoked ? (
+                <div className="mt-2 flex gap-2">
+                  <input aria-label="Secure share link" readOnly value={createdLink.url} className="min-w-0 flex-1 rounded-lg border border-foreground/10 bg-background px-3 py-2 text-[11px] font-semibold text-foreground" />
+                  <button type="button" onClick={() => void copyLink()} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-foreground/10 bg-background px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]">
+                    <Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy"}
+                  </button>
+                  {onRevoke ? (
+                    <button type="button" disabled={pending} onClick={() => void revokeLink()} className="inline-flex shrink-0 items-center rounded-lg border border-danger/20 bg-background px-3 py-2 text-[11px] font-bold text-danger hover:bg-danger/[0.05] disabled:opacity-40">
+                      Revoke link
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+          {historyPending ? <p className="mt-4 text-[11px] font-semibold text-muted-foreground/65">Loading recent packages...</p> : null}
+          {shareHistory.filter((link) => link.id !== createdLink?.id).length ? (
+            <section className="mt-4 border-t border-foreground/8 pt-4" aria-label="Recent share packages">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">Recent packages</p>
+              <div className="mt-2 overflow-hidden rounded-[12px] border border-foreground/8">
+                {shareHistory.filter((link) => link.id !== createdLink?.id).map((link) => (
+                  <div key={link.id} className="flex items-center gap-3 border-b border-foreground/6 px-3 py-2.5 last:border-b-0">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[12px] font-bold text-foreground">{link.label}</p>
+                      <p className="mt-0.5 truncate text-[10px] font-semibold text-muted-foreground/70">{presetName(link.preset)} · {link.assetCount} file{link.assetCount === 1 ? "" : "s"}{link.recipientEmail ? ` · ${link.recipientEmail}` : ""}{link.accessCount ? ` · opened ${link.accessCount}×` : ""}</p>
+                    </div>
+                    <MusicStatusPill value={titleCaseStatus(link.state)} />
+                    {onRevoke && link.state === "active" ? (
+                      <button type="button" disabled={pending} onClick={() => void revokeHistoricalLink(link)} aria-label={`Revoke ${link.label}`} className="shrink-0 text-[10px] font-bold text-danger hover:underline disabled:opacity-40">Revoke</button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+          {error ? <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
+          <p className="text-[11px] font-semibold text-muted-foreground/70">Links stay revocable. Downloads are signed per file.</p>
+          <span className="flex shrink-0 gap-2">
+            <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Close</button>
+            <button type="submit" disabled={!selectedAssetIds.length || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Preparing" : createdLink ? "Create another" : "Create secure link"}</button>
+          </span>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 function MusicUploadDialog({
   asset,
   pending,
@@ -2208,7 +2528,11 @@ function MusicDetailEditDialog({
         <div className="px-5 py-4">
         <label className="grid gap-2 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
           Value
-          <input value={value} onChange={(event) => setValue(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none" />
+          {field.label === "Lyrics" ? (
+            <textarea aria-label="Value" value={value} onChange={(event) => setValue(event.target.value)} rows={8} className="resize-y rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none" />
+          ) : (
+            <input value={value} onChange={(event) => setValue(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none" />
+          )}
         </label>
         <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Provider-confirmed metadata stays read-only. This saves a user-supplied draft for incomplete fields.</p>
         </div>
@@ -2223,6 +2547,17 @@ function MusicDetailEditDialog({
 
 function canActOnAsset(asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) {
   return Boolean(asset.assetType && (asset.canUpload || asset.canReplace || asset.status === "Missing" || asset.status === "Draft"));
+}
+
+function isShareableMusicAsset(asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) {
+  return Boolean(asset.assetId && ["Uploaded", "Confirmed", "Cleared"].includes(asset.status));
+}
+
+function presetName(preset: "listen" | "epk_press" | "delivery" | "custom") {
+  if (preset === "listen") return "Listen only";
+  if (preset === "epk_press") return "EPK / press";
+  if (preset === "delivery") return "Delivery";
+  return "Custom";
 }
 
 function canEditDetailField(field: MusicDetailField) {

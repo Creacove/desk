@@ -4285,6 +4285,213 @@ describe("Clean production prototype-match shell", () => {
     expect(within(read).getByTestId("manager-read-metrics")).toHaveClass("grid-cols-2");
   });
 
+  it("keeps the Manager Read independent from continuing the linked song conversation", async () => {
+    const subject = {
+      ...musicReadSubject("song", "fresh"),
+      managerConversationId: "conversation-jam",
+    };
+    const onOpenManager = vi.fn();
+    const repositories = repositoriesFor("Nova Vale");
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onOpenManager={onOpenManager}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    const room = screen.getByTestId("music-song-detail");
+    fireEvent.click(within(room).getByRole("button", { name: "Continue with Manager" }));
+
+    expect(onOpenManager).toHaveBeenCalledWith(subject);
+    expect(within(room).getByTestId("manager-read-copy")).toHaveTextContent(completeSongManagerRead.body.split("\n")[0]);
+  });
+
+  it("keeps a linked project’s Manager Read refresh secondary to its conversation", async () => {
+    const subject = {
+      ...musicReadSubject("project", "fresh"),
+      managerConversationId: "conversation-blue-rooms",
+    };
+    const repositories = repositoriesFor("Nova Vale");
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onOpenManager={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open project Blue Rooms" }));
+
+    expect(screen.getByRole("button", { name: "Refresh Manager Read" })).toHaveClass("h-9", "w-9");
+    expect(screen.getByRole("button", { name: "Continue with Manager" })).toBeInTheDocument();
+  });
+
+  it("keeps selected-asset sharing inside the song Files surface", async () => {
+    const subject = {
+      ...musicReadSubject("song", "fresh"),
+      fileAssets: [
+        {
+          assetId: "asset-final-master",
+          group: "Audio" as const,
+          label: "Final master",
+          status: "Uploaded",
+          action: "Ready for approved sharing",
+          assetType: "final_master",
+        },
+      ],
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    const revokeShareLink = vi.fn(async () => undefined);
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={{
+          ...repositories.music,
+          createShareLink: vi.fn(async () => ({
+            id: "share-link-1",
+            label: "Jam shared package",
+            preset: "delivery" as const,
+            url: "https://app.ordersounds.com/share?token=abc",
+          })),
+          listShareLinks: vi.fn(async () => [{
+            id: "share-prior",
+            label: "Previous press package",
+            preset: "epk_press" as const,
+            state: "active" as const,
+            assetCount: 2,
+            accessCount: 4,
+          }]),
+          revokeShareLink,
+        }}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    const room = screen.getByTestId("music-song-detail");
+    expect(within(room).queryByRole("button", { name: "Share files" })).not.toBeInTheDocument();
+
+    fireEvent.click(within(room).getByRole("button", { name: "files" }));
+    fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
+
+    expect(screen.getByRole("dialog", { name: "Share Jam files" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Final master")).toBeChecked();
+    expect(await screen.findByText("Previous press package")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Revoke Previous press package" }));
+    await waitFor(() => expect(revokeShareLink).toHaveBeenCalledWith("share-prior"));
+  });
+
+  it("keeps the created secure link usable when its optional email delivery fails", async () => {
+    const subject = {
+      ...musicReadSubject("song", "fresh"),
+      fileAssets: [{
+        assetId: "asset-final-master",
+        group: "Audio" as const,
+        label: "Final master",
+        status: "Uploaded",
+        action: "Ready for approved sharing",
+        assetType: "final_master",
+      }],
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    const createShareLink = vi.fn(async () => ({
+      id: "share-link-2",
+      label: "Jam shared package",
+      preset: "delivery" as const,
+      url: "https://app.ordersounds.com/share?token=abc",
+    }));
+    const revokeShareLink = vi.fn(async () => undefined);
+
+    render(
+      <MusicWorkspace
+        music={[subject]}
+        missions={[]}
+        musicRepository={{ ...repositories.music, createShareLink, revokeShareLink, sendShareLink: async () => { throw new Error("Email provider trace"); } }}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    const room = screen.getByTestId("music-song-detail");
+    fireEvent.click(within(room).getByRole("button", { name: "files" }));
+    fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
+    fireEvent.change(screen.getByLabelText("Send to email"), { target: { value: "press@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create secure link" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("secure link was created");
+    expect(screen.getByLabelText("Secure share link")).toHaveValue("https://app.ordersounds.com/share?token=abc");
+    expect(createShareLink).toHaveBeenCalledWith(expect.objectContaining({
+      musicSubject: { type: "music_item", id: "song-jam" },
+      assetIds: ["asset-final-master"],
+      recipientEmail: "press@example.com",
+    }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Revoke link" }));
+    await waitFor(() => expect(revokeShareLink).toHaveBeenCalledWith("share-link-2"));
+    expect(screen.getByText("Link revoked.")).toBeInTheDocument();
+  });
+
+  it("keeps the new Manager conversation linked to the song after its first streamed response starts", async () => {
+    const subject = musicReadSubject("song", "fresh");
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.music = { ...repositories.music, loadMusic: async () => [subject] };
+    repositories.manager = {
+      ...repositories.manager,
+      sendMessageStream: vi.fn(async (_input, handlers) => {
+        handlers.onEvent({
+          type: "conversation.started",
+          conversation: { id: "conversation-jam-new", topic: "Manage Jam", status: "Manager is thinking" },
+          run: { id: "run-jam-new", status: "running" },
+        });
+      }),
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="musicWorkspace"
+      />,
+    );
+
+    await screen.findByRole("heading", { name: "Catalog" });
+    fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Continue with Manager" }));
+
+    await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
+      expect.objectContaining({ musicSubject: { type: "music_item", id: "song-jam" } }),
+      expect.any(Object),
+    ));
+
+    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Catalog workspace" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Open song Jam" }));
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Refresh Manager Read" })).toHaveClass("h-9", "w-9");
+  });
+
   it.each([
     ["song", "not_generated", "Not generated", "Ask Manager for a read", false],
     ["song", "stale", "Refresh required", "Refresh Manager Read", false],

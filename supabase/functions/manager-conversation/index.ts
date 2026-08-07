@@ -22,6 +22,11 @@ import {
   buildManagerConversationModelContext,
   classifyManagerConversationError,
 } from "../_shared/manager-conversation/context.ts";
+import {
+  musicConversationSubjectTarget,
+  parseMusicConversationSubject,
+  type MusicConversationSubject,
+} from "../_shared/manager-conversation/musicSubject.ts";
 import { qualifyManagerMemoryCandidates } from "../_shared/manager-conversation/memory.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
@@ -38,6 +43,7 @@ type ManagerConversationInput = {
   artistId: string;
   conversationId?: string;
   taskId?: string;
+  musicSubject?: MusicConversationSubject;
   body: string;
   contextRequestId?: string;
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
@@ -73,6 +79,7 @@ Deno.serve(async (request) => {
     await assertActiveWorkspaceEntitlement(db, input);
     await assertWorkspace(db, input);
     const conversationId = await ensureConversation(db, input);
+    const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
     const artistMessage = await insertConversationMessage(db, input, conversationId, {
       speaker: "artist",
       label: "You",
@@ -80,7 +87,7 @@ Deno.serve(async (request) => {
       metadata: managerArtistMessageMetadata(input),
     });
 
-    const packet = await buildManagerConversationPacket(db, input, conversationId, artistMessage.id);
+    const packet = await buildManagerConversationPacket(db, input, conversationId, artistMessage.id, focusedMusicSubject);
     runId = await createManagerRun(db, input, conversationId, packet);
     usageId = await createUsageEvent(db, input, runId);
 
@@ -91,6 +98,8 @@ Deno.serve(async (request) => {
       buildManagerConversationModelContext(input, packet, conversationId, previousResponseId),
       previousResponseId,
       managerConversationPlaybookKeys(packet),
+      conversationId,
+      runId,
     );
     const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {
       conversationId,
@@ -146,6 +155,7 @@ Deno.serve(async (request) => {
 function validateInput(input: ManagerConversationInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId) throw new Error("Manager conversation workspace input is incomplete.");
   if (!input.body || input.body.trim().length < 3) throw new Error("Manager conversation requires a directive or question.");
+  input.musicSubject = parseMusicConversationSubject(input.musicSubject) ?? undefined;
 }
 
 async function assertWorkspace(db: any, input: ManagerConversationInput) {
@@ -176,6 +186,9 @@ async function ensureConversation(db: any, input: ManagerConversationInput) {
     return input.conversationId;
   }
 
+  const linkedConversationId = await findLinkedMusicConversation(db, input);
+  if (linkedConversationId) return linkedConversationId;
+
   const { data, error } = await db
     .from("conversations")
     .insert({
@@ -191,6 +204,43 @@ async function ensureConversation(db: any, input: ManagerConversationInput) {
     .single();
   if (error) throw error;
   return data.id as string;
+}
+
+async function findLinkedMusicConversation(db: any, input: ManagerConversationInput) {
+  if (!input.musicSubject) return null;
+
+  const target = musicConversationSubjectTarget(input.musicSubject);
+  const { data: links, error: linkError } = await db.from("artifact_links")
+    .select("source_id,created_at")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("source_type", "conversation")
+    .eq("target_type", target.artifactType)
+    .eq("target_id", input.musicSubject.id)
+    .eq("relationship", "references")
+    .order("created_at", { ascending: false })
+    .order("source_id", { ascending: false })
+    .limit(20);
+  if (linkError) throw linkError;
+
+  const candidateIds: string[] = (links ?? [])
+    .map((link: { source_id?: string | null }) => link.source_id)
+    .filter((id: unknown): id is string => typeof id === "string" && id.length > 0);
+  if (!candidateIds.length) return null;
+
+  const { data: conversations, error: conversationError } = await db.from("conversations")
+    .select("id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .in("id", candidateIds);
+  if (conversationError) throw conversationError;
+
+  const ownedConversationIds = new Set<string>((conversations ?? [])
+    .map((conversation: { id?: string | null }) => conversation.id)
+    .filter((id: unknown): id is string => typeof id === "string" && id.length > 0));
+  return candidateIds.find((id) => ownedConversationIds.has(id)) ?? null;
 }
 
 async function ensureTaskConversation(db: any, input: ManagerConversationInput) {
@@ -286,7 +336,70 @@ async function ensureTaskConversationLink(db: any, input: ManagerConversationInp
   if (error) throw error;
 }
 
-async function buildManagerConversationPacket(db: any, input: ManagerConversationInput, conversationId: string, messageId: string) {
+async function ensureMusicConversationSubjectLink(db: any, input: ManagerConversationInput, conversationId: string) {
+  if (!input.musicSubject) return null;
+
+  const target = musicConversationSubjectTarget(input.musicSubject);
+  const subjectColumns = input.musicSubject.type === "music_item"
+    ? "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata"
+    : "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit,metadata";
+  const { data: musicSubject, error: subjectError } = await db
+    .from(target.table)
+    .select(subjectColumns)
+    .eq("id", input.musicSubject.id)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (subjectError) throw subjectError;
+  if (!musicSubject) throw new Error("Manager conversation music subject was not found.");
+
+  const { data: existing, error: existingError } = await db.from("artifact_links")
+    .select("id")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("source_type", "conversation")
+    .eq("source_id", conversationId)
+    .eq("target_type", target.artifactType)
+    .eq("target_id", input.musicSubject.id)
+    .eq("relationship", "references")
+    .maybeSingle();
+  if (existingError) throw existingError;
+  if (!existing) {
+    const { error: linkError } = await db.from("artifact_links").insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      source_type: "conversation",
+      source_id: conversationId,
+      target_type: target.artifactType,
+      target_id: input.musicSubject.id,
+      relationship: "references",
+    });
+    if (linkError) throw linkError;
+  }
+
+  return {
+    type: input.musicSubject.type,
+    id: musicSubject.id,
+    title: musicSubject.title,
+    kind: musicSubject.item_type ?? musicSubject.project_type ?? "",
+    lifecycleStage: musicSubject.lifecycle_stage ?? "",
+    releasedAt: musicSubject.released_at ?? "",
+    sourceKind: musicSubject.source_kind ?? "",
+    sourceLimit: musicSubject.source_limit ?? "",
+    metadata: musicSubject.metadata ?? {},
+  };
+}
+
+async function buildManagerConversationPacket(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  messageId: string,
+  focusedMusicSubject: Record<string, unknown> | null,
+) {
   const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, conversations, messages, managerPackets] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context,social_handles", input, 1),
     selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 12),
@@ -338,6 +451,7 @@ async function buildManagerConversationPacket(db: any, input: ManagerConversatio
     recentConversations: conversations,
     conversationHistory: messages,
     taskContext,
+    focusedMusicSubject,
     latestManagerIntelligencePacket,
     managerIntelligenceProfileProjection: latestManagerIntelligencePacket?.profile_projection_json ?? {},
     managerIntelligenceMissionSeed: latestManagerIntelligencePacket?.mission_seed_json ?? {},
@@ -405,8 +519,17 @@ async function insertConversationMessage(db: any, input: ManagerConversationInpu
   return data;
 }
 
-async function callOpenAIManagerConversation(db: any, input: ManagerConversationInput, context: unknown, previousResponseId: string, playbookKeys: PlaybookKey[]) {
+async function callOpenAIManagerConversation(
+  db: any,
+  input: ManagerConversationInput,
+  context: unknown,
+  previousResponseId: string,
+  playbookKeys: PlaybookKey[],
+  conversationId: string,
+  runId: string | null,
+) {
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
+  const toolInput = { ...input, conversationId, runId: runId ?? undefined };
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -421,7 +544,7 @@ async function callOpenAIManagerConversation(db: any, input: ManagerConversation
     contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
     promptCacheMode: "explicit",
-    executeTool: (name, args) => executeManagerConversationTool(db, input, name, args),
+    executeTool: (name, args) => executeManagerConversationTool(db, toolInput, name, args),
   });
   return {
     output: parseManagerConversationOutput(result.outputText),
