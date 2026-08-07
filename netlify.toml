@@ -19,7 +19,7 @@
     X-Frame-Options = "DENY"
     Referrer-Policy = "strict-origin-when-cross-origin"
     Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(self)"
-    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' https://cdn.paddle.com; connect-src 'self' https://bbwbxmnanccwottrmkqu.supabase.co wss://bbwbxmnanccwottrmkqu.supabase.co https://sandbox-api.paddle.com https://api.paddle.com https://checkout-service.paddle.com https://sandbox-checkout-service.paddle.com; frame-src https://checkout.paddle.com https://sandbox-checkout.paddle.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+    Content-Security-Policy-Report-Only = "default-src 'self'; script-src 'self' https://cdn.paddle.com https://eu-assets.i.posthog.com; connect-src 'self' https://bbwbxmnanccwottrmkqu.supabase.co wss://bbwbxmnanccwottrmkqu.supabase.co https://sandbox-api.paddle.com https://api.paddle.com https://checkout-service.paddle.com https://sandbox-checkout-service.paddle.com https://eu.i.posthog.com; frame-src https://checkout.paddle.com https://sandbox-checkout.paddle.com; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 [[redirects]]
   from = "/*"

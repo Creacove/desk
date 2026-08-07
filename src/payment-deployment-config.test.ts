@@ -34,6 +34,10 @@ describe("payment deployment configuration", () => {
     expect(config).toContain('Referrer-Policy = "strict-origin-when-cross-origin"');
     expect(config).toContain("Content-Security-Policy-Report-Only");
     expect(config).toContain("https://cdn.paddle.com");
+    expect(config).toContain("https://eu-assets.i.posthog.com");
+    expect(config).toContain("https://eu.i.posthog.com");
+    expect(config).toContain("https://fonts.googleapis.com");
+    expect(config).toContain("https://fonts.gstatic.com");
     expect(config).not.toContain("unsafe-eval");
   });
 

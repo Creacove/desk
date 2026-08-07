@@ -27,6 +27,11 @@ type FocusedMusicOverlay = {
   object: MusicObjectViewModel;
   parentManagerRevision: string;
 };
+type SongWorkspaceCreation = {
+  input: { title: string; itemType: string; lifecycleStage: string; requestId: string };
+  status: "creating" | "failed";
+  error?: string;
+};
 
 export function MusicWorkspace({
   music,
@@ -75,6 +80,7 @@ export function MusicWorkspace({
   const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [songWorkspaceCreation, setSongWorkspaceCreation] = useState<SongWorkspaceCreation | null>(null);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
@@ -264,23 +270,14 @@ export function MusicWorkspace({
 
   async function createMusicRecord(input: { title: string; type: string; lifecycleStage: string }) {
     if (createKind === "songs") {
-      try {
-        setActionError(null);
-        setActionPending(true);
-        const workspace = await musicRepository.createSongWorkspace({ title: input.title, itemType: input.type, lifecycleStage: input.lifecycleStage });
-        await onSongWorkspaceCreated?.(workspace);
-        setCreatedMusicById((current) => ({ ...current, [musicObjectKey(workspace.song)]: workspace.song }));
-        setSelectedId(workspace.song.id);
-        setSelectedKind("song");
-        setReturnTab("songs");
-        setSongRoomTab("files");
-        setMode("songDetail");
-        setCreateKind(null);
-      } catch (error) {
-        setActionError(readErrorMessage(error, "Song workspace setup failed."));
-      } finally {
-        setActionPending(false);
-      }
+      const songWorkspaceInput = {
+        title: input.title,
+        itemType: input.type,
+        lifecycleStage: input.lifecycleStage,
+        requestId: crypto.randomUUID(),
+      };
+      setCreateKind(null);
+      await createSongWorkspace(songWorkspaceInput);
       return;
     }
 
@@ -292,6 +289,28 @@ export function MusicWorkspace({
       setMode("projectDetail");
       setCreateKind(null);
     });
+  }
+
+  async function createSongWorkspace(input: SongWorkspaceCreation["input"]) {
+    try {
+      setActionError(null);
+      setSongWorkspaceCreation({ input, status: "creating" });
+      const workspace = await musicRepository.createSongWorkspace(input);
+      await onSongWorkspaceCreated?.(workspace);
+      setCreatedMusicById((current) => ({ ...current, [musicObjectKey(workspace.song)]: workspace.song }));
+      setSelectedId(workspace.song.id);
+      setSelectedKind("song");
+      setReturnTab("songs");
+      setSongRoomTab("files");
+      setMode("songDetail");
+      setSongWorkspaceCreation(null);
+    } catch (error) {
+      setSongWorkspaceCreation({
+        input,
+        status: "failed",
+        error: readErrorMessage(error, "Song workspace setup failed."),
+      });
+    }
   }
 
   function openImportedRecord(result: SpotifyImportResult) {
@@ -416,8 +435,9 @@ export function MusicWorkspace({
                   type="button"
                   onClick={() => setAddMenuKind(tab)}
                   aria-label={tab === "songs" ? "Add song" : "Add project"}
-                  title={tab === "songs" ? "Add song" : "Add project"}
-                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground shadow-sm transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+                  title={tab === "songs" && songWorkspaceCreation?.status === "creating" ? "Preparing song workspace" : tab === "songs" ? "Add song" : "Add project"}
+                  disabled={tab === "songs" && songWorkspaceCreation?.status === "creating"}
+                  className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground shadow-sm transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:cursor-wait disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
                 </button>
@@ -425,6 +445,13 @@ export function MusicWorkspace({
             </div>
 
             <div className="sr-only" aria-live="polite">{actionPending ? "Saving Music update" : ""}</div>
+            {songWorkspaceCreation ? (
+              <SongWorkspaceCreationNotice
+                creation={songWorkspaceCreation}
+                onRetry={() => void createSongWorkspace(songWorkspaceCreation.input)}
+                onDismiss={() => setSongWorkspaceCreation(null)}
+              />
+            ) : null}
             {actionError ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{actionError}</p> : null}
 
             <div data-testid="music-mobile-library" className="grid gap-2 lg:hidden">
@@ -1780,6 +1807,7 @@ function MusicCreateDialog({
   const [type, setType] = useState(kind === "songs" ? "song" : "ep");
   const [lifecycleStage, setLifecycleStage] = useState("idea");
   const label = kind === "songs" ? "Add song" : "Add project";
+  const submitLabel = kind === "songs" ? "Create song" : "Add project";
 
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
@@ -1796,8 +1824,9 @@ function MusicCreateDialog({
       >
         <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
           <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Manual Music record</p>
-            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{label}</h3>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">{kind === "songs" ? "New unreleased song" : "Manual music record"}</p>
+            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{kind === "songs" ? "Start a song workspace" : label}</h3>
+            {kind === "songs" ? <p className="mt-2 max-w-md text-[12px] font-medium leading-relaxed text-muted-foreground">Create the song first. You can add the audio, credits, rights, and details once you arrive.</p> : null}
           </div>
           <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
             <X className="h-4 w-4" />
@@ -1823,13 +1852,51 @@ function MusicCreateDialog({
                 <option key={stage} value={stage}>{titleCaseStatus(stage)}</option>
               ))}
             </select>
+            {kind === "songs" ? <span className="normal-case text-[11px] font-medium tracking-normal text-muted-foreground">Choose the truest current stage. You can change it later.</span> : null}
           </label>
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
-          <button type="submit" disabled={!title.trim() || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? (kind === "songs" ? "Setting up workspace…" : "Saving") : label}</button>
+          <button type="submit" disabled={!title.trim() || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Saving" : submitLabel}</button>
         </div>
       </form>
+    </div>
+  );
+}
+
+function SongWorkspaceCreationNotice({
+  creation,
+  onRetry,
+  onDismiss,
+}: {
+  creation: SongWorkspaceCreation;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  const isCreating = creation.status === "creating";
+
+  return (
+    <div
+      data-testid="song-workspace-creation-notice"
+      role={isCreating ? "status" : "alert"}
+      className={cn(
+        "flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3.5 py-3 text-[12px]",
+        isCreating ? "border-brand-accent/20 bg-brand-accent/[0.045] text-foreground" : "border-danger/20 bg-danger/10 text-danger",
+      )}
+    >
+      {isCreating ? <Loader2 className="h-4 w-4 shrink-0 animate-spin text-brand-accent" aria-hidden="true" /> : <AlertCircle className="h-4 w-4 shrink-0" aria-hidden="true" />}
+      <div className="min-w-0 flex-1">
+        <p className="font-semibold">{isCreating ? `Creating ${creation.input.title}` : `Couldn’t create ${creation.input.title}`}</p>
+        <p className={cn("mt-0.5 text-[11px] font-medium", isCreating ? "text-muted-foreground" : "text-danger/80")}>
+          {isCreating ? "Preparing its Files space and linked work. You can keep browsing." : creation.error}
+        </p>
+      </div>
+      {!isCreating ? (
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={onRetry} className="rounded-lg border border-current/20 px-2.5 py-1.5 text-[11px] font-bold transition-colors hover:bg-current/10">Retry</button>
+          <button type="button" onClick={onDismiss} aria-label="Dismiss song workspace error" className="rounded-lg p-1.5 transition-colors hover:bg-current/10"><X className="h-3.5 w-3.5" /></button>
+        </div>
+      ) : null}
     </div>
   );
 }

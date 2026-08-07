@@ -124,12 +124,14 @@ function musicReadSubject(
 
 beforeEach(() => {
   Object.defineProperty(window, "scrollTo", { configurable: true, writable: true, value: vi.fn() });
+  vi.stubGlobal("crypto", { randomUUID: () => "123e4567-e89b-42d3-a456-426614174000" });
 });
 
 afterEach(() => {
   cleanup();
   window.history.replaceState({}, "", "/");
   vi.useRealTimers();
+  vi.unstubAllGlobals();
   supabaseDiscoveryPoll.responses = [];
   vi.clearAllMocks();
 });
@@ -4852,14 +4854,75 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
     fireEvent.change(screen.getByLabelText("Song title"), { target: { value: "Debbie" } });
     fireEvent.change(screen.getByLabelText("Lifecycle stage"), { target: { value: "mastering" } });
-    fireEvent.click(within(screen.getByRole("dialog", { name: "Add song" })).getByRole("button", { name: "Add song" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add song" })).getByRole("button", { name: "Create song" }));
 
-    expect(createSongWorkspace).toHaveBeenCalledWith({ title: "Debbie", itemType: "song", lifecycleStage: "mastering" });
+    expect(createSongWorkspace).toHaveBeenCalledWith(expect.objectContaining({ title: "Debbie", itemType: "song", lifecycleStage: "mastering" }));
     expect(await screen.findByTestId("music-song-detail")).toBeInTheDocument();
     expect(screen.getByText("File manifest")).toBeInTheDocument();
     expect(screen.getByText("Working audio")).toBeInTheDocument();
     expect(screen.queryByTestId("manager-read-copy")).not.toBeInTheDocument();
     expect(onMusicChanged).not.toHaveBeenCalled();
+  });
+
+  it("closes the manual-song dialog while its workspace is being prepared", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const createSongWorkspace = vi.fn(() => new Promise<never>(() => undefined));
+    repositories.music = { ...repositories.music, createSongWorkspace };
+
+    render(
+      <MusicWorkspace
+        music={[]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add song" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
+    fireEvent.change(screen.getByLabelText("Song title"), { target: { value: "Debbie" } });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add song" })).getByRole("button", { name: "Create song" }));
+
+    expect(createSongWorkspace).toHaveBeenCalledWith(expect.objectContaining({ title: "Debbie", itemType: "song", lifecycleStage: "idea" }));
+    expect(screen.queryByRole("dialog", { name: "Add song" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("music-workspace-content")).not.toHaveClass("blur-[6px]");
+    expect(screen.getByTestId("song-workspace-creation-notice")).toHaveTextContent("Creating Debbie");
+  });
+
+  it("retries a failed manual-song workspace creation with the same request identity", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const createSongWorkspace = vi.fn()
+      .mockRejectedValueOnce(new Error("The workspace request could not start."))
+      .mockImplementationOnce(() => new Promise<never>(() => undefined));
+    repositories.music = { ...repositories.music, createSongWorkspace };
+
+    render(
+      <MusicWorkspace
+        music={[]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add song" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
+    fireEvent.change(screen.getByLabelText("Song title"), { target: { value: "Debbie" } });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add song" })).getByRole("button", { name: "Create song" }));
+
+    const notice = await screen.findByTestId("song-workspace-creation-notice");
+    expect(notice).toHaveTextContent("Couldn’t create Debbie");
+    const requestId = createSongWorkspace.mock.calls[0][0].requestId;
+
+    fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(createSongWorkspace).toHaveBeenCalledTimes(2));
+    expect(createSongWorkspace.mock.calls[1][0].requestId).toBe(requestId);
   });
 
   it("opens the catalog import dialog from the Add chooser", async () => {

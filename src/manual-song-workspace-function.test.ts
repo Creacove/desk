@@ -9,6 +9,7 @@ describe("manual song workspace function contract", () => {
   it("requires an authenticated request before calling the workspace RPC", () => {
     expect(existsSync(functionPath)).toBe(true);
     const source = readFileSync(functionPath, "utf8");
+    expect(source).toContain('import { createClient } from "https://esm.sh/@supabase/supabase-js@2"');
     expect(source).toContain("authClient.auth.getUser");
     expect(source).toContain("create_manual_song_workspace_v1");
     expect(source).toContain("assertActiveWorkspaceEntitlement");

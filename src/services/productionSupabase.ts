@@ -1588,7 +1588,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             accountId: workspace.accountId,
             artistWorkspaceId: workspace.artistWorkspaceId,
             artistId: workspace.artistId,
-            requestId: crypto.randomUUID(),
+            requestId: input.requestId ?? crypto.randomUUID(),
             title: input.title.trim(),
             itemType: input.itemType,
             lifecycleStage: input.lifecycleStage,
