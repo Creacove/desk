@@ -208,22 +208,28 @@ describe("Manager discovery shared tools", () => {
     });
   });
 
-  it("fails when a catalog exists but no focus asset can be enriched", () => {
+  it("completes with limits from the public catalog when Chartmetric is unavailable", () => {
     expect(classifyDiscoveryCompletion({
       catalogHasAssets: true,
       toolResults: [
-        { name: "chartmetric_artist_enrich", result: { status: "completed" } },
-        { name: "chartmetric_track_enrich", result: { status: "unresolved" } },
+        { name: "save_public_evidence", result: { status: "saved" } },
       ],
-      failedTools: [],
+      failedTools: [
+        { tool: "chartmetric_artist_enrich", summary: "Chartmetric request failed with status 402." },
+        { tool: "chartmetric_track_enrich", summary: "Chartmetric request failed with status 402." },
+        { tool: "chartmetric_project_enrich", summary: "Chartmetric request failed with status 402." },
+      ],
     })).toEqual({
-      status: "failed",
-      limitations: [{ tool: "chartmetric_track_enrich", summary: "Provider intelligence could not be matched for this focus asset." }],
-      error: "Required focus-asset intelligence failed; discovery cannot complete without any matched catalog assets.",
+      status: "completed_with_limits",
+      limitations: [
+        { tool: "chartmetric_artist_enrich", summary: "Chartmetric request failed with status 402." },
+        { tool: "chartmetric_track_enrich", summary: "Chartmetric request failed with status 402." },
+        { tool: "chartmetric_project_enrich", summary: "Chartmetric request failed with status 402." },
+      ],
     });
   });
 
-  it("fails when required artist intelligence is absent", () => {
+  it("fails when both public catalog context and artist intelligence are absent", () => {
     expect(classifyDiscoveryCompletion({
       catalogHasAssets: false,
       toolResults: [],
@@ -231,7 +237,7 @@ describe("Manager discovery shared tools", () => {
     })).toEqual({
       status: "failed",
       limitations: [],
-      error: "Required artist intelligence failed; discovery cannot complete without provider-backed artist enrichment.",
+      error: "Discovery cannot complete without public catalog context or provider-backed artist intelligence.",
     });
   });
 

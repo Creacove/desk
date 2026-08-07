@@ -783,20 +783,11 @@ export function classifyDiscoveryCompletion(input: {
     artistResults.some(({ result }) => successfulStatuses.has(resultStatus(result))) &&
     !input.failedTools.some(({ tool }) => tool === "chartmetric_artist_enrich");
 
-  if (!artistSucceeded) {
+  if (!artistSucceeded && !input.catalogHasAssets) {
     return {
       status: "failed" as const,
       limitations,
-      error: "Required artist intelligence failed; discovery cannot complete without provider-backed artist enrichment.",
-    };
-  }
-
-  const assetSucceeded = assetResults.some(({ result }) => successfulStatuses.has(resultStatus(result)));
-  if (input.catalogHasAssets && !assetSucceeded) {
-    return {
-      status: "failed" as const,
-      limitations,
-      error: "Required focus-asset intelligence failed; discovery cannot complete without any matched catalog assets.",
+      error: "Discovery cannot complete without public catalog context or provider-backed artist intelligence.",
     };
   }
 
