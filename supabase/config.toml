@@ -388,6 +388,9 @@ verify_jwt = false
 [functions.music-audio-analysis-worker]
 verify_jwt = false
 
+[functions.initialize-song-workspace]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

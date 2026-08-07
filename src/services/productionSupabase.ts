@@ -22,6 +22,7 @@ import type {
   MusicManagerRunStatus,
   MusicManagerReadViewModel,
   MusicObjectViewModel,
+  ManualSongWorkspaceResult,
   PriorityItem,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
@@ -1545,6 +1546,48 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           splitRows: [],
           splitContributorRows: [],
         }))[0];
+      },
+      async createSongWorkspace(input): Promise<ManualSongWorkspaceResult> {
+        const { data, error } = await client.functions.invoke("initialize-song-workspace", {
+          body: {
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            requestId: crypto.randomUUID(),
+            title: input.title.trim(),
+            itemType: input.itemType,
+            lifecycleStage: input.lifecycleStage,
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "Song workspace setup failed.");
+        if (!isPlainRecord(data)) throw new Error("Song workspace setup returned an invalid response.");
+
+        const songId = readConversationString(data.songId, "");
+        const missionId = readConversationString(data.missionId, "");
+        const conversationId = readConversationString(data.conversationId, "");
+        if (!songId || !missionId || !conversationId) throw new Error("Song workspace setup did not return every linked record.");
+
+        const [song, conversationRow, messageRows] = await Promise.all([
+          loadMusicObject(songId, "music_item"),
+          ownerFilters(client.from("conversations").select("id,topic,status,summary,last_update_at,created_at"))
+            .eq("id", conversationId)
+            .maybeSingle(),
+          ownerFilters(client.from("conversation_messages").select("id,conversation_id,speaker,label,body,metadata,created_at"))
+            .eq("conversation_id", conversationId)
+            .order("created_at", { ascending: true })
+            .limit(20),
+        ]);
+        if (!song) throw new Error("Song workspace setup completed but the song could not be loaded.");
+        if (conversationRow.error) throw conversationRow.error;
+        if (messageRows.error) throw messageRows.error;
+        const conversation = conversationRow.data as ConversationRow | null;
+        if (!conversation) throw new Error("Song workspace setup completed but the conversation could not be loaded.");
+
+        return {
+          song,
+          missionId,
+          conversation: conversationFromRows(conversation, (messageRows.data as ConversationMessageRow[] | null) ?? [], undefined, undefined),
+        };
       },
       async createProject(input) {
         const { data, error } = await client

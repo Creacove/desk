@@ -365,6 +365,12 @@ export type MusicObjectViewModel = {
   };
 };
 
+export type ManualSongWorkspaceResult = {
+  song: MusicObjectViewModel;
+  missionId: string;
+  conversation: ConversationViewModel;
+};
+
 export type SplitContributorInput = {
   name: string;
   role: string;
@@ -660,6 +666,7 @@ export type MusicRepository = {
   searchSpotifyCatalog(input: { kind: "song" | "project"; albumId?: string }): Promise<SpotifyCatalogSearchResult>;
   importSpotifySelection(input: { kind: "song" | "project"; albumId: string; trackId?: string }): Promise<SpotifyImportResult>;
   createSong(input: { title: string; itemType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
+  createSongWorkspace(input: { title: string; itemType: string; lifecycleStage: string }): Promise<ManualSongWorkspaceResult>;
   createProject(input: { title: string; projectType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
   updateLifecycleStage(musicItemId: string, lifecycleStage: string): Promise<void>;
   saveDetail(musicItemId: string, input: { group: string; label: string; value: string }): Promise<void>;

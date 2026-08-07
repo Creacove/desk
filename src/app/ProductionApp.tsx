@@ -1423,6 +1423,12 @@ function CleanProductionWorkspace({
     return nextMusic;
   }
 
+  async function handleSongWorkspaceCreated(result: import("../types/cleanProduction").ManualSongWorkspaceResult) {
+    setMusic((current) => [result.song, ...current.filter((item) => item.id !== result.song.id)]);
+    setConversations((current) => [result.conversation, ...current.filter((item) => item.id !== result.conversation.id)]);
+    void reloadMissionList().then(setMissions).catch(() => undefined);
+  }
+
   const refreshMusicObject = useCallback(async (
     subjectId: string,
     subjectType: "music_item" | "music_project",
@@ -1888,6 +1894,7 @@ function CleanProductionWorkspace({
               musicRepository={repositories.music}
               onRefreshObject={refreshMusicObject}
               onMusicChanged={reloadMusic}
+              onSongWorkspaceCreated={handleSongWorkspaceCreated}
               onOpenMission={openMissionRoom}
               onOpenManager={(subject) => void openMusicManagerConversation(subject)}
               onBack={() => navigate("labelHQ")}

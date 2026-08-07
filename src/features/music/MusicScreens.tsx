@@ -8,6 +8,7 @@ import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
 import type {
   MissionViewModel,
+  ManualSongWorkspaceResult,
   MusicObjectViewModel,
   MusicRepository,
   MusicShareLinkHistoryViewModel,
@@ -34,6 +35,7 @@ export function MusicWorkspace({
   musicRepository,
   onRefreshObject,
   onMusicChanged,
+  onSongWorkspaceCreated,
   onOpenMission,
   onOpenManager,
   onBack: _onBack,
@@ -49,6 +51,7 @@ export function MusicWorkspace({
     subjectType: "music_item" | "music_project",
   ) => Promise<MusicObjectViewModel | null>;
   onMusicChanged: () => Promise<void>;
+  onSongWorkspaceCreated?: (result: ManualSongWorkspaceResult) => Promise<void> | void;
   onOpenMission: (missionId: string) => void;
   onOpenManager?: (subject: MusicObjectViewModel) => void;
   onBack: () => void;
@@ -75,17 +78,21 @@ export function MusicWorkspace({
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
+  const [createdMusicById, setCreatedMusicById] = useState<Record<string, MusicObjectViewModel>>({});
   const managerReadHydrationChecks = useRef(new Set<string>());
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget || shareTarget);
 
-  const currentMusic = useMemo(
-    () => music.map((item) => {
+  const currentMusic = useMemo(() => {
+    const parentMusic = music.map((item) => {
       const overlay = focusedMusicById[musicObjectKey(item)];
       if (!overlay || overlay.parentManagerRevision !== managerReadRevision(item)) return item;
       return mergeFocusedManagerState(item, overlay.object);
-    }),
-    [focusedMusicById, music],
-  );
+    });
+    const newlyCreated = Object.values(createdMusicById).filter(
+      (created) => !parentMusic.some((item) => musicObjectKey(item) === musicObjectKey(created)),
+    );
+    return [...newlyCreated, ...parentMusic];
+  }, [createdMusicById, focusedMusicById, music]);
   const getMusicObject = (id: string, kind?: MusicObjectViewModel["kind"]) =>
     currentMusic.find((object) => object.id === id && (!kind || object.kind === kind));
   const songs = currentMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
@@ -139,6 +146,15 @@ export function MusicWorkspace({
         delete reconciled[key];
       }
       return reconciled;
+    });
+  }, [music]);
+
+  useEffect(() => {
+    setCreatedMusicById((current) => {
+      const retained = Object.fromEntries(
+        Object.entries(current).filter(([, created]) => !music.some((item) => musicObjectKey(item) === musicObjectKey(created))),
+      );
+      return Object.keys(retained).length === Object.keys(current).length ? current : retained;
     });
   }, [music]);
 
@@ -247,21 +263,33 @@ export function MusicWorkspace({
   }
 
   async function createMusicRecord(input: { title: string; type: string; lifecycleStage: string }) {
-    await runMusicAction(async () => {
-      if (createKind === "songs") {
-        const created = await musicRepository.createSong({ title: input.title, itemType: input.type, lifecycleStage: input.lifecycleStage });
-        setSelectedId(created.id);
+    if (createKind === "songs") {
+      try {
+        setActionError(null);
+        setActionPending(true);
+        const workspace = await musicRepository.createSongWorkspace({ title: input.title, itemType: input.type, lifecycleStage: input.lifecycleStage });
+        await onSongWorkspaceCreated?.(workspace);
+        setCreatedMusicById((current) => ({ ...current, [musicObjectKey(workspace.song)]: workspace.song }));
+        setSelectedId(workspace.song.id);
         setSelectedKind("song");
         setReturnTab("songs");
-        setSongRoomTab("overview");
+        setSongRoomTab("files");
         setMode("songDetail");
-      } else {
-        const created = await musicRepository.createProject({ title: input.title, projectType: input.type, lifecycleStage: input.lifecycleStage });
-        setSelectedId(created.id);
-        setSelectedKind("project");
-        setReturnTab("projects");
-        setMode("projectDetail");
+        setCreateKind(null);
+      } catch (error) {
+        setActionError(readErrorMessage(error, "Song workspace setup failed."));
+      } finally {
+        setActionPending(false);
       }
+      return;
+    }
+
+    await runMusicAction(async () => {
+      const created = await musicRepository.createProject({ title: input.title, projectType: input.type, lifecycleStage: input.lifecycleStage });
+      setSelectedId(created.id);
+      setSelectedKind("project");
+      setReturnTab("projects");
+      setMode("projectDetail");
       setCreateKind(null);
     });
   }
@@ -1760,7 +1788,7 @@ function MusicCreateDialog({
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
-          <button type="submit" disabled={!title.trim() || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Saving" : label}</button>
+          <button type="submit" disabled={!title.trim() || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? (kind === "songs" ? "Setting up workspace…" : "Saving") : label}</button>
         </div>
       </form>
     </div>

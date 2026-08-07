@@ -4656,6 +4656,63 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Edit Mix engineer" })).toHaveTextContent("");
   }, 20000);
 
+  it("sets up a manual song workspace before opening the Files tab", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const createSongWorkspace = vi.fn(async (input: { title: string; itemType: string; lifecycleStage: string }) => ({
+      song: {
+        id: "song-debbie",
+        kind: "song" as const,
+        title: input.title,
+        lifecycle: input.lifecycleStage,
+        lifecycleStage: input.lifecycleStage,
+        blocker: "Add the current working audio",
+        sourceKind: "manual",
+        sourceLimit: "Test song workspace.",
+        managerConversationId: "conversation-debbie",
+        linkedMissionIds: ["mission-debbie"],
+        linkedTaskCount: 1,
+        fileAssets: [{ group: "Audio" as const, label: "Working audio", status: "Missing", action: "Upload working audio", assetType: "rough_mix", canUpload: true }],
+      },
+      missionId: "mission-debbie",
+      conversation: {
+        id: "conversation-debbie",
+        topic: "Debbie — song workspace",
+        status: "active",
+        summary: "Start in Files by adding the current working audio.",
+        prompt: "",
+        messages: [],
+        createdWork: [],
+      },
+    }));
+    repositories.music = { ...repositories.music, createSongWorkspace };
+    const onMusicChanged = vi.fn(async () => undefined);
+
+    render(
+      <MusicWorkspace
+        music={[]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add song" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create manually" }));
+    fireEvent.change(screen.getByLabelText("Song title"), { target: { value: "Debbie" } });
+    fireEvent.change(screen.getByLabelText("Lifecycle stage"), { target: { value: "mastering" } });
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Add song" })).getByRole("button", { name: "Add song" }));
+
+    expect(createSongWorkspace).toHaveBeenCalledWith({ title: "Debbie", itemType: "song", lifecycleStage: "mastering" });
+    expect(await screen.findByTestId("music-song-detail")).toBeInTheDocument();
+    expect(screen.getByText("File manifest")).toBeInTheDocument();
+    expect(screen.getByText("Working audio")).toBeInTheDocument();
+    expect(screen.queryByTestId("manager-read-copy")).not.toBeInTheDocument();
+    expect(onMusicChanged).not.toHaveBeenCalled();
+  });
+
   it("opens the catalog import dialog from the Add chooser", async () => {
     await enterDeskHq();
 

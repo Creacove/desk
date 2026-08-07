@@ -866,6 +866,24 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         music = [created, ...music];
         return created;
       },
+      async createSongWorkspace(input) {
+        const song = await this.createSong(input);
+        const conversation = {
+          id: `conversation-${song.id}`,
+          topic: `${song.title} — song workspace`,
+          status: "active",
+          summary: `Start in Files by adding the current working audio for ${song.title}.`,
+          prompt: "",
+          messages: [{
+            id: `message-${song.id}`,
+            speaker: "manager" as const,
+            label: "Manager",
+            body: `Start in Files by adding the current working audio for ${song.title}.`,
+          }],
+          createdWork: [],
+        };
+        return { song: { ...song, managerConversationId: conversation.id }, missionId: `mission-${song.id}`, conversation };
+      },
       async createProject(input) {
         const created = {
           id: `fixture-project-${Date.now()}`,
