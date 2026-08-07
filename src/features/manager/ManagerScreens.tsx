@@ -337,6 +337,7 @@ export function ConversationWorkspace({
   conversation,
   onBack,
   onOpenCreatedWork,
+  onOpenMusicSubject,
   onSendMessage,
   onSendContextAnswers,
   onRetryLastMessage,
@@ -349,6 +350,7 @@ export function ConversationWorkspace({
   conversation: ConversationViewModel;
   onBack: () => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   onOpenDecisionPackage?: () => void;
   taskContext?: MissionTaskViewModel;
   onBackToTask?: () => void;
@@ -370,6 +372,11 @@ export function ConversationWorkspace({
   const allCreatedWork = conversation.createdWork.length
     ? conversation.createdWork
     : messageCreatedWork;
+  const resolvedContextRequestIds = new Set(conversation.messages.flatMap((message) =>
+    message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length
+      ? [message.contextRequestId]
+      : [],
+  ));
   const shouldShowCreatedWorkSummary = allCreatedWork.length > 0 && messageCreatedWork.length === 0;
   const activeRun = conversation.activeRun;
   const isManagerThinking = sendPending || activeRun?.status === "running";
@@ -411,6 +418,34 @@ export function ConversationWorkspace({
         — Side whitespace is the product of the column constraint, not padding hacks.
       */}
       <div className="mx-auto max-w-[680px] pb-44">
+        {conversation.musicSubject ? (
+          <section data-testid="conversation-music-subject" className="mb-5 flex items-center justify-between gap-4 rounded-[16px] border border-foreground/10 bg-background/92 p-4 shadow-sm">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
+                <Music2 className="h-4 w-4" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/75">
+                  About this {conversation.musicSubject.type === "music_project" ? "project" : "song"}
+                </p>
+                <p className="mt-1 truncate text-[13px] font-semibold text-foreground">{conversation.musicSubject.title}</p>
+                {conversation.musicSubject.lifecycleStage ? (
+                  <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{conversation.musicSubject.lifecycleStage}</p>
+                ) : null}
+              </div>
+            </div>
+            {onOpenMusicSubject ? (
+              <button
+                type="button"
+                aria-label={`Open ${conversation.musicSubject.type === "music_project" ? "project" : "song"} room`}
+                onClick={() => onOpenMusicSubject(conversation.musicSubject!)}
+                className="shrink-0 rounded-lg border border-foreground/10 bg-background px-3 py-2 text-[11px] font-bold text-foreground transition-colors hover:bg-foreground/[0.04]"
+              >
+                Open
+              </button>
+            ) : null}
+          </section>
+        ) : null}
         {taskContext ? (
           <div className="mb-6 flex items-start justify-between gap-4 rounded-[16px] border border-brand-accent/20 bg-brand-accent/[0.045] p-4">
             <div className="min-w-0">
@@ -446,6 +481,7 @@ export function ConversationWorkspace({
               }
               onOpenCreatedWork={onOpenCreatedWork}
               suppressMissionArtifacts={Boolean(taskContext)}
+              contextResolved={Boolean(message.contextRequestId && resolvedContextRequestIds.has(message.contextRequestId))}
             />
           ))}
 
@@ -542,6 +578,7 @@ function MessageRow({
   onSendContextAnswers,
   onOpenCreatedWork,
   suppressMissionArtifacts,
+  contextResolved = false,
   prompt,
 }: {
   message: ConversationViewModel["messages"][number];
@@ -551,6 +588,7 @@ function MessageRow({
   onSendContextAnswers: (answers: ManagerConversationContextAnswer[]) => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
   suppressMissionArtifacts?: boolean;
+  contextResolved?: boolean;
   prompt?: string;
 }) {
   const isArtist = message.speaker === "artist";
@@ -616,7 +654,9 @@ function MessageRow({
           ) : null}
 
           {/* Context questions */}
-          {message.contextQuestions?.length ? (
+          {message.contextQuestions?.length ? contextResolved ? (
+            <p className="mt-4 text-[12px] font-semibold text-muted-foreground">Context captured</p>
+          ) : (
             <ManagerContextQuestionForm
               questions={message.contextQuestions}
               disabled={sendPending}

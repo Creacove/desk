@@ -3,6 +3,7 @@ import { shouldAutomaticallyRefreshMusicRead } from "../supabase/functions/_shar
 
 describe("music Manager Read refresh policy", () => {
   it("refreshes an unreleased song after material release work changes", () => {
+    expect(shouldAutomaticallyRefreshMusicRead({ mode: "pre_release", eventType: "music_item_created" })).toBe(true);
     expect(shouldAutomaticallyRefreshMusicRead({ mode: "pre_release", eventType: "music_asset_uploaded" })).toBe(true);
     expect(shouldAutomaticallyRefreshMusicRead({ mode: "pre_release", eventType: "music_audio_analysis_completed" })).toBe(true);
     expect(shouldAutomaticallyRefreshMusicRead({ mode: "release_window", eventType: "music_split_confirmation_sent" })).toBe(true);

@@ -320,6 +320,7 @@ export type MusicObjectViewModel = {
   managerReadRunId?: string;
   managerReadError?: string;
   managerConversationId?: string;
+  managerConversation?: MusicConversationLinkViewModel;
   rightsState?: string;
   assets?: string[];
   coverImageUrl?: string;
@@ -363,6 +364,21 @@ export type MusicObjectViewModel = {
       approval: string;
     }>;
   };
+};
+
+export type MusicConversationLinkViewModel = {
+  id: string;
+  topic: string;
+  summary: string;
+  status: string;
+  lastUpdate?: string;
+};
+
+export type MusicConversationSubjectViewModel = {
+  type: "music_item" | "music_project";
+  id: string;
+  title: string;
+  lifecycleStage?: string;
 };
 
 export type ManualSongWorkspaceResult = {
@@ -416,6 +432,7 @@ export type ConversationMessageViewModel = {
   }>;
   contextRequestId?: string;
   contextQuestions?: ManagerMissionContextQuestion[];
+  contextAnswers?: ManagerConversationContextAnswer[];
 };
 
 export type ManagerRunStepViewModel = {
@@ -456,6 +473,7 @@ export type DecisionPackageViewModel = {
 export type ConversationViewModel = {
   id: string;
   taskContextId?: string;
+  musicSubject?: MusicConversationSubjectViewModel;
   topic: string;
   status: string;
   summary: string;

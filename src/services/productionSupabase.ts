@@ -10,6 +10,8 @@ import type {
   AgentViewModel,
   ArtistProfileViewModel,
   CleanProductionRepositories,
+  MusicConversationLinkViewModel,
+  MusicConversationSubjectViewModel,
   ConversationViewModel,
   EvidenceItemViewModel,
   MissionGenesisResultViewModel,
@@ -932,28 +934,34 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .limit(statusRowLimit),
       ownerFilters(client
         .from("artifact_links")
-        .select("source_id,target_id,target_type,relationship,created_at")
+        .select("source_type,source_id,target_id,target_type,relationship,created_at")
       )
-        .eq("source_type", "conversation")
+        .in("source_type", ["conversation", "mission"])
         .in("target_type", ["music_item", "music_project"])
         .in("target_id", subjectIds)
         .eq("relationship", "references")
         .order("created_at", { ascending: false })
         .order("source_id", { ascending: false })
-        .limit(statusRowLimit),
+        .limit(statusRowLimit * 2),
     ]);
 
     if (managerOutputError) throw managerOutputError;
     if (managerRunError) throw managerRunError;
     if (conversationLinkError) throw conversationLinkError;
 
+    const musicLinks = (conversationLinkRows ?? []) as ArtifactLinkRow[];
+    const conversationPreviews = await loadConversationPreviewMap(client, workspace, linkedConversationIds(musicLinks));
     return applyMusicConversationLinks(
-      applyMusicListManagerState(
-        models,
-        (managerOutputRows ?? []) as ManagerOutputRow[],
-        (managerRunRows ?? []) as ManagerSynthesisRunRow[],
+      applyMusicMissionLinks(
+        applyMusicListManagerState(
+          models,
+          (managerOutputRows ?? []) as ManagerOutputRow[],
+          (managerRunRows ?? []) as ManagerSynthesisRunRow[],
+        ),
+        musicLinks,
       ),
-      (conversationLinkRows ?? []) as ArtifactLinkRow[],
+      musicLinks,
+      conversationPreviews,
     );
   };
 
@@ -1067,15 +1075,15 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .limit(1),
       ownerFilters(client
         .from("artifact_links")
-        .select("source_id,target_id,target_type,relationship,created_at")
+        .select("source_type,source_id,target_id,target_type,relationship,created_at")
       )
-        .eq("source_type", "conversation")
+        .in("source_type", ["conversation", "mission"])
         .eq("target_type", subjectType)
         .eq("target_id", subjectId)
         .eq("relationship", "references")
         .order("created_at", { ascending: false })
         .order("source_id", { ascending: false })
-        .limit(20),
+        .limit(40),
     ]);
 
     if (identityError) throw identityError;
@@ -1133,9 +1141,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       managerOutputRows: (managerOutputRows ?? []) as ManagerOutputRow[],
       managerRunRows: (managerRunRows ?? []) as ManagerSynthesisRunRow[],
     });
+    const musicLinks = (conversationLinkRows ?? []) as ArtifactLinkRow[];
+    const conversationPreviews = await loadConversationPreviewMap(client, workspace, linkedConversationIds(musicLinks));
     return applyMusicConversationLinks(
-      musicViewModelsFromLibrary(library),
-      (conversationLinkRows ?? []) as ArtifactLinkRow[],
+      applyMusicMissionLinks(musicViewModelsFromLibrary(library), musicLinks),
+      musicLinks,
+      conversationPreviews,
     ).find((model) => model.id === subjectId) ?? null;
   };
 
@@ -1172,6 +1183,30 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       subjectType,
       ...(row.error ? { error: row.error } : {}),
     };
+  };
+
+  const attachMusicWorkspaceLinks = async (models: MusicObjectViewModel[]) => {
+    const subjectIds = [...new Set(models.map((model) => model.id))];
+    if (!subjectIds.length) return models;
+    const { data, error } = await ownerFilters(client
+      .from("artifact_links")
+      .select("source_type,source_id,target_id,target_type,relationship,created_at")
+    )
+      .in("source_type", ["conversation", "mission"])
+      .in("target_type", ["music_item", "music_project"])
+      .in("target_id", subjectIds)
+      .eq("relationship", "references")
+      .order("created_at", { ascending: false })
+      .order("source_id", { ascending: false })
+      .limit(subjectIds.length * 2);
+    if (error) throw error;
+    const musicLinks = (data ?? []) as ArtifactLinkRow[];
+    const conversationPreviews = await loadConversationPreviewMap(client, workspace, linkedConversationIds(musicLinks));
+    return applyMusicConversationLinks(
+      applyMusicMissionLinks(models, musicLinks),
+      musicLinks,
+      conversationPreviews,
+    );
   };
 
   return {
@@ -1430,7 +1465,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     music: {
       async loadMusic() {
         const library = await musicLibraryLoader.loadMusicLibrary(workspace);
-        return musicViewModelsFromLibrary(library);
+        return attachMusicWorkspaceLinks(musicViewModelsFromLibrary(library));
       },
       loadMusicList,
       loadMusicObject,
@@ -1586,7 +1621,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         return {
           song,
           missionId,
-          conversation: conversationFromRows(conversation, (messageRows.data as ConversationMessageRow[] | null) ?? [], undefined, undefined),
+          conversation: conversationFromRows(
+            conversation,
+            (messageRows.data as ConversationMessageRow[] | null) ?? [],
+            undefined,
+            undefined,
+            { type: "music_item", id: song.id, title: song.title, lifecycleStage: song.lifecycleStage ?? song.lifecycle },
+          ),
         };
       },
       async createProject(input) {
@@ -2019,7 +2060,19 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           .order("last_update_at", { ascending: false })
           .limit(20);
         if (error) throw error;
-        return ((data as ConversationRow[] | null) ?? []).map((row) => conversationFromRows(row, [], undefined, undefined));
+        const rows = (data as ConversationRow[] | null) ?? [];
+        if (!rows.length) return [];
+        const { data: subjectLinkRows, error: subjectLinkError } = await ownerFilters(client
+          .from("artifact_links")
+          .select("source_type,source_id,target_id,target_type,relationship")
+        )
+          .eq("source_type", "conversation")
+          .in("target_type", ["music_item", "music_project"])
+          .eq("relationship", "references")
+          .in("source_id", rows.map((row) => row.id));
+        if (subjectLinkError) throw subjectLinkError;
+        const musicSubjects = await loadConversationMusicSubjects(client, workspace, (subjectLinkRows ?? []) as ArtifactLinkRow[]);
+        return rows.map((row) => conversationFromRows(row, [], undefined, undefined, musicSubjects.get(row.id)));
       },
       async loadConversation(conversationId) {
         const { data, error } = await ownerFilters(client
@@ -2053,22 +2106,25 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .limit(1),
           ownerFilters(client
             .from("artifact_links")
-            .select("source_id,target_id,relationship")
+            .select("source_type,source_id,target_id,target_type,relationship")
           )
             .eq("source_type", "conversation")
             .eq("source_id", conversationId)
-            .eq("target_type", "task")
+            .in("target_type", ["task", "music_item", "music_project"])
             .eq("relationship", "references")
-            .limit(1),
+            .limit(3),
         ]);
         if (messageError) throw messageError;
         if (outputError) throw outputError;
         if (linkError) throw linkError;
+        const conversationLinks = (links as ArtifactLinkRow[] | null) ?? [];
+        const musicSubjects = await loadConversationMusicSubjects(client, workspace, conversationLinks);
         return conversationFromRows(
           row,
           (messages as ConversationMessageRow[] | null) ?? [],
           ((outputs as ManagerOutputRow[] | null) ?? [])[0],
-          ((links as ArtifactLinkRow[] | null) ?? [])[0]?.target_id,
+          conversationLinks.find((link) => link.target_type === "task")?.target_id,
+          musicSubjects.get(conversationId),
         );
       },
       async loadConversations() {
@@ -2109,10 +2165,10 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .in("subject_id", rows.map((row) => row.id)),
           client
             .from("artifact_links")
-            .select("source_id,target_id,relationship")
+            .select("source_type,source_id,target_id,target_type,relationship")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .eq("source_type", "conversation")
-            .eq("target_type", "task")
+            .in("target_type", ["task", "music_item", "music_project"])
             .eq("relationship", "references")
             .in("source_id", rows.map((row) => row.id)),
         ]);
@@ -2131,16 +2187,19 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         for (const output of (outputData as ManagerOutputRow[] | null) ?? []) {
           if (output.subject_id) outputsByConversation.set(output.subject_id, output);
         }
+        const conversationLinks = (taskLinkData as ArtifactLinkRow[] | null) ?? [];
         const taskByConversation = new Map<string, string>();
-        for (const link of (taskLinkData as ArtifactLinkRow[] | null) ?? []) {
-          taskByConversation.set(link.source_id, link.target_id);
+        for (const link of conversationLinks) {
+          if (link.target_type === "task") taskByConversation.set(link.source_id, link.target_id);
         }
+        const musicSubjects = await loadConversationMusicSubjects(client, workspace, conversationLinks);
 
         return rows.map((row) => conversationFromRows(
           row,
           messagesByConversation.get(row.id) ?? [],
           outputsByConversation.get(row.id),
           taskByConversation.get(row.id),
+          musicSubjects.get(row.id),
         ));
       },
       async sendMessage(input) {
@@ -2602,6 +2661,12 @@ type MusicProjectRow = {
   metadata?: unknown;
 };
 
+type MusicConversationSubjectRow = {
+  id: string;
+  title: string;
+  lifecycle_stage?: string | null;
+};
+
 type MusicProjectItemRow = {
   music_project_id: string;
   music_item_id: string;
@@ -2821,6 +2886,7 @@ type TaskResultRow = {
 };
 
 type ArtifactLinkRow = {
+  source_type?: string | null;
   source_id: string;
   target_id: string;
   target_type?: string | null;
@@ -2857,13 +2923,20 @@ type EvidenceRow = {
   limitation?: string | null;
 };
 
-function conversationFromRows(row: ConversationRow, messages: ConversationMessageRow[], output?: ManagerOutputRow, taskContextId?: string): ConversationViewModel {
+function conversationFromRows(
+  row: ConversationRow,
+  messages: ConversationMessageRow[],
+  output?: ManagerOutputRow,
+  taskContextId?: string,
+  musicSubject?: MusicConversationSubjectViewModel,
+): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
 
   return {
     id: row.id,
     ...(taskContextId ? { taskContextId } : {}),
+    ...(musicSubject ? { musicSubject } : {}),
     topic: row.topic,
     status: row.status,
     summary: row.summary ?? "No summary has been generated yet.",
@@ -2897,6 +2970,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
   const speaker = row.speaker === "artist" ? "artist" : "manager";
   const createdWork = normalizeCreatedWork(metadata.createdWork);
   const contextQuestions = normalizeContextQuestions(metadata.contextQuestions);
+  const contextAnswers = normalizeContextAnswers(metadata.contextAnswers);
   const contextRequestId = readOptionalConversationString(metadata.contextRequestId);
   return {
     id: row.id,
@@ -2905,6 +2979,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
     body: row.body,
     ...(createdWork.length ? { createdWork } : {}),
     ...(contextQuestions.length ? { contextQuestions } : {}),
+    ...(contextAnswers.length ? { contextAnswers } : {}),
     ...(contextRequestId ? { contextRequestId } : {}),
   };
 }
@@ -2917,6 +2992,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
         const speaker = message.speaker === "artist" ? "artist" : "manager";
         const createdWork = normalizeCreatedWork(message.createdWork);
         const contextQuestions = normalizeContextQuestions(message.contextQuestions);
+        const contextAnswers = normalizeContextAnswers(message.contextAnswers);
         const contextRequestId = readOptionalConversationString(message.contextRequestId);
         return {
           id: readConversationString(message.id, `message-${index}`),
@@ -2925,6 +3001,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
           body: readConversationString(message.body, ""),
           ...(createdWork.length ? { createdWork } : {}),
           ...(contextQuestions.length ? { contextQuestions } : {}),
+          ...(contextAnswers.length ? { contextAnswers } : {}),
           ...(contextRequestId ? { contextRequestId } : {}),
         };
       })
@@ -2976,6 +3053,17 @@ function normalizeContextQuestions(value: unknown): NonNullable<ConversationView
       recommendationReason: readOptionalConversationString(item.recommendationReason),
     }))
     .filter((item) => item.key && item.question);
+}
+
+function normalizeContextAnswers(value: unknown): NonNullable<ConversationViewModel["messages"][number]["contextAnswers"]> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isPlainRecord)
+    .map((item) => ({
+      questionKey: readConversationString(item.questionKey, ""),
+      answer: readConversationString(item.answer, ""),
+    }))
+    .filter((item) => item.questionKey && item.answer);
 }
 
 function normalizeProposedActions(value: unknown): NonNullable<ConversationViewModel["decisionPackage"]>["proposedActions"] {
@@ -5300,10 +5388,138 @@ function applyMusicListManagerState(
   });
 }
 
-function applyMusicConversationLinks(models: MusicObjectViewModel[], links: ArtifactLinkRow[]) {
+async function loadConversationPreviewMap(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  conversationIds: string[],
+): Promise<Map<string, MusicConversationLinkViewModel>> {
+  if (!conversationIds.length) return new Map();
+  const { data, error } = await client
+    .from("conversations")
+    .select("id,topic,status,summary,last_update_at,created_at")
+    .eq("account_id", workspace.accountId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId)
+    .eq("artist_id", workspace.artistId)
+    .in("id", conversationIds)
+    .order("last_update_at", { ascending: false })
+    .limit(conversationIds.length);
+  if (error) throw error;
+  return new Map(((data as ConversationRow[] | null) ?? []).map((row) => [
+    row.id,
+    {
+      id: row.id,
+      topic: row.topic,
+      summary: row.summary ?? "No summary has been generated yet.",
+      status: row.status,
+      lastUpdate: row.last_update_at ?? row.created_at ?? undefined,
+    },
+  ]));
+}
+
+function linkedConversationIds(links: ArtifactLinkRow[]) {
+  return [...new Set(links.flatMap((link) =>
+    link.source_type === "conversation" &&
+    (link.target_type === "music_item" || link.target_type === "music_project") &&
+    link.relationship === "references"
+      ? [link.source_id]
+      : [],
+  ))];
+}
+
+async function loadConversationMusicSubjects(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  links: ArtifactLinkRow[],
+): Promise<Map<string, MusicConversationSubjectViewModel>> {
+  const musicLinks = links.filter((link) =>
+    link.source_type === "conversation" &&
+    link.relationship === "references" &&
+    (link.target_type === "music_item" || link.target_type === "music_project") &&
+    Boolean(link.source_id && link.target_id),
+  );
+  const itemIds = [...new Set(musicLinks.filter((link) => link.target_type === "music_item").map((link) => link.target_id))];
+  const projectIds = [...new Set(musicLinks.filter((link) => link.target_type === "music_project").map((link) => link.target_id))];
+  if (!itemIds.length && !projectIds.length) return new Map();
+
+  const [itemResult, projectResult] = await Promise.all([
+    itemIds.length
+      ? client.from("music_items").select("id,title,lifecycle_stage")
+          .eq("account_id", workspace.accountId)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId)
+          .eq("artist_id", workspace.artistId)
+          .eq("status", "active")
+          .in("id", itemIds)
+          .limit(itemIds.length)
+      : Promise.resolve({ data: [], error: null }),
+    projectIds.length
+      ? client.from("music_projects").select("id,title,lifecycle_stage")
+          .eq("account_id", workspace.accountId)
+          .eq("artist_workspace_id", workspace.artistWorkspaceId)
+          .eq("artist_id", workspace.artistId)
+          .eq("status", "active")
+          .in("id", projectIds)
+          .limit(projectIds.length)
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (itemResult.error) throw itemResult.error;
+  if (projectResult.error) throw projectResult.error;
+
+  const subjectByKey = new Map<string, MusicConversationSubjectViewModel>();
+  for (const row of (itemResult.data as MusicConversationSubjectRow[] | null) ?? []) {
+    subjectByKey.set(musicManagerRunKey("music_item", row.id), {
+      type: "music_item",
+      id: row.id,
+      title: row.title,
+      lifecycleStage: row.lifecycle_stage ?? undefined,
+    });
+  }
+  for (const row of (projectResult.data as MusicConversationSubjectRow[] | null) ?? []) {
+    subjectByKey.set(musicManagerRunKey("music_project", row.id), {
+      type: "music_project",
+      id: row.id,
+      title: row.title,
+      lifecycleStage: row.lifecycle_stage ?? undefined,
+    });
+  }
+
+  const subjectByConversation = new Map<string, MusicConversationSubjectViewModel>();
+  for (const link of musicLinks) {
+    const subject = subjectByKey.get(musicManagerRunKey(link.target_type as "music_item" | "music_project", link.target_id));
+    if (subject && !subjectByConversation.has(link.source_id)) subjectByConversation.set(link.source_id, subject);
+  }
+  return subjectByConversation;
+}
+
+function applyMusicMissionLinks(models: MusicObjectViewModel[], links: ArtifactLinkRow[]) {
+  const missionIdsBySubject = new Map<string, string[]>();
+  for (const link of links) {
+    if (
+      link.source_type !== "mission" ||
+      !link.source_id ||
+      !link.target_id ||
+      (link.target_type !== "music_item" && link.target_type !== "music_project") ||
+      link.relationship !== "references"
+    ) continue;
+    const key = musicManagerRunKey(link.target_type, link.target_id);
+    missionIdsBySubject.set(key, [...new Set([...(missionIdsBySubject.get(key) ?? []), link.source_id])]);
+  }
+
+  return models.map((model) => {
+    const subjectType = model.kind === "project" ? "music_project" : "music_item";
+    const linkedMissionIds = missionIdsBySubject.get(musicManagerRunKey(subjectType, model.id));
+    return linkedMissionIds ? { ...model, linkedMissionIds } : model;
+  });
+}
+
+function applyMusicConversationLinks(
+  models: MusicObjectViewModel[],
+  links: ArtifactLinkRow[],
+  conversationPreviews: Map<string, MusicConversationLinkViewModel>,
+) {
   const latestConversationBySubject = new Map<string, { conversationId: string; createdAt: string }>();
   for (const link of links) {
     if (
+      link.source_type !== "conversation" ||
       !link.source_id ||
       !link.target_id ||
       (link.target_type !== "music_item" && link.target_type !== "music_project") ||
@@ -5324,7 +5540,16 @@ function applyMusicConversationLinks(models: MusicObjectViewModel[], links: Arti
   return models.map((model) => {
     const subjectType = model.kind === "project" ? "music_project" : "music_item";
     const linkedConversation = latestConversationBySubject.get(musicManagerRunKey(subjectType, model.id));
-    return linkedConversation ? { ...model, managerConversationId: linkedConversation.conversationId } : model;
+    const managerConversation = linkedConversation
+      ? conversationPreviews.get(linkedConversation.conversationId)
+      : undefined;
+    return linkedConversation
+      ? {
+          ...model,
+          managerConversationId: linkedConversation.conversationId,
+          ...(managerConversation ? { managerConversation } : {}),
+        }
+      : model;
   });
 }
 

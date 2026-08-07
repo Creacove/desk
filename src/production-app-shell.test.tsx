@@ -2418,6 +2418,104 @@ describe("Clean production prototype-match shell", () => {
     );
   }, 20000);
 
+  it("keeps the completed context-answer turn when the conversation is reopened", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const initialConversation = {
+      id: "conv-context-reopen",
+      topic: "Mission context",
+      status: "Manager needs context",
+      summary: "Manager needs context before creating work.",
+      prompt: "Create the next mission.",
+      lastUpdate: "Just now",
+      messages: [
+        { id: "msg-user", speaker: "artist" as const, label: "You", body: "Create the next mission." },
+        {
+          id: "msg-manager", speaker: "manager" as const, label: "Manager", body: "I need one boundary before I create the mission graph.",
+          contextRequestId: "ctx-reopen",
+          contextQuestions: [{
+            key: "budget_boundary",
+            question: "What budget should the Manager protect before asking for approval?",
+            reason: "Spend changes the task plan and permission gate.",
+            answerKind: "money_range" as const,
+            options: [],
+          }],
+        },
+      ],
+      createdWork: [],
+    };
+    const completedConversation = {
+      ...initialConversation,
+      status: "Manager responded",
+      summary: "The Manager created the mission.",
+      messages: [
+        ...initialConversation.messages,
+        {
+          id: "msg-answer",
+          speaker: "artist" as const,
+          label: "You",
+          body: "Context answers for Manager mission decision.",
+          contextRequestId: "ctx-reopen",
+          contextAnswers: [{ questionKey: "budget_boundary", answer: "$5,000" }],
+        },
+        {
+          id: "msg-completed", speaker: "manager" as const, label: "Manager", body: "I created the release mission with the protected budget.",
+          createdWork: [{
+            type: "mission" as const,
+            id: "mission-context-reopen",
+            title: "Release mission",
+            body: "A dedicated release mission now owns the next tasks.",
+            status: "created" as const,
+          }],
+        },
+      ],
+      createdWork: [{
+        type: "mission" as const,
+        id: "mission-context-reopen",
+        title: "Release mission",
+        body: "A dedicated release mission now owns the next tasks.",
+        status: "created" as const,
+      }],
+    };
+    let persistedConversation = initialConversation;
+    let handlers: any = null;
+    repositories.manager.loadConversationList = vi.fn(async () => [{ ...initialConversation, messages: [], createdWork: [] }]);
+    repositories.manager.loadConversation = vi.fn(async () => persistedConversation);
+    repositories.manager.sendMessageStream = vi.fn(async (_input, nextHandlers) => {
+      handlers = nextHandlers;
+    }) as any;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
+    openManagerFromDesk();
+    fireEvent.click(await screen.findByRole("button", { name: "Mission context" }));
+    expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send Manager context answers" }));
+    await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledTimes(1));
+
+    persistedConversation = completedConversation;
+    await act(async () => {
+      handlers.onEvent({ type: "conversation.completed", conversation: completedConversation, refresh: { missions: true } });
+    });
+    expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Mission context" }));
+
+    expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send Manager context answers" })).not.toBeInTheDocument();
+    expect(repositories.manager.loadConversation).toHaveBeenCalledTimes(2);
+  }, 20000);
+
   it("preserves existing Manager thread history when a streamed follow-up starts with a partial conversation event", async () => {
     const repositories = repositoriesFor("Nova Vale");
     let handlers: any = null;
@@ -2428,6 +2526,7 @@ describe("Clean production prototype-match shell", () => {
         status: "Manager responded",
         summary: "Release planning thread.",
         prompt: "Should we release Night Bus this month?",
+        musicSubject: { type: "music_item" as const, id: "song-night-bus", title: "Night Bus", lifecycleStage: "Mastering" },
         lastUpdate: "14h ago",
         messages: [
           { id: "msg-1", speaker: "artist" as const, label: "You", body: "Should we release Night Bus this month?" },
@@ -2458,6 +2557,13 @@ describe("Clean production prototype-match shell", () => {
     const messageBox = await screen.findByPlaceholderText("Message the Manager…");
     fireEvent.change(messageBox, { target: { value: "What changed after the campaign result?" } });
     fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
+    expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conv-history",
+        musicSubject: { type: "music_item", id: "song-night-bus" },
+      }),
+      expect.any(Object),
+    );
 
     await act(async () => {
       handlers.onEvent({
@@ -2982,6 +3088,39 @@ describe("Clean production prototype-match shell", () => {
     expect(source).not.toContain("shadow-[0_8px_40px_rgba(0,0,0,0.1)]");
     const css = readFileSync(join(process.cwd(), "src", "index.css"), "utf8");
     expect(css).toMatch(/\.app-workspace-reveal\s*\{[^}]*animation:[^;]*backwards;/);
+  });
+
+  it("pins the linked song above a Manager conversation and returns to its song room", () => {
+    const onOpenMusicSubject = vi.fn();
+    const conversation: ConversationViewModel = {
+      id: "conv-debbie",
+      topic: "Debbie — song workspace",
+      status: "active",
+      summary: "Start with the working audio package.",
+      prompt: "",
+      musicSubject: { type: "music_item", id: "song-debbie", title: "Debbie", lifecycleStage: "Mastering" },
+      messages: [],
+      createdWork: [],
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        onBack={() => undefined}
+        onOpenMusicSubject={onOpenMusicSubject}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    const subject = screen.getByTestId("conversation-music-subject");
+    expect(subject).toHaveTextContent("Debbie");
+    expect(subject).toHaveTextContent("Mastering");
+    fireEvent.click(within(subject).getByRole("button", { name: "Open song room" }));
+    expect(onOpenMusicSubject).toHaveBeenCalledWith(conversation.musicSubject);
   });
 
   it("shows Manager-created missions on the Missions page without a page reload", async () => {
@@ -4289,6 +4428,12 @@ describe("Clean production prototype-match shell", () => {
     const subject = {
       ...musicReadSubject("song", "fresh"),
       managerConversationId: "conversation-jam",
+      managerConversation: {
+        id: "conversation-jam",
+        topic: "Debbie release workspace",
+        summary: "Add the current working audio before planning the next release step.",
+        status: "active",
+      },
     };
     const onOpenManager = vi.fn();
     const repositories = repositoriesFor("Nova Vale");
@@ -4308,9 +4453,13 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const room = screen.getByTestId("music-song-detail");
+    const linkedConversation = within(room).getByTestId("music-linked-conversation");
+    expect(linkedConversation).toHaveTextContent("Debbie release workspace");
+    fireEvent.click(within(linkedConversation).getByRole("button", { name: "Open conversation" }));
+    expect(onOpenManager).toHaveBeenCalledWith(subject);
     fireEvent.click(within(room).getByRole("button", { name: "Continue with Manager" }));
 
-    expect(onOpenManager).toHaveBeenCalledWith(subject);
+    expect(onOpenManager).toHaveBeenCalledTimes(2);
     expect(within(room).getByTestId("manager-read-copy")).toHaveTextContent(completeSongManagerRead.body.split("\n")[0]);
   });
 
@@ -4541,9 +4690,9 @@ describe("Clean production prototype-match shell", () => {
   });
 
   it.each([
-    ["song", "refreshing", "Refreshing", "Manager Read is being refreshed. The current read remains available."],
+    ["song", "refreshing", "Refreshing", "Updating from latest song changes. The current read remains available."],
     ["song", "refresh_failed", "Refresh failed", "Manager Read could not be refreshed. Your previous read is still available."],
-    ["project", "refreshing", "Refreshing", "Manager Read is being refreshed. The current read remains available."],
+    ["project", "refreshing", "Refreshing", "Updating from latest song changes. The current read remains available."],
     ["project", "refresh_failed", "Refresh failed", "Manager Read could not be refreshed. Your previous read is still available."],
   ] as const)("keeps the prior %s read visible while %s", (kind, status, statusLabel, safeMessage) => {
     const subject = musicReadSubject(kind, status);

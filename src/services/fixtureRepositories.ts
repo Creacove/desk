@@ -874,6 +874,7 @@ export function createFixtureRepositories(): CleanProductionRepositories {
           status: "active",
           summary: `Start in Files by adding the current working audio for ${song.title}.`,
           prompt: "",
+          musicSubject: { type: "music_item" as const, id: song.id, title: song.title, lifecycleStage: song.lifecycleStage ?? song.lifecycle },
           messages: [{
             id: `message-${song.id}`,
             speaker: "manager" as const,
@@ -882,7 +883,21 @@ export function createFixtureRepositories(): CleanProductionRepositories {
           }],
           createdWork: [],
         };
-        return { song: { ...song, managerConversationId: conversation.id }, missionId: `mission-${song.id}`, conversation };
+        return {
+          song: {
+            ...song,
+            managerConversationId: conversation.id,
+            managerConversation: {
+              id: conversation.id,
+              topic: conversation.topic,
+              summary: conversation.summary,
+              status: conversation.status,
+            },
+            linkedMissionIds: [`mission-${song.id}`],
+          },
+          missionId: `mission-${song.id}`,
+          conversation,
+        };
       },
       async createProject(input) {
         const created = {

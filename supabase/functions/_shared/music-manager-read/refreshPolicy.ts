@@ -1,6 +1,7 @@
 export type MusicReadRefreshMode = "pre_release" | "release_window" | "post_release";
 
 const PRE_RELEASE_EVENTS = new Set([
+  "music_item_created",
   "music_asset_uploaded",
   "music_asset_upload_failed",
   "music_audio_analysis_completed",

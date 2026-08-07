@@ -46,7 +46,7 @@ describe("music share-link Edge Functions", () => {
   it("lets public capabilities and protected cron workers reach their application-level secret checks", () => {
     const config = readFileSync(configPath, "utf8");
     for (const functionName of ["public-music-share", "music-manager-read-refresh-worker", "music-audio-analysis-worker"]) {
-      expect(config).toContain(`[functions.${functionName}]\nverify_jwt = false`);
+      expect(config).toMatch(new RegExp(`\\[functions\\.${functionName}\\]\\r?\\nverify_jwt = false`));
     }
   });
 });

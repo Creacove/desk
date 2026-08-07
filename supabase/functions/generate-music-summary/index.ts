@@ -99,6 +99,11 @@ type StepState = {
   status: WorkflowStepStatus;
 };
 
+type ManagerReadFinalization = {
+  published: boolean;
+  supersededByEventId?: string;
+};
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -280,6 +285,7 @@ async function completeManagerReadInBackground({
   const requestLedger = createOpenAIRequestLedger();
   const steps = new Map<StepName, WorkflowStepStatus>([["queued", "completed"]]);
   let builtContext: ManagerReadContext | null = null;
+  const finalizationState: { value: ManagerReadFinalization | null } = { value: null };
   const lease = await claimManagerSynthesisRun(db, { runId, leaseSeconds: MUSIC_MANAGER_READ_LEASE_SECONDS });
   if (!lease) return;
   const heartbeat = () => heartbeatMusicManagerReadLease(db, runId, lease.token);
@@ -315,16 +321,23 @@ async function completeManagerReadInBackground({
         const terminalStatus = workflowResult.completedWithLimits ? "completed_with_limits" : "completed";
         const terminalSteps = orderedSteps(new Map(steps).set("output_activation", "completed"));
         await heartbeat();
-        await finalizeManagerRead(db, input, runId, lease.token, usageId, model, terminalStatus, terminalSteps, workflowResult);
+        finalizationState.value = await finalizeManagerRead(db, input, runId, lease.token, usageId, model, terminalStatus, terminalSteps, workflowResult);
       },
     });
 
     const terminalStatus = result.completedWithLimits ? "completed_with_limits" : "completed";
+    const finalization = finalizationState.value;
     await reconcileParentSetupMusicReads(db, input, runId, terminalStatus);
     await writeManagerReadTerminalEventSafe(db, input, runId, terminalStatus, {
-      eventType: "music_manager_read_generated",
-      summary: `Generated Manager Read for ${result.output.position}.`,
-      payload: { manager_synthesis_run_id: runId, manager_output_id: result.outputId },
+      eventType: finalization?.published === false ? "music_manager_read_superseded" : "music_manager_read_generated",
+      summary: finalization?.published === false
+        ? "Skipped publishing a stale Manager Read because newer song changes are available."
+        : `Generated Manager Read for ${result.output.position}.`,
+      payload: {
+        manager_synthesis_run_id: runId,
+        manager_output_id: result.outputId,
+        ...(finalization?.supersededByEventId ? { superseded_by_event_id: finalization.supersededByEventId } : {}),
+      },
     });
   } catch (error) {
     const failure = toPublicMusicManagerReadFailure(error);
@@ -556,9 +569,10 @@ async function enrichChartmetricEvidence(
 }
 
 async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput): Promise<ManagerReadContext> {
-  const [subject, identifiers, evidence, artistProfile, relatedRecords, relatedEvidence, tracklist, packet] = await Promise.all([
+  const [subject, identifiers, assetManifest, evidence, artistProfile, relatedRecords, relatedEvidence, tracklist, packet] = await Promise.all([
     loadSubject(db, input),
     loadIdentifiers(db, input),
+    loadAssetManifest(db, input),
     loadEvidence(db, input),
     loadArtistProfile(db, input),
     loadRelatedRecords(db, input),
@@ -594,7 +608,7 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
     groundingContract: {
       VERIFIED_EVIDENCE: "reasoningEvidence, metricCandidates, managerPacketEvidence",
       USER_CONTEXT: "artistProfile goals, direction, stage, and budget",
-      PERSISTED_WORKSPACE_STATE: "requestedSubject, identifiers, relatedRecords, projectTracklist, managerPacket",
+      PERSISTED_WORKSPACE_STATE: "requestedSubject, identifiers, assetManifest, relatedRecords, projectTracklist, managerPacket",
       PERMITTED_INFERENCE: "comparison and management judgment derived from supplied fields",
       MISSING_OR_STALE_INFORMATION: "evidence freshness, confidence, and limitations",
     },
@@ -603,6 +617,7 @@ async function buildManagerReadContext(db: any, input: GenerateMusicSummaryInput
       ...compactRecord(subject, ["id", "title", "item_type", "project_type", "lifecycle_stage", "released_at"]),
     },
     identifiers: identifiers.slice(0, 8).map((item) => compactRecord(item, ["identifier_type", "identifier_value"])),
+    assetManifest,
     reasoningEvidence: exactEvidence,
     metricCandidates,
     artistProfile: compactRecord(artistProfile, ["display_name", "genres", "home_market", "stage", "artist_direction", "current_goal", "budget_context"]),
@@ -665,6 +680,40 @@ async function loadIdentifiers(db: any, input: GenerateMusicSummaryInput) {
   ).eq(subjectColumn, input.subjectId).limit(8);
   if (error) throw error;
   return (data ?? []) as Array<Record<string, unknown>>;
+}
+
+async function loadAssetManifest(db: any, input: GenerateMusicSummaryInput) {
+  const subjectColumn = input.subjectType === "music_item" ? "music_item_id" : "music_project_id";
+  const { data: assetRows, error: assetError } = await exactOwnedQuery(
+    db.from("music_assets").select("id,asset_type,title,status,version_label,notes,uploaded_file_id"), input,
+  ).eq(subjectColumn, input.subjectId).order("created_at", { ascending: true }).limit(40);
+  if (assetError) throw assetError;
+
+  const assetList = (assetRows ?? []) as Array<Record<string, unknown>>;
+  const fileIds = assetList
+    .map((asset) => readString(asset.uploaded_file_id))
+    .filter((fileId): fileId is string => Boolean(fileId));
+  if (!fileIds.length) {
+    return assetList.map((asset) => compactRecord(asset, ["asset_type", "title", "status", "version_label", "notes"]));
+  }
+
+  const { data: fileRows, error: fileError } = await exactOwnedQuery(
+    db.from("uploaded_files").select("id,file_name,file_type,classification,status,created_at"), input,
+  ).in("id", fileIds).limit(40);
+  if (fileError) throw fileError;
+  const filesById = new Map<string, Record<string, unknown>>(
+    ((fileRows ?? []) as Array<Record<string, unknown>>)
+      .map((file) => [readString(file.id), file] as const)
+      .filter((entry): entry is [string, Record<string, unknown>] => Boolean(entry[0])),
+  );
+
+  return assetList.map((asset) => {
+    const file = filesById.get(readString(asset.uploaded_file_id) ?? "");
+    return {
+      ...compactRecord(asset, ["asset_type", "title", "status", "version_label", "notes"]),
+      ...(file ? { file: compactRecord(file, ["file_name", "file_type", "classification", "status", "created_at"]) } : {}),
+    };
+  });
 }
 
 async function loadEvidence(db: any, input: GenerateMusicSummaryInput) {
@@ -986,7 +1035,7 @@ async function finalizeManagerRead(
   runStatus: "completed" | "completed_with_limits",
   steps: StepState[],
   result: { outputId: string; usage: OpenAIUsage; responseId: string; requestCount: number },
-) {
+): Promise<ManagerReadFinalization> {
   const metadata = { response_id: boundedString(result.responseId, 180), model: boundedString(model, 180) };
   const rpcArguments = {
     target_run_id: runId,
@@ -1001,11 +1050,13 @@ async function finalizeManagerRead(
     target_reasoning_tokens: result.usage.reasoningTokens,
     target_provider_request_count: result.requestCount,
     target_usage_metadata: metadata,
+    target_trigger_event_id: input.triggerEventId ?? null,
   };
-  const { error: rpcError } = await db.rpc("finalize_leased_music_manager_read_v2", rpcArguments);
-  if (!rpcError) return;
+  const { data, error: rpcError } = await db.rpc("finalize_latest_leased_music_manager_read_v2", rpcArguments);
+  if (!rpcError) return managerReadFinalization(data);
   const reconciled = await reconcileFinalization(db, input, runId, usageId, runStatus, steps, result, metadata);
-  if (!reconciled) throw rpcError;
+  if (reconciled) return reconciled;
+  throw rpcError;
 }
 
 async function reconcileFinalization(
@@ -1017,27 +1068,45 @@ async function reconcileFinalization(
   steps: StepState[],
   result: { outputId: string; usage: OpenAIUsage; responseId: string; requestCount: number },
   metadata: Record<string, unknown>,
-) {
+): Promise<ManagerReadFinalization | null> {
   try {
     const [{ data: run, error: runError }, { data: usage, error: usageError }, { data: outputs, error: outputError }] = await Promise.all([
       exactRunQuery(db.from("manager_synthesis_runs").select("id,status,steps_payload,completed_at,error"), runId, input).maybeSingle(),
       exactUsageQuery(db.from("ai_run_usage_events").select("id,status,input_tokens,cached_input_tokens,output_tokens,reasoning_tokens,provider_request_count,metadata,completed_at,failure_reason"), usageId, runId, input).maybeSingle(),
       exactOutputScopeQuery(db.from("manager_outputs").select("id,is_current,supersedes_output_id,created_from_run_id,schema_version"), input),
     ]);
-    if (runError || usageError || outputError || !run || !usage || !Array.isArray(outputs)) return false;
+    if (runError || usageError || outputError || !run || !usage || !Array.isArray(outputs)) return null;
     const expectedUsageStatus = runStatus === "completed" ? "succeeded" : "partial";
     const runMatches = run.status === runStatus && Boolean(run.completed_at) && run.error === null && jsonEqual(run.steps_payload, steps);
+    const stagedOutput = outputs.find((row: any) => row.id === result.outputId);
     const usageMatches = usage.status === expectedUsageStatus && Boolean(usage.completed_at) && usage.failure_reason === null &&
       usage.input_tokens === result.usage.inputTokens && usage.cached_input_tokens === result.usage.cachedInputTokens &&
       usage.output_tokens === result.usage.outputTokens && usage.reasoning_tokens === result.usage.reasoningTokens &&
-      usage.provider_request_count === result.requestCount && jsonEqual(usage.metadata, metadata);
-    const stagedOutput = outputs.find((row: any) => row.id === result.outputId);
+      usage.provider_request_count === result.requestCount && finalizationMetadataMatches(usage.metadata, metadata, stagedOutput?.is_current === false);
     const outputMatches = stagedOutput?.created_from_run_id === runId && stagedOutput?.schema_version === MUSIC_MANAGER_READ_SCHEMA_VERSION &&
-      outputIsInCurrentLineage(outputs, result.outputId);
-    return runMatches && usageMatches && outputMatches;
+      (outputIsInCurrentLineage(outputs, result.outputId) || stagedOutput?.is_current === false);
+    if (!runMatches || !usageMatches || !outputMatches) return null;
+    return { published: stagedOutput?.is_current === true };
   } catch {
-    return false;
+    return null;
   }
+}
+
+function finalizationMetadataMatches(actual: unknown, expected: Record<string, unknown>, allowSuperseded: boolean) {
+  if (jsonEqual(actual, expected)) return true;
+  if (!allowSuperseded || !isRecord(actual)) return false;
+  const { superseded_by_event_id: supersededByEventId, ...baseMetadata } = actual;
+  return typeof supersededByEventId === "string" && supersededByEventId.trim().length > 0 && jsonEqual(baseMetadata, expected);
+}
+
+function managerReadFinalization(value: unknown): ManagerReadFinalization {
+  if (!isRecord(value)) return { published: true };
+  return {
+    published: value.published !== false,
+    ...(typeof value.supersededByEventId === "string" && value.supersededByEventId.trim()
+      ? { supersededByEventId: value.supersededByEventId }
+      : {}),
+  };
 }
 
 function outputIsInCurrentLineage(outputs: Array<Record<string, unknown>>, outputId: string) {

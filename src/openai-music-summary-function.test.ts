@@ -150,7 +150,7 @@ describe("generate-music-summary durable v2 endpoint contract", () => {
     expect(functionSource).not.toContain("output.watch");
     expect(functionSource).not.toContain("output.confidence");
     expect(functionSource).toContain("is_current: false");
-    expect(functionSource).toContain('.rpc("finalize_leased_music_manager_read_v2"');
+    expect(functionSource).toContain('.rpc("finalize_latest_leased_music_manager_read_v2"');
     expect(functionSource).toContain("target_lease_token");
   });
 

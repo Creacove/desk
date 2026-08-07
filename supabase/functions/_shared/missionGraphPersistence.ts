@@ -16,6 +16,7 @@ type ManagerGraphContext = {
   actionId?: string;
   sourceType: "manager_conversation" | "mission_genesis";
   trigger: string;
+  scopedMissionId?: string;
 };
 
 export async function persistManagerMissionGraphDecisions(
@@ -25,8 +26,16 @@ export async function persistManagerMissionGraphDecisions(
   output: ManagerConversationOutput,
 ): Promise<ManagerConversationCreatedWork[]> {
   const persisted: ManagerConversationCreatedWork[] = output.createdWork.filter((work) => work.type === "music_item");
+  const scopedMissionId = context.scopedMissionId;
+  const decisions: ManagerMissionGraphDecision[] = scopedMissionId
+    ? output.missionGraphDecisions.slice(0, 1).map((decision) => ({
+      ...decision,
+      outcome: "update_existing_mission" as const,
+      existingMissionId: scopedMissionId,
+    }))
+    : output.missionGraphDecisions;
 
-  for (const decision of output.missionGraphDecisions) {
+  for (const decision of decisions) {
     if (decision.outcome === "activate_mission") {
       const mission = await createMission(db, input, context, decision);
       const taskWork = await writeMissionPlan(db, input, context, mission.id, decision);

@@ -1141,6 +1141,60 @@ describe("production Supabase services", () => {
     }
   });
 
+  it("hydrates the existing song mission and official conversation from artifact links", async () => {
+    const tables = musicManagerReadTables({
+      artifact_links: [
+        {
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source_type: "mission",
+          source_id: "mission-jam-release",
+          target_type: "music_item",
+          target_id: "song-jam",
+          relationship: "references",
+          created_at: "2026-07-27T09:00:00.000Z",
+        },
+        {
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          source_type: "conversation",
+          source_id: "conversation-jam-release",
+          target_type: "music_item",
+          target_id: "song-jam",
+          relationship: "references",
+          created_at: "2026-07-27T09:01:00.000Z",
+        },
+      ],
+      conversations: [
+        {
+          id: "conversation-jam-release",
+          account_id: "account-1",
+          artist_workspace_id: "workspace-1",
+          artist_id: "artist-1",
+          topic: "Jam — song workspace",
+          status: "active",
+          summary: "Add the final mix before release planning.",
+          last_update_at: "2026-07-27T09:01:00.000Z",
+        },
+      ],
+    });
+
+    const [song] = await createSupabaseProductionRepositories(createMutableSupabaseClient(tables), workspace).music.loadMusic();
+
+    expect(song).toMatchObject({
+      id: "song-jam",
+      linkedMissionIds: ["mission-jam-release"],
+      managerConversationId: "conversation-jam-release",
+      managerConversation: {
+        id: "conversation-jam-release",
+        topic: "Jam — song workspace",
+        summary: "Add the final mix before release planning.",
+      },
+    });
+  });
+
   it("selects the newest subject run deterministically when database order is ambiguous", async () => {
     const tables = musicManagerReadTables({
       manager_synthesis_runs: [
@@ -1448,16 +1502,19 @@ describe("production Supabase services", () => {
     const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicObject("song-jam", "music_item");
 
     expect(result).toMatchObject({ id: "song-jam", managerConversationId: "conversation-song-current" });
-    expect(calls.find((call) => call.table === "artifact_links")).toMatchObject({
+    const conversationLinkCall = calls.find((call) =>
+      call.table === "artifact_links" && call.filters.some(([key, value]) => key === "target_id" && value === "song-jam"),
+    );
+    expect(conversationLinkCall).toMatchObject({
       filters: expect.arrayContaining([
         ["account_id", "account-1"],
         ["artist_workspace_id", "workspace-1"],
         ["artist_id", "artist-1"],
-        ["source_type", "conversation"],
         ["target_type", "music_item"],
         ["target_id", "song-jam"],
         ["relationship", "references"],
       ]),
+      inFilters: expect.arrayContaining([["source_type", ["conversation", "mission"]]]),
     });
   });
 
@@ -1561,7 +1618,11 @@ describe("production Supabase services", () => {
 
     calls.splice(0);
     await (repositories.manager as any).loadConversationList();
-    expect(calls.map((call) => call.table)).toEqual(["conversations"]);
+    expect(calls.map((call) => call.table)).toEqual(["conversations", "artifact_links"]);
+    expect(calls.find((call) => call.table === "artifact_links")?.filters).toEqual(expect.arrayContaining([
+      ["source_type", "conversation"],
+      ["relationship", "references"],
+    ]));
 
     calls.splice(0);
     await (repositories.manager as any).loadConversation("conversation-1");
@@ -2496,6 +2557,14 @@ describe("production Supabase services", () => {
           label: "Manager",
           body: "Run a capped proof loop before scaling spend.",
           metadata: {
+            contextRequestId: "context-budget-1",
+            contextQuestions: [{
+              key: "budget_boundary",
+              question: "What budget should the Manager protect?",
+              reason: "Spend changes the task plan.",
+              answerKind: "money_range",
+              options: [],
+            }],
             createdWork: [
               {
                 type: "task",
@@ -2509,6 +2578,18 @@ describe("production Supabase services", () => {
           },
           created_at: "2026-06-26T07:57:00.000Z",
         },
+        {
+          id: "message-3",
+          conversation_id: "conversation-1",
+          speaker: "artist",
+          label: "You",
+          body: "Context answers for Manager mission decision.",
+          metadata: {
+            contextRequestId: "context-budget-1",
+            contextAnswers: [{ questionKey: "budget_boundary", answer: "$5,000" }],
+          },
+          created_at: "2026-06-26T07:58:00.000Z",
+        },
       ],
       artifact_links: [
         {
@@ -2519,6 +2600,22 @@ describe("production Supabase services", () => {
           target_id: "task-1",
           relationship: "references",
         },
+        {
+          artist_workspace_id: "workspace-1",
+          source_type: "conversation",
+          source_id: "conversation-1",
+          target_type: "music_item",
+          target_id: "song-debbie",
+          relationship: "references",
+        },
+      ],
+      music_items: [
+        {
+          id: "song-debbie",
+          title: "Debbie",
+          lifecycle_stage: "mastering",
+          status: "active",
+        },
       ],
     });
 
@@ -2528,6 +2625,7 @@ describe("production Supabase services", () => {
       expect.objectContaining({
         id: "conversation-1",
         taskContextId: "task-1",
+        musicSubject: { type: "music_item", id: "song-debbie", title: "Debbie", lifecycleStage: "mastering" },
         topic: "Budget validation",
         lastUpdate: "2026-06-26T08:00:00.000Z",
         messages: [
@@ -2545,6 +2643,12 @@ describe("production Supabase services", () => {
                 status: "created",
               }),
             ],
+          }),
+          expect.objectContaining({
+            id: "message-3",
+            speaker: "artist",
+            contextRequestId: "context-budget-1",
+            contextAnswers: [{ questionKey: "budget_boundary", answer: "$5,000" }],
           }),
         ],
         createdWork: [

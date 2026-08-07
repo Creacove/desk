@@ -1107,9 +1107,28 @@ function CleanProductionWorkspace({
       ? conversations.find((conversation) => conversation.id === conversationId) ??
         (selectedConversation?.id === conversationId ? selectedConversation : undefined)
       : undefined;
+    const effectiveMusicSubject = options.musicSubject ?? (sourceConversation?.musicSubject
+      ? { type: sourceConversation.musicSubject.type, id: sourceConversation.musicSubject.id }
+      : undefined);
+    const resolvedMusicSubject = sourceConversation?.musicSubject ?? (effectiveMusicSubject
+      ? music.find((item) =>
+          item.id === effectiveMusicSubject.id &&
+          item.kind === (effectiveMusicSubject.type === "music_project" ? "project" : "song"),
+        )
+      : undefined);
+    const musicSubjectView = resolvedMusicSubject
+      ? "kind" in resolvedMusicSubject
+        ? {
+            type: resolvedMusicSubject.kind === "project" ? "music_project" as const : "music_item" as const,
+            id: resolvedMusicSubject.id,
+            title: resolvedMusicSubject.title,
+            lifecycleStage: resolvedMusicSubject.lifecycleStage ?? resolvedMusicSubject.lifecycle,
+          }
+        : resolvedMusicSubject
+      : undefined;
     const optimisticConversation = conversationId
       ? withOptimisticManagerMessage(sourceConversation, trimmedBody)
-      : createOptimisticManagerConversation(trimmedBody);
+      : createOptimisticManagerConversation(trimmedBody, musicSubjectView);
     const optimisticId = optimisticConversation?.id;
     const lockedTopic = stableTopic ?? sourceConversation?.topic;
     let streamCompleted = false;
@@ -1129,7 +1148,7 @@ function CleanProductionWorkspace({
         ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
         ...(options.contextAnswers?.length ? { contextAnswers: options.contextAnswers } : {}),
         ...(options.taskId ? { taskId: options.taskId } : {}),
-        ...(options.musicSubject ? { musicSubject: options.musicSubject } : {}),
+        ...(effectiveMusicSubject ? { musicSubject: effectiveMusicSubject } : {}),
       };
 
       if (repositories.manager.sendMessageStream) {
@@ -1143,7 +1162,8 @@ function CleanProductionWorkspace({
                 conversationId,
                 lockedTopic,
                 userBody: trimmedBody,
-                musicSubject: options.musicSubject,
+                musicSubject: effectiveMusicSubject,
+                musicSubjectView,
               });
               if (event.type === "conversation.completed") {
                 streamCompleted = true;
@@ -1155,11 +1175,16 @@ function CleanProductionWorkspace({
       }
 
       const conversation = await repositories.manager.sendMessage(managerInput);
-      const mergedConversation = lockedTopic ? { ...conversation, topic: lockedTopic } : conversation;
+      const mergedConversation = {
+        ...conversation,
+        ...(lockedTopic ? { topic: lockedTopic } : {}),
+        ...(conversation.musicSubject || musicSubjectView ? { musicSubject: conversation.musicSubject ?? musicSubjectView } : {}),
+      };
       setConversations((current) => [mergedConversation, ...current.filter((item) => item.id !== mergedConversation.id && item.id !== optimisticId)]);
       setSelectedConversation(mergedConversation);
-      if (options.musicSubject) {
-        setMusic((items) => applyManagerConversationLink(items, options.musicSubject!, mergedConversation.id));
+      invalidateConversationCache(mergedConversation.id);
+      if (effectiveMusicSubject) {
+        setMusic((items) => applyManagerConversationLink(items, effectiveMusicSubject, mergedConversation.id));
       }
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       if (conversationHasMissionWork(conversation)) {
@@ -1186,6 +1211,7 @@ function CleanProductionWorkspace({
       lockedTopic?: string;
       userBody: string;
       musicSubject?: ManagerConversationMusicSubject;
+      musicSubjectView?: ConversationViewModel["musicSubject"];
     },
   ) {
     if (event.type === "conversation.started") {
@@ -1239,6 +1265,7 @@ function CleanProductionWorkspace({
     if (event.type === "conversation.completed") {
       const completedConversation = context.lockedTopic ? { ...event.conversation, topic: context.lockedTopic } : event.conversation;
       updateCompletedManagerConversation(context.optimisticId, completedConversation, Boolean(context.lockedTopic));
+      invalidateConversationCache(completedConversation.id);
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       void refreshFromManagerHint(event.refresh ?? { missions: conversationHasMissionWork(completedConversation) });
       return;
@@ -1276,6 +1303,11 @@ function CleanProductionWorkspace({
       setConversations((items) => [merged, ...items.filter((item) => item.id !== previousId && item.id !== merged.id)]);
       return merged;
     });
+  }
+
+  function invalidateConversationCache(conversationId: string) {
+    resourceRequests.invalidate(resourceWorkspaceId, `conversation:${conversationId}`);
+    resourceRequests.invalidate(resourceWorkspaceId, "conversation-list");
   }
 
   function applyManagerStreamError(message: string) {
@@ -1943,14 +1975,26 @@ function CleanProductionWorkspace({
                 onBackToTask={managerTaskContextId ? returnToManagerTask : undefined}
                 onOpenCreatedWork={openCreatedWork}
                 onOpenDecisionPackage={() => navigate("decisionPackage")}
-                onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, { taskId: managerTaskContextId ?? undefined })}
+                onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
+                onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
+                  taskId: managerTaskContextId ?? undefined,
+                  ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
+                })}
                 onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
-                  void sendManagerMessage(body, conversationId, activeConversation.topic, { contextRequestId, contextAnswers, taskId: managerTaskContextId ?? undefined })
+                  void sendManagerMessage(body, conversationId, activeConversation.topic, {
+                    contextRequestId,
+                    contextAnswers,
+                    taskId: managerTaskContextId ?? undefined,
+                    ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
+                  })
                 }
                 onRetryLastMessage={() => {
                   const lastArtistMessage = activeConversation.messages.filter((message) => message.speaker === "artist").at(-1);
                   if (lastArtistMessage) {
-                    void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, { taskId: managerTaskContextId ?? undefined });
+                    void sendManagerMessage(lastArtistMessage.body, activeConversation.id, activeConversation.topic, {
+                      taskId: managerTaskContextId ?? undefined,
+                      ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
+                    });
                   }
                 }}
                 sendPending={managerSendPending}
@@ -2874,7 +2918,7 @@ function applyManagerConversationLink(
   );
 }
 
-function createOptimisticManagerConversation(body: string): ConversationViewModel {
+function createOptimisticManagerConversation(body: string, musicSubject?: ConversationViewModel["musicSubject"]): ConversationViewModel {
   const id = `pending-conversation-${Date.now()}`;
   const runId = `pending-run-${Date.now()}`;
   return {
@@ -2883,6 +2927,7 @@ function createOptimisticManagerConversation(body: string): ConversationViewMode
     status: "Manager is thinking",
     summary: body,
     prompt: body,
+    ...(musicSubject ? { musicSubject } : {}),
     lastUpdate: "Now",
     activeRun: {
       id: runId,
@@ -2932,7 +2977,7 @@ function withOptimisticManagerMessage(conversation: ConversationViewModel | unde
 
 function conversationFromStartedEvent(
   event: Extract<ManagerConversationStreamEvent, { type: "conversation.started" }>,
-  context: { optimisticId?: string; lockedTopic?: string; userBody: string },
+  context: { optimisticId?: string; lockedTopic?: string; userBody: string; musicSubjectView?: ConversationViewModel["musicSubject"] },
 ): ConversationViewModel {
   const id = event.conversation.id;
   const runId = event.run?.id ?? `run-${id}`;
@@ -2942,6 +2987,7 @@ function conversationFromStartedEvent(
     status: event.conversation.status ?? "Manager is thinking",
     summary: event.conversation.summary ?? context.userBody,
     prompt: event.conversation.prompt ?? context.userBody,
+    ...(event.conversation.musicSubject || context.musicSubjectView ? { musicSubject: event.conversation.musicSubject ?? context.musicSubjectView } : {}),
     lastUpdate: event.conversation.lastUpdate ?? "Now",
     messages: event.conversation.messages?.length
       ? event.conversation.messages

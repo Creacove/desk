@@ -80,6 +80,7 @@ Deno.serve(async (request) => {
     await assertWorkspace(db, input);
     const conversationId = await ensureConversation(db, input);
     const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+    const scopedMissionId = await resolveConversationMissionScope(db, input, conversationId, focusedMusicSubject);
     const artistMessage = await insertConversationMessage(db, input, conversationId, {
       speaker: "artist",
       label: "You",
@@ -106,6 +107,7 @@ Deno.serve(async (request) => {
       runId,
       sourceType: "manager_conversation",
       trigger: "manager_conversation",
+      scopedMissionId,
     }, output);
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
     output.createdWork = taskDraftWork ? [...persistedWork, taskDraftWork] : persistedWork;
@@ -337,13 +339,36 @@ async function ensureTaskConversationLink(db: any, input: ManagerConversationInp
 }
 
 async function ensureMusicConversationSubjectLink(db: any, input: ManagerConversationInput, conversationId: string) {
-  if (!input.musicSubject) return null;
+  const { data: existingLinks, error: existingLinksError } = await db.from("artifact_links")
+    .select("target_type,target_id,created_at")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("source_type", "conversation")
+    .eq("source_id", conversationId)
+    .in("target_type", ["music_item", "music_project"])
+    .eq("relationship", "references")
+    .order("created_at", { ascending: true })
+    .limit(2);
+  if (existingLinksError) throw existingLinksError;
 
-  const target = musicConversationSubjectTarget(input.musicSubject);
-  const subjectColumns = input.musicSubject.type === "music_item"
+  const existingLink = existingLinks?.[0];
+  const musicSubject = existingLink
+    ? { type: existingLink.target_type, id: existingLink.target_id } as MusicConversationSubject
+    : input.musicSubject;
+  if (existingLink && input.musicSubject && musicSubject && (
+    input.musicSubject.type !== musicSubject.type || input.musicSubject.id !== musicSubject.id
+  )) {
+    throw new Error("Manager conversation is already scoped to a different song or project.");
+  }
+  if (!musicSubject) return null;
+  input.musicSubject = musicSubject;
+
+  const target = musicConversationSubjectTarget(musicSubject);
+  const subjectColumns = musicSubject.type === "music_item"
     ? "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata"
     : "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit,metadata";
-  const { data: musicSubject, error: subjectError } = await db
+  const { data: musicSubjectRow, error: subjectError } = await db
     .from(target.table)
     .select(subjectColumns)
     .eq("id", input.musicSubject.id)
@@ -352,21 +377,9 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     .eq("artist_id", input.artistId)
     .maybeSingle();
   if (subjectError) throw subjectError;
-  if (!musicSubject) throw new Error("Manager conversation music subject was not found.");
+  if (!musicSubjectRow) throw new Error("Manager conversation music subject was not found.");
 
-  const { data: existing, error: existingError } = await db.from("artifact_links")
-    .select("id")
-    .eq("account_id", input.accountId)
-    .eq("artist_workspace_id", input.artistWorkspaceId)
-    .eq("artist_id", input.artistId)
-    .eq("source_type", "conversation")
-    .eq("source_id", conversationId)
-    .eq("target_type", target.artifactType)
-    .eq("target_id", input.musicSubject.id)
-    .eq("relationship", "references")
-    .maybeSingle();
-  if (existingError) throw existingError;
-  if (!existing) {
+  if (!existingLink) {
     const { error: linkError } = await db.from("artifact_links").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
@@ -382,15 +395,37 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
 
   return {
     type: input.musicSubject.type,
-    id: musicSubject.id,
-    title: musicSubject.title,
-    kind: musicSubject.item_type ?? musicSubject.project_type ?? "",
-    lifecycleStage: musicSubject.lifecycle_stage ?? "",
-    releasedAt: musicSubject.released_at ?? "",
-    sourceKind: musicSubject.source_kind ?? "",
-    sourceLimit: musicSubject.source_limit ?? "",
-    metadata: musicSubject.metadata ?? {},
+    id: musicSubjectRow.id,
+    title: musicSubjectRow.title,
+    kind: musicSubjectRow.item_type ?? musicSubjectRow.project_type ?? "",
+    lifecycleStage: musicSubjectRow.lifecycle_stage ?? "",
+    releasedAt: musicSubjectRow.released_at ?? "",
+    sourceKind: musicSubjectRow.source_kind ?? "",
+    sourceLimit: musicSubjectRow.source_limit ?? "",
+    metadata: musicSubjectRow.metadata ?? {},
   };
+}
+
+async function resolveConversationMissionScope(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  focusedMusicSubject: Record<string, unknown> | null,
+) {
+  if (!focusedMusicSubject) return undefined;
+
+  const { data, error } = await db.from("conversations")
+    .select("linked_mission_id")
+    .eq("id", conversationId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+
+  return typeof data?.linked_mission_id === "string" && data.linked_mission_id.trim()
+    ? data.linked_mission_id
+    : undefined;
 }
 
 async function buildManagerConversationPacket(
@@ -911,6 +946,7 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
       body: message.body,
       createdWork: normalizeCreatedWork(metadata.createdWork),
       contextQuestions: normalizeContextQuestions(metadata.contextQuestions),
+      contextAnswers: normalizeContextAnswers(metadata.contextAnswers),
       contextRequestId: typeof metadata.contextRequestId === "string" && metadata.contextRequestId.trim() ? metadata.contextRequestId.trim() : undefined,
     };
   });

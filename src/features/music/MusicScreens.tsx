@@ -885,7 +885,12 @@ function MusicSongDetail({
             </div>
             <MusicManagerReadContent subject={song} testId="manager-read-copy" onContinueWithManager={onContinueWithManager} />
           </div>
-          <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
+          <MusicLinkedWork
+            linkedConversation={song.managerConversation}
+            linkedMissions={linkedMissions}
+            onOpenConversation={onContinueWithManager}
+            onOpenMission={onOpenMission}
+          />
         </div>
       ) : null}
 
@@ -1226,7 +1231,7 @@ function MusicManagerReadContent({
   const read = subject.managerRead;
   const statusMessage =
     subject.managerReadStatus === "refreshing"
-      ? "Manager Read is being refreshed. The current read remains available."
+      ? "Updating from latest song changes. The current read remains available."
       : subject.managerReadStatus === "refresh_failed"
         ? "Manager Read could not be refreshed. Your previous read is still available."
         : subject.managerReadStatus === "failed"
@@ -1401,20 +1406,47 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
   );
 }
 
-function MusicLinkedWork({ linkedMissions, onOpenMission }: { linkedMissions: MissionViewModel[]; onOpenMission: (missionId: string) => void }) {
-  const hasLinkedWork = linkedMissions.length > 0;
+function MusicLinkedWork({
+  linkedConversation,
+  linkedMissions,
+  onOpenConversation,
+  onOpenMission,
+}: {
+  linkedConversation?: MusicObjectViewModel["managerConversation"];
+  linkedMissions: MissionViewModel[];
+  onOpenConversation?: () => void;
+  onOpenMission: (missionId: string) => void;
+}) {
+  const hasLinkedWork = Boolean(linkedConversation || linkedMissions.length);
 
   return (
     <aside data-testid="music-linked-work" className="surface-elevated self-start rounded-[22px] p-5 shadow-sm max-lg:rounded-[16px] max-lg:p-4 max-lg:shadow-none lg:sticky lg:top-8">
       <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-4 max-lg:border-0 max-lg:pb-0">
         <div>
           <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Linked work</p>
-          <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground max-lg:hidden">Mission path</h4>
+          <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground max-lg:hidden">Workspace links</h4>
         </div>
       </div>
 
       {hasLinkedWork ? (
       <div data-testid="music-linked-work-list" className="mt-4 grid gap-4 max-lg:hidden">
+        {linkedConversation ? (
+          <section data-testid="music-linked-conversation" className="rounded-[16px] border border-foreground/8 bg-background/72">
+            <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
+              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Conversation</p>
+            </div>
+            <div className="p-3">
+              <button type="button" aria-label="Open conversation" onClick={onOpenConversation} className="grid w-full gap-2 rounded-[12px] px-2 py-2 text-left transition-colors hover:bg-brand-accent/[0.04]">
+                <span className="block min-w-0 text-[13px] font-medium leading-snug text-foreground">{linkedConversation.topic}</span>
+                <span className="line-clamp-2 text-[11px] font-semibold leading-relaxed text-muted-foreground">{linkedConversation.summary}</span>
+                <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-accent">
+                  Open conversation <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                </span>
+              </button>
+            </div>
+          </section>
+        ) : null}
+        {linkedMissions.length ? (
         <section className="rounded-[16px] border border-foreground/8 bg-background/72">
           <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Mission</p>
@@ -1440,11 +1472,18 @@ function MusicLinkedWork({ linkedMissions, onOpenMission }: { linkedMissions: Mi
             })}
           </div>
         </section>
+        ) : null}
       </div>
       ) : (
         <p className="mt-4 text-[12px] font-semibold text-muted-foreground/72">No mission linked</p>
       )}
-      {hasLinkedWork ? (
+      {linkedConversation ? (
+        <button type="button" onClick={onOpenConversation} className="mt-3 flex w-full items-center justify-between gap-3 border-t border-foreground/8 pt-3 text-left lg:hidden">
+          <span className="min-w-0 truncate text-[12px] font-semibold text-foreground">{linkedConversation.topic}</span>
+          <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Open conversation</span>
+        </button>
+      ) : null}
+      {linkedMissions.length ? (
         <button type="button" onClick={() => onOpenMission(linkedMissions[0].id)} className="mt-3 flex w-full items-center justify-between gap-3 border-t border-foreground/8 pt-3 text-left lg:hidden">
           <span className="min-w-0 truncate text-[12px] font-semibold text-foreground">{linkedMissions.length} linked mission{linkedMissions.length === 1 ? "" : "s"}</span>
           <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Open</span>
