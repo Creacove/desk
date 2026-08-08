@@ -1,0 +1,23 @@
+- generic [ref=e4]:
+  - complementary [ref=e5]:
+    - generic [ref=e8]:
+      - paragraph [ref=e9]: Ordersounds
+      - paragraph [ref=e10]: Artist operating desk
+    - heading "Open the artist's operating read." [level=2] [ref=e11]
+    - paragraph [ref=e12]: Return to the signals, blockers, tasks, and Manager decisions that need the team's attention today.
+  - generic [ref=e14]:
+    - heading "Sign in to Ordersounds" [level=1] [ref=e15]
+    - generic [ref=e16]:
+      - button "Use sign in mode" [ref=e17] [cursor=pointer]: Sign in
+      - button "Use sign-up mode" [ref=e18] [cursor=pointer]: Sign up
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - generic [ref=e21]: Email
+        - textbox "Email" [ref=e22]
+      - generic [ref=e23]:
+        - generic [ref=e24]: Password
+        - textbox "Password" [ref=e25]
+      - generic [ref=e26]:
+        - button "Sign in" [ref=e27] [cursor=pointer]
+        - button "Create account" [ref=e28] [cursor=pointer]
+        - button "Forgot password?" [ref=e29] [cursor=pointer]
