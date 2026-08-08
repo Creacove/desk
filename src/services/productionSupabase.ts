@@ -2263,9 +2263,24 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           .order("created_at", { ascending: false })
           .limit(100);
         if (error) throw error;
-        return ((data as MissionRow[] | null) ?? [])
-          .filter((mission) => !["candidate", "archived", "cancelled"].includes(mission.status ?? ""))
-          .map((mission) => missionFromRow(mission));
+        const missionRows = ((data as MissionRow[] | null) ?? [])
+          .filter((mission) => !["candidate", "archived", "cancelled"].includes(mission.status ?? ""));
+        if (missionRows.length === 0) return [];
+
+        const { data: taskData, error: taskError } = await ownerFilters(client
+          .from("tasks")
+          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+        )
+          .in("mission_id", missionRows.map((mission) => mission.id))
+          .order("created_at", { ascending: true });
+        if (taskError) throw taskError;
+        const taskRows = (taskData as TaskRow[] | null) ?? [];
+
+        return missionRows.map((mission) => missionFromRow(
+          mission,
+          [],
+          taskRows.filter((task) => task.mission_id === mission.id),
+        ));
       },
       async loadMission(missionId) {
         const { data, error } = await ownerFilters(client

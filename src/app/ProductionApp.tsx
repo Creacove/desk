@@ -617,6 +617,7 @@ function CleanProductionWorkspace({
   const [missionListOpenRequestKey, setMissionListOpenRequestKey] = useState(0);
   const [musicListOpenRequestKey, setMusicListOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
+  const [targetSongRoomTab, setTargetSongRoomTab] = useState<"overview" | "files">("overview");
   const [musicDetailOpen, setMusicDetailOpen] = useState(false);
   const [missionRoomOpen, setMissionRoomOpen] = useState(false);
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
@@ -942,6 +943,7 @@ function CleanProductionWorkspace({
       return;
     }
     if (event.targetType === "music_item" || event.targetType === "music_project") {
+      setTargetSongRoomTab("overview");
       setTargetMusicObjectId(event.targetId);
       navigate("musicWorkspace");
       return;
@@ -965,6 +967,7 @@ function CleanProductionWorkspace({
 
   function navigateFromMenu(nextView: CleanProductionView) {
     if (nextView === "musicWorkspace") {
+      setTargetSongRoomTab("overview");
       setTargetMusicObjectId(null);
       setMusicDetailOpen(false);
       setMusicListOpenRequestKey((current) => current + 1);
@@ -1006,6 +1009,7 @@ function CleanProductionWorkspace({
   }
 
   function openMusicFocus(musicObjectId?: string) {
+    setTargetSongRoomTab("overview");
     setTargetMusicObjectId(musicObjectId ?? null);
     navigate("musicWorkspace");
   }
@@ -1433,8 +1437,9 @@ function CleanProductionWorkspace({
     }
   }
 
-  async function openCreatedWork(type: "music_item" | "mission" | "task", id?: string) {
+  async function openCreatedWork(type: "music_item" | "mission" | "task", id?: string, destination?: "files") {
     if (type === "music_item") {
+      setTargetSongRoomTab(destination === "files" ? "files" : "overview");
       setTargetMusicObjectId(id ?? null);
       navigate("musicWorkspace");
       return;
@@ -1943,6 +1948,7 @@ function CleanProductionWorkspace({
               music={music}
               missions={missions}
               targetMusicObjectId={targetMusicObjectId}
+              targetSongRoomTab={targetSongRoomTab}
               musicRepository={repositories.music}
               onRefreshObject={refreshMusicObject}
               onMusicChanged={reloadMusic}

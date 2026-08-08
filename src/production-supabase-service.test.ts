@@ -1587,7 +1587,20 @@ describe("production Supabase services", () => {
       manager_synthesis_runs: [],
       missions: [{ id: "mission-1", account_id: "account-1", artist_workspace_id: "workspace-1", artist_id: "artist-1", title: "Focused mission", objective: "Ship safely", status: "active", progress: 20 }],
       checkpoints: [],
-      tasks: [],
+      tasks: [{
+        id: "task-1",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        mission_id: "mission-1",
+        primary_checkpoint_id: null,
+        title: "Add the current working audio",
+        status: "open",
+        owner_role: "Artist / team",
+        work_mode: "artist_action",
+        purpose: "Give the song workspace a real audio reference.",
+        approval_state: "not_required",
+      }],
       task_steps: [],
       task_results: [],
       memory_entries: [],
@@ -1606,8 +1619,13 @@ describe("production Supabase services", () => {
     expect(calls.map((call) => call.table)).toEqual(["manager_outputs", "manager_synthesis_runs"]);
 
     calls.splice(0);
-    await (repositories.missions as any).loadMissionList();
-    expect(calls.map((call) => call.table)).toEqual(["missions"]);
+    const missionList = await (repositories.missions as any).loadMissionList();
+    expect(calls.map((call) => call.table)).toEqual(["missions", "tasks"]);
+    expect(calls.find((call) => call.table === "tasks")?.inFilters).toContainEqual(["mission_id", ["mission-1"]]);
+    expect(missionList[0]).toMatchObject({
+      nextTask: "Add the current working audio",
+      tasks: [expect.objectContaining({ id: "task-1", title: "Add the current working audio" })],
+    });
 
     calls.splice(0);
     await (repositories.missions as any).loadMission("mission-1");

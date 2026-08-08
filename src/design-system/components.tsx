@@ -214,12 +214,14 @@ export function WorkspaceShell({
   onBack,
   children,
   showBack = true,
+  punctuateTitle = true,
 }: {
   eyebrow: string;
   title: string;
   onBack: () => void;
   children: ReactNode;
   showBack?: boolean;
+  punctuateTitle?: boolean;
 }) {
   return (
     <div className="app-workspace app-workspace-reveal">
@@ -239,7 +241,7 @@ export function WorkspaceShell({
       ) : null}
       <div className="mb-5 lg:mb-8">
         <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
-        <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.55rem] lg:text-[1.3rem]">{title}.</h1>
+        <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.55rem] lg:text-[1.3rem]">{title}{punctuateTitle ? "." : ""}</h1>
       </div>
       {children}
     </div>

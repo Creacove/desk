@@ -38,6 +38,7 @@ export function MusicWorkspace({
   music,
   missions,
   targetMusicObjectId,
+  targetSongRoomTab = "overview",
   musicRepository,
   onRefreshObject,
   onMusicChanged,
@@ -51,6 +52,7 @@ export function MusicWorkspace({
   music: MusicObjectViewModel[];
   missions: MissionViewModel[];
   targetMusicObjectId?: string | null;
+  targetSongRoomTab?: SongRoomTab;
   musicRepository: MusicRepository;
   onRefreshObject: (
     subjectId: string,
@@ -130,9 +132,9 @@ export function MusicWorkspace({
     if (!targetMusicObjectId) return;
     const target = getMusicObject(targetMusicObjectId);
     if (!target) return;
-    openObject(target, target.kind === "project" ? "projects" : "songs");
+    openObject(target, target.kind === "project" ? "projects" : "songs", targetSongRoomTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetMusicObjectId, music]);
+  }, [targetMusicObjectId, targetSongRoomTab, music]);
 
   useEffect(() => {
     onDetailModeChange?.(mode !== "library");
@@ -230,11 +232,11 @@ export function MusicWorkspace({
     setMode("library");
   }
 
-  function openObject(object: MusicObjectViewModel, origin: MusicTab = tab) {
+  function openObject(object: MusicObjectViewModel, origin: MusicTab = tab, destination: SongRoomTab = "overview") {
     setSelectedId(object.id);
     setSelectedKind(object.kind);
     setReturnTab(origin);
-    if (object.kind === "song") setSongRoomTab("overview");
+    if (object.kind === "song") setSongRoomTab(destination);
     setMode(object.kind === "song" ? "songDetail" : "projectDetail");
   }
 

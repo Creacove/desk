@@ -349,7 +349,7 @@ export function ConversationWorkspace({
 }: {
   conversation: ConversationViewModel;
   onBack: () => void;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   onOpenDecisionPackage?: () => void;
   taskContext?: MissionTaskViewModel;
@@ -409,7 +409,7 @@ export function ConversationWorkspace({
   };
 
   return (
-    <WorkspaceShell eyebrow="Direct message" title={conversation.topic} onBack={onBack}>
+    <WorkspaceShell eyebrow="Direct message" title={conversation.topic} onBack={onBack} punctuateTitle={false}>
       {/*
         ChatGPT layout pattern:
         — A centered, width-constrained reading column gives the breathing room.
@@ -586,7 +586,7 @@ function MessageRow({
   onRetryLastMessage?: () => void;
   sendPending: boolean;
   onSendContextAnswers: (answers: ManagerConversationContextAnswer[]) => void;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   suppressMissionArtifacts?: boolean;
   contextResolved?: boolean;
   prompt?: string;
@@ -1097,13 +1097,14 @@ function ManagerContextQuestionForm({
 // Music items get a compact inline card.
 // ---------------------------------------------------------------------------
 type WorkItem = ConversationViewModel["createdWork"][number];
+type CreatedWorkDestination = "files";
 
 function WorkArtifactGroup({
   items,
   onOpenCreatedWork,
 }: {
   items: WorkItem[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   const draftArtifacts = items.filter((w) => w.artifactKind === "task_draft");
   const missions = items.filter((w) => w.type === "mission");
@@ -1145,7 +1146,7 @@ function TaskDraftArtifactCard({
   onOpenCreatedWork,
 }: {
   item: WorkItem;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const content = item.content?.trim() || item.body;
@@ -1223,7 +1224,7 @@ function MissionArtifactCard({
 }: {
   mission: WorkItem;
   tasks: WorkItem[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   const statusLabel = mission.status ? mission.status.replace(/_/g, " ") : "created";
   const isUpdate = mission.status === "updated";
@@ -1311,7 +1312,7 @@ function TaskGroupCard({
   onOpenCreatedWork,
 }: {
   tasks: WorkItem[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   // Determine if any are updates vs new
   const hasUpdates = tasks.some((t) => t.status === "updated");
@@ -1375,7 +1376,7 @@ function MusicItemArtifactCard({
   onOpenCreatedWork,
 }: {
   item: WorkItem;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   const statusLabel = item.status ? item.status.replace(/_/g, " ") : "created";
   const isSongWorkspace = item.body.includes("Song Workspace created.");
@@ -1396,11 +1397,11 @@ function MusicItemArtifactCard({
       </div>
       <button
         type="button"
-        onClick={() => void onOpenCreatedWork(item.type, item.id)}
+        onClick={() => void onOpenCreatedWork(item.type, item.id, isSongWorkspace ? "files" : undefined)}
         aria-label={`Open music item: ${item.title}`}
         className="flex shrink-0 items-center gap-1.5 rounded-lg bg-foreground/[0.045] px-3 py-1.5 text-[11px] font-semibold text-foreground/75 transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
       >
-        {isSongWorkspace ? "Open song" : "Open"}
+        {isSongWorkspace ? "Add files" : "Open"}
         <ChevronRight className="h-3 w-3" aria-hidden="true" />
       </button>
     </div>

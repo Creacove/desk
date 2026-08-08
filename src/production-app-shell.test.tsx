@@ -1560,7 +1560,7 @@ describe("Clean production prototype-match shell", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
 
-    expect(await screen.findByText("What should I do with the UK signal today?")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "What should I do with the UK signal today?", exact: true })).toBeInTheDocument();
     expect(generationModes).toEqual([]);
   }, 20000);
 
@@ -1653,7 +1653,7 @@ describe("Clean production prototype-match shell", () => {
       target: { value: "Turn this into a manager conversation" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
-    expect(await screen.findByText("Turn this into a manager conversation")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Turn this into a manager conversation", exact: true })).toBeInTheDocument();
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Desk HQ" }));
     fireEvent.click(screen.getByRole("button", { name: "Open focus mission Push Jam" }));
@@ -2256,7 +2256,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
-    expect(await screen.findByText("We have $5,000. What should we do this month?")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "We have $5,000. What should we do this month?", exact: true })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Send Manager message" })).toBeDisabled();
     expect(screen.queryByText("Manager is reading the workspace packet.")).not.toBeInTheDocument();
     expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
@@ -3168,8 +3168,42 @@ describe("Clean production prototype-match shell", () => {
     const receipt = screen.getByTestId("song-workspace-artifact");
     expect(receipt).toHaveTextContent("Song Workspace ready");
     expect(receipt).toHaveTextContent("Files, rights, and release planning are connected here.");
+    expect(screen.getByRole("heading", { name: "After Hours — release planning", exact: true })).toBeInTheDocument();
+    expect(within(receipt).getByRole("button", { name: "Open music item: After Hours" })).toHaveTextContent("Add files");
     fireEvent.click(within(receipt).getByRole("button", { name: "Open music item: After Hours" }));
-    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours");
+    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours", "files");
+  });
+
+  it("opens a chat-created song directly on its requested Files destination", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const song: MusicObjectViewModel = {
+      id: "song-chat-release",
+      kind: "song",
+      title: "After Hours",
+      lifecycle: "mixing",
+      lifecycleStage: "mixing",
+      blocker: "Add the current working audio",
+      sourceKind: "manual",
+      sourceLimit: "Created from Manager chat.",
+      fileAssets: [{ group: "Audio", label: "Working audio", status: "Missing", action: "Upload working audio", assetType: "rough_mix", canUpload: true }],
+    };
+
+    render(
+      <MusicWorkspace
+        music={[song]}
+        missions={[]}
+        targetMusicObjectId={song.id}
+        targetSongRoomTab="files"
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    expect(await screen.findByText("File manifest")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "files" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("shows Manager-created missions on the Missions page without a page reload", async () => {
@@ -3282,7 +3316,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(askBox, { target: { value: "Create the mission from this chat." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
-    expect(await screen.findByRole("heading", { name: "Manager-created mission." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager-created mission", exact: true })).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Missions" }));
 
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
