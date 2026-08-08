@@ -1187,7 +1187,16 @@ function CleanProductionWorkspace({
         setMusic((items) => applyManagerConversationLink(items, effectiveMusicSubject, mergedConversation.id));
       }
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
-      if (conversationHasMissionWork(conversation)) {
+      const createdWork = conversationWorkItems(conversation);
+      const workspaceMusicCreated = createdWork.some((work) => work.type === "music_item");
+      if (workspaceMusicCreated) {
+        await refreshFromManagerHint({
+          music: true,
+          missions: true,
+          missionIds: createdWork.filter((work) => work.type === "mission").flatMap((work) => work.id ? [work.id] : []),
+          taskIds: createdWork.filter((work) => work.type === "task").flatMap((work) => work.id ? [work.id] : []),
+        });
+      } else if (conversationHasMissionWork(conversation)) {
         const nextMissions = await reloadMissionList();
         setMissions(nextMissions);
         setSelectedMissionId(selectCreatedMissionId(conversation, nextMissions));
@@ -1220,6 +1229,17 @@ function CleanProductionWorkspace({
       if (context.musicSubject) {
         setMusic((items) => applyManagerConversationLink(items, context.musicSubject!, nextConversation.id));
       }
+      return;
+    }
+
+    if (event.type === "conversation.workspace_ready") {
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        topic: event.topic || conversation.topic,
+        musicSubject: event.musicSubject,
+        createdWork: mergeCreatedWorkItems(conversation.createdWork, event.createdWork),
+      }));
+      void refreshFromManagerHint(event.refresh);
       return;
     }
 

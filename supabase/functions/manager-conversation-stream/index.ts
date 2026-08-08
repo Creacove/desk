@@ -119,7 +119,7 @@ Deno.serve(async (request) => {
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "running" });
 
         const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
-        const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(
+        const { output, usage, responseId, toolTrace, toolCreatedWork } = await callOpenAIManagerConversation(
           db,
           input,
           buildManagerConversationModelContext(input, packet, conversationId, previousResponseId),
@@ -138,6 +138,20 @@ Deno.serve(async (request) => {
             });
           },
         );
+        const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+        const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
+        if (toolCreatedWork.length) output.missionGraphDecisions = [];
+        const preserveWorkspaceTopic = toolCreatedWork.some((work) => work.type === "music_item");
+        if (preserveWorkspaceTopic && finalMusicSubject) {
+          emit({
+            type: "conversation.workspace_ready",
+            conversationId,
+            topic: releasePlanningTopic(finalMusicSubject),
+            musicSubject: finalMusicSubject,
+            createdWork: toolCreatedWork.map(normalizeCreatedWorkItem),
+            refresh: refreshHintForCreatedWorkItems(toolCreatedWork),
+          });
+        }
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "completed" });
         emit({ type: "tool.started", runId, tool: "manager-router", label: "Preparing Manager answer", status: "running" });
 
@@ -152,10 +166,12 @@ Deno.serve(async (request) => {
           runId,
           sourceType: "manager_conversation",
           trigger: "manager_conversation",
-          scopedMissionId,
+          scopedMissionId: finalScopedMissionId,
         }, output);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-        output.createdWork = taskDraftWork ? [...persistedWork, taskDraftWork] : persistedWork;
+        output.createdWork = taskDraftWork
+          ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
+          : [...toolCreatedWork, ...persistedWork];
 
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
@@ -184,7 +200,7 @@ Deno.serve(async (request) => {
           emit({ type: "artifact.changed", runId, artifact: normalizeCreatedWorkItem(work), refresh: refreshHintForCreatedWork(work) });
         }
 
-        await updateConversation(db, input, conversationId, output);
+        await updateConversation(db, input, conversationId, output, preserveWorkspaceTopic);
         await completeManagerRun(db, runId, output);
         await completeUsageEvent(db, usageId, usage);
         const messages = await selectConversationMessages(db, input, conversationId);
@@ -193,7 +209,8 @@ Deno.serve(async (request) => {
           type: "conversation.completed",
           conversation: toConversationViewModel({
             id: conversationId,
-            topic: input.conversationId ? undefined : output.topic,
+            topic: preserveWorkspaceTopic ? releasePlanningTopic(finalMusicSubject) : input.conversationId ? undefined : output.topic,
+            musicSubject: finalMusicSubject ?? undefined,
             status: output.status || "Manager responded",
             summary: output.summary,
             last_update_at: new Date().toISOString(),
@@ -663,7 +680,8 @@ async function callOpenAIManagerConversation(
   onToolEvent: (event: ManagerAgentToolTrace) => void,
 ) {
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
-  const toolInput = { ...input, conversationId, runId: runId ?? undefined };
+  const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
+  const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -686,6 +704,7 @@ async function callOpenAIManagerConversation(
     usage: result.usage,
     responseId: result.responseId,
     toolTrace: result.toolTrace,
+    toolCreatedWork,
   };
 }
 
@@ -928,13 +947,19 @@ async function persistDecisionPackageOutput(db: any, input: ManagerConversationI
   return data as { id: string };
 }
 
-async function updateConversation(db: any, input: ManagerConversationInput, conversationId: string, output: ManagerConversationOutput) {
+async function updateConversation(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  output: ManagerConversationOutput,
+  preserveWorkspaceTopic = false,
+) {
   const patch: Record<string, unknown> = {
     status: output.status || "Manager responded",
     summary: output.summary,
     last_update_at: new Date().toISOString(),
   };
-  if (!input.conversationId) {
+  if (!input.conversationId && !preserveWorkspaceTopic) {
     patch.topic = output.topic || titleFromBody(input.body);
   }
   const { error } = await db
@@ -1025,6 +1050,7 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
   return {
     id: conversation.id,
     ...(taskContextId ? { taskContextId } : {}),
+    ...(conversation.musicSubject ? { musicSubject: conversation.musicSubject } : {}),
     topic: conversation.topic || titleFromBody(normalizedMessages.find((message) => message.speaker === "artist")?.body || ""),
     status: conversation.status,
     summary: conversation.summary || "Manager conversation.",
@@ -1033,6 +1059,11 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
     messages: normalizedMessages,
     createdWork: normalizedMessages.flatMap((message) => message.createdWork ?? []),
   };
+}
+
+function releasePlanningTopic(musicSubject: Record<string, unknown> | null) {
+  const title = typeof musicSubject?.title === "string" ? musicSubject.title.trim() : "";
+  return title ? `${title} — release planning` : "";
 }
 
 function toMessageViewModel(message: any) {
@@ -1106,6 +1137,7 @@ function managerToolLabel(tool: string) {
   if (tool === "web_search") return "Searching the web";
   if (tool === "query_evidence_items") return "Checking evidence";
   if (tool === "query_active_missions") return "Reviewing mission state";
+  if (tool === "ensure_song_release_workspace") return "Creating Song Workspace";
   if (tool === "query_music_catalog") return "Checking catalog";
   if (tool === "query_durable_memory") return "Reading Manager memory";
   if (tool === "query_manager_outputs") return "Reviewing prior decisions";
@@ -1168,6 +1200,7 @@ function refreshHintForCreatedWork(work: ManagerConversationOutput["createdWork"
 function refreshHintForCreatedWorkItems(items: ManagerConversationOutput["createdWork"]) {
   return {
     conversations: false,
+    music: items.some((work) => work.type === "music_item"),
     missions: true,
     missionIds: uniqueStrings(items.flatMap((work) => work.type === "mission" ? [work.id] : work.parentMissionId ? [work.parentMissionId] : [])),
     taskIds: uniqueStrings(items.filter((work) => work.type === "task").map((work) => work.id)),

@@ -93,7 +93,7 @@ Deno.serve(async (request) => {
     usageId = await createUsageEvent(db, input, runId);
 
     const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
-    const { output, usage, responseId, toolTrace } = await callOpenAIManagerConversation(
+    const { output, usage, responseId, toolTrace, toolCreatedWork } = await callOpenAIManagerConversation(
       db,
       input,
       buildManagerConversationModelContext(input, packet, conversationId, previousResponseId),
@@ -102,15 +102,20 @@ Deno.serve(async (request) => {
       conversationId,
       runId,
     );
+    const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+    const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
+    if (toolCreatedWork.length) output.missionGraphDecisions = [];
     const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {
       conversationId,
       runId,
       sourceType: "manager_conversation",
       trigger: "manager_conversation",
-      scopedMissionId,
+      scopedMissionId: finalScopedMissionId,
     }, output);
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-    output.createdWork = taskDraftWork ? [...persistedWork, taskDraftWork] : persistedWork;
+    output.createdWork = taskDraftWork
+      ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
+      : [...toolCreatedWork, ...persistedWork];
     await persistActions(db, input, runId, output);
     await persistMemory(db, input, conversationId, runId, output);
     const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
@@ -134,14 +139,16 @@ Deno.serve(async (request) => {
         toolTraceSummary: safeToolTraceSummary(toolTrace),
       },
     });
-    await updateConversation(db, input, conversationId, output);
+    const preserveWorkspaceTopic = toolCreatedWork.some((work) => work.type === "music_item");
+    await updateConversation(db, input, conversationId, output, preserveWorkspaceTopic);
     await completeManagerRun(db, runId, output);
     await completeUsageEvent(db, usageId, usage);
     const messages = await selectConversationMessages(db, input, conversationId);
 
     return json(toConversationViewModel({
       id: conversationId,
-      topic: input.conversationId ? undefined : output.topic,
+      topic: preserveWorkspaceTopic ? releasePlanningTopic(finalMusicSubject) : input.conversationId ? undefined : output.topic,
+      musicSubject: finalMusicSubject ?? undefined,
       status: output.status || "Manager responded",
       summary: output.summary,
       last_update_at: new Date().toISOString(),
@@ -564,7 +571,8 @@ async function callOpenAIManagerConversation(
   runId: string | null,
 ) {
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
-  const toolInput = { ...input, conversationId, runId: runId ?? undefined };
+  const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
+  const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -586,6 +594,7 @@ async function callOpenAIManagerConversation(
     usage: result.usage,
     responseId: result.responseId,
     toolTrace: result.toolTrace,
+    toolCreatedWork,
   };
 }
 
@@ -831,13 +840,19 @@ async function persistDecisionPackageOutput(db: any, input: ManagerConversationI
   return data as { id: string };
 }
 
-async function updateConversation(db: any, input: ManagerConversationInput, conversationId: string, output: ManagerConversationOutput) {
+async function updateConversation(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  output: ManagerConversationOutput,
+  preserveWorkspaceTopic = false,
+) {
   const patch: Record<string, unknown> = {
     status: output.status || "Manager responded",
     summary: output.summary,
     last_update_at: new Date().toISOString(),
   };
-  if (!input.conversationId) {
+  if (!input.conversationId && !preserveWorkspaceTopic) {
     patch.topic = output.topic || titleFromBody(input.body);
   }
   const { error } = await db
@@ -953,6 +968,7 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
   return {
     id: conversation.id,
     ...(taskContextId ? { taskContextId } : {}),
+    ...(conversation.musicSubject ? { musicSubject: conversation.musicSubject } : {}),
     topic: conversation.topic || titleFromBody(normalizedMessages.find((message) => message.speaker === "artist")?.body || ""),
     status: conversation.status,
     summary: conversation.summary || "Manager conversation.",
@@ -961,6 +977,11 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
     messages: normalizedMessages,
     createdWork: normalizedMessages.flatMap((message) => message.createdWork ?? []),
   };
+}
+
+function releasePlanningTopic(musicSubject: Record<string, unknown> | null) {
+  const title = typeof musicSubject?.title === "string" ? musicSubject.title.trim() : "";
+  return title ? `${title} — release planning` : "";
 }
 
 async function loadPreviousOpenAIResponseId(db: any, input: ManagerConversationInput, conversationId: string) {

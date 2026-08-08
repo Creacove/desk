@@ -117,7 +117,7 @@ const focusedMusicLifecycleProperties = {
   },
 };
 
-const createMusicSongProperties = {
+const ensureSongReleaseWorkspaceProperties = {
   type: "object",
   additionalProperties: false,
   required: ["title", "lifecycleStage"],
@@ -201,10 +201,10 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   },
   {
     type: "function",
-    name: "create_music_song",
-    description: "Create a new manual song record when the user has clearly asked to add a song. Use an internal unreleased stage only, then link it to this Manager conversation for continued work.",
+    name: "ensure_song_release_workspace",
+    description: "Create or safely resume the complete Song Workspace in this Manager conversation after the user has clearly named a new song and its current unreleased stage. This atomically creates the song, its dedicated release mission, initial package task, and all links. Never use it for an already attached song or project.",
     strict: true,
-    parameters: createMusicSongProperties,
+    parameters: ensureSongReleaseWorkspaceProperties,
   },
 ];
 

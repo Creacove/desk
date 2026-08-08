@@ -1,4 +1,6 @@
 import { writeWorkspaceEvent } from "../workspaceEvents.ts";
+import { manualSongWorkspaceCopy } from "../manualSongWorkspace.ts";
+import type { ManagerConversationCreatedWork } from "../openaiManagerConversation.ts";
 
 type ManagerToolInput = {
   accountId: string;
@@ -7,10 +9,12 @@ type ManagerToolInput = {
   conversationId?: string;
   runId?: string;
   musicSubject?: { type: "music_item" | "music_project"; id: string };
+  createdWork?: ManagerConversationCreatedWork[];
 };
 
 type SupabaseLike = {
   from(table: string): any;
+  rpc?(functionName: string, args: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
 };
 
 export async function executeManagerConversationTool(
@@ -29,7 +33,7 @@ export async function executeManagerConversationTool(
   if (name === "read_focused_release_readiness") return readFocusedReleaseReadiness(db, input);
   if (name === "update_focused_music_metadata") return updateFocusedMusicMetadata(db, input, args);
   if (name === "update_focused_music_lifecycle") return updateFocusedMusicLifecycle(db, input, args);
-  if (name === "create_music_song") return createMusicSong(db, input, args);
+  if (name === "ensure_song_release_workspace") return ensureSongReleaseWorkspace(db, input, args);
   throw new Error(`Unsupported Manager tool: ${name}`);
 }
 
@@ -350,47 +354,78 @@ async function updateFocusedMusicLifecycle(db: SupabaseLike, input: ManagerToolI
   return { status: "updated", subjectId: subject.id, lifecycleStage };
 }
 
-async function createMusicSong(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+async function ensureSongReleaseWorkspace(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
   const title = requiredText(args.title, "Song title", 180);
   const lifecycleStage = requiredLifecycleStage(args.lifecycleStage);
-  const { data: song, error } = await db.from("music_items")
-    .insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      title,
-      item_type: "song",
-      lifecycle_stage: lifecycleStage,
-      source_kind: "manual",
-      source_limit: "Manager-created record. Confirm files, credits, identifiers, rights, and release details before operational use.",
-      created_by_type: "manager",
-      created_from_run_id: input.runId ?? null,
-    })
-    .select("id,title,lifecycle_stage")
-    .single();
-  if (error) throw error;
-  if (!song?.id) throw new Error("Manager song creation returned no record.");
-  if (input.conversationId) {
-    const { error: linkError } = await db.from("artifact_links").insert({
-      account_id: input.accountId,
-      artist_workspace_id: input.artistWorkspaceId,
-      artist_id: input.artistId,
-      source_type: "conversation",
-      source_id: input.conversationId,
-      target_type: "music_item",
-      target_id: song.id,
-      relationship: "references",
-      created_from_run_id: input.runId ?? null,
-    });
-    if (linkError) throw linkError;
-  }
-  await writeMusicManagerEvent(db, input, {
-    eventType: "music_item_created",
-    subject: { type: "music_item", id: song.id },
-    summary: `Manager created song ${song.title}.`,
-    payload: { lifecycleStage, title: song.title },
+  if (!input.conversationId) throw new Error("A release workspace can only be created from a Manager conversation.");
+  if (!input.runId) throw new Error("Manager run context is required to create a release workspace.");
+  if (!db.rpc) throw new Error("Manager release workspace command is unavailable.");
+
+  const copy = manualSongWorkspaceCopy({ title, lifecycleStage });
+  const { data, error } = await db.rpc("create_conversational_song_workspace_v2", {
+    p_account_id: input.accountId,
+    p_artist_workspace_id: input.artistWorkspaceId,
+    p_artist_id: input.artistId,
+    p_request_id: input.runId,
+    p_title: title,
+    p_item_type: "song",
+    p_lifecycle_stage: lifecycleStage,
+    p_mission_title: copy.missionTitle,
+    p_mission_objective: copy.missionObjective,
+    p_mission_summary: copy.missionSummary,
+    p_checkpoint_title: copy.checkpointTitle,
+    p_checkpoint_question: copy.checkpointQuestion,
+    p_checkpoint_decision_rule: copy.checkpointDecisionRule,
+    p_first_task_title: copy.firstTaskTitle,
+    p_first_task_purpose: copy.firstTaskPurpose,
+    p_opening_message: copy.openingMessage,
+    p_conversation_id: input.conversationId,
   });
-  return { status: "created", subject: { type: "music_item", id: song.id, title: song.title, lifecycleStage: song.lifecycle_stage } };
+  if (error) throw error;
+  const workspace = record(data);
+  const songId = stringArg(workspace.songId);
+  const missionId = stringArg(workspace.missionId);
+  const taskId = stringArg(workspace.taskId);
+  const songTitle = stringArg(workspace.songTitle) || title;
+  const committedLifecycleStage = stringArg(workspace.lifecycleStage) || lifecycleStage;
+  if (!songId || !missionId || !taskId) throw new Error("Release workspace creation returned an incomplete workspace.");
+
+  input.musicSubject = { type: "music_item", id: songId };
+  const receipts: ManagerConversationCreatedWork[] = [
+    {
+      type: "music_item",
+      id: songId,
+      title: songTitle,
+      body: "Song Workspace created. Files, Details, Rights, and release planning now share this conversation.",
+      status: "created",
+    },
+    {
+      type: "mission",
+      id: missionId,
+      title: copy.missionTitle,
+      body: copy.missionSummary,
+      status: "created",
+    },
+    {
+      type: "task",
+      id: taskId,
+      parentMissionId: missionId,
+      title: copy.firstTaskTitle,
+      body: copy.firstTaskPurpose,
+      status: "created",
+    },
+  ];
+  for (const receipt of receipts) {
+    if (!input.createdWork?.some((work) => work.type === receipt.type && work.id === receipt.id)) {
+      input.createdWork?.push(receipt);
+    }
+  }
+
+  return {
+    status: "ready",
+    subject: { type: "music_item", id: songId, title: songTitle, lifecycleStage: committedLifecycleStage },
+    workspace: { songId, missionId, taskId, conversationId: input.conversationId },
+  };
 }
 
 function requireFocusedMusicSubject(input: ManagerToolInput) {

@@ -3123,6 +3123,55 @@ describe("Clean production prototype-match shell", () => {
     expect(onOpenMusicSubject).toHaveBeenCalledWith(conversation.musicSubject);
   });
 
+  it("renders the committed Song Workspace receipt in the Manager conversation", () => {
+    const onOpenCreatedWork = vi.fn();
+    const conversation: ConversationViewModel = {
+      id: "conv-song-workspace",
+      topic: "After Hours — release planning",
+      status: "Manager responded",
+      summary: "The song workspace is ready.",
+      prompt: "I want to release After Hours.",
+      musicSubject: { type: "music_item", id: "song-after-hours", title: "After Hours", lifecycleStage: "mixing" },
+      messages: [
+        { id: "artist-1", speaker: "artist", label: "You", body: "I want to release After Hours." },
+        {
+          id: "manager-1",
+          speaker: "manager",
+          label: "Manager",
+          body: "Your song workspace is ready. Start in Files with the current working audio.",
+          createdWork: [
+            {
+              type: "music_item",
+              id: "song-after-hours",
+              title: "After Hours",
+              body: "Song Workspace created. Files, Details, Rights, and release planning now share this conversation.",
+              status: "created",
+            },
+          ],
+        },
+      ],
+      createdWork: [],
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        onBack={() => undefined}
+        onOpenCreatedWork={onOpenCreatedWork}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    const receipt = screen.getByTestId("song-workspace-artifact");
+    expect(receipt).toHaveTextContent("Song Workspace ready");
+    expect(receipt).toHaveTextContent("Files, rights, and release planning are connected here.");
+    fireEvent.click(within(receipt).getByRole("button", { name: "Open music item: After Hours" }));
+    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours");
+  });
+
   it("shows Manager-created missions on the Missions page without a page reload", async () => {
     const repositories = repositoriesFor("Nova Vale");
     let missionRows = [] as Awaited<ReturnType<CleanProductionRepositories["missions"]["loadMissions"]>>;

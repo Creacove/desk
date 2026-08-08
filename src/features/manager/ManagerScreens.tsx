@@ -1378,14 +1378,21 @@ function MusicItemArtifactCard({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string) => void | Promise<void>;
 }) {
   const statusLabel = item.status ? item.status.replace(/_/g, " ") : "created";
+  const isSongWorkspace = item.body.includes("Song Workspace created.");
   return (
-    <div className="flex items-center gap-3 rounded-[14px] border border-foreground/10 bg-background px-4 py-3.5 shadow-sm">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-foreground/[0.06] text-foreground/70">
+    <div
+      data-testid={isSongWorkspace ? "song-workspace-artifact" : undefined}
+      className="flex items-center gap-3 rounded-[14px] border border-foreground/10 bg-background px-4 py-3.5 shadow-sm transition-[transform,box-shadow] duration-300 hover:-translate-y-px hover:shadow-md"
+    >
+      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-brand-accent/10 text-brand-accent">
         <Music2 className="h-4 w-4" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
-        <p className="font-ui text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">Music item {statusLabel}</p>
+        <p className="font-ui text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">
+          {isSongWorkspace ? "Song Workspace ready" : `Music item ${statusLabel}`}
+        </p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+        {isSongWorkspace ? <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/75">Files, rights, and release planning are connected here.</p> : null}
       </div>
       <button
         type="button"
@@ -1393,7 +1400,7 @@ function MusicItemArtifactCard({
         aria-label={`Open music item: ${item.title}`}
         className="flex shrink-0 items-center gap-1.5 rounded-lg bg-foreground/[0.045] px-3 py-1.5 text-[11px] font-semibold text-foreground/75 transition-colors hover:bg-foreground/[0.07] hover:text-foreground"
       >
-        Open
+        {isSongWorkspace ? "Open song" : "Open"}
         <ChevronRight className="h-3 w-3" aria-hidden="true" />
       </button>
     </div>

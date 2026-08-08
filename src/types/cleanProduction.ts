@@ -502,6 +502,14 @@ export type ManagerConversationStreamEvent =
       run?: Partial<ManagerRunViewModel> & { id: string };
     }
   | {
+      type: "conversation.workspace_ready";
+      conversationId: string;
+      topic: string;
+      musicSubject: MusicConversationSubjectViewModel;
+      createdWork: ConversationViewModel["createdWork"];
+      refresh?: ManagerConversationRefreshHint;
+    }
+  | {
       type: "run.step";
       runId?: string;
       stepId?: string;
