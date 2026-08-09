@@ -48,7 +48,7 @@ export function buildShareSelection(purpose: SharePurpose, inventory: ShareInven
   }
 
   const assets = purpose === "epk_press"
-    ? inventory.assets.filter((asset) => asset.group === "Audio" || asset.group === "Artwork")
+    ? [currentAudio, cover, ...inventory.assets.filter((asset) => asset.group === "Artwork" && asset.id !== cover?.id && asset.assetType !== "cover_art")].filter(isDefined)
     : [currentAudio, cover].filter(isDefined);
   const documentTypes = purpose === "epk_press" ? PRESS_DOCUMENT_TYPES : DELIVERY_DOCUMENT_TYPES;
   return {

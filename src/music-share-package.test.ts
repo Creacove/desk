@@ -10,6 +10,7 @@ const inventory: ShareInventory = {
   assets: [
     { id: "master", group: "Audio", label: "Final master", assetType: "final_master" },
     { id: "cover", group: "Artwork", label: "Cover artwork", assetType: "cover_art" },
+    { id: "old-cover", group: "Artwork", label: "Old cover", assetType: "cover_art" },
     { id: "press-photo", group: "Artwork", label: "Press portrait", assetType: "press_photo" },
   ],
   documents: [
