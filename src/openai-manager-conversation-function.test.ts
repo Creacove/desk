@@ -207,6 +207,16 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("Do not recite public catalog metrics");
     expect(instructions).toContain("Never ask the artist for screenshots, exports, typed analytics");
     expect(instructions).toContain("Missing private-platform metrics do not block a useful answer");
+    expect(instructions).toContain("provide a useful tool-backed recommendation before requesting private data");
+  });
+
+  it("leads an attached unreleased song one durable release decision at a time", () => {
+    const instructions = buildManagerConversationInstructions();
+    expect(instructions).toContain("Attached unreleased-song loop");
+    expect(instructions).toContain("ask exactly one human-only question");
+    expect(instructions).toContain("After any successful focused-song write, call read_focused_release_readiness again before answering");
+    expect(instructions).toContain("existingMissionId must equal the attached linked mission ID");
+    expect(instructions).toContain("Never narrate the full release-readiness checklist");
   });
 
   it("prompts Manager chat as a synthesis router, not a generic assistant or evidence-read section", () => {
