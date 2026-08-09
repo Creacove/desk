@@ -3380,6 +3380,16 @@ describe("production Supabase services", () => {
       music_identifiers: [],
       uploaded_files: [],
       operating_events: [],
+      artifact_links: [{
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        source_type: "mission",
+        source_id: "mission-release-1",
+        target_type: "music_item",
+        target_id: "song-1",
+        relationship: "references",
+      }],
     };
     const client = createMutableSupabaseClient(tables, {
       storage: {
@@ -3442,6 +3452,11 @@ describe("production Supabase services", () => {
       "music_asset_upload_intent_created",
       "music_asset_uploaded",
     ]);
+    expect(tables.operating_events.filter((event) => String(event.event_type).startsWith("music_asset_")))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({ event_type: "music_asset_upload_intent_created", mission_id: "mission-release-1" }),
+        expect.objectContaining({ event_type: "music_asset_uploaded", mission_id: "mission-release-1" }),
+      ]));
   });
 
   it("creates a short-lived signed URL for an asset owned by the requested song", async () => {

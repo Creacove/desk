@@ -180,6 +180,18 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(migration).toMatch(/grant select on public\.music_credits to service_role/i);
   });
 
+  it("refreshes attached-song assets, analysis, and activity for every Manager turn without storage URLs", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain('.from("music_assets")');
+      expect(source).toContain('.from("evidence_items")');
+      expect(source).toContain('.from("operating_events")');
+      expect(source).toContain('select("id,asset_type,title,status,created_at")');
+      expect(source).toContain("recentActivity:");
+      expect(source).not.toContain("storage_ref");
+      expect(source).not.toContain("signedUrl");
+    }
+  });
+
   it("prompts Manager chat as a synthesis router, not a generic assistant or evidence-read section", () => {
     const instructions = buildManagerConversationInstructions();
 
