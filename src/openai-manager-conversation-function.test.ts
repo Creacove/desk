@@ -178,6 +178,8 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("createdWork");
     expect(instructions).toContain("workMode");
     expect(instructions).toContain("read_focused_release_readiness");
+    expect(instructions).toContain("uploaded or changed an attached song");
+    expect(instructions).toContain("read_focused_music_subject");
     expect(instructions).toContain("ISO-8601 timestamp derived from a confirmed release date");
     expect(instructions).toContain("Never reopen pre-release gates for released/catalog music");
     expect(instructions).toContain("Never invent a contact name, email address, outlet, playlist, or result");

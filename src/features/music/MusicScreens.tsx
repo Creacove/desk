@@ -12,6 +12,7 @@ import type {
   ManualSongWorkspaceResult,
   MusicObjectViewModel,
   MusicRepository,
+  MusicUploadProgress,
   MusicShareLinkHistoryViewModel,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
@@ -39,6 +40,7 @@ export function MusicWorkspace({
   missions,
   targetMusicObjectId,
   targetSongRoomTab = "overview",
+  targetRequestKey = 0,
   musicRepository,
   onRefreshObject,
   onMusicChanged,
@@ -53,6 +55,7 @@ export function MusicWorkspace({
   missions: MissionViewModel[];
   targetMusicObjectId?: string | null;
   targetSongRoomTab?: SongRoomTab;
+  targetRequestKey?: number;
   musicRepository: MusicRepository;
   onRefreshObject: (
     subjectId: string,
@@ -83,12 +86,15 @@ export function MusicWorkspace({
   const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<MusicUploadProgress | null>(null);
   const [songWorkspaceCreation, setSongWorkspaceCreation] = useState<SongWorkspaceCreation | null>(null);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
   const [createdMusicById, setCreatedMusicById] = useState<Record<string, MusicObjectViewModel>>({});
   const managerReadHydrationChecks = useRef(new Set<string>());
+  const handledTargetRequest = useRef("");
+  const handledListRequest = useRef(listRequestKey);
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget || shareTarget);
 
   const currentMusic = useMemo(() => {
@@ -130,11 +136,14 @@ export function MusicWorkspace({
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
+    const requestKey = `${targetMusicObjectId}:${targetSongRoomTab}:${targetRequestKey}`;
+    if (handledTargetRequest.current === requestKey) return;
     const target = getMusicObject(targetMusicObjectId);
     if (!target) return;
+    handledTargetRequest.current = requestKey;
     openObject(target, target.kind === "project" ? "projects" : "songs", targetSongRoomTab);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetMusicObjectId, targetSongRoomTab, music]);
+  }, [targetMusicObjectId, targetSongRoomTab, targetRequestKey, music]);
 
   useEffect(() => {
     onDetailModeChange?.(mode !== "library");
@@ -142,7 +151,9 @@ export function MusicWorkspace({
   }, [mode, onDetailModeChange]);
 
   useEffect(() => {
-    if (listRequestKey > 0) setMode("library");
+    if (handledListRequest.current === listRequestKey) return;
+    handledListRequest.current = listRequestKey;
+    setMode("library");
   }, [listRequestKey]);
 
   useEffect(() => {
@@ -251,8 +262,10 @@ export function MusicWorkspace({
       setActionPending(true);
       await action();
       await onMusicChanged();
+      return true;
     } catch (error) {
       setActionError(readErrorMessage(error, "Music update failed."));
+      return false;
     } finally {
       setActionPending(false);
     }
@@ -382,30 +395,35 @@ export function MusicWorkspace({
 
   async function uploadMusicAsset(file: File) {
     if (!uploadTarget) return;
-    await runMusicAction(async () => {
+    setUploadProgress({ phase: "preparing", percent: 0, bytesUploaded: 0, bytesTotal: file.size });
+    const succeeded = await runMusicAction(async () => {
       await musicRepository.uploadAsset(uploadTarget.song.id, {
         assetType: uploadTarget.asset.assetType ?? "other",
         title: uploadTarget.asset.label,
         file,
+        onProgress: setUploadProgress,
       });
-      setUploadTarget(null);
     });
+    if (succeeded) {
+      setUploadTarget(null);
+      setUploadProgress(null);
+    }
   }
 
   async function saveSplitContributor(songId: string, input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) {
-    await runMusicAction(async () => {
+    return runMusicAction(async () => {
       await musicRepository.saveSplitContributor(songId, input);
     });
   }
 
   async function removeSplitContributor(songId: string, contributorId: string) {
-    await runMusicAction(async () => {
+    return runMusicAction(async () => {
       await musicRepository.removeSplitContributor(songId, contributorId);
     });
   }
 
   async function sendSplitConfirmationLinks(songId: string) {
-    await runMusicAction(async () => {
+    return runMusicAction(async () => {
       await musicRepository.sendSplitConfirmationLinks(songId);
     });
   }
@@ -492,6 +510,7 @@ export function MusicWorkspace({
           onTabChange={setSongRoomTab}
           onUploadAsset={(asset) => {
             setActionError(null);
+            setUploadProgress(null);
             setUploadTarget({ song: selected, asset });
           }}
           onShareFiles={musicRepository.createShareLink ? () => setShareTarget(selected) : undefined}
@@ -507,6 +526,7 @@ export function MusicWorkspace({
           onBack={backToLibrary}
           onOpenMission={onOpenMission}
           error={actionError}
+          actionPending={actionPending}
         />
       ) : null}
 
@@ -568,8 +588,13 @@ export function MusicWorkspace({
         <MusicUploadDialog
           asset={uploadTarget.asset}
           pending={actionPending}
+          progress={uploadProgress}
           error={actionError}
-          onCancel={() => setUploadTarget(null)}
+          onCancel={() => {
+            if (actionPending) return;
+            setUploadTarget(null);
+            setUploadProgress(null);
+          }}
           onSubmit={uploadMusicAsset}
         />
       ) : null}
@@ -810,6 +835,7 @@ function MusicSongDetail({
   onBack,
   onOpenMission,
   error,
+  actionPending,
 }: {
   song: MusicObjectViewModel;
   linkedMissions: MissionViewModel[];
@@ -819,9 +845,9 @@ function MusicSongDetail({
   onShareFiles?: () => void;
   onEditDetail: (groupTitle: string, field: MusicDetailField) => void;
   onStageChange: (stage: string) => void;
-  onSaveSplitContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => void;
-  onRemoveSplitContributor: (contributorId: string) => void;
-  onSendSplitConfirmationLinks: () => void;
+  onSaveSplitContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => Promise<boolean>;
+  onRemoveSplitContributor: (contributorId: string) => Promise<boolean>;
+  onSendSplitConfirmationLinks: () => Promise<boolean>;
   onGenerateBrief: () => void;
   onContinueWithManager?: () => void;
   briefPending: boolean;
@@ -829,6 +855,7 @@ function MusicSongDetail({
   onBack: () => void;
   onOpenMission: (missionId: string) => void;
   error?: string | null;
+  actionPending: boolean;
 }) {
   const fileAssets = song.fileAssets ?? [];
   const audioFiles = fileAssets.filter((asset) => asset.group === "Audio");
@@ -1094,6 +1121,7 @@ function MusicSongDetail({
           onSaveContributor={onSaveSplitContributor}
           onRemoveContributor={onRemoveSplitContributor}
           onSendLinks={onSendSplitConfirmationLinks}
+          pending={actionPending}
         />
       ) : null}
     </section>
@@ -1528,11 +1556,13 @@ function MusicRightsWorkspace({
   onSaveContributor,
   onRemoveContributor,
   onSendLinks,
+  pending,
 }: {
   song: MusicObjectViewModel;
-  onSaveContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => void;
-  onRemoveContributor: (contributorId: string) => void;
-  onSendLinks: () => void;
+  onSaveContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => Promise<boolean>;
+  onRemoveContributor: (contributorId: string) => Promise<boolean>;
+  onSendLinks: () => Promise<boolean>;
+  pending: boolean;
 }) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("Artist / writer");
@@ -1546,8 +1576,9 @@ function MusicRightsWorkspace({
   const totalMaster = sumContributorShares(contributors.map((contributor) => contributor.masterShare));
   const confirmedCount = contributors.filter((contributor) => ["cleared", "confirmed"].includes(contributor.approval.toLowerCase())).length;
   const pendingCount = contributors.filter((contributor) => contributor.approval.toLowerCase() === "pending").length;
-  const locked = ["cleared", "revoked", "superseded"].includes(normalizedStatus);
-  const canSendLinks = !locked && contributors.length > 0 && contributors.every((contributor) => contributor.email?.trim()) && totalPublishing === 100 && totalMaster === 100;
+  const locked = ["pending confirmation", "pending_confirmation", "partially confirmed", "partially_confirmed", "cleared", "revoked", "superseded"].includes(normalizedStatus);
+  const allocationComplete = totalPublishing === 100 && totalMaster === 100;
+  const canSendLinks = !locked && !pending && contributors.length > 0 && contributors.every((contributor) => contributor.email?.trim()) && allocationComplete;
   const statusCopy =
     normalizedStatus === "cleared"
       ? "Every invited collaborator has confirmed these split details."
@@ -1555,20 +1586,22 @@ function MusicRightsWorkspace({
         ? `${pendingCount} collaborator${pendingCount === 1 ? "" : "s"} still need to confirm.`
         : "Balance shares and collect collaborator emails before sending confirmation links.";
 
-  function handleAddContributor(event: FormEvent<HTMLFormElement>) {
+  async function handleAddContributor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const nextName = name.trim();
     const nextEmail = email.trim();
     const nextPublishing = Number.parseFloat(publishingShare);
     const nextMaster = Number.parseFloat(masterShare);
     if (!nextName || !nextEmail || !Number.isFinite(nextPublishing) || !Number.isFinite(nextMaster)) return;
-    onSaveContributor({
+    if (nextPublishing < 0 || nextMaster < 0 || nextPublishing > 100 - totalPublishing || nextMaster > 100 - totalMaster) return;
+    const succeeded = await onSaveContributor({
       name: nextName,
       role,
       email: nextEmail,
       publishingShare: nextPublishing,
       masterShare: nextMaster,
     });
+    if (!succeeded) return;
     setName("");
     setRole("Artist / writer");
     setEmail("");
@@ -1586,17 +1619,13 @@ function MusicRightsWorkspace({
             <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Splits</h4>
             <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{statusCopy}</p>
           </div>
-          <div className="flex max-w-full flex-wrap items-center justify-end gap-2">
+          <div className="flex max-w-full flex-col items-end gap-3">
             <MusicStatusPill value={status} />
-            <span className="rounded-full border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-bold text-foreground/78">
-              Confirmed {confirmedCount}/{contributors.length || 0}
-            </span>
-            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", totalPublishing === 100 ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
-              Publishing / composition {totalPublishing}% / 100%
-            </span>
-            <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-bold", totalMaster === 100 ? "bg-success/10 text-success" : "bg-warning/10 text-warning")}>
-              Master recording {totalMaster}% / 100%
-            </span>
+            <div className="grid min-w-[240px] grid-cols-2 gap-4 rounded-[14px] border border-foreground/8 bg-background/74 px-3.5 py-3">
+              <SplitAllocationMeter label="publishing" value={totalPublishing} />
+              <SplitAllocationMeter label="master" value={totalMaster} />
+            </div>
+            {contributors.length ? <span className="text-[11px] font-semibold text-muted-foreground">{confirmedCount} of {contributors.length} confirmed</span> : null}
           </div>
         </div>
 
@@ -1656,7 +1685,8 @@ function MusicRightsWorkspace({
                     {!locked && contributor.id ? (
                       <button
                         type="button"
-                        onClick={() => onRemoveContributor(contributor.id!)}
+                        onClick={() => void onRemoveContributor(contributor.id!)}
+                        disabled={pending}
                         aria-label={`Remove ${contributor.name}`}
                         title={`Remove ${contributor.name}`}
                         className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
@@ -1673,7 +1703,7 @@ function MusicRightsWorkspace({
           </div>
         ) : null}
 
-        {!locked ? (
+        {!locked && !allocationComplete ? (
           <form onSubmit={handleAddContributor} className="mt-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] p-4">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/86">Add collaborator</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-[1.4fr_1.15fr_1.45fr_0.85fr_0.85fr] items-end">
@@ -1693,38 +1723,41 @@ function MusicRightsWorkspace({
               </label>
               <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
                 Publishing / composition %
-                <input type="number" min="0" max="100" step="0.01" value={publishingShare} onChange={(event) => setPublishingShare(event.target.value)} required className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground transition-colors focus:border-foreground focus:outline-none" />
+                <input type="number" min="0" max={Math.max(0, 100 - totalPublishing)} step="0.01" value={publishingShare} onChange={(event) => setPublishingShare(event.target.value)} required className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground transition-colors focus:border-foreground focus:outline-none" />
               </label>
               <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
                 Master recording %
-                <input type="number" min="0" max="100" step="0.01" value={masterShare} onChange={(event) => setMasterShare(event.target.value)} required className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground transition-colors focus:border-foreground focus:outline-none" />
+                <input type="number" min="0" max={Math.max(0, 100 - totalMaster)} step="0.01" value={masterShare} onChange={(event) => setMasterShare(event.target.value)} required className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground transition-colors focus:border-foreground focus:outline-none" />
               </label>
             </div>
-            <button type="submit" className="mt-4 inline-flex items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90">
+            <button type="submit" disabled={pending} className="mt-4 inline-flex items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:opacity-40">
               <UsersRound className="h-4 w-4" />
               <span>Add collaborator</span>
             </button>
           </form>
         ) : null}
 
-        {!locked ? (
-          <div className="mt-4 flex justify-end border-t border-foreground/8 pt-4">
+        {!locked && allocationComplete ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-foreground/8 pt-4">
+            <p className="text-[12px] font-semibold text-muted-foreground">Allocation complete. Remove a collaborator to make changes.</p>
             <button
               type="button"
               disabled={!canSendLinks}
-              onClick={onSendLinks}
+              onClick={() => void onSendLinks()}
               className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[12px] bg-foreground px-5 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:bg-foreground/10 disabled:text-muted-foreground"
             >
               <span>Send split confirmation links</span>
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>
+        ) : !locked && contributors.length ? (
+          <p className="mt-4 border-t border-foreground/8 pt-4 text-[12px] font-semibold text-muted-foreground">Finish both allocations at 100% to send confirmation links.</p>
         ) : null}
       </div>
 
       {song.splits?.approvalLog?.length ? (
-        <div className="surface-elevated rounded-[18px] p-5 shadow-sm">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Approval log</p>
+        <details className="surface-elevated rounded-[18px] p-5 shadow-sm">
+          <summary className="cursor-pointer font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Approval log</summary>
           <div className="mt-3 space-y-2">
             {song.splits.approvalLog.map((entry, index) => (
               <div key={`${entry}-${index}`} className="flex items-start gap-2.5 rounded-[12px] border border-foreground/6 bg-background/68 px-3.5 py-2.5 text-[12.5px] font-bold leading-relaxed text-foreground/85">
@@ -1733,9 +1766,23 @@ function MusicRightsWorkspace({
               </div>
             ))}
           </div>
-        </div>
+        </details>
       ) : null}
     </div>
+  );
+}
+
+function SplitAllocationMeter({ label, value }: { label: string; value: number }) {
+  const boundedValue = Math.min(100, Math.max(0, value));
+  return (
+    <span className="min-w-0">
+      <span className="flex items-baseline justify-between gap-2 text-[11px] font-bold text-foreground">
+        <span>{value}% {label}</span>
+      </span>
+      <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-foreground/8" aria-hidden="true">
+        <span className={cn("block h-full rounded-full transition-[width] duration-300", value === 100 ? "bg-success" : "bg-warning")} style={{ width: `${boundedValue}%` }} />
+      </span>
+    </span>
   );
 }
 
@@ -2571,17 +2618,27 @@ function MusicShareDialog({
 function MusicUploadDialog({
   asset,
   pending,
+  progress,
   error,
   onCancel,
   onSubmit,
 }: {
   asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
   pending: boolean;
+  progress: MusicUploadProgress | null;
   error: string | null;
   onCancel: () => void;
   onSubmit: (file: File) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const percent = Math.round(progress?.percent ?? 0);
+  const progressCopy = progress?.phase === "preparing"
+    ? "Preparing secure upload"
+    : progress?.phase === "finalizing"
+      ? "Saving file to your song"
+      : progress?.phase === "complete"
+        ? "Upload complete"
+        : "Uploading securely";
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
       <form
@@ -2599,13 +2656,13 @@ function MusicUploadDialog({
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Private Music upload</p>
             <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{asset.canReplace ? "Replace" : "Upload"} {asset.label}</h3>
           </div>
-          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
+          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:opacity-30">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-5 py-4">
-        <label className="group grid min-h-[148px] cursor-pointer place-items-center rounded-[18px] border border-dashed border-foreground/18 bg-background px-5 py-6 text-center transition-colors hover:border-foreground/30 hover:bg-foreground/[0.02]">
-          <input aria-label="File" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" />
+        <label className={cn("group grid min-h-[148px] place-items-center rounded-[18px] border border-dashed border-foreground/18 bg-background px-5 py-6 text-center transition-colors", pending ? "cursor-wait opacity-70" : "cursor-pointer hover:border-foreground/30 hover:bg-foreground/[0.02]")}>
+          <input aria-label="File" type="file" disabled={pending} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" />
           <span className="flex flex-col items-center gap-3">
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
               <Upload className="h-5 w-5" />
@@ -2616,15 +2673,37 @@ function MusicUploadDialog({
             </span>
           </span>
         </label>
+        {file && !pending ? <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{formatUploadBytes(file.size)}</p> : null}
+        {pending && progress ? (
+          <div className="mt-4 rounded-[14px] border border-brand-accent/16 bg-brand-accent/[0.035] p-3.5" role="status" aria-live="polite">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-[12px] font-bold text-foreground">{progressCopy}</span>
+              <span className="text-[12px] font-bold tabular-nums text-brand-accent">{percent}%</span>
+            </div>
+            <div role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="mt-3 h-2 overflow-hidden rounded-full bg-foreground/8">
+              <div className="h-full rounded-full bg-brand-accent transition-[width] duration-200" style={{ width: `${percent}%` }} />
+            </div>
+            {progress.bytesTotal ? (
+              <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{formatUploadBytes(progress.bytesUploaded ?? 0)} of {formatUploadBytes(progress.bytesTotal)}</p>
+            ) : null}
+            <p className="mt-1 text-[10px] font-medium text-muted-foreground/75">Keep this window open until the upload finishes.</p>
+          </div>
+        ) : null}
         {error ? <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
-          <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
+          <button type="button" onClick={onCancel} disabled={pending} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground disabled:opacity-35">Cancel</button>
           <button type="submit" disabled={!file || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Uploading" : "Upload"}</button>
         </div>
       </form>
     </div>
   );
+}
+
+function formatUploadBytes(bytes: number) {
+  if (bytes < 1_000_000) return `${Math.max(0, Math.round(bytes / 1_000))} KB`;
+  const megabytes = bytes / 1_000_000;
+  return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)} MB`;
 }
 
 function MusicDetailEditDialog({

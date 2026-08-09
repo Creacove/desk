@@ -715,8 +715,15 @@ export type MusicRepository = {
   revokeShareLink?(shareLinkId: string): Promise<void>;
   uploadAsset(
     musicItemId: string,
-    input: { assetType: string; title: string; file: File },
+    input: { assetType: string; title: string; file: File; onProgress?: (progress: MusicUploadProgress) => void },
   ): Promise<{ group: "Audio" | "Artwork" | "Splits"; label: string; status: string; action: string; assetType?: string }>;
+};
+
+export type MusicUploadProgress = {
+  phase: "preparing" | "uploading" | "finalizing" | "complete";
+  percent: number;
+  bytesUploaded?: number;
+  bytesTotal?: number;
 };
 
 export type ManagerRepository = {

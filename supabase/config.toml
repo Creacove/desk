@@ -388,6 +388,12 @@ verify_jwt = false
 [functions.music-audio-analysis-worker]
 verify_jwt = false
 
+[functions.load-split-confirmation]
+verify_jwt = false
+
+[functions.confirm-split]
+verify_jwt = false
+
 [functions.initialize-song-workspace]
 verify_jwt = true
 

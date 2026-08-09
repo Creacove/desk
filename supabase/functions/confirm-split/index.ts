@@ -41,15 +41,24 @@ Deno.serve(async (request) => {
 
     const now = new Date().toISOString();
     const rejected = input.decision === "rejected";
-    await client.from("music_split_confirmations").update({
+    const { error: confirmationUpdateError } = await client.from("music_split_confirmations").update({
       status: input.decision,
       confirmed_at: rejected ? null : now,
       rejected_at: rejected ? now : null,
       confirmation_text: input.confirmationText?.trim() ?? null,
     }).eq("id", confirmation.id);
-    await client.from("music_split_contributors").update({
+    if (confirmationUpdateError) throw confirmationUpdateError;
+    const { error: contributorUpdateError } = await client.from("music_split_contributors").update({
       approval_status: rejected ? "rejected" : "confirmed",
     }).eq("id", confirmation.music_split_contributor_id);
+    if (contributorUpdateError) throw contributorUpdateError;
+    if (rejected) {
+      const { error: supersedeError } = await client.from("music_split_confirmations")
+        .update({ status: "superseded" })
+        .eq("music_split_id", confirmation.music_split_id)
+        .in("status", ["sent", "opened"]);
+      if (supersedeError) throw supersedeError;
+    }
 
     const { data: contributors, error: contributorsError } = await client
       .from("music_split_contributors")
@@ -69,8 +78,9 @@ Deno.serve(async (request) => {
         ? "A collaborator rejected the proposed split details."
         : "Split details partially confirmed. Waiting for remaining collaborators.";
 
-    await client.from("music_splits").update({ status: nextStatus, summary }).eq("id", confirmation.music_split_id);
-    await client.from("operating_events").insert({
+    const { error: splitUpdateError } = await client.from("music_splits").update({ status: nextStatus, summary }).eq("id", confirmation.music_split_id);
+    if (splitUpdateError) throw splitUpdateError;
+    const { error: decisionEventError } = await client.from("operating_events").insert({
       account_id: confirmation.account_id,
       artist_workspace_id: confirmation.artist_workspace_id,
       artist_id: confirmation.artist_id,
@@ -83,7 +93,8 @@ Deno.serve(async (request) => {
       summary: rejected ? "Collaborator rejected split details." : "Collaborator confirmed split details.",
       payload: { status: nextStatus, contributor_id: confirmation.music_split_contributor_id },
     });
-    await client.from("operating_events").insert({
+    if (decisionEventError) throw decisionEventError;
+    const { error: statusEventError } = await client.from("operating_events").insert({
       account_id: confirmation.account_id,
       artist_workspace_id: confirmation.artist_workspace_id,
       artist_id: confirmation.artist_id,
@@ -96,9 +107,11 @@ Deno.serve(async (request) => {
       summary: `Split status changed to ${nextStatus}.`,
       payload: { status: nextStatus },
     });
+    if (statusEventError) throw statusEventError;
 
     return json({ status: nextStatus });
   } catch (error) {
+    console.error("Split confirmation submission failed", error);
     return json({ error: error instanceof Error ? error.message : "Split confirmation could not be submitted." }, 500);
   }
 });

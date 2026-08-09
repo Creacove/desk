@@ -37,6 +37,10 @@ const oversizedPacket = {
     sourceKind: "manual",
     sourceLimit: "No delivery confirmation yet.",
     metadata: { lyrics: "This should stay bounded." },
+    assets: [{ id: "asset-master", assetType: "final_master", title: "Final master", status: "uploaded" }],
+    rights: { status: "pending_confirmation", publishingTotal: 100, masterTotal: 100 },
+    analysis: [{ metric: "tempo_bpm", value: 102, unit: "bpm", confidence: "medium" }],
+    recentActivity: [{ eventType: "music_asset_uploaded", summary: "Uploaded Final master.", createdAt: "2026-08-09T00:00:00Z" }],
   },
 };
 
@@ -55,6 +59,10 @@ describe("Manager conversation context boundary", () => {
         id: "song-focused",
         title: "Night Bus",
         lifecycleStage: "mastering",
+        assets: [{ id: "asset-master", assetType: "final_master", title: "Final master", status: "uploaded" }],
+        rights: { status: "pending_confirmation", publishingTotal: 100, masterTotal: 100 },
+        analysis: [{ metric: "tempo_bpm", value: 102, unit: "bpm", confidence: "medium" }],
+        recentActivity: [{ eventType: "music_asset_uploaded", summary: "Uploaded Final master.", createdAt: "2026-08-09T00:00:00Z" }],
       },
     });
     expect(serialized).not.toContain("render_json");

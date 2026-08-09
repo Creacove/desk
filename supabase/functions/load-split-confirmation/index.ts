@@ -27,7 +27,10 @@ Deno.serve(async (request) => {
     if (["expired", "revoked", "superseded"].includes(confirmation.status)) return json({ error: "Split confirmation link is no longer active." }, 410);
     if (new Date(confirmation.expires_at).getTime() < Date.now()) return json({ error: "Split confirmation link has expired." }, 410);
 
-    await client.from("music_split_confirmations").update({ status: confirmation.status === "sent" ? "opened" : confirmation.status }).eq("id", confirmation.id);
+    const { error: openedError } = await client.from("music_split_confirmations")
+      .update({ status: confirmation.status === "sent" ? "opened" : confirmation.status })
+      .eq("id", confirmation.id);
+    if (openedError) throw openedError;
 
     const [{ data: split, error: splitError }, { data: contributor, error: contributorError }, { data: contributors, error: contributorsError }] = await Promise.all([
       client.from("music_splits").select("id,music_item_id,music_items(title)").eq("id", confirmation.music_split_id).maybeSingle(),
@@ -55,6 +58,7 @@ Deno.serve(async (request) => {
       })),
     });
   } catch (error) {
+    console.error("Split confirmation load failed", error);
     return json({ error: error instanceof Error ? error.message : "Split confirmation could not be loaded." }, 500);
   }
 });

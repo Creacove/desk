@@ -3427,7 +3427,14 @@ describe("production Supabase services", () => {
       createMutableSupabaseClient(tables, {
         invoke: async (name, options) => {
           functionCalls.push({ name, body: options.body });
-          return { data: { sent: 2 }, error: null };
+          const split = tables.music_splits[0];
+          if (split) {
+            split.status = "pending_confirmation";
+            split.summary = "Split confirmation links sent. Waiting for collaborators to confirm their shares.";
+          }
+          for (const contributor of tables.music_split_contributors) contributor.approval_status = "pending";
+          tables.operating_events.push({ event_type: "music_split_confirmation_sent" });
+          return { data: { status: "sent", sent: 2 }, error: null };
         },
       }),
       workspace,

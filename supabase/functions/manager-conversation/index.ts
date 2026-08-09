@@ -400,6 +400,32 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     if (linkError) throw linkError;
   }
 
+  const assetForeignKey = musicSubject.type === "music_item" ? "music_item_id" : "music_project_id";
+  const [assetResult, splitResult, analysisResult, activityResult] = await Promise.all([
+    db.from("music_assets")
+      .select("id,asset_type,title,status,created_at")
+      .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
+      .eq(assetForeignKey, musicSubjectRow.id).order("created_at", { ascending: false }).limit(12),
+    musicSubject.type === "music_item"
+      ? db.from("music_splits").select("status,publishing_total,master_total,summary,updated_at")
+        .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
+        .eq("music_item_id", musicSubjectRow.id).order("updated_at", { ascending: false }).limit(1).maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    db.from("evidence_items")
+      .select("metric_name,metric_value,metric_unit,confidence,created_at")
+      .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
+      .eq("subject_type", musicSubject.type).eq("subject_id", musicSubjectRow.id).eq("evidence_type", "audio_analysis")
+      .order("created_at", { ascending: false }).limit(8),
+    db.from("operating_events")
+      .select("event_type,summary,created_at")
+      .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
+      .eq("target_type", musicSubject.type).eq("target_id", musicSubjectRow.id)
+      .order("created_at", { ascending: false }).limit(8),
+  ]);
+  for (const result of [assetResult, splitResult, analysisResult, activityResult]) {
+    if (result.error) throw result.error;
+  }
+
   return {
     type: input.musicSubject.type,
     id: musicSubjectRow.id,
@@ -410,6 +436,10 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     sourceKind: musicSubjectRow.source_kind ?? "",
     sourceLimit: musicSubjectRow.source_limit ?? "",
     metadata: musicSubjectRow.metadata ?? {},
+    assets: (assetResult.data ?? []).map((asset: any) => ({ id: asset.id, assetType: asset.asset_type, title: asset.title, status: asset.status, createdAt: asset.created_at })),
+    rights: splitResult.data ? { status: splitResult.data.status, publishingTotal: splitResult.data.publishing_total, masterTotal: splitResult.data.master_total, summary: splitResult.data.summary } : null,
+    analysis: (analysisResult.data ?? []).map((item: any) => ({ metric: item.metric_name, value: item.metric_value, unit: item.metric_unit, confidence: item.confidence, createdAt: item.created_at })),
+    recentActivity: (activityResult.data ?? []).map((event: any) => ({ eventType: event.event_type, summary: event.summary, createdAt: event.created_at })),
   };
 }
 

@@ -25,6 +25,7 @@ import type {
   MusicManagerRunStatus,
   MusicManagerReadViewModel,
   MusicObjectViewModel,
+  MusicUploadProgress,
   ManualSongWorkspaceResult,
   PriorityItem,
   SpotifyCatalogSearchResult,
@@ -1823,27 +1824,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const contributors = await loadSplitContributors(client, split.id);
         validateSplitReadyToSend(split, contributors);
 
-        const { error } = await client
-          .from("music_split_contributors")
-          .update({ approval_status: "pending" })
-          .eq("music_split_id", split.id)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId);
-
-        if (error) throw error;
-
-        const { error: splitError } = await client
-          .from("music_splits")
-          .update({
-            status: "pending_confirmation",
-            summary: "Split confirmation links sent. Waiting for collaborators to confirm their shares.",
-          })
-          .eq("id", split.id)
-          .eq("artist_workspace_id", workspace.artistWorkspaceId);
-
-        if (splitError) throw splitError;
-
         const appOrigin = typeof window === "undefined" ? "http://localhost:5173" : window.location.origin;
-        const { error: functionError } = await client.functions.invoke("send-split-confirmations", {
+        const { data: functionData, error: functionError } = await client.functions.invoke("send-split-confirmations", {
           body: {
             accountId: workspace.accountId,
             artistWorkspaceId: workspace.artistWorkspaceId,
@@ -1856,14 +1838,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (functionError) {
           await throwFunctionInvokeError(functionError, "Split confirmation email delivery failed.");
         }
-
-        await writeOperatingEvent(client, workspace, {
-          eventType: "music_split_confirmation_sent",
-          targetType: "music_split",
-          targetId: split.id,
-          summary: "Sent split confirmation links to collaborators.",
-          payload: { music_item_id: musicItemId, contributor_count: contributors.length },
-        });
+        if (!isPlainRecord(functionData) || functionData.status !== "sent") {
+          throw new Error("Split confirmation email delivery returned an invalid response.");
+        }
       },
       async loadSplitConfirmation(token) {
         const normalizedToken = token.trim();
@@ -1957,6 +1934,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (error) await throwFunctionInvokeError(error, "Share link could not be revoked.");
       },
       async uploadAsset(musicItemId, input) {
+        input.onProgress?.({ phase: "preparing", percent: 0, bytesUploaded: 0, bytesTotal: input.file.size });
+        const missionId = await loadLinkedMusicMissionId(client, workspace, musicItemId);
         const storagePath = buildMusicStoragePath(workspace, musicItemId, input.assetType, input.file.name);
         const uploadMethod = shouldUseResumableUpload(input.file, input.assetType) ? "resumable_tus" : "standard";
         const { data: uploadedFile, error: intentError } = await client
@@ -1986,11 +1965,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           sourceType: "uploaded_file",
           sourceId: uploadedFileRow.id,
           summary: `Prepared upload for ${input.title}.`,
+          missionId,
           payload: { asset_type: input.assetType, storage_ref: storagePath, upload_method: uploadMethod },
         });
 
         try {
-          await uploadMusicFile(client, input.file, storagePath, uploadMethod);
+          await uploadMusicFile(client, input.file, storagePath, uploadMethod, input.onProgress);
         } catch (uploadError) {
           const uploadErrorMessage = readErrorMessage(uploadError, "Upload failed.");
           await client.from("uploaded_files").update({ status: "failed", error: uploadErrorMessage }).eq("id", uploadedFileRow.id);
@@ -2001,11 +1981,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             sourceType: "uploaded_file",
             sourceId: uploadedFileRow.id,
             summary: `Upload failed for ${input.title}.`,
+            missionId,
             payload: { asset_type: input.assetType, error: uploadErrorMessage },
           });
           throw new Error(uploadErrorMessage);
         }
 
+        input.onProgress?.({ phase: "finalizing", percent: 100, bytesUploaded: input.file.size, bytesTotal: input.file.size });
         await client.from("uploaded_files").update({ status: "uploaded" }).eq("id", uploadedFileRow.id);
 
         const { error: assetError } = await client.from("music_assets").insert({
@@ -2030,8 +2012,10 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           sourceType: "uploaded_file",
           sourceId: uploadedFileRow.id,
           summary: `Uploaded ${input.title}.`,
+          missionId,
           payload: { asset_type: input.assetType, storage_ref: storagePath, upload_method: uploadMethod },
         });
+        input.onProgress?.({ phase: "complete", percent: 100, bytesUploaded: input.file.size, bytesTotal: input.file.size });
 
         return {
           group: assetGroup(input.assetType),
@@ -3376,6 +3360,7 @@ async function writeOperatingEvent(
     summary: string;
     sourceType?: string;
     sourceId?: string;
+    missionId?: string;
     payload?: Record<string, unknown>;
   },
 ) {
@@ -3389,11 +3374,29 @@ async function writeOperatingEvent(
     target_id: event.targetId,
     source_type: event.sourceType,
     source_id: event.sourceId,
+    mission_id: event.missionId,
     summary: event.summary,
     payload: event.payload ?? {},
   });
 
   if (error) throw error;
+}
+
+async function loadLinkedMusicMissionId(client: SupabaseClient, workspace: ProductionWorkspace, musicItemId: string) {
+  const { data, error } = await client
+    .from("artifact_links")
+    .select("source_id")
+    .eq("account_id", workspace.accountId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId)
+    .eq("artist_id", workspace.artistId)
+    .eq("source_type", "mission")
+    .eq("target_type", "music_item")
+    .eq("target_id", musicItemId)
+    .eq("relationship", "references")
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return typeof data?.source_id === "string" ? data.source_id : undefined;
 }
 
 async function loadTaskDocumentDeliverables(client: SupabaseClient, workspace: ProductionWorkspace, taskIds: string[]) {
@@ -3670,9 +3673,15 @@ function shouldUseResumableUpload(file: File, assetType: string) {
   return file.size > RESUMABLE_UPLOAD_THRESHOLD_BYTES || ["final_master", "clean_version", "instrumental", "stems"].includes(assetType);
 }
 
-async function uploadMusicFile(client: SupabaseClient, file: File, storagePath: string, uploadMethod: string) {
+async function uploadMusicFile(
+  client: SupabaseClient,
+  file: File,
+  storagePath: string,
+  uploadMethod: string,
+  onProgress?: (progress: MusicUploadProgress) => void,
+) {
   if (uploadMethod === "resumable_tus") {
-    await uploadMusicFileResumable(client, file, storagePath);
+    await uploadMusicFileResumable(client, file, storagePath, onProgress);
     return;
   }
 
@@ -3687,6 +3696,7 @@ async function uploadMusicFile(client: SupabaseClient, file: File, storagePath: 
   });
 
   if (error) throw error;
+  onProgress?.({ phase: "uploading", percent: 100, bytesUploaded: file.size, bytesTotal: file.size });
 }
 
 async function uploadWorkspaceDocumentFile(client: SupabaseClient, file: File, storagePath: string) {
@@ -3703,7 +3713,12 @@ async function uploadWorkspaceDocumentFile(client: SupabaseClient, file: File, s
   if (error) throw error;
 }
 
-async function uploadMusicFileResumable(client: SupabaseClient, file: File, storagePath: string) {
+async function uploadMusicFileResumable(
+  client: SupabaseClient,
+  file: File,
+  storagePath: string,
+  onProgress?: (progress: MusicUploadProgress) => void,
+) {
   const clientLike = client as unknown as SupabaseStorageClient;
   const sessionResult = await clientLike.auth?.getSession();
   const token = sessionResult?.data?.session?.access_token;
@@ -3719,6 +3734,7 @@ async function uploadMusicFileResumable(client: SupabaseClient, file: File, stor
       upsert: false,
     });
     if (error) throw error;
+    onProgress?.({ phase: "uploading", percent: 100, bytesUploaded: file.size, bytesTotal: file.size });
     return;
   }
 
@@ -3737,6 +3753,14 @@ async function uploadMusicFileResumable(client: SupabaseClient, file: File, stor
         objectName: storagePath,
         contentType: file.type || "application/octet-stream",
         cacheControl: "3600",
+      },
+      onProgress: (bytesUploaded, bytesTotal) => {
+        onProgress?.({
+          phase: "uploading",
+          percent: bytesTotal > 0 ? Math.min(100, (bytesUploaded / bytesTotal) * 100) : 0,
+          bytesUploaded,
+          bytesTotal,
+        });
       },
       onError: reject,
       onSuccess: () => resolve(),

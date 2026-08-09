@@ -3194,6 +3194,7 @@ describe("Clean production prototype-match shell", () => {
         missions={[]}
         targetMusicObjectId={song.id}
         targetSongRoomTab="files"
+        listRequestKey={1}
         musicRepository={repositories.music}
         onRefreshObject={repositories.music.loadMusicObject}
         onMusicChanged={async () => undefined}
@@ -3204,6 +3205,80 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("File manifest")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "files" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("does not replay a consumed song navigation intent after repository refresh", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const song = musicReadSubject("song", "fresh");
+    const workspaceView = (items: MusicObjectViewModel[]) => (
+      <MusicWorkspace
+        music={items}
+        missions={[]}
+        targetMusicObjectId={song.id}
+        targetSongRoomTab="overview"
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />
+    );
+    const { rerender } = render(workspaceView([song]));
+
+    expect(await screen.findByTestId("music-song-detail")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "rights" }));
+    expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
+
+    rerender(workspaceView([{ ...song, blocker: "Split proposal updated" }]));
+    expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows real resumable upload progress instead of a frozen Uploading button", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const song: MusicObjectViewModel = {
+      id: "song-upload-progress",
+      kind: "song",
+      title: "Progress",
+      lifecycle: "mastering",
+      lifecycleStage: "mastering",
+      blocker: "Add the master",
+      sourceKind: "manual",
+      sourceLimit: "Test song.",
+      fileAssets: [{ group: "Audio", label: "Final master", status: "Missing", action: "Upload", assetType: "final_master", canUpload: true }],
+    };
+    let finishUpload: (() => void) | undefined;
+    repositories.music = {
+      ...repositories.music,
+      uploadAsset: vi.fn(async (_songId, input) => {
+        (input as any).onProgress?.({ phase: "uploading", percent: 42, bytesUploaded: 4_200_000, bytesTotal: 10_000_000 });
+        await new Promise<void>((resolve) => { finishUpload = resolve; });
+        return { group: "Audio", label: input.title, status: "Uploaded", action: "Uploaded", assetType: input.assetType };
+      }),
+    };
+
+    render(
+      <MusicWorkspace
+        music={[song]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open song Progress" }));
+    fireEvent.click(screen.getByRole("button", { name: "files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload Final master" }));
+    fireEvent.change(screen.getByLabelText("File"), {
+      target: { files: [new File(["audio"], "progress.wav", { type: "audio/wav" })] },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+
+    expect(await screen.findByRole("progressbar", { name: "Upload progress" })).toHaveAttribute("aria-valuenow", "42");
+    expect(screen.getByText("42%" )).toBeInTheDocument();
+    expect(screen.getByText(/4.2 MB of 10 MB/i)).toBeInTheDocument();
+    await act(async () => { finishUpload?.(); });
   });
 
   it("shows Manager-created missions on the Missions page without a page reload", async () => {
@@ -5462,11 +5537,11 @@ describe("Clean production prototype-match shell", () => {
         splits: {
           status: "Draft",
           summary: "Balance shares before sending.",
-          publishingTotal: "100%",
-          masterTotal: "100%",
+          publishingTotal: "80%",
+          masterTotal: "80%",
           contributors: [
-            { id: "contributor-1", name: "Nova Vale", role: "Artist / writer", email: "nova@example.com", publishingShare: "50%", masterShare: "70%", approval: "Draft" },
-            { id: "contributor-2", name: "Mara Vale", role: "Producer / writer", email: "mara@example.com", publishingShare: "50%", masterShare: "30%", approval: "Draft" },
+            { id: "contributor-1", name: "Nova Vale", role: "Artist / writer", email: "nova@example.com", publishingShare: "50%", masterShare: "50%", approval: "Draft" },
+            { id: "contributor-2", name: "Mara Vale", role: "Producer / writer", email: "mara@example.com", publishingShare: "30%", masterShare: "30%", approval: "Draft" },
           ],
         },
       },
@@ -5481,6 +5556,8 @@ describe("Clean production prototype-match shell", () => {
           ...item,
           splits: {
             ...item.splits!,
+            publishingTotal: `${Number.parseFloat(item.splits!.publishingTotal ?? "0") + input.publishingShare}%`,
+            masterTotal: `${Number.parseFloat(item.splits!.masterTotal ?? "0") + input.masterShare}%`,
             contributors: [...item.splits!.contributors, {
               id: "contributor-3",
               name: input.name,
@@ -5523,17 +5600,22 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song Split Ready" }));
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "rights" }));
 
-    expect(screen.getByText("Publishing / composition 100% / 100%")).toBeInTheDocument();
-    expect(screen.getByText("Master recording 100% / 100%")).toBeInTheDocument();
+    expect(screen.getByText("80% publishing")).toBeInTheDocument();
+    expect(screen.getByText("80% master")).toBeInTheDocument();
     expect(screen.getByText("nova@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send split confirmation links" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Send split confirmation links" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Lena Cruz" } });
     fireEvent.change(screen.getByLabelText("Email (for signature request)"), { target: { value: "lena@example.com" } });
-    fireEvent.change(screen.getByLabelText("Publishing / composition %"), { target: { value: "0" } });
-    fireEvent.change(screen.getByLabelText("Master recording %"), { target: { value: "0" } });
+    fireEvent.change(screen.getByLabelText("Publishing / composition %"), { target: { value: "20" } });
+    fireEvent.change(screen.getByLabelText("Master recording %"), { target: { value: "20" } });
     fireEvent.click(screen.getByRole("button", { name: "Add collaborator" }));
-    await waitFor(() => expect(actions).toContain("save:Lena Cruz:lena@example.com:0:0"));
+    await waitFor(() => expect(actions).toContain("save:Lena Cruz:lena@example.com:20:20"));
+    expect(await screen.findByText("Lena Cruz")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.queryByRole("button", { name: "Add collaborator" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Allocation complete/i)).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Send split confirmation links" })).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "Send split confirmation links" }));
     await waitFor(() => expect(actions).toContain("send"));

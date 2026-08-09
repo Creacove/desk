@@ -618,6 +618,7 @@ function CleanProductionWorkspace({
   const [musicListOpenRequestKey, setMusicListOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
   const [targetSongRoomTab, setTargetSongRoomTab] = useState<"overview" | "files">("overview");
+  const [musicRoomOpenRequestKey, setMusicRoomOpenRequestKey] = useState(0);
   const [musicDetailOpen, setMusicDetailOpen] = useState(false);
   const [missionRoomOpen, setMissionRoomOpen] = useState(false);
   const [managerAnswers, setManagerAnswers] = useState<Record<string, string>>({});
@@ -945,6 +946,7 @@ function CleanProductionWorkspace({
     if (event.targetType === "music_item" || event.targetType === "music_project") {
       setTargetSongRoomTab("overview");
       setTargetMusicObjectId(event.targetId);
+      setMusicRoomOpenRequestKey((current) => current + 1);
       navigate("musicWorkspace");
       return;
     }
@@ -1011,6 +1013,7 @@ function CleanProductionWorkspace({
   function openMusicFocus(musicObjectId?: string) {
     setTargetSongRoomTab("overview");
     setTargetMusicObjectId(musicObjectId ?? null);
+    setMusicRoomOpenRequestKey((current) => current + 1);
     navigate("musicWorkspace");
   }
 
@@ -1441,6 +1444,7 @@ function CleanProductionWorkspace({
     if (type === "music_item") {
       setTargetSongRoomTab(destination === "files" ? "files" : "overview");
       setTargetMusicObjectId(id ?? null);
+      setMusicRoomOpenRequestKey((current) => current + 1);
       navigate("musicWorkspace");
       return;
     }
@@ -1949,6 +1953,7 @@ function CleanProductionWorkspace({
               missions={missions}
               targetMusicObjectId={targetMusicObjectId}
               targetSongRoomTab={targetSongRoomTab}
+              targetRequestKey={musicRoomOpenRequestKey}
               musicRepository={repositories.music}
               onRefreshObject={refreshMusicObject}
               onMusicChanged={reloadMusic}

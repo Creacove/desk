@@ -64,6 +64,13 @@ Deno.serve(async (request) => {
     const songTitle = readNestedTitle(split) ?? "Split proposal";
     const sent: string[] = [];
 
+    const { error: supersedeError } = await client
+      .from("music_split_confirmations")
+      .update({ status: "superseded" })
+      .eq("music_split_id", split.id)
+      .in("status", ["sent", "opened"]);
+    if (supersedeError) throw supersedeError;
+
     for (const contributor of contributors ?? []) {
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const confirmation_token_hash = await hashToken(token);
@@ -101,11 +108,18 @@ Deno.serve(async (request) => {
       sent.push(contributor.email);
     }
 
-    await client.from("music_splits").update({
+    const { error: contributorStatusError } = await client
+      .from("music_split_contributors")
+      .update({ approval_status: "pending" })
+      .eq("music_split_id", split.id);
+    if (contributorStatusError) throw contributorStatusError;
+
+    const { error: updateSplitError } = await client.from("music_splits").update({
       status: "pending_confirmation",
       summary: "Split confirmation links sent. Waiting for collaborators to confirm their shares.",
     }).eq("id", split.id);
-    await client.from("operating_events").insert({
+    if (updateSplitError) throw updateSplitError;
+    const { error: eventError } = await client.from("operating_events").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
@@ -116,8 +130,9 @@ Deno.serve(async (request) => {
       summary: "Sent split confirmation links to collaborators.",
       payload: { music_item_id: input.musicItemId, recipient_count: sent.length },
     });
+    if (eventError) throw eventError;
 
-    return json({ sent: sent.length });
+    return json({ status: "sent", sent: sent.length });
   } catch (error) {
     return json({ error: errorMessage(error, "Split confirmation links could not be sent.") }, 500);
   }

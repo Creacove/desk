@@ -141,7 +141,35 @@ function compactFocusedMusicSubject(value: unknown) {
     releasedAt: compactText(subject.releasedAt ?? subject.released_at, 120),
     sourceKind: compactText(subject.sourceKind ?? subject.source_kind, 120),
     sourceLimit: compactText(subject.sourceLimit ?? subject.source_limit, 600),
+    assets: array(subject.assets).slice(0, 12).map((item) => {
+      const asset = record(item);
+      return { id: compactText(asset.id, 120), assetType: compactText(asset.assetType ?? asset.asset_type, 120), title: compactText(asset.title, 240), status: compactText(asset.status, 120) };
+    }),
+    rights: compactFocusedRights(subject.rights),
+    analysis: array(subject.analysis).slice(0, 8).map((item) => {
+      const analysis = record(item);
+      return { metric: compactText(analysis.metric, 120), value: numberOrText(analysis.value, 120), unit: compactText(analysis.unit, 80), confidence: compactText(analysis.confidence, 80) };
+    }),
+    recentActivity: array(subject.recentActivity).slice(0, 8).map((item) => {
+      const event = record(item);
+      return { eventType: compactText(event.eventType ?? event.event_type, 160), summary: compactText(event.summary, 500), createdAt: compactText(event.createdAt ?? event.created_at, 120) };
+    }),
   };
+}
+
+function compactFocusedRights(value: unknown) {
+  const rights = record(value);
+  if (!Object.keys(rights).length) return null;
+  return {
+    status: compactText(rights.status, 120),
+    publishingTotal: numberOrText(rights.publishingTotal ?? rights.publishing_total, 80),
+    masterTotal: numberOrText(rights.masterTotal ?? rights.master_total, 80),
+    summary: compactText(rights.summary, 500),
+  };
+}
+
+function numberOrText(value: unknown, maxLength: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : compactText(value, maxLength);
 }
 
 function compactCatalogList(value: unknown, limit: number) {
