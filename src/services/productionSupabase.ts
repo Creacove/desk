@@ -1942,7 +1942,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           .eq("music_item_id", musicItemId)
           .maybeSingle();
         if (assetError) throw assetError;
-        const uploadedFileId = typeof asset?.uploaded_file_id === "string" ? asset.uploaded_file_id : "";
+        const assetRow = asset as { uploaded_file_id?: unknown } | null;
+        const uploadedFileId = typeof assetRow?.uploaded_file_id === "string" ? assetRow.uploaded_file_id : "";
         if (!uploadedFileId) throw new Error("This file is not available to play yet.");
 
         const { data: uploadedFile, error: fileError } = await ownerFilters(client
@@ -1952,8 +1953,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           .eq("id", uploadedFileId)
           .maybeSingle();
         if (fileError) throw fileError;
-        const bucket = typeof uploadedFile?.storage_bucket === "string" ? uploadedFile.storage_bucket : "";
-        const path = typeof uploadedFile?.storage_ref === "string" ? uploadedFile.storage_ref : "";
+        const uploadedFileRow = uploadedFile as { storage_bucket?: unknown; storage_ref?: unknown } | null;
+        const bucket = typeof uploadedFileRow?.storage_bucket === "string" ? uploadedFileRow.storage_bucket : "";
+        const path = typeof uploadedFileRow?.storage_ref === "string" ? uploadedFileRow.storage_ref : "";
         if (!bucket || !path) throw new Error("This file is not available to play yet.");
 
         const { data: signedFile, error: signedUrlError } = await client.storage.from(bucket).createSignedUrl(path, 300);
