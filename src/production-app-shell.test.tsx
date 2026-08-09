@@ -3203,8 +3203,56 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByText("File manifest")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Song assets" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "files" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("presents Files as a quiet music-first asset library", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const getAssetAccessUrl = vi.fn(async () => "https://signed.example/final-master.wav");
+    repositories.music = { ...repositories.music, getAssetAccessUrl };
+    const song: MusicObjectViewModel = {
+      id: "song-assets",
+      kind: "song",
+      title: "North Star",
+      lifecycle: "mastering",
+      lifecycleStage: "mastering",
+      blocker: "No active blocker",
+      sourceKind: "manual",
+      sourceLimit: "Test song.",
+      fileAssets: [
+        { assetId: "asset-master", group: "Audio", label: "Final master", status: "Uploaded", action: "Uploaded", assetType: "final_master", canReplace: true },
+        { assetId: "asset-cover", group: "Artwork", label: "Cover artwork", status: "Uploaded", action: "Uploaded", assetType: "cover_art", canReplace: true },
+        { assetId: "asset-press", group: "Documents", label: "Press release", status: "Uploaded", action: "Uploaded", assetType: "press_release", canReplace: true },
+      ],
+    };
+
+    render(
+      <MusicWorkspace
+        music={[song]}
+        missions={[]}
+        targetMusicObjectId={song.id}
+        targetSongRoomTab="files"
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    const room = await screen.findByTestId("music-song-detail");
+    expect(within(room).getByRole("heading", { name: "Song assets" })).toBeInTheDocument();
+    expect(within(room).getByText("Everything your team needs for this song, in one place.")).toBeInTheDocument();
+    expect(within(room).getByRole("button", { name: "Upload files" })).toBeInTheDocument();
+    expect(within(room).getByText("Artwork & images")).toBeInTheDocument();
+    expect(within(room).getByText("Documents")).toBeInTheDocument();
+    expect(within(room).queryByText("Rights documents")).not.toBeInTheDocument();
+    expect(within(room).queryByText(/\d+\/\d+ ready/i)).not.toBeInTheDocument();
+
+    fireEvent.click(within(room).getByRole("button", { name: "Play Final master" }));
+    expect(await within(room).findByLabelText("Final master audio player")).toHaveAttribute("src", "https://signed.example/final-master.wav");
+    expect(getAssetAccessUrl).toHaveBeenCalledWith("song-assets", "asset-master");
   });
 
   it("does not replay a consumed song navigation intent after repository refresh", async () => {
@@ -4944,18 +4992,15 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Songs" }));
     fireEvent.click(screen.getByRole("button", { name: "Open song Night Bus" }));
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "files" }));
-    expect(screen.getByRole("button", { name: "Replace Final master" })).toHaveTextContent("");
-    expect(screen.getByRole("button", { name: "Upload Split sheet document" })).toHaveTextContent("");
+    expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Replace Final master" })).toHaveTextContent("Replace");
+    expect(screen.queryByText("Rights documents")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Upload Split sheet document" }));
-    expect(screen.getByRole("dialog", { name: "Upload Split sheet document" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replace Final master" }));
+    expect(screen.getByRole("dialog", { name: "Upload Final master" })).toBeInTheDocument();
     expect(screen.queryByText("File")).not.toBeInTheDocument();
     expect(screen.getByTestId("music-workspace-content")).toHaveClass("blur-[6px]");
-    fireEvent.change(screen.getByLabelText("File"), {
-      target: { files: [new File(["split"], "night-bus-splits.pdf", { type: "application/pdf" })] },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
-    expect(await screen.findByText("3/3 ready")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "details" }));
     expect(screen.queryByRole("button", { name: "Edit Genre" })).not.toBeInTheDocument();
@@ -5014,8 +5059,9 @@ describe("Clean production prototype-match shell", () => {
 
     expect(createSongWorkspace).toHaveBeenCalledWith(expect.objectContaining({ title: "Debbie", itemType: "song", lifecycleStage: "mastering" }));
     expect(await screen.findByTestId("music-song-detail")).toBeInTheDocument();
-    expect(screen.getByText("File manifest")).toBeInTheDocument();
-    expect(screen.getByText("Working audio")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Song assets" })).toBeInTheDocument();
+    expect(screen.getByText("Add your current audio")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Upload Working audio" })).toBeInTheDocument();
     expect(screen.queryByTestId("manager-read-copy")).not.toBeInTheDocument();
     expect(onMusicChanged).not.toHaveBeenCalled();
   });

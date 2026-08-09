@@ -1,6 +1,6 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, ListMusic, Loader2, Pencil, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, FileAudio, FileText, Image as ImageIcon, ListMusic, Loader2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { BorderBeam } from "border-beam";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { createClientRequestId } from "../../lib/requestId";
@@ -514,6 +514,7 @@ export function MusicWorkspace({
             setUploadTarget({ song: selected, asset });
           }}
           onShareFiles={musicRepository.createShareLink ? () => setShareTarget(selected) : undefined}
+          onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(selected.id, assetId) : undefined}
           onEditDetail={(groupTitle, field) => setDetailTarget({ song: selected, groupTitle, field })}
           onStageChange={(stage) => runMusicAction(() => musicRepository.updateLifecycleStage(selected.id, stage))}
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
@@ -823,6 +824,7 @@ function MusicSongDetail({
   onTabChange,
   onUploadAsset,
   onShareFiles,
+  onRequestAssetAccess,
   onEditDetail,
   onStageChange,
   onSaveSplitContributor,
@@ -843,6 +845,7 @@ function MusicSongDetail({
   onTabChange: (tab: SongRoomTab) => void;
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
   onShareFiles?: () => void;
+  onRequestAssetAccess?: (assetId: string) => Promise<string>;
   onEditDetail: (groupTitle: string, field: MusicDetailField) => void;
   onStageChange: (stage: string) => void;
   onSaveSplitContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => Promise<boolean>;
@@ -858,17 +861,21 @@ function MusicSongDetail({
   actionPending: boolean;
 }) {
   const fileAssets = song.fileAssets ?? [];
-  const audioFiles = fileAssets.filter((asset) => asset.group === "Audio");
-  const masterDelivery = audioFiles.filter((asset) => ["Final master", "Clean version", "Instrumental", "Stems"].includes(asset.label));
-  const sessionFiles = audioFiles.filter((asset) => !["Final master", "Clean version", "Instrumental", "Stems"].includes(asset.label));
-  const fileSections = [
-    { title: "Audio files", assets: sessionFiles },
-    { title: "Master delivery", assets: masterDelivery },
-    { title: "Artwork", assets: fileAssets.filter((asset) => asset.group === "Artwork") },
-    { title: "Rights documents", assets: fileAssets.filter((asset) => asset.group === "Splits") },
-  ].filter((section) => section.assets.length > 0);
-  const fileReadyCount = countCompleteMusicItems(fileAssets);
-  const fileMissingCount = fileAssets.filter((asset) => asset.status === "Missing").length;
+  const [playback, setPlayback] = useState<{ assetId: string; url?: string; error?: string; loading?: boolean } | null>(null);
+  const audioFiles = fileAssets.filter((asset) => asset.group === "Audio" && asset.status !== "Missing");
+  const primaryAudio = audioFiles.find((asset) => asset.assetType === "final_master") ?? audioFiles[0];
+  const secondaryAudio = audioFiles.filter((asset) => asset !== primaryAudio);
+  const artworkFiles = fileAssets.filter((asset) => asset.group === "Artwork" && asset.status !== "Missing");
+  const documentFiles = fileAssets.filter((asset) => asset.group === "Documents" && asset.status !== "Missing");
+  const missingAudioTarget = fileAssets.find((asset) => asset.group === "Audio" && asset.status === "Missing");
+  const uploadTarget = missingAudioTarget ?? {
+    group: "Audio" as const,
+    label: "Audio file",
+    status: "Missing",
+    action: "Upload a song file",
+    assetType: "rough_mix",
+    canUpload: true,
+  };
   const shareableAssets = fileAssets.filter(isShareableMusicAsset);
   const fallbackDetails = (song.details ?? []).map((field) => ({ label: field.label, value: field.value, status: normalizeFieldStatus(field.status) }));
   const identityFields = [...(song.metadataFields ?? []), ...(song.identifiers ?? [])];
@@ -889,6 +896,20 @@ function MusicSongDetail({
     hasConversation: Boolean(song.managerConversationId),
   });
   const hasSecondaryReadAction = readControls.readActionPriority === "secondary";
+
+  async function playAsset(asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) {
+    if (!asset.assetId || !onRequestAssetAccess) return;
+    setPlayback({ assetId: asset.assetId, loading: true });
+    try {
+      const url = await onRequestAssetAccess(asset.assetId);
+      setPlayback({ assetId: asset.assetId, url });
+    } catch (playbackError) {
+      setPlayback({
+        assetId: asset.assetId,
+        error: playbackError instanceof Error ? playbackError.message : "This file could not be opened.",
+      });
+    }
+  }
 
   return (
     <section data-testid="music-song-detail" className="grid gap-5">
@@ -952,60 +973,86 @@ function MusicSongDetail({
       ) : null}
 
       {activeTab === "files" ? (
-        <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
-            <div>
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">File manifest</p>
-              <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Assets</h4>
+        <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
+          <div className="flex flex-col gap-4 border-b border-foreground/8 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+            <div className="max-w-xl">
+              <h4 className="font-display text-[20px] font-semibold leading-tight text-foreground">Song assets</h4>
+              <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground/82">Everything your team needs for this song, in one place.</p>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
+            <div className="flex items-center gap-2">
               {onShareFiles && shareableAssets.length ? (
                 <button
                   type="button"
                   aria-label="Share files"
                   onClick={onShareFiles}
-                  className="inline-flex items-center gap-1.5 rounded-md border border-foreground/10 bg-background px-2.5 py-1 text-[11px] font-bold text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+                  className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-foreground/10 bg-background px-3 text-[11px] font-semibold text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
                 >
                   <Share2 className="h-3.5 w-3.5" aria-hidden="true" />
                   Share
                 </button>
               ) : null}
-              <span className="rounded-md border border-foreground/8 bg-background/74 px-2.5 py-1 text-[11px] font-semibold text-foreground/78">{fileReadyCount}/{fileAssets.length || 0} ready</span>
-              {fileMissingCount ? <span className="rounded-md bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning">{fileMissingCount} missing</span> : null}
+              <button
+                type="button"
+                aria-label="Upload files"
+                onClick={() => onUploadAsset(uploadTarget)}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
+              >
+                <Upload className="h-3.5 w-3.5" aria-hidden="true" />
+                Upload files
+              </button>
             </div>
           </div>
 
-          <div className="mt-4 overflow-hidden rounded-[16px] border border-foreground/8 bg-background/72">
-            {fileSections.map((section) => (
-              <div key={section.title} className="border-b border-foreground/8 last:border-b-0">
-                <div className="flex items-center justify-between gap-4 bg-foreground/[0.025] px-4 py-3">
-                  <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{section.title}</p>
-                  <span className="text-[11px] font-semibold text-muted-foreground">{countCompleteMusicItems(section.assets)}/{section.assets.length} ready</span>
-                </div>
-                <div className="divide-y divide-foreground/6">
-                  {section.assets.map((asset) => (
-                    <div key={`${section.title}-${asset.label}`} className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.6fr)_auto] sm:items-center">
-                      <span className="min-w-0 text-[13px] font-medium text-foreground">{asset.label}</span>
-                      <span className="text-[11px] font-semibold text-muted-foreground">{asset.action}</span>
-                      <span className="flex flex-wrap items-center justify-end gap-2">
-                        {canActOnAsset(asset) ? (
-                          <button
-                            type="button"
-                            aria-label={`${asset.canReplace || asset.status === "Uploaded" ? "Replace" : "Upload"} ${asset.label}`}
-                            title={`${asset.canReplace || asset.status === "Uploaded" ? "Replace" : "Upload"} ${asset.label}`}
-                            onClick={() => onUploadAsset(asset)}
-                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
-                          >
-                            <Upload className="h-3.5 w-3.5" />
-                          </button>
-                        ) : null}
-                        <MusicStatusPill value={asset.status} />
-                      </span>
-                    </div>
-                  ))}
-                </div>
+          <div className="grid gap-7 px-4 py-5 sm:px-5 sm:py-6">
+            <section aria-labelledby="song-assets-audio">
+              <div className="mb-3 flex items-center gap-2">
+                <FileAudio className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
+                <h5 id="song-assets-audio" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Audio</h5>
               </div>
-            ))}
+              {primaryAudio ? (
+                <div className="overflow-hidden rounded-[16px] border border-foreground/8 bg-foreground/[0.018]">
+                  <div className="flex min-h-[72px] items-center gap-3 px-3.5 py-3 sm:px-4">
+                    {primaryAudio.assetId && onRequestAssetAccess ? (
+                      <button
+                        type="button"
+                        aria-label={`Play ${primaryAudio.label}`}
+                        onClick={() => void playAsset(primaryAudio)}
+                        disabled={playback?.assetId === primaryAudio.assetId && playback.loading}
+                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:opacity-45"
+                      >
+                        {playback?.assetId === primaryAudio.assetId && playback.loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
+                      </button>
+                    ) : (
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground/[0.07] text-muted-foreground"><FileAudio className="h-4 w-4" /></span>
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[14px] font-semibold text-foreground">{primaryAudio.label}</span>
+                      <span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Current audio</span>
+                    </span>
+                    {canActOnAsset(primaryAudio) ? (
+                      <button type="button" aria-label={`Replace ${primaryAudio.label}`} onClick={() => onUploadAsset(primaryAudio)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+                        <Upload className="h-3.5 w-3.5" /> Replace
+                      </button>
+                    ) : null}
+                  </div>
+                  {playback && playback.assetId === primaryAudio.assetId && playback.url ? (
+                    <div className="border-t border-foreground/7 px-3.5 py-3 sm:px-4">
+                      <audio controls autoPlay preload="metadata" src={playback.url} aria-label={`${primaryAudio.label} audio player`} className="h-9 w-full" />
+                    </div>
+                  ) : null}
+                  {playback && playback.assetId === primaryAudio.assetId && playback.error ? <p role="alert" className="border-t border-danger/15 px-4 py-2.5 text-[11px] font-semibold text-danger">{playback.error}</p> : null}
+                  {secondaryAudio.length ? <div className="divide-y divide-foreground/6 border-t border-foreground/7">{secondaryAudio.map((asset) => <MusicStoredAssetRow key={asset.assetId ?? asset.label} asset={asset} onUploadAsset={onUploadAsset} />)}</div> : null}
+                </div>
+              ) : missingAudioTarget ? (
+                <button type="button" aria-label={`Upload ${missingAudioTarget.label}`} onClick={() => onUploadAsset(missingAudioTarget)} className="flex w-full items-center justify-between gap-4 rounded-[14px] border border-dashed border-foreground/14 px-4 py-4 text-left transition-colors hover:border-foreground/25 hover:bg-foreground/[0.018] focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+                  <span><span className="block text-[13px] font-semibold text-foreground">Add your current audio</span><span className="mt-1 block text-[11px] font-medium text-muted-foreground">Upload a mix or master so the Manager can work from the song itself.</span></span>
+                  <Upload className="h-4 w-4 shrink-0 text-muted-foreground" />
+                </button>
+              ) : null}
+            </section>
+
+            <MusicAssetGroup title="Artwork & images" icon={<ImageIcon className="h-4 w-4" />} assets={artworkFiles} emptyCopy="Cover art and press images will live here." onUploadAsset={onUploadAsset} />
+            <MusicAssetGroup title="Documents" icon={<FileText className="h-4 w-4" />} assets={documentFiles} emptyCopy="Lyrics, press notes, and release documents will live here." onUploadAsset={onUploadAsset} />
           </div>
         </div>
       ) : null}
@@ -1125,6 +1172,61 @@ function MusicSongDetail({
         />
       ) : null}
     </section>
+  );
+}
+
+function MusicAssetGroup({
+  title,
+  icon,
+  assets,
+  emptyCopy,
+  onUploadAsset,
+}: {
+  title: string;
+  icon: ReactNode;
+  assets: NonNullable<MusicObjectViewModel["fileAssets"]>;
+  emptyCopy: string;
+  onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
+}) {
+  return (
+    <section aria-labelledby={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+      <div className="mb-3 flex items-center gap-2 text-muted-foreground/70">
+        {icon}
+        <h5 id={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">{title}</h5>
+      </div>
+      {assets.length ? (
+        <div className="divide-y divide-foreground/6 overflow-hidden rounded-[14px] border border-foreground/8">
+          {assets.map((asset) => <MusicStoredAssetRow key={asset.assetId ?? asset.label} asset={asset} onUploadAsset={onUploadAsset} />)}
+        </div>
+      ) : (
+        <p className="rounded-[14px] border border-dashed border-foreground/10 px-4 py-3 text-[11px] font-medium text-muted-foreground/72">{emptyCopy}</p>
+      )}
+    </section>
+  );
+}
+
+function MusicStoredAssetRow({
+  asset,
+  onUploadAsset,
+}: {
+  asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
+  onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
+}) {
+  return (
+    <div className="flex min-h-[52px] items-center gap-3 px-3.5 py-2.5 sm:px-4">
+      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{asset.label}</span>
+      {canActOnAsset(asset) ? (
+        <button
+          type="button"
+          aria-label={`${asset.canReplace || asset.status === "Uploaded" ? "Replace" : "Upload"} ${asset.label}`}
+          onClick={() => onUploadAsset(asset)}
+          className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+        >
+          <Upload className="h-3.5 w-3.5" />
+          {asset.canReplace || asset.status === "Uploaded" ? "Replace" : "Upload"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
