@@ -4824,6 +4824,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(screen.getByRole("dialog", { name: "Share Jam files" })).toBeInTheDocument();
     expect(screen.getByLabelText("Final master")).toBeChecked();
+    fireEvent.click(await screen.findByRole("button", { name: "Manage links" }));
     expect(await screen.findByText("Previous press package")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Revoke Previous press package" }));
     await waitFor(() => expect(revokeShareLink).toHaveBeenCalledWith("share-prior"));
@@ -4845,7 +4846,7 @@ describe("Clean production prototype-match shell", () => {
     const createShareLink = vi.fn(async () => ({
       id: "share-link-2",
       label: "Jam shared package",
-      preset: "delivery" as const,
+      preset: "listen" as const,
       url: "https://app.ordersounds.com/share?token=abc",
     }));
     const revokeShareLink = vi.fn(async () => undefined);
@@ -4866,20 +4867,22 @@ describe("Clean production prototype-match shell", () => {
     const room = screen.getByTestId("music-song-detail");
     fireEvent.click(within(room).getByRole("button", { name: "files" }));
     fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
-    fireEvent.change(screen.getByLabelText("Send to email"), { target: { value: "press@example.com" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create secure link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create link" }));
+    expect(await screen.findByRole("heading", { name: "Link ready" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send by email" }));
+    fireEvent.change(screen.getByLabelText("Send by email"), { target: { value: "press@example.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("secure link was created");
+    expect(await screen.findByRole("alert")).toHaveTextContent("link is ready");
     expect(screen.getByLabelText("Secure share link")).toHaveValue("https://app.ordersounds.com/share?token=abc");
     expect(createShareLink).toHaveBeenCalledWith(expect.objectContaining({
       musicSubject: { type: "music_item", id: "song-jam" },
       assetIds: ["asset-final-master"],
-      recipientEmail: "press@example.com",
     }));
 
     fireEvent.click(screen.getByRole("button", { name: "Revoke link" }));
     await waitFor(() => expect(revokeShareLink).toHaveBeenCalledWith("share-link-2"));
-    expect(screen.getByText("Link revoked.")).toBeInTheDocument();
+    expect(screen.getByText("This package is no longer accessible.")).toBeInTheDocument();
   });
 
   it("keeps the new Manager conversation linked to the song after its first streamed response starts", async () => {

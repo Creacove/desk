@@ -26,6 +26,9 @@ describe("music share-link Edge Functions", () => {
     expect(source).toContain("tokenFromPublicUrl");
     expect(source).toContain("Share URL does not match this package");
     expect(source).toContain("asset_manifest");
+    expect(source).toContain("manual_details");
+    expect(source).toContain("Open package");
+    expect(source).toContain("information_manifest");
     expect(source).not.toMatch(/select\([^)]*token_hash[^)]*token[^)]*\)/i);
   });
 
@@ -39,6 +42,9 @@ describe("music share-link Edge Functions", () => {
     expect(source).toContain("asset_manifest");
     expect(source).toContain("state",);
     expect(source).toContain("record_music_share_link_access");
+    expect(source).toContain("inlineUrl");
+    expect(source).toContain("downloadUrl");
+    expect(source).toContain("created_at");
     expect(source).not.toContain("access_count: Number(shareLink.access_count");
     expect(source).not.toContain("music_assets");
   });

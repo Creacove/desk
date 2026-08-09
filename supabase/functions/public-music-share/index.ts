@@ -16,7 +16,7 @@ Deno.serve(async (request) => {
     const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
     const tokenHash = await hashToken(token);
     const { data: shareLink, error } = await db.from("music_share_links")
-      .select("id,label,preset,asset_manifest,information_manifest,state,expires_at")
+      .select("id,label,preset,asset_manifest,information_manifest,state,created_at,expires_at")
       .eq("token_hash", tokenHash).maybeSingle();
     if (error) throw error;
     if (!shareLink || shareLink.state !== "active") return json({ error: "This share link is invalid or unavailable." }, 404);
@@ -29,23 +29,28 @@ Deno.serve(async (request) => {
       const bucket = cleanText(asset?.bucket, 120);
       const path = cleanText(asset?.path, 600);
       if (!bucket || !path) return null;
-      const { data, error: signedUrlError } = await db.storage.from(bucket).createSignedUrl(path, 300, { download: cleanText(asset?.fileName, 240) || undefined });
-      if (signedUrlError || !data?.signedUrl) return null;
+      const [{ data: inlineData, error: inlineError }, { data: downloadData, error: downloadError }] = await Promise.all([
+        db.storage.from(bucket).createSignedUrl(path, 300),
+        db.storage.from(bucket).createSignedUrl(path, 300, { download: cleanText(asset?.fileName, 240) || undefined }),
+      ]);
+      if (inlineError || downloadError || !inlineData?.signedUrl || !downloadData?.signedUrl) return null;
       return {
         id: cleanText(asset?.assetId, 120),
         title: cleanText(asset?.title, 180) || "Shared file",
         assetType: cleanText(asset?.assetType, 80),
         fileName: cleanText(asset?.fileName, 240) || "download",
         fileType: cleanText(asset?.fileType, 120),
-        downloadUrl: data.signedUrl,
+        inlineUrl: inlineData.signedUrl,
+        downloadUrl: downloadData.signedUrl,
       };
     }));
     const availableAssets = assets.filter(Boolean);
     const information = normalizeInformationManifest(shareLink.information_manifest);
+    const identity = normalizeIdentity(shareLink.information_manifest);
     if (!availableAssets.length && !information.length) return json({ error: "This share link is unavailable." }, 404);
     const { error: accessError } = await db.rpc("record_music_share_link_access", { target_share_link_id: shareLink.id });
     if (accessError) throw accessError;
-    return json({ label: cleanText(shareLink.label, 180), preset: cleanText(shareLink.preset, 40), assets: availableAssets, information });
+    return json({ label: cleanText(shareLink.label, 180), preset: cleanText(shareLink.preset, 40), title: identity.title, artist: identity.artist, createdAt: shareLink.created_at, expiresAt: shareLink.expires_at, assets: availableAssets, information });
   } catch (error) {
     return json({ error: "This share link is unavailable." }, 404);
   }
@@ -69,6 +74,12 @@ function normalizeInformationManifest(value: unknown) {
     const content = String(field?.value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ").trim().slice(0, 60_000);
     return key && title && content ? [{ key, title, value: content, documentType: cleanText(field?.documentType, 80) }] : [];
   });
+}
+
+function normalizeIdentity(value: unknown) {
+  const manifest = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+  const identity = manifest.identity && typeof manifest.identity === "object" ? manifest.identity : {};
+  return { title: cleanText(identity.title, 180), artist: cleanText(identity.artist, 180) };
 }
 
 function requireEnv(name: string) {

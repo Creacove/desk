@@ -9,6 +9,7 @@ import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
 import { ReleaseWorkAttachment } from "./SongRoomAttachments";
 import { SongDocumentEditor } from "./SongDocumentEditor";
+import { MusicShareDialog as PolishedMusicShareDialog } from "./MusicShareDialog";
 import type {
   MissionViewModel,
   ManualSongWorkspaceResult,
@@ -730,13 +731,14 @@ export function MusicWorkspace({
       ) : null}
 
       {shareTarget && musicRepository.createShareLink ? (
-        <MusicShareDialog
+        <PolishedMusicShareDialog
           song={shareTarget}
           onCancel={() => setShareTarget(null)}
           onCreate={musicRepository.createShareLink}
           onList={musicRepository.listShareLinks}
           onSend={musicRepository.sendShareLink}
           onRevoke={musicRepository.revokeShareLink}
+          onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(shareTarget.id, assetId) : undefined}
         />
       ) : null}
     </section>

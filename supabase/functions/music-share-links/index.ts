@@ -61,14 +61,16 @@ async function createShareLink(db: any, input: ShareInput, userId: string) {
   const target = subject.type === "music_item"
     ? { table: "music_items", foreignKey: "music_item_id" }
     : { table: "music_projects", foreignKey: "music_project_id" };
-  const [{ data: music, error: musicError }, { data: assets, error: assetsError }] = await Promise.all([
+  const [{ data: music, error: musicError }, { data: assets, error: assetsError }, { data: profile, error: profileError }] = await Promise.all([
     owned(db.from(target.table).select("id,title,metadata,released_at,lifecycle_stage"), input).eq("id", subject.id).maybeSingle(),
     assetIds.length
       ? owned(db.from("music_assets").select("id,title,asset_type,status,uploaded_file_id"), input).eq(target.foreignKey, subject.id).in("id", assetIds).limit(40)
       : Promise.resolve({ data: [], error: null }),
+    owned(db.from("artist_profiles").select("display_name"), input).maybeSingle(),
   ]);
   if (musicError) throw musicError;
   if (assetsError) throw assetsError;
+  if (profileError) throw profileError;
   if (!music?.id) throw new Error("Music record was not found.");
   if ((assets ?? []).length !== assetIds.length) throw new Error("One or more selected files do not belong to this music record.");
   const fileIds = (assets ?? []).map((asset: any) => asset.uploaded_file_id).filter((id: unknown): id is string => typeof id === "string");
@@ -101,14 +103,18 @@ async function createShareLink(db: any, input: ShareInput, userId: string) {
     const value = canonicalInformationValue(key, music, metadata);
     return value ? [{ key, title: informationTitle(key), value }] : [];
   });
-  const informationManifest = { version: 1, fields: [...detailFields, ...documentFields] };
+  const identity = {
+    title: cleanText(music.title, 180),
+    artist: canonicalInformationValue("primary_artist", music, metadata) || cleanText(profile?.display_name, 180),
+  };
+  const informationManifest = { version: 2, identity, fields: [...detailFields, ...documentFields] };
   const rawToken = randomToken();
   const { data: shareLink, error: insertError } = await db.from("music_share_links").insert({
     account_id: input.accountId,
     artist_workspace_id: input.artistWorkspaceId,
     artist_id: input.artistId,
     ...(subject.type === "music_item" ? { music_item_id: subject.id } : { music_project_id: subject.id }),
-    label: cleanText(input.label, 180) || `${music.title} shared package`,
+    label: cleanText(input.label, 180) || `${music.title} private package`,
     access_mode: "link",
     recipient_email: normalizeEmail(input.recipientEmail) || null,
     preset: validPreset(input.preset),
@@ -156,12 +162,13 @@ function allowedInformationKeys(value: unknown) {
 }
 
 function canonicalInformationValue(key: string, music: any, metadata: any) {
+  const manualDetails = metadata?.manual_details && typeof metadata.manual_details === "object" ? metadata.manual_details : {};
   if (key === "song_title") return cleanText(music?.title, 500);
-  if (key === "release_date") return cleanText(metadata?.release_date ?? music?.released_at, 500);
-  if (key === "primary_artist") return cleanText(metadata?.artists?.[0]?.name ?? metadata?.primary_artist, 500);
-  if (key === "label") return cleanText(metadata?.label ?? metadata?.album_label, 500);
+  if (key === "release_date") return cleanText(manualDetails?.release_date ?? manualDetails?.planned_release_date ?? metadata?.release_date ?? music?.released_at, 500);
+  if (key === "primary_artist") return cleanText(manualDetails?.primary_artist ?? manualDetails?.primary_artists ?? metadata?.artists?.[0]?.name ?? metadata?.primary_artist, 500);
+  if (key === "label") return cleanText(manualDetails?.record_label ?? manualDetails?.label ?? metadata?.label ?? metadata?.album_label, 500);
   if (key === "copyright") return cleanText(Array.isArray(metadata?.copyrights) ? metadata.copyrights.join("; ") : metadata?.copyright, 2_000);
-  if (key === "genre") return cleanText(Array.isArray(metadata?.genres) ? metadata.genres.join(", ") : metadata?.genre, 500);
+  if (key === "genre") return cleanText(manualDetails?.genre ?? (Array.isArray(metadata?.genres) ? metadata.genres.join(", ") : metadata?.genre), 500);
   return "";
 }
 
@@ -201,7 +208,7 @@ async function listShareLinks(db: any, input: ShareInput) {
 async function sendShareEmail(db: any, input: ShareInput) {
   const shareLinkId = requiredText(input.shareLinkId, "Share link id", 120);
   const { data: shareLink, error } = await owned(
-    db.from("music_share_links").select("id,label,recipient_email,state,expires_at,music_item_id,music_project_id,token_hash"),
+    db.from("music_share_links").select("id,label,preset,recipient_email,state,expires_at,music_item_id,music_project_id,token_hash,information_manifest"),
     input,
   ).eq("id", shareLinkId).maybeSingle();
   if (error) throw error;
@@ -221,13 +228,16 @@ async function sendShareEmail(db: any, input: ShareInput) {
     throw new Error("Share URL does not match this package.");
   }
   const url = publicUrl(rawToken);
+  const identity = shareLink.information_manifest?.identity ?? {};
+  const packageTitle = cleanText(identity?.title, 180) || cleanText(shareLink.label, 180);
+  const packageArtist = cleanText(identity?.artist, 180);
   await sendTransactionalEmail({
     db,
     eventKey: `music-share-link:${shareLink.id}:${recipient}`,
     template: "music_share_link",
     to: recipient,
-    subject: `Shared release package: ${shareLink.label}`,
-    html: `<p>${escapeHtml(shareLink.label)}</p><p><a href="${escapeHtml(url)}">Open shared files</a></p>`,
+    subject: `${packageTitle}${packageArtist ? ` by ${packageArtist}` : ""} — private package`,
+    html: `<div style="margin:0 auto;max-width:560px;padding:40px 24px;font-family:Arial,sans-serif;color:#17191f"><p style="margin:0 0 10px;font-size:12px;color:#717680">ORDERSOUNDS · PRIVATE SHARE</p><h1 style="margin:0;font-size:28px;line-height:1.15">${escapeHtml(packageTitle)}</h1>${packageArtist ? `<p style="margin:8px 0 0;color:#717680">${escapeHtml(packageArtist)}</p>` : ""}<p style="margin:28px 0 24px;color:#4f545d;line-height:1.6">A ${escapeHtml(presetEmailLabel(shareLink.preset))} has been shared with you.</p><a href="${escapeHtml(url)}" style="display:inline-block;border-radius:10px;background:#17191f;color:#fff;padding:13px 20px;text-decoration:none;font-weight:700">Open package</a><p style="margin:28px 0 0;font-size:11px;line-height:1.5;color:#8a8f98">If the button does not open, paste this link into your browser:<br>${escapeHtml(url)}</p></div>`,
     metadata: { share_link_id: shareLink.id },
   });
   const subject = shareLink.music_item_id
@@ -270,6 +280,13 @@ async function writeEvent(db: any, input: ShareInput, eventType: string, summary
     payload,
   });
   if (error) throw error;
+}
+
+function presetEmailLabel(value: unknown) {
+  if (value === "listen") return "private listen";
+  if (value === "epk_press") return "press kit";
+  if (value === "delivery") return "delivery package";
+  return "private package";
 }
 
 function owned(query: any, input: ShareInput) {

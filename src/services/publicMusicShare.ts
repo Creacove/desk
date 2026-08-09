@@ -1,6 +1,10 @@
 export type PublicMusicSharePackage = {
   label: string;
   preset: string;
+  title?: string;
+  artist?: string;
+  createdAt?: string;
+  expiresAt?: string;
   assets: Array<{
     id: string;
     title: string;
@@ -8,6 +12,7 @@ export type PublicMusicSharePackage = {
     fileName: string;
     fileType: string;
     downloadUrl: string;
+    inlineUrl?: string;
   }>;
   information?: Array<{ key: string; title: string; value: string; documentType?: string }>;
 };
@@ -24,12 +29,25 @@ export async function loadPublicMusicShare(client: PublicFunctionClient, token: 
   const payload = record(data);
   const label = text(payload.label, 180);
   const preset = text(payload.preset, 40);
+  const title = text(payload.title, 180);
+  const artist = text(payload.artist, 180);
+  const createdAt = text(payload.createdAt, 80);
+  const expiresAt = text(payload.expiresAt, 80);
   const sourceAssets = Array.isArray(payload.assets) ? payload.assets.slice(0, 40) : [];
   const assets = sourceAssets.map(normalizeAsset).filter((asset): asset is PublicMusicSharePackage["assets"][number] => Boolean(asset));
   const sourceInformation = Array.isArray(payload.information) ? payload.information.slice(0, 60) : [];
   const information = sourceInformation.map(normalizeInformation).filter((field): field is NonNullable<PublicMusicSharePackage["information"]>[number] => Boolean(field));
   if (!label || !preset || (!assets.length && !information.length)) throw new Error("Share package is unavailable.");
-  return { label, preset, assets, ...(information.length ? { information } : {}) };
+  return {
+    label,
+    preset,
+    ...(title ? { title } : {}),
+    ...(artist ? { artist } : {}),
+    ...(createdAt ? { createdAt } : {}),
+    ...(expiresAt ? { expiresAt } : {}),
+    assets,
+    ...(information.length ? { information } : {}),
+  };
 }
 
 function normalizeInformation(value: unknown) {
@@ -50,8 +68,9 @@ function normalizeAsset(value: unknown) {
   const fileName = text(source.fileName, 240);
   const fileType = text(source.fileType, 120);
   const downloadUrl = text(source.downloadUrl, 2_000);
+  const inlineUrl = text(source.inlineUrl, 2_000);
   if (!id || !title || !fileName || !safeHttpUrl(downloadUrl)) return null;
-  return { id, title, assetType, fileName, fileType, downloadUrl };
+  return { id, title, assetType, fileName, fileType, downloadUrl, ...(safeHttpUrl(inlineUrl) ? { inlineUrl } : {}) };
 }
 
 function safeHttpUrl(value: string) {
