@@ -1583,7 +1583,7 @@ function MusicRightsWorkspace({
     normalizedStatus === "cleared"
       ? "Every invited collaborator has confirmed these split details."
       : pendingCount
-        ? `${pendingCount} collaborator${pendingCount === 1 ? "" : "s"} still need to confirm.`
+        ? `${pendingCount} collaborator${pendingCount === 1 ? "" : "s"} still ${pendingCount === 1 ? "needs" : "need"} to confirm.`
         : "Balance shares and collect collaborator emails before sending confirmation links.";
 
   async function handleAddContributor(event: FormEvent<HTMLFormElement>) {
