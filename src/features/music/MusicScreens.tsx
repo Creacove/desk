@@ -34,6 +34,15 @@ type SongWorkspaceCreation = {
   status: "creating" | "failed";
   error?: string;
 };
+type MusicUploadJob = {
+  id: string;
+  songId: string;
+  asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
+  file: File;
+  progress: MusicUploadProgress;
+  status: "uploading" | "failed";
+  error?: string;
+};
 
 export function MusicWorkspace({
   music,
@@ -86,7 +95,7 @@ export function MusicWorkspace({
   const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState<MusicUploadProgress | null>(null);
+  const [uploadJobs, setUploadJobs] = useState<Record<string, MusicUploadJob>>({});
   const [songWorkspaceCreation, setSongWorkspaceCreation] = useState<SongWorkspaceCreation | null>(null);
   const [briefPending, setBriefPending] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
@@ -393,20 +402,54 @@ export function MusicWorkspace({
     });
   }
 
-  async function uploadMusicAsset(file: File) {
+  function uploadMusicAsset(file: File) {
     if (!uploadTarget) return;
-    setUploadProgress({ phase: "preparing", percent: 0, bytesUploaded: 0, bytesTotal: file.size });
-    const succeeded = await runMusicAction(async () => {
-      await musicRepository.uploadAsset(uploadTarget.song.id, {
-        assetType: uploadTarget.asset.assetType ?? "other",
-        title: uploadTarget.asset.label,
-        file,
-        onProgress: setUploadProgress,
+    const resolvedAsset = resolveUploadAsset(uploadTarget.asset, file);
+    const job: MusicUploadJob = {
+      id: createClientRequestId(),
+      songId: uploadTarget.song.id,
+      asset: resolvedAsset,
+      file,
+      progress: { phase: "preparing", percent: 0, bytesUploaded: 0, bytesTotal: file.size },
+      status: "uploading",
+    };
+    setActionError(null);
+    setUploadTarget(null);
+    setUploadJobs((current) => ({ ...current, [job.id]: job }));
+    void performMusicAssetUpload(job);
+  }
+
+  async function performMusicAssetUpload(job: MusicUploadJob) {
+    setUploadJobs((current) => ({
+      ...current,
+      [job.id]: { ...job, status: "uploading", error: undefined },
+    }));
+    try {
+      await musicRepository.uploadAsset(job.songId, {
+        assetType: job.asset.assetType ?? "other",
+        title: job.asset.label,
+        file: job.file,
+        onProgress: (progress) => setUploadJobs((current) => current[job.id]
+          ? { ...current, [job.id]: { ...current[job.id], progress } }
+          : current),
       });
-    });
-    if (succeeded) {
-      setUploadTarget(null);
-      setUploadProgress(null);
+      await onMusicChanged();
+      setUploadJobs((current) => {
+        const next = { ...current };
+        delete next[job.id];
+        return next;
+      });
+    } catch (uploadError) {
+      setUploadJobs((current) => current[job.id]
+        ? {
+            ...current,
+            [job.id]: {
+              ...current[job.id],
+              status: "failed",
+              error: readErrorMessage(uploadError, "Upload failed."),
+            },
+          }
+        : current);
     }
   }
 
@@ -510,11 +553,12 @@ export function MusicWorkspace({
           onTabChange={setSongRoomTab}
           onUploadAsset={(asset) => {
             setActionError(null);
-            setUploadProgress(null);
             setUploadTarget({ song: selected, asset });
           }}
           onShareFiles={musicRepository.createShareLink ? () => setShareTarget(selected) : undefined}
           onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(selected.id, assetId) : undefined}
+          uploadJobs={Object.values(uploadJobs).filter((job) => job.songId === selected.id)}
+          onRetryUpload={(job) => void performMusicAssetUpload(job)}
           onEditDetail={(groupTitle, field) => setDetailTarget({ song: selected, groupTitle, field })}
           onStageChange={(stage) => runMusicAction(() => musicRepository.updateLifecycleStage(selected.id, stage))}
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
@@ -588,14 +632,7 @@ export function MusicWorkspace({
       {uploadTarget ? (
         <MusicUploadDialog
           asset={uploadTarget.asset}
-          pending={actionPending}
-          progress={uploadProgress}
-          error={actionError}
-          onCancel={() => {
-            if (actionPending) return;
-            setUploadTarget(null);
-            setUploadProgress(null);
-          }}
+          onCancel={() => setUploadTarget(null)}
           onSubmit={uploadMusicAsset}
         />
       ) : null}
@@ -825,6 +862,8 @@ function MusicSongDetail({
   onUploadAsset,
   onShareFiles,
   onRequestAssetAccess,
+  uploadJobs,
+  onRetryUpload,
   onEditDetail,
   onStageChange,
   onSaveSplitContributor,
@@ -846,6 +885,8 @@ function MusicSongDetail({
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
   onShareFiles?: () => void;
   onRequestAssetAccess?: (assetId: string) => Promise<string>;
+  uploadJobs: MusicUploadJob[];
+  onRetryUpload: (job: MusicUploadJob) => void;
   onEditDetail: (groupTitle: string, field: MusicDetailField) => void;
   onStageChange: (stage: string) => void;
   onSaveSplitContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => Promise<boolean>;
@@ -1049,10 +1090,17 @@ function MusicSongDetail({
                   <Upload className="h-4 w-4 shrink-0 text-muted-foreground" />
                 </button>
               ) : null}
+              {uploadJobs.filter((job) => job.asset.group === "Audio").length ? (
+                <div className="mt-3 grid gap-2">
+                  {uploadJobs.filter((job) => job.asset.group === "Audio").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
+                </div>
+              ) : null}
             </section>
 
             <MusicAssetGroup title="Artwork & images" icon={<ImageIcon className="h-4 w-4" />} assets={artworkFiles} emptyCopy="Cover art and press images will live here." onUploadAsset={onUploadAsset} />
+            {uploadJobs.filter((job) => job.asset.group === "Artwork").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
             <MusicAssetGroup title="Documents" icon={<FileText className="h-4 w-4" />} assets={documentFiles} emptyCopy="Lyrics, press notes, and release documents will live here." onUploadAsset={onUploadAsset} />
+            {uploadJobs.filter((job) => job.asset.group === "Documents").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
           </div>
         </div>
       ) : null}
@@ -1172,6 +1220,40 @@ function MusicSongDetail({
         />
       ) : null}
     </section>
+  );
+}
+
+function MusicInlineUpload({ job, onRetry }: { job: MusicUploadJob; onRetry: (job: MusicUploadJob) => void }) {
+  const percent = Math.round(job.progress.percent ?? 0);
+  const statusCopy = job.progress.phase === "preparing"
+    ? "Preparing upload"
+    : job.progress.phase === "finalizing"
+      ? "Adding to this song"
+      : "Uploading";
+  return (
+    <div className={cn("rounded-[14px] border px-3.5 py-3 sm:px-4", job.status === "failed" ? "border-danger/18 bg-danger/[0.025]" : "border-brand-accent/14 bg-brand-accent/[0.025]")}>
+      <div className="flex items-start justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block truncate text-[13px] font-semibold text-foreground">{job.file.name}</span>
+          <span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">{job.status === "failed" ? "Upload didn’t finish" : statusCopy}</span>
+        </span>
+        {job.status === "failed" ? (
+          <button type="button" aria-label={`Retry ${job.file.name}`} onClick={() => onRetry(job)} className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+            <RotateCcw className="h-3.5 w-3.5" /> Retry
+          </button>
+        ) : <span className="shrink-0 text-[12px] font-semibold tabular-nums text-brand-accent">{percent}%</span>}
+      </div>
+      {job.status === "failed" ? (
+        <p role="alert" className="mt-2 text-[11px] font-semibold text-danger">{job.error}</p>
+      ) : (
+        <>
+          <div role="progressbar" aria-label={`Uploading ${job.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="mt-3 h-1.5 overflow-hidden rounded-full bg-foreground/8">
+            <div className="h-full rounded-full bg-brand-accent transition-[width] duration-200" style={{ width: `${percent}%` }} />
+          </div>
+          {job.progress.bytesTotal ? <p className="mt-2 text-[10px] font-medium text-muted-foreground/75">{formatUploadBytes(job.progress.bytesUploaded ?? 0)} of {formatUploadBytes(job.progress.bytesTotal)}</p> : null}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2700,28 +2782,14 @@ function MusicShareDialog({
 
 function MusicUploadDialog({
   asset,
-  pending,
-  progress,
-  error,
   onCancel,
   onSubmit,
 }: {
   asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
-  pending: boolean;
-  progress: MusicUploadProgress | null;
-  error: string | null;
   onCancel: () => void;
   onSubmit: (file: File) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
-  const percent = Math.round(progress?.percent ?? 0);
-  const progressCopy = progress?.phase === "preparing"
-    ? "Preparing secure upload"
-    : progress?.phase === "finalizing"
-      ? "Saving file to your song"
-      : progress?.phase === "complete"
-        ? "Upload complete"
-        : "Uploading securely";
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
       <form
@@ -2739,13 +2807,13 @@ function MusicUploadDialog({
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Private Music upload</p>
             <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{asset.canReplace ? "Replace" : "Upload"} {asset.label}</h3>
           </div>
-          <button type="button" onClick={onCancel} disabled={pending} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:opacity-30">
+          <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-5 py-4">
-        <label className={cn("group grid min-h-[148px] place-items-center rounded-[18px] border border-dashed border-foreground/18 bg-background px-5 py-6 text-center transition-colors", pending ? "cursor-wait opacity-70" : "cursor-pointer hover:border-foreground/30 hover:bg-foreground/[0.02]")}>
-          <input aria-label="File" type="file" disabled={pending} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" />
+        <label className="group grid min-h-[148px] cursor-pointer place-items-center rounded-[18px] border border-dashed border-foreground/18 bg-background px-5 py-6 text-center transition-colors hover:border-foreground/30 hover:bg-foreground/[0.02]">
+          <input aria-label="File" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" />
           <span className="flex flex-col items-center gap-3">
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
               <Upload className="h-5 w-5" />
@@ -2756,27 +2824,11 @@ function MusicUploadDialog({
             </span>
           </span>
         </label>
-        {file && !pending ? <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{formatUploadBytes(file.size)}</p> : null}
-        {pending && progress ? (
-          <div className="mt-4 rounded-[14px] border border-brand-accent/16 bg-brand-accent/[0.035] p-3.5" role="status" aria-live="polite">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[12px] font-bold text-foreground">{progressCopy}</span>
-              <span className="text-[12px] font-bold tabular-nums text-brand-accent">{percent}%</span>
-            </div>
-            <div role="progressbar" aria-label="Upload progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} className="mt-3 h-2 overflow-hidden rounded-full bg-foreground/8">
-              <div className="h-full rounded-full bg-brand-accent transition-[width] duration-200" style={{ width: `${percent}%` }} />
-            </div>
-            {progress.bytesTotal ? (
-              <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{formatUploadBytes(progress.bytesUploaded ?? 0)} of {formatUploadBytes(progress.bytesTotal)}</p>
-            ) : null}
-            <p className="mt-1 text-[10px] font-medium text-muted-foreground/75">Keep this window open until the upload finishes.</p>
-          </div>
-        ) : null}
-        {error ? <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
+        {file ? <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{formatUploadBytes(file.size)}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
-          <button type="button" onClick={onCancel} disabled={pending} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground disabled:opacity-35">Cancel</button>
-          <button type="submit" disabled={!file || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Uploading" : "Upload"}</button>
+          <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
+          <button type="submit" disabled={!file} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">Upload</button>
         </div>
       </form>
     </div>
@@ -2787,6 +2839,21 @@ function formatUploadBytes(bytes: number) {
   if (bytes < 1_000_000) return `${Math.max(0, Math.round(bytes / 1_000))} KB`;
   const megabytes = bytes / 1_000_000;
   return `${Number.isInteger(megabytes) ? megabytes : megabytes.toFixed(1)} MB`;
+}
+
+function resolveUploadAsset(
+  target: NonNullable<MusicObjectViewModel["fileAssets"]>[number],
+  file: File,
+): NonNullable<MusicObjectViewModel["fileAssets"]>[number] {
+  if (target.label !== "Audio file") return target;
+  const isArtwork = file.type.startsWith("image/");
+  const isAudio = file.type.startsWith("audio/");
+  return {
+    ...target,
+    group: isArtwork ? "Artwork" : isAudio ? "Audio" : "Documents",
+    label: file.name,
+    assetType: isArtwork ? "press_photo" : isAudio ? "rough_mix" : "other",
+  };
 }
 
 function MusicDetailEditDialog({

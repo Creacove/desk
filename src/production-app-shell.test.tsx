@@ -3281,7 +3281,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
   });
 
-  it("shows real resumable upload progress instead of a frozen Uploading button", async () => {
+  it("keeps real upload progress inside Files instead of blocking the song room", async () => {
     const repositories = repositoriesFor("Nova Vale");
     const song: MusicObjectViewModel = {
       id: "song-upload-progress",
@@ -3323,7 +3323,9 @@ describe("Clean production prototype-match shell", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
-    expect(await screen.findByRole("progressbar", { name: "Upload progress" })).toHaveAttribute("aria-valuenow", "42");
+    expect(screen.queryByRole("dialog", { name: "Upload Final master" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("music-workspace-content")).not.toHaveClass("blur-[6px]");
+    expect(await screen.findByRole("progressbar", { name: "Uploading progress.wav" })).toHaveAttribute("aria-valuenow", "42");
     expect(screen.getByText("42%" )).toBeInTheDocument();
     expect(screen.getByText(/4.2 MB of 10 MB/i)).toBeInTheDocument();
     await act(async () => { finishUpload?.(); });
@@ -5144,31 +5146,32 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("dialog", { name: "Import song from catalog" })).not.toBeInTheDocument();
   }, 20000);
 
-  it("keeps upload failures visible inside the Catalog upload modal", async () => {
+  it("keeps failed uploads visible in Files and retries without reopening the picker", async () => {
     const failingSong: MusicObjectViewModel = {
       id: "song-upload-failure",
       kind: "song",
       title: "Upload Failure",
       lifecycle: "Ready",
       lifecycleStage: "Ready",
-      blocker: "Missing split proof",
+      blocker: "Add the master",
       sourceKind: "manual",
       sourceLimit: "Test song.",
-      nextMove: "Upload split proof.",
+      nextMove: "Upload the master.",
       linkedMissionIds: [],
       linkedTaskCount: 0,
       fileAssets: [
-        { group: "Splits", label: "Split sheet document", status: "Missing", action: "Upload split sheet", assetType: "split_sheet", canUpload: true },
+        { group: "Audio", label: "Final master", status: "Missing", action: "Upload final master", assetType: "final_master", canUpload: true },
       ],
-      files: [{ label: "Split sheet document", status: "Missing" }],
+      files: [{ label: "Final master", status: "Missing" }],
     };
     const repositories = repositoriesFor("Nova Vale");
+    const uploadAsset = vi.fn()
+      .mockRejectedValueOnce(new Error("Storage upload failed"))
+      .mockResolvedValueOnce({ group: "Audio", label: "Final master", status: "Uploaded", action: "Uploaded", assetType: "final_master" });
     repositories.music = {
       ...repositories.music,
       loadMusic: async () => [failingSong],
-      uploadAsset: async () => {
-        throw new Error("Storage upload failed");
-      },
+      uploadAsset,
     };
 
     render(
@@ -5183,14 +5186,16 @@ describe("Clean production prototype-match shell", () => {
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Upload Failure" }));
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "files" }));
-    fireEvent.click(screen.getByRole("button", { name: "Upload Split sheet document" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload Final master" }));
     fireEvent.change(screen.getByLabelText("File"), {
-      target: { files: [new File(["split"], "split.pdf", { type: "application/pdf" })] },
+      target: { files: [new File(["audio"], "master.wav", { type: "audio/wav" })] },
     });
     fireEvent.click(screen.getByRole("button", { name: "Upload" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Storage upload failed");
-    expect(screen.getByRole("dialog", { name: "Upload Split sheet document" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Upload Final master" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry master.wav" }));
+    await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2));
   }, 20000);
 
   it("merges the focused Manager Read start response without a redundant broad reload", async () => {
