@@ -1,7 +1,7 @@
 # Song Asset Library, Sharing, and Lifecycle Design
 
 **Date:** 2026-08-09
-**Status:** Product model approved; experience refinement awaiting review
+**Status:** Approved for implementation
 
 ## Product standard
 
@@ -177,6 +177,19 @@ same simple song record also informs the Manager and linked mission.
 
 ## End-to-end interaction design
 
+### Song identity and playback
+
+The Song Room masthead is the stable song identity across all four tabs. It
+contains canonical cover artwork, title, lifecycle stage, and a compact Play
+control when private playable audio exists. Play opens the existing restrained
+audio control without navigating away. An imported catalog song without private
+audio uses `Open on Spotify` rather than implying that Ordersounds holds a
+playable master.
+
+The masthead does not become a large consumer-player surface. It remains inside
+the existing Ordersounds header geometry and uses the same short-lived signed
+asset access path as Files.
+
 ### Arriving in Files
 
 The existing Song Room header and four tabs remain stable. Files does not add a
@@ -239,6 +252,65 @@ likely next action. Rename, reclassify, and delete remain in the overflow menu.
 Selecting rows reveals one contextual action bar for Download or Share. The bar
 disappears when selection clears. The permanent page header does not accumulate
 bulk-action buttons.
+
+### Context attachments and linked work
+
+The host surface always remains visually dominant. An attachment identifies
+context and provides one route; it does not reproduce the attached object's
+full interface.
+
+- A Mission Room linked to a song shows one compact song attachment with
+  artwork, title, lifecycle stage, Play when private audio is available, and
+  `Open song`. It does not repeat song metadata, Rights, Manager analysis, or
+  release readiness.
+- A Song Overview linked to a mission shows one compact `Release work` strip
+  containing the mission title, current task, progress, a real blocker only
+  when one exists, and `Open plan`. The official Manager conversation is a
+  secondary `Talk to Manager` action, not a second equal-weight card.
+- A song-focused Manager conversation shows one thin persistent context strip
+  with artwork, song title, lifecycle stage, and `Open song`. When the
+  conversation is task-scoped, the exact task may appear as one subordinate
+  line; full song, mission, and task cards are never stacked together.
+
+The current Song Overview right-hand `Linked work` column is removed. Overview
+uses one focused hierarchy: current playable audio, Manager recommendation, one
+next action, the compact Release work strip, and collapsed meaningful activity.
+
+### Creating song documents
+
+Files can contain uploaded files and native editable documents. A document has
+one canonical identity even when it is referenced from a conversation, mission
+task, Files, and a share package.
+
+The Documents group offers one `Add document` action with three beginnings:
+
+1. `Write here` creates an editable native document.
+2. `Ask Manager to draft` opens the official focused-song conversation with the
+   chosen document type and song context.
+3. `Upload a file` uses the existing private document upload path.
+
+Supported plain-language document types are Lyrics, Press release, Artist
+biography, Press angle or notes, One-sheet, Credits, Distributor notes, and
+Other document. The UI does not expose internal document, output, artifact, or
+storage terminology.
+
+Manager-created writing reuses the existing `manager_outputs`, `documents`,
+`document_versions`, mission deliverables, and `artifact_links` foundation. A
+persisted Manager draft appears inline in conversation as one compact document
+artifact and in Files > Documents as the same canonical document with `Needs
+review`. The artist can open it, edit it directly, ask the Manager for changes,
+or choose `Use this`. Acceptance removes the review treatment, updates the
+linked mission task from the same document, and makes the material eligible for
+sharing. No copy is created when the same document appears in another context.
+
+User-written native documents use the same focused editor and version model.
+User-saved writing appears quietly without a Draft badge. The Manager may revise
+the same document through a new version rather than creating a competing item.
+
+When an uploaded file appears to duplicate an existing canonical document, the
+user chooses Replace current document, Keep as an additional document, or Use
+as reference. Extraction may create a reviewable suggestion but never silently
+overwrites canonical text.
 
 ### Details interaction
 
@@ -374,9 +446,25 @@ Actual stored assets are organized into three groups:
    one-sheets, credits, distributor notes, and other supporting documents.
 
 These categories organize real assets; they are not a permanent wall of missing
-placeholders. A stage-aware first action may still recommend the most useful
-missing asset for a new unreleased song, but empty categories use a quiet add
-action rather than a scoreboard.
+placeholders. Each category has one quiet contextual add action so an empty
+group remains self-explanatory without becoming a checklist:
+
+- `Add audio` offers Working mix, Final master, Clean version, Instrumental,
+  Stems, and Other audio.
+- `Add image` offers Cover artwork, Press photo, Campaign artwork, and Alternate
+  artwork.
+- `Add document` offers Write here, Ask Manager to draft, and Upload a file,
+  followed by a plain-language document type.
+
+The page-level `Upload files` action remains the fastest path for drag-and-drop
+or mixed multi-file selection. It detects likely types and asks the user to
+confirm or correct each classification before transfer. It is not the only
+discoverable upload path.
+
+Cover artwork is the canonical song identity image. A successful cover-art
+upload updates the Song Room masthead, Catalog row, Manager context, and new
+share-package identity from the same asset. Press photos and campaign artwork
+never replace the cover implicitly.
 
 ### Rights boundary
 
