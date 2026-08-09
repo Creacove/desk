@@ -953,7 +953,7 @@ function MusicSongDetail({
   }
 
   return (
-    <section data-testid="music-song-detail" className="grid gap-5">
+    <section data-testid="music-song-detail" className="grid min-w-0 gap-5">
       <MusicDetailTop object={song} label="Song room" onBack={onBack} onStageChange={onStageChange} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
       <WorkspaceTabRail

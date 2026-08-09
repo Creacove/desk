@@ -3543,6 +3543,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Open mobile song Night Bus" }));
     let songRoom = screen.getByTestId("music-song-detail");
+    expect(songRoom).toHaveClass("min-w-0");
     const mobileSongTop = within(songRoom).getByTestId("music-detail-mobile-top");
     const desktopSongTop = within(songRoom).getByTestId("music-detail-desktop-top");
     const mobileSongTitle = within(songRoom).getByTestId("music-detail-mobile-title");
