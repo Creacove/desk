@@ -1892,7 +1892,35 @@ describe("production Supabase services", () => {
       music_project_items: [
         { music_project_id: "project-spotify", music_item_id: "song-spotify-released", order_index: 1, disc_number: 1, display_title: "Released From Spotify" },
       ],
-      music_assets: [],
+      music_assets: [
+        {
+          id: "asset-master",
+          music_item_id: "song-manual-ready",
+          music_project_id: null,
+          asset_type: "final_master",
+          title: "Final master",
+          status: "uploaded",
+          uploaded_file_id: "file-master",
+        },
+        {
+          id: "asset-press-release",
+          music_item_id: "song-manual-ready",
+          music_project_id: null,
+          asset_type: "press_release",
+          title: "Press release",
+          status: "uploaded",
+          uploaded_file_id: "file-press-release",
+        },
+        {
+          id: "asset-split-sheet",
+          music_item_id: "song-manual-ready",
+          music_project_id: null,
+          asset_type: "split_sheet",
+          title: "Signed split sheet",
+          status: "uploaded",
+          uploaded_file_id: "file-split-sheet",
+        },
+      ],
       music_credits: [],
       music_splits: [
         {
@@ -1926,7 +1954,7 @@ describe("production Supabase services", () => {
       rightsState: "Released catalog rights attached outside this app",
       managerReadStatus: "not_generated",
     });
-    expect(spotifySong?.fileAssets?.some((asset) => asset.group === "Splits" && asset.status === "Missing")).toBe(false);
+    expect(spotifySong?.fileAssets?.some((asset) => asset.assetType === "split_sheet")).toBe(false);
     expect(spotifyProject).toMatchObject({ blocker: "No inherited blockers", managerReadStatus: "not_generated" });
 
     expect(manualSong).toMatchObject({
@@ -1935,8 +1963,10 @@ describe("production Supabase services", () => {
       managerReadStatus: "not_generated",
     });
     expect(manualSong?.fileAssets).toEqual(expect.arrayContaining([
-      expect.objectContaining({ group: "Splits", label: "Split sheet document", status: "Missing", canUpload: true }),
+      expect.objectContaining({ group: "Audio", label: "Final master", status: "Uploaded" }),
+      expect.objectContaining({ group: "Documents", label: "Press release", status: "Uploaded" }),
     ]));
+    expect(manualSong?.fileAssets?.some((asset) => asset.assetType === "split_sheet")).toBe(false);
 
     expect(manualReleasedSong).toMatchObject({
       status: "Released",

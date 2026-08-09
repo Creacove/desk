@@ -637,7 +637,6 @@ export const productionFixtureData: ProductionFixtureData = {
       fileAssets: [
         { group: "Audio", label: "Final master", status: "Uploaded", action: "Upload final master", assetType: "final_master", canReplace: true },
         { group: "Artwork", label: "Cover art", status: "Confirmed", action: "Upload artwork", assetType: "cover_art", canReplace: true },
-        { group: "Splits", label: "Split sheet document", status: "Missing", action: "Upload split sheet", assetType: "split_sheet", canUpload: true },
       ],
       linkedMissionIds: ["mission-night-bus"],
       linkedTaskIds: ["confirm-split-sheet", "submit-distributor-package", "submit-spotify-pitch"],
@@ -990,7 +989,11 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       async submitSplitConfirmation() {},
       async uploadAsset(_musicItemId, input) {
         const uploaded = {
-          group: input.assetType === "cover_art" ? "Artwork" as const : input.assetType === "split_sheet" ? "Splits" as const : "Audio" as const,
+          group: input.assetType === "cover_art"
+            ? "Artwork" as const
+            : ["final_master", "master", "mix", "stem", "demo", "instrumental", "acapella", "clean", "audio"].some((type) => input.assetType.includes(type))
+              ? "Audio" as const
+              : "Documents" as const,
           label: input.title,
           status: "Uploaded",
           action: "Uploaded",

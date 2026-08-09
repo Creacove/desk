@@ -339,7 +339,7 @@ export type MusicObjectViewModel = {
   songIds?: string[];
   projectIds?: string[];
   files?: Array<{ label: string; status: string }>;
-  fileAssets?: Array<{ assetId?: string; group: "Audio" | "Artwork" | "Splits"; label: string; status: string; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
+  fileAssets?: Array<{ assetId?: string; group: "Audio" | "Artwork" | "Documents"; label: string; status: string; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
   details?: Array<{ label: string; value: string; status: string }>;
   metadataFields?: Array<{ label: string; value: string; status: "Missing" | "Draft" | "Confirmed" }>;
   releaseFields?: Array<{ label: string; value: string; status: "Missing" | "Draft" | "Confirmed" }>;
@@ -716,7 +716,7 @@ export type MusicRepository = {
   uploadAsset(
     musicItemId: string,
     input: { assetType: string; title: string; file: File; onProgress?: (progress: MusicUploadProgress) => void },
-  ): Promise<{ group: "Audio" | "Artwork" | "Splits"; label: string; status: string; action: string; assetType?: string }>;
+  ): Promise<{ group: "Audio" | "Artwork" | "Documents"; label: string; status: string; action: string; assetType?: string }>;
 };
 
 export type MusicUploadProgress = {

@@ -4443,10 +4443,10 @@ function mapAssets(rows: MusicAssetRow[] | undefined): ProductionMusicItem["asse
   }));
 }
 
-function assetGroup(assetType: string): "Audio" | "Artwork" | "Splits" {
+function assetGroup(assetType: string): "Audio" | "Artwork" | "Documents" {
   if (assetType.includes("artwork") || assetType.includes("cover_art") || assetType.includes("press_photo")) return "Artwork";
-  if (assetType.includes("split") || assetType.includes("royalty") || assetType.includes("distributor_export")) return "Splits";
-  return "Audio";
+  if (["final_master", "master", "mix", "stem", "demo", "instrumental", "acapella", "clean", "audio"].some((type) => assetType.includes(type))) return "Audio";
+  return "Documents";
 }
 
 function assetAction(assetType: string) {
@@ -5753,7 +5753,7 @@ function buildRightsState(song: ProductionMusicItem) {
 }
 
 function buildFileAssets(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["fileAssets"]> {
-  const assets = [...song.assets];
+  const assets = song.assets.filter((asset) => !isRightsOwnedAsset(asset.assetType));
   const hasSpotifyReference = Boolean(song.spotifyUrl);
   if (isReleasedMusic(song)) {
     return [
@@ -5764,20 +5764,24 @@ function buildFileAssets(song: ProductionMusicItem): NonNullable<MusicObjectView
     ];
   }
   const hasConfirmedAudioAsset = assets.some((asset) => asset.group === "Audio" && ["Uploaded", "Confirmed", "Cleared"].includes(asset.status));
-  const hasSplitAsset = assets.some((asset) => asset.group === "Splits");
-  const needsSplitProof = requiresInAppSplitProof(song);
 
   return [
     ...(hasSpotifyReference
       ? [{ group: "Audio" as const, label: "Spotify track page", status: "Confirmed", action: "Open Spotify URL" }]
       : []),
-    { group: "Artwork" as const, label: "Cover artwork", status: song.coverImageUrl ? "Confirmed" : "Missing", action: "Add artwork source", assetType: "cover_art", canUpload: !song.coverImageUrl },
     ...assets.filter((asset) => asset.group === "Artwork"),
     ...assets.filter((asset) => asset.group === "Audio"),
     ...(hasConfirmedAudioAsset ? [] : [{ group: "Audio" as const, label: "User-uploaded master", status: "Missing", action: "Upload final master", assetType: "final_master", canUpload: true }]),
-    ...assets.filter((asset) => asset.group === "Splits"),
-    ...(!hasSplitAsset && needsSplitProof ? [{ group: "Splits" as const, label: "Split sheet document", status: song.splits?.status === "Cleared" ? "Confirmed" : "Missing", action: "Upload split sheet", assetType: "split_sheet", canUpload: song.splits?.status !== "Cleared" }] : []),
+    ...assets.filter((asset) => asset.group === "Documents"),
   ];
+}
+
+function isRightsOwnedAsset(assetType?: string) {
+  const normalized = assetType?.toLowerCase() ?? "";
+  return normalized.includes("split")
+    || normalized.includes("royalty")
+    || normalized.includes("rights_document")
+    || normalized.includes("distributor_export");
 }
 
 function buildSongDetails(song: ProductionMusicItem) {
