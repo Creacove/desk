@@ -3288,12 +3288,13 @@ describe("Clean production prototype-match shell", () => {
     );
 
     fireEvent.click((await screen.findByTestId("music-song-detail")).querySelector('[aria-label="Add document"]')!);
-    expect(screen.getByRole("menuitem", { name: "Write here" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Ask Manager to draft" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Lyrics file" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "EPK / press kit" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Press material" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Write here" }));
+    expect(screen.getByRole("button", { name: "Write here" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Ask Manager to draft" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Lyrics" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "EPK / press kit" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Press material" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Split sheet / rights document" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Write here" }));
     fireEvent.change(screen.getByLabelText("Document title"), { target: { value: "North Star press release" } });
     fireEvent.change(screen.getByLabelText("Document content"), { target: { value: "North Star opens a new chapter." } });
     fireEvent.click(screen.getByRole("button", { name: "Save document" }));
@@ -3372,7 +3373,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(screen.getByLabelText("File"), {
       target: { files: [new File(["audio"], "progress.wav", { type: "audio/wav" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload final master" }));
 
     expect(screen.queryByRole("dialog", { name: "Upload Final master" })).not.toBeInTheDocument();
     expect(screen.getByTestId("music-workspace-content")).not.toHaveClass("blur-[6px]");
@@ -3537,8 +3538,8 @@ describe("Clean production prototype-match shell", () => {
     expect(songRoom).toHaveTextContent("ISRC");
 
     fireEvent.click(within(songRoom).getByRole("button", { name: "rights" }));
-    expect(songRoom).toHaveTextContent("Collaborator ledger");
-    expect(songRoom).toHaveTextContent("Add collaborator");
+    expect(songRoom).toHaveTextContent("Song rights");
+    expect(songRoom).toHaveTextContent("Set up song rights");
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Catalog" }));
     fireEvent.click(screen.getByRole("button", { name: "Projects" }));
@@ -5273,9 +5274,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(screen.getByLabelText("File"), {
       target: { files: [new File(["audio"], "master.wav", { type: "audio/wav" })] },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Upload" }));
+    fireEvent.click(screen.getByRole("button", { name: "Upload final master" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Storage upload failed");
+    expect(await screen.findByRole("alert")).toHaveTextContent("This file couldn’t be uploaded. Check your connection and try again.");
     expect(screen.queryByRole("dialog", { name: "Upload Final master" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry master.wav" }));
     await waitFor(() => expect(uploadAsset).toHaveBeenCalledTimes(2));
@@ -5740,7 +5741,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Send split confirmation links" })).not.toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Lena Cruz" } });
-    fireEvent.change(screen.getByLabelText("Email (for signature request)"), { target: { value: "lena@example.com" } });
+    fireEvent.change(screen.getByLabelText("Email (for confirmation request)"), { target: { value: "lena@example.com" } });
     fireEvent.change(screen.getByLabelText("Publishing / composition %"), { target: { value: "20" } });
     fireEvent.change(screen.getByLabelText("Master recording %"), { target: { value: "20" } });
     fireEvent.click(screen.getByRole("button", { name: "Add collaborator" }));
@@ -5753,7 +5754,8 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Send split confirmation links" }));
     await waitFor(() => expect(actions).toContain("send"));
-    expect(await screen.findByText("Waiting for 3 collaborators to confirm their split shares.")).toBeInTheDocument();
+    expect(await screen.findByText("Waiting for collaborators")).toBeInTheDocument();
+    expect(screen.getByText("Confirmation requests were sent to 3 collaborators.")).toBeInTheDocument();
     expect(screen.getAllByText("Awaiting confirmation")).toHaveLength(3);
   }, 20000);
 
@@ -5797,9 +5799,11 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song QA Release Flow" }));
     fireEvent.click(screen.getByRole("button", { name: "rights" }));
 
-    expect(await screen.findByText("Mureni confirmed their 50% publishing and 50% master share. Waiting for David.")).toBeInTheDocument();
-    expect(screen.getAllByText("Publishing 50% · Master 50%")).toHaveLength(2);
-    expect(screen.getByText("Confirmed")).toBeInTheDocument();
+    expect(await screen.findByText("1 of 2 collaborators confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Publishing allocated")).toBeInTheDocument();
+    expect(screen.getByText("Master allocated")).toBeInTheDocument();
+    expect(screen.getByText("1 of 2", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.getAllByText("Confirmed").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText("Awaiting confirmation")).toBeInTheDocument();
     expect(screen.queryByText("100% publishing")).not.toBeInTheDocument();
     expect(screen.queryByText("100% master")).not.toBeInTheDocument();

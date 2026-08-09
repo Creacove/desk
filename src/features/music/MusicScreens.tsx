@@ -516,7 +516,7 @@ export function MusicWorkspace({
             [job.id]: {
               ...current[job.id],
               status: "failed",
-              error: readErrorMessage(uploadError, "Upload failed."),
+              error: customerUploadError(uploadError),
             },
           }
         : current);
@@ -3201,6 +3201,13 @@ function readErrorMessage(error: unknown, fallback: string) {
     return (error as { message: string }).message;
   }
   return fallback;
+}
+
+function customerUploadError(error: unknown) {
+  const technical = readErrorMessage(error, "").toLowerCase();
+  if (technical.includes("too large") || technical.includes("size")) return "This file is too large to upload. Choose a smaller file and try again.";
+  if (technical.includes("type") || technical.includes("format") || technical.includes("mime")) return "This file format isn’t supported here. Choose another file and try again.";
+  return "This file couldn’t be uploaded. Check your connection and try again.";
 }
 
 function titleCaseStatus(status: string) {
