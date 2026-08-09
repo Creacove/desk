@@ -17,10 +17,53 @@ The implementation extends the current song materials, music assets, split confi
 ## Product Principles
 
 - Every control must earn its place. A user should see the next relevant action, not every possible action simultaneously.
+- Every customer-facing word must help an artist, artist team, or label operator complete the work. Infrastructure terminology, engineering explanations, and internal state names do not belong in the product UI.
 - The app must distinguish allocation, confirmation, evidence, and legal execution. Ordersounds confirmation is a durable product record but is not represented as a DocuSign-equivalent signature.
 - Public catalog data cannot establish private rights. Spotify import proves catalog identity and release state, not ownership or collaborator agreement.
 - The Manager reads before asking. It asks one high-value question at a time and never asks the artist to repeat information already stored on the song.
 - Existing released-song and general Manager behavior must remain stable outside the attached unreleased-song workflow.
+
+## Customer-Facing Overlay and Copy Standard
+
+This work includes an audit of every dialog, modal, sheet, popover, menu, confirmation state, and overlay used by the song room and release workflow. The audit is not limited to the Add document menu or one upload dialog. Create/import, document editing, audio/image/document upload, metadata editing, sharing, rights sending, split review, confirmation, correction, export, and related failure states must all follow the same standard.
+
+### Copy contract
+
+Every overlay answers only the questions the user needs at that moment:
+
+1. **What am I doing?** The title names the user action and object in familiar language.
+2. **What should I choose or enter?** Labels are specific to the song task, not the underlying system.
+3. **What happens next?** Supporting copy is included only when the consequence is not already obvious.
+4. **Is it working?** Selection, validation, progress, success, and failure are visible at the moment they matter.
+5. **What can I do now?** Buttons use specific verbs such as **Upload audio**, **Save lyrics**, **Send split**, or **Copy link**.
+
+The UI must not expose implementation language such as “large-file path,” “standard private upload path,” storage bucket, signed URL, storage reference, RPC, provider trace, processing pipeline, internal enum value, or raw database/server error. “Workspace” is used only when the user is actually managing a workspace; it is not a generic substitute for song, project, team, or account. Technical failures are translated into a concise description of what failed and a useful retry or recovery action. Diagnostic detail remains in logs, not customer copy.
+
+### Audio upload example
+
+The current sentence—“Masters and stems use the large-file path. Artwork and documents use the standard private upload path.”—is removed. It explains the implementation, compares unrelated asset types, and gives the artist no useful guidance.
+
+The audio upload experience instead uses:
+
+- eyebrow: **Add to song**;
+- title: **Upload audio**;
+- chooser: **Choose an audio file**;
+- supporting copy: **Add a mix, master, instrumental, or stems for this song.**;
+- a selected-file summary showing the filename, format, and size;
+- a context-specific primary action such as **Upload master** when the asset type is known, otherwise **Upload audio**;
+- real upload progress with the filename, followed by a brief finalizing state such as **Adding to [song title]**; and
+- a plain, actionable failure state that keeps the selection available for retry.
+
+The primary action remains disabled until a valid file is selected, but the interface explains accepted formats or size constraints only when they help the user choose a file or resolve validation. It never explains which backend upload mechanism will receive it.
+
+### Visual and behavioral consistency
+
+- Overlays use the existing Ordersounds shell, type, spacing, colors, radii, and restrained motion.
+- Desktop dialogs are centered or anchored according to the task; mobile uses a full-height dialog or bottom sheet when space requires it.
+- Long content has one intentional scroll region. No menu or modal can be clipped by a song-room container.
+- Focus enters the overlay, Escape and the visible close control dismiss it when safe, and focus returns to the trigger.
+- Pending actions cannot be accidentally submitted twice. Closing during a destructive or active upload state requires an explicit safe behavior.
+- Success is reflected in the underlying song UI immediately; the user is not left staring at a completed modal or forced to refresh.
 
 ## 1. Add Document Experience
 
@@ -245,6 +288,14 @@ Schema changes are limited to fields required for correction notes, immutable pr
 - Every choice routes to the correct existing editor, Manager conversation, or typed upload.
 - Created/uploaded documents appear without a manual refresh and reach Manager context.
 
+### Overlay and copy quality
+
+- Every song-room and release-workflow overlay is reviewed against the customer-facing copy contract, including empty, selected, pending, success, failure, and retry states.
+- No infrastructure terminology or raw service error is visible in dialogs, sheets, popovers, confirmation pages, or notifications.
+- Audio upload uses artist-facing guidance, identifies the selected file, reports meaningful progress, and reflects the completed asset in the song without a refresh.
+- Key component tests assert the intended customer copy and explicitly reject known internal phrases such as “large-file path,” “private upload path,” “storage bucket,” and “provider trace.”
+- Responsive signed-in QA verifies that every audited overlay remains readable, dismissible, and usable without clipping or horizontal overflow.
+
 ### Rights owner
 
 - Draft, ready, awaiting, partial, disputed, confirmed, imported-unmanaged, and document-on-file states each show one clear primary action.
@@ -283,4 +334,3 @@ Schema changes are limited to fields required for correction notes, immutable pr
 - Distributor API submission.
 - A new document storage system.
 - A second release mission for the same attached song.
-
