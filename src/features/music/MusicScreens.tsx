@@ -3016,7 +3016,7 @@ function MusicUploadDialog({
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
               <Upload className="h-5 w-5" />
             </span>
-            <span className="font-display text-[16px] font-bold text-foreground">{file ? file.name : `Choose ${objectLabel === "image" ? "an" : "a"} ${objectLabel} file`}</span>
+            <span className="font-display text-[16px] font-bold text-foreground">{file ? file.name : `Choose ${objectLabel === "document" ? "a" : "an"} ${objectLabel} file`}</span>
             <span className="max-w-sm text-[12px] font-semibold normal-case leading-relaxed tracking-normal text-muted-foreground/82">
               {supportingCopy}
             </span>

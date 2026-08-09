@@ -3252,6 +3252,10 @@ describe("Clean production prototype-match shell", () => {
     expect(within(room).queryByText("Rights documents")).not.toBeInTheDocument();
     expect(within(room).queryByText(/\d+\/\d+ ready/i)).not.toBeInTheDocument();
 
+    fireEvent.click(within(room).getByRole("button", { name: "Add audio" }));
+    expect(screen.getByText("Choose an audio file")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
     fireEvent.click(within(room).getByRole("button", { name: "Play Final master" }));
     expect(await within(room).findByLabelText("Final master audio player")).toHaveAttribute("src", "https://signed.example/final-master.wav");
     expect(getAssetAccessUrl).toHaveBeenCalledWith("song-assets", "asset-master");
