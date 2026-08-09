@@ -13,6 +13,7 @@ import type {
   MissionTaskViewModel,
   MissionViewModel,
 } from "../../types/cleanProduction";
+import { SongContextAttachment } from "../music/SongRoomAttachments";
 
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "activity";
 
@@ -22,6 +23,7 @@ export function MissionsWorkspace({
   onSelectMission,
   onCreateFirstMission,
   onOpenManager,
+  onOpenMusicSubject,
   onWorkWithManager,
   firstMissionPending,
   onApproveTask,
@@ -39,6 +41,7 @@ export function MissionsWorkspace({
   onSelectMission: (id: string) => void;
   onCreateFirstMission: () => void;
   onOpenManager: () => void;
+  onOpenMusicSubject?: (subject: { id: string; title: string; type: "music_item" | "music_project" }) => void;
   onWorkWithManager?: (taskId: string) => void;
   firstMissionPending: boolean;
   onApproveTask: (taskId: string) => Promise<void>;
@@ -131,6 +134,7 @@ export function MissionsWorkspace({
       onCompleteTask={onCompleteTask}
       onUploadTaskDeliverable={onUploadTaskDeliverable}
       onWorkWithManager={onWorkWithManager}
+      onOpenMusicSubject={onOpenMusicSubject}
       targetTaskId={openTaskId ?? undefined}
     />
   );
@@ -256,6 +260,7 @@ function MissionRoom({
   onCompleteTask,
   onUploadTaskDeliverable,
   onWorkWithManager,
+  onOpenMusicSubject,
   targetTaskId,
 }: {
   mission: MissionViewModel;
@@ -267,6 +272,7 @@ function MissionRoom({
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
   onWorkWithManager?: (taskId: string) => void;
+  onOpenMusicSubject?: (subject: { id: string; title: string; type: "music_item" | "music_project" }) => void;
   targetTaskId?: string;
 }) {
   const checkpoints = missionCheckpoints(mission);
@@ -293,6 +299,15 @@ function MissionRoom({
           </div>
         </div>
       </header>
+
+      {mission.subjectType === "music_item" && mission.subjectId && onOpenMusicSubject ? (
+        <div className="max-w-[680px]">
+          <SongContextAttachment
+            title={mission.musicSubject}
+            onOpenSong={() => onOpenMusicSubject({ id: mission.subjectId!, title: mission.musicSubject, type: "music_item" })}
+          />
+        </div>
+      ) : null}
 
       <div data-testid="mission-surface-rail" className="min-w-0 max-w-full">
         <MissionTabRail tab={tab} onTab={onTab} openTaskCount={openTaskCount} noteCount={notes.length} blockedCheckpointCount={activeBlocker ? 1 : 0} missionBlocked={mission.status === "blocked"} />

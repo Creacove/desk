@@ -3116,10 +3116,10 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    const subject = screen.getByTestId("conversation-music-subject");
+    const subject = screen.getByTestId("conversation-song-context");
     expect(subject).toHaveTextContent("Debbie");
     expect(subject).toHaveTextContent("Mastering");
-    fireEvent.click(within(subject).getByRole("button", { name: "Open song room" }));
+    fireEvent.click(within(subject).getByRole("button", { name: "Open song Debbie" }));
     expect(onOpenMusicSubject).toHaveBeenCalledWith(conversation.musicSubject);
   });
 
@@ -3557,8 +3557,8 @@ describe("Clean production prototype-match shell", () => {
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
     expect(within(songRoom).queryByTestId("track-intelligence-card")).not.toBeInTheDocument();
-    expect(within(songRoom).getByTestId("music-linked-work")).toHaveClass("max-lg:rounded-[16px]", "max-lg:shadow-none");
-    expect(within(songRoom).getByTestId("music-linked-work-list")).toHaveClass("max-lg:hidden");
+    expect(within(songRoom).getByRole("region", { name: "Release work" })).toBeInTheDocument();
+    expect(within(songRoom).queryByTestId("music-linked-work")).not.toBeInTheDocument();
 
     fireEvent.click(within(songRoom).getByRole("button", { name: "details" }));
     const mobileDetails = within(songRoom).getByTestId("song-room-mobile-details");
@@ -4536,12 +4536,11 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Signal Song" }));
-    const songLinkedWork = within(screen.getByTestId("music-song-detail")).getByTestId("music-linked-work");
+    const songLinkedWork = within(screen.getByTestId("music-song-detail")).getByRole("region", { name: "Release work" });
     expect(songLinkedWork).toHaveTextContent("Push Signal Song");
-    expect(songLinkedWork).toHaveTextContent("1 task attached");
-    expect(songLinkedWork).not.toHaveTextContent("3 tasks");
+    expect(songLinkedWork).toHaveTextContent("Confirm launch lane.");
 
-    fireEvent.click(within(songLinkedWork).getByRole("button", { name: /Push Signal Song/i }));
+    fireEvent.click(within(songLinkedWork).getByRole("button", { name: "Open plan" }));
     expect(await screen.findByRole("heading", { name: "Push Signal Song" })).toBeInTheDocument();
     expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
 
@@ -4643,18 +4642,34 @@ describe("Clean production prototype-match shell", () => {
         summary: "Add the current working audio before planning the next release step.",
         status: "active",
       },
+      linkedMissionIds: ["mission-jam-release"],
+    };
+    const linkedMission: MissionViewModel = {
+      id: "mission-jam-release",
+      title: "Prepare Jam for release",
+      status: "active",
+      progress: 35,
+      review: "The master is still needed.",
+      summary: "Finish the release package.",
+      recommendation: "Add the current working audio.",
+      musicSubject: "Jam",
+      subjectType: "music_item",
+      subjectId: "song-jam",
+      nextTask: "Add the current working audio",
+      tasks: [],
     };
     const onOpenManager = vi.fn();
+    const onOpenMission = vi.fn();
     const repositories = repositoriesFor("Nova Vale");
 
     render(
       <MusicWorkspace
         music={[subject]}
-        missions={[]}
+        missions={[linkedMission]}
         musicRepository={repositories.music}
-        onRefreshObject={repositories.music.loadMusicObject}
+        onRefreshObject={async () => subject}
         onMusicChanged={async () => undefined}
-        onOpenMission={() => undefined}
+        onOpenMission={onOpenMission}
         onOpenManager={onOpenManager}
         onBack={() => undefined}
       />,
@@ -4662,13 +4677,17 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const room = screen.getByTestId("music-song-detail");
-    const linkedConversation = within(room).getByTestId("music-linked-conversation");
-    expect(linkedConversation).toHaveTextContent("Debbie release workspace");
-    fireEvent.click(within(linkedConversation).getByRole("button", { name: "Open conversation" }));
+    const releaseWork = within(room).getByRole("region", { name: "Release work" });
+    expect(releaseWork).toHaveTextContent("Prepare Jam for release");
+    expect(releaseWork).toHaveTextContent("Add the current working audio");
+    expect(within(room).queryByText("Linked work")).not.toBeInTheDocument();
+    expect(within(room).queryByTestId("music-linked-conversation")).not.toBeInTheDocument();
+    fireEvent.click(within(releaseWork).getByRole("button", { name: "Talk to Manager" }));
     expect(onOpenManager).toHaveBeenCalledWith(subject);
-    fireEvent.click(within(room).getByRole("button", { name: "Continue with Manager" }));
+    fireEvent.click(within(releaseWork).getByRole("button", { name: "Open plan" }));
+    expect(onOpenMission).toHaveBeenCalledWith("mission-jam-release");
 
-    expect(onOpenManager).toHaveBeenCalledTimes(2);
+    expect(onOpenManager).toHaveBeenCalledTimes(1);
     expect(within(room).getByTestId("manager-read-copy")).toHaveTextContent(completeSongManagerRead.body.split("\n")[0]);
   });
 
@@ -4838,7 +4857,7 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Continue with Manager" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Talk to Manager" }));
 
     await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
       expect.objectContaining({ musicSubject: { type: "music_item", id: "song-jam" } }),

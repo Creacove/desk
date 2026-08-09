@@ -125,6 +125,35 @@ describe("simplified mission room", () => {
     expect(within(expandedCheckpoint).queryByText("Run listener interviews")).not.toBeInTheDocument();
   });
 
+  it("keeps a linked song compact and routes back to its Song Room", () => {
+    const linkedMission = mission();
+    linkedMission.musicSubject = "Night Bus";
+    linkedMission.subjectType = "music_item";
+    linkedMission.subjectId = "song-night-bus";
+    const onOpenMusicSubject = vi.fn();
+
+    render(
+      <MissionsWorkspace
+        missions={[linkedMission]}
+        selectedMissionId="mission-1"
+        onSelectMission={vi.fn()}
+        onCreateFirstMission={vi.fn()}
+        onOpenManager={vi.fn()}
+        onOpenMusicSubject={onOpenMusicSubject}
+        firstMissionPending={false}
+        onApproveTask={vi.fn(async () => undefined)}
+        onCompleteTask={vi.fn(async () => undefined)}
+        onDrawer={vi.fn()}
+        openRoomRequestKey={1}
+      />,
+    );
+
+    const attachment = screen.getByTestId("linked-song-attachment");
+    expect(attachment).toHaveTextContent("Night Bus");
+    fireEvent.click(within(attachment).getByRole("button", { name: "Open song Night Bus" }));
+    expect(onOpenMusicSubject).toHaveBeenCalledWith({ id: "song-night-bus", title: "Night Bus", type: "music_item" });
+  });
+
   it("uses the decision question instead of pretending a waiting checkpoint has a Manager read", () => {
     renderMission("checkpoints");
 

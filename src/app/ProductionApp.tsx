@@ -2043,6 +2043,7 @@ function CleanProductionWorkspace({
                 onSelectMission={selectMissionForDetail}
                 onCreateFirstMission={createFirstMissionWithManager}
                 onOpenManager={openManager}
+                onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
                 onWorkWithManager={workWithManagerOnTask}
                 firstMissionPending={managerSendPending}
                 onApproveTask={approveMissionTask}

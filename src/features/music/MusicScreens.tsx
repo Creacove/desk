@@ -7,6 +7,7 @@ import { createClientRequestId } from "../../lib/requestId";
 import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
+import { ReleaseWorkAttachment } from "./SongRoomAttachments";
 import type {
   MissionViewModel,
   ManualSongWorkspaceResult,
@@ -966,7 +967,7 @@ function MusicSongDetail({
       />
 
       {activeTab === "overview" ? (
-        <div className="grid items-start gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid items-start gap-4 lg:gap-5">
           <div data-testid="song-room-mobile-overview" className="surface-elevated space-y-5 overflow-hidden rounded-[16px] p-4 shadow-sm sm:p-5 lg:space-y-6 lg:rounded-[22px] lg:p-6">
             <div>
               <div className="mb-4 flex items-start justify-between gap-3">
@@ -1002,13 +1003,13 @@ function MusicSongDetail({
                 </p>
               ) : null}
             </div>
-            <MusicManagerReadContent subject={song} testId="manager-read-copy" onContinueWithManager={onContinueWithManager} />
+            <MusicManagerReadContent subject={song} testId="manager-read-copy" />
           </div>
-          <MusicLinkedWork
-            linkedConversation={song.managerConversation}
-            linkedMissions={linkedMissions}
-            onOpenConversation={onContinueWithManager}
-            onOpenMission={onOpenMission}
+          <ReleaseWorkAttachment
+            mission={linkedMissions[0]}
+            blocker={song.blocker}
+            onTalkToManager={onContinueWithManager}
+            onOpenPlan={linkedMissions[0] ? () => onOpenMission(linkedMissions[0].id) : undefined}
           />
         </div>
       ) : null}

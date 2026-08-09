@@ -5,6 +5,7 @@ import type { CleanProductionView, ConversationViewModel, ManagerConversationCon
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { OrbState } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
+import { SongContextAttachment } from "../music/SongRoomAttachments";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
@@ -418,7 +419,15 @@ export function ConversationWorkspace({
         — Side whitespace is the product of the column constraint, not padding hacks.
       */}
       <div className="mx-auto max-w-[680px] pb-44">
-        {conversation.musicSubject ? (
+        {conversation.musicSubject?.type === "music_item" ? (
+          <div data-testid="conversation-song-context" className="mb-5">
+            <SongContextAttachment
+              title={conversation.musicSubject.title}
+              stage={conversation.musicSubject.lifecycleStage}
+              onOpenSong={() => onOpenMusicSubject?.(conversation.musicSubject!)}
+            />
+          </div>
+        ) : conversation.musicSubject ? (
           <section data-testid="conversation-music-subject" className="mb-5 flex items-center justify-between gap-4 rounded-[16px] border border-foreground/10 bg-background/92 p-4 shadow-sm">
             <div className="flex min-w-0 items-center gap-3">
               <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
@@ -426,7 +435,7 @@ export function ConversationWorkspace({
               </span>
               <div className="min-w-0">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/75">
-                  About this {conversation.musicSubject.type === "music_project" ? "project" : "song"}
+                  About this project
                 </p>
                 <p className="mt-1 truncate text-[13px] font-semibold text-foreground">{conversation.musicSubject.title}</p>
                 {conversation.musicSubject.lifecycleStage ? (
@@ -437,7 +446,7 @@ export function ConversationWorkspace({
             {onOpenMusicSubject ? (
               <button
                 type="button"
-                aria-label={`Open ${conversation.musicSubject.type === "music_project" ? "project" : "song"} room`}
+                aria-label="Open project room"
                 onClick={() => onOpenMusicSubject(conversation.musicSubject!)}
                 className="shrink-0 rounded-lg border border-foreground/10 bg-background px-3 py-2 text-[11px] font-bold text-foreground transition-colors hover:bg-foreground/[0.04]"
               >
