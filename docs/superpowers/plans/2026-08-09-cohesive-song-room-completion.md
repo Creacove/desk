@@ -22,7 +22,7 @@
 - `src/types/cleanProduction.ts`: song materials, documents, share snapshot, and repository action contracts.
 - `src/services/productionSupabase.ts`: canonical projections and mutations.
 - `src/services/fixtureRepositories.ts`: fixture parity.
-- `supabase/migrations/20260809000100_song_documents_and_share_snapshots.sql`: additive document-to-song metadata/indexes and versioned share information manifest.
+- `supabase/migrations/20260809000300_song_documents_and_share_snapshots.sql`: additive document-to-song metadata/indexes and versioned share information manifest.
 - `supabase/functions/music-share-links/index.ts`: server-authoritative asset/document/information snapshot creation.
 - `supabase/functions/public-music-share/index.ts`: backward-compatible public package loading.
 - `src/PublicMusicSharePortal.tsx`: media-first recipient renderer shared by preview and public link.
@@ -99,7 +99,7 @@ git commit -m "feat: unify song work attachments"
 - Modify: `src/types/cleanProduction.ts`
 - Modify: `src/services/productionSupabase.ts`
 - Modify: `src/services/fixtureRepositories.ts`
-- Create: `supabase/migrations/20260809000100_song_documents_and_share_snapshots.sql`
+- Create: `supabase/migrations/20260809000300_song_documents_and_share_snapshots.sql`
 - Test: `src/production-supabase-service.test.ts`
 - Test: `src/music-share-links-schema.test.ts`
 
@@ -148,7 +148,7 @@ Run: `npm test -- --run src/production-supabase-service.test.ts src/music-share-
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/types/cleanProduction.ts src/services/productionSupabase.ts src/services/fixtureRepositories.ts supabase/migrations/20260809000100_song_documents_and_share_snapshots.sql src/production-supabase-service.test.ts src/music-share-links-schema.test.ts
+git add src/types/cleanProduction.ts src/services/productionSupabase.ts src/services/fixtureRepositories.ts supabase/migrations/20260809000300_song_documents_and_share_snapshots.sql src/production-supabase-service.test.ts src/music-share-links-schema.test.ts
 git commit -m "feat: project canonical song materials"
 ```
 
@@ -403,4 +403,3 @@ Using the logged-in Ordersounds Chrome tab, verify desktop and 390 px mobile:
 - [ ] **Step 5: Push and deploy**
 
 Commit only evidence-backed QA fixes, push `main` as explicitly requested, deploy production, reload the production URL, repeat the smoke checks, and preserve unrelated user-owned untracked files.
-
