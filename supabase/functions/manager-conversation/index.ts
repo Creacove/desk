@@ -403,7 +403,8 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
   }
 
   const assetForeignKey = musicSubject.type === "music_item" ? "music_item_id" : "music_project_id";
-  const [assetResult, splitResult, analysisResult, activityResult] = await Promise.all([
+  const managerReadOutputType = musicSubject.type === "music_item" ? "song_manager_read" : "project_manager_read";
+  const [assetResult, splitResult, analysisResult, activityResult, managerReadResult] = await Promise.all([
     db.from("music_assets")
       .select("id,asset_type,title,status,created_at")
       .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
@@ -423,8 +424,14 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
       .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
       .eq("target_type", musicSubject.type).eq("target_id", musicSubjectRow.id)
       .order("created_at", { ascending: false }).limit(8),
+    db.from("manager_outputs")
+      .select("id,summary,primary_recommendation_json,created_at")
+      .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
+      .eq("subject_type", musicSubject.type).eq("subject_id", musicSubjectRow.id)
+      .eq("output_type", managerReadOutputType).eq("is_current", true)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
-  for (const result of [assetResult, splitResult, analysisResult, activityResult]) {
+  for (const result of [assetResult, splitResult, analysisResult, activityResult, managerReadResult]) {
     if (result.error) throw result.error;
   }
   const documents = musicSubject.type === "music_item" ? await loadFocusedSongDocuments(db, input, musicSubjectRow.id) : [];
@@ -444,6 +451,14 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     rights: splitResult.data ? { status: splitResult.data.status, publishingTotal: splitResult.data.publishing_total, masterTotal: splitResult.data.master_total, summary: splitResult.data.summary } : null,
     analysis: (analysisResult.data ?? []).map((item: any) => ({ metric: item.metric_name, value: item.metric_value, unit: item.metric_unit, confidence: item.confidence, createdAt: item.created_at })),
     recentActivity: (activityResult.data ?? []).map((event: any) => ({ eventType: event.event_type, summary: event.summary, createdAt: event.created_at })),
+    managerRead: managerReadResult.data ? {
+      id: managerReadResult.data.id,
+      summary: managerReadResult.data.summary ?? "",
+      recommendation: isRecord(managerReadResult.data.primary_recommendation_json)
+        ? managerReadResult.data.primary_recommendation_json.recommendation ?? ""
+        : "",
+      createdAt: managerReadResult.data.created_at,
+    } : null,
   };
 }
 

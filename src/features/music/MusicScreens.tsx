@@ -103,6 +103,7 @@ export function MusicWorkspace({
   const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
   const [documentEditorTarget, setDocumentEditorTarget] = useState<SongDocumentEditorTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [uploadJobs, setUploadJobs] = useState<Record<string, MusicUploadJob>>({});
   const [songWorkspaceCreation, setSongWorkspaceCreation] = useState<SongWorkspaceCreation | null>(null);
@@ -289,12 +290,18 @@ export function MusicWorkspace({
     setMode("library");
   }
 
-  async function runMusicAction(action: () => Promise<void>) {
+  async function runMusicAction(action: () => Promise<void>, successMessage = "Saved.") {
     try {
       setActionError(null);
+      setActionNotice(null);
       setActionPending(true);
       await action();
-      await onMusicChanged();
+      setActionNotice(successMessage);
+      try {
+        await onMusicChanged();
+      } catch {
+        setActionError("Saved, but this view could not refresh. Reopen the song to load the latest version.");
+      }
       return true;
     } catch (error) {
       setActionError(readErrorMessage(error, "Music update failed."));
@@ -338,6 +345,16 @@ export function MusicWorkspace({
       setMode("projectDetail");
       setCreateKind(null);
     });
+  }
+
+  async function refreshFocusedSong(songId: string) {
+    try {
+      const refreshed = await onRefreshObject(songId, "music_item");
+      if (refreshed) rememberFocusedUpdate(refreshed);
+      return refreshed;
+    } catch {
+      return null;
+    }
   }
 
   async function createSongWorkspace(input: SongWorkspaceCreation["input"]) {
@@ -422,8 +439,9 @@ export function MusicWorkspace({
       } else {
         await musicRepository.saveDetail(detailTarget.song.id, { group: detailTarget.groupTitle, label, value });
       }
+      await refreshFocusedSong(detailTarget.song.id);
       setDetailTarget(null);
-    });
+    }, `${detailTarget.field.label} saved.`);
   }
 
   function uploadMusicAsset(file: File) {
@@ -454,10 +472,9 @@ export function MusicWorkspace({
         if (!musicRepository.createSongDocument) throw new Error("Document creation is not available yet.");
         await musicRepository.createSongDocument(target.song.id, input);
       }
-      const refreshed = await onRefreshObject(target.song.id, "music_item");
-      if (refreshed) rememberFocusedUpdate(refreshed);
+      await refreshFocusedSong(target.song.id);
       setDocumentEditorTarget(null);
-    });
+    }, `${input.title} saved.`);
   }
 
   async function performMusicAssetUpload(job: MusicUploadJob) {
@@ -477,7 +494,13 @@ export function MusicWorkspace({
       if (job.asset.assetType === "cover_art" && job.file.type.startsWith("image/") && typeof URL.createObjectURL === "function") {
         setCoverPreviewById((current) => ({ ...current, [job.songId]: URL.createObjectURL(job.file) }));
       }
-      await onMusicChanged();
+      await refreshFocusedSong(job.songId);
+      try {
+        await onMusicChanged();
+      } catch {
+        setActionError("Upload finished, but this view could not refresh. Reopen the song to load the file.");
+      }
+      setActionNotice(`${job.asset.label} uploaded.`);
       setUploadJobs((current) => {
         const next = { ...current };
         delete next[job.id];
@@ -600,13 +623,13 @@ export function MusicWorkspace({
             setUploadTarget({ song: selected, asset });
           }}
           onShareFiles={musicRepository.createShareLink ? () => setShareTarget(selected) : undefined}
-          onWriteDocument={musicRepository.createSongDocument ? () => setDocumentEditorTarget({ song: selected }) : undefined}
-          onEditDocument={musicRepository.updateSongDocument ? (document) => setDocumentEditorTarget({ song: selected, document }) : undefined}
+          onWriteDocument={musicRepository.createSongDocument ? () => { setActionError(null); setDocumentEditorTarget({ song: selected }); } : undefined}
+          onEditDocument={musicRepository.updateSongDocument ? (document) => { setActionError(null); setDocumentEditorTarget({ song: selected, document }); } : undefined}
           onAskManagerForDocument={() => onOpenManager?.(selected, `Draft a press release for ${selected.title}. Use the song's current files, lyrics, metadata, and release context. Save the draft to this song for my review.`)}
           onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(selected.id, assetId) : undefined}
           uploadJobs={Object.values(uploadJobs).filter((job) => job.songId === selected.id)}
           onRetryUpload={(job) => void performMusicAssetUpload(job)}
-          onEditDetail={(groupTitle, field) => setDetailTarget({ song: selected, groupTitle, field })}
+          onEditDetail={(groupTitle, field) => { setActionError(null); setDetailTarget({ song: selected, groupTitle, field }); }}
           onStageChange={(stage) => runMusicAction(() => musicRepository.updateLifecycleStage(selected.id, stage))}
           onSaveSplitContributor={(input) => saveSplitContributor(selected.id, input)}
           onRemoveSplitContributor={(contributorId) => removeSplitContributor(selected.id, contributorId)}
@@ -618,6 +641,7 @@ export function MusicWorkspace({
           onBack={backToLibrary}
           onOpenMission={onOpenMission}
           error={actionError}
+          notice={actionNotice}
           actionPending={actionPending}
         />
       ) : null}
@@ -689,6 +713,7 @@ export function MusicWorkspace({
           groupTitle={detailTarget.groupTitle}
           field={detailTarget.field}
           pending={actionPending}
+          error={actionError}
           onCancel={() => setDetailTarget(null)}
           onSubmit={saveMusicDetail}
         />
@@ -698,6 +723,7 @@ export function MusicWorkspace({
         <SongDocumentEditor
           document={documentEditorTarget.document}
           pending={actionPending}
+          error={actionError}
           onCancel={() => setDocumentEditorTarget(null)}
           onSave={saveSongDocument}
         />
@@ -935,6 +961,7 @@ function MusicSongDetail({
   onBack,
   onOpenMission,
   error,
+  notice,
   actionPending,
 }: {
   song: MusicObjectViewModel;
@@ -961,6 +988,7 @@ function MusicSongDetail({
   onBack: () => void;
   onOpenMission: (missionId: string) => void;
   error?: string | null;
+  notice?: string | null;
   actionPending: boolean;
 }) {
   const fileAssets = song.fileAssets ?? [];
@@ -1019,6 +1047,7 @@ function MusicSongDetail({
     <section data-testid="music-song-detail" className="grid min-w-0 gap-5">
       <MusicDetailTop object={song} label="Song room" onBack={onBack} onStageChange={onStageChange} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
+      {notice && !error ? <p role="status" className="rounded-lg border border-success/20 bg-success/8 px-3 py-2 text-[12px] font-semibold text-success">{notice}</p> : null}
       <WorkspaceTabRail
         ariaLabel="Song sections"
         testId="song-room-mobile-tabs"
@@ -1029,7 +1058,7 @@ function MusicSongDetail({
       />
 
       {activeTab === "overview" ? (
-        <div className="grid items-start gap-4 lg:gap-5">
+        <div className="grid items-start gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div data-testid="song-room-mobile-overview" className="surface-elevated space-y-5 overflow-hidden rounded-[16px] p-4 shadow-sm sm:p-5 lg:space-y-6 lg:rounded-[22px] lg:p-6">
             <div>
               <div className="mb-4 flex items-start justify-between gap-3">
@@ -1068,10 +1097,9 @@ function MusicSongDetail({
             <MusicManagerReadContent subject={song} testId="manager-read-copy" />
           </div>
           <ReleaseWorkAttachment
-            mission={linkedMissions[0]}
-            blocker={song.blocker}
+            missions={linkedMissions}
             onTalkToManager={onContinueWithManager}
-            onOpenPlan={linkedMissions[0] ? () => onOpenMission(linkedMissions[0].id) : undefined}
+            onOpenPlan={onOpenMission}
           />
         </div>
       ) : null}
@@ -1151,7 +1179,19 @@ function MusicSongDetail({
               ) : null}
             </section>
 
-            <MusicAssetGroup title="Artwork & images" addLabel="Add image" addTarget={{ group: "Artwork", label: "Cover art", status: "Missing", action: "Upload cover art", assetType: "cover_art", canUpload: true }} icon={<ImageIcon className="h-4 w-4" />} assets={artworkFiles} emptyCopy="Cover art and press images will live here." onUploadAsset={onUploadAsset} />
+            <MusicAssetGroup
+              title="Artwork & images"
+              addLabel="Add image"
+              addTargets={[
+                { label: "Cover artwork", target: { group: "Artwork", label: "Cover artwork", status: "Missing", action: "Upload cover artwork", assetType: "cover_art", canUpload: true } },
+                { label: "Press image", target: { group: "Artwork", label: "Press image", status: "Missing", action: "Upload press image", assetType: "press_photo", canUpload: true } },
+                { label: "Alternate artwork", target: { group: "Artwork", label: "Alternate artwork", status: "Missing", action: "Upload alternate artwork", assetType: "alternate_artwork", canUpload: true } },
+              ]}
+              icon={<ImageIcon className="h-4 w-4" />}
+              assets={artworkFiles}
+              emptyCopy="Add cover artwork, alternate artwork, or press images."
+              onUploadAsset={onUploadAsset}
+            />
             {uploadJobs.filter((job) => job.asset.group === "Artwork").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
             <section aria-labelledby="song-assets-documents" className="relative">
               <div className="mb-3 flex items-center justify-between gap-3">
@@ -1162,7 +1202,16 @@ function MusicSongDetail({
                 <div role="menu" aria-label="Add document" className="absolute right-0 top-10 z-20 grid w-56 overflow-hidden rounded-[12px] border border-foreground/10 bg-background p-1.5 shadow-xl">
                   {onWriteDocument ? <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onWriteDocument(); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Write here</button> : null}
                   {onAskManagerForDocument ? <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onAskManagerForDocument(); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Ask Manager to draft</button> : null}
-                  <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onUploadAsset({ group: "Documents", label: "Song document", status: "Missing", action: "Upload document", assetType: "press_document", canUpload: true }); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Upload a file</button>
+                  <div className="my-1 border-t border-foreground/8" />
+                  <p className="px-3 pb-1 pt-1.5 font-ui text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Upload</p>
+                  {[
+                    { label: "Lyrics file", assetType: "lyrics" },
+                    { label: "EPK / press kit", assetType: "epk" },
+                    { label: "Press material", assetType: "pitch_asset" },
+                    { label: "Other document", assetType: "other" },
+                  ].map((option) => (
+                    <button key={option.assetType} type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onUploadAsset({ group: "Documents", label: option.label, status: "Missing", action: `Upload ${option.label.toLowerCase()}`, assetType: option.assetType, canUpload: true }); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">{option.label}</button>
+                  ))}
                 </div>
               ) : null}
               {nativeDocuments.length || documentFiles.length ? (
@@ -1319,7 +1368,7 @@ function MusicInlineUpload({ job, onRetry }: { job: MusicUploadJob; onRetry: (jo
 function MusicAssetGroup({
   title,
   addLabel,
-  addTarget,
+  addTargets,
   icon,
   assets,
   emptyCopy,
@@ -1327,18 +1376,24 @@ function MusicAssetGroup({
 }: {
   title: string;
   addLabel?: string;
-  addTarget?: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
+  addTargets?: Array<{ label: string; target: NonNullable<MusicObjectViewModel["fileAssets"]>[number] }>;
   icon: ReactNode;
   assets: NonNullable<MusicObjectViewModel["fileAssets"]>;
   emptyCopy: string;
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
 }) {
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
   return (
-    <section aria-labelledby={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+    <section className="relative" aria-labelledby={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-muted-foreground/70">{icon}<h5 id={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">{title}</h5></div>
-        {addLabel && addTarget ? <button type="button" aria-label={addLabel} onClick={() => onUploadAsset(addTarget)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> {addLabel}</button> : null}
+        {addLabel && addTargets?.length ? <button type="button" aria-label={addLabel} aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> {addLabel}</button> : null}
       </div>
+      {addMenuOpen ? (
+        <div role="menu" aria-label={addLabel} className="absolute right-0 top-10 z-20 grid w-52 overflow-hidden rounded-[12px] border border-foreground/10 bg-background p-1.5 shadow-xl">
+          {addTargets?.map((option) => <button key={option.target.assetType ?? option.label} type="button" role="menuitem" onClick={() => { setAddMenuOpen(false); onUploadAsset(option.target); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">{option.label}</button>)}
+        </div>
+      ) : null}
       {assets.length ? (
         <div className="divide-y divide-foreground/6 overflow-hidden rounded-[14px] border border-foreground/8">
           {assets.map((asset) => <MusicStoredAssetRow key={asset.assetId ?? asset.label} asset={asset} onUploadAsset={onUploadAsset} />)}
@@ -2968,12 +3023,14 @@ function MusicDetailEditDialog({
   groupTitle,
   field,
   pending,
+  error,
   onCancel,
   onSubmit,
 }: {
   groupTitle: string;
   field: MusicDetailField;
   pending: boolean;
+  error?: string | null;
   onCancel: () => void;
   onSubmit: (value: string) => void;
 }) {
@@ -3009,6 +3066,7 @@ function MusicDetailEditDialog({
           )}
         </label>
         <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Provider-confirmed metadata stays read-only. This saves a user-supplied draft for incomplete fields.</p>
+        {error ? <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>

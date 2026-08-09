@@ -1,54 +1,41 @@
-import { ArrowRight, Disc3, MessageCircle, Play } from "lucide-react";
+import { ArrowRight, BriefcaseBusiness, MessageCircle, Play } from "lucide-react";
 
 import type { MissionViewModel } from "../../types/cleanProduction";
 
 export function ReleaseWorkAttachment({
-  mission,
-  blocker,
+  missions = [],
   onOpenPlan,
   onTalkToManager,
 }: {
-  mission?: MissionViewModel;
-  blocker?: string;
-  onOpenPlan?: () => void;
+  missions?: MissionViewModel[];
+  onOpenPlan?: (missionId: string) => void;
   onTalkToManager?: () => void;
 }) {
-  if (!mission && !onTalkToManager) return null;
-  const meaningfulBlocker = blocker && !["none", "no active blocker"].includes(blocker.trim().toLowerCase()) ? blocker : undefined;
+  if (!missions.length && !onTalkToManager) return null;
 
   return (
-    <section role="region" aria-label="Release work" className="surface-elevated overflow-hidden rounded-[16px] shadow-sm lg:rounded-[22px]">
-      <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-foreground/[0.055] text-muted-foreground">
-            <Disc3 className="h-4 w-4" aria-hidden="true" />
-          </span>
-          <div className="min-w-0">
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/78">Release work</p>
-            <p className="mt-1 text-[14px] font-semibold leading-snug text-foreground">{mission?.title ?? "Work with your Manager"}</p>
-            {mission?.nextTask ? <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground">{mission.nextTask}</p> : null}
-            {meaningfulBlocker ? <p className="mt-1.5 text-[11px] font-semibold text-warning">{meaningfulBlocker}</p> : null}
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {onTalkToManager ? (
-            <button type="button" aria-label="Talk to Manager" onClick={onTalkToManager} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-foreground/10 bg-background px-3 text-[11px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
-              <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-              Talk to Manager
-            </button>
-          ) : null}
-          {mission && onOpenPlan ? (
-            <button type="button" aria-label="Open plan" onClick={onOpenPlan} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
-              Open plan
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
-          ) : null}
-        </div>
+    <section role="region" aria-label="Work on this song" className="surface-elevated overflow-hidden rounded-[16px] shadow-sm lg:sticky lg:top-5 lg:rounded-[22px]">
+      <div className="border-b border-foreground/8 p-4 sm:p-5">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
+          <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
+        </span>
+        <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight text-foreground">Work on this song</h4>
+        <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">Continue the conversation or open a linked mission.</p>
+        {onTalkToManager ? (
+          <button type="button" aria-label="Talk to Manager" onClick={onTalkToManager} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+            <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            Talk to Manager
+          </button>
+        ) : null}
       </div>
-      {mission ? (
-        <div className="h-0.5 bg-foreground/[0.055]">
-          <span className="block h-full bg-brand-accent transition-[width] duration-200" style={{ width: `${Math.max(0, Math.min(100, mission.progress))}%` }} />
+      {missions.length ? (
+        <div className="divide-y divide-foreground/7">
+          {missions.map((mission) => (
+            <button key={mission.id} type="button" aria-label={`Open mission ${mission.title}`} onClick={() => onOpenPlan?.(mission.id)} disabled={!onOpenPlan} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-foreground/[0.025] disabled:cursor-default sm:px-5">
+              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">{mission.title}</span>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            </button>
+          ))}
         </div>
       ) : null}
     </section>

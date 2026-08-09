@@ -1514,8 +1514,52 @@ describe("production Supabase services", () => {
         ["target_id", "song-jam"],
         ["relationship", "references"],
       ]),
-      inFilters: expect.arrayContaining([["source_type", ["conversation", "mission"]]]),
+      inFilters: expect.arrayContaining([["source_type", ["conversation", "mission", "document"]]]),
     });
+  });
+
+  it("hydrates canonical song documents when refreshing one exact song", async () => {
+    const tables = musicManagerReadTables({
+      artifact_links: [{
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        source_type: "document",
+        source_id: "document-lyrics",
+        target_type: "music_item",
+        target_id: "song-jam",
+        relationship: "references",
+        created_at: "2026-08-09T12:00:00.000Z",
+      }],
+      documents: [{
+        id: "document-lyrics",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        title: "Lyrics",
+        document_type: "lyrics",
+        origin: "user_uploaded",
+        status: "accepted",
+        current_version_id: "version-lyrics-1",
+        metadata: {},
+      }],
+      document_versions: [{
+        id: "version-lyrics-1",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        document_id: "document-lyrics",
+        version_number: 1,
+        metadata: { body: "First line" },
+      }],
+    });
+    const { client } = createObservedSupabaseClient(tables);
+
+    const result = await createSupabaseProductionRepositories(client, workspace).music.loadMusicObject("song-jam", "music_item");
+
+    expect(result?.materials).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "document-lyrics", kind: "document", materialType: "lyrics", body: "First line" }),
+    ]));
   });
 
   it("loads one Manager Read run by the exact owner tuple and run id", async () => {
@@ -3404,6 +3448,8 @@ describe("production Supabase services", () => {
     const repositories = createSupabaseProductionRepositories(client, workspace);
 
     await repositories.music.updateLifecycleStage("song-1", "ready");
+    await repositories.music.saveDetail("song-1", { group: "Lyrics", label: "Lyrics", value: "The first line" });
+    await repositories.music.saveDetail("song-1", { group: "Song identity", label: "Song title", value: "After Midnight" });
     await repositories.music.saveCredit("song-1", { role: "Producer", name: "Mara Vale" });
     await repositories.music.saveIdentifier("song-1", { identifierType: "isrc", identifierValue: "USNV12600099" });
     const uploaded = await repositories.music.uploadAsset("song-1", {
@@ -3421,7 +3467,11 @@ describe("production Supabase services", () => {
         options: expect.objectContaining({ upsert: false, contentType: "audio/wav" }),
       }),
     ]);
-    expect(tables.music_items[0]).toMatchObject({ lifecycle_stage: "ready" });
+    expect(tables.music_items[0]).toMatchObject({
+      lifecycle_stage: "ready",
+      title: "After Midnight",
+      metadata: expect.objectContaining({ manual_details: expect.objectContaining({ lyrics: "The first line" }) }),
+    });
     expect(tables.music_credits[0]).toMatchObject({
       role: "Producer",
       name: "Mara Vale",
@@ -3447,6 +3497,8 @@ describe("production Supabase services", () => {
     });
     expect(tables.operating_events.map((event) => event.event_type)).toEqual([
       "music_lifecycle_updated",
+      "music_metadata_updated",
+      "music_metadata_updated",
       "music_credit_updated",
       "music_identifier_added",
       "music_asset_upload_intent_created",

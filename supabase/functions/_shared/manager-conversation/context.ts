@@ -154,6 +154,18 @@ function compactFocusedMusicSubject(value: unknown) {
       const event = record(item);
       return { eventType: compactText(event.eventType ?? event.event_type, 160), summary: compactText(event.summary, 500), createdAt: compactText(event.createdAt ?? event.created_at, 120) };
     }),
+    managerRead: compactFocusedManagerRead(subject.managerRead),
+  };
+}
+
+function compactFocusedManagerRead(value: unknown) {
+  const read = record(value);
+  if (!Object.keys(read).length) return null;
+  return {
+    id: compactText(read.id, 120),
+    summary: compactText(read.summary, 2_000),
+    recommendation: compactText(read.recommendation, 3_000),
+    createdAt: compactText(read.createdAt ?? read.created_at, 120),
   };
 }
 

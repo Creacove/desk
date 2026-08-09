@@ -17,11 +17,13 @@ const DOCUMENT_TYPES: Array<{ value: SongDocumentType; label: string }> = [
 export function SongDocumentEditor({
   document,
   pending,
+  error,
   onCancel,
   onSave,
 }: {
   document?: Extract<SongMaterialViewModel, { kind: "document" }>;
   pending: boolean;
+  error?: string | null;
   onCancel: () => void;
   onSave: (input: { documentType: SongDocumentType; title: string; body: string }) => Promise<void> | void;
 }) {
@@ -62,6 +64,7 @@ export function SongDocumentEditor({
           <label className="grid min-h-[320px] gap-1.5 text-[11px] font-semibold text-muted-foreground">Content
             <textarea aria-label="Document content" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Start writing…" className="min-h-[300px] resize-y rounded-[14px] border border-foreground/12 bg-background p-4 font-body text-[14px] leading-7 text-foreground outline-none focus:ring-2 focus:ring-brand-accent/25" />
           </label>
+          {error ? <p role="alert" className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
         </div>
         <footer className="flex justify-end gap-2 border-t border-foreground/8 px-5 py-4 sm:px-6">
           <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Cancel</button>

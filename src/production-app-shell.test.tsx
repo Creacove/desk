@@ -3290,7 +3290,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click((await screen.findByTestId("music-song-detail")).querySelector('[aria-label="Add document"]')!);
     expect(screen.getByRole("menuitem", { name: "Write here" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Ask Manager to draft" })).toBeInTheDocument();
-    expect(screen.getByRole("menuitem", { name: "Upload a file" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Lyrics file" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "EPK / press kit" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Press material" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("menuitem", { name: "Write here" }));
     fireEvent.change(screen.getByLabelText("Document title"), { target: { value: "North Star press release" } });
     fireEvent.change(screen.getByLabelText("Document content"), { target: { value: "North Star opens a new chapter." } });
@@ -3606,7 +3608,7 @@ describe("Clean production prototype-match shell", () => {
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
     expect(within(songRoom).queryByTestId("track-intelligence-card")).not.toBeInTheDocument();
-    expect(within(songRoom).getByRole("region", { name: "Release work" })).toBeInTheDocument();
+    expect(within(songRoom).getByRole("region", { name: "Work on this song" })).toBeInTheDocument();
     expect(within(songRoom).queryByTestId("music-linked-work")).not.toBeInTheDocument();
 
     fireEvent.click(within(songRoom).getByRole("button", { name: "details" }));
@@ -4585,11 +4587,11 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Signal Song" }));
-    const songLinkedWork = within(screen.getByTestId("music-song-detail")).getByRole("region", { name: "Release work" });
+    const songLinkedWork = within(screen.getByTestId("music-song-detail")).getByRole("region", { name: "Work on this song" });
     expect(songLinkedWork).toHaveTextContent("Push Signal Song");
-    expect(songLinkedWork).toHaveTextContent("Confirm launch lane.");
+    expect(songLinkedWork).not.toHaveTextContent("Confirm launch lane.");
 
-    fireEvent.click(within(songLinkedWork).getByRole("button", { name: "Open plan" }));
+    fireEvent.click(within(songLinkedWork).getByRole("button", { name: "Open mission Push Signal Song" }));
     expect(await screen.findByRole("heading", { name: "Push Signal Song" })).toBeInTheDocument();
     expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
 
@@ -4726,14 +4728,14 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const room = screen.getByTestId("music-song-detail");
-    const releaseWork = within(room).getByRole("region", { name: "Release work" });
+    const releaseWork = within(room).getByRole("region", { name: "Work on this song" });
     expect(releaseWork).toHaveTextContent("Prepare Jam for release");
-    expect(releaseWork).toHaveTextContent("Add the current working audio");
+    expect(releaseWork).not.toHaveTextContent("Add the current working audio");
     expect(within(room).queryByText("Linked work")).not.toBeInTheDocument();
     expect(within(room).queryByTestId("music-linked-conversation")).not.toBeInTheDocument();
     fireEvent.click(within(releaseWork).getByRole("button", { name: "Talk to Manager" }));
     expect(onOpenManager).toHaveBeenCalledWith(subject);
-    fireEvent.click(within(releaseWork).getByRole("button", { name: "Open plan" }));
+    fireEvent.click(within(releaseWork).getByRole("button", { name: "Open mission Prepare Jam for release" }));
     expect(onOpenMission).toHaveBeenCalledWith("mission-jam-release");
 
     expect(onOpenManager).toHaveBeenCalledTimes(1);
@@ -5068,6 +5070,11 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: "Add document" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Replace Final master" })).toHaveTextContent("Replace");
     expect(screen.queryByText("Rights documents")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add image" }));
+    expect(screen.getByRole("menuitem", { name: "Cover artwork" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Press image" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Alternate artwork" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Replace Final master" }));
     expect(screen.getByRole("dialog", { name: "Upload Final master" })).toBeInTheDocument();

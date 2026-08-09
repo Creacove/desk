@@ -192,6 +192,17 @@ describe("OpenAI Manager Conversation Router", () => {
     }
   });
 
+  it("continues an imported song conversation from its current Manager Read instead of restarting from catalog metrics", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain('.from("manager_outputs")');
+      expect(source).toContain("managerRead:");
+      expect(source).toContain("song_manager_read");
+    }
+    const instructions = buildManagerConversationInstructions();
+    expect(instructions).toContain("continue from the attached current Manager Read");
+    expect(instructions).toContain("Do not recite public catalog metrics");
+  });
+
   it("prompts Manager chat as a synthesis router, not a generic assistant or evidence-read section", () => {
     const instructions = buildManagerConversationInstructions();
 

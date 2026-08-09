@@ -1069,7 +1069,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .from("artifact_links")
         .select("source_type,source_id,target_id,target_type,relationship,created_at")
       )
-        .in("source_type", ["conversation", "mission"])
+        .in("source_type", ["conversation", "mission", "document"])
         .eq("target_type", subjectType)
         .eq("target_id", subjectId)
         .eq("relationship", "references")
@@ -1703,9 +1703,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         metadata.manual_details = { ...existingManual, [key]: input.value.trim() };
         metadata.manual_detail_groups = { ...existingGroups, [key]: input.group };
 
+        const detailPatch: Record<string, unknown> = { metadata };
+        if (input.label.trim().toLowerCase() === "song title") detailPatch.title = input.value.trim();
+
         const { error } = await client
           .from("music_items")
-          .update({ metadata })
+          .update(detailPatch)
           .eq("id", musicItemId)
           .eq("artist_workspace_id", workspace.artistWorkspaceId);
 
@@ -3056,6 +3059,10 @@ async function applySongDocumentMaterials(
   models: MusicObjectViewModel[],
   links: ArtifactLinkRow[],
 ) {
+  const owned = (query: any) => query
+    .eq("account_id", workspace.accountId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId)
+    .eq("artist_id", workspace.artistId);
   const documentLinks = links.filter((link) => link.source_type === "document" && link.target_type === "music_item");
   const documentIds = [...new Set(documentLinks.map((link) => link.source_id).filter(Boolean))];
   const fileMaterialsBySong = new Map(models.map((model) => [
@@ -3078,11 +3085,11 @@ async function applySongDocumentMaterials(
   }
 
   const [{ data: documentData, error: documentError }, { data: versionData, error: versionError }] = await Promise.all([
-    ownerFilters(client
+    owned(client
       .from("documents")
       .select("id,title,document_type,origin,status,current_version_id,metadata")
     ).in("id", documentIds),
-    ownerFilters(client
+    owned(client
       .from("document_versions")
       .select("id,document_id,file_name,metadata")
     ).in("document_id", documentIds).order("version_number", { ascending: false }),
@@ -6030,9 +6037,9 @@ function buildSongDetails(song: ProductionMusicItem) {
 
 function buildMetadataFields(song: ProductionMusicItem): NonNullable<MusicObjectViewModel["metadataFields"]> {
   return [
-    { label: "Song title", value: song.title, status: "Confirmed" },
+    manualDetailField(song, "Song title", song.title),
     manualDetailField(song, "Primary artist", song.primaryArtist),
-    { label: "Featured artists", value: song.featuredArtists.length ? song.featuredArtists.join(", ") : "None", status: "Confirmed" },
+    manualDetailField(song, "Featured artists", song.featuredArtists.length ? song.featuredArtists.join(", ") : "None"),
     manualDetailField(song, "Version", song.itemType === "alternate_version" ? "Alternate version" : undefined, "Draft"),
     manualDetailField(song, "Genre", song.genres?.length ? song.genres.join(", ") : undefined),
     manualDetailField(song, "Mood", song.mood),
@@ -6062,9 +6069,9 @@ function buildReleaseFields(song: ProductionMusicItem): NonNullable<MusicObjectV
 }
 
 function manualDetailField(song: ProductionMusicItem, label: string, providerValue?: string, fallbackStatus: "Missing" | "Draft" = "Missing") {
-  if (providerValue) return { label, value: providerValue, status: "Confirmed" as const };
   const manualValue = song.manualDetails?.[normalizeManualDetailKey(label)];
-  return manualValue ? { label, value: manualValue, status: "Confirmed" as const } : { label, value: "Missing", status: fallbackStatus };
+  if (manualValue) return { label, value: manualValue, status: "Confirmed" as const };
+  return providerValue ? { label, value: providerValue, status: "Confirmed" as const } : { label, value: "Missing", status: fallbackStatus };
 }
 
 function manualOrAudioAnalysisDetailField(

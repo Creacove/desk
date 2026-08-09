@@ -316,8 +316,9 @@ async function updateFocusedMusicMetadata(db: SupabaseLike, input: ManagerToolIn
     manual_details: { ...manual, [key]: value },
     manual_detail_groups: { ...groups, [key]: group },
   };
-  const { error: updateError } = await scopedQuery(db, target.table, "id", input)
-    .update({ metadata: nextMetadata })
+  const updateValues: Record<string, unknown> = { metadata: nextMetadata };
+  if (subject.type === "music_item" && key === "song_title") updateValues.title = value;
+  const { error: updateError } = await scopedUpdate(db, target.table, updateValues, input)
     .eq("id", subject.id);
   if (updateError) throw updateError;
   await writeMusicManagerEvent(db, input, {
@@ -341,8 +342,7 @@ async function updateFocusedMusicLifecycle(db: SupabaseLike, input: ManagerToolI
   if (current.released_at || isReleasedLifecycle(current.lifecycle_stage)) {
     return { status: "not_allowed", reason: "Released and catalog music is managed through post-release work, not pre-release stage changes." };
   }
-  const { error: updateError } = await scopedQuery(db, target.table, "id", input)
-    .update({ lifecycle_stage: lifecycleStage })
+  const { error: updateError } = await scopedUpdate(db, target.table, { lifecycle_stage: lifecycleStage }, input)
     .eq("id", subject.id);
   if (updateError) throw updateError;
   await writeMusicManagerEvent(db, input, {
@@ -532,6 +532,15 @@ function scopedQuery(db: SupabaseLike, table: string, columns: string, input: Ma
   return db
     .from(table)
     .select(columns)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId);
+}
+
+function scopedUpdate(db: SupabaseLike, table: string, values: Record<string, unknown>, input: ManagerToolInput) {
+  return db
+    .from(table)
+    .update(values)
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId);

@@ -96,6 +96,7 @@ describe("Manager output tools", () => {
         manual_detail_groups: expect.objectContaining({ tempo_bpm: "Release metadata" }),
       }),
     });
+    expect([...states].reverse().find((state) => state.table === "music_items" && state.updates)?.columns).toBe("");
     expect(states.find((state) => state.table === "operating_events")?.updates).toMatchObject({
       event_type: "music_metadata_updated",
       target_id: "song-1",
@@ -112,6 +113,24 @@ describe("Manager output tools", () => {
       label: "Tempo (BPM)",
       value: "102",
     })).rejects.toThrow("focused music conversation");
+  });
+
+  it("updates the canonical song title when Manager confirms a title correction", async () => {
+    const { db, states } = dbWith([{ id: "song-1", metadata: {} }]);
+
+    await executeManagerConversationTool(db, {
+      ...scope,
+      musicSubject: { type: "music_item", id: "song-1" },
+    }, "update_focused_music_metadata", {
+      group: "Song identity",
+      label: "Song title",
+      value: "After Midnight",
+    });
+
+    expect([...states].reverse().find((state) => state.table === "music_items" && state.updates)?.updates).toMatchObject({
+      title: "After Midnight",
+      metadata: expect.objectContaining({ manual_details: expect.objectContaining({ song_title: "After Midnight" }) }),
+    });
   });
 
   it("does not treat a released manual song as an unfinished pre-release checklist", async () => {
