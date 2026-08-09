@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, FileAudio, FileText, Image as ImageIcon, ListMusic, Loader2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, Download, FileAudio, FileText, Image as ImageIcon, ListMusic, Loader2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
@@ -9,7 +9,9 @@ import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
 import { ReleaseWorkAttachment } from "./SongRoomAttachments";
 import { SongDocumentEditor } from "./SongDocumentEditor";
+import { SongDocumentActions } from "./SongDocumentActions";
 import { MusicShareDialog as PolishedMusicShareDialog } from "./MusicShareDialog";
+import { buildSplitRecord, deriveSongRightsState } from "./songRights";
 import type {
   MissionViewModel,
   ManualSongWorkspaceResult,
@@ -1001,7 +1003,6 @@ function MusicSongDetail({
   const artworkFiles = fileAssets.filter((asset) => asset.group === "Artwork" && asset.status !== "Missing");
   const documentFiles = fileAssets.filter((asset) => asset.group === "Documents" && asset.status !== "Missing");
   const nativeDocuments = (song.materials ?? []).filter((material): material is Extract<SongMaterialViewModel, { kind: "document" }> => material.kind === "document");
-  const [documentActionsOpen, setDocumentActionsOpen] = useState(false);
   const missingAudioTarget = fileAssets.find((asset) => asset.group === "Audio" && asset.status === "Missing");
   const uploadTarget = missingAudioTarget ?? {
     group: "Audio" as const,
@@ -1195,27 +1196,15 @@ function MusicSongDetail({
               onUploadAsset={onUploadAsset}
             />
             {uploadJobs.filter((job) => job.asset.group === "Artwork").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
-            <section aria-labelledby="song-assets-documents" className="relative">
+            <section aria-labelledby="song-assets-documents">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 text-muted-foreground/70"><FileText className="h-4 w-4" /><h5 id="song-assets-documents" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Documents</h5></div>
-                <button type="button" aria-label="Add document" aria-expanded={documentActionsOpen} onClick={() => setDocumentActionsOpen((open) => !open)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> Add document</button>
+                <SongDocumentActions
+                  onWrite={onWriteDocument}
+                  onAskManager={onAskManagerForDocument}
+                  onUpload={(option) => onUploadAsset({ group: "Documents", label: option.label, status: "Missing", action: `Upload ${option.label.toLowerCase()}`, assetType: option.assetType, canUpload: true })}
+                />
               </div>
-              {documentActionsOpen ? (
-                <div role="menu" aria-label="Add document" className="absolute right-0 top-10 z-20 grid w-56 overflow-hidden rounded-[12px] border border-foreground/10 bg-background p-1.5 shadow-xl">
-                  {onWriteDocument ? <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onWriteDocument(); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Write here</button> : null}
-                  {onAskManagerForDocument ? <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onAskManagerForDocument(); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Ask Manager to draft</button> : null}
-                  <div className="my-1 border-t border-foreground/8" />
-                  <p className="px-3 pb-1 pt-1.5 font-ui text-[9px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Upload</p>
-                  {[
-                    { label: "Lyrics file", assetType: "lyrics" },
-                    { label: "EPK / press kit", assetType: "epk" },
-                    { label: "Press material", assetType: "pitch_asset" },
-                    { label: "Other document", assetType: "other" },
-                  ].map((option) => (
-                    <button key={option.assetType} type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onUploadAsset({ group: "Documents", label: option.label, status: "Missing", action: `Upload ${option.label.toLowerCase()}`, assetType: option.assetType, canUpload: true }); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">{option.label}</button>
-                  ))}
-                </div>
-              ) : null}
               {nativeDocuments.length || documentFiles.length ? (
                 <div className="divide-y divide-foreground/6 overflow-hidden rounded-[14px] border border-foreground/8">
                   {nativeDocuments.map((document) => <button key={document.id} type="button" onClick={() => onEditDocument?.(document)} className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left hover:bg-foreground/[0.025]"><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-foreground">{document.title}</span>{document.reviewState === "needs_review" ? <span className="mt-0.5 block text-[10px] font-semibold text-warning">Needs review</span> : null}</span><span className="text-[11px] font-semibold text-muted-foreground">Open</span></button>)}
@@ -1326,6 +1315,11 @@ function MusicSongDetail({
           onSaveContributor={onSaveSplitContributor}
           onRemoveContributor={onRemoveSplitContributor}
           onSendLinks={onSendSplitConfirmationLinks}
+          onUploadExistingSplit={() => onUploadAsset({ group: "Documents", label: "Split sheet / rights document", status: "Missing", action: "Upload existing split sheet", assetType: "split_sheet", canUpload: true })}
+          onOpenExternalRecord={onRequestAssetAccess ? async (assetId) => {
+            const url = await onRequestAssetAccess(assetId);
+            window.open(url, "_blank", "noopener,noreferrer");
+          } : undefined}
           pending={actionPending}
         />
       ) : null}
@@ -1860,12 +1854,16 @@ function MusicRightsWorkspace({
   onSaveContributor,
   onRemoveContributor,
   onSendLinks,
+  onUploadExistingSplit,
+  onOpenExternalRecord,
   pending,
 }: {
   song: MusicObjectViewModel;
   onSaveContributor: (input: { name: string; role: string; email: string; publishingShare: number; masterShare: number }) => Promise<boolean>;
   onRemoveContributor: (contributorId: string) => Promise<boolean>;
   onSendLinks: () => Promise<boolean>;
+  onUploadExistingSplit: () => void;
+  onOpenExternalRecord?: (assetId: string) => Promise<void>;
   pending: boolean;
 }) {
   const [name, setName] = useState("");
@@ -1873,7 +1871,9 @@ function MusicRightsWorkspace({
   const [email, setEmail] = useState("");
   const [publishingShare, setPublishingShare] = useState("");
   const [masterShare, setMasterShare] = useState("");
+  const [setupOpen, setSetupOpen] = useState(false);
   const contributors = song.splits?.contributors ?? [];
+  const rights = deriveSongRightsState(song);
   const status = song.splits?.status ?? "Missing";
   const normalizedStatus = status.toLowerCase();
   const totalPublishing = sumContributorShares(contributors.map((contributor) => contributor.publishingShare));
@@ -1882,19 +1882,19 @@ function MusicRightsWorkspace({
   const confirmationActive = ["pending confirmation", "pending_confirmation", "partially confirmed", "partially_confirmed", "cleared"].includes(normalizedStatus);
   const allocationComplete = totalPublishing === 100 && totalMaster === 100;
   const canSendLinks = !locked && !pending && contributors.length > 0 && contributors.every((contributor) => contributor.email?.trim()) && allocationComplete;
-  const statusCopy =
-    confirmationActive
-      ? splitConfirmationCopy(contributors)
-      : normalizedStatus === "revoked"
-        ? "This split request was revoked. Create a new proposal before requesting confirmation."
-        : normalizedStatus === "superseded"
-          ? "A newer split proposal replaced this one."
-          : allocationComplete
-            ? "The allocation is complete. Send confirmation links when you are ready."
-            : "Add collaborator shares until publishing and master recording both total 100%.";
   const ledgerColumns = locked
-    ? "grid-cols-[1.35fr_1.05fr_1.35fr_1.35fr_1.25fr]"
-    : "grid-cols-[1.3fr_1fr_1.25fr_1.35fr_1.2fr_44px]";
+    ? "grid-cols-[1.3fr_1fr_1.25fr_0.85fr_0.85fr_1.15fr]"
+    : "grid-cols-[1.3fr_1fr_1.25fr_0.85fr_0.85fr_1.1fr_44px]";
+
+  function exportRecord() {
+    const blob = new Blob([buildSplitRecord(song)], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${song.title.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "song"}-split-record.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleAddContributor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1923,13 +1923,37 @@ function MusicRightsWorkspace({
     <div className="grid gap-4">
       <span className="sr-only">split sheet document confirm split sheet publishing splits master share</span>
       <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
-        <div className="border-b border-foreground/8 pb-4">
-          <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Collaborator ledger</p>
-            <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Splits</h4>
-            <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{statusCopy}</p>
+        <div className="flex flex-col gap-3 border-b border-foreground/8 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="max-w-3xl">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Song rights</p>
+            <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">{rights.headline}</h4>
+            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{rights.description}</p>
           </div>
+          {rights.state === "confirmed" ? (
+            <button type="button" onClick={exportRecord} className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.04]"><Download className="h-3.5 w-3.5" /> Export split record</button>
+          ) : null}
         </div>
+
+        {contributors.length ? (
+          <div className="mt-4 grid gap-2 rounded-[14px] bg-foreground/[0.025] p-3 sm:grid-cols-3">
+            <p className="text-[12px] font-semibold text-muted-foreground"><span className="block text-[10px] uppercase tracking-[0.08em]">Publishing allocated</span><strong className="mt-1 block text-[16px] text-foreground">{rights.publishingAllocated}%</strong></p>
+            <p className="text-[12px] font-semibold text-muted-foreground"><span className="block text-[10px] uppercase tracking-[0.08em]">Master allocated</span><strong className="mt-1 block text-[16px] text-foreground">{rights.masterAllocated}%</strong></p>
+            {confirmationActive ? <p className="text-[12px] font-semibold text-muted-foreground"><span className="block text-[10px] uppercase tracking-[0.08em]">Confirmed</span><strong className="mt-1 block text-[16px] text-foreground">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
+          </div>
+        ) : null}
+
+        {!contributors.length ? (
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            {rights.state === "document_on_file" && rights.externalRecordId && onOpenExternalRecord ? (
+              <button type="button" onClick={() => void onOpenExternalRecord(rights.externalRecordId!)} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold text-background"><FileText className="h-4 w-4" /> Open rights document</button>
+            ) : (
+              <button type="button" onClick={() => setSetupOpen(true)} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold text-background"><UsersRound className="h-4 w-4" /> Set up splits here</button>
+            )}
+            <button type="button" onClick={rights.state === "document_on_file" ? () => setSetupOpen(true) : onUploadExistingSplit} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-foreground/10 px-4 py-2.5 text-[12px] font-semibold text-foreground hover:bg-foreground/[0.04]">
+              {rights.state === "document_on_file" ? "Set up structured splits" : "Upload existing split sheet"}
+            </button>
+          </div>
+        ) : null}
 
         {contributors.length > 0 && (totalPublishing !== 100 || totalMaster !== 100) ? (
           <div className="mt-4 flex items-start gap-3 rounded-[14px] border border-warning/18 bg-warning/[0.055] p-3.5">
@@ -1951,7 +1975,8 @@ function MusicRightsWorkspace({
                 <span>Contributor</span>
                 <span>Role</span>
                 <span>Email</span>
-                <span>Rights share</span>
+                <span>Publishing</span>
+                <span>Master</span>
                 <span>Confirmation</span>
                 {!locked ? <span className="text-right">Remove</span> : null}
               </div>
@@ -1962,7 +1987,8 @@ function MusicRightsWorkspace({
                     <span className="truncate text-[14px] font-bold text-foreground">{contributor.name}</span>
                     <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.role}</span>
                     <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.email ?? "Missing"}</span>
-                    <span className="text-[12px] font-bold text-foreground">Publishing {contributor.publishingShare} · Master {contributor.masterShare}</span>
+                    <span className="text-[12px] font-bold text-foreground">{contributor.publishingShare}</span>
+                    <span className="text-[12px] font-bold text-foreground">{contributor.masterShare}</span>
                     <span className="flex min-w-0 items-center gap-1.5">
                       {["cleared", "confirmed"].includes(approval) ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
@@ -2002,7 +2028,7 @@ function MusicRightsWorkspace({
           </div>
         ) : null}
 
-        {!locked && !allocationComplete ? (
+        {!locked && !allocationComplete && (contributors.length > 0 || setupOpen) ? (
           <form onSubmit={handleAddContributor} className="mt-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] p-4">
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/86">Add collaborator</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-[1.4fr_1.15fr_1.45fr_0.85fr_0.85fr] items-end">
@@ -2017,7 +2043,7 @@ function MusicRightsWorkspace({
                 </select>
               </label>
               <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
-                Email (for signature request)
+                Email (for confirmation request)
                 <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground transition-colors focus:border-foreground focus:outline-none" />
               </label>
               <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
@@ -2955,6 +2981,13 @@ function MusicUploadDialog({
   onSubmit: (file: File) => void;
 }) {
   const [file, setFile] = useState<File | null>(null);
+  const objectLabel = asset.group === "Audio" ? "audio" : asset.group === "Artwork" ? "image" : "document";
+  const actionLabel = `${asset.canReplace ? "Replace" : "Upload"} ${asset.label === "Audio file" ? "audio" : asset.label.toLowerCase()}`;
+  const supportingCopy = asset.group === "Audio"
+    ? "Add a mix, master, instrumental, or stems for this song."
+    : asset.group === "Artwork"
+      ? "Add artwork or an image your team can use for this song."
+      : "Add a document your team can keep with this song.";
   return (
     <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
       <form
@@ -2969,8 +3002,8 @@ function MusicUploadDialog({
       >
         <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
           <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Private Music upload</p>
-            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{asset.canReplace ? "Replace" : "Upload"} {asset.label}</h3>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Add to song</p>
+            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{actionLabel}</h3>
           </div>
           <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
             <X className="h-4 w-4" />
@@ -2983,17 +3016,17 @@ function MusicUploadDialog({
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
               <Upload className="h-5 w-5" />
             </span>
-            <span className="font-display text-[16px] font-bold text-foreground">{file ? file.name : "Choose a private file"}</span>
+            <span className="font-display text-[16px] font-bold text-foreground">{file ? file.name : `Choose ${objectLabel === "image" ? "an" : "a"} ${objectLabel} file`}</span>
             <span className="max-w-sm text-[12px] font-semibold normal-case leading-relaxed tracking-normal text-muted-foreground/82">
-              Masters and stems use the large-file path. Artwork and documents use the standard private upload path.
+              {supportingCopy}
             </span>
           </span>
         </label>
-        {file ? <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{formatUploadBytes(file.size)}</p> : null}
+        {file ? <p className="mt-2 text-[11px] font-semibold text-muted-foreground">{file.type || file.name.split(".").pop()?.toUpperCase() || "File"} · {formatUploadBytes(file.size)}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
-          <button type="submit" disabled={!file} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">Upload</button>
+          <button type="submit" disabled={!file} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{actionLabel}</button>
         </div>
       </form>
     </div>
