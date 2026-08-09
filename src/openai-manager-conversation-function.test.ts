@@ -193,16 +193,9 @@ describe("OpenAI Manager Conversation Router", () => {
   });
 
   it("continues an imported song conversation from its current Manager Read instead of restarting from catalog metrics", () => {
-    for (const source of [functionSource, streamFunctionSource]) {
-      expect(source).toContain('.from("manager_outputs")');
-      expect(source).toContain("managerRead:");
-      expect(source).toContain("song_manager_read");
-      expect(source).toContain("focused Manager Read unavailable");
-      expect(source).toContain("managerReadResult.error && managerReadResult.data");
-      expect(source).toContain("primary_recommendation_json.managerRead");
-    }
     const instructions = buildManagerConversationInstructions();
-    expect(instructions).toContain("continue from the attached current Manager Read");
+    expect(instructions).toContain("query_manager_outputs with that exact subject ID");
+    expect(instructions).toContain("read_manager_output_section");
     expect(instructions).toContain("Do not recite public catalog metrics");
   });
 
