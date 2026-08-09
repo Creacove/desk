@@ -17,6 +17,12 @@ describe("split confirmation edge functions", () => {
     expect(source).toContain("/split-confirmation?token=");
     expect(source).toContain("music_split_confirmations");
     expect(source).toContain("music_split_confirmation_sent");
+    expect(source).toContain("publishingShare");
+    expect(source).toContain("masterShare");
+    expect(source).toContain("contributorRole");
+    expect(source).toContain("expiresAt");
+    expect(source).toContain("Review split");
+    expect(source).toContain("failed:");
     expect(source).not.toContain("confirmation_token text");
   });
 
@@ -35,8 +41,12 @@ describe("split confirmation edge functions", () => {
     expect(loadSource).toContain("songTitle");
     expect(loadSource).not.toContain("missions");
     expect(loadSource).not.toContain("conversations");
+    expect(loadSource).not.toContain('select("name,role,publishing_share,master_share,approval_status")');
+    expect(loadSource).not.toContain("approval: item.approval_status");
     expect(confirmSource).toContain("music_split_confirmed");
     expect(confirmSource).toContain("music_split_rejected");
+    expect(confirmSource).toContain("correction_requested");
+    expect(confirmSource).toContain("correctionReason");
     expect(confirmSource).toContain("partially_confirmed");
     expect(confirmSource).toContain("cleared");
   });

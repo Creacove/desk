@@ -23,9 +23,9 @@ Deno.serve(async (request) => {
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    if (!confirmation) return json({ error: "Split confirmation link was not found." }, 404);
-    if (["expired", "revoked", "superseded"].includes(confirmation.status)) return json({ error: "Split confirmation link is no longer active." }, 410);
-    if (new Date(confirmation.expires_at).getTime() < Date.now()) return json({ error: "Split confirmation link has expired." }, 410);
+    if (!confirmation) return json({ error: "This split request is not available." }, 404);
+    if (["expired", "revoked", "superseded"].includes(confirmation.status)) return json({ error: "This split request is no longer available." }, 410);
+    if (new Date(confirmation.expires_at).getTime() < Date.now()) return json({ error: "This split request has expired." }, 410);
 
     const { error: openedError } = await client.from("music_split_confirmations")
       .update({ status: confirmation.status === "sent" ? "opened" : confirmation.status })
@@ -34,8 +34,8 @@ Deno.serve(async (request) => {
 
     const [{ data: split, error: splitError }, { data: contributor, error: contributorError }, { data: contributors, error: contributorsError }] = await Promise.all([
       client.from("music_splits").select("id,music_item_id,music_items(title)").eq("id", confirmation.music_split_id).maybeSingle(),
-      client.from("music_split_contributors").select("id,name,role,publishing_share,master_share,approval_status").eq("id", confirmation.music_split_contributor_id).maybeSingle(),
-      client.from("music_split_contributors").select("name,role,publishing_share,master_share,approval_status").eq("music_split_id", confirmation.music_split_id),
+      client.from("music_split_contributors").select("id,name,role,publishing_share,master_share").eq("id", confirmation.music_split_contributor_id).maybeSingle(),
+      client.from("music_split_contributors").select("name,role,publishing_share,master_share").eq("music_split_id", confirmation.music_split_id),
     ]);
     if (splitError) throw splitError;
     if (contributorError) throw contributorError;
@@ -54,12 +54,11 @@ Deno.serve(async (request) => {
         role: item.role,
         publishingShare: item.publishing_share,
         masterShare: item.master_share,
-        approval: item.approval_status,
       })),
     });
   } catch (error) {
     console.error("Split confirmation load failed", error);
-    return json({ error: error instanceof Error ? error.message : "Split confirmation could not be loaded." }, 500);
+    return json({ error: "This split request could not be loaded." }, 500);
   }
 });
 

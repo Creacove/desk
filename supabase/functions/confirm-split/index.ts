@@ -8,8 +8,9 @@ const corsHeaders = {
 
 type ConfirmInput = {
   token: string;
-  decision: "confirmed" | "rejected";
+  decision: "confirmed" | "correction_requested";
   confirmationText?: string;
+  correctionReason?: string;
 };
 
 Deno.serve(async (request) => {
@@ -19,7 +20,9 @@ Deno.serve(async (request) => {
   try {
     const input = (await request.json()) as ConfirmInput;
     if (!input?.token?.trim()) return json({ error: "Split confirmation token is required." }, 400);
-    if (!["confirmed", "rejected"].includes(input.decision)) return json({ error: "Confirmation decision must be confirmed or rejected." }, 400);
+    if (!["confirmed", "correction_requested"].includes(input.decision)) return json({ error: "Choose whether to confirm your shares or request a correction." }, 400);
+    const correctionReason = input.correctionReason?.trim() ?? "";
+    if (input.decision === "correction_requested" && !correctionReason) return json({ error: "Tell the artist team what needs to change." }, 400);
 
     const client = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
     const confirmation_token_hash = await hashToken(input.token.trim());
@@ -30,22 +33,25 @@ Deno.serve(async (request) => {
       .limit(1)
       .maybeSingle();
     if (error) throw error;
-    if (!confirmation) return json({ error: "Split confirmation link was not found." }, 404);
-    if (["confirmed", "rejected", "expired", "revoked", "superseded"].includes(confirmation.status)) {
-      return json({ error: "Split confirmation link is no longer active." }, 410);
+    if (!confirmation) return json({ error: "This split request is not available." }, 404);
+    if (["confirmed", "rejected"].includes(confirmation.status)) {
+      return json({ status: confirmation.status === "confirmed" ? "confirmed" : "correction_requested", terminal: true });
+    }
+    if (["expired", "revoked", "superseded"].includes(confirmation.status)) {
+      return json({ error: "This split request is no longer available." }, 410);
     }
     if (new Date(confirmation.expires_at).getTime() < Date.now()) {
       await client.from("music_split_confirmations").update({ status: "expired" }).eq("id", confirmation.id);
-      return json({ error: "Split confirmation link has expired." }, 410);
+      return json({ error: "This split request has expired." }, 410);
     }
 
     const now = new Date().toISOString();
-    const rejected = input.decision === "rejected";
+    const rejected = input.decision === "correction_requested";
     const { error: confirmationUpdateError } = await client.from("music_split_confirmations").update({
-      status: input.decision,
+      status: rejected ? "rejected" : "confirmed",
       confirmed_at: rejected ? null : now,
       rejected_at: rejected ? now : null,
-      confirmation_text: input.confirmationText?.trim() ?? null,
+      confirmation_text: rejected ? correctionReason : input.confirmationText?.trim() ?? null,
     }).eq("id", confirmation.id);
     if (confirmationUpdateError) throw confirmationUpdateError;
     const { error: contributorUpdateError } = await client.from("music_split_contributors").update({
@@ -75,7 +81,7 @@ Deno.serve(async (request) => {
     const summary = nextStatus === "cleared"
       ? "Split details confirmed by all invited collaborators."
       : nextStatus === "disputed"
-        ? "A collaborator rejected the proposed split details."
+        ? "A collaborator requested a correction to the proposed split details."
         : "Split details partially confirmed. Waiting for remaining collaborators.";
 
     const { error: splitUpdateError } = await client.from("music_splits").update({ status: nextStatus, summary }).eq("id", confirmation.music_split_id);
@@ -90,8 +96,8 @@ Deno.serve(async (request) => {
       target_id: confirmation.music_split_id,
       source_type: "music_split_confirmation",
       source_id: confirmation.id,
-      summary: rejected ? "Collaborator rejected split details." : "Collaborator confirmed split details.",
-      payload: { status: nextStatus, contributor_id: confirmation.music_split_contributor_id },
+      summary: rejected ? "Collaborator requested a split correction." : "Collaborator confirmed split details.",
+      payload: { status: nextStatus, contributor_id: confirmation.music_split_contributor_id, correction_reason: rejected ? correctionReason : undefined },
     });
     if (decisionEventError) throw decisionEventError;
     const { error: statusEventError } = await client.from("operating_events").insert({
@@ -112,7 +118,7 @@ Deno.serve(async (request) => {
     return json({ status: nextStatus });
   } catch (error) {
     console.error("Split confirmation submission failed", error);
-    return json({ error: error instanceof Error ? error.message : "Split confirmation could not be submitted." }, 500);
+    return json({ error: "Your split response could not be saved." }, 500);
   }
 });
 

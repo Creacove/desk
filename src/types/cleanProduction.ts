@@ -434,7 +434,6 @@ export type SplitConfirmationViewModel = {
     role: string;
     publishingShare: string;
     masterShare: string;
-    approval: string;
   }>;
 };
 
@@ -731,7 +730,7 @@ export type MusicRepository = {
   removeSplitContributor(musicItemId: string, contributorId: string): Promise<void>;
   sendSplitConfirmationLinks(musicItemId: string): Promise<void>;
   loadSplitConfirmation(token: string): Promise<SplitConfirmationViewModel>;
-  submitSplitConfirmation(token: string, input: { decision: "confirmed" | "rejected"; confirmationText?: string }): Promise<void>;
+  submitSplitConfirmation(token: string, input: { decision: "confirmed" | "correction_requested"; confirmationText?: string; correctionReason?: string }): Promise<void>;
   createShareLink?(input: {
     musicSubject: ManagerConversationMusicSubject;
     assetIds: string[];

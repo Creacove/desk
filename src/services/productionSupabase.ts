@@ -1985,6 +1985,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             token: normalizedToken,
             decision: input.decision,
             confirmationText: input.confirmationText?.trim(),
+            correctionReason: input.correctionReason?.trim(),
           },
         });
 
@@ -3864,7 +3865,6 @@ function normalizeSplitConfirmationView(data: unknown): SplitConfirmationViewMod
             role: readStringField(contributor.role) ?? "Contributor",
             publishingShare: formatPercent(contributor.publishingShare as string | number | null | undefined) ?? "Missing",
             masterShare: formatPercent(contributor.masterShare as string | number | null | undefined) ?? "Missing",
-            approval: titleCaseStatus(readStringField(contributor.approval) ?? "pending"),
           };
         })
       : [],
