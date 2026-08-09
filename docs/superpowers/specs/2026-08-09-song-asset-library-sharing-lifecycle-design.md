@@ -81,6 +81,47 @@ dark semantic tokens, brand accent, icon family, radius rules, and 170-240 ms
 motion tokens remain the foundation. This is targeted evolution, not a visual
 reset or an imported third-party design system.
 
+### Visual continuity contract
+
+The finished work must look unmistakably like the existing Ordersounds app. It
+keeps the current shell navigation, Song Room masthead, artwork treatment, stage
+control, four-tab rail, page width, light and dark themes, Manrope typography,
+semantic color tokens, Lucide icon set, focus treatment, and established motion
+timing.
+
+Implementation must not introduce:
+
+- a new font, icon family, accent color, gradient language, or shadow system;
+- a second navigation pattern inside Files;
+- glass panels, floating toolbars, oversized media cards, or consumer-player
+  chrome that conflicts with the rest of the workspace;
+- unique button, input, menu, dialog, or sheet styling when an existing
+  Ordersounds component can satisfy the interaction;
+- a Files-only dark theme or a recipient-page visual language that appears to
+  come from another product.
+
+The visual improvement comes from subtraction and rhythm:
+
+- preserve the Song Room header and tab position so navigation muscle memory
+  does not change;
+- remove nested bordered containers when spacing or one divider can communicate
+  the same hierarchy;
+- use the brand accent for the active tab, focus, primary progress, and the
+  single primary action, not as decoration on every label;
+- use sentence-case headings and the existing display weight, reserving
+  uppercase microcopy for the few global patterns that already require it;
+- keep surfaces on the existing 16 px mobile and 22 px desktop radius family,
+  while rows and controls follow the existing smaller radius tokens;
+- use existing success, warning, and critical tones only for real semantic
+  states;
+- keep shadows at the application's current soft elevation rather than adding
+  dramatic depth.
+
+The implementation review must compare the changed Files, Details, share, and
+recipient surfaces with adjacent unchanged Ordersounds screens at desktop and
+mobile sizes. A surface fails review if it is attractive in isolation but no
+longer feels native to the application.
+
 ### What proven music products validate
 
 The design borrows interaction principles, not visual styling:
