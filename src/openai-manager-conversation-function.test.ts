@@ -197,6 +197,9 @@ describe("OpenAI Manager Conversation Router", () => {
       expect(source).toContain('.from("manager_outputs")');
       expect(source).toContain("managerRead:");
       expect(source).toContain("song_manager_read");
+      expect(source).toContain("focused Manager Read unavailable");
+      expect(source).toContain("managerReadResult.error && managerReadResult.data");
+      expect(source).toContain("primary_recommendation_json.managerRead");
     }
     const instructions = buildManagerConversationInstructions();
     expect(instructions).toContain("continue from the attached current Manager Read");

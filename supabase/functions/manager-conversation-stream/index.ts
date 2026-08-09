@@ -223,6 +223,7 @@ Deno.serve(async (request) => {
         });
       } catch (error) {
         const failure = classifyManagerConversationError(error);
+        console.error("manager-conversation-stream failed", { runId, message: failure.internalMessage });
         if (runId) await markRunFailedSafe(runId, failure.internalMessage);
         if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage);
         emit({ type: "error", message: failure.publicMessage, runId });
@@ -510,8 +511,11 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
       .eq("output_type", managerReadOutputType).eq("is_current", true)
       .order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
-  for (const result of [assetResult, splitResult, analysisResult, activityResult, managerReadResult]) {
+  for (const result of [assetResult, splitResult, analysisResult, activityResult]) {
     if (result.error) throw result.error;
+  }
+  if (managerReadResult.error) {
+    console.warn("manager-conversation-stream: focused Manager Read unavailable", managerReadResult.error.message);
   }
   const documents = musicSubject.type === "music_item" ? await loadFocusedSongDocuments(db, input, musicSubjectRow.id) : [];
 
@@ -530,11 +534,13 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     rights: splitResult.data ? { status: splitResult.data.status, publishingTotal: splitResult.data.publishing_total, masterTotal: splitResult.data.master_total, summary: splitResult.data.summary } : null,
     analysis: (analysisResult.data ?? []).map((item: any) => ({ metric: item.metric_name, value: item.metric_value, unit: item.metric_unit, confidence: item.confidence, createdAt: item.created_at })),
     recentActivity: (activityResult.data ?? []).map((event: any) => ({ eventType: event.event_type, summary: event.summary, createdAt: event.created_at })),
-    managerRead: managerReadResult.data ? {
+    managerRead: !managerReadResult.error && managerReadResult.data ? {
       id: managerReadResult.data.id,
       summary: managerReadResult.data.summary ?? "",
       recommendation: isRecord(managerReadResult.data.primary_recommendation_json)
-        ? managerReadResult.data.primary_recommendation_json.recommendation ?? ""
+        ? managerReadResult.data.primary_recommendation_json.recommendation
+          ?? managerReadResult.data.primary_recommendation_json.managerRead
+          ?? ""
         : "",
       createdAt: managerReadResult.data.created_at,
     } : null,
