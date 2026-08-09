@@ -5600,8 +5600,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song Split Ready" }));
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "rights" }));
 
-    expect(screen.getByText("80% publishing")).toBeInTheDocument();
-    expect(screen.getByText("80% master")).toBeInTheDocument();
+    expect(screen.getByText("Publishing / composition is currently 80%.")).toBeInTheDocument();
+    expect(screen.getByText("Master recording is currently 80%.")).toBeInTheDocument();
     expect(screen.getByText("nova@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Send split confirmation links" })).not.toBeInTheDocument();
 
@@ -5619,9 +5619,59 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Send split confirmation links" }));
     await waitFor(() => expect(actions).toContain("send"));
-    expect(await screen.findByText("Split confirmation links sent. Waiting for collaborators to confirm their shares.")).toBeInTheDocument();
-    expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Waiting for 3 collaborators to confirm their split shares.")).toBeInTheDocument();
+    expect(screen.getAllByText("Awaiting confirmation")).toHaveLength(3);
   }, 20000);
+
+  it("summarizes a partially confirmed split without allocation noise", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const song: MusicObjectViewModel = {
+      id: "song-partial-split",
+      kind: "song",
+      title: "QA Release Flow",
+      lifecycle: "Mastering",
+      lifecycleStage: "Mastering",
+      blocker: "Waiting for split confirmation",
+      sourceKind: "manual",
+      sourceLimit: "Test song.",
+      linkedMissionIds: [],
+      linkedTaskCount: 0,
+      splits: {
+        status: "Partially Confirmed",
+        summary: "Split details partially confirmed. Waiting for remaining collaborators.",
+        publishingTotal: "100%",
+        masterTotal: "100%",
+        contributors: [
+          { id: "contributor-mureni", name: "Mureni", role: "Artist / writer", email: "mureni@example.com", publishingShare: "50%", masterShare: "50%", approval: "Cleared" },
+          { id: "contributor-david", name: "David", role: "Artist / writer", email: "david@example.com", publishingShare: "50%", masterShare: "50%", approval: "Pending" },
+        ],
+      },
+    };
+
+    render(
+      <MusicWorkspace
+        music={[song]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open song QA Release Flow" }));
+    fireEvent.click(screen.getByRole("button", { name: "rights" }));
+
+    expect(await screen.findByText("Mureni confirmed their 50% publishing and 50% master share. Waiting for David.")).toBeInTheDocument();
+    expect(screen.getAllByText("Publishing 50% · Master 50%")).toHaveLength(2);
+    expect(screen.getByText("Confirmed")).toBeInTheDocument();
+    expect(screen.getByText("Awaiting confirmation")).toBeInTheDocument();
+    expect(screen.queryByText("100% publishing")).not.toBeInTheDocument();
+    expect(screen.queryByText("100% master")).not.toBeInTheDocument();
+    expect(screen.queryByText("Split details partially confirmed. Waiting for remaining collaborators.")).not.toBeInTheDocument();
+    expect(screen.queryByText("Remove")).not.toBeInTheDocument();
+  });
 
   it("renders Staff, Missions, Settings, and contextual evidence without top-level evidence navigation", async () => {
     await enterDeskHq();

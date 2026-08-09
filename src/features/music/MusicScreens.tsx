@@ -1574,17 +1574,23 @@ function MusicRightsWorkspace({
   const normalizedStatus = status.toLowerCase();
   const totalPublishing = sumContributorShares(contributors.map((contributor) => contributor.publishingShare));
   const totalMaster = sumContributorShares(contributors.map((contributor) => contributor.masterShare));
-  const confirmedCount = contributors.filter((contributor) => ["cleared", "confirmed"].includes(contributor.approval.toLowerCase())).length;
-  const pendingCount = contributors.filter((contributor) => contributor.approval.toLowerCase() === "pending").length;
   const locked = ["pending confirmation", "pending_confirmation", "partially confirmed", "partially_confirmed", "cleared", "revoked", "superseded"].includes(normalizedStatus);
+  const confirmationActive = ["pending confirmation", "pending_confirmation", "partially confirmed", "partially_confirmed", "cleared"].includes(normalizedStatus);
   const allocationComplete = totalPublishing === 100 && totalMaster === 100;
   const canSendLinks = !locked && !pending && contributors.length > 0 && contributors.every((contributor) => contributor.email?.trim()) && allocationComplete;
   const statusCopy =
-    normalizedStatus === "cleared"
-      ? "Every invited collaborator has confirmed these split details."
-      : pendingCount
-        ? `${pendingCount} collaborator${pendingCount === 1 ? "" : "s"} still ${pendingCount === 1 ? "needs" : "need"} to confirm.`
-        : "Balance shares and collect collaborator emails before sending confirmation links.";
+    confirmationActive
+      ? splitConfirmationCopy(contributors)
+      : normalizedStatus === "revoked"
+        ? "This split request was revoked. Create a new proposal before requesting confirmation."
+        : normalizedStatus === "superseded"
+          ? "A newer split proposal replaced this one."
+          : allocationComplete
+            ? "The allocation is complete. Send confirmation links when you are ready."
+            : "Add collaborator shares until publishing and master recording both total 100%.";
+  const ledgerColumns = locked
+    ? "grid-cols-[1.35fr_1.05fr_1.35fr_1.35fr_1.25fr]"
+    : "grid-cols-[1.3fr_1fr_1.25fr_1.35fr_1.2fr_44px]";
 
   async function handleAddContributor(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1613,27 +1619,13 @@ function MusicRightsWorkspace({
     <div className="grid gap-4">
       <span className="sr-only">split sheet document confirm split sheet publishing splits master share</span>
       <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
+        <div className="border-b border-foreground/8 pb-4">
           <div>
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Collaborator ledger</p>
             <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Splits</h4>
             <p className="mt-2 max-w-3xl text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{statusCopy}</p>
           </div>
-          <div className="flex max-w-full flex-col items-end gap-3">
-            <MusicStatusPill value={status} />
-            <div className="grid min-w-[240px] grid-cols-2 gap-4 rounded-[14px] border border-foreground/8 bg-background/74 px-3.5 py-3">
-              <SplitAllocationMeter label="publishing" value={totalPublishing} />
-              <SplitAllocationMeter label="master" value={totalMaster} />
-            </div>
-            {contributors.length ? <span className="text-[11px] font-semibold text-muted-foreground">{confirmedCount} of {contributors.length} confirmed</span> : null}
-          </div>
         </div>
-
-        {song.splits?.summary ? (
-          <div className={cn("mt-4 rounded-[14px] border px-3.5 py-2.5 text-[12px] font-semibold leading-relaxed", normalizedStatus === "cleared" ? "border-success/18 bg-success/[0.055] text-success" : "border-foreground/8 bg-foreground/[0.025] text-muted-foreground/90")}>
-            {song.splits.summary}
-          </div>
-        ) : null}
 
         {contributors.length > 0 && (totalPublishing !== 100 || totalMaster !== 100) ? (
           <div className="mt-4 flex items-start gap-3 rounded-[14px] border border-warning/18 bg-warning/[0.055] p-3.5">
@@ -1651,54 +1643,57 @@ function MusicRightsWorkspace({
         {contributors.length > 0 ? (
           <div className="mt-4 overflow-x-auto rounded-[16px] border border-foreground/8 bg-background/70">
             <div className="min-w-[620px]">
-              <div className="grid grid-cols-[1.5fr_1.15fr_1.45fr_1fr_1.35fr_44px] gap-2 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
+              <div className={cn("grid gap-2 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82", ledgerColumns)}>
                 <span>Contributor</span>
                 <span>Role</span>
                 <span>Email</span>
-                <span>Splits</span>
+                <span>Rights share</span>
                 <span>Confirmation</span>
-                <span className="text-right">Remove</span>
+                {!locked ? <span className="text-right">Remove</span> : null}
               </div>
-              {contributors.map((contributor) => (
-                <div key={contributor.id ?? contributor.name} className="grid grid-cols-[1.5fr_1.15fr_1.45fr_1fr_1.35fr_44px] items-center gap-2 border-b border-foreground/6 px-4 py-3.5 last:border-b-0">
-                  <span className="truncate text-[14px] font-bold text-foreground">{contributor.name}</span>
-                  <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.role}</span>
-                  <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.email ?? "Missing"}</span>
-                  <span className="text-[13px] font-bold text-foreground">{contributor.publishingShare} / {contributor.masterShare}</span>
-                  <span className="flex items-center gap-1.5 min-w-0">
-                    {["Cleared", "Confirmed"].includes(contributor.approval) ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
-                        <span className="h-1.5 w-1.5 rounded-full bg-success" />
-                        Cleared
+              {contributors.map((contributor) => {
+                const approval = contributor.approval.toLowerCase();
+                return (
+                  <div key={contributor.id ?? contributor.name} className={cn("grid items-center gap-2 border-b border-foreground/6 px-4 py-3.5 last:border-b-0", ledgerColumns)}>
+                    <span className="truncate text-[14px] font-bold text-foreground">{contributor.name}</span>
+                    <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.role}</span>
+                    <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.email ?? "Missing"}</span>
+                    <span className="text-[12px] font-bold text-foreground">Publishing {contributor.publishingShare} · Master {contributor.masterShare}</span>
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      {["cleared", "confirmed"].includes(approval) ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
+                          <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                          Confirmed
+                        </span>
+                      ) : approval === "pending" ? (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-foreground px-2.5 py-1 text-[10px] font-bold text-background">
+                          Awaiting confirmation
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-muted-foreground">
+                          {contributor.approval}
+                        </span>
+                      )}
+                    </span>
+                    {!locked ? (
+                      <span className="pr-2 text-right">
+                        {contributor.id ? (
+                          <button
+                            type="button"
+                            onClick={() => void onRemoveContributor(contributor.id!)}
+                            disabled={pending}
+                            aria-label={`Remove ${contributor.name}`}
+                            title={`Remove ${contributor.name}`}
+                            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        ) : null}
                       </span>
-                    ) : contributor.approval === "Pending" ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-foreground px-2.5 py-1 text-[10px] font-bold text-background">
-                        Pending
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-muted-foreground">
-                        {contributor.approval}
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-right pr-2">
-                    {!locked && contributor.id ? (
-                      <button
-                        type="button"
-                        onClick={() => void onRemoveContributor(contributor.id!)}
-                        disabled={pending}
-                        aria-label={`Remove ${contributor.name}`}
-                        title={`Remove ${contributor.name}`}
-                        className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    ) : (
-                      <span className="text-[11px] font-semibold text-muted-foreground">-</span>
-                    )}
-                  </span>
-                </div>
-              ))}
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
           </div>
         ) : null}
@@ -1769,20 +1764,6 @@ function MusicRightsWorkspace({
         </details>
       ) : null}
     </div>
-  );
-}
-
-function SplitAllocationMeter({ label, value }: { label: string; value: number }) {
-  const boundedValue = Math.min(100, Math.max(0, value));
-  return (
-    <span className="min-w-0">
-      <span className="flex items-baseline justify-between gap-2 text-[11px] font-bold text-foreground">
-        <span>{value}% {label}</span>
-      </span>
-      <span className="mt-2 block h-1.5 overflow-hidden rounded-full bg-foreground/8" aria-hidden="true">
-        <span className={cn("block h-full rounded-full transition-[width] duration-300", value === 100 ? "bg-success" : "bg-warning")} style={{ width: `${boundedValue}%` }} />
-      </span>
-    </span>
   );
 }
 
@@ -2805,6 +2786,30 @@ function musicStatusClass(status: MusicStatus) {
 
 function countCompleteMusicItems(items?: { status: string }[]) {
   return items?.filter((item) => ["Uploaded", "Confirmed", "Cleared"].includes(item.status)).length ?? 0;
+}
+
+function splitConfirmationCopy(contributors: NonNullable<MusicObjectViewModel["splits"]>["contributors"]) {
+  const confirmed = contributors.filter((contributor) => ["cleared", "confirmed"].includes(contributor.approval.toLowerCase()));
+  const pending = contributors.filter((contributor) => contributor.approval.toLowerCase() === "pending");
+
+  if (confirmed.length === 1 && pending.length === 1) {
+    const collaborator = confirmed[0];
+    return `${collaborator.name} confirmed their ${collaborator.publishingShare} publishing and ${collaborator.masterShare} master share. Waiting for ${pending[0].name}.`;
+  }
+
+  if (pending.length === 0 && confirmed.length === contributors.length && contributors.length > 0) {
+    return `All ${contributors.length} collaborator${contributors.length === 1 ? "" : "s"} confirmed their split shares.`;
+  }
+
+  if (confirmed.length === 0 && pending.length === 1) {
+    return `Waiting for ${pending[0].name} to confirm their split share.`;
+  }
+
+  if (confirmed.length === 0) {
+    return `Waiting for ${pending.length} collaborators to confirm their split shares.`;
+  }
+
+  return `${confirmed.length} of ${contributors.length} collaborators confirmed. Waiting for ${pending.length} collaborator${pending.length === 1 ? "" : "s"}.`;
 }
 
 function sumContributorShares(values: string[]) {
