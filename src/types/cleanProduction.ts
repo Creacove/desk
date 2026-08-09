@@ -713,6 +713,7 @@ export type MusicRepository = {
   listShareLinks?(musicSubject: ManagerConversationMusicSubject): Promise<MusicShareLinkHistoryViewModel[]>;
   sendShareLink?(input: { shareLinkId: string; url: string; recipientEmail: string }): Promise<{ status: "sent"; shareLinkId: string; recipientEmail: string }>;
   revokeShareLink?(shareLinkId: string): Promise<void>;
+  getAssetAccessUrl?(musicItemId: string, assetId: string): Promise<string>;
   uploadAsset(
     musicItemId: string,
     input: { assetType: string; title: string; file: File; onProgress?: (progress: MusicUploadProgress) => void },

@@ -987,6 +987,9 @@ export function createFixtureRepositories(): CleanProductionRepositories {
         throw new Error("Fixture split confirmations are opened from emailed links in production.");
       },
       async submitSplitConfirmation() {},
+      async getAssetAccessUrl(_musicItemId, assetId) {
+        return `https://fixture.ordersounds.test/assets/${encodeURIComponent(assetId)}`;
+      },
       async uploadAsset(_musicItemId, input) {
         const uploaded = {
           group: input.assetType === "cover_art"

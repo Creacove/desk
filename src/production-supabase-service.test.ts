@@ -3444,6 +3444,68 @@ describe("production Supabase services", () => {
     ]);
   });
 
+  it("creates a short-lived signed URL for an asset owned by the requested song", async () => {
+    const signedUrlCalls: Array<{ bucket: string; path: string; expiresIn: number }> = [];
+    const client = createMutableSupabaseClient({
+      music_assets: [{
+        id: "asset-1",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        music_item_id: "song-1",
+        uploaded_file_id: "file-1",
+      }],
+      uploaded_files: [{
+        id: "file-1",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        storage_bucket: "music-uploads",
+        storage_ref: "account-1/workspace-1/song-1/final_master/master.wav",
+      }],
+    }, {
+      storage: {
+        from: (bucket: string) => ({
+          upload: async () => ({ data: null, error: null }),
+          createSignedUrl: async (path: string, expiresIn: number) => {
+            signedUrlCalls.push({ bucket, path, expiresIn });
+            return { data: { signedUrl: "https://signed.example/master.wav" }, error: null };
+          },
+        }),
+      },
+    });
+    const music = createSupabaseProductionRepositories(client, workspace).music as unknown as {
+      getAssetAccessUrl(musicItemId: string, assetId: string): Promise<string>;
+    };
+
+    const url = await music.getAssetAccessUrl("song-1", "asset-1");
+
+    expect(url).toBe("https://signed.example/master.wav");
+    expect(signedUrlCalls).toEqual([{
+      bucket: "music-uploads",
+      path: "account-1/workspace-1/song-1/final_master/master.wav",
+      expiresIn: 300,
+    }]);
+  });
+
+  it("does not create playback access for an asset attached to another song", async () => {
+    const client = createMutableSupabaseClient({
+      music_assets: [{
+        id: "asset-1",
+        account_id: "account-1",
+        artist_workspace_id: "workspace-1",
+        artist_id: "artist-1",
+        music_item_id: "song-2",
+        uploaded_file_id: "file-1",
+      }],
+      uploaded_files: [],
+    });
+    const music = createSupabaseProductionRepositories(client, workspace).music;
+
+    await expect(music.getAssetAccessUrl?.("song-1", "asset-1"))
+      .rejects.toThrow("This file is not available to play yet.");
+  });
+
   it("creates, removes, and sends scoped split confirmations only when totals are balanced", async () => {
     const functionCalls: Array<{ name: string; body: unknown }> = [];
     const tables: Record<string, Array<Record<string, unknown>>> = {
@@ -3910,6 +3972,7 @@ function createMutableSupabaseClient(
     storage?: {
       from(bucket: string): {
         upload(path: string, file: File, options: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
+        createSignedUrl?(path: string, expiresIn: number): Promise<{ data: { signedUrl?: string } | null; error: unknown }>;
       };
     };
   } = {},

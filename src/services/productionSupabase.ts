@@ -1933,6 +1933,34 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         });
         if (error) await throwFunctionInvokeError(error, "Share link could not be revoked.");
       },
+      async getAssetAccessUrl(musicItemId, assetId) {
+        const { data: asset, error: assetError } = await ownerFilters(client
+          .from("music_assets")
+          .select("id,music_item_id,uploaded_file_id")
+        )
+          .eq("id", assetId)
+          .eq("music_item_id", musicItemId)
+          .maybeSingle();
+        if (assetError) throw assetError;
+        const uploadedFileId = typeof asset?.uploaded_file_id === "string" ? asset.uploaded_file_id : "";
+        if (!uploadedFileId) throw new Error("This file is not available to play yet.");
+
+        const { data: uploadedFile, error: fileError } = await ownerFilters(client
+          .from("uploaded_files")
+          .select("id,storage_bucket,storage_ref")
+        )
+          .eq("id", uploadedFileId)
+          .maybeSingle();
+        if (fileError) throw fileError;
+        const bucket = typeof uploadedFile?.storage_bucket === "string" ? uploadedFile.storage_bucket : "";
+        const path = typeof uploadedFile?.storage_ref === "string" ? uploadedFile.storage_ref : "";
+        if (!bucket || !path) throw new Error("This file is not available to play yet.");
+
+        const { data: signedFile, error: signedUrlError } = await client.storage.from(bucket).createSignedUrl(path, 300);
+        if (signedUrlError) throw signedUrlError;
+        if (!signedFile?.signedUrl) throw new Error("This file could not be opened.");
+        return signedFile.signedUrl;
+      },
       async uploadAsset(musicItemId, input) {
         input.onProgress?.({ phase: "preparing", percent: 0, bytesUploaded: 0, bytesTotal: input.file.size });
         const missionId = await loadLinkedMusicMissionId(client, workspace, musicItemId);
