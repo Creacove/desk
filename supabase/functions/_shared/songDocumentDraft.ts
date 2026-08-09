@@ -92,3 +92,7 @@ function requestedDocumentType(value: string) {
 function documentTitle(type: string) {
   return ({ press_release: "Press release", press_angle: "Press angle", artist_biography: "Artist biography", one_sheet: "One-sheet", lyrics: "Lyrics", credits: "Credits", distributor_notes: "Distributor notes" } as Record<string, string>)[type] ?? "Song document";
 }
+
+function cleanLongText(value: unknown, maxChars: number) {
+  return typeof value === "string" ? value.trim().slice(0, maxChars) : "";
+}

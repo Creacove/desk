@@ -14,6 +14,8 @@ const streamFunctionPath = join(process.cwd(), "supabase", "functions", "manager
 const streamFunctionSource = existsSync(streamFunctionPath) ? readFileSync(streamFunctionPath, "utf8") : "";
 const graphPersistencePath = join(process.cwd(), "supabase", "functions", "_shared", "missionGraphPersistence.ts");
 const graphPersistenceSource = existsSync(graphPersistencePath) ? readFileSync(graphPersistencePath, "utf8") : "";
+const songDocumentDraftPath = join(process.cwd(), "supabase", "functions", "_shared", "songDocumentDraft.ts");
+const songDocumentDraftSource = existsSync(songDocumentDraftPath) ? readFileSync(songDocumentDraftPath, "utf8") : "";
 const serviceRoleGrantMigrationPath = join(
   process.cwd(),
   "supabase",
@@ -28,6 +30,10 @@ const musicSubjectGrantMigrationPath = join(
 );
 
 describe("OpenAI Manager Conversation Router", () => {
+  it("defines the document text normalizer used while loading focused song context", () => {
+    expect(songDocumentDraftSource).toContain("function cleanLongText");
+    expect(songDocumentDraftSource).toContain("cleanLongText(version?.metadata?.body");
+  });
   it("has a deployed Edge Function contract for authenticated Manager chat routing", () => {
     expect(existsSync(functionPath)).toBe(true);
     expect(functionSource).toContain("Deno.serve");
