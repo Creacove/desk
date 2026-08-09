@@ -67,6 +67,9 @@ Deno.serve(async (request) => {
       let input: ManagerConversationInput | null = null;
       let runId: string | null = null;
       let usageId: string | null = null;
+      let db: any = null;
+      let conversationId: string | null = null;
+      let failureStage = "request";
 
       try {
         input = (await request.json()) as ManagerConversationInput;
@@ -86,12 +89,17 @@ Deno.serve(async (request) => {
         if (membershipError) throw membershipError;
         if (!membership) throw new HttpError("Forbidden.", 403);
 
-        const db = createClient(supabaseUrl, serviceRoleKey);
+        db = createClient(supabaseUrl, serviceRoleKey);
+        failureStage = "entitlement";
         await assertActiveWorkspaceEntitlement(db, input);
         await assertWorkspace(db, input);
-        const conversationId = await ensureConversation(db, input);
+        failureStage = "conversation";
+        conversationId = await ensureConversation(db, input);
+        failureStage = "focused_music_subject";
         const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+        failureStage = "mission_scope";
         const scopedMissionId = await resolveConversationMissionScope(db, input, conversationId, focusedMusicSubject);
+        failureStage = "artist_message";
         const artistMessage = await insertConversationMessage(db, input, conversationId, {
           speaker: "artist",
           label: "You",
@@ -112,6 +120,7 @@ Deno.serve(async (request) => {
         });
 
         emit({ type: "run.step", label: "Reading workspace packet", status: "running" });
+        failureStage = "packet";
         const packet = await buildManagerConversationPacket(db, input, conversationId, artistMessage.id, focusedMusicSubject);
         emit({ type: "run.step", label: "Reading workspace packet", status: "completed" });
 
@@ -223,8 +232,9 @@ Deno.serve(async (request) => {
         });
       } catch (error) {
         const failure = classifyManagerConversationError(error);
-        console.error("manager-conversation-stream failed", { runId, message: failure.internalMessage });
+        console.error("manager-conversation-stream failed", { runId, failureStage, message: failure.internalMessage });
         if (runId) await markRunFailedSafe(runId, failure.internalMessage);
+        else if (db && input && conversationId) await persistPreflightFailureSafe(db, input, conversationId, failureStage, failure.internalMessage);
         if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage);
         emit({ type: "error", message: failure.publicMessage, runId });
       } finally {
@@ -1068,6 +1078,37 @@ async function markRunFailedSafe(runId: string, errorMessage: string) {
     await db.from("manager_synthesis_runs").update({ status: "failed", error: errorMessage, completed_at: new Date().toISOString() }).eq("id", runId);
   } catch {
     // Failure marking must not mask the original error.
+  }
+}
+
+async function persistPreflightFailureSafe(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  failureStage: string,
+  errorMessage: string,
+) {
+  try {
+    const now = new Date().toISOString();
+    await db.from("manager_synthesis_runs").insert({
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      trigger_type: "conversation",
+      conversation_id: conversationId,
+      status: "failed",
+      classification: "manager_conversation_preflight",
+      confidence: "unknown",
+      context_payload: { failureStage },
+      steps_payload: [{ step: failureStage, status: "failed" }],
+      action_plan: [],
+      limitations: [],
+      started_at: now,
+      completed_at: now,
+      error: errorMessage,
+    });
+  } catch {
+    // Diagnostics must never mask the original conversation failure.
   }
 }
 
