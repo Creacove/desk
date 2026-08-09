@@ -8,6 +8,7 @@ import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
 import { ReleaseWorkAttachment } from "./SongRoomAttachments";
+import { SongDocumentEditor } from "./SongDocumentEditor";
 import type {
   MissionViewModel,
   ManualSongWorkspaceResult,
@@ -19,6 +20,8 @@ import type {
   SpotifyImportResult,
   SpotifyReleaseCandidate,
   SpotifyTrackCandidate,
+  SongDocumentType,
+  SongMaterialViewModel,
 } from "../../types/cleanProduction";
 
 type MusicTab = "songs" | "projects";
@@ -43,6 +46,10 @@ type MusicUploadJob = {
   progress: MusicUploadProgress;
   status: "uploading" | "failed";
   error?: string;
+};
+type SongDocumentEditorTarget = {
+  song: MusicObjectViewModel;
+  document?: Extract<SongMaterialViewModel, { kind: "document" }>;
 };
 
 export function MusicWorkspace({
@@ -74,7 +81,7 @@ export function MusicWorkspace({
   onMusicChanged: () => Promise<void>;
   onSongWorkspaceCreated?: (result: ManualSongWorkspaceResult) => Promise<void> | void;
   onOpenMission: (missionId: string) => void;
-  onOpenManager?: (subject: MusicObjectViewModel) => void;
+  onOpenManager?: (subject: MusicObjectViewModel, starterPrompt?: string) => void;
   onBack: () => void;
   onDetailModeChange?: (detailOpen: boolean) => void;
   listRequestKey?: number;
@@ -94,6 +101,7 @@ export function MusicWorkspace({
   const [uploadTarget, setUploadTarget] = useState<{ song: MusicObjectViewModel; asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number] } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ song: MusicObjectViewModel; groupTitle: string; field: MusicDetailField } | null>(null);
   const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
+  const [documentEditorTarget, setDocumentEditorTarget] = useState<SongDocumentEditorTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionPending, setActionPending] = useState(false);
   const [uploadJobs, setUploadJobs] = useState<Record<string, MusicUploadJob>>({});
@@ -102,22 +110,23 @@ export function MusicWorkspace({
   const [briefError, setBriefError] = useState<string | null>(null);
   const [focusedMusicById, setFocusedMusicById] = useState<Record<string, FocusedMusicOverlay>>({});
   const [createdMusicById, setCreatedMusicById] = useState<Record<string, MusicObjectViewModel>>({});
+  const [coverPreviewById, setCoverPreviewById] = useState<Record<string, string>>({});
   const managerReadHydrationChecks = useRef(new Set<string>());
   const handledTargetRequest = useRef("");
   const handledListRequest = useRef(listRequestKey);
-  const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget || shareTarget);
+  const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget || shareTarget || documentEditorTarget);
 
   const currentMusic = useMemo(() => {
     const parentMusic = music.map((item) => {
       const overlay = focusedMusicById[musicObjectKey(item)];
-      if (!overlay || overlay.parentManagerRevision !== managerReadRevision(item)) return item;
-      return mergeFocusedManagerState(item, overlay.object);
+      const focused = !overlay || overlay.parentManagerRevision !== managerReadRevision(item) ? item : mergeFocusedManagerState(item, overlay.object);
+      return coverPreviewById[item.id] ? { ...focused, coverImageUrl: coverPreviewById[item.id] } : focused;
     });
     const newlyCreated = Object.values(createdMusicById).filter(
       (created) => !parentMusic.some((item) => musicObjectKey(item) === musicObjectKey(created)),
     );
     return [...newlyCreated, ...parentMusic];
-  }, [createdMusicById, focusedMusicById, music]);
+  }, [coverPreviewById, createdMusicById, focusedMusicById, music]);
   const getMusicObject = (id: string, kind?: MusicObjectViewModel["kind"]) =>
     currentMusic.find((object) => object.id === id && (!kind || object.kind === kind));
   const songs = currentMusic.filter((object) => object.kind === "song" && (!object.projectIds || object.projectIds.length === 0));
@@ -187,6 +196,20 @@ export function MusicWorkspace({
       return Object.keys(retained).length === Object.keys(current).length ? current : retained;
     });
   }, [music]);
+
+  useEffect(() => {
+    if (!musicRepository.getAssetAccessUrl) return;
+    let active = true;
+    for (const song of music.filter((item) => item.kind === "song")) {
+      if (coverPreviewById[song.id]) continue;
+      const coverAsset = song.fileAssets?.find((asset) => asset.assetId && asset.assetType === "cover_art" && asset.status !== "Missing");
+      if (!coverAsset?.assetId) continue;
+      void musicRepository.getAssetAccessUrl(song.id, coverAsset.assetId).then((url) => {
+        if (active) setCoverPreviewById((current) => current[song.id] ? current : { ...current, [song.id]: url });
+      }).catch(() => undefined);
+    }
+    return () => { active = false; };
+  }, [coverPreviewById, music, musicRepository]);
 
   useEffect(() => {
     if (!selected) return;
@@ -392,7 +415,7 @@ export function MusicWorkspace({
     if (!detailTarget) return;
     await runMusicAction(async () => {
       const label = detailTarget.field.label;
-      if (detailTarget.groupTitle === "Credits") {
+      if (detailTarget.groupTitle === "Artists & credits") {
         await musicRepository.saveCredit(detailTarget.song.id, { role: label, name: value });
       } else if (isIdentifierField(label)) {
         await musicRepository.saveIdentifier(detailTarget.song.id, { identifierType: identifierTypeForLabel(label), identifierValue: value });
@@ -420,6 +443,23 @@ export function MusicWorkspace({
     void performMusicAssetUpload(job);
   }
 
+  async function saveSongDocument(input: { documentType: SongDocumentType; title: string; body: string }) {
+    if (!documentEditorTarget) return;
+    const target = documentEditorTarget;
+    await runMusicAction(async () => {
+      if (target.document) {
+        if (!musicRepository.updateSongDocument) throw new Error("Document editing is not available yet.");
+        await musicRepository.updateSongDocument(target.document.id, { title: input.title, body: input.body });
+      } else {
+        if (!musicRepository.createSongDocument) throw new Error("Document creation is not available yet.");
+        await musicRepository.createSongDocument(target.song.id, input);
+      }
+      const refreshed = await onRefreshObject(target.song.id, "music_item");
+      if (refreshed) rememberFocusedUpdate(refreshed);
+      setDocumentEditorTarget(null);
+    });
+  }
+
   async function performMusicAssetUpload(job: MusicUploadJob) {
     setUploadJobs((current) => ({
       ...current,
@@ -434,6 +474,9 @@ export function MusicWorkspace({
           ? { ...current, [job.id]: { ...current[job.id], progress } }
           : current),
       });
+      if (job.asset.assetType === "cover_art" && job.file.type.startsWith("image/") && typeof URL.createObjectURL === "function") {
+        setCoverPreviewById((current) => ({ ...current, [job.songId]: URL.createObjectURL(job.file) }));
+      }
       await onMusicChanged();
       setUploadJobs((current) => {
         const next = { ...current };
@@ -557,6 +600,9 @@ export function MusicWorkspace({
             setUploadTarget({ song: selected, asset });
           }}
           onShareFiles={musicRepository.createShareLink ? () => setShareTarget(selected) : undefined}
+          onWriteDocument={musicRepository.createSongDocument ? () => setDocumentEditorTarget({ song: selected }) : undefined}
+          onEditDocument={musicRepository.updateSongDocument ? (document) => setDocumentEditorTarget({ song: selected, document }) : undefined}
+          onAskManagerForDocument={() => onOpenManager?.(selected, `Draft a press release for ${selected.title}. Use the song's current files, lyrics, metadata, and release context. Save the draft to this song for my review.`)}
           onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(selected.id, assetId) : undefined}
           uploadJobs={Object.values(uploadJobs).filter((job) => job.songId === selected.id)}
           onRetryUpload={(job) => void performMusicAssetUpload(job)}
@@ -645,6 +691,15 @@ export function MusicWorkspace({
           pending={actionPending}
           onCancel={() => setDetailTarget(null)}
           onSubmit={saveMusicDetail}
+        />
+      ) : null}
+
+      {documentEditorTarget ? (
+        <SongDocumentEditor
+          document={documentEditorTarget.document}
+          pending={actionPending}
+          onCancel={() => setDocumentEditorTarget(null)}
+          onSave={saveSongDocument}
         />
       ) : null}
 
@@ -862,6 +917,9 @@ function MusicSongDetail({
   onTabChange,
   onUploadAsset,
   onShareFiles,
+  onWriteDocument,
+  onEditDocument,
+  onAskManagerForDocument,
   onRequestAssetAccess,
   uploadJobs,
   onRetryUpload,
@@ -885,6 +943,9 @@ function MusicSongDetail({
   onTabChange: (tab: SongRoomTab) => void;
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
   onShareFiles?: () => void;
+  onWriteDocument?: () => void;
+  onEditDocument?: (document: Extract<SongMaterialViewModel, { kind: "document" }>) => void;
+  onAskManagerForDocument?: () => void;
   onRequestAssetAccess?: (assetId: string) => Promise<string>;
   uploadJobs: MusicUploadJob[];
   onRetryUpload: (job: MusicUploadJob) => void;
@@ -909,6 +970,8 @@ function MusicSongDetail({
   const secondaryAudio = audioFiles.filter((asset) => asset !== primaryAudio);
   const artworkFiles = fileAssets.filter((asset) => asset.group === "Artwork" && asset.status !== "Missing");
   const documentFiles = fileAssets.filter((asset) => asset.group === "Documents" && asset.status !== "Missing");
+  const nativeDocuments = (song.materials ?? []).filter((material): material is Extract<SongMaterialViewModel, { kind: "document" }> => material.kind === "document");
+  const [documentActionsOpen, setDocumentActionsOpen] = useState(false);
   const missingAudioTarget = fileAssets.find((asset) => asset.group === "Audio" && asset.status === "Missing");
   const uploadTarget = missingAudioTarget ?? {
     group: "Audio" as const,
@@ -920,16 +983,15 @@ function MusicSongDetail({
   };
   const shareableAssets = fileAssets.filter(isShareableMusicAsset);
   const fallbackDetails = (song.details ?? []).map((field) => ({ label: field.label, value: field.value, status: normalizeFieldStatus(field.status) }));
-  const identityFields = [...(song.metadataFields ?? []), ...(song.identifiers ?? [])];
+  const allIdentityFields = [...(song.metadataFields ?? []), ...(song.identifiers ?? [])];
+  const lyricsFields = allIdentityFields.filter((field) => field.label === "Lyrics");
+  const identityFields = allIdentityFields.filter((field) => field.label !== "Lyrics");
   const detailGroups = [
     { title: "Song identity", fields: identityFields.length ? identityFields : fallbackDetails },
-    { title: "Credits", fields: (song.credits ?? []).map((credit) => ({ label: credit.role, value: credit.names, status: credit.status })) },
-    { title: "Release details", fields: song.releaseFields ?? [] },
+    { title: "Artists & credits", fields: (song.credits ?? []).map((credit) => ({ label: credit.role, value: credit.names, status: credit.status })) },
+    { title: "Release information", fields: song.releaseFields ?? [] },
+    { title: "Lyrics", fields: lyricsFields },
   ].filter((group) => group.fields.length > 0);
-  const allDetailFields = detailGroups.flatMap((group) => group.fields);
-  const detailConfirmedCount = allDetailFields.filter((field) => field.status === "Confirmed").length;
-  const detailMissingCount = allDetailFields.filter((field) => field.status === "Missing").length;
-  const detailDraftCount = allDetailFields.filter((field) => field.status === "Draft").length;
   const generateReadLabel = managerReadButtonLabel("song", song.managerReadStatus);
   const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
   const pendingReadLabel = song.managerReadStatus === "unknown" ? "Checking status" : "Manager is reading";
@@ -1022,7 +1084,7 @@ function MusicSongDetail({
               <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground/82">Everything your team needs for this song, in one place.</p>
             </div>
             <div className="flex items-center gap-2">
-              {onShareFiles && shareableAssets.length ? (
+              {onShareFiles && (shareableAssets.length || nativeDocuments.length) ? (
                 <button
                   type="button"
                   aria-label="Share files"
@@ -1033,23 +1095,14 @@ function MusicSongDetail({
                   Share
                 </button>
               ) : null}
-              <button
-                type="button"
-                aria-label="Upload files"
-                onClick={() => onUploadAsset(uploadTarget)}
-                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-3.5 text-[11px] font-semibold text-background shadow-sm transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
-              >
-                <Upload className="h-3.5 w-3.5" aria-hidden="true" />
-                Upload files
-              </button>
             </div>
           </div>
 
           <div className="grid gap-7 px-4 py-5 sm:px-5 sm:py-6">
             <section aria-labelledby="song-assets-audio">
-              <div className="mb-3 flex items-center gap-2">
-                <FileAudio className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" />
-                <h5 id="song-assets-audio" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Audio</h5>
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2"><FileAudio className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" /><h5 id="song-assets-audio" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Audio</h5></div>
+                <button type="button" aria-label="Add audio" onClick={() => onUploadAsset(uploadTarget)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> Add audio</button>
               </div>
               {primaryAudio ? (
                 <div className="overflow-hidden rounded-[16px] border border-foreground/8 bg-foreground/[0.018]">
@@ -1098,9 +1151,27 @@ function MusicSongDetail({
               ) : null}
             </section>
 
-            <MusicAssetGroup title="Artwork & images" icon={<ImageIcon className="h-4 w-4" />} assets={artworkFiles} emptyCopy="Cover art and press images will live here." onUploadAsset={onUploadAsset} />
+            <MusicAssetGroup title="Artwork & images" addLabel="Add image" addTarget={{ group: "Artwork", label: "Cover art", status: "Missing", action: "Upload cover art", assetType: "cover_art", canUpload: true }} icon={<ImageIcon className="h-4 w-4" />} assets={artworkFiles} emptyCopy="Cover art and press images will live here." onUploadAsset={onUploadAsset} />
             {uploadJobs.filter((job) => job.asset.group === "Artwork").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
-            <MusicAssetGroup title="Documents" icon={<FileText className="h-4 w-4" />} assets={documentFiles} emptyCopy="Lyrics, press notes, and release documents will live here." onUploadAsset={onUploadAsset} />
+            <section aria-labelledby="song-assets-documents" className="relative">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-muted-foreground/70"><FileText className="h-4 w-4" /><h5 id="song-assets-documents" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Documents</h5></div>
+                <button type="button" aria-label="Add document" aria-expanded={documentActionsOpen} onClick={() => setDocumentActionsOpen((open) => !open)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> Add document</button>
+              </div>
+              {documentActionsOpen ? (
+                <div role="menu" aria-label="Add document" className="absolute right-0 top-10 z-20 grid w-56 overflow-hidden rounded-[12px] border border-foreground/10 bg-background p-1.5 shadow-xl">
+                  {onWriteDocument ? <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onWriteDocument(); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Write here</button> : null}
+                  {onAskManagerForDocument ? <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onAskManagerForDocument(); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Ask Manager to draft</button> : null}
+                  <button type="button" role="menuitem" onClick={() => { setDocumentActionsOpen(false); onUploadAsset({ group: "Documents", label: "Song document", status: "Missing", action: "Upload document", assetType: "press_document", canUpload: true }); }} className="rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold text-foreground hover:bg-foreground/[0.045]">Upload a file</button>
+                </div>
+              ) : null}
+              {nativeDocuments.length || documentFiles.length ? (
+                <div className="divide-y divide-foreground/6 overflow-hidden rounded-[14px] border border-foreground/8">
+                  {nativeDocuments.map((document) => <button key={document.id} type="button" onClick={() => onEditDocument?.(document)} className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left hover:bg-foreground/[0.025]"><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-foreground">{document.title}</span>{document.reviewState === "needs_review" ? <span className="mt-0.5 block text-[10px] font-semibold text-warning">Needs review</span> : null}</span><span className="text-[11px] font-semibold text-muted-foreground">Open</span></button>)}
+                  {documentFiles.map((asset) => <MusicStoredAssetRow key={asset.assetId ?? asset.label} asset={asset} onUploadAsset={onUploadAsset} />)}
+                </div>
+              ) : <p className="rounded-[14px] border border-dashed border-foreground/10 px-4 py-3 text-[11px] font-medium text-muted-foreground/72">Write lyrics and press materials here, ask Manager for a draft, or upload an existing file.</p>}
+            </section>
             {uploadJobs.filter((job) => job.asset.group === "Documents").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
           </div>
         </div>
@@ -1114,10 +1185,6 @@ function MusicSongDetail({
                 <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Details</p>
                 <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Song identity</h4>
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-1">
-                <span className="rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-semibold text-success">{detailConfirmedCount} confirmed</span>
-                {detailMissingCount ? <span className="rounded-full bg-warning/10 px-2.5 py-1 text-[10px] font-semibold text-warning">{detailMissingCount} missing</span> : null}
-              </div>
             </div>
 
             <div className="mt-3 grid gap-3">
@@ -1125,7 +1192,6 @@ function MusicSongDetail({
                 <section key={group.title} className="overflow-hidden rounded-[14px] border border-foreground/8 bg-background/72">
                   <div className="flex items-center justify-between gap-3 border-b border-foreground/8 bg-foreground/[0.025] px-3 py-2.5">
                     <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
-                    <span className="text-[10px] font-semibold text-muted-foreground">{countCompleteMusicItems(group.fields)}/{group.fields.length}</span>
                   </div>
                   <div className="divide-y divide-foreground/6">
                     {group.fields.map((field) => (
@@ -1136,7 +1202,7 @@ function MusicSongDetail({
                       >
                         <span className="min-w-0">
                           <span className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
-                          <span className="mt-0.5 block truncate text-[13px] font-medium text-foreground">{field.value}</span>
+                          <span className={cn("mt-0.5 block truncate text-[13px] font-medium", field.status === "Missing" ? "text-muted-foreground/65" : "text-foreground")}>{field.status === "Missing" ? "Not added" : field.value}</span>
                         </span>
                         <span className="flex shrink-0 items-center gap-1.5">
                           {canEditDetailField(field) ? (
@@ -1150,7 +1216,6 @@ function MusicSongDetail({
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           ) : null}
-                          <MusicStatusPill value={field.status} />
                         </span>
                       </div>
                     ))}
@@ -1163,13 +1228,8 @@ function MusicSongDetail({
           <div data-testid="song-room-desktop-details" className="surface-elevated hidden rounded-[22px] p-5 shadow-sm lg:block">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
               <div>
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Metadata board</p>
-                <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Song identity</h4>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                <span className="rounded-md bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success">{detailConfirmedCount} confirmed</span>
-                {detailDraftCount ? <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">{detailDraftCount} draft</span> : null}
-                {detailMissingCount ? <span className="rounded-md bg-warning/10 px-2.5 py-1 text-[11px] font-semibold text-warning">{detailMissingCount} missing</span> : null}
+                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Details</p>
+                <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Everything about this song</h4>
               </div>
             </div>
 
@@ -1178,14 +1238,13 @@ function MusicSongDetail({
                 <section key={group.title} className="rounded-[16px] border border-foreground/8 bg-background/72">
                   <div className="flex items-center justify-between gap-4 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
                     <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
-                    <span className="text-[11px] font-semibold text-muted-foreground">{countCompleteMusicItems(group.fields)}/{group.fields.length} confirmed</span>
                   </div>
                   <div className="grid divide-y divide-foreground/6 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
                     {group.fields.map((field) => (
                       <div key={`${group.title}-${field.label}`} className="flex min-h-[74px] items-center justify-between gap-4 border-b border-foreground/6 px-4 py-3 last:border-b-0 lg:[&:nth-last-child(-n+2)]:border-b-0">
                         <span className="min-w-0">
                           <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
-                          <span className="mt-1 block truncate text-[14px] font-medium text-foreground">{field.value}</span>
+                          <span className={cn("mt-1 block truncate text-[14px] font-medium", field.status === "Missing" ? "text-muted-foreground/65" : "text-foreground")}>{field.status === "Missing" ? "Not added" : field.value}</span>
                         </span>
                         <span className="flex shrink-0 items-center gap-2">
                           {canEditDetailField(field) ? (
@@ -1199,7 +1258,6 @@ function MusicSongDetail({
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           ) : null}
-                          <MusicStatusPill value={field.status} />
                         </span>
                       </div>
                     ))}
@@ -1260,12 +1318,16 @@ function MusicInlineUpload({ job, onRetry }: { job: MusicUploadJob; onRetry: (jo
 
 function MusicAssetGroup({
   title,
+  addLabel,
+  addTarget,
   icon,
   assets,
   emptyCopy,
   onUploadAsset,
 }: {
   title: string;
+  addLabel?: string;
+  addTarget?: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
   icon: ReactNode;
   assets: NonNullable<MusicObjectViewModel["fileAssets"]>;
   emptyCopy: string;
@@ -1273,9 +1335,9 @@ function MusicAssetGroup({
 }) {
   return (
     <section aria-labelledby={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
-      <div className="mb-3 flex items-center gap-2 text-muted-foreground/70">
-        {icon}
-        <h5 id={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">{title}</h5>
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-muted-foreground/70">{icon}<h5 id={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">{title}</h5></div>
+        {addLabel && addTarget ? <button type="button" aria-label={addLabel} onClick={() => onUploadAsset(addTarget)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> {addLabel}</button> : null}
       </div>
       {assets.length ? (
         <div className="divide-y divide-foreground/6 overflow-hidden rounded-[14px] border border-foreground/8">
@@ -2556,7 +2618,11 @@ function MusicShareDialog({
   onRevoke?: NonNullable<MusicRepository["revokeShareLink"]>;
 }) {
   const assets = (song.fileAssets ?? []).filter(isShareableMusicAsset);
+  const documents = (song.materials ?? []).filter((material): material is Extract<SongMaterialViewModel, { kind: "document" }> => material.kind === "document" && material.reviewState !== "needs_review");
   const [selectedAssetIds, setSelectedAssetIds] = useState(() => assets.flatMap((asset) => asset.assetId ? [asset.assetId] : []));
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState(() => documents.map((document) => document.id));
+  const [selectedInformationKeys, setSelectedInformationKeys] = useState<string[]>(["song_title", "primary_artist", "release_date"]);
+  const [previewing, setPreviewing] = useState(false);
   const [preset, setPreset] = useState<"listen" | "epk_press" | "delivery" | "custom">("delivery");
   const [recipientEmail, setRecipientEmail] = useState("");
   const [pending, setPending] = useState(false);
@@ -2594,9 +2660,13 @@ function MusicShareDialog({
       : [...current, assetId]);
   }
 
+  function toggleSelection(value: string, values: string[], setValues: (next: string[]) => void) {
+    setValues(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!selectedAssetIds.length || pending) return;
+    if ((!selectedAssetIds.length && !selectedDocumentIds.length && !selectedInformationKeys.length) || pending) return;
     setPending(true);
     setError(null);
     setEmailSent(false);
@@ -2607,6 +2677,8 @@ function MusicShareDialog({
       const shareLink = await onCreate({
         musicSubject: { type: "music_item", id: song.id },
         assetIds: selectedAssetIds,
+        documentIds: selectedDocumentIds,
+        informationKeys: selectedInformationKeys,
         preset,
         recipientEmail: recipientEmail.trim() || undefined,
       });
@@ -2688,7 +2760,7 @@ function MusicShareDialog({
           <div>
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Private release package</p>
             <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">Share {song.title}</h3>
-            <p className="mt-2 max-w-lg text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Choose only the original files this person needs. The shared page never exposes your whole song room.</p>
+            <p className="mt-2 max-w-lg text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Choose exactly what this person needs. The shared page never exposes your whole song room.</p>
           </div>
           <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
             <X className="h-4 w-4" />
@@ -2727,6 +2799,40 @@ function MusicShareDialog({
               ))}
             </div>
           </fieldset>
+
+          {documents.length ? (
+            <fieldset className="mt-5">
+              <legend className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">Included documents</legend>
+              <div className="mt-2 overflow-hidden rounded-[14px] border border-foreground/8">
+                {documents.map((document) => (
+                  <label key={document.id} className="flex cursor-pointer items-center gap-3 border-b border-foreground/6 px-3 py-3 last:border-b-0 hover:bg-foreground/[0.025]">
+                    <input aria-label={document.title} type="checkbox" checked={selectedDocumentIds.includes(document.id)} onChange={() => toggleSelection(document.id, selectedDocumentIds, setSelectedDocumentIds)} className="h-4 w-4 accent-foreground" />
+                    <span className="text-[13px] font-semibold text-foreground">{document.title}</span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ) : null}
+
+          <fieldset className="mt-5">
+            <legend className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">Song information</legend>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {[{ key: "song_title", label: "Song title" }, { key: "primary_artist", label: "Primary artist" }, { key: "release_date", label: "Release date" }, { key: "genre", label: "Genre" }, { key: "label", label: "Record label" }].map((field) => (
+                <label key={field.key} className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-foreground/10 px-3 py-2 text-[11px] font-semibold text-foreground">
+                  <input aria-label={field.label} type="checkbox" checked={selectedInformationKeys.includes(field.key)} onChange={() => toggleSelection(field.key, selectedInformationKeys, setSelectedInformationKeys)} className="h-3.5 w-3.5 accent-foreground" />
+                  {field.label}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+
+          {previewing && !createdLink ? (
+            <section aria-label="Package preview" className="mt-5 rounded-[16px] border border-foreground/10 bg-foreground/[0.018] p-4">
+              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Preview package</p>
+              <h4 className="mt-2 font-display text-[20px] font-semibold text-foreground">{song.title}</h4>
+              <p className="mt-2 text-[12px] leading-relaxed text-muted-foreground">{selectedAssetIds.length} file{selectedAssetIds.length === 1 ? "" : "s"}, {selectedDocumentIds.length} document{selectedDocumentIds.length === 1 ? "" : "s"}, and {selectedInformationKeys.length} song detail{selectedInformationKeys.length === 1 ? "" : "s"}.</p>
+            </section>
+          ) : null}
 
           {createdLink ? (
             <div className="mt-4 rounded-[14px] border border-success/20 bg-success/[0.055] p-3.5">
@@ -2773,7 +2879,8 @@ function MusicShareDialog({
           <p className="text-[11px] font-semibold text-muted-foreground/70">Links stay revocable. Downloads are signed per file.</p>
           <span className="flex shrink-0 gap-2">
             <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Close</button>
-            <button type="submit" disabled={!selectedAssetIds.length || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Preparing" : createdLink ? "Create another" : "Create secure link"}</button>
+            <button type="button" onClick={() => setPreviewing((value) => !value)} className="rounded-lg border border-foreground/10 px-3 py-2 text-[12px] font-bold text-foreground">{previewing ? "Back to selection" : "Preview package"}</button>
+            <button type="submit" disabled={(!selectedAssetIds.length && !selectedDocumentIds.length && !selectedInformationKeys.length) || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Preparing" : createdLink ? "Create another" : "Create secure link"}</button>
           </span>
         </div>
       </form>
@@ -2928,7 +3035,7 @@ function presetName(preset: "listen" | "epk_press" | "delivery" | "custom") {
 }
 
 function canEditDetailField(field: MusicDetailField) {
-  return ["Missing", "Draft"].includes(field.status);
+  return field.label !== "Lifecycle";
 }
 
 function isIdentifierField(label: string) {

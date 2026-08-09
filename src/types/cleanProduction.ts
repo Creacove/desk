@@ -304,6 +304,32 @@ export type MusicManagerRunStatus =
   | "failed"
   | "cancelled";
 
+export type SongDocumentType = "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes" | "other";
+
+export type SongMaterialViewModel =
+  | {
+      id: string;
+      kind: "file";
+      group: "Audio" | "Artwork" | "Documents";
+      materialType: string;
+      title: string;
+      status: string;
+      origin: "uploaded" | "imported";
+    }
+  | {
+      id: string;
+      kind: "document";
+      group: "Documents";
+      materialType: SongDocumentType;
+      title: string;
+      status: string;
+      origin: "user_uploaded" | "manager_generated" | "system_generated" | "imported";
+      reviewState?: "needs_review" | "ready";
+      body?: string;
+      fileName?: string;
+      currentVersionId?: string;
+    };
+
 export type MusicObjectViewModel = {
   id: string;
   kind: "song" | "project";
@@ -340,6 +366,7 @@ export type MusicObjectViewModel = {
   projectIds?: string[];
   files?: Array<{ label: string; status: string }>;
   fileAssets?: Array<{ assetId?: string; group: "Audio" | "Artwork" | "Documents"; label: string; status: string; action: string; assetType?: string; canUpload?: boolean; canReplace?: boolean }>;
+  materials?: SongMaterialViewModel[];
   details?: Array<{ label: string; value: string; status: string }>;
   metadataFields?: Array<{ label: string; value: string; status: "Missing" | "Draft" | "Confirmed" }>;
   releaseFields?: Array<{ label: string; value: string; status: "Missing" | "Draft" | "Confirmed" }>;
@@ -698,6 +725,8 @@ export type MusicRepository = {
   saveDetail(musicItemId: string, input: { group: string; label: string; value: string }): Promise<void>;
   saveCredit(musicItemId: string, input: { role: string; name: string }): Promise<void>;
   saveIdentifier(musicItemId: string, input: { identifierType: string; identifierValue: string }): Promise<void>;
+  createSongDocument?(musicItemId: string, input: { documentType: SongDocumentType; title: string; body: string }): Promise<SongMaterialViewModel>;
+  updateSongDocument?(documentId: string, input: { title?: string; body: string }): Promise<SongMaterialViewModel>;
   saveSplitContributor(musicItemId: string, input: SplitContributorInput): Promise<void>;
   removeSplitContributor(musicItemId: string, contributorId: string): Promise<void>;
   sendSplitConfirmationLinks(musicItemId: string): Promise<void>;
@@ -706,6 +735,8 @@ export type MusicRepository = {
   createShareLink?(input: {
     musicSubject: ManagerConversationMusicSubject;
     assetIds: string[];
+    documentIds?: string[];
+    informationKeys?: string[];
     preset: MusicShareLinkViewModel["preset"];
     recipientEmail?: string;
     label?: string;

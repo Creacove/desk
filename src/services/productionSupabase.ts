@@ -928,7 +928,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         .from("artifact_links")
         .select("source_type,source_id,target_id,target_type,relationship,created_at")
       )
-        .in("source_type", ["conversation", "mission"])
+        .in("source_type", ["conversation", "mission", "document"])
         .in("target_type", ["music_item", "music_project"])
         .in("target_id", subjectIds)
         .eq("relationship", "references")
@@ -1135,11 +1135,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     });
     const musicLinks = (conversationLinkRows ?? []) as ArtifactLinkRow[];
     const conversationPreviews = await loadConversationPreviewMap(client, workspace, linkedConversationIds(musicLinks));
-    return applyMusicConversationLinks(
+    const linkedModels = applyMusicConversationLinks(
       applyMusicMissionLinks(musicViewModelsFromLibrary(library), musicLinks),
       musicLinks,
       conversationPreviews,
-    ).find((model) => model.id === subjectId) ?? null;
+    );
+    const modelsWithMaterials = await applySongDocumentMaterials(client, workspace, linkedModels, musicLinks);
+    return modelsWithMaterials.find((model) => model.id === subjectId) ?? null;
   };
 
   const loadManagerRun = async (runId: string): Promise<{
@@ -1184,7 +1186,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       .from("artifact_links")
       .select("source_type,source_id,target_id,target_type,relationship,created_at")
     )
-      .in("source_type", ["conversation", "mission"])
+      .in("source_type", ["conversation", "mission", "document"])
       .in("target_type", ["music_item", "music_project"])
       .in("target_id", subjectIds)
       .eq("relationship", "references")
@@ -1194,11 +1196,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
     if (error) throw error;
     const musicLinks = (data ?? []) as ArtifactLinkRow[];
     const conversationPreviews = await loadConversationPreviewMap(client, workspace, linkedConversationIds(musicLinks));
-    return applyMusicConversationLinks(
+    const linkedModels = applyMusicConversationLinks(
       applyMusicMissionLinks(models, musicLinks),
       musicLinks,
       conversationPreviews,
     );
+    return applySongDocumentMaterials(client, workspace, linkedModels, musicLinks);
   };
 
   return {
@@ -1738,6 +1741,120 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           payload: { role: input.role.trim(), name: input.name.trim() },
         });
       },
+      async createSongDocument(musicItemId, input) {
+        const { data: documentData, error: documentError } = await client
+          .from("documents")
+          .insert({
+            account_id: workspace.accountId,
+            artist_workspace_id: workspace.artistWorkspaceId,
+            artist_id: workspace.artistId,
+            title: input.title.trim(),
+            document_type: input.documentType,
+            origin: "user_uploaded",
+            status: "accepted",
+            metadata: {},
+            created_by_type: "user",
+          })
+          .select("id,title,document_type,origin,status,current_version_id,metadata")
+          .single();
+        if (documentError) throw documentError;
+        const document = documentData as DocumentRow;
+
+        const { data: versionData, error: versionError } = await client
+          .from("document_versions")
+          .insert({
+            account_id: workspace.accountId,
+            artist_workspace_id: workspace.artistWorkspaceId,
+            artist_id: workspace.artistId,
+            document_id: document.id,
+            version_number: 1,
+            file_type: "text/markdown",
+            extraction_status: "not_required",
+            metadata: { body: input.body },
+          })
+          .select("id,document_id,file_name,metadata")
+          .single();
+        if (versionError) throw versionError;
+        const version = versionData as DocumentVersionRow;
+
+        const { error: updateError } = await client.from("documents").update({ current_version_id: version.id }).eq("id", document.id);
+        if (updateError) throw updateError;
+        const { error: linkError } = await client.from("artifact_links").insert({
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          source_type: "document",
+          source_id: document.id,
+          target_type: "music_item",
+          target_id: musicItemId,
+          relationship: "references",
+        });
+        if (linkError) throw linkError;
+        await writeOperatingEvent(client, workspace, {
+          eventType: "song_document_created",
+          targetType: "music_item",
+          targetId: musicItemId,
+          sourceType: "document",
+          sourceId: document.id,
+          summary: `Added ${input.title.trim()} to this song.`,
+          payload: { document_type: input.documentType },
+        });
+        return {
+          id: document.id,
+          kind: "document" as const,
+          group: "Documents" as const,
+          materialType: input.documentType,
+          title: input.title.trim(),
+          status: "accepted",
+          origin: "user_uploaded" as const,
+          reviewState: "ready" as const,
+          body: input.body,
+          currentVersionId: version.id,
+        };
+      },
+      async updateSongDocument(documentId, input) {
+        const { data: documentData, error: documentError } = await ownerFilters(client
+          .from("documents")
+          .select("id,title,document_type,origin,status,current_version_id,metadata")
+        ).eq("id", documentId).maybeSingle();
+        if (documentError) throw documentError;
+        if (!documentData) throw new Error("This document could not be found.");
+        const document = documentData as DocumentRow;
+        const { data: versionsData, error: versionsError } = await ownerFilters(client
+          .from("document_versions")
+          .select("id,document_id,file_name,metadata,version_number")
+        ).eq("document_id", documentId).order("version_number", { ascending: false }).limit(1);
+        if (versionsError) throw versionsError;
+        const currentVersion = ((versionsData ?? []) as Array<DocumentVersionRow & { version_number?: number }>)[0];
+        const nextVersionNumber = (currentVersion?.version_number ?? 0) + 1;
+        const { data: nextVersionData, error: nextVersionError } = await client.from("document_versions").insert({
+          account_id: workspace.accountId,
+          artist_workspace_id: workspace.artistWorkspaceId,
+          artist_id: workspace.artistId,
+          document_id: documentId,
+          version_number: nextVersionNumber,
+          file_type: "text/markdown",
+          extraction_status: "not_required",
+          metadata: { body: input.body },
+        }).select("id,document_id,file_name,metadata").single();
+        if (nextVersionError) throw nextVersionError;
+        const nextVersion = nextVersionData as DocumentVersionRow;
+        const title = input.title?.trim() || document.title;
+        const { error: updateError } = await client.from("documents").update({ title, current_version_id: nextVersion.id, status: "accepted" }).eq("id", documentId);
+        if (updateError) throw updateError;
+        return {
+          id: document.id,
+          kind: "document" as const,
+          group: "Documents" as const,
+          materialType: normalizeSongDocumentType(document.document_type),
+          title,
+          status: "accepted",
+          origin: document.origin ?? "user_uploaded",
+          reviewState: "ready" as const,
+          body: input.body,
+          currentVersionId: nextVersion.id,
+        };
+      },
       async saveIdentifier(musicItemId, input) {
         const { error } = await client.from("music_identifiers").insert({
           account_id: workspace.accountId,
@@ -1881,6 +1998,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             artistId: workspace.artistId,
             musicSubject: input.musicSubject,
             assetIds: input.assetIds,
+            documentIds: input.documentIds,
+            informationKeys: input.informationKeys,
             preset: input.preset,
             recipientEmail: input.recipientEmail?.trim() || undefined,
             label: input.label?.trim() || undefined,
@@ -2919,13 +3038,104 @@ type DocumentRow = {
   title: string;
   status?: MissionTaskDeliverableViewModel["status"] | null;
   current_version_id?: string | null;
+  document_type?: string | null;
+  origin?: "user_uploaded" | "manager_generated" | "system_generated" | "imported" | null;
+  metadata?: Record<string, unknown> | null;
 };
 
 type DocumentVersionRow = {
   id: string;
   document_id: string;
   file_name?: string | null;
+  metadata?: Record<string, unknown> | null;
 };
+
+async function applySongDocumentMaterials(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  models: MusicObjectViewModel[],
+  links: ArtifactLinkRow[],
+) {
+  const documentLinks = links.filter((link) => link.source_type === "document" && link.target_type === "music_item");
+  const documentIds = [...new Set(documentLinks.map((link) => link.source_id).filter(Boolean))];
+  const fileMaterialsBySong = new Map(models.map((model) => [
+    model.id,
+    (model.fileAssets ?? [])
+      .filter((asset) => asset.assetId && asset.status !== "Missing")
+      .map((asset) => ({
+        id: asset.assetId!,
+        kind: "file" as const,
+        group: asset.group,
+        materialType: asset.assetType ?? "other",
+        title: asset.label,
+        status: asset.status,
+        origin: model.sourceKind === "spotify_public_catalog" ? "imported" as const : "uploaded" as const,
+      })),
+  ]));
+
+  if (!documentIds.length) {
+    return models.map((model) => ({ ...model, materials: fileMaterialsBySong.get(model.id) ?? [] }));
+  }
+
+  const [{ data: documentData, error: documentError }, { data: versionData, error: versionError }] = await Promise.all([
+    ownerFilters(client
+      .from("documents")
+      .select("id,title,document_type,origin,status,current_version_id,metadata")
+    ).in("id", documentIds),
+    ownerFilters(client
+      .from("document_versions")
+      .select("id,document_id,file_name,metadata")
+    ).in("document_id", documentIds).order("version_number", { ascending: false }),
+  ]);
+  if (documentError) throw documentError;
+  if (versionError) throw versionError;
+
+  const documents = (documentData ?? []) as DocumentRow[];
+  const versions = (versionData ?? []) as DocumentVersionRow[];
+  const documentById = new Map(documents.map((document) => [document.id, document]));
+  const versionByDocumentId = new Map<string, DocumentVersionRow>();
+  for (const version of versions) {
+    if (!versionByDocumentId.has(version.document_id)) versionByDocumentId.set(version.document_id, version);
+  }
+
+  return models.map((model) => {
+    const seen = new Set<string>();
+    const linkedDocuments = documentLinks.flatMap((link) => {
+      if (link.target_id !== model.id || seen.has(link.source_id)) return [];
+      const document = documentById.get(link.source_id);
+      if (!document) return [];
+      seen.add(document.id);
+      const version = versions.find((item) => item.id === document.current_version_id) ?? versionByDocumentId.get(document.id);
+      const body = typeof version?.metadata?.body === "string"
+        ? version.metadata.body
+        : typeof document.metadata?.body === "string"
+          ? document.metadata.body
+          : undefined;
+      const origin = document.origin ?? "user_uploaded";
+      const needsReview = origin === "manager_generated" && ["draft", "needs_revision"].includes(document.status ?? "draft");
+      return [{
+        id: document.id,
+        kind: "document" as const,
+        group: "Documents" as const,
+        materialType: normalizeSongDocumentType(document.document_type),
+        title: document.title,
+        status: document.status ?? "draft",
+        origin,
+        reviewState: needsReview ? "needs_review" as const : "ready" as const,
+        ...(body ? { body } : {}),
+        ...(version?.file_name ? { fileName: version.file_name } : {}),
+        ...(document.current_version_id ? { currentVersionId: document.current_version_id } : {}),
+      }];
+    });
+    return { ...model, materials: [...(fileMaterialsBySong.get(model.id) ?? []), ...linkedDocuments] };
+  });
+}
+
+function normalizeSongDocumentType(value?: string | null): "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes" | "other" {
+  return ["lyrics", "press_release", "press_angle", "artist_biography", "one_sheet", "credits", "distributor_notes"].includes(value ?? "")
+    ? value as "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes"
+    : "other";
+}
 
 type EvidenceRow = {
   id: string;
@@ -5854,7 +6064,7 @@ function buildReleaseFields(song: ProductionMusicItem): NonNullable<MusicObjectV
 function manualDetailField(song: ProductionMusicItem, label: string, providerValue?: string, fallbackStatus: "Missing" | "Draft" = "Missing") {
   if (providerValue) return { label, value: providerValue, status: "Confirmed" as const };
   const manualValue = song.manualDetails?.[normalizeManualDetailKey(label)];
-  return manualValue ? { label, value: manualValue, status: "Draft" as const } : { label, value: "Missing", status: fallbackStatus };
+  return manualValue ? { label, value: manualValue, status: "Confirmed" as const } : { label, value: "Missing", status: fallbackStatus };
 }
 
 function manualOrAudioAnalysisDetailField(
@@ -5866,7 +6076,7 @@ function manualOrAudioAnalysisDetailField(
 ) {
   if (providerValue) return { label, value: providerValue, status: "Confirmed" as const };
   const manualValue = song.manualDetails?.[normalizeManualDetailKey(label)];
-  if (manualValue) return { label, value: manualValue, status: "Draft" as const };
+  if (manualValue) return { label, value: manualValue, status: "Confirmed" as const };
   const detected = song.evidence.find((item) => item.evidenceType === "audio_analysis" && item.metricName === metricName);
   if (!detected) return { label, value: "Missing", status: "Missing" as const };
   const value = typeof detected.metricValue === "number" ? detected.metricValue : 0;

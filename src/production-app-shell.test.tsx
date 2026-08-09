@@ -3244,7 +3244,9 @@ describe("Clean production prototype-match shell", () => {
     const room = await screen.findByTestId("music-song-detail");
     expect(within(room).getByRole("heading", { name: "Song assets" })).toBeInTheDocument();
     expect(within(room).getByText("Everything your team needs for this song, in one place.")).toBeInTheDocument();
-    expect(within(room).getByRole("button", { name: "Upload files" })).toBeInTheDocument();
+    expect(within(room).getByRole("button", { name: "Add audio" })).toBeInTheDocument();
+    expect(within(room).getByRole("button", { name: "Add image" })).toBeInTheDocument();
+    expect(within(room).getByRole("button", { name: "Add document" })).toBeInTheDocument();
     expect(within(room).getByText("Artwork & images")).toBeInTheDocument();
     expect(within(room).getByText("Documents")).toBeInTheDocument();
     expect(within(room).queryByText("Rights documents")).not.toBeInTheDocument();
@@ -3253,6 +3255,53 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(room).getByRole("button", { name: "Play Final master" }));
     expect(await within(room).findByLabelText("Final master audio player")).toHaveAttribute("src", "https://signed.example/final-master.wav");
     expect(getAssetAccessUrl).toHaveBeenCalledWith("song-assets", "asset-master");
+  });
+
+  it("creates a native song document from the Documents section", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const song = { ...musicReadSubject("song", "fresh"), materials: [], fileAssets: [] };
+    const createSongDocument = vi.fn(async (_songId, input) => ({
+      id: "document-press",
+      kind: "document" as const,
+      group: "Documents" as const,
+      materialType: input.documentType,
+      title: input.title,
+      body: input.body,
+      status: "accepted",
+      origin: "user_uploaded" as const,
+      reviewState: "ready" as const,
+    }));
+
+    render(
+      <MusicWorkspace
+        music={[song]}
+        missions={[]}
+        targetMusicObjectId={song.id}
+        targetSongRoomTab="files"
+        musicRepository={{ ...repositories.music, createSongDocument }}
+        onRefreshObject={async () => song}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onOpenManager={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click((await screen.findByTestId("music-song-detail")).querySelector('[aria-label="Add document"]')!);
+    expect(screen.getByRole("menuitem", { name: "Write here" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Ask Manager to draft" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Upload a file" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Write here" }));
+    fireEvent.change(screen.getByLabelText("Document title"), { target: { value: "North Star press release" } });
+    fireEvent.change(screen.getByLabelText("Document content"), { target: { value: "North Star opens a new chapter." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save document" }));
+
+    await waitFor(() => expect(createSongDocument).toHaveBeenCalledWith("song-jam", expect.objectContaining({
+      documentType: "press_release",
+      title: "North Star press release",
+      body: "North Star opens a new chapter.",
+    })));
+    expect(screen.queryByRole("dialog", { name: /Write here/i })).not.toBeInTheDocument();
   });
 
   it("does not replay a consumed song navigation intent after repository refresh", async () => {
@@ -5014,7 +5063,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Songs" }));
     fireEvent.click(screen.getByRole("button", { name: "Open song Night Bus" }));
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "files" }));
-    expect(screen.getByRole("button", { name: "Upload files" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add audio" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add image" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add document" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Replace Final master" })).toHaveTextContent("Replace");
     expect(screen.queryByText("Rights documents")).not.toBeInTheDocument();
 
@@ -5025,7 +5076,6 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "details" }));
-    expect(screen.queryByRole("button", { name: "Edit Genre" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Edit ISRC" })).toHaveTextContent("");
     expect(screen.getByRole("button", { name: "Edit Mix engineer" })).toHaveTextContent("");
   }, 20000);

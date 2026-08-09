@@ -9,6 +9,7 @@ export type PublicMusicSharePackage = {
     fileType: string;
     downloadUrl: string;
   }>;
+  information?: Array<{ key: string; title: string; value: string; documentType?: string }>;
 };
 
 type PublicFunctionClient = {
@@ -25,8 +26,20 @@ export async function loadPublicMusicShare(client: PublicFunctionClient, token: 
   const preset = text(payload.preset, 40);
   const sourceAssets = Array.isArray(payload.assets) ? payload.assets.slice(0, 40) : [];
   const assets = sourceAssets.map(normalizeAsset).filter((asset): asset is PublicMusicSharePackage["assets"][number] => Boolean(asset));
-  if (!label || !preset || !assets.length) throw new Error("Share package is unavailable.");
-  return { label, preset, assets };
+  const sourceInformation = Array.isArray(payload.information) ? payload.information.slice(0, 60) : [];
+  const information = sourceInformation.map(normalizeInformation).filter((field): field is NonNullable<PublicMusicSharePackage["information"]>[number] => Boolean(field));
+  if (!label || !preset || (!assets.length && !information.length)) throw new Error("Share package is unavailable.");
+  return { label, preset, assets, ...(information.length ? { information } : {}) };
+}
+
+function normalizeInformation(value: unknown) {
+  const source = record(value);
+  const key = text(source.key, 180);
+  const title = text(source.title, 180);
+  const fieldValue = typeof source.value === "string" ? source.value.trim().slice(0, 60_000) : "";
+  const documentType = text(source.documentType, 80);
+  if (!key || !title || !fieldValue) return null;
+  return { key, title, value: fieldValue, ...(documentType ? { documentType } : {}) };
 }
 
 function normalizeAsset(value: unknown) {

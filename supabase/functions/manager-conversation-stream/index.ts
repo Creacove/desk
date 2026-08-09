@@ -30,6 +30,7 @@ import {
 import { qualifyManagerMemoryCandidates } from "../_shared/manager-conversation/memory.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
+import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_shared/songDocumentDraft.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -169,6 +170,7 @@ Deno.serve(async (request) => {
           scopedMissionId: finalScopedMissionId,
         }, output);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
+        await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
         output.createdWork = taskDraftWork
           ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
           : [...toolCreatedWork, ...persistedWork];
@@ -217,7 +219,7 @@ Deno.serve(async (request) => {
           }, messages.length ? messages : [artistMessage, managerMessage], input.taskId),
           refresh: output.createdWork.some((work) => work.type === "mission" || work.type === "task")
             ? refreshHintForCreatedWorkItems(output.createdWork)
-            : { conversations: false },
+            : { conversations: false, music: Boolean(finalMusicSubject) },
         });
       } catch (error) {
         const failure = classifyManagerConversationError(error);
@@ -504,6 +506,7 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
   for (const result of [assetResult, splitResult, analysisResult, activityResult]) {
     if (result.error) throw result.error;
   }
+  const documents = musicSubject.type === "music_item" ? await loadFocusedSongDocuments(db, input, musicSubjectRow.id) : [];
 
   return {
     type: input.musicSubject.type,
@@ -516,6 +519,7 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     sourceLimit: musicSubjectRow.source_limit ?? "",
     metadata: musicSubjectRow.metadata ?? {},
     assets: (assetResult.data ?? []).map((asset: any) => ({ id: asset.id, assetType: asset.asset_type, title: asset.title, status: asset.status, createdAt: asset.created_at })),
+    documents,
     rights: splitResult.data ? { status: splitResult.data.status, publishingTotal: splitResult.data.publishing_total, masterTotal: splitResult.data.master_total, summary: splitResult.data.summary } : null,
     analysis: (analysisResult.data ?? []).map((item: any) => ({ metric: item.metric_name, value: item.metric_value, unit: item.metric_unit, confidence: item.confidence, createdAt: item.created_at })),
     recentActivity: (activityResult.data ?? []).map((event: any) => ({ eventType: event.event_type, summary: event.summary, createdAt: event.created_at })),

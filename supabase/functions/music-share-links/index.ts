@@ -14,6 +14,8 @@ type ShareInput = {
   artistId: string;
   musicSubject?: { type: "music_item" | "music_project"; id: string };
   assetIds?: string[];
+  documentIds?: string[];
+  informationKeys?: string[];
   preset?: "listen" | "epk_press" | "delivery" | "custom";
   recipientEmail?: string;
   label?: string;
@@ -53,14 +55,17 @@ Deno.serve(async (request) => {
 async function createShareLink(db: any, input: ShareInput, userId: string) {
   const subject = requireSubject(input);
   const assetIds = uniqueIds(input.assetIds);
-  if (!assetIds.length) throw new Error("Select at least one uploaded file to share.");
+  const documentIds = uniqueIds(input.documentIds);
+  const informationKeys = allowedInformationKeys(input.informationKeys);
+  if (!assetIds.length && !documentIds.length && !informationKeys.length) throw new Error("Select at least one file, document, or song detail to share.");
   const target = subject.type === "music_item"
     ? { table: "music_items", foreignKey: "music_item_id" }
     : { table: "music_projects", foreignKey: "music_project_id" };
   const [{ data: music, error: musicError }, { data: assets, error: assetsError }] = await Promise.all([
-    owned(db.from(target.table).select("id,title"), input).eq("id", subject.id).maybeSingle(),
-    owned(db.from("music_assets").select("id,title,asset_type,status,uploaded_file_id"), input)
-      .eq(target.foreignKey, subject.id).in("id", assetIds).limit(40),
+    owned(db.from(target.table).select("id,title,metadata,released_at,lifecycle_stage"), input).eq("id", subject.id).maybeSingle(),
+    assetIds.length
+      ? owned(db.from("music_assets").select("id,title,asset_type,status,uploaded_file_id"), input).eq(target.foreignKey, subject.id).in("id", assetIds).limit(40)
+      : Promise.resolve({ data: [], error: null }),
   ]);
   if (musicError) throw musicError;
   if (assetsError) throw assetsError;
@@ -88,6 +93,15 @@ async function createShareLink(db: any, input: ShareInput, userId: string) {
       path: cleanText(file.storage_ref, 600),
     };
   });
+  const documentFields = subject.type === "music_item" && documentIds.length
+    ? await loadDocumentFields(db, input, subject.id, documentIds)
+    : [];
+  const metadata = music?.metadata && typeof music.metadata === "object" ? music.metadata : {};
+  const detailFields = informationKeys.flatMap((key) => {
+    const value = canonicalInformationValue(key, music, metadata);
+    return value ? [{ key, title: informationTitle(key), value }] : [];
+  });
+  const informationManifest = { version: 1, fields: [...detailFields, ...documentFields] };
   const rawToken = randomToken();
   const { data: shareLink, error: insertError } = await db.from("music_share_links").insert({
     account_id: input.accountId,
@@ -99,6 +113,7 @@ async function createShareLink(db: any, input: ShareInput, userId: string) {
     recipient_email: normalizeEmail(input.recipientEmail) || null,
     preset: validPreset(input.preset),
     asset_manifest: manifest,
+    information_manifest: informationManifest,
     token_hash: await hashToken(rawToken),
     state: "active",
     created_by_id: userId,
@@ -109,9 +124,53 @@ async function createShareLink(db: any, input: ShareInput, userId: string) {
     shareLinkId: shareLink.id,
     preset: shareLink.preset,
     assetCount: manifest.length,
+    informationCount: informationManifest.fields.length,
     recipientEmail: shareLink.recipient_email ?? "",
   });
   return { shareLink: { id: shareLink.id, label: shareLink.label, preset: shareLink.preset, url, recipientEmail: shareLink.recipient_email ?? "", createdAt: shareLink.created_at } };
+}
+
+async function loadDocumentFields(db: any, input: ShareInput, musicItemId: string, documentIds: string[]) {
+  const { data: links, error: linksError } = await owned(db.from("artifact_links").select("source_id,target_id"), input)
+    .eq("source_type", "document").eq("target_type", "music_item").eq("target_id", musicItemId).in("source_id", documentIds).limit(40);
+  if (linksError) throw linksError;
+  const linkedIds = [...new Set((links ?? []).map((link: any) => link.source_id).filter((id: unknown): id is string => typeof id === "string"))];
+  if (linkedIds.length !== documentIds.length) throw new Error("One or more selected documents do not belong to this song.");
+  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status"), input).in("id", linkedIds).limit(40);
+  if (documentsError) throw documentsError;
+  const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);
+  if (versionsError) throw versionsError;
+  return (documents ?? []).flatMap((document: any) => {
+    const version = (versions ?? []).find((item: any) => item.id === document.current_version_id)
+      ?? (versions ?? []).find((item: any) => item.document_id === document.id);
+    const body = cleanLongText(version?.metadata?.body, 60_000);
+    if (!body) return [];
+    return [{ key: `document:${document.id}`, title: cleanText(document.title, 180), value: body, documentType: cleanText(document.document_type, 80) }];
+  });
+}
+
+function allowedInformationKeys(value: unknown) {
+  const allowed = new Set(["song_title", "primary_artist", "release_date", "label", "copyright", "genre"]);
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((item): item is string => typeof item === "string" && allowed.has(item)))];
+}
+
+function canonicalInformationValue(key: string, music: any, metadata: any) {
+  if (key === "song_title") return cleanText(music?.title, 500);
+  if (key === "release_date") return cleanText(metadata?.release_date ?? music?.released_at, 500);
+  if (key === "primary_artist") return cleanText(metadata?.artists?.[0]?.name ?? metadata?.primary_artist, 500);
+  if (key === "label") return cleanText(metadata?.label ?? metadata?.album_label, 500);
+  if (key === "copyright") return cleanText(Array.isArray(metadata?.copyrights) ? metadata.copyrights.join("; ") : metadata?.copyright, 2_000);
+  if (key === "genre") return cleanText(Array.isArray(metadata?.genres) ? metadata.genres.join(", ") : metadata?.genre, 500);
+  return "";
+}
+
+function informationTitle(key: string) {
+  return ({ song_title: "Song title", primary_artist: "Primary artist", release_date: "Release date", label: "Record label", copyright: "Copyright", genre: "Genre" } as Record<string, string>)[key] ?? key;
+}
+
+function cleanLongText(value: unknown, maxLength: number) {
+  return String(value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ").trim().slice(0, maxLength);
 }
 
 async function listShareLinks(db: any, input: ShareInput) {

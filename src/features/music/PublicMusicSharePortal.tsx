@@ -60,6 +60,16 @@ export function PublicMusicSharePortal({
               </div>
 
               <div className="p-4 sm:p-5">
+                {(sharePackage.information ?? []).length ? (
+                  <section aria-label="Shared information" className="mb-4 overflow-hidden rounded-[16px] border border-foreground/8">
+                    {(sharePackage.information ?? []).map((field) => (
+                      <article key={field.key} className="border-b border-foreground/6 p-4 last:border-b-0">
+                        <h2 className="text-[12px] font-bold text-foreground">{field.title}</h2>
+                        <p className="mt-2 whitespace-pre-wrap text-[13px] leading-6 text-muted-foreground">{field.value}</p>
+                      </article>
+                    ))}
+                  </section>
+                ) : null}
                 <div className="overflow-hidden rounded-[16px] border border-foreground/8">
                   {sharePackage.assets.map((asset) => (
                     <article key={asset.id || `${asset.title}-${asset.fileName}`} className="grid gap-3 border-b border-foreground/6 p-4 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">

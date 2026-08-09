@@ -16,7 +16,7 @@ Deno.serve(async (request) => {
     const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
     const tokenHash = await hashToken(token);
     const { data: shareLink, error } = await db.from("music_share_links")
-      .select("id,label,preset,asset_manifest,state,expires_at")
+      .select("id,label,preset,asset_manifest,information_manifest,state,expires_at")
       .eq("token_hash", tokenHash).maybeSingle();
     if (error) throw error;
     if (!shareLink || shareLink.state !== "active") return json({ error: "This share link is invalid or unavailable." }, 404);
@@ -41,10 +41,11 @@ Deno.serve(async (request) => {
       };
     }));
     const availableAssets = assets.filter(Boolean);
-    if (!availableAssets.length) return json({ error: "This share link is unavailable." }, 404);
+    const information = normalizeInformationManifest(shareLink.information_manifest);
+    if (!availableAssets.length && !information.length) return json({ error: "This share link is unavailable." }, 404);
     const { error: accessError } = await db.rpc("record_music_share_link_access", { target_share_link_id: shareLink.id });
     if (accessError) throw accessError;
-    return json({ label: cleanText(shareLink.label, 180), preset: cleanText(shareLink.preset, 40), assets: availableAssets });
+    return json({ label: cleanText(shareLink.label, 180), preset: cleanText(shareLink.preset, 40), assets: availableAssets, information });
   } catch (error) {
     return json({ error: "This share link is unavailable." }, 404);
   }
@@ -57,6 +58,17 @@ async function hashToken(token: string) {
 
 function cleanText(value: unknown, maxLength: number) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
+}
+
+function normalizeInformationManifest(value: unknown) {
+  const manifest = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+  const fields = Array.isArray(manifest.fields) ? manifest.fields.slice(0, 60) : [];
+  return fields.flatMap((field: any) => {
+    const key = cleanText(field?.key, 180);
+    const title = cleanText(field?.title, 180);
+    const content = String(field?.value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ").trim().slice(0, 60_000);
+    return key && title && content ? [{ key, title, value: content, documentType: cleanText(field?.documentType, 80) }] : [];
+  });
 }
 
 function requireEnv(name: string) {

@@ -986,7 +986,7 @@ function CleanProductionWorkspace({
     navigate("managerOffice");
   }
 
-  async function openMusicManagerConversation(subject: MusicObjectViewModel) {
+  async function openMusicManagerConversation(subject: MusicObjectViewModel, starterPrompt?: string) {
     const musicSubject: ManagerConversationMusicSubject = {
       type: subject.kind === "project" ? "music_project" : "music_item",
       id: subject.id,
@@ -1003,7 +1003,7 @@ function CleanProductionWorkspace({
     }
 
     await sendManagerMessage(
-      `Help me manage ${subject.title}. Start from its current state and give me the one most important next action or question.`,
+      starterPrompt ?? `Help me manage ${subject.title}. Start from its current state and give me the one most important next action or question.`,
       undefined,
       `Manage ${subject.title}`,
       { musicSubject },
@@ -1192,6 +1192,7 @@ function CleanProductionWorkspace({
       invalidateConversationCache(mergedConversation.id);
       if (effectiveMusicSubject) {
         setMusic((items) => applyManagerConversationLink(items, effectiveMusicSubject, mergedConversation.id));
+        await refreshMusicObject(effectiveMusicSubject.id, effectiveMusicSubject.type);
       }
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
       const createdWork = conversationWorkItems(conversation);
