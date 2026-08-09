@@ -493,7 +493,8 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
   }
 
   const assetForeignKey = musicSubject.type === "music_item" ? "music_item_id" : "music_project_id";
-  const [assetResult, splitResult, analysisResult, activityResult] = await Promise.all([
+  const managerReadOutputType = musicSubject.type === "music_item" ? "song_manager_read" : "project_manager_read";
+  const [assetResult, splitResult, analysisResult, activityResult, managerReadResult] = await Promise.all([
     db.from("music_assets")
       .select("id,asset_type,title,status,created_at")
       .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
@@ -504,19 +505,26 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
         .eq("music_item_id", musicSubjectRow.id).order("updated_at", { ascending: false }).limit(1).maybeSingle()
       : Promise.resolve({ data: null, error: null }),
     db.from("evidence_items")
-      .select("metric_name,metric_value,metric_unit,confidence,created_at")
+      .select("id,source,evidence_type,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,created_at")
       .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
-      .eq("subject_type", musicSubject.type).eq("subject_id", musicSubjectRow.id).eq("evidence_type", "audio_analysis")
-      .order("created_at", { ascending: false }).limit(8),
+      .eq("subject_type", musicSubject.type).eq("subject_id", musicSubjectRow.id)
+      .order("created_at", { ascending: false }).limit(16),
     db.from("operating_events")
       .select("event_type,summary,created_at")
       .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
       .eq("target_type", musicSubject.type).eq("target_id", musicSubjectRow.id)
       .order("created_at", { ascending: false }).limit(8),
+    db.from("manager_outputs")
+      .select("id,summary,primary_recommendation_json,render_json,created_at")
+      .eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId)
+      .eq("subject_type", musicSubject.type).eq("subject_id", musicSubjectRow.id)
+      .eq("output_type", managerReadOutputType).eq("is_current", true)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   for (const result of [assetResult, splitResult, analysisResult, activityResult]) {
     if (result.error) throw result.error;
   }
+  if (managerReadResult.error) console.warn("manager-conversation-stream: focused Manager Read unavailable", managerReadResult.error.message);
   const documents = musicSubject.type === "music_item" ? await loadFocusedSongDocuments(db, input, musicSubjectRow.id) : [];
 
   return {
@@ -532,8 +540,20 @@ async function ensureMusicConversationSubjectLink(db: any, input: ManagerConvers
     assets: (assetResult.data ?? []).map((asset: any) => ({ id: asset.id, assetType: asset.asset_type, title: asset.title, status: asset.status, createdAt: asset.created_at })),
     documents,
     rights: splitResult.data ? { status: splitResult.data.status, publishingTotal: splitResult.data.publishing_total, masterTotal: splitResult.data.master_total, summary: splitResult.data.summary } : null,
-    analysis: (analysisResult.data ?? []).map((item: any) => ({ metric: item.metric_name, value: item.metric_value, unit: item.metric_unit, confidence: item.confidence, createdAt: item.created_at })),
+    analysis: (analysisResult.data ?? []).map((item: any) => ({ id: item.id, source: item.source, evidenceType: item.evidence_type, metric: item.metric_name, value: item.metric_value, unit: item.metric_unit, freshness: item.freshness, confidence: item.confidence, provenance: item.provenance, limitation: item.limitation, createdAt: item.created_at })),
     recentActivity: (activityResult.data ?? []).map((event: any) => ({ eventType: event.event_type, summary: event.summary, createdAt: event.created_at })),
+    managerRead: !managerReadResult.error && managerReadResult.data ? focusedManagerRead(managerReadResult.data) : null,
+  };
+}
+
+function focusedManagerRead(row: any) {
+  const primary = isRecord(row.primary_recommendation_json) ? row.primary_recommendation_json : {};
+  const render = isRecord(row.render_json) ? row.render_json : {};
+  return {
+    id: row.id,
+    summary: row.summary ?? "",
+    recommendation: primary.recommendation ?? primary.managerRead ?? render.content ?? "",
+    createdAt: row.created_at,
   };
 }
 

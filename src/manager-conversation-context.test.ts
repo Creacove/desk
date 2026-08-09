@@ -41,6 +41,12 @@ const oversizedPacket = {
     rights: { status: "pending_confirmation", publishingTotal: 100, masterTotal: 100 },
     analysis: [{ metric: "tempo_bpm", value: 102, unit: "bpm", confidence: "medium" }],
     recentActivity: [{ eventType: "music_asset_uploaded", summary: "Uploaded Final master.", createdAt: "2026-08-09T00:00:00Z" }],
+    managerRead: {
+      id: "read-night-bus",
+      summary: "Night Bus is already released and should be managed post-release.",
+      recommendation: "Use its current audience signal to choose the next owned-audience move.",
+      createdAt: "2026-08-08T00:00:00Z",
+    },
   },
 };
 
@@ -63,6 +69,12 @@ describe("Manager conversation context boundary", () => {
         rights: { status: "pending_confirmation", publishingTotal: 100, masterTotal: 100 },
         analysis: [{ metric: "tempo_bpm", value: 102, unit: "bpm", confidence: "medium" }],
         recentActivity: [{ eventType: "music_asset_uploaded", summary: "Uploaded Final master.", createdAt: "2026-08-09T00:00:00Z" }],
+        managerRead: {
+          id: "read-night-bus",
+          summary: "Night Bus is already released and should be managed post-release.",
+          recommendation: "Use its current audience signal to choose the next owned-audience move.",
+          createdAt: "2026-08-08T00:00:00Z",
+        },
       },
     });
     expect(serialized).not.toContain("render_json");

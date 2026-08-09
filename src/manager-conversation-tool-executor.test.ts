@@ -37,6 +37,38 @@ function dbWith(rows: unknown[]) {
 const scope = { accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1" };
 
 describe("Manager output tools", () => {
+  it("applies exact song filters before limiting evidence retrieval", async () => {
+    const { db, states } = dbWith([]);
+
+    await executeManagerConversationTool(db, scope, "query_evidence_items", {
+      subjectType: "music_item",
+      subjectId: "song-420",
+      limit: 16,
+    });
+
+    expect(states[0].filters).toEqual(expect.arrayContaining([
+      ["subject_type", "music_item"],
+      ["subject_id", "song-420"],
+    ]));
+  });
+
+  it("applies exact song and output filters before limiting Manager Read retrieval", async () => {
+    const { db, states } = dbWith([]);
+
+    await executeManagerConversationTool(db, scope, "query_manager_outputs", {
+      subjectType: "music_item",
+      subjectId: "song-420",
+      outputType: "song_manager_read",
+      limit: 10,
+    });
+
+    expect(states[0].filters).toEqual(expect.arrayContaining([
+      ["subject_type", "music_item"],
+      ["subject_id", "song-420"],
+      ["output_type", "song_manager_read"],
+    ]));
+  });
+
   it("lists Manager output metadata without embedding raw documents", async () => {
     const { db, states } = dbWith([{
       id: "output-1", output_type: "decision_package", subject_type: "music_item", subject_id: "song-1",

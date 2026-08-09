@@ -148,7 +148,18 @@ function compactFocusedMusicSubject(value: unknown) {
     rights: compactFocusedRights(subject.rights),
     analysis: array(subject.analysis).slice(0, 8).map((item) => {
       const analysis = record(item);
-      return { metric: compactText(analysis.metric, 120), value: numberOrText(analysis.value, 120), unit: compactText(analysis.unit, 80), confidence: compactText(analysis.confidence, 80) };
+      return {
+        id: compactText(analysis.id, 120),
+        source: compactText(analysis.source, 120),
+        evidenceType: compactText(analysis.evidenceType ?? analysis.evidence_type, 120),
+        metric: compactText(analysis.metric, 120),
+        value: numberOrText(analysis.value, 120),
+        unit: compactText(analysis.unit, 80),
+        freshness: compactText(analysis.freshness, 80),
+        confidence: compactText(analysis.confidence, 80),
+        provenance: compactText(analysis.provenance, 500),
+        limitation: compactText(analysis.limitation, 500),
+      };
     }),
     recentActivity: array(subject.recentActivity).slice(0, 8).map((item) => {
       const event = record(item);

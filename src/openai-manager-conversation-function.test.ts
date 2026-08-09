@@ -200,9 +200,13 @@ describe("OpenAI Manager Conversation Router", () => {
 
   it("continues an imported song conversation from its current Manager Read instead of restarting from catalog metrics", () => {
     const instructions = buildManagerConversationInstructions();
-    expect(instructions).toContain("query_manager_outputs with that exact subject ID");
+    expect(instructions).toContain("read the exact focused subject and its current Manager Read");
+    expect(instructions).toContain("refresh_focused_music_intelligence");
+    expect(instructions).toContain("web search");
     expect(instructions).toContain("read_manager_output_section");
     expect(instructions).toContain("Do not recite public catalog metrics");
+    expect(instructions).toContain("Never ask the artist for screenshots, exports, typed analytics");
+    expect(instructions).toContain("Missing private-platform metrics do not block a useful answer");
   });
 
   it("prompts Manager chat as a synthesis router, not a generic assistant or evidence-read section", () => {

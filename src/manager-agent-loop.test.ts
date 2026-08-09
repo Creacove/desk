@@ -46,6 +46,7 @@ describe("Manager Agent Responses loop", () => {
       expect.objectContaining({ type: "function", name: "read_manager_output_section" }),
       expect.objectContaining({ type: "function", name: "read_focused_music_subject", strict: true }),
       expect.objectContaining({ type: "function", name: "read_focused_release_readiness", strict: true }),
+      expect.objectContaining({ type: "function", name: "refresh_focused_music_intelligence", strict: true }),
       expect.objectContaining({ type: "function", name: "update_focused_music_metadata", strict: true }),
       expect.objectContaining({ type: "function", name: "update_focused_music_lifecycle", strict: true }),
       expect.objectContaining({ type: "function", name: "ensure_song_release_workspace", strict: true }),

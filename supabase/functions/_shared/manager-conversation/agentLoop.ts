@@ -187,6 +187,13 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   },
   {
     type: "function",
+    name: "refresh_focused_music_intelligence",
+    description: "Refresh connected Chartmetric intelligence for the exact attached song or project, using its saved Spotify or ISRC identity. Use this before asking the artist for public performance data. If the provider cannot resolve it, continue with saved evidence and web search.",
+    strict: true,
+    parameters: focusedMusicReadProperties,
+  },
+  {
+    type: "function",
     name: "update_focused_music_metadata",
     description: "Save one verified metadata field on the exact song or project attached to this conversation. This uses the same editable Details data that the user can correct in the app. Never invent values; ask if the value is not known.",
     strict: true,

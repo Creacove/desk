@@ -1003,7 +1003,7 @@ function CleanProductionWorkspace({
     }
 
     await sendManagerMessage(
-      starterPrompt ?? `Help me manage ${subject.title}. Start from its current state and give me the one most important next action or question.`,
+      starterPrompt ?? `Work on ${subject.title} from its current state. Use what you already know about the song and take the most useful next step.`,
       undefined,
       `Manage ${subject.title}`,
       { musicSubject },

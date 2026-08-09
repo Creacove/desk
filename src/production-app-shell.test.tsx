@@ -4911,7 +4911,10 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Talk to Manager" }));
 
     await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
-      expect.objectContaining({ musicSubject: { type: "music_item", id: "song-jam" } }),
+      expect.objectContaining({
+        body: "Work on Jam from its current state. Use what you already know about the song and take the most useful next step.",
+        musicSubject: { type: "music_item", id: "song-jam" },
+      }),
       expect.any(Object),
     ));
 

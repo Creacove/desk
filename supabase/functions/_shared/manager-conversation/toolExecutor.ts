@@ -1,5 +1,6 @@
 import { writeWorkspaceEvent } from "../workspaceEvents.ts";
 import { manualSongWorkspaceCopy } from "../manualSongWorkspace.ts";
+import { executeDiscoveryTool } from "../manager-agent/discoveryTools.ts";
 import type { ManagerConversationCreatedWork } from "../openaiManagerConversation.ts";
 
 type ManagerToolInput = {
@@ -31,6 +32,7 @@ export async function executeManagerConversationTool(
   if (name === "read_manager_output_section") return readManagerOutputSection(db, input, args);
   if (name === "read_focused_music_subject") return readFocusedMusicSubject(db, input);
   if (name === "read_focused_release_readiness") return readFocusedReleaseReadiness(db, input);
+  if (name === "refresh_focused_music_intelligence") return refreshFocusedMusicIntelligence(db, input);
   if (name === "update_focused_music_metadata") return updateFocusedMusicMetadata(db, input, args);
   if (name === "update_focused_music_lifecycle") return updateFocusedMusicLifecycle(db, input, args);
   if (name === "ensure_song_release_workspace") return ensureSongReleaseWorkspace(db, input, args);
@@ -38,7 +40,7 @@ export async function executeManagerConversationTool(
 }
 
 async function queryEvidenceItems(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
-  const rows = await selectScoped(db, "evidence_items", [
+  let query = scopedQuery(db, "evidence_items", [
     "id",
     "source",
     "source_kind",
@@ -55,7 +57,11 @@ async function queryEvidenceItems(db: SupabaseLike, input: ManagerToolInput, arg
     "limitation",
     "raw_ref",
     "created_at",
-  ].join(","), input, numberArg(args.limit, 16, 40));
+  ].join(","), input);
+  query = applyExactSubjectFilters(query, args);
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(numberArg(args.limit, 16, 40));
+  if (error) throw error;
+  const rows = data ?? [];
   return {
     items: filterRows(rows, args).map((row: any) => ({
       id: row.id,
@@ -142,10 +148,16 @@ async function queryDurableMemory(db: SupabaseLike, input: ManagerToolInput, arg
 }
 
 async function queryManagerOutputs(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
-  const rows = await selectScoped(db, "manager_outputs", "id,output_type,subject_type,subject_id,summary,primary_recommendation_json,avoid_json,confidence_json,supporting_evidence_json,created_at", input, numberArg(args.limit, 10, 30));
   const outputType = stringArg(args.outputType);
   const subjectType = stringArg(args.subjectType);
   const subjectId = stringArg(args.subjectId);
+  let query = scopedQuery(db, "manager_outputs", "id,output_type,subject_type,subject_id,summary,primary_recommendation_json,avoid_json,confidence_json,supporting_evidence_json,created_at", input);
+  if (outputType) query = query.eq("output_type", outputType);
+  if (subjectType) query = query.eq("subject_type", subjectType);
+  if (subjectId) query = query.eq("subject_id", subjectId);
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(numberArg(args.limit, 10, 30));
+  if (error) throw error;
+  const rows = data ?? [];
   return {
     items: filterRows(rows, args)
       .filter((row: any) => !outputType || row.output_type === outputType)
@@ -164,6 +176,19 @@ async function queryManagerOutputs(db: SupabaseLike, input: ManagerToolInput, ar
         createdAt: row.created_at,
       })),
   };
+}
+
+async function refreshFocusedMusicIntelligence(db: SupabaseLike, input: ManagerToolInput) {
+  const subject = requireFocusedMusicSubject(input);
+  const name = subject.type === "music_item" ? "chartmetric_track_enrich" : "chartmetric_project_enrich";
+  const args = subject.type === "music_item" ? { musicItemId: subject.id } : { musicProjectId: subject.id };
+  return executeDiscoveryTool(db, {
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    reuseExistingSnapshots: false,
+    managerRunId: input.runId,
+  }, name, args);
 }
 
 async function readManagerOutputSection(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
@@ -564,6 +589,14 @@ function filterRows(rows: any[], args: Record<string, unknown>) {
     .filter((row) => !subjectId || row.subject_id === subjectId || row.id === subjectId)
     .filter((row) => !category || haystack(row).includes(category))
     .filter((row) => !query || haystack(row).includes(query));
+}
+
+function applyExactSubjectFilters(query: any, args: Record<string, unknown>) {
+  const subjectType = stringArg(args.subjectType);
+  const subjectId = stringArg(args.subjectId);
+  if (subjectType) query = query.eq("subject_type", subjectType);
+  if (subjectId) query = query.eq("subject_id", subjectId);
+  return query;
 }
 
 function haystack(row: unknown) {
