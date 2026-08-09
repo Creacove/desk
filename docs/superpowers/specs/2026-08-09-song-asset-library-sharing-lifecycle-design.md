@@ -1,7 +1,7 @@
 # Song Asset Library, Sharing, and Lifecycle Design
 
 **Date:** 2026-08-09
-**Status:** Approved design; implementation plan not started
+**Status:** Product model approved; experience refinement awaiting review
 
 ## Product standard
 
@@ -58,6 +58,256 @@ more than press: production, delivery, licensing, catalog, and internal handoff
 all use the same source library. The EPK is one type of package created from the
 library, not a second source of truth.
 
+## Experience direction and reference research
+
+### Design read
+
+This is a preserve-and-evolve redesign of a daily artist workspace for
+non-technical users. The interface should feel calm, media-first, trustworthy,
+and immediate. It is not a dashboard, an admin console, or a launch-video concept
+placed on top of the product.
+
+The design dials for this work are:
+
+- **Design variance 4/10**: recognizable application patterns with enough brand
+  character to feel like Ordersounds.
+- **Motion intensity 4/10**: visible state transitions and tactile feedback,
+  without decorative choreography.
+- **Visual density 4/10**: enough information for daily work, with secondary
+  controls deferred until requested.
+
+The current Ordersounds information architecture, Manrope type family, light and
+dark semantic tokens, brand accent, icon family, radius rules, and 170-240 ms
+motion tokens remain the foundation. This is targeted evolution, not a visual
+reset or an imported third-party design system.
+
+### What proven music products validate
+
+The design borrows interaction principles, not visual styling:
+
+- [Untitled](https://untitled.stream/) makes unfinished music immediately
+  listenable, organizes it with familiar projects and folders, supports direct
+  replacement with newer versions, and makes sharing a primary action. Its
+  current App Store reception also shows that artists value organization,
+  painless sharing, and real-time listen feedback more than administrative
+  complexity.
+- [DISCO](https://www.disco.ac/platform/sharing-collaboration) validates the
+  separation between a source catalog and a polished, audience-specific EPK or
+  microsite. Music, media, and documents can travel together without making the
+  library itself look like the recipient page.
+- [Byta](https://byta.com/) validates explicit stream/download behavior,
+  recipient access without mandatory signup, correct file metadata, and adding
+  press images, PDFs, and release dates to a music share.
+- [Apple's progress guidance](https://developer.apple.com/design/human-interface-guidelines/progress-indicators)
+  validates determinate progress whenever duration is measurable, stable
+  placement, accurate phases, and actionable stalled states.
+- [W3C upload-status guidance](https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA25)
+  requires upload progress and completion to be communicated as accessible
+  status messages without stealing focus.
+
+Ordersounds should not copy Untitled's edit suite, DISCO's catalog depth, or
+Byta's contact and campaign tooling. Its differentiated experience is that the
+same simple song record also informs the Manager and linked mission.
+
+### Experience principles
+
+1. **Music first.** If playable audio exists, the first useful interaction is
+   Play, not reading a manifest or readiness score.
+2. **Plain artist language.** Visible copy says `Files`, `Final master`,
+   `Upload`, `Share`, `Saved`, and `Needs review`. Internal terms such as asset
+   manifest, canonical packet, metadata board, capability token, and provider
+   projection never appear in the artist interface.
+3. **The action happens where the result will live.** Upload progress appears in
+   the destination file row. A metadata save resolves in the edited field. Share
+   creation resolves into the usable link. A Rights change resolves in the
+   collaborator ledger.
+4. **One primary choice at a time.** Secondary settings remain behind an
+   overflow, disclosure, or Advanced control. There is no wall of equal-weight
+   buttons.
+5. **No silent work.** Every delay has a visible state, every success leaves
+   durable evidence, and every failure explains the next action in plain
+   language.
+6. **Do not punish completeness.** Once information or files exist, setup prompts
+   disappear. The finished Song Room becomes calmer rather than accumulating
+   badges and congratulatory banners.
+7. **Motion explains causality.** Motion is used for insertion, replacement,
+   progress, disclosure, and completion. Nothing pulses, floats, or shimmers
+   simply to make the interface feel premium.
+
+## End-to-end interaction design
+
+### Arriving in Files
+
+The existing Song Room header and four tabs remain stable. Files does not add a
+second hero, readiness dashboard, or side navigation.
+
+When no audio exists, the page presents one compact first action:
+
+> Add the version you are working with.
+
+The entire empty body can accept a desktop file drop, and a visible **Upload**
+button remains available for mouse, keyboard, touch, and mobile users. The next
+recommended asset may be mentioned in one sentence based on the song stage. It
+does not render a permanent list of every possible missing file.
+
+When audio exists, the current working or final audio appears first in a quiet
+playable row. It provides Play/Pause, elapsed and total duration, title, version
+label when one exists, and Replace. A lightweight styled native audio path is
+preferred over adding a waveform or playback dependency. The rest of the asset
+library follows below.
+
+### Upload interaction
+
+The upload dialog exists only to choose files and confirm or correct their
+plain-language type. It is not the place where the user waits.
+
+After the user presses **Upload**:
+
+1. the dialog closes;
+2. a provisional row appears immediately in the correct Files group;
+3. the row shows filename, transferred bytes, percentage, and current phase;
+4. the user can continue reading, editing, or playing other content;
+5. completion resolves the same row to Ready;
+6. analysis continues in that row as a secondary state when required.
+
+For known transfer length, the row uses determinate progress. Saving or analysis
+may use a restrained indeterminate state without replacing the progress control
+with a visually unrelated spinner. Screen readers receive polite announcements
+at useful milestones rather than on every percentage tick.
+
+A failed row preserves the chosen file and shows the concrete reason when safe,
+plus **Try again**. Unsupported type, file too large, network interruption,
+storage failure, and analysis failure have different copy and recovery. Analysis
+failure never marks the stored file as failed.
+
+Replacing audio updates the existing visible slot instead of adding another
+top-level row with the same role. If the current data model safely preserves
+prior uploaded assets, older versions can appear behind a **Previous versions**
+disclosure. A new version-history subsystem is not required for this phase.
+
+### File-library interaction
+
+Groups use whitespace and one divider rhythm rather than a card inside a card.
+Group headings are sentence case and contain no readiness fraction. Empty groups
+do not render unless the user is choosing where to add a file.
+
+The common row interaction is single-click Play for playable audio and Open or
+Download for other files. Replace and Share may be visible when they are the
+likely next action. Rename, reclassify, and delete remain in the overflow menu.
+
+Selecting rows reveals one contextual action bar for Download or Share. The bar
+disappears when selection clears. The permanent page header does not accumulate
+bulk-action buttons.
+
+### Details interaction
+
+Details reads like a well-kept song record, not a table of statuses. Each value
+has a persistent label and a readable value. Hover, focus, or an explicit Edit
+control enters inline editing for short fields without navigating away or
+opening a generic modal.
+
+Save and Cancel appear only for the field being edited. Saving keeps the row in
+place, briefly confirms `Saved`, and returns it to its quiet read state. Validation
+is inline and never clears the user's input.
+
+Lyrics use a focused editor because they are long-form content. Featured artists
+use a compact repeatable person control. Provider provenance appears as quiet
+supporting text only when relevant, such as `Verified from Spotify` or `Different
+from Spotify`. Status pills are reserved for Suggested and Needs review, where a
+decision is actually required.
+
+### Share interaction
+
+Sharing is one focused surface, not a multi-page wizard and not a settings form.
+It has three natural moments without a decorative stepper:
+
+1. **Choose**: select Press, Producer, Distributor, or Custom and adjust the
+   recommended files and song information.
+2. **Preview**: see the exact recipient page using the production renderer.
+3. **Link ready**: copy, open, send, or revoke the created link.
+
+The preset chooses a useful starting set rather than selecting everything. Each
+selected item answers a recipient need. Advanced access settings such as expiry
+or recipient restriction are available but visually secondary.
+
+The primary button uses concrete stateful copy: `Create link`, then `Creating
+link`, then `Link ready`. It does not close the composer and rely on a toast. If
+creation fails, the selection remains intact. If email delivery fails after link
+creation, the usable link remains the dominant result and email retry is local.
+
+On mobile, the same composer becomes a full-height sheet with a sticky final
+action and no horizontally compressed two-column controls. On desktop, it stays
+within the current modal/sheet foundation and preserves visible Song Room context.
+
+### Recipient interaction
+
+The recipient page is media-first and intentionally simpler than the owner
+workspace. It starts with artwork, song identity, and Play when audio preview is
+allowed. Selected context and downloads follow in the sender's chosen order.
+
+The page never exposes the sender's internal readiness, Manager notes, mission,
+unselected metadata, or unselected assets. Download permission is explicit per
+item. Expired, revoked, restricted, and unavailable states use one clear message
+and no dead controls.
+
+The page loads enough identity before large media so the recipient never sees a
+blank shell. Audio duration and image dimensions reserve their layout space to
+avoid jumps.
+
+### Manager and mission feedback
+
+Successful Song Room changes produce quiet, factual receipts in the official
+song conversation and linked mission activity, for example:
+
+> Final master added. Audio analysis is pending.
+
+The receipt is not a synthetic chat response. It proves that the system noticed
+the change. The next Manager response uses the refreshed song packet and names
+the new state when relevant.
+
+The existing song mission may consume the same evidence to complete an exact
+task or propose the next stage-appropriate task. For example, a Mastering song
+with a final master but no shareable press materials may receive a proposed
+`Prepare the press package` task. If the package already exists, the Manager does
+not create it or ask for it again.
+
+This phase does not redesign Missions or create a universal release checklist.
+It only guarantees that song evidence, Manager reasoning, and linked mission
+state agree.
+
+### Motion, feedback, and accessibility
+
+Interaction motion uses the application's existing 170-240 ms timing range and
+animates transform or opacity only. Required motion moments are:
+
+- the pending upload row entering the destination group;
+- a replacement resolving in place;
+- a disclosure opening or closing;
+- the share composer changing from selection to link-ready state;
+- a saved field returning to read mode.
+
+Upload progress itself moves continuously and accurately. Completion may use one
+short check transition, not confetti, particles, or a full-page celebration.
+
+All motion honors reduced-motion preferences. Controls maintain visible focus,
+44 px touch targets where possible, keyboard parity, sufficient contrast, and
+accessible names. Drag and drop is always an enhancement to the visible file
+picker, never the only path.
+
+### Responsive hierarchy
+
+Desktop and mobile expose the same product model, but not the same geometry.
+
+- Desktop keeps the existing left navigation, Song Room header, and tab rail.
+  File metadata and actions can share a row.
+- Mobile preserves artwork, title, stage, and tabs in the compact header. File
+  rows stack metadata without truncating the primary label, and uncommon actions
+  move to the overflow.
+- The audio control remains reachable without opening another screen.
+- Upload and share states never depend on hover.
+- No horizontal scrolling is introduced for Files, Details, Rights, or the share
+  composer.
+
 ## Files: canonical song asset library
 
 ### Header and hierarchy
@@ -66,8 +316,7 @@ The Files surface is titled **Song assets** and uses a short description such
 as `Everything used to finish, deliver, and share this song.` The header contains:
 
 - **Upload files** as the primary action;
-- **Share** as a secondary action when at least one share-eligible item exists;
-- one quiet inventory summary, for example `7 files · 186 MB`.
+- **Share** as a secondary action when at least one share-eligible item exists.
 
 The current overall ready count, missing count, and per-section readiness counts
 are removed. Release readiness belongs in the Manager and linked mission. Files
@@ -118,7 +367,8 @@ protected analyzer has produced trusted evidence.
 The existing standard and resumable upload paths remain authoritative. The
 surface supports one or multiple selected files and lets the user classify them
 in plain language. Media type and filename can suggest a category, but the user
-can correct it.
+can correct it. Multiple selection is an in-client queue over the existing
+per-file upload contract, not a new batch-upload backend.
 
 Each active upload shows filename, transferred size, numeric progress, and a
 plain-language phase: preparing, uploading, saving, processing, or complete.
@@ -455,13 +705,33 @@ Implementation reuses:
 
 ## Delivery sequence
 
-The implementation plan should preserve independently verifiable boundaries:
+This document is the umbrella experience contract. It is intentionally broader
+than one safe implementation change and must be delivered as four bounded
+increments in the same product direction:
+
+1. **Asset library and awareness**: correct Files categories and hierarchy,
+   remove the duplicate Rights projection, move upload progress into live rows,
+   and keep Manager/mission evidence current.
+2. **Share packages**: repair server-authoritative link creation, add preview and
+   information snapshots, and refine the existing recipient portal.
+3. **Song details**: correct provenance semantics, inline editability, lyrics,
+   and featured-artist behavior.
+4. **Released operation**: adapt the same surfaces and Manager guidance for
+   manually released and imported catalog songs.
+
+Each increment receives a focused implementation plan, tests, production build,
+browser QA, and deploy verification before the next increment starts. The
+umbrella acceptance criteria remain the definition of full completion.
+
+Across those increments, implementation preserves these independently
+verifiable boundaries:
 
 1. Add characterization tests for current projections, uploads, share creation,
    public links, metadata edits, Manager context, and released behavior.
 2. Correct the asset projection and types to represent Audio, Artwork, and
    Documents while removing the duplicate Rights placeholder.
-3. Simplify Files and preserve current upload behavior.
+3. Simplify Files and preserve the current storage and resumable-upload
+   contracts while moving waiting and feedback into live file rows.
 4. Diagnose and repair Create Link at the server boundary, then expose explicit
    share eligibility.
 5. Add the backward-compatible song-information snapshot and extend the current
