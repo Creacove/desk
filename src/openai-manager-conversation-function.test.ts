@@ -20,6 +20,12 @@ const serviceRoleGrantMigrationPath = join(
   "migrations",
   "20260626000100_manager_conversation_service_role_grants.sql",
 );
+const musicSubjectGrantMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260809000200_manager_music_subject_service_grants.sql",
+);
 
 describe("OpenAI Manager Conversation Router", () => {
   it("has a deployed Edge Function contract for authenticated Manager chat routing", () => {
@@ -165,6 +171,13 @@ describe("OpenAI Manager Conversation Router", () => {
     for (const table of ["conversations", "conversation_messages", "manager_synthesis_runs", "manager_run_actions", "memory_entries", "ai_run_usage_events", "missions", "mission_plan_versions", "mission_plan_checkpoints", "checkpoints", "tasks", "task_steps", "permission_requests", "operating_events"]) {
       expect(migration).toMatch(new RegExp(`grant select, insert, update on public\\.${table} to service_role`, "i"));
     }
+  });
+
+  it("grants the server-side router access to attached-song asset and credit reads", () => {
+    expect(existsSync(musicSubjectGrantMigrationPath)).toBe(true);
+    const migration = readFileSync(musicSubjectGrantMigrationPath, "utf8");
+    expect(migration).toMatch(/grant select on public\.music_assets to service_role/i);
+    expect(migration).toMatch(/grant select on public\.music_credits to service_role/i);
   });
 
   it("prompts Manager chat as a synthesis router, not a generic assistant or evidence-read section", () => {
