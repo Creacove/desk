@@ -23,8 +23,10 @@ describe("SettingsScreen", () => {
 
     expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Artist profile." })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Profile", "Workspace", "Preferences", "Account"]);
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Access" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "Workspace" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tablist", { name: "Settings sections" })).toHaveClass("workspace-tab-rail");
     expect(screen.getByLabelText("Artist name")).toBeInTheDocument();
@@ -76,7 +78,7 @@ describe("SettingsScreen", () => {
     expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
   });
 
-  it("isolates appearance in Account and can override system mode", () => {
+  it("isolates appearance in Preferences and can override system mode", () => {
     const onThemeModeChange = vi.fn();
 
     render(
@@ -91,7 +93,7 @@ describe("SettingsScreen", () => {
     );
 
     expect(screen.queryByText("Appearance")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Preferences" }));
     expect(screen.getByText("Appearance")).toBeTruthy();
     expect(screen.getByText("Following system: Dark")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Use system appearance" }).getAttribute("aria-pressed")).toBe("true");
@@ -99,6 +101,25 @@ describe("SettingsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Use dark appearance" }));
 
     expect(onThemeModeChange).toHaveBeenCalledWith("dark");
+    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
+    expect(screen.queryByText("Appearance")).not.toBeInTheDocument();
+  });
+
+  it("lets users edit manual profile fields while keeping the connected artist managed", () => {
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onSaveProfile={vi.fn().mockResolvedValue(undefined)}
+        onBack={vi.fn()}
+      />,
+    );
+
+    for (const label of ["Artist name", "Artist stage", "Home market", "Genre", "Monthly budget", "TikTok", "Instagram", "YouTube", "X"]) {
+      expect(screen.getByLabelText(label)).toBeEnabled();
+    }
+    expect(screen.getByLabelText("Connected artist")).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
 
   it("shows the signed-in account email in Account", () => {
@@ -119,7 +140,7 @@ describe("SettingsScreen", () => {
     expect(email).not.toBeDisabled();
   });
 
-  it("separates access details from account security", async () => {
+  it("separates workspace access details from account security", async () => {
     const onUpdatePassword = vi.fn().mockResolvedValue(undefined);
     const onSignOut = vi.fn();
     render(
@@ -148,7 +169,7 @@ describe("SettingsScreen", () => {
     );
 
     expect(screen.queryByText("Private beta")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
     expect(screen.getByText("Private beta")).toBeTruthy();
     expect(screen.getByText("Aug 12, 2026")).toBeTruthy();
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
@@ -184,12 +205,12 @@ describe("SettingsScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
     expect(screen.getByRole("heading", { name: "Active workspace access" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "No active access" })).not.toBeInTheDocument();
   });
 
-  it("offers Paddle self-service billing from the access tab", () => {
+  it("offers Paddle self-service billing from the workspace tab", () => {
     const onManageBilling = vi.fn();
     render(<SettingsScreen
       profile={profileWithArtistIntelligence()} onChange={vi.fn()} onBack={vi.fn()}
@@ -201,7 +222,7 @@ describe("SettingsScreen", () => {
       }}
       onManageBilling={onManageBilling}
     />);
-    fireEvent.click(screen.getByRole("tab", { name: "Access" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
     fireEvent.click(screen.getByRole("button", { name: "Manage billing" }));
     expect(onManageBilling).toHaveBeenCalledTimes(1);
   });

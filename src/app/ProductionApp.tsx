@@ -174,6 +174,8 @@ export function ProductionApp({
         ({
           saveSetupContext: (nextWorkspace, profile) =>
             createSupabaseProfileSetupService(getClient()).saveSetupContext(nextWorkspace, profile),
+          updateArtistProfile: (nextWorkspace, profile) =>
+            createSupabaseProfileSetupService(getClient()).updateArtistProfile!(nextWorkspace, profile),
         } satisfies ProductionProfileSetupService),
       repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) =>
         repositories ?? createSupabaseProductionRepositories(getClient(), nextWorkspace),

@@ -36,24 +36,25 @@ export function SettingsScreen({
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "profile", label: "Profile" },
-    { id: "access", label: "Access" },
+    { id: "workspace", label: "Workspace" },
+    { id: "preferences", label: "Preferences" },
     { id: "account", label: "Account" },
   ];
 
   return (
     <WorkspaceShell eyebrow="Workspace" title="Settings" onBack={onBack}>
       <div className="sticky top-[109px] z-20 -mx-3 mb-4 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
-        <WorkspaceTabRail ariaLabel="Settings sections" semanticTabs idPrefix="settings" items={tabs} active={activeTab} onChange={setActiveTab} className="grid-cols-3 lg:max-w-md" />
+        <WorkspaceTabRail ariaLabel="Settings sections" semanticTabs idPrefix="settings" items={tabs} active={activeTab} onChange={setActiveTab} className="grid-cols-4 lg:max-w-xl" />
       </div>
 
       <div id={`settings-panel-${activeTab}`} role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
         {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
-        {activeTab === "access" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
+        {activeTab === "workspace" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
+        {activeTab === "preferences" ? (
+          <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
+        ) : null}
         {activeTab === "account" ? (
           <AccountSettings
-            mode={themeMode}
-            resolvedMode={resolvedThemeMode}
-            onThemeModeChange={onThemeModeChange}
             onUpdatePassword={onUpdatePassword}
             onSignOut={onSignOut}
             accountEmail={accountEmail}
@@ -64,7 +65,7 @@ export function SettingsScreen({
   );
 }
 
-type SettingsTab = "profile" | "access" | "account";
+type SettingsTab = "profile" | "workspace" | "preferences" | "account";
 
 function ProfileSettings({
   profile,
@@ -242,25 +243,30 @@ function AccessEmptyState() {
   );
 }
 
-function AccountSettings({
-  accountEmail,
+function PreferencesSettings({
   mode,
   resolvedMode,
   onThemeModeChange,
+}: {
+  mode: ThemeMode;
+  resolvedMode: ResolvedThemeMode;
+  onThemeModeChange?: (mode: ThemeMode) => void;
+}) {
+  return <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />;
+}
+
+function AccountSettings({
+  accountEmail,
   onUpdatePassword,
   onSignOut,
 }: {
   accountEmail?: string;
-  mode: ThemeMode;
-  resolvedMode: ResolvedThemeMode;
-  onThemeModeChange?: (mode: ThemeMode) => void;
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
   onSignOut?: () => void;
 }) {
   return (
     <div className="space-y-4">
       <AccountIdentity accountEmail={accountEmail} />
-      <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
         <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
