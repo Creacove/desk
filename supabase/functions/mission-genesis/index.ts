@@ -1,4 +1,5 @@
-import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   MISSION_GENESIS_PACKET_VERSION,
@@ -205,6 +206,18 @@ Deno.serve(withAppErrorCapture("mission-genesis", async (request) => {
     return json({ status: "processing", runId: activeRunId }, 202);
   } catch (error) {
     const message = describeError(error, "Mission Genesis failed.");
+    const errorEventId = await captureAppError(error, {
+      functionName: "mission-genesis",
+      operation: "generate_mission",
+      source: "edge",
+      publicMessage: "Mission Genesis failed.",
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      accountId: input?.accountId,
+      artistWorkspaceId: input?.artistWorkspaceId,
+      artistId: input?.artistId,
+      provider: "openai",
+      refs: { manager_run_id: runId, usage_event_id: usageId, mission_id: input?.candidateMissionId },
+    });
     const failed = runId && leaseToken && workflowDb
       ? await finishManagerSynthesisRun(workflowDb, {
         runId,
@@ -215,7 +228,7 @@ Deno.serve(withAppErrorCapture("mission-genesis", async (request) => {
       }).catch(() => false)
       : false;
     if (failed && usageId) await markUsageFailedSafe(usageId, message);
-    return json({ error: message }, 500);
+    return markErrorCaptured(json({ error: message, errorEventId }, 500), errorEventId);
   }
 }));
 
@@ -255,6 +268,18 @@ async function completeMissionGenesisRun({
     await finalizeMissionGenesis(db, input, runId, leaseToken, usageId, output, usage, requestCount);
   } catch (error) {
     const message = describeError(error, "Mission Genesis failed.");
+    await captureAppError(error, {
+      functionName: "mission-genesis",
+      operation: "generate_mission",
+      source: "worker",
+      publicMessage: "Mission Genesis failed.",
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      provider: "openai",
+      refs: { manager_run_id: runId, usage_event_id: usageId, mission_id: input.candidateMissionId },
+      context: { mode: input.mode, background: true },
+    });
     const failed = await finishManagerSynthesisRun(db, {
       runId,
       leaseToken,

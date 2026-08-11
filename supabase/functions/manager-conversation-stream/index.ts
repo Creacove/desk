@@ -1,4 +1,5 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
@@ -71,6 +72,8 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
       let db: any = null;
       let conversationId: string | null = null;
       let failureStage = "request";
+      let userId: string | undefined;
+      let accountEmail: string | undefined;
 
       try {
         input = (await request.json()) as ManagerConversationInput;
@@ -85,6 +88,8 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         const authClient = createClient(supabaseUrl, anonKey, { global: { headers: { Authorization: authHeader } } });
         const { data: { user }, error: userError } = await authClient.auth.getUser();
         if (userError || !user) throw new HttpError("Unauthorized.", 401);
+        userId = user.id;
+        accountEmail = user.email;
 
         const { data: membership, error: membershipError } = await authClient.rpc("is_account_member", { target_account_id: input.accountId });
         if (membershipError) throw membershipError;
@@ -234,10 +239,30 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
       } catch (error) {
         const failure = classifyManagerConversationError(error);
         console.error("manager-conversation-stream failed", { runId, failureStage, message: failure.internalMessage });
-        if (runId) await markRunFailedSafe(runId, failure.internalMessage);
+        const errorEventId = await captureAppError(error, {
+          functionName: "manager-conversation-stream",
+          operation: "generate_reply",
+          source: "edge",
+          publicMessage: failure.publicMessage,
+          requestId: request.headers.get("x-request-id") ?? undefined,
+          userId,
+          accountEmail,
+          accountId: input?.accountId,
+          artistWorkspaceId: input?.artistWorkspaceId,
+          artistId: input?.artistId,
+          provider: "openai",
+          refs: {
+            manager_run_id: runId,
+            usage_event_id: usageId,
+            conversation_id: conversationId ?? input?.conversationId,
+            task_id: input?.taskId,
+            stage: failureStage,
+          },
+        });
+        if (runId) await markRunFailedSafe(runId, failure.internalMessage, errorEventId);
         else if (db && input && conversationId) await persistPreflightFailureSafe(db, input, conversationId, failureStage, failure.internalMessage);
-        if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage);
-        emit({ type: "error", message: failure.publicMessage, runId });
+        if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage, errorEventId);
+        emit({ type: "error", message: failure.publicMessage, runId, errorEventId });
       } finally {
         controller.close();
       }
@@ -1093,12 +1118,19 @@ async function completeUsageEvent(db: any, usageId: string, usage: Record<string
   if (error) throw error;
 }
 
-async function markRunFailedSafe(runId: string, errorMessage: string) {
+async function markRunFailedSafe(runId: string, errorMessage: string, parentErrorEventId: string | null) {
   try {
     const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    await db.from("manager_synthesis_runs").update({ status: "failed", error: errorMessage, completed_at: new Date().toISOString() }).eq("id", runId);
-  } catch {
-    // Failure marking must not mask the original error.
+    const { error } = await db.from("manager_synthesis_runs").update({ status: "failed", error: errorMessage, completed_at: new Date().toISOString() }).eq("id", runId);
+    if (error) throw error;
+  } catch (error) {
+    await captureAppError(error, {
+      functionName: "manager-conversation-stream",
+      operation: "mark_run_failed",
+      source: "database",
+      parentErrorEventId: parentErrorEventId ?? undefined,
+      refs: { manager_run_id: runId },
+    });
   }
 }
 
@@ -1133,12 +1165,19 @@ async function persistPreflightFailureSafe(
   }
 }
 
-async function markUsageFailedSafe(usageId: string, errorMessage: string) {
+async function markUsageFailedSafe(usageId: string, errorMessage: string, parentErrorEventId: string | null) {
   try {
     const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-    await db.from("ai_run_usage_events").update({ status: "failed", error: errorMessage, completed_at: new Date().toISOString() }).eq("id", usageId);
-  } catch {
-    // Failure marking must not mask the original error.
+    const { error } = await db.from("ai_run_usage_events").update({ status: "failed", failure_reason: errorMessage, completed_at: new Date().toISOString() }).eq("id", usageId);
+    if (error) throw error;
+  } catch (error) {
+    await captureAppError(error, {
+      functionName: "manager-conversation-stream",
+      operation: "mark_usage_failed",
+      source: "database",
+      parentErrorEventId: parentErrorEventId ?? undefined,
+      refs: { usage_event_id: usageId },
+    });
   }
 }
 

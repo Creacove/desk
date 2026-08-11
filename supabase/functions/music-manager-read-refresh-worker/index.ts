@@ -1,4 +1,5 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { musicReadRefreshMode, shouldAutomaticallyRefreshMusicRead } from "../_shared/music-manager-read/refreshPolicy.ts";
 
@@ -30,7 +31,14 @@ Deno.serve(withAppErrorCapture("music-manager-read-refresh-worker", async (reque
     return json({ status: "completed", inspected: candidates.length, dispatched });
   } catch (error) {
     console.error("Music Manager Read refresh worker failed", error);
-    return json({ error: "Music Manager Read refresh worker failed." }, 500);
+    const errorEventId = await captureAppError(error, {
+      functionName: "music-manager-read-refresh-worker",
+      operation: "refresh_music_manager_reads",
+      source: "worker",
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      publicMessage: "Music Manager Read refresh worker failed.",
+    });
+    return json({ error: "Music Manager Read refresh worker failed.", errorEventId }, 500);
   }
 }));
 

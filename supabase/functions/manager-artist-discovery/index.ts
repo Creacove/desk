@@ -1,4 +1,5 @@
-import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runManagerAgentLoop } from "../_shared/manager-conversation/agentLoop.ts";
 import type { ManagerAgentToolDefinition } from "../_shared/manager-conversation/agentLoop.ts";
@@ -355,6 +356,22 @@ Deno.serve(withAppErrorCapture("manager-artist-discovery", async (request) => {
     const failure = publicWorkflowFailure(error);
     const rawError = error instanceof Error ? error.message : String(error);
     console.error("manager-artist-discovery failed", { error, rawError, setupRunId: input?.setupRunId });
+    const errorEventId = await captureAppError(error, {
+      functionName: "manager-artist-discovery",
+      operation: "discover_artist",
+      source: "edge",
+      publicMessage: failure.message,
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      accountId: input?.accountId,
+      artistWorkspaceId: input?.artistWorkspaceId,
+      artistId: input?.artistId,
+      provider: "openai",
+      refs: {
+        setup_run_id: input?.setupRunId,
+        manager_run_id: synthesisRunId,
+        stage: "manager_discovery",
+      },
+    });
     if (input && db) {
       try {
         await writeOperatingEvent(db, input, "manager_discovery_failed", failure.message, { failure }, synthesisRunId ?? undefined);
@@ -363,7 +380,7 @@ Deno.serve(withAppErrorCapture("manager-artist-discovery", async (request) => {
             runId: synthesisRunId,
             leaseToken: synthesisLeaseToken,
             status: "failed",
-            error: rawError, // TEMP: raw for diagnosis
+            error: rawError,
           });
         }
         if (input.setupRunId && setupStageLeaseToken) {
@@ -376,7 +393,7 @@ Deno.serve(withAppErrorCapture("manager-artist-discovery", async (request) => {
         }
       } catch { /* best-effort logging */ }
     }
-    return json({ ...workflowFailureBody(error), rawError }, 500); // TEMP
+    return markErrorCaptured(json({ ...workflowFailureBody(error), errorEventId }, 500), errorEventId);
   }
 }));
 

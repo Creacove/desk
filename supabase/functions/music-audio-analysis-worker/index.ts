@@ -1,4 +1,5 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const AUDIO_ASSET_TYPES = new Set(["demo", "rough_mix", "final_master", "clean_version", "instrumental", "stems"]);
@@ -24,7 +25,14 @@ Deno.serve(withAppErrorCapture("music-audio-analysis-worker", async (request) =>
     return json({ status: "completed", inspected: candidates.length, analyzed });
   } catch (error) {
     console.error("Music audio-analysis worker failed", error);
-    return json({ error: "Music audio-analysis worker failed." }, 500);
+    const errorEventId = await captureAppError(error, {
+      functionName: "music-audio-analysis-worker",
+      operation: "analyze_audio",
+      source: "worker",
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      publicMessage: "Music audio-analysis worker failed.",
+    });
+    return json({ error: "Music audio-analysis worker failed.", errorEventId }, 500);
   }
 }));
 
@@ -143,6 +151,20 @@ async function analyzeCandidate(db: any, analyzerUrl: string, candidate: Candida
     return true;
   } catch (error) {
     const attempts = currentAttempts(candidate.file.metadata) + 1;
+    await captureAppError(error, {
+      functionName: "music-audio-analysis-worker",
+      operation: "analyze_audio",
+      source: "worker",
+      accountId: candidate.accountId,
+      artistWorkspaceId: candidate.artistWorkspaceId,
+      artistId: candidate.artistId,
+      refs: {
+        music_item_id: candidate.subjectType === "music_item" ? candidate.subjectId : undefined,
+        music_project_id: candidate.subjectType === "music_project" ? candidate.subjectId : undefined,
+        attempt: attempts,
+      },
+      context: { assetId: candidate.assetId, uploadedFileId: candidate.file.id, failureCode: failureCode(error) },
+    });
     await markAnalysisState(db, candidate, "failed", attempts, failureCode(error));
     await writeAnalysisEvent(db, candidate, "music_audio_analysis_failed", "Audio analysis could not be completed; manual song details remain available.", { attempts });
     console.error("Music audio analysis failed", { assetId: candidate.assetId, reason: failureCode(error) });

@@ -1,4 +1,5 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const RECOVERY_BATCH_SIZE = 4;
@@ -105,6 +106,16 @@ Deno.serve(withAppErrorCapture("workflow-recovery", async (request) => {
       }
     } catch (dispatchError) {
       const message = dispatchError instanceof Error ? dispatchError.message : "Recovery dispatch failed.";
+      await captureAppError(dispatchError, {
+        functionName: "workflow-recovery",
+        operation: "dispatch_recovery",
+        source: "worker",
+        accountId: candidate.account_id,
+        artistWorkspaceId: candidate.artist_workspace_id,
+        artistId: candidate.artist_id,
+        refs: recoveryErrorRefs(candidate),
+        context: { entityType: candidate.entity_type, workflowVersion: candidate.workflow_version },
+      });
       if (dispatchError instanceof PermanentRecoveryError) {
         await terminalizeRecoveryFailure(db, candidate, message);
         results.push({ ...candidateSummary(candidate), status: "failed_permanent" });
@@ -117,6 +128,16 @@ Deno.serve(withAppErrorCapture("workflow-recovery", async (request) => {
 
   return json({ mode: "run", processed: results });
 }));
+
+function recoveryErrorRefs(candidate: RecoveryCandidate) {
+  return {
+    setup_run_id: candidate.entity_type === "workspace_setup_run" ? candidate.id : undefined,
+    manager_run_id: candidate.entity_type === "manager_synthesis_run" ? candidate.id : undefined,
+    source_sync_job_id: candidate.entity_type === "source_sync_job" ? candidate.id : undefined,
+    stage: readString(candidate.payload.current_stage) || candidate.workflow_version,
+    attempt: candidate.attempt_count,
+  };
+}
 
 async function assertRecoveryOwner(db: any, candidate: RecoveryCandidate) {
   const { data, error } = await db.from("artist_workspaces").select("id")

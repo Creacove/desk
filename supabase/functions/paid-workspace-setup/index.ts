@@ -1,4 +1,5 @@
-import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { claimWorkspaceSetupStage, mergeWorkspaceSetupStage } from "../_shared/durableWorkflow.ts";
 import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
@@ -72,7 +73,17 @@ Deno.serve(withAppErrorCapture("paid-workspace-setup", async (request) => {
     return json(await runContextualizePhase({ db, supabaseUrl, serviceRoleKey, checkout, workspace, setupRun }));
   } catch (error) {
     console.error("paid-workspace-setup failed", { error, setupRunId: setupRun?.id, phase: input?.phase });
-    return json(workflowFailureBody(error), 500);
+    const failureBody = workflowFailureBody(error);
+    const errorEventId = await captureAppError(error, {
+      functionName: "paid-workspace-setup",
+      operation: "orchestrate_setup",
+      source: "edge",
+      publicMessage: typeof failureBody.error === "string" ? failureBody.error : "Workspace setup could not be completed.",
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      refs: { setup_run_id: setupRun?.id, stage: input?.phase },
+      context: { checkoutSessionId: input?.checkoutSessionId },
+    });
+    return markErrorCaptured(json({ ...failureBody, errorEventId }, 500), errorEventId);
   }
 }));
 

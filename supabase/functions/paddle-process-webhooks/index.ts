@@ -1,4 +1,5 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createPaddleClient, requireEnv, sha256Hex } from "../_shared/paddle.ts";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
@@ -40,6 +41,14 @@ Deno.serve(withAppErrorCapture("paddle-process-webhooks", async (request) => {
       await finishEvent(db, event.id, "processed");
       results.push({ id: event.id, status: "processed" });
     } catch (processingError) {
+      await captureAppError(processingError, {
+        functionName: "paddle-process-webhooks",
+        operation: "process_billing_webhook",
+        source: "worker",
+        provider: "paddle",
+        refs: { billing_event_id: event.id, attempt: event.attempt_count },
+        context: { eventType: event.event_type, occurredAt: event.occurred_at },
+      });
       await failEvent(db, event, processingError);
       results.push({ id: event.id, status: "failed" });
     }

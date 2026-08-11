@@ -113,4 +113,18 @@ describe("Edge application error boundary", () => {
     expect(capturedResponse.headers.get("x-error-captured")).toBeNull();
     expect(capturedResponse.headers.get("x-error-event-id")).toBe("33333333-3333-4333-8333-333333333333");
   });
+
+  it("marks an explicit high-fidelity error response so the boundary does not duplicate it", async () => {
+    const { markErrorCaptured, withAppErrorCapture } = await import("../supabase/functions/_shared/appFunction");
+    const wrapped = withAppErrorCapture("example", async () => markErrorCaptured(
+      new Response(JSON.stringify({ error: "Safe message" }), { status: 500 }),
+      "44444444-4444-4444-8444-444444444444",
+    ));
+
+    const response = await wrapped(new Request("https://example.test/functions/v1/example"));
+
+    expect(captureAppError).not.toHaveBeenCalled();
+    expect(response.headers.get("x-error-captured")).toBeNull();
+    expect(response.headers.get("x-error-event-id")).toBe("44444444-4444-4444-8444-444444444444");
+  });
 });

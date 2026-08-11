@@ -64,6 +64,17 @@ export function withAppErrorCapture(
   };
 }
 
+export function markErrorCaptured(response: Response, errorEventId: string | null): Response {
+  const headers = new Headers(response.headers);
+  headers.set(CAPTURED_HEADER, "1");
+  if (errorEventId) headers.set(ERROR_EVENT_ID_HEADER, errorEventId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 function decorateResponse(response: Response, requestId: string, errorEventId: string | null): Response {
   const headers = new Headers(response.headers);
   headers.delete(CAPTURED_HEADER);

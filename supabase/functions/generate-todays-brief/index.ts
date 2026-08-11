@@ -1,4 +1,5 @@
-import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   TODAYS_BRIEF_PACKET_VERSION,
@@ -109,8 +110,9 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
+  let input: GenerateTodaysBriefInput | null = null;
   try {
-    const input = (await request.json()) as GenerateTodaysBriefInput;
+    input = (await request.json()) as GenerateTodaysBriefInput;
     validateInput(input);
     const generationMode = readGenerationMode(input);
 
@@ -221,7 +223,20 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
     return json({ status: "processing", runId: run.id, setupMusicReadTargets: frozen.generationMode === "setup-map" ? frozen.setupMusicReadTargets : [] });
   } catch (error) {
     console.error("generate-todays-brief failed before dispatch", { error });
-    return json(workflowFailureBody(error), 500);
+    const failureBody = workflowFailureBody(error);
+    const errorEventId = await captureAppError(error, {
+      functionName: "generate-todays-brief",
+      operation: "generate_todays_brief",
+      source: "edge",
+      publicMessage: typeof failureBody.error === "string" ? failureBody.error : "Today's Brief could not be generated.",
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      accountId: input?.accountId,
+      artistWorkspaceId: input?.artistWorkspaceId,
+      artistId: input?.artistId,
+      provider: "openai",
+      refs: { setup_run_id: input?.setupRunId },
+    });
+    return markErrorCaptured(json({ ...failureBody, errorEventId }, 500), errorEventId);
   }
 }));
 
@@ -294,6 +309,22 @@ async function executeTodaysBriefRun(args: {
   } catch (error) {
     const failure = publicWorkflowFailure(error);
     console.error("Today's Brief background generation failed", { error, runId: args.runId });
+    await captureAppError(error, {
+      functionName: "generate-todays-brief",
+      operation: "generate_todays_brief",
+      source: "worker",
+      publicMessage: failure.message,
+      accountId: args.input.accountId,
+      artistWorkspaceId: args.input.artistWorkspaceId,
+      artistId: args.input.artistId,
+      provider: "openai",
+      refs: {
+        manager_run_id: args.runId,
+        usage_event_id: usageId,
+        setup_run_id: args.input.setupRunId,
+      },
+      context: { generationMode: args.generationMode, trigger: args.input.trigger },
+    });
     const runFinished = await finishManagerSynthesisRun(args.db, {
       runId: args.runId,
       leaseToken: lease.token,
