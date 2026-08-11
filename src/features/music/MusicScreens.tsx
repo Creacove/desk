@@ -2627,7 +2627,7 @@ function MusicImportDialog({
         </div>
 
         {busy ? (
-          <MusicImportProgress phase={activeJob!.phase === "read" ? "read" : "import"} kind={searchKind} title={activeJob!.title} onContinueBrowsing={onContinueBrowsing} />
+          <MusicImportProgress phase={activeJob!.phase === "read" ? "read" : "import"} kind={searchKind} onContinueBrowsing={onContinueBrowsing} />
         ) : (
           <>
             {!drill ? (
@@ -2723,7 +2723,7 @@ function MusicImportDialog({
   );
 }
 
-function MusicImportProgress({ phase, kind, title, onContinueBrowsing }: { phase: ImportPhase; kind: "song" | "project"; title: string; onContinueBrowsing: () => void }) {
+function MusicImportProgress({ phase, kind, onContinueBrowsing }: { phase: ImportPhase; kind: "song" | "project"; onContinueBrowsing: () => void }) {
   const order: ImportPhase[] = ["import", "read"];
   const currentIndex = phase === "done" ? order.length : order.indexOf(phase);
   const steps = [
@@ -2758,9 +2758,6 @@ function MusicImportProgress({ phase, kind, title, onContinueBrowsing }: { phase
           </div>
         );
         })}
-      <p className="mt-2 text-[11px] font-semibold normal-case leading-relaxed text-muted-foreground/75">
-        Importing <span className="font-bold text-foreground">{title}</span>. This runs the same pipeline as setup and can continue while you browse.
-      </p>
       <button type="button" onClick={onContinueBrowsing} className="mt-2 w-fit rounded-full border border-foreground/12 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:border-foreground/25 hover:text-foreground">
         Continue browsing
       </button>
