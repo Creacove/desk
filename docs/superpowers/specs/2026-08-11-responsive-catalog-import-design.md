@@ -32,7 +32,7 @@ The parent `MusicWorkspace` owns a single `catalogImportJob` while the dialog is
 
 The existing skeleton and `AppThinkingOrb` progress UI remain the feedback language. While the sheet is visible, its close control is disabled only for the short handoff needed to start the job; after that handoff, the user may continue browsing. Errors return to the selection view when the sheet is visible, remain in the status notice when backgrounded, and allow the same selection to be retried.
 
-`onGenerateRead` returns the refreshed Music object or `null`. The import commit treats `null` as a failed read step. After both import and read succeed, `onDone` refreshes the Music list and then opens the returned subject. A refresh failure is surfaced as a non-blocking notice while keeping the imported subject navigable when possible.
+`onGenerateRead` returns the refreshed Music object or `null`. The import commit treats `null` as a failed read step. After both import and read succeed, the parent workspace refreshes the Music list and then opens the returned subject. A refresh failure is surfaced as a non-blocking notice while keeping the imported subject navigable when possible.
 
 ## Verification
 
