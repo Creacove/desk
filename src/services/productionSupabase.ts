@@ -2395,7 +2395,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async loadMissionList() {
         const { data, error } = await ownerFilters(client
           .from("missions")
-          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name,active_plan_version_id")
         )
           .order("created_at", { ascending: false })
           .limit(100);
@@ -2406,7 +2406,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         const { data: taskData, error: taskError } = await ownerFilters(client
           .from("tasks")
-          .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+          .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
         )
           .in("mission_id", missionRows.map((mission) => mission.id))
           .order("created_at", { ascending: true });
@@ -2422,7 +2422,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async loadMission(missionId) {
         const { data, error } = await ownerFilters(client
           .from("missions")
-          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name,active_plan_version_id")
         )
           .eq("id", missionId)
           .limit(1)
@@ -2439,13 +2439,13 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         ] = await Promise.all([
           ownerFilters(client
             .from("checkpoints")
-            .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
+            .select("id,mission_id,mission_plan_version_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
           )
             .eq("mission_id", missionId)
             .order("created_at", { ascending: true }),
           ownerFilters(client
             .from("tasks")
-            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
           )
             .eq("mission_id", missionId)
             .order("created_at", { ascending: true }),
@@ -2506,7 +2506,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async loadMissions() {
         const { data, error } = await client
           .from("missions")
-          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name")
+          .select("id,title,objective,status,progress,review_point,summary,current_recommendation,pattern_name,active_plan_version_id")
           .eq("artist_workspace_id", workspace.artistWorkspaceId)
           .order("created_at", { ascending: false });
 
@@ -2526,12 +2526,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         ] = await Promise.all([
           client
             .from("checkpoints")
-            .select("id,mission_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
+            .select("id,mission_id,mission_plan_version_id,title,question,status,recommendation,decision_rule,next_action,blocked_reason,dependency_impact,watched_signals,required_evidence,missing_evidence,reason_for_checkpoint")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: true }),
           client
             .from("tasks")
-            .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: true }),
           client
@@ -2970,11 +2970,13 @@ type MissionRow = {
   summary?: string | null;
   current_recommendation?: string | null;
   pattern_name?: string | null;
+  active_plan_version_id?: string | null;
 };
 
 type CheckpointRow = {
   id: string;
   mission_id: string;
+  mission_plan_version_id?: string | null;
   title: string;
   question: string;
   status: string;
@@ -2992,6 +2994,7 @@ type CheckpointRow = {
 type TaskRow = {
   id: string;
   mission_id?: string | null;
+  mission_plan_version_id?: string | null;
   primary_checkpoint_id?: string | null;
   title: string;
   status: string;
@@ -6182,10 +6185,19 @@ function missionFromRow(
   operatingEvents: any[] = [],
   memoryEntries: any[] = [],
 ): MissionViewModel {
-  const blockingTaskRows = tasks.filter(isBlockingTask);
+  const currentPlanId = row.active_plan_version_id ?? null;
+  const currentCheckpoints = checkpoints.filter((checkpoint) => (
+    checkpoint.status !== "skipped"
+    && (!currentPlanId || !checkpoint.mission_plan_version_id || checkpoint.mission_plan_version_id === currentPlanId)
+  ));
+  const currentTasks = tasks.filter((task) => (
+    task.status !== "superseded"
+    && (!currentPlanId || !task.mission_plan_version_id || task.mission_plan_version_id === currentPlanId)
+  ));
+  const blockingTaskRows = currentTasks.filter(isBlockingTask);
   const nextTask = blockingTaskRows.find((task) => !["completed", "archived", "rejected", "superseded"].includes(task.status));
 
-  const mappedTasks: MissionTaskViewModel[] = tasks.map((task) => {
+  const mappedTasks: MissionTaskViewModel[] = currentTasks.map((task) => {
     const taskSteps = steps
       .filter((step) => step.task_id === task.id)
       .map((step) => step.body);
@@ -6227,7 +6239,7 @@ function missionFromRow(
     };
   });
 
-  const mappedCheckpoints: MissionCheckpointViewModel[] = checkpoints.map((checkpoint, index) => {
+  const mappedCheckpoints: MissionCheckpointViewModel[] = currentCheckpoints.map((checkpoint, index) => {
     const checkpointTasks = mappedTasks.filter((task) => task.checkpointId === checkpoint.id);
     const requiredTaskIds = checkpointTasks.filter((task) => task.workMode !== "manager_work").map((task) => task.id);
     const persistedStatus = mapCheckpointStatus(checkpoint.status);
@@ -6236,8 +6248,8 @@ function missionFromRow(
       ? "Watching signal"
       : persistedStatus;
 
-    const dependsOnCheckpointIds = index > 0 ? [checkpoints[index - 1].id] : [];
-    const unlocks = index < checkpoints.length - 1 ? [checkpoints[index + 1].title] : [];
+    const dependsOnCheckpointIds = index > 0 ? [currentCheckpoints[index - 1].id] : [];
+    const unlocks = index < currentCheckpoints.length - 1 ? [currentCheckpoints[index + 1].title] : [];
 
     return {
       id: checkpoint.id,

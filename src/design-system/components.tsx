@@ -80,6 +80,7 @@ export function Field({
   autoComplete,
   required,
   disabled,
+  readOnly,
   helper,
   error,
 }: {
@@ -90,6 +91,7 @@ export function Field({
   autoComplete?: string;
   required?: boolean;
   disabled?: boolean;
+  readOnly?: boolean;
   helper?: string;
   error?: string;
 }) {
@@ -112,8 +114,12 @@ export function Field({
         autoComplete={autoComplete}
         required={required}
         disabled={disabled}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1 w-full bg-transparent text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60"
+        className={cn(
+          "mt-1 w-full bg-transparent text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60",
+          readOnly && "cursor-default",
+        )}
       />
       {error || helper ? <p className={cn("mt-1.5 text-[11px] font-semibold", error ? "text-destructive" : "text-muted-foreground/80")}>{error ?? helper}</p> : null}
     </div>

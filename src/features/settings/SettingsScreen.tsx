@@ -12,6 +12,7 @@ export function SettingsScreen({
   onSaveProfile,
   onBack,
   onSignOut,
+  accountEmail,
   themeMode = "system",
   resolvedThemeMode = "light",
   onThemeModeChange,
@@ -24,6 +25,7 @@ export function SettingsScreen({
   onSaveProfile?: (profile: ArtistProfileViewModel) => Promise<void>;
   onBack: () => void;
   onSignOut?: () => void;
+  accountEmail?: string;
   themeMode?: ThemeMode;
   resolvedThemeMode?: ResolvedThemeMode;
   onThemeModeChange?: (mode: ThemeMode) => void;
@@ -54,6 +56,7 @@ export function SettingsScreen({
             onThemeModeChange={onThemeModeChange}
             onUpdatePassword={onUpdatePassword}
             onSignOut={onSignOut}
+            accountEmail={accountEmail}
           />
         ) : null}
       </div>
@@ -240,12 +243,14 @@ function AccessEmptyState() {
 }
 
 function AccountSettings({
+  accountEmail,
   mode,
   resolvedMode,
   onThemeModeChange,
   onUpdatePassword,
   onSignOut,
 }: {
+  accountEmail?: string;
   mode: ThemeMode;
   resolvedMode: ResolvedThemeMode;
   onThemeModeChange?: (mode: ThemeMode) => void;
@@ -254,6 +259,7 @@ function AccountSettings({
 }) {
   return (
     <div className="space-y-4">
+      <AccountIdentity accountEmail={accountEmail} />
       <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
@@ -271,6 +277,20 @@ function AccountSettings({
         </section>
       ) : null}
     </div>
+  );
+}
+
+function AccountIdentity({ accountEmail }: { accountEmail?: string }) {
+  const displayEmail = accountEmail?.trim() || "Email unavailable";
+
+  return (
+    <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
+      <p className="text-[11px] font-bold text-foreground">Account email</p>
+      <p className="mt-1 text-[12px] font-semibold text-muted-foreground">Used to sign in and recover this account.</p>
+      <div className="mt-4">
+        <Field label="Email address" value={displayEmail} onChange={() => undefined} type="email" readOnly />
+      </div>
+    </section>
   );
 }
 

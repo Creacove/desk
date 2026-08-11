@@ -1,4 +1,5 @@
-import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
@@ -42,9 +43,11 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
 
   let runId: string | null = null;
   let usageId: string | null = null;
+  let input: ReviewInput | undefined;
+  let failureStage = "validate_request";
 
   try {
-    const input = (await request.json()) as ReviewInput;
+    input = (await request.json()) as ReviewInput;
     validateInput(input);
 
     const authHeader = request.headers.get("Authorization");
@@ -63,12 +66,18 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     await assertActiveWorkspaceEntitlement(authClient, input);
 
     const db = createClient(supabaseUrl, serviceRoleKey);
+    failureStage = "load_review_context";
     const context = await loadReviewContext(db, input, user.id);
+    failureStage = "create_manager_run";
     runId = await createManagerRun(db, input, context);
+    failureStage = "create_usage_event";
     usageId = await createUsageEvent(db, input, runId);
 
+    failureStage = "openai_review";
     const { review, usage } = await callOpenAIManagerReview(context);
+    failureStage = "persist_review";
     await applyManagerReview(db, input, context, runId, review);
+    failureStage = "complete_run";
     await completeManagerRun(db, runId, review);
     await completeUsageEvent(db, usageId, usage);
 
@@ -76,9 +85,26 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     return json({ mission, review });
   } catch (error) {
     const message = describeError(error, "Manager task review failed.");
+    const errorEventId = await captureAppError(error, {
+      functionName: "manager-review-task-result",
+      operation: "review_task_result",
+      source: failureStage === "persist_review" ? "database" : "edge",
+      publicMessage: message,
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      accountId: input?.accountId,
+      artistWorkspaceId: input?.artistWorkspaceId,
+      artistId: input?.artistId,
+      provider: failureStage === "openai_review" ? "openai" : undefined,
+      refs: {
+        manager_run_id: runId,
+        usage_event_id: usageId,
+        task_id: input?.taskId,
+        stage: failureStage,
+      },
+    });
     if (runId) await markRunFailedSafe(runId, message);
     if (usageId) await markUsageFailedSafe(usageId, message);
-    return json({ error: message }, 500);
+    return markErrorCaptured(json({ error: message, errorEventId }, 500), errorEventId);
   }
 }));
 
@@ -109,6 +135,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     .maybeSingle();
   if (taskError) throw taskError;
   if (!task?.mission_id) throw new Error("Manager task review task was not found.");
+  assertTaskCanBeReviewed(task);
 
   const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments, submittedManagerDraft] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
@@ -156,6 +183,12 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
       submittedDocumentsAreOptionalContext: true,
     },
   };
+}
+
+function assertTaskCanBeReviewed(task: { status?: unknown }) {
+  if (task.status === "superseded") {
+    throw new Error("This task belongs to an earlier mission plan. Refresh Missions and use the current task instead.");
+  }
 }
 
 async function callOpenAIManagerReview(context: unknown) {
@@ -763,7 +796,9 @@ function requireEnv(name: string) {
 }
 
 function describeError(error: unknown, fallback: string) {
-  return error instanceof Error ? error.message : fallback;
+  if (error instanceof Error && error.message) return error.message;
+  if (isRecord(error) && typeof error.message === "string" && error.message.trim()) return error.message.trim();
+  return typeof error === "string" && error.trim() ? error.trim() : fallback;
 }
 
 function json(body: unknown, status = 200) {

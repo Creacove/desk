@@ -2062,6 +2062,7 @@ function CleanProductionWorkspace({
           {view === "artistProfileWorkspace" ? (
             <SettingsScreen
               profile={profile}
+              accountEmail={analyticsUser.email}
               onChange={setProfile}
               onSaveProfile={
                 workspace && profileSetupService?.updateArtistProfile

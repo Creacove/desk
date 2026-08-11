@@ -71,6 +71,22 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain("After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.");
   });
 
+  it("rejects terminal plan tasks before spending a Manager review run", () => {
+    expect(functionSource).toContain("assertTaskCanBeReviewed(task)");
+    expect(functionSource).toContain('task.status === "superseded"');
+    expect(functionSource).toContain("This task belongs to an earlier mission plan");
+  });
+
+  it("captures the original review failure with task and run correlation", () => {
+    expect(functionSource).toContain('import { captureAppError } from "../_shared/appError.ts"');
+    expect(functionSource).toContain("markErrorCaptured");
+    expect(functionSource).toContain('operation: "review_task_result"');
+    expect(functionSource).toContain("manager_run_id: runId");
+    expect(functionSource).toContain("usage_event_id: usageId");
+    expect(functionSource).toContain("task_id: input?.taskId");
+    expect(functionSource).toContain("errorEventId");
+  });
+
   it("has service-role access to the mission graph and review write tables", () => {
     expect(existsSync(serviceRoleGrantMigrationPath)).toBe(true);
     expect(existsSync(workspaceDocumentsMigrationPath)).toBe(true);

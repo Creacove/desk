@@ -101,6 +101,24 @@ describe("SettingsScreen", () => {
     expect(onThemeModeChange).toHaveBeenCalledWith("dark");
   });
 
+  it("shows the signed-in account email in Account", () => {
+    render(
+      <SettingsScreen
+        profile={profileWithArtistIntelligence()}
+        onChange={vi.fn()}
+        onBack={vi.fn()}
+        accountEmail="artist@example.com"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
+
+    const email = screen.getByLabelText("Email address");
+    expect(email).toHaveValue("artist@example.com");
+    expect(email).toHaveAttribute("readonly");
+    expect(email).not.toBeDisabled();
+  });
+
   it("separates access details from account security", async () => {
     const onUpdatePassword = vi.fn().mockResolvedValue(undefined);
     const onSignOut = vi.fn();

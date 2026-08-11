@@ -1433,6 +1433,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Account" }));
+    expect(screen.getByLabelText("Email address")).toHaveValue("artist@example.com");
+    expect(screen.getByLabelText("Email address")).toHaveAttribute("readonly");
   }, 20000);
 
   it("saves Settings profile edits through the dedicated profile service without re-entering setup", async () => {

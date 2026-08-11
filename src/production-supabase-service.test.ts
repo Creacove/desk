@@ -2920,6 +2920,79 @@ describe("production Supabase services", () => {
     expect(missions.map((mission) => mission.title)).toContain("Visible mission 25");
   });
 
+  it("projects only the active mission plan so superseded tasks cannot be submitted", async () => {
+    const client = fakeSupabaseClient({
+      missions: [{
+        id: "mission-current-plan",
+        title: "Validate the current direction",
+        status: "active",
+        active_plan_version_id: "plan-current",
+      }],
+      checkpoints: [
+        {
+          id: "checkpoint-superseded",
+          mission_id: "mission-current-plan",
+          mission_plan_version_id: "plan-old",
+          title: "Old review",
+          question: "Should this old plan continue?",
+          status: "skipped",
+        },
+        {
+          id: "checkpoint-current",
+          mission_id: "mission-current-plan",
+          mission_plan_version_id: "plan-current",
+          title: "Current review",
+          question: "Is the current plan ready?",
+          status: "waiting",
+        },
+      ],
+      tasks: [
+        {
+          id: "task-superseded",
+          mission_id: "mission-current-plan",
+          mission_plan_version_id: "plan-old",
+          primary_checkpoint_id: "checkpoint-superseded",
+          title: "Submit the old draft",
+          status: "superseded",
+          owner_role: "Manager",
+          work_mode: "collaborative",
+          completion_mode: "manager_draft",
+        },
+        {
+          id: "task-current",
+          mission_id: "mission-current-plan",
+          mission_plan_version_id: "plan-current",
+          primary_checkpoint_id: "checkpoint-current",
+          title: "Complete the current task",
+          status: "proposed",
+          owner_role: "Artist / team",
+          work_mode: "artist_action",
+        },
+      ],
+      task_steps: [],
+      task_results: [],
+      operating_events: [],
+      memory_entries: [],
+      artifact_links: [],
+      documents: [],
+      document_versions: [],
+      manager_outputs: [],
+    });
+
+    const repositories = createSupabaseProductionRepositories(client, workspace).missions;
+    const [listMission, detailMission, [bulkMission]] = await Promise.all([
+      repositories.loadMissionList!().then((missions) => missions[0]),
+      repositories.loadMission!("mission-current-plan"),
+      repositories.loadMissions(),
+    ]);
+
+    for (const mission of [listMission, detailMission, bulkMission]) {
+      expect(mission?.tasks?.map((task) => task.id)).toEqual(["task-current"]);
+      expect(mission?.checkpoints?.map((checkpoint) => checkpoint.id) ?? []).not.toContain("checkpoint-superseded");
+      expect(mission?.nextTask).toBe("Complete the current task");
+    }
+  });
+
   it("renders a persisted met checkpoint as Met", async () => {
     const client = fakeSupabaseClient({
       missions: [{
