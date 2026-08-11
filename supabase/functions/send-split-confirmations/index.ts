@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
@@ -15,7 +16,7 @@ type SendInput = {
   appOrigin: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -150,7 +151,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: errorMessage(error, "Split confirmation links could not be sent.") }, 500);
   }
-});
+}));
 
 function validateInput(input: SendInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.musicItemId || !input.appOrigin) {

@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { bootstrapSpotifyCatalog } from "../_shared/spotifyCatalogBootstrap.ts";
 import { createSpotifyCatalogClient } from "../_shared/spotifyCatalogClient.ts";
@@ -39,7 +40,7 @@ type BootstrapInput = {
   setupStageLeaseToken?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("spotify-catalog-bootstrap", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -218,7 +219,7 @@ Deno.serve(async (request) => {
     }
     return json(workflowFailureBody(error), 500);
   }
-});
+}));
 
 async function dispatchManagerArtistDiscovery(
   supabaseUrl: string,

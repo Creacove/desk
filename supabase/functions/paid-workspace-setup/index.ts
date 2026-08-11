@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { claimWorkspaceSetupStage, mergeWorkspaceSetupStage } from "../_shared/durableWorkflow.ts";
 import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
@@ -16,7 +17,7 @@ type SetupInput = {
 
 type StageStatus = Record<string, Record<string, unknown> | string>;
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paid-workspace-setup", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -73,7 +74,7 @@ Deno.serve(async (request) => {
     console.error("paid-workspace-setup failed", { error, setupRunId: setupRun?.id, phase: input?.phase });
     return json(workflowFailureBody(error), 500);
   }
-});
+}));
 
 async function isAuthorizedSetupCheckout(db: any, checkout: any) {
   if (checkout.status === "paid") {

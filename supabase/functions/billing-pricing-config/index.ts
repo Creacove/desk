@@ -1,7 +1,8 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { readCanonicalPaddlePrice, readPaddleEnvironment, requireEnv } from "../_shared/paddle.ts";
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("billing-pricing-config", async (request) => {
   if (request.method === "OPTIONS") return respond(request, { ok: true });
   if (request.method !== "POST") return respond(request, { error: "Method not allowed." }, 405);
   try {
@@ -42,7 +43,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return respond(request, { error: error instanceof Error ? error.message : "Pricing is unavailable." }, 500);
   }
-});
+}));
 
 function requireMinorAmount(primary: string, fallback?: string) {
   const raw = Deno.env.get(primary)?.trim() || (fallback ? Deno.env.get(fallback)?.trim() : "");

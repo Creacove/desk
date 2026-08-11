@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createChartmetricClient } from "../_shared/chartmetricClient.ts";
 import { normalizeChartmetricArtistEvidence } from "../_shared/chartmetricEvidence.ts";
@@ -35,7 +36,7 @@ type ArtistProfileRow = {
   spotify_identity?: Record<string, unknown> | null;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("chartmetric-artist-enrichment", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -171,7 +172,7 @@ Deno.serve(async (request) => {
     }
     return json({ error: describeError(error, "Chartmetric artist enrichment failed.") }, 500);
   }
-});
+}));
 
 async function loadQueuedJobContext(supabase: any, input: ArtistEnrichmentInput): Promise<QueuedJobContext> {
   if (!input.sourceSyncJobId) {

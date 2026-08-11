@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import {
@@ -24,7 +25,7 @@ type ImportSelectionInput = {
   market?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("spotify-import-selection", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -118,7 +119,7 @@ Deno.serve(async (request) => {
     console.error("spotify-import-selection failed", { message });
     return json({ error: message }, 500);
   }
-});
+}));
 
 async function resolveSelectedArtist(
   authClient: any,

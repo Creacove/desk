@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSpotifyCatalogClient } from "../_shared/spotifyCatalogClient.ts";
 import { loadSpotifyCatalogPreview } from "../_shared/spotifyCatalogPreview.ts";
@@ -18,7 +19,7 @@ type PreviewInput = {
   market?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("spotify-catalog-preview", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -55,7 +56,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Spotify catalog preview failed." }, 500);
   }
-});
+}));
 
 function requireEnv(key: string) {
   const value = Deno.env.get(key);

@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
@@ -10,7 +11,7 @@ type BillingStatusInput = {
   retrySetup?: boolean;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("billing-status", async (request) => {
   if (request.method === "OPTIONS") return json(request, { ok: true });
   if (request.method !== "POST") return json(request, { error: "Method not allowed." }, 405);
 
@@ -164,7 +165,7 @@ Deno.serve(async (request) => {
     console.error("billing-status failed", { error });
     return json(request, workflowFailureBody(error), 500);
   }
-});
+}));
 
 function selectSetupRetryPhase(setupRun: any): "discovery" | "contextualize" {
   const stageStatus = setupRun?.stage_status;

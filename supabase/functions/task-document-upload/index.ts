@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
@@ -30,7 +31,7 @@ type UploadInput = {
   fileSize?: number;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("task-document-upload", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return failure("METHOD_NOT_ALLOWED", "Method not allowed.", 405);
 
@@ -64,7 +65,7 @@ Deno.serve(async (request) => {
     const status = code === "UNSUPPORTED_FILE_TYPE" || code === "FILE_TOO_LARGE" || code === "INVALID_INPUT" ? 400 : 500;
     return failure(code, publicErrorMessage(code), status);
   }
-});
+}));
 
 async function prepareUpload(db: any, input: UploadInput, userId: string) {
   const fileName = cleanFileName(input.fileName);

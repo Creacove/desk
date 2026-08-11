@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { manualSongWorkspaceCopy } from "../_shared/manualSongWorkspace.ts";
@@ -22,7 +23,7 @@ type InitializeSongWorkspaceInput = {
   lifecycleStage: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("initialize-song-workspace", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -72,7 +73,7 @@ Deno.serve(async (request) => {
     console.error("initialize-song-workspace failed", { message });
     return json({ error: message }, 400);
   }
-});
+}));
 
 function validateInput(value: InitializeSongWorkspaceInput) {
   const title = text(value?.title, 180);

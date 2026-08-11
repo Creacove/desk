@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createSupabaseCatalogRepository } from "../_shared/supabaseCatalogRepository.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
@@ -32,7 +33,7 @@ type ConnectInput = {
   market?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("connect-spotify-artist", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -156,7 +157,7 @@ Deno.serve(async (request) => {
     console.error("connect-spotify-artist failed", { error });
     return json(workflowFailureBody(error), 500);
   }
-});
+}));
 
 function scheduleCatalogBootstrap(task: Promise<unknown>) {
   task.catch(() => undefined);

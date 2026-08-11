@@ -1,9 +1,10 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const AUDIO_ASSET_TYPES = new Set(["demo", "rough_mix", "final_master", "clean_version", "instrumental", "stems"]);
 const MAX_CANDIDATES = 24;
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("music-audio-analysis-worker", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const workerSecret = Deno.env.get("WORKFLOW_WORKER_SECRET");
   if (!workerSecret || request.headers.get("x-workflow-worker-secret") !== workerSecret) {
@@ -25,7 +26,7 @@ Deno.serve(async (request) => {
     console.error("Music audio-analysis worker failed", error);
     return json({ error: "Music audio-analysis worker failed." }, 500);
   }
-});
+}));
 
 type Candidate = {
   assetId: string;

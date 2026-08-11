@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createChartmetricClient, isChartmetricNotFoundError } from "../_shared/chartmetricClient.ts";
 import type { ChartmetricClient } from "../_shared/chartmetricClient.ts";
@@ -55,7 +56,7 @@ type TrackResolution = {
   resolvedVia: "provided" | "spotify_track_id" | "isrc" | "none";
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("chartmetric-track-enrichment", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -288,7 +289,7 @@ Deno.serve(async (request) => {
     }
     return json({ error: describeError(error) }, 500);
   }
-});
+}));
 
 // ---------------------------------------------------------------------------
 // Resolution

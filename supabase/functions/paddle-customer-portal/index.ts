@@ -1,9 +1,10 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createPaddleClient, requireEnv } from "../_shared/paddle.ts";
 
 type PortalInput = { artistWorkspaceId?: string };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paddle-customer-portal", async (request) => {
   if (request.method === "OPTIONS") return respond(request, { ok: true });
   if (request.method !== "POST") return respond(request, { error: "Method not allowed." }, 405);
   try {
@@ -48,7 +49,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return respond(request, { error: error instanceof Error ? error.message : "Customer portal could not be opened." }, 500);
   }
-});
+}));
 
 function assertPortalUrl(value: string) {
   const url = new URL(value);

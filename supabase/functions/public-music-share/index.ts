@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -6,7 +7,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("public-music-share", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   try {
@@ -54,7 +55,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: "This share link is unavailable." }, 404);
   }
-});
+}));
 
 async function hashToken(token: string) {
   const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));

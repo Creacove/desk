@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { escapeHtml, sendTransactionalEmail } from "../_shared/transactionalEmail.ts";
 
@@ -23,7 +24,7 @@ type ShareInput = {
   shareLinkId?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("music-share-links", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -50,7 +51,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: safeError(error) }, 400);
   }
-});
+}));
 
 async function createShareLink(db: any, input: ShareInput, userId: string) {
   const subject = requireSubject(input);

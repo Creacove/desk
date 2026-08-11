@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { createSpotifyCatalogClient } from "../_shared/spotifyCatalogClient.ts";
@@ -38,7 +39,7 @@ type TrackCandidate = {
   alreadyImported: boolean;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("spotify-catalog-search", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -145,7 +146,7 @@ Deno.serve(async (request) => {
     console.error("spotify-catalog-search failed", { message });
     return json({ error: message }, 500);
   }
-});
+}));
 
 // This Spotify app runs in development mode, which caps the get-artist-albums
 // endpoint at limit=10 (higher values return 400 "Invalid limit"). Paginate with

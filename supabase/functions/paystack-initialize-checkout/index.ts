@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type CheckoutInput = {
@@ -15,7 +16,7 @@ type CheckoutInput = {
   };
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paystack-initialize-checkout", async (request) => {
   if (request.method === "OPTIONS") return json(request, { ok: true });
   if (request.method !== "POST") return json(request, { error: "Method not allowed." }, 405);
 
@@ -187,7 +188,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json(request, { error: readErrorMessage(error, "Checkout could not be initialized.") }, 500);
   }
-});
+}));
 
 function validateArtist(artist: CheckoutInput["selectedArtist"]): asserts artist is NonNullable<CheckoutInput["selectedArtist"]> {
   if (!artist?.spotifyArtistId || !artist.name || !artist.spotifyUrl) {

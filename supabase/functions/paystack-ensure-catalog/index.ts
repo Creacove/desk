@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 type CanonicalPlan = {
   name: string;
   amount: number;
@@ -10,7 +11,7 @@ const CANONICAL_PLANS: CanonicalPlan[] = [
   { name: "Desk Pro", amount: 30_200_000, interval: "annually", currency: "NGN" },
 ];
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paystack-ensure-catalog", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const supplied = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "") ?? "";
   const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -37,7 +38,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Paystack catalog could not be reconciled." }, 500);
   }
-});
+}));
 
 async function listPlans(secretKey: string) {
   const response = await fetch("https://api.paystack.co/plan?perPage=100", {

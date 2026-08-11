@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -13,7 +14,7 @@ type ConfirmInput = {
   correctionReason?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("confirm-split", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -120,7 +121,7 @@ Deno.serve(async (request) => {
     console.error("Split confirmation submission failed", error);
     return json({ error: "Your split response could not be saved." }, 500);
   }
-});
+}));
 
 async function hashToken(token: string) {
   const bytes = new TextEncoder().encode(token);

@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   TODAYS_BRIEF_PACKET_VERSION,
@@ -104,7 +105,7 @@ type MusicProjectRow = {
   source_limit?: string | null;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -222,7 +223,7 @@ Deno.serve(async (request) => {
     console.error("generate-todays-brief failed before dispatch", { error });
     return json(workflowFailureBody(error), 500);
   }
-});
+}));
 
 async function executeTodaysBriefRun(args: {
   db: any;

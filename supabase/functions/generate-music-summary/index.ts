@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
@@ -104,7 +105,7 @@ type ManagerReadFinalization = {
   supersededByEventId?: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("generate-music-summary", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -166,7 +167,7 @@ Deno.serve(async (request) => {
     logMusicManagerReadDiagnostic("Music Manager Read request failed", error);
     return json({ error: failure.message, code: failure.code }, 500);
   }
-});
+}));
 
 function scheduleBackgroundRun(task: Promise<void>) {
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;

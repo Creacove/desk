@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { readCanonicalPaddlePrice, requireEnv, sha256Hex } from "../_shared/paddle.ts";
 
@@ -15,7 +16,7 @@ type CheckoutInput = {
   };
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
   if (request.method === "OPTIONS") return respond(request, { ok: true });
   if (request.method !== "POST") return respond(request, { error: "Method not allowed." }, 405);
 
@@ -162,7 +163,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return respond(request, { error: error instanceof Error ? error.message : "Checkout could not be created." }, 500);
   }
-});
+}));
 
 function validateArtist(artist: CheckoutInput["selectedArtist"]): asserts artist is NonNullable<CheckoutInput["selectedArtist"]> {
   if (!artist?.spotifyArtistId?.trim() || !artist.name?.trim() || !artist.spotifyUrl?.startsWith("https://")) {

@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createPaddleClient, requireEnv } from "../_shared/paddle.ts";
 
@@ -5,7 +6,7 @@ declare const EdgeRuntime: { waitUntil(promise: Promise<unknown>): void };
 
 const MAX_WEBHOOK_BYTES = 1_000_000;
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paddle-webhook", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const contentType = request.headers.get("Content-Type")?.split(";", 1)[0].trim().toLowerCase();
   if (contentType !== "application/json") return json({ error: "Content-Type must be application/json." }, 415);
@@ -56,7 +57,7 @@ Deno.serve(async (request) => {
   }).catch(() => undefined));
 
   return json({ ok: true });
-});
+}));
 
 function readProviderReference(event: any) {
   return event?.data?.id ?? event?.data?.subscriptionId ?? event.eventId;

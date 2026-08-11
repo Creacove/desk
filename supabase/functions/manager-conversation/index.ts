@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
@@ -50,7 +51,7 @@ type ManagerConversationInput = {
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -162,7 +163,7 @@ Deno.serve(async (request) => {
     if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage);
     return json({ error: failure.publicMessage }, 500);
   }
-});
+}));
 
 function validateInput(input: ManagerConversationInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId) throw new Error("Manager conversation workspace input is incomplete.");

@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { escapeHtml, sendTransactionalEmail } from "../_shared/transactionalEmail.ts";
 
@@ -7,7 +8,7 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("redeem-private-beta-code", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   if (Deno.env.get("PRIVATE_BETA_ENABLED") !== "true") return json({ error: "Private beta access is unavailable." }, 404);
@@ -77,7 +78,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Private-beta activation failed." }, 500);
   }
-});
+}));
 
 function mapWorkspace(row: any, checkoutSessionId: string) {
   return {

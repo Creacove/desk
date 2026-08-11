@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
@@ -35,7 +36,7 @@ type ManagerTaskReview = {
   permissionRequests: Array<{ title: string; requestType: string; body: string; risk: string }>;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -79,7 +80,7 @@ Deno.serve(async (request) => {
     if (usageId) await markUsageFailedSafe(usageId, message);
     return json({ error: message }, 500);
   }
-});
+}));
 
 function validateInput(input: ReviewInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.taskId) throw new Error("Manager task review input is incomplete.");

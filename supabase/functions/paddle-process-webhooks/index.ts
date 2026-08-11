@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createPaddleClient, requireEnv, sha256Hex } from "../_shared/paddle.ts";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
@@ -15,7 +16,7 @@ const SUPPORTED_EVENTS = new Set([
   "customer.created", "customer.updated", "transaction.completed",
 ]);
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paddle-process-webhooks", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const suppliedSecret = request.headers.get("x-billing-worker-secret") ?? "";
   const expectedSecret = requireEnv("BILLING_WORKER_SECRET");
@@ -44,7 +45,7 @@ Deno.serve(async (request) => {
     }
   }
   return json({ ok: true, processed: results });
-});
+}));
 
 async function processEvent(db: any, event: QueueEvent, supabaseUrl: string, serviceRoleKey: string) {
   switch (event.event_type) {

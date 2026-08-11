@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
@@ -26,7 +27,7 @@ type SpotifyArtist = {
   images?: SpotifyImage[];
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("spotify-artist-search", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -83,7 +84,7 @@ Deno.serve(async (request) => {
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : "Spotify artist search failed." }, 500);
   }
-});
+}));
 
 async function createSpotifyAccessToken() {
   const clientId = requireEnv("SPOTIFY_CLIENT_ID");

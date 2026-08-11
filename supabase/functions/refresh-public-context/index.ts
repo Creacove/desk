@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import {
@@ -18,7 +19,7 @@ type RefreshPublicContextInput = {
   artistId: string;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("refresh-public-context", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -84,7 +85,7 @@ Deno.serve(async (request) => {
     if (usageId) await markUsageFailedSafe(usageId, message);
     return json({ error: message }, 500);
   }
-});
+}));
 
 function validateInput(input: RefreshPublicContextInput) {
   for (const [key, value] of Object.entries({

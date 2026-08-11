@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { runManagerAgentLoop } from "../_shared/manager-conversation/agentLoop.ts";
 import type { ManagerAgentToolDefinition } from "../_shared/manager-conversation/agentLoop.ts";
@@ -136,7 +137,7 @@ const discoveryToolsList: ManagerAgentToolDefinition[] = [
   }
 ];
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("manager-artist-discovery", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -377,7 +378,7 @@ Deno.serve(async (request) => {
     }
     return json({ ...workflowFailureBody(error), rawError }, 500); // TEMP
   }
-});
+}));
 
 function validateInput(input: DiscoveryInput) {
   for (const [key, value] of [

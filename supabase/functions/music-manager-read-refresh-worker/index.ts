@@ -1,10 +1,11 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { musicReadRefreshMode, shouldAutomaticallyRefreshMusicRead } from "../_shared/music-manager-read/refreshPolicy.ts";
 
 const MAX_EVENTS = 160;
 const LOOKBACK_DAYS = 14;
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("music-manager-read-refresh-worker", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const workerSecret = Deno.env.get("WORKFLOW_WORKER_SECRET");
   if (!workerSecret || request.headers.get("x-workflow-worker-secret") !== workerSecret) {
@@ -31,7 +32,7 @@ Deno.serve(async (request) => {
     console.error("Music Manager Read refresh worker failed", error);
     return json({ error: "Music Manager Read refresh worker failed." }, 500);
   }
-});
+}));
 
 type MusicSubject = {
   type: "music_item" | "music_project";

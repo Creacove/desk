@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
 import { fulfillVerifiedPaystackCheckout } from "../_shared/paystackFulfillment.ts";
@@ -7,7 +8,7 @@ type PaystackEvent = {
   data?: Record<string, any>;
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("paystack-webhook", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
   const rawBody = await request.text();
@@ -77,7 +78,7 @@ Deno.serve(async (request) => {
   }
 
   return json({ ok: true });
-});
+}));
 
 async function processPaystackEvent(db: any, event: PaystackEvent, webhookEventId: string) {
   switch (event.event) {

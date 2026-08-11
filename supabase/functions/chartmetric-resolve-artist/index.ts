@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createChartmetricClient } from "../_shared/chartmetricClient.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
@@ -26,7 +27,7 @@ type ResolveArtistInput = {
   };
 };
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("chartmetric-resolve-artist", async (request) => {
   if (request.method === "OPTIONS") {
     return json({ ok: true });
   }
@@ -138,7 +139,7 @@ Deno.serve(async (request) => {
     }
     return json({ error: error instanceof Error ? error.message : "Chartmetric artist resolution failed." }, 500);
   }
-});
+}));
 
 function buildChartmetricSearchPath(input: ResolveArtistInput) {
   const searchParams = new URLSearchParams();

@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   MISSION_GENESIS_PACKET_VERSION,
@@ -62,7 +63,7 @@ type MissionGenesisInput = {
 
 const MISSION_GENESIS_LEASE_SECONDS = 900;
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("mission-genesis", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
 
@@ -216,7 +217,7 @@ Deno.serve(async (request) => {
     if (failed && usageId) await markUsageFailedSafe(usageId, message);
     return json({ error: message }, 500);
   }
-});
+}));
 
 function scheduleMissionGenesisBackgroundRun(task: Promise<void>) {
   const runtime = (globalThis as { EdgeRuntime?: { waitUntil?: (promise: Promise<unknown>) => void } }).EdgeRuntime;

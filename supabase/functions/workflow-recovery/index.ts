@@ -1,3 +1,4 @@
+import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const RECOVERY_BATCH_SIZE = 4;
@@ -42,7 +43,7 @@ const handlers = {
   "todays_brief_v1": recoverTodaysBrief,
 } as const;
 
-Deno.serve(async (request) => {
+Deno.serve(withAppErrorCapture("workflow-recovery", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const suppliedSecret = request.headers.get("x-workflow-worker-secret") ?? "";
   const expectedSecret = requireEnv("WORKFLOW_WORKER_SECRET");
@@ -115,7 +116,7 @@ Deno.serve(async (request) => {
   }
 
   return json({ mode: "run", processed: results });
-});
+}));
 
 async function assertRecoveryOwner(db: any, candidate: RecoveryCandidate) {
   const { data, error } = await db.from("artist_workspaces").select("id")
