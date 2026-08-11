@@ -5,6 +5,7 @@ import { ThemeProvider } from "./app/theme";
 import { SplitConfirmationPortal } from "./features/music/SplitConfirmationPortal";
 import { PublicMusicSharePortal } from "./features/music/PublicMusicSharePortal";
 import { createBrowserSupabaseClient } from "./lib/supabaseClient";
+import { installBrowserErrorTelemetry } from "./lib/errorTelemetry";
 import AiLabelPrototype from "./prototype/AiLabelPrototype";
 import { createSupabaseProductionRepositories } from "./services/productionSupabase";
 import { loadPublicMusicShare } from "./services/publicMusicShare";
@@ -29,6 +30,16 @@ const initialView = requestedView && productionViews.includes(requestedView) ? r
 const fixtureMode = params.get("fixtures") === "true";
 const splitConfirmationToken = window.location.pathname === "/split-confirmation" ? params.get("token") ?? "" : "";
 const publicShareToken = window.location.pathname === "/share" ? params.get("token") ?? "" : "";
+if (import.meta.env.PROD && !splitConfirmationToken && !publicShareToken && import.meta.env.VITE_APP_MODE !== "prototype") {
+  const telemetryClient = createBrowserSupabaseClient();
+  installBrowserErrorTelemetry({
+    capture: async (payload) => {
+      const { data: { session } } = await telemetryClient.auth.getSession();
+      if (!session) return;
+      await telemetryClient.functions.invoke("capture-browser-error", { body: payload });
+    },
+  });
+}
 const publicSplitWorkspace = {
   accountId: "public-split-confirmation",
   artistWorkspaceId: "public-split-confirmation",
