@@ -2,7 +2,7 @@ import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText,
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OrbState } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
 import { SongContextAttachment } from "../music/SongRoomAttachments";
@@ -65,17 +65,127 @@ function useTypewriter(target: string, streaming: boolean): string {
     };
   }, [target]);
 
-  // Keep scroll pinned to bottom while typewriter is actively catching up
-  useEffect(() => {
-    if (hasStreamedRef.current && displayed.length < target.length) {
-      const anchor = document.getElementById("chat-scroll-anchor");
-      if (anchor) {
-        anchor.scrollIntoView({ block: "end", behavior: "auto" });
-      }
-    }
-  }, [displayed, target.length]);
-
   return displayed.length <= target.length ? displayed : target;
+}
+
+const CHAT_SCROLL_NEAR_BOTTOM_PX = 160;
+
+function isNearConversationTail() {
+  if (typeof window === "undefined" || typeof document === "undefined") return true;
+  return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - CHAT_SCROLL_NEAR_BOTTOM_PX;
+}
+
+function useConversationScroll({
+  conversationId,
+  messageCount,
+  streamedTextLength,
+  stepCount,
+  hasStreamingMessage,
+}: {
+  conversationId: string;
+  messageCount: number;
+  streamedTextLength: number;
+  stepCount: number;
+  hasStreamingMessage: boolean;
+}) {
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
+  const frameRef = useRef<number | null>(null);
+  const pendingBehaviorRef = useRef<ScrollBehavior>("auto");
+  const followTailRef = useRef(true);
+  const previousScrollYRef = useRef(typeof window === "undefined" ? 0 : window.scrollY);
+  const ignoreInitialScrollRef = useRef(true);
+  const previousConversationIdRef = useRef(conversationId);
+  const previousMessageCountRef = useRef(messageCount);
+  const previousStreamingRef = useRef(hasStreamingMessage);
+  const mountedRef = useRef(false);
+
+  const scrollToTail = useCallback((behavior: ScrollBehavior) => {
+    if (typeof scrollAnchorRef.current?.scrollIntoView !== "function") return;
+    const reducedMotion = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scrollAnchorRef.current.scrollIntoView({ block: "end", behavior: reducedMotion ? "auto" : behavior });
+  }, []);
+
+  const scheduleTailScroll = useCallback((behavior: ScrollBehavior = "auto") => {
+    if (!followTailRef.current) return;
+    if (behavior === "smooth") pendingBehaviorRef.current = "smooth";
+    if (frameRef.current !== null) return;
+
+    frameRef.current = requestAnimationFrame(() => {
+      frameRef.current = null;
+      const nextBehavior = pendingBehaviorRef.current;
+      pendingBehaviorRef.current = "auto";
+      if (followTailRef.current) scrollToTail(nextBehavior);
+    });
+  }, [scrollToTail]);
+
+  const resumeFollowing = useCallback(() => {
+    followTailRef.current = true;
+  }, []);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      const movingUp = currentScrollY < previousScrollYRef.current - 2;
+      if (ignoreInitialScrollRef.current) {
+        previousScrollYRef.current = currentScrollY;
+        return;
+      }
+      if (movingUp) {
+        followTailRef.current = false;
+      } else if (isNearConversationTail()) {
+        followTailRef.current = true;
+      }
+      previousScrollYRef.current = currentScrollY;
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    const initialFrame = requestAnimationFrame(() => {
+      ignoreInitialScrollRef.current = false;
+    });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      cancelAnimationFrame(initialFrame);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined" || !messageListRef.current) return;
+    const observer = new ResizeObserver(() => scheduleTailScroll("auto"));
+    observer.observe(messageListRef.current);
+    return () => observer.disconnect();
+  }, [scheduleTailScroll]);
+
+  useEffect(() => () => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+  }, []);
+
+  useLayoutEffect(() => {
+    const isNewConversation = !mountedRef.current || previousConversationIdRef.current !== conversationId;
+    const isNewMessage = messageCount > previousMessageCountRef.current;
+    const startedStreaming = hasStreamingMessage && !previousStreamingRef.current;
+    mountedRef.current = true;
+    previousConversationIdRef.current = conversationId;
+    previousMessageCountRef.current = messageCount;
+    previousStreamingRef.current = hasStreamingMessage;
+
+    if (isNewConversation) {
+      followTailRef.current = true;
+      scrollToTail("auto");
+      return;
+    }
+    if (!followTailRef.current) return;
+
+    if (startedStreaming) {
+      scheduleTailScroll("smooth");
+    } else if (isNewMessage) {
+      scrollToTail("auto");
+    } else if (hasStreamingMessage || streamedTextLength > 0 || stepCount > 0) {
+      scheduleTailScroll("auto");
+    }
+  }, [conversationId, hasStreamingMessage, messageCount, scheduleTailScroll, scrollToTail, stepCount, streamedTextLength]);
+
+  return { messageListRef, scrollAnchorRef, resumeFollowing };
 }
 
 // ---------------------------------------------------------------------------
@@ -367,7 +477,6 @@ export function ConversationWorkspace({
   sendError: string | null;
 }) {
   const [draft, setDraft] = useState("");
-  const scrollAnchorRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageCreatedWork = conversation.messages.flatMap((message) => message.createdWork ?? []);
   const allCreatedWork = conversation.createdWork.length
@@ -383,13 +492,13 @@ export function ConversationWorkspace({
   const isManagerThinking = sendPending || activeRun?.status === "running";
   const hasStreamingMessage = conversation.messages.some((message) => message.status === "streaming");
   const hasFailedManagerMessage = conversation.messages.some((message) => message.speaker === "manager" && message.status === "failed");
-
-  // Auto-scroll on new content
-  useEffect(() => {
-    if (typeof scrollAnchorRef.current?.scrollIntoView === "function") {
-      scrollAnchorRef.current.scrollIntoView({ block: "end", behavior: "smooth" });
-    }
-  }, [conversation.messages.length, activeRun?.streamedText, activeRun?.steps.length]);
+  const { messageListRef, scrollAnchorRef, resumeFollowing } = useConversationScroll({
+    conversationId: conversation.id,
+    messageCount: conversation.messages.length,
+    streamedTextLength: activeRun?.streamedText?.length ?? 0,
+    stepCount: activeRun?.steps.length ?? 0,
+    hasStreamingMessage,
+  });
 
   // Auto-resize textarea
   const handleDraftChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -402,6 +511,7 @@ export function ConversationWorkspace({
   const handleSend = () => {
     const body = draft.trim();
     if (!body || sendPending) return;
+    resumeFollowing();
     onSendMessage(body, conversation.id);
     setDraft("");
     if (textareaRef.current) {
@@ -471,23 +581,27 @@ export function ConversationWorkspace({
             ) : null}
           </div>
         ) : null}
-        <div className="flex flex-col gap-8">
+        <div ref={messageListRef} className="flex flex-col gap-8">
           {conversation.messages.map((message) => (
             <MessageRow
               key={message.id}
               message={message}
               activeRun={activeRun}
               prompt={conversation.prompt}
-              onRetryLastMessage={onRetryLastMessage}
+              onRetryLastMessage={onRetryLastMessage ? () => {
+                resumeFollowing();
+                onRetryLastMessage();
+              } : undefined}
               sendPending={sendPending}
-              onSendContextAnswers={(answers) =>
+              onSendContextAnswers={(answers) => {
+                resumeFollowing();
                 onSendContextAnswers(
                   "Context answers for Manager mission decision.",
                   conversation.id,
                   message.contextRequestId ?? message.id,
                   answers,
-                )
-              }
+                );
+              }}
               onOpenCreatedWork={onOpenCreatedWork}
               suppressMissionArtifacts={Boolean(taskContext)}
               contextResolved={Boolean(message.contextRequestId && resolvedContextRequestIds.has(message.contextRequestId))}
@@ -499,7 +613,7 @@ export function ConversationWorkspace({
             <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}
 
-          <div id="chat-scroll-anchor" ref={scrollAnchorRef} />
+          <div data-testid="manager-chat-tail" ref={scrollAnchorRef} className="h-32 shrink-0" aria-hidden="true" />
         </div>
 
         {/* Created work summary */}

@@ -3094,6 +3094,81 @@ describe("Clean production prototype-match shell", () => {
     expect(css).toMatch(/\.app-workspace-reveal\s*\{[^}]*animation:[^;]*backwards;/);
   });
 
+  it("uses one tail scroll controller while Manager content streams", async () => {
+    const scrollIntoView = vi.fn();
+    const previousScrollIntoView = HTMLElement.prototype.scrollIntoView;
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: scrollIntoView });
+
+    const base: ConversationViewModel = {
+      id: "conv-scroll",
+      topic: "Release planning",
+      status: "Manager is thinking",
+      summary: "Release planning thread.",
+      prompt: "Plan the release.",
+      activeRun: {
+        id: "run-scroll",
+        status: "running",
+        streamedText: "",
+        steps: [{ id: "start", label: "Starting Manager run", status: "running" }],
+      },
+      messages: [{ id: "artist-1", speaker: "artist", label: "You", body: "Plan the release." }],
+      createdWork: [],
+    };
+
+    try {
+      const { rerender } = render(
+        <ConversationWorkspace
+          conversation={base}
+          onBack={() => undefined}
+          onOpenCreatedWork={() => undefined}
+          onSendMessage={() => undefined}
+          onSendContextAnswers={() => undefined}
+          sendPending
+          sendError={null}
+        />,
+      );
+
+      await act(async () => undefined);
+      const initialCalls = scrollIntoView.mock.calls.length;
+      expect(initialCalls).toBeGreaterThan(0);
+      expect(screen.getByTestId("manager-chat-tail")).toHaveClass("h-32");
+
+      rerender(
+        <ConversationWorkspace
+          conversation={{
+            ...base,
+            activeRun: { ...base.activeRun!, streamedText: "The Manager is reviewing the release context." },
+            messages: [
+              ...base.messages,
+              {
+                id: "manager-stream",
+                speaker: "manager",
+                label: "Manager",
+                body: "The Manager is reviewing the release context.",
+                status: "streaming",
+              },
+            ],
+          }}
+          onBack={() => undefined}
+          onOpenCreatedWork={() => undefined}
+          onSendMessage={() => undefined}
+          onSendContextAnswers={() => undefined}
+          sendPending
+          sendError={null}
+        />,
+      );
+
+      await act(async () => undefined);
+      const callsAfterRender = scrollIntoView.mock.calls.length;
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
+      expect(scrollIntoView.mock.calls.length).toBeLessThanOrEqual(callsAfterRender + 1);
+    } finally {
+      Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: previousScrollIntoView });
+    }
+  });
+
   it("pins the linked song above a Manager conversation and returns to its song room", () => {
     const onOpenMusicSubject = vi.fn();
     const conversation: ConversationViewModel = {
