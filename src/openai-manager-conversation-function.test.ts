@@ -65,6 +65,13 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(streamFunctionSource).toContain("memory_entries");
   });
 
+  it("accepts short non-empty Manager messages in both conversation functions", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain('if (!input.body || !input.body.trim()) throw new Error("Manager conversation requires a directive or question.");');
+      expect(source).not.toContain("input.body.trim().length < 3");
+    }
+  });
+
   it("persists Manager mission graph decisions through the full mission plan writer before chat artifacts are emitted", () => {
     expect(streamFunctionSource).toContain("persistManagerMissionGraphDecisions");
     expect(graphPersistenceSource).toContain("missionGraphDecisions");

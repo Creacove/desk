@@ -110,4 +110,19 @@ describe("Manager conversation context boundary", () => {
       expect(failure.internalMessage).toContain(errorMessage);
     }
   });
+
+  it("retains structured Supabase timeout diagnostics and reports workspace unavailability", () => {
+    const failure = classifyManagerConversationError({
+      code: "PGRST_TIMEOUT",
+      message: "Warp server error: Thread killed by timeout manager",
+      details: "PostgREST could not acquire a database worker before the request deadline.",
+    });
+
+    expect(failure.internalMessage).toContain("PGRST_TIMEOUT");
+    expect(failure.internalMessage).toContain("Thread killed by timeout manager");
+    expect(failure.internalMessage).toContain("PostgREST could not acquire a database worker");
+    expect(failure.publicMessage).toBe(
+      "Manager is temporarily unable to reach your workspace. Please try again in a moment.",
+    );
+  });
 });

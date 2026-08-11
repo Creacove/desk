@@ -48,6 +48,12 @@ export function buildManagerConversationModelContext(
 export function classifyManagerConversationError(error: unknown, fallback = "Manager could not complete that request. Your conversation and drafts are safe; try again."): ManagerFailure {
   const internalMessage = readErrorMessage(error, fallback);
   const normalized = internalMessage.toLowerCase();
+  if (/thread killed by timeout manager|postgrest.*timeout|pgrst.*timeout|database worker/.test(normalized)) {
+    return {
+      publicMessage: "Manager is temporarily unable to reach your workspace. Please try again in a moment.",
+      internalMessage,
+    };
+  }
   if (/status 429|rate.limit/.test(normalized)) {
     if (/request too large|tokens per min|token limit|context length|context window|too many tokens/.test(normalized)) {
       return {
@@ -316,6 +322,24 @@ function compactText(value: unknown, maxChars: number) {
 function readErrorMessage(error: unknown, fallback: string) {
   if (error instanceof Error && error.message.trim()) return error.message;
   if (typeof error === "string" && error.trim()) return error;
+
+  if (error && typeof error === "object" && !Array.isArray(error)) {
+    const source = error as Record<string, unknown>;
+    const parts = [
+      ["code", source.code],
+      ["status", source.status],
+      ["message", source.message],
+      ["details", source.details],
+      ["hint", source.hint],
+    ].flatMap(([label, value]) => {
+      if (typeof value !== "string" && typeof value !== "number") return [];
+      const text = String(value).trim();
+      return text ? [`${label}=${text}`] : [];
+    });
+
+    if (parts.length > 0) return parts.join(" | ");
+  }
+
   return fallback;
 }
 

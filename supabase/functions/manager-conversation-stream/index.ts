@@ -255,7 +255,7 @@ Deno.serve(async (request) => {
 
 function validateInput(input: ManagerConversationInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId) throw new Error("Manager conversation workspace input is incomplete.");
-  if (!input.body || input.body.trim().length < 3) throw new Error("Manager conversation requires a directive or question.");
+  if (!input.body || !input.body.trim()) throw new Error("Manager conversation requires a directive or question.");
   input.musicSubject = parseMusicConversationSubject(input.musicSubject) ?? undefined;
 }
 
