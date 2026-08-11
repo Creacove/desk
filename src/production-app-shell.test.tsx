@@ -8,7 +8,7 @@ import { ProductionApp } from "./app/ProductionApp";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { MusicWorkspace } from "./features/music/MusicScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
-import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, TodayBriefViewModel } from "./types/cleanProduction";
+import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, SpotifyImportResult, SpotifyReleaseCandidate, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
   ProductionBillingService,
@@ -5311,6 +5311,131 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByRole("dialog", { name: "Import song from catalog" })).not.toBeInTheDocument();
+  }, 20000);
+
+  it("keeps catalog imports responsive and backgroundable while the Catalog stays interactive", async () => {
+    const project = musicReadSubject("project", "fresh");
+    const importedProject = { ...project, id: "project-night-drive", title: "Night Drive" };
+    const release: SpotifyReleaseCandidate = {
+      albumId: "album-night-drive",
+      name: "Night Drive",
+      albumType: "album",
+      releaseDate: "2026-08-01",
+      totalTracks: 5,
+      alreadyImported: false,
+    };
+    let resolveImport!: (result: SpotifyImportResult) => void;
+    const importPromise = new Promise<SpotifyImportResult>((resolve) => {
+      resolveImport = resolve;
+    });
+    const order: string[] = [];
+    const repositories = repositoriesFor("Nova Vale");
+    const startManagerRead = vi.fn(async () => {
+      order.push("read");
+      return importedProject;
+    });
+    repositories.music = {
+      ...repositories.music,
+      loadMusic: async () => [project],
+      searchSpotifyCatalog: vi.fn(async () => ({ mode: "releases" as const, releases: [release] })),
+      importSpotifySelection: vi.fn(async () => {
+        order.push("import");
+        return importPromise;
+      }),
+      startManagerRead,
+    };
+    const onMusicChanged = vi.fn(async () => {
+      order.push("refresh");
+    });
+
+    render(
+      <MusicWorkspace
+        music={[project]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={onMusicChanged}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import from catalog" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Import project from catalog" });
+    expect(dialog).toHaveClass("h-[100dvh]");
+    expect(dialog).toHaveClass("w-full");
+    expect(dialog).toHaveClass("sm:h-auto");
+    expect(dialog).toHaveClass("overflow-hidden");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: /Night Drive/ }));
+    expect(await within(dialog).findByRole("heading", { name: "Importing Night Drive" })).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("button", { name: "Continue browsing" })).toHaveLength(2);
+
+    fireEvent.click(within(dialog).getAllByRole("button", { name: "Continue browsing" })[1]);
+    expect(screen.queryByRole("dialog", { name: "Import project from catalog" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("catalog-import-notice")).toHaveTextContent("Importing Night Drive");
+    expect(screen.getByRole("button", { name: "Add project" })).not.toBeDisabled();
+
+    resolveImport({ subjectType: "music_project", subjectId: importedProject.id, alreadyExisted: false, importedTrackCount: 5 });
+    await waitFor(() => expect(startManagerRead).toHaveBeenCalledWith(importedProject.id, "music_project"));
+    await waitFor(() => expect(screen.getByTestId("catalog-import-notice")).toHaveTextContent("Imported Night Drive"));
+    expect(order).toEqual(["import", "read", "refresh"]);
+    fireEvent.click(within(screen.getByTestId("catalog-import-notice")).getByRole("button", { name: "Open" }));
+    await waitFor(() => expect(screen.queryByTestId("catalog-import-notice")).not.toBeInTheDocument());
+  }, 20000);
+
+  it("keeps the catalog picker open when the Manager Read step fails", async () => {
+    const project = musicReadSubject("project", "fresh");
+    const release: SpotifyReleaseCandidate = {
+      albumId: "album-night-drive",
+      name: "Night Drive",
+      albumType: "album",
+      releaseDate: "2026-08-01",
+      totalTracks: 5,
+      alreadyImported: false,
+    };
+    const repositories = repositoriesFor("Nova Vale");
+    repositories.music = {
+      ...repositories.music,
+      searchSpotifyCatalog: vi.fn(async () => ({ mode: "releases" as const, releases: [release] })),
+      importSpotifySelection: vi.fn(async () => ({
+        subjectType: "music_project" as const,
+        subjectId: "project-night-drive",
+        alreadyExisted: false,
+        importedTrackCount: 5,
+      })),
+      startManagerRead: vi.fn(async () => {
+        throw new Error("Manager Read could not start. Try again.");
+      }),
+    };
+
+    render(
+      <MusicWorkspace
+        music={[project]}
+        missions={[]}
+        musicRepository={repositories.music}
+        onRefreshObject={repositories.music.loadMusicObject}
+        onMusicChanged={async () => undefined}
+        onOpenMission={() => undefined}
+        onBack={() => undefined}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add project" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import from catalog" }));
+    const dialog = await screen.findByRole("dialog", { name: "Import project from catalog" });
+    fireEvent.click(within(dialog).getByRole("button", { name: /Night Drive/ }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Manager Read could not start. Try again.");
+    expect(screen.getByRole("dialog", { name: "Import project from catalog" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    const notice = await screen.findByTestId("catalog-import-notice");
+    fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByRole("heading", { name: "Importing Night Drive" })).toBeInTheDocument();
   }, 20000);
 
   it("keeps failed uploads visible in Files and retries without reopening the picker", async () => {

@@ -41,6 +41,18 @@ type SongWorkspaceCreation = {
   status: "creating" | "failed";
   error?: string;
 };
+type CatalogImportSelection = { albumId: string; trackId?: string };
+type CatalogImportJob = {
+  id: string;
+  kind: "song" | "project";
+  title: string;
+  selection: CatalogImportSelection;
+  phase: "import" | "read" | "done" | "failed";
+  backgrounded: boolean;
+  result?: SpotifyImportResult;
+  error?: string;
+  refreshError?: string;
+};
 type MusicUploadJob = {
   id: string;
   songId: string;
@@ -101,6 +113,7 @@ export function MusicWorkspace({
   const [createKind, setCreateKind] = useState<MusicTab | null>(null);
   const [addMenuKind, setAddMenuKind] = useState<MusicTab | null>(null);
   const [importKind, setImportKind] = useState<MusicTab | null>(null);
+  const [catalogImportJob, setCatalogImportJob] = useState<CatalogImportJob | null>(null);
   const [uploadTarget, setUploadTarget] = useState<{ song: MusicObjectViewModel; asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number] } | null>(null);
   const [detailTarget, setDetailTarget] = useState<{ song: MusicObjectViewModel; groupTitle: string; field: MusicDetailField } | null>(null);
   const [shareTarget, setShareTarget] = useState<MusicObjectViewModel | null>(null);
@@ -118,6 +131,8 @@ export function MusicWorkspace({
   const managerReadHydrationChecks = useRef(new Set<string>());
   const handledTargetRequest = useRef("");
   const handledListRequest = useRef(listRequestKey);
+  const catalogImportJobRef = useRef<CatalogImportJob | null>(null);
+  const catalogImportBackgroundedRef = useRef(false);
   const modalActive = Boolean(createKind || addMenuKind || importKind || uploadTarget || detailTarget || shareTarget || documentEditorTarget);
 
   const currentMusic = useMemo(() => {
@@ -320,8 +335,10 @@ export function MusicWorkspace({
       setBriefPending(true);
       const updated = await musicRepository.startManagerRead(subjectId, subjectType);
       rememberFocusedUpdate(updated);
+      return updated;
     } catch {
       setBriefError("Manager Read could not start. Try again.");
+      return null;
     } finally {
       setBriefPending(false);
     }
@@ -395,6 +412,109 @@ export function MusicWorkspace({
       setSongRoomTab("overview");
       setMode("songDetail");
     }
+  }
+
+  function updateCatalogImportJob(next: CatalogImportJob | null) {
+    catalogImportJobRef.current = next;
+    setCatalogImportJob(next);
+  }
+
+  async function startCatalogImport(input: {
+    kind: "song" | "project";
+    title: string;
+    selection: CatalogImportSelection;
+  }) {
+    const job: CatalogImportJob = {
+      id: createClientRequestId(),
+      kind: input.kind,
+      title: input.title,
+      selection: input.selection,
+      phase: "import",
+      backgrounded: false,
+    };
+    catalogImportBackgroundedRef.current = false;
+    setActionError(null);
+    updateCatalogImportJob(job);
+
+    try {
+      const result = await musicRepository.importSpotifySelection({
+        kind: input.kind,
+        albumId: input.selection.albumId,
+        trackId: input.selection.trackId,
+      });
+      const current = catalogImportJobRef.current;
+      if (!current || current.id !== job.id) return;
+      updateCatalogImportJob({ ...current, phase: "read", result });
+
+      const read = await startManagerRead(result.subjectId, result.subjectType);
+      if (!read) throw new Error("Manager Read could not start. Try again.");
+
+      let refreshError: string | undefined;
+      try {
+        await onMusicChanged();
+      } catch {
+        refreshError = "Imported, but the Catalog could not refresh. Try Open again to load it.";
+      }
+
+      const completed = {
+        ...catalogImportJobRef.current!,
+        phase: "done" as const,
+        result,
+        refreshError,
+      } satisfies CatalogImportJob;
+      updateCatalogImportJob(completed);
+
+      if (!catalogImportBackgroundedRef.current && !refreshError) {
+        openImportedRecord(result);
+        updateCatalogImportJob(null);
+      } else if (!catalogImportBackgroundedRef.current) {
+        setImportKind(null);
+      }
+    } catch (error) {
+      const failed = {
+        ...(catalogImportJobRef.current ?? job),
+        phase: "failed" as const,
+        error: readErrorMessage(error, "Import failed."),
+      } satisfies CatalogImportJob;
+      updateCatalogImportJob(failed);
+    }
+  }
+
+  function continueCatalogImportInBackground() {
+    const current = catalogImportJobRef.current;
+    if (!current || (current.phase !== "import" && current.phase !== "read")) return;
+    catalogImportBackgroundedRef.current = true;
+    updateCatalogImportJob({ ...current, backgrounded: true });
+    setImportKind(null);
+  }
+
+  function retryCatalogImport() {
+    const current = catalogImportJobRef.current;
+    if (!current || (current.phase !== "failed" && current.phase !== "done")) return;
+    setImportKind(current.kind === "song" ? "songs" : "projects");
+    void startCatalogImport({ kind: current.kind, title: current.title, selection: current.selection });
+  }
+
+  async function openCatalogImport() {
+    const current = catalogImportJobRef.current;
+    if (!current?.result) return;
+    if (current.refreshError) {
+      try {
+        await onMusicChanged();
+        updateCatalogImportJob({ ...current, refreshError: undefined });
+      } catch {
+        updateCatalogImportJob({ ...current, refreshError: "The Catalog could not refresh yet. Try Open again." });
+        return;
+      }
+    }
+    openImportedRecord(current.result);
+    updateCatalogImportJob(null);
+  }
+
+  function dismissCatalogImport() {
+    const current = catalogImportJobRef.current;
+    if (!current || (current.phase !== "failed" && current.phase !== "done")) return;
+    updateCatalogImportJob(null);
   }
 
   async function checkManagerReadStatus(subjectId: string, subjectType: "music_item" | "music_project") {
@@ -587,6 +707,14 @@ export function MusicWorkspace({
               />
             ) : null}
             {actionError ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{actionError}</p> : null}
+            {catalogImportJob ? (
+              <CatalogImportNotice
+                job={catalogImportJob}
+                onOpen={() => void openCatalogImport()}
+                onRetry={retryCatalogImport}
+                onDismiss={dismissCatalogImport}
+              />
+            ) : null}
 
             <div data-testid="music-mobile-library" className="grid gap-2 lg:hidden">
               {tab === "songs"
@@ -697,9 +825,9 @@ export function MusicWorkspace({
           kind={importKind}
           onCancel={() => setImportKind(null)}
           onSearch={(input) => musicRepository.searchSpotifyCatalog(input)}
-          onImportSelection={(input) => musicRepository.importSpotifySelection(input)}
-          onGenerateRead={startManagerRead}
-          onDone={openImportedRecord}
+          importJob={catalogImportJob}
+          onStartImport={({ selection, title }) => void startCatalogImport({ kind: importKind === "songs" ? "song" : "project", title, selection })}
+          onContinueBrowsing={continueCatalogImportInBackground}
         />
       ) : null}
 
@@ -2326,22 +2454,83 @@ function MusicAddChooser({
   );
 }
 
+function CatalogImportNotice({
+  job,
+  onOpen,
+  onRetry,
+  onDismiss,
+}: {
+  job: CatalogImportJob;
+  onOpen: () => void;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  const active = job.phase === "import" || job.phase === "read";
+  const failed = job.phase === "failed";
+  const title = active
+    ? job.phase === "import" ? `Importing ${job.title}` : `Preparing ${job.title}`
+    : failed ? `${job.title} import failed` : `Imported ${job.title}`;
+  const detail = active
+    ? job.phase === "import" ? "Adding it to your Catalog." : "Fetching the Manager Read."
+    : failed ? job.error ?? "Import failed. Try again." : job.refreshError ?? "Ready in your Catalog.";
+
+  return (
+    <section
+      data-testid="catalog-import-notice"
+      role={failed ? "alert" : "status"}
+      aria-live="polite"
+      className={cn(
+        "flex min-w-0 flex-col gap-3 rounded-[16px] border px-4 py-3 sm:flex-row sm:items-center sm:justify-between",
+        failed ? "border-danger/20 bg-danger/10" : "border-brand-accent/20 bg-brand-accent/[0.06]",
+      )}
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <span className={cn(
+          "mt-0.5 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
+          failed ? "bg-danger/10 text-danger" : "bg-brand-accent/10 text-brand-accent",
+        )}>
+          {active ? <AppThinkingOrb state="working" size={20} /> : failed ? <AlertCircle className="h-4 w-4" /> : <Check className="h-4 w-4" />}
+        </span>
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-bold text-foreground">{title}</p>
+          <p className="mt-0.5 text-[11px] font-semibold leading-relaxed text-muted-foreground/80">{detail}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+        {active ? (
+          <span className="rounded-full border border-foreground/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">In background</span>
+        ) : failed ? (
+          <>
+            <button type="button" onClick={onRetry} className="rounded-full bg-foreground px-3 py-1.5 text-[11px] font-bold text-background">Retry</button>
+            <button type="button" onClick={onDismiss} className="rounded-full border border-foreground/10 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground">Dismiss</button>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={onOpen} className="rounded-full bg-foreground px-3 py-1.5 text-[11px] font-bold text-background">Open</button>
+            <button type="button" onClick={onDismiss} className="rounded-full border border-foreground/10 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:text-foreground">Dismiss</button>
+          </>
+        )}
+      </div>
+    </section>
+  );
+}
+
 type ImportPhase = "import" | "read" | "done";
 
 function MusicImportDialog({
   kind,
   onCancel,
   onSearch,
-  onImportSelection,
-  onGenerateRead,
-  onDone,
+  importJob,
+  onStartImport,
+  onContinueBrowsing,
 }: {
   kind: MusicTab;
   onCancel: () => void;
   onSearch: (input: { kind: "song" | "project"; albumId?: string }) => Promise<SpotifyCatalogSearchResult>;
-  onImportSelection: (input: { kind: "song" | "project"; albumId: string; trackId?: string }) => Promise<SpotifyImportResult>;
-  onGenerateRead: (subjectId: string, subjectType: "music_item" | "music_project") => Promise<unknown>;
-  onDone: (result: SpotifyImportResult) => void;
+  importJob: CatalogImportJob | null;
+  onStartImport: (input: { selection: CatalogImportSelection; title: string }) => void;
+  onContinueBrowsing: () => void;
 }) {
   const searchKind = kind === "songs" ? "song" : "project";
   const noun = kind === "songs" ? "song" : "project";
@@ -2351,9 +2540,10 @@ function MusicImportDialog({
   const [error, setError] = useState<string | null>(null);
   const [drill, setDrill] = useState<{ album: { albumId: string; name: string; coverImageUrl?: string }; tracks: SpotifyTrackCandidate[] } | null>(null);
   const [loadingTracks, setLoadingTracks] = useState(false);
-  const [phase, setPhase] = useState<ImportPhase | null>(null);
-  const [workingTitle, setWorkingTitle] = useState("");
   const active = useRef(true);
+  const activeJob = importJob?.kind === searchKind ? importJob : null;
+  const busy = activeJob?.phase === "import" || activeJob?.phase === "read";
+  const jobError = activeJob?.phase === "failed" ? activeJob.error : null;
 
   useEffect(() => {
     active.current = true;
@@ -2393,34 +2583,22 @@ function MusicImportDialog({
     }
   }
 
-  async function commit(selection: { albumId: string; trackId?: string }, title: string) {
+  function commit(selection: CatalogImportSelection, title: string) {
     setError(null);
-    setWorkingTitle(title);
-    try {
-      setPhase("import");
-      const result = await onImportSelection({ kind: searchKind, albumId: selection.albumId, trackId: selection.trackId });
-      setPhase("read");
-      await onGenerateRead(result.subjectId, result.subjectType);
-      setPhase("done");
-      onDone(result);
-    } catch (err) {
-      setError(readErrorMessage(err, "Import failed."));
-      setPhase(null);
-    }
+    onStartImport({ selection, title });
   }
 
-  const busy = phase !== null;
-
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-4 backdrop-blur-xl">
+    <div className="fixed inset-0 z-[80] grid overflow-x-hidden bg-foreground/24 backdrop-blur-xl sm:place-items-center sm:p-4">
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Import ${noun} from catalog`}
-        className="flex max-h-[min(90vh,44rem)] w-[min(100%,40rem)] flex-col overflow-hidden rounded-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)] ring-1 ring-foreground/5"
+        aria-busy={loadingReleases || loadingTracks || busy}
+        className="flex h-[100dvh] w-full min-w-0 flex-col overflow-hidden bg-background shadow-[0_24px_70px_rgba(17,19,24,0.20)] sm:h-auto sm:max-h-[min(90vh,44rem)] sm:w-[min(100%,40rem)] sm:rounded-[22px] sm:border sm:border-foreground/10 sm:ring-1 sm:ring-foreground/5"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
-          <div className="flex items-start gap-3">
+        <div className="flex min-w-0 shrink-0 items-start justify-between gap-3 border-b border-foreground/8 px-4 pb-4 pt-4 sm:gap-4 sm:px-5 sm:pt-5">
+          <div className="flex min-w-0 items-start gap-2.5 sm:gap-3">
             {drill && !busy ? (
               <button
                 type="button"
@@ -2431,30 +2609,29 @@ function MusicImportDialog({
                 <ArrowLeft className="h-4 w-4" />
               </button>
             ) : null}
-            <div>
+            <div className="min-w-0">
               <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Import from catalog</p>
-              <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">
-                {busy ? `Importing ${workingTitle || noun}` : drill ? drill.album.name : `Choose a ${noun}`}
+              <h3 className="mt-1 break-words font-display text-[22px] font-bold leading-tight text-foreground sm:text-[24px]">
+                {busy ? `Importing ${activeJob?.title || noun}` : drill ? drill.album.name : `Choose a ${noun}`}
               </h3>
             </div>
           </div>
           <button
             type="button"
-            onClick={onCancel}
-            disabled={busy}
-            aria-label="Close"
-            className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground disabled:opacity-40"
+            onClick={busy ? onContinueBrowsing : onCancel}
+            aria-label={busy ? "Continue browsing" : "Close"}
+            className="shrink-0 rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
 
         {busy ? (
-          <MusicImportProgress phase={phase} kind={searchKind} />
+          <MusicImportProgress phase={activeJob!.phase === "read" ? "read" : "import"} kind={searchKind} title={activeJob!.title} onContinueBrowsing={onContinueBrowsing} />
         ) : (
           <>
             {!drill ? (
-              <div className="border-b border-foreground/8 px-5 py-3">
+              <div className="shrink-0 border-b border-foreground/8 px-4 py-3 sm:px-5">
                 <div className="flex items-center gap-2 rounded-[12px] border border-foreground/10 bg-background px-3 py-2 focus-within:border-foreground">
                   <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
                   <input
@@ -2473,11 +2650,11 @@ function MusicImportDialog({
               </div>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-              {error ? (
+            <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+              {error || jobError ? (
                 <p role="alert" className="mb-3 flex items-start gap-2 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">
                   <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                  {error}
+                  {error ?? jobError}
                 </p>
               ) : null}
 
@@ -2534,7 +2711,7 @@ function MusicImportDialog({
               )}
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
+            <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-4 py-3 sm:px-5 sm:py-4">
               <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">
                 Cancel
               </button>
@@ -2546,7 +2723,7 @@ function MusicImportDialog({
   );
 }
 
-function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song" | "project" }) {
+function MusicImportProgress({ phase, kind, title, onContinueBrowsing }: { phase: ImportPhase; kind: "song" | "project"; title: string; onContinueBrowsing: () => void }) {
   const order: ImportPhase[] = ["import", "read"];
   const currentIndex = phase === "done" ? order.length : order.indexOf(phase);
   const steps = [
@@ -2557,13 +2734,14 @@ function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song"
     },
   ];
   return (
-    <div className="grid gap-3 px-6 py-8">
-      {steps.map((step, index) => {
+    <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-4 py-8 sm:px-6">
+      <div className="mx-auto grid w-full max-w-md gap-3">
+        {steps.map((step, index) => {
         const stepIndex = order.indexOf(step.key);
         const done = stepIndex < currentIndex;
         const activeStep = stepIndex === currentIndex && phase !== "done";
         return (
-          <div key={step.key} className="flex items-center gap-3">
+          <div key={step.key} className="flex min-w-0 items-center gap-3">
             <span
               className={cn(
                 "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border",
@@ -2576,13 +2754,17 @@ function MusicImportProgress({ phase, kind }: { phase: ImportPhase; kind: "song"
             >
               {done ? <Check className="h-4 w-4" /> : activeStep ? <AppThinkingOrb state="working" size={20} /> : <span className="text-[12px] font-bold">{index + 1}</span>}
             </span>
-            <span className={cn("text-[13px] font-semibold", done || activeStep ? "text-foreground" : "text-muted-foreground/70")}>{step.label}</span>
+            <span className={cn("min-w-0 text-[13px] font-semibold", done || activeStep ? "text-foreground" : "text-muted-foreground/70")}>{step.label}</span>
           </div>
         );
-      })}
+        })}
       <p className="mt-2 text-[11px] font-semibold normal-case leading-relaxed text-muted-foreground/75">
-        This runs the same pipeline as setup — hang tight, it only takes a moment.
+        Importing <span className="font-bold text-foreground">{title}</span>. This runs the same pipeline as setup and can continue while you browse.
       </p>
+      <button type="button" onClick={onContinueBrowsing} className="mt-2 w-fit rounded-full border border-foreground/12 px-3 py-1.5 text-[11px] font-bold text-muted-foreground hover:border-foreground/25 hover:text-foreground">
+        Continue browsing
+      </button>
+      </div>
     </div>
   );
 }
@@ -2613,7 +2795,7 @@ function ImportRow({
       onClick={onAction}
       disabled={alreadyImported}
       className={cn(
-        "group flex w-full items-center gap-3 rounded-[14px] border border-foreground/8 bg-background px-3 py-2.5 text-left transition-colors",
+        "group flex min-w-0 w-full items-center gap-3 overflow-hidden rounded-[14px] border border-foreground/8 bg-background px-3 py-2.5 text-left transition-colors",
         alreadyImported ? "opacity-60" : "hover:border-foreground/20 hover:bg-foreground/[0.03] focus:outline-none focus:ring-2 focus:ring-brand-accent/25",
       )}
     >
@@ -2631,8 +2813,8 @@ function ImportRow({
         {metaLine ? <span className="mt-0.5 block truncate text-[11px] font-semibold normal-case text-muted-foreground/78">{metaLine}</span> : null}
       </span>
       {alreadyImported ? (
-        <span className="inline-flex items-center gap-1 rounded-full bg-foreground/6 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
-          <Check className="h-3 w-3" /> Imported
+        <span className="inline-flex max-w-[42%] shrink-0 items-center gap-1 rounded-full bg-foreground/6 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground sm:max-w-none">
+          <Check className="h-3 w-3 shrink-0" /> <span className="truncate">Imported</span>
         </span>
       ) : actionIcon === "chevron" ? (
         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/60 transition-colors group-hover:text-foreground" />
