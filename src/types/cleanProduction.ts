@@ -1,9 +1,12 @@
 import type { LucideIcon } from "lucide-react";
 import type {
   ReleaseDateChangeReceipt,
+  ReleaseGateResult,
   ReleaseSchedulePreview,
   ReleaseSuccessAssessment,
 } from "../../supabase/functions/_shared/release-success/types";
+
+export type { ReleaseGateResult } from "../../supabase/functions/_shared/release-success/types";
 
 export type CleanProductionView =
   | "connectArtist"

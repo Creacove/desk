@@ -44,6 +44,7 @@ import {
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
 import { invalidationsFromManagerRefreshHint, mergeReleaseSuccessArtifacts } from "../services/managerConversationStream";
+import { createClientRequestId } from "../lib/requestId";
 import {
   loadWorkspaceActivityPage,
   type WorkspaceEventCursor,
@@ -72,6 +73,8 @@ import type {
   MusicObjectViewModel,
   MusicReadTarget,
   PublicContextRefreshResult,
+  ReleaseDateChangeRequestViewModel,
+  ReleaseSuccessArtifactViewModel,
   TodayBriefGenerationMode,
   TodayBriefGenerationResponse,
   TodayBriefViewModel,
@@ -647,6 +650,7 @@ function CleanProductionWorkspace({
   const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
   const [managerSendPending, setManagerSendPending] = useState(false);
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
+  const releaseApprovalIdempotencyKeys = useRef(new Map<string, string>());
 
   const loadDeskAggregate = () => resourceRequests.load(resourceWorkspaceId, "workspace", () => repositories.desk.loadDesk());
   const loadActivityResource = () => resourceRequests.load(resourceWorkspaceId, "activity", () =>
@@ -1017,6 +1021,108 @@ function CleanProductionWorkspace({
     setTargetMusicObjectId(musicObjectId ?? null);
     setMusicRoomOpenRequestKey((current) => current + 1);
     navigate("musicWorkspace");
+  }
+
+  function updateReleaseSuccessArtifact(
+    artifactId: string,
+    updater: (artifact: ReleaseSuccessArtifactViewModel) => ReleaseSuccessArtifactViewModel,
+  ) {
+    updateActiveConversation((conversation) => ({
+      ...conversation,
+      releaseSuccessArtifacts: (conversation.releaseSuccessArtifacts ?? []).map((artifact) =>
+        artifact.id === artifactId ? updater(artifact) : artifact,
+      ),
+    }));
+  }
+
+  function releaseApprovalIdempotencyKey(artifact: ReleaseSuccessArtifactViewModel, request: ReleaseDateChangeRequestViewModel) {
+    const existing = releaseApprovalIdempotencyKeys.current.get(artifact.id);
+    if (existing) return existing;
+    const key = `release-approval:${artifact.musicItemId}:${request.requestId}:${request.previewHash}:${createClientRequestId()}`;
+    releaseApprovalIdempotencyKeys.current.set(artifact.id, key);
+    return key;
+  }
+
+  function releaseErrorReference(error: unknown) {
+    if (!error || typeof error !== "object") return undefined;
+    const details = error as { errorEventId?: unknown; requestId?: unknown; code?: unknown };
+    if (typeof details.errorEventId === "string" && details.errorEventId) return details.errorEventId;
+    if (typeof details.requestId === "string" && details.requestId) return details.requestId;
+    if (typeof details.code === "string" && details.code) return details.code;
+    return undefined;
+  }
+
+  async function approveReleaseDateChange(request: ReleaseDateChangeRequestViewModel) {
+    const artifact = selectedConversation?.releaseSuccessArtifacts?.find((item) =>
+      (request.requestId && item.requestId === request.requestId) || item.musicItemId === request.musicItemId,
+    );
+    if (!artifact) return;
+
+    updateReleaseSuccessArtifact(artifact.id, (current) => ({ ...current, state: "applying", error: undefined }));
+    try {
+      if (!repositories.manager.approveReleaseDateChange) throw new Error("Release date approval is unavailable.");
+      const receipt = await repositories.manager.approveReleaseDateChange({
+        requestId: request.requestId,
+        previewHash: request.previewHash,
+        idempotencyKey: releaseApprovalIdempotencyKey(artifact, request),
+      });
+      updateReleaseSuccessArtifact(artifact.id, (current) => ({
+        ...current,
+        state: "applied",
+        receipt,
+        error: undefined,
+      }));
+      try {
+        await refreshFromManagerHint({
+          music: true,
+          missions: Boolean(receipt.missionId),
+          missionIds: receipt.missionId ? [receipt.missionId] : [],
+          taskIds: receipt.moved.map((item) => item.taskId),
+          desk: true,
+        });
+      } catch (refreshError) {
+        updateReleaseSuccessArtifact(artifact.id, (current) => ({
+          ...current,
+          state: "applied",
+          error: {
+            message: "Release date updated, but the workspace refresh needs a retry.",
+            retryable: true,
+            ...(releaseErrorReference(refreshError) ? { reference: releaseErrorReference(refreshError) } : {}),
+          },
+        }));
+      }
+    } catch (error) {
+      updateReleaseSuccessArtifact(artifact.id, (current) => ({
+        ...current,
+        state: "failed",
+        error: {
+          message: readErrorMessage(error, "The release date change could not be applied."),
+          retryable: true,
+          ...(releaseErrorReference(error) ? { reference: releaseErrorReference(error) } : {}),
+        },
+      }));
+    }
+  }
+
+  function keepReleaseDateAndShowRecoveryPlan(artifact: ReleaseSuccessArtifactViewModel) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    const currentDate = artifact.subject.approvedReleaseDate ?? artifact.preview?.fromDate ?? "the current release date";
+    void sendManagerMessage(
+      `Keep ${currentDate} for ${artifact.subject.title} and show me the recovery plan for release success. Do not approve a date change.`,
+      conversation.id,
+      conversation.topic,
+      conversation.musicSubject ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } } : {},
+    );
+  }
+
+  function retryReleaseSuccessReview(artifact: ReleaseSuccessArtifactViewModel) {
+    const conversation = selectedConversation;
+    const lastArtistMessage = conversation?.messages.filter((message) => message.speaker === "artist").at(-1);
+    if (!conversation || !lastArtistMessage) return Promise.resolve();
+    return sendManagerMessage(lastArtistMessage.body, conversation.id, conversation.topic, conversation.musicSubject
+      ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } }
+      : {});
   }
 
   async function openConversation(conversation: ConversationViewModel) {
@@ -2021,6 +2127,10 @@ function CleanProductionWorkspace({
                 onBackToTask={managerTaskContextId ? returnToManagerTask : undefined}
                 onOpenCreatedWork={openCreatedWork}
                 onOpenDecisionPackage={() => navigate("decisionPackage")}
+                onApproveReleaseDateChange={approveReleaseDateChange}
+                onKeepReleaseDate={keepReleaseDateAndShowRecoveryPlan}
+                onReviewReleaseSuccess={() => undefined}
+                onRetryReleaseSuccess={retryReleaseSuccessReview}
                 onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
                 onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
                   taskId: managerTaskContextId ?? undefined,

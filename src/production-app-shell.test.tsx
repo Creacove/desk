@@ -8,7 +8,7 @@ import { ProductionApp } from "./app/ProductionApp";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { MusicWorkspace } from "./features/music/MusicScreens";
 import { productionFixtureData } from "./services/fixtureRepositories";
-import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, SpotifyImportResult, SpotifyReleaseCandidate, TodayBriefViewModel } from "./types/cleanProduction";
+import type { ArtistProfileViewModel, CleanProductionRepositories, ConversationViewModel, MissionTaskViewModel, MissionViewModel, MusicObjectViewModel, ReleaseSuccessArtifactViewModel, SpotifyImportResult, SpotifyReleaseCandidate, TodayBriefViewModel } from "./types/cleanProduction";
 import type {
   ProductionAuthAdapter,
   ProductionBillingService,
@@ -2766,6 +2766,59 @@ describe("Clean production prototype-match shell", () => {
     expect(productionAppSource).toContain("releaseSuccessArtifacts");
     expect(productionAppSource).toContain("mergeReleaseSuccessArtifacts");
     expect(productionAppSource).not.toContain("createdWork: mergeReleaseSuccessArtifacts");
+  });
+
+  it("renders one chat-native Video One artifact and keeps approval behind the repository boundary", async () => {
+    const onApprove = vi.fn(async () => undefined);
+    const artifact: ReleaseSuccessArtifactViewModel = {
+      id: "release-artifact-shell",
+      musicItemId: "song-shell",
+      missionId: "mission-shell",
+      requestId: "request-shell",
+      state: "awaiting_approval",
+      subject: { title: "After Midnight", itemType: "song", approvedReleaseDate: "2026-08-26" },
+      preview: {
+        fromDate: "2026-08-26",
+        proposedDate: "2026-09-09",
+        expectedRevision: 2,
+        changes: [],
+        preserved: [],
+        previewHash: "a".repeat(64),
+      },
+    };
+    const conversation: ConversationViewModel = {
+      id: "conv-release-shell",
+      topic: "After Midnight release success",
+      status: "Manager responded",
+      summary: "Release review is ready.",
+      prompt: "Make After Midnight release-ready.",
+      musicSubject: { type: "music_item", id: "song-shell", title: "After Midnight", lifecycleStage: "mastering" },
+      messages: [{ id: "msg-release-shell", speaker: "manager", label: "Manager", body: "The release review is ready." }],
+      createdWork: [],
+      releaseSuccessArtifacts: [artifact],
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        onApproveReleaseDateChange={onApprove}
+        onKeepReleaseDate={() => undefined}
+        onReviewReleaseSuccess={() => undefined}
+        onRetryReleaseSuccess={async () => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    expect(screen.getAllByTestId("release-success-artifact")).toHaveLength(1);
+    const card = screen.getByTestId("release-success-artifact");
+    expect(within(card).getByText("After Midnight")).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole("button", { name: "Approve release date change" }));
+    await waitFor(() => expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({ requestId: "request-shell", previewHash: "a".repeat(64) })));
   });
 
   it("keeps an existing Manager thread title stable after streamed follow-up completion", async () => {

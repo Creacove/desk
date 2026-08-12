@@ -1,11 +1,21 @@
 import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
-import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
+import type {
+  CleanProductionView,
+  ConversationViewModel,
+  ManagerConversationContextAnswer,
+  ManagerMissionContextQuestion,
+  MissionGenesisResultViewModel,
+  MissionTaskViewModel,
+  ReleaseDateChangeRequestViewModel,
+  ReleaseSuccessArtifactViewModel,
+} from "../../types/cleanProduction";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OrbState } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
 import { SongContextAttachment } from "../music/SongRoomAttachments";
+import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
@@ -453,6 +463,10 @@ export function ConversationWorkspace({
   onSendContextAnswers,
   onRetryLastMessage,
   onOpenDecisionPackage,
+  onApproveReleaseDateChange,
+  onKeepReleaseDate,
+  onReviewReleaseSuccess,
+  onRetryReleaseSuccess,
   taskContext,
   onBackToTask,
   sendPending,
@@ -463,6 +477,10 @@ export function ConversationWorkspace({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   onOpenDecisionPackage?: () => void;
+  onApproveReleaseDateChange?: (request: ReleaseDateChangeRequestViewModel) => Promise<void>;
+  onKeepReleaseDate?: (artifact: ReleaseSuccessArtifactViewModel) => void;
+  onReviewReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => void;
+  onRetryReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => Promise<void>;
   taskContext?: MissionTaskViewModel;
   onBackToTask?: () => void;
   onSendMessage: (body: string, conversationId: string) => void;
@@ -482,6 +500,7 @@ export function ConversationWorkspace({
   const allCreatedWork = conversation.createdWork.length
     ? conversation.createdWork
     : messageCreatedWork;
+  const releaseSuccessArtifact = conversation.releaseSuccessArtifacts?.[0];
   const resolvedContextRequestIds = new Set(conversation.messages.flatMap((message) =>
     message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length
       ? [message.contextRequestId]
@@ -609,6 +628,18 @@ export function ConversationWorkspace({
           ))}
 
           {/* Thinking indicator — only shown when no streaming message exists yet */}
+          {releaseSuccessArtifact ? (
+            <ReleaseSuccessArtifact
+              artifact={releaseSuccessArtifact}
+              onApprove={onApproveReleaseDateChange ?? (async () => undefined)}
+              onKeepDate={onKeepReleaseDate ?? (() => undefined)}
+              onReviewAll={onReviewReleaseSuccess ?? (() => undefined)}
+              onOpenSong={(musicItemId) => void onOpenCreatedWork("music_item", musicItemId)}
+              onOpenMission={(missionId) => void onOpenCreatedWork("mission", missionId)}
+              onRetry={onRetryReleaseSuccess ?? (async () => undefined)}
+            />
+          ) : null}
+
           {isManagerThinking && !hasStreamingMessage ? (
             <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}
