@@ -114,6 +114,117 @@ const focusedReleaseDateProposalProperties = {
   },
 };
 
+const focusedReleaseOpportunityQueryProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["opportunityType"],
+  properties: {
+    opportunityType: { type: "string", enum: ["playlist", "press"] },
+  },
+};
+
+const focusedReleaseOpportunitySaveProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["opportunityType", "candidates"],
+  properties: {
+    opportunityType: { type: "string", enum: ["playlist", "press"] },
+    candidates: {
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "opportunityType",
+          "platform",
+          "targetName",
+          "sourceUrl",
+          "targetUrl",
+          "publicOrganization",
+          "publicContact",
+          "fit",
+          "sourceEvidence",
+          "confidence",
+          "limitations",
+          "paidPlacementClaim",
+          "requirements",
+        ],
+        properties: {
+          opportunityType: { type: "string", enum: ["playlist", "press"] },
+          platform: { type: ["string", "null"] },
+          targetName: { type: "string" },
+          sourceUrl: { type: "string" },
+          targetUrl: { type: ["string", "null"] },
+          publicOrganization: { type: ["string", "null"] },
+          publicContact: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            required: ["kind", "value", "sourceUrl", "verifiedAt"],
+            properties: {
+              kind: { type: "string", enum: ["email", "submission_form", "contact_page"] },
+              value: { type: "string" },
+              sourceUrl: { type: "string" },
+              verifiedAt: { type: ["string", "null"] },
+            },
+          },
+          fit: {
+            type: "object",
+            additionalProperties: false,
+            required: ["songCriteria", "targetCriteria", "explanation", "recency", "market"],
+            properties: {
+              songCriteria: { type: "array", items: { type: "string" } },
+              targetCriteria: { type: "array", items: { type: "string" } },
+              explanation: { type: "string" },
+              recency: { type: ["string", "null"] },
+              market: { type: ["string", "null"] },
+            },
+          },
+          sourceEvidence: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["source", "ref", "observedAt"],
+              properties: {
+                source: { type: "string" },
+                ref: { type: ["string", "null"] },
+                observedAt: { type: ["string", "null"] },
+              },
+            },
+          },
+          confidence: { type: "string", enum: ["high", "medium", "low", "unknown"] },
+          limitations: { type: "array", items: { type: "string" } },
+          paidPlacementClaim: { type: "boolean" },
+          requirements: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  },
+};
+
+const focusedReleaseOpportunityOutcomeProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["opportunityId", "status", "manualOutcome"],
+  properties: {
+    opportunityId: { type: "string" },
+    status: { type: "string", enum: ["watch", "shortlisted", "approved", "submitted_manually", "replied", "accepted", "declined", "skipped"] },
+    manualOutcome: { type: "string" },
+  },
+};
+
+const focusedSongDocumentProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["documentType", "title", "body"],
+  properties: {
+    documentType: { type: "string", enum: ["press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
+    title: { type: "string" },
+    body: { type: "string" },
+  },
+};
+
 const focusedMusicMetadataProperties = {
   type: "object",
   additionalProperties: false,
@@ -208,6 +319,34 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
     description: "Prepare a deterministic release-date impact preview and permission request for the exact attached unreleased song. This never applies the date change; approval stays with the user.",
     strict: true,
     parameters: focusedReleaseDateProposalProperties,
+  },
+  {
+    type: "function",
+    name: "query_focused_release_opportunities",
+    description: "Read the exact attached song, its scoped evidence, and existing playlist or press opportunities before public web research. Use only for the attached song.",
+    strict: true,
+    parameters: focusedReleaseOpportunityQueryProperties,
+  },
+  {
+    type: "function",
+    name: "save_focused_release_opportunities",
+    description: "Save a normalized, source-backed playlist or press shortlist for the exact attached song. This stores preparation and public provenance only; it never sends or submits anything.",
+    strict: true,
+    parameters: focusedReleaseOpportunitySaveProperties,
+  },
+  {
+    type: "function",
+    name: "record_focused_release_opportunity_outcome",
+    description: "Record a manual outcome for one saved playlist or press target on the exact attached song. The artist still performs any submission or outreach.",
+    strict: true,
+    parameters: focusedReleaseOpportunityOutcomeProperties,
+  },
+  {
+    type: "function",
+    name: "create_focused_song_document",
+    description: "Create or version one canonical song document through the existing Files pathway for the exact attached song. The document is a draft for review and sharing; it is never sent or published.",
+    strict: true,
+    parameters: focusedSongDocumentProperties,
   },
   {
     type: "function",

@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { executeManagerConversationTool } from "../supabase/functions/_shared/manager-conversation/toolExecutor";
+
+const { captureAppError } = vi.hoisted(() => ({ captureAppError: vi.fn() }));
+vi.mock("../supabase/functions/_shared/appError", () => ({ captureAppError }));
 import {
   classifyOpportunitySafety,
   dedupeOpportunityCandidates,
@@ -50,6 +54,41 @@ function candidate(overrides: Partial<ReleaseOpportunityCandidate> = {}): Releas
     ...overrides,
   };
 }
+
+function minimalOpportunityDb(options: { failOn?: "from" | "upsert" } = {}) {
+  const rows = (table: string) => table === "music_items"
+    ? [{ id: "song-1", title: "After Midnight", item_type: "song", metadata: { manual_details: { genre: "alt-r&b", mood: "late-night" } }, planned_release_date: "2026-08-26", released_at: null, lifecycle_stage: "ready" }]
+    : [];
+  const chain = (table: string) => {
+    const query: any = {
+      select() { return query; },
+      eq() { return query; },
+      in() { return query; },
+      order() { return query; },
+      limit() { return query; },
+      insert() { return query; },
+      upsert() {
+        if (options.failOn === "upsert") throw new Error("opportunity persistence unavailable");
+        return query;
+      },
+      update() { return query; },
+      async maybeSingle() { return { data: rows(table)[0] ?? null, error: null }; },
+      async single() { return { data: rows(table)[0] ?? { id: "created-1" }, error: null }; },
+      then(resolve: (value: { data: unknown[]; error: null }) => unknown) {
+        return Promise.resolve({ data: rows(table), error: null }).then(resolve);
+      },
+    };
+    return query;
+  };
+  return {
+    from(table: string) {
+      if (options.failOn === "from") throw new Error("opportunity search unavailable");
+      return chain(table);
+    },
+  };
+}
+
+const managerScope = { accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1", musicSubject: { type: "music_item" as const, id: "song-1" } };
 
 describe("release opportunity normalization", () => {
   it("normalizes HTTPS URLs and collapses case/trailing-slash duplicates", () => {
@@ -160,5 +199,44 @@ describe("release opportunity normalization", () => {
       candidate({ sourceUrl: "https://example.com/paid", paidPlacementClaim: true }),
     ].map((item) => normalizeOpportunityBrief(item, song)).filter((item): item is NonNullable<typeof item> => Boolean(item && item.status === "shortlisted"));
     expect(shortlist).toEqual([]);
+  });
+
+  it("logs unexpected search, contact verification, and persistence failures with the required stages", async () => {
+    captureAppError.mockReset();
+    captureAppError.mockResolvedValue("error-event-1");
+
+    await expect(executeManagerConversationTool(
+      minimalOpportunityDb({ failOn: "from" }),
+      managerScope,
+      "query_focused_release_opportunities",
+      { opportunityType: "playlist" },
+    )).resolves.toMatchObject({ status: "failed", retryable: true });
+    expect(captureAppError).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      refs: expect.objectContaining({ stage: "opportunity_search" }),
+    }));
+
+    captureAppError.mockReset();
+    captureAppError.mockResolvedValue("error-event-2");
+    await expect(executeManagerConversationTool(
+      minimalOpportunityDb(),
+      managerScope,
+      "save_focused_release_opportunities",
+      { opportunityType: "playlist", candidates: [{ ...candidate(), fit: null }] },
+    )).resolves.toMatchObject({ status: "failed", retryable: true });
+    expect(captureAppError).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      refs: expect.objectContaining({ stage: "contact_verification" }),
+    }));
+
+    captureAppError.mockReset();
+    captureAppError.mockResolvedValue("error-event-3");
+    await expect(executeManagerConversationTool(
+      minimalOpportunityDb({ failOn: "upsert" }),
+      managerScope,
+      "save_focused_release_opportunities",
+      { opportunityType: "playlist", candidates: [candidate()] },
+    )).resolves.toMatchObject({ status: "failed", retryable: true });
+    expect(captureAppError).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      refs: expect.objectContaining({ stage: "opportunity_persistence" }),
+    }));
   });
 });

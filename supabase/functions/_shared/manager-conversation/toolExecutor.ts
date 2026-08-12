@@ -1,10 +1,25 @@
 import { writeWorkspaceEvent } from "../workspaceEvents.ts";
 import { manualSongWorkspaceCopy } from "../manualSongWorkspace.ts";
 import { executeDiscoveryTool } from "../manager-agent/discoveryTools.ts";
+import { captureAppError } from "../appError.ts";
 import type { ManagerConversationCreatedWork } from "../openaiManagerConversation.ts";
 import { assessReleaseSuccess } from "../release-success/readiness.ts";
+import {
+  dedupeOpportunityCandidates,
+  normalizeOpportunityBrief,
+  normalizePublicEmail,
+  normalizePublicUrl,
+} from "../release-success/opportunities.ts";
 import { createSchedulePreview } from "../release-success/schedule.ts";
-import type { ReleaseFact, ReleaseSuccessPacket, ReleaseTaskScheduleBindingInput } from "../release-success/types.ts";
+import type {
+  ReleaseFact,
+  ReleaseOpportunityBrief,
+  ReleaseOpportunityCandidate,
+  ReleaseOpportunitySongContext,
+  ReleaseSuccessPacket,
+  ReleaseTaskScheduleBindingInput,
+} from "../release-success/types.ts";
+import { persistFocusedSongDocumentDraft } from "../songDocumentDraft.ts";
 
 type ManagerToolInput = {
   accountId: string;
@@ -37,6 +52,10 @@ export async function executeManagerConversationTool(
   if (name === "read_focused_music_subject") return readFocusedMusicSubject(db, input);
   if (name === "read_focused_release_success") return readFocusedReleaseSuccess(db, input);
   if (name === "propose_focused_release_date_change") return proposeFocusedReleaseDateChange(db, input, args);
+  if (name === "query_focused_release_opportunities") return queryFocusedReleaseOpportunities(db, input, args);
+  if (name === "save_focused_release_opportunities") return saveFocusedReleaseOpportunities(db, input, args);
+  if (name === "record_focused_release_opportunity_outcome") return recordFocusedReleaseOpportunityOutcome(db, input, args);
+  if (name === "create_focused_song_document") return createFocusedSongDocument(db, input, args);
   if (name === "read_focused_release_readiness") return readFocusedReleaseReadiness(db, input);
   if (name === "refresh_focused_music_intelligence") return refreshFocusedMusicIntelligence(db, input);
   if (name === "update_focused_music_metadata") return updateFocusedMusicMetadata(db, input, args);
@@ -489,6 +508,429 @@ async function proposeFocusedReleaseDateChange(db: SupabaseLike, input: ManagerT
   });
   if (error) throw error;
   return { status: "proposed", request: { ...record(data), preview, previewHash: preview.previewHash } };
+}
+
+async function queryFocusedReleaseOpportunities(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Playlist and press research is currently scoped to an attached song." };
+  }
+  const opportunityType = requiredOpportunityType(args.opportunityType);
+  try {
+    const context = await loadOpportunityContext(db, input, opportunityType);
+    if (!context) return { status: "not_found", subject };
+    return {
+      status: "ready_for_research",
+      song: context.song,
+      evidence: context.evidence,
+      existingOpportunities: context.existingOpportunities,
+      searchPlan: {
+        opportunityType,
+        publicSourcesOnly: true,
+        webSearchRequired: true,
+        spotifyEditorialSeparate: opportunityType === "playlist",
+        independentOutreachSeparate: opportunityType === "playlist",
+        targetCount: { min: 5, max: 8 },
+        preserveWatchTargets: true,
+      },
+    };
+  } catch (error) {
+    return failedOpportunityResult(error, input, "opportunity_search", "Playlist and press research could not be completed.");
+  }
+}
+
+async function saveFocusedReleaseOpportunities(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Playlist and press research is currently scoped to an attached song." };
+  }
+  const opportunityType = requiredOpportunityType(args.opportunityType);
+  const rawCandidates = Array.isArray(args.candidates) ? args.candidates : [];
+  if (!rawCandidates.length) return { status: "no_matches", saved: [], watch: [], excluded: [], rejected: [] };
+  if (rawCandidates.length > 12) throw new Error("A shortlist can contain at most 12 candidates.");
+
+  // These are expected model-validation failures, not application failures. Do not
+  // persist a source-less target or a contact that cannot be traced to a public page.
+  rawCandidates.forEach((raw) => assertPublicOpportunityProvenance(record(raw)));
+
+  let saved: ReleaseOpportunityBrief[] = [];
+  const watch: ReleaseOpportunityBrief[] = [];
+  const excluded: ReleaseOpportunityBrief[] = [];
+  const rejected: Array<{ targetName: string; reason: string }> = [];
+  try {
+    const context = await loadOpportunityContext(db, input, opportunityType);
+    if (!context) return { status: "not_found", subject };
+    const planRows = await selectFocusedRows(
+      db,
+      "music_release_plans",
+      "mission_id",
+      input,
+      [["music_item_id", subject.id]],
+      1,
+    );
+    const missionId = stringArg((planRows as any[])[0]?.mission_id) || null;
+
+    const normalizedCandidates = dedupeOpportunityCandidates(rawCandidates.map((raw) => {
+      const source = record(raw);
+      if (!isRecord(source.fit) || !Array.isArray(source.sourceEvidence) || !source.sourceEvidence.length) {
+        throw new OpportunityCandidateError("Candidate fit and source evidence are required.");
+      }
+      return toOpportunityCandidate(source, opportunityType);
+    }));
+
+    for (const candidate of normalizedCandidates) {
+      // Spotify editorial is a pitch/handoff route. Never carry an editor email
+      // into the record, even if a model tries to attach one.
+      if (isSpotifyEditorial(candidate)) candidate.publicContact = undefined;
+      const brief = normalizeOpportunityBrief(candidate, context.song);
+      if (!brief) {
+        rejected.push({ targetName: candidate.targetName || "Unnamed target", reason: "The candidate lacks song-specific fit or public evidence." });
+        continue;
+      }
+      if (brief.safetyState === "excluded") excluded.push(brief);
+      else {
+        saved.push(brief);
+        if (brief.status === "watch") watch.push(brief);
+      }
+    }
+
+    if (saved.length) {
+      const rows = saved.map((brief) => opportunityRow(brief, input, subject.id, missionId));
+      const { error } = await db.from("release_opportunities")
+        .upsert(rows, { onConflict: "music_item_id,opportunity_type,dedupe_key" })
+        .select("id");
+      if (error) throw error;
+      await writeWorkspaceEvent(db, {
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        eventType: "release_opportunities_saved",
+        targetType: "music_item",
+        targetId: subject.id,
+        dedupeKey: `release-opportunities:${subject.id}:${opportunityType}:${stableTextHash(saved.map((item) => item.dedupeKey).sort().join("|"))}`,
+        summary: `${saved.length} ${opportunityType} research target${saved.length === 1 ? "" : "s"} saved for review.`,
+        refreshScope: ["music", "missions", "conversations"],
+        payload: {
+          opportunityType,
+          saved: saved.map((item) => ({ targetName: item.targetName, dedupeKey: item.dedupeKey, status: item.status })),
+          excluded: excluded.map((item) => ({ targetName: item.targetName, reason: "unsafe placement claim" })),
+        },
+      });
+    }
+
+    return {
+      status: saved.length ? "saved" : "no_matches",
+      musicItemId: subject.id,
+      missionId: missionId || undefined,
+      saved,
+      watch,
+      excluded,
+      rejected,
+      handoffs: saved.filter(isSpotifyEditorial).map((item) => ({
+        targetName: item.targetName,
+        kind: "pitch",
+        nextAction: "Prepare a song-specific editorial pitch for the platform's official route.",
+        contact: null,
+      })),
+    };
+  } catch (error) {
+    const failure = await failedOpportunityResult(error, input, error instanceof OpportunityCandidateError ? "contact_verification" : "opportunity_persistence", "Release targets could not be saved safely.");
+    return {
+      ...failure,
+      musicItemId: subject.id,
+      saved,
+      watch,
+      excluded,
+      rejected,
+    };
+  }
+}
+
+async function recordFocusedReleaseOpportunityOutcome(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Opportunity outcomes are currently scoped to an attached song." };
+  }
+  const opportunityId = requiredText(args.opportunityId, "Opportunity ID", 120);
+  const outcome = requiredOpportunityStatus(args.status);
+  const manualOutcome = requiredText(args.manualOutcome, "Manual outcome", 2_000);
+  const { data, error } = await scopedUpdate(db, "release_opportunities", {
+    status: outcome,
+    manual_outcome: manualOutcome,
+  }, input)
+    .eq("id", opportunityId)
+    .eq("music_item_id", subject.id)
+    .select("id,status,manual_outcome")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.id) return { status: "not_found", opportunityId };
+  await writeMusicManagerEvent(db, input, {
+    eventType: "release_opportunity_outcome_recorded",
+    subject,
+    summary: `Recorded the ${outcome.replace(/_/g, " ")} outcome for a release target.`,
+    payload: { opportunityId, outcome, manualOutcome },
+  });
+  return { status: "recorded", opportunityId, outcome, manualOutcome };
+}
+
+async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Song documents are currently scoped to an attached song." };
+  }
+  const documentType = requiredSongDocumentType(args.documentType);
+  const title = requiredText(args.title, "Document title", 240);
+  const body = requiredText(args.body, "Document body", 60_000);
+  try {
+    await persistFocusedSongDocumentDraft(
+      db,
+      { ...input, body: `Create a draft ${documentType} titled ${title}.` },
+      input.runId ?? `manager-document-${subject.id}`,
+      body,
+      false,
+    );
+    return { status: "drafted", musicItemId: subject.id, documentType, title };
+  } catch (error) {
+    return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
+  }
+}
+
+async function loadOpportunityContext(db: SupabaseLike, input: ManagerToolInput, opportunityType: "playlist" | "press") {
+  const subject = requireFocusedMusicSubject(input);
+  const { data: identity, error: identityError } = await scopedQuery(
+    db,
+    "music_items",
+    "id,title,item_type,lifecycle_stage,metadata",
+    input,
+  ).eq("id", subject.id).maybeSingle();
+  if (identityError) throw identityError;
+  if (!identity?.id) return null;
+
+  const [evidenceRows, opportunityRows] = await Promise.all([
+    selectFocusedRows(
+      db,
+      "evidence_items",
+      "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,provenance,confidence,limitation,raw_ref,created_at",
+      input,
+      [["subject_type", "music_item"], ["subject_id", subject.id]],
+      40,
+    ),
+    selectFocusedRows(
+      db,
+      "release_opportunities",
+      "id,music_item_id,opportunity_type,platform,target_name,source_url,target_url,public_organization,contact_kind,public_contact_value,public_contact_source_url,contact_verified_at,fit_json,evidence_json,confidence,limitations_json,safety_state,requirements_json,package_json,status,manual_outcome,dedupe_key,created_at,updated_at",
+      input,
+      [["music_item_id", subject.id], ["opportunity_type", opportunityType]],
+      40,
+    ),
+  ]);
+
+  return {
+    song: opportunitySongContext(identity),
+    evidence: (evidenceRows as any[]).map(normalizeOpportunityEvidence),
+    existingOpportunities: (opportunityRows as any[]).map(normalizeExistingOpportunity),
+  };
+}
+
+function opportunitySongContext(identity: any): ReleaseOpportunitySongContext {
+  const metadata = record(identity.metadata);
+  const details = record(metadata.manual_details);
+  return {
+    musicItemId: stringArg(identity.id),
+    title: stringArg(identity.title),
+    genres: firstStringList(details, metadata, ["genre", "genres", "style"]),
+    moods: firstStringList(details, metadata, ["mood", "moods", "tone"]),
+    markets: firstStringList(details, metadata, ["market", "markets", "territory", "territories"]),
+    comparableArtists: firstStringList(details, metadata, ["comparable_artist", "comparable_artists", "similar_artists"]),
+    artistStage: stringArg(identity.lifecycle_stage) || undefined,
+  };
+}
+
+function firstStringList(primary: Record<string, unknown>, secondary: Record<string, unknown>, keys: string[]) {
+  for (const key of keys) {
+    const values = stringList(primary[key] ?? secondary[key]);
+    if (values.length) return values;
+  }
+  return [];
+}
+
+function stringList(value: unknown) {
+  if (Array.isArray(value)) return value.map(stringArg).filter(Boolean).slice(0, 12);
+  return stringArg(value).split(/[,;|]/).map((item) => item.trim()).filter(Boolean).slice(0, 12);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeOpportunityEvidence(row: any) {
+  return {
+    id: row.id,
+    source: row.source,
+    sourceKind: row.source_kind,
+    evidenceType: row.evidence_type,
+    subjectType: row.subject_type,
+    subjectId: row.subject_id,
+    subject: row.subject_label,
+    provenance: row.provenance,
+    confidence: row.confidence,
+    limitation: row.limitation,
+    rawRef: row.raw_ref,
+    createdAt: row.created_at,
+  };
+}
+
+function normalizeExistingOpportunity(row: any) {
+  return {
+    id: row.id,
+    opportunityType: row.opportunity_type,
+    platform: row.platform,
+    targetName: row.target_name,
+    sourceUrl: row.source_url,
+    targetUrl: row.target_url,
+    publicOrganization: row.public_organization,
+    publicContact: row.contact_kind && row.public_contact_value
+      ? { kind: row.contact_kind, value: row.public_contact_value, sourceUrl: row.public_contact_source_url, verifiedAt: row.contact_verified_at }
+      : undefined,
+    fit: row.fit_json,
+    sourceEvidence: row.evidence_json,
+    confidence: row.confidence,
+    limitations: row.limitations_json,
+    safetyState: row.safety_state,
+    requirements: row.requirements_json,
+    package: row.package_json,
+    status: row.status,
+    manualOutcome: row.manual_outcome,
+    dedupeKey: row.dedupe_key,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function toOpportunityCandidate(source: Record<string, unknown>, defaultType: "playlist" | "press"): ReleaseOpportunityCandidate {
+  const fit = source.fit as Record<string, unknown>;
+  const publicContact = isRecord(source.publicContact) ? source.publicContact : undefined;
+  return {
+    opportunityType: source.opportunityType === "press" || source.opportunityType === "playlist" ? source.opportunityType : defaultType,
+    platform: stringArg(source.platform) || undefined,
+    targetName: stringArg(source.targetName),
+    sourceUrl: stringArg(source.sourceUrl),
+    targetUrl: stringArg(source.targetUrl) || undefined,
+    publicOrganization: stringArg(source.publicOrganization) || undefined,
+    publicContact: publicContact
+      ? {
+          kind: publicContact.kind as "email" | "submission_form" | "contact_page",
+          value: stringArg(publicContact.value),
+          sourceUrl: stringArg(publicContact.sourceUrl),
+          verifiedAt: stringArg(publicContact.verifiedAt) || undefined,
+        }
+      : undefined,
+    fit: {
+      songCriteria: stringList(fit.songCriteria),
+      targetCriteria: stringList(fit.targetCriteria),
+      explanation: stringArg(fit.explanation),
+      recency: stringArg(fit.recency) || undefined,
+      market: stringArg(fit.market) || undefined,
+    },
+    sourceEvidence: (source.sourceEvidence as any[]).map((item) => {
+      const evidence = record(item);
+      return { source: stringArg(evidence.source), ref: stringArg(evidence.ref) || undefined, observedAt: stringArg(evidence.observedAt) || undefined };
+    }),
+    confidence: ["high", "medium", "low", "unknown"].includes(stringArg(source.confidence))
+      ? stringArg(source.confidence) as ReleaseOpportunityCandidate["confidence"]
+      : "unknown",
+    limitations: stringList(source.limitations),
+    paidPlacementClaim: source.paidPlacementClaim === true,
+    requirements: stringList(source.requirements),
+  };
+}
+
+function opportunityRow(brief: ReleaseOpportunityBrief, input: ManagerToolInput, musicItemId: string, missionId: string | null) {
+  return {
+    account_id: input.accountId,
+    artist_workspace_id: input.artistWorkspaceId,
+    artist_id: input.artistId,
+    music_item_id: musicItemId,
+    mission_id: missionId,
+    opportunity_type: brief.opportunityType,
+    platform: brief.platform ?? null,
+    target_name: brief.targetName,
+    source_url: brief.sourceUrl,
+    target_url: brief.targetUrl ?? null,
+    public_organization: brief.publicOrganization ?? null,
+    contact_kind: brief.publicContact?.kind ?? null,
+    public_contact_value: brief.publicContact?.value ?? null,
+    public_contact_source_url: brief.publicContact?.sourceUrl ?? null,
+    contact_verified_at: brief.publicContact?.verifiedAt ?? null,
+    fit_json: brief.fit,
+    evidence_json: brief.sourceEvidence,
+    confidence: brief.confidence,
+    limitations_json: brief.limitations,
+    safety_state: brief.safetyState,
+    requirements_json: brief.requirements ?? [],
+    package_json: { handoffOnly: true, sendEnabled: false },
+    status: brief.status,
+    dedupe_key: brief.dedupeKey,
+  };
+}
+
+function assertPublicOpportunityProvenance(source: Record<string, unknown>) {
+  if (!normalizePublicUrl(stringArg(source.sourceUrl))) throw new Error("A public HTTPS source URL is required for opportunity provenance.");
+  if (source.publicContact == null) return;
+  const contact = record(source.publicContact);
+  const sourceUrl = normalizePublicUrl(stringArg(contact.sourceUrl));
+  if (!sourceUrl) throw new Error("A public contact must include its source URL.");
+  const kind = stringArg(contact.kind);
+  const value = stringArg(contact.value);
+  const validValue = kind === "email" ? normalizePublicEmail(value) : normalizePublicUrl(value);
+  if (!validValue || !stringArg(contact.verifiedAt)) throw new Error("A public contact must be verifiable from its cited source.");
+}
+
+function isSpotifyEditorial(candidate: Pick<ReleaseOpportunityCandidate, "platform" | "targetName">) {
+  return /spotify\s+editorial|spotify\s+for\s+artists|editorial\s+playlist/i.test(`${candidate.platform ?? ""} ${candidate.targetName}`);
+}
+
+function requiredOpportunityType(value: unknown): "playlist" | "press" {
+  const type = stringArg(value).toLowerCase();
+  if (type !== "playlist" && type !== "press") throw new Error("Opportunity type must be playlist or press.");
+  return type;
+}
+
+function requiredOpportunityStatus(value: unknown) {
+  const status = stringArg(value).toLowerCase();
+  if (!["watch", "shortlisted", "approved", "submitted_manually", "replied", "accepted", "declined", "skipped"].includes(status)) {
+    throw new Error("Opportunity outcome is invalid.");
+  }
+  return status;
+}
+
+function requiredSongDocumentType(value: unknown) {
+  const type = stringArg(value).toLowerCase();
+  if (!["press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"].includes(type)) {
+    throw new Error("Song document type is invalid.");
+  }
+  return type;
+}
+
+class OpportunityCandidateError extends Error {}
+
+async function failedOpportunityResult(error: unknown, input: ManagerToolInput, stage: "opportunity_search" | "contact_verification" | "opportunity_persistence", publicMessage: string) {
+  const errorEventId = await captureAppError(error, {
+    functionName: "manager-conversation-tool-executor",
+    operation: "release_opportunity_workflow",
+    source: "edge",
+    publicMessage,
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    refs: {
+      conversation_id: input.conversationId,
+      manager_run_id: input.runId,
+      music_item_id: input.musicSubject?.type === "music_item" ? input.musicSubject.id : null,
+      stage,
+    },
+  });
+  return { status: "failed", stage, retryable: true, reference: errorEventId ?? undefined };
 }
 
 async function updateFocusedMusicMetadata(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {

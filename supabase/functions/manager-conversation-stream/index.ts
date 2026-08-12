@@ -805,7 +805,7 @@ async function callOpenAIManagerConversation(
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
     promptCacheMode: "explicit",
     executeTool: async (name, args) => {
-      if (!isReleaseSuccessTool(name)) return executeManagerConversationTool(db, toolInput, name, args);
+      if (!isReleaseSuccessTool(name) && !isOpportunityTool(name)) return executeManagerConversationTool(db, toolInput, name, args);
       try {
         const result = await executeManagerConversationTool(db, toolInput, name, args);
         releaseSuccessToolResults.push({ tool: name, result });
@@ -813,9 +813,9 @@ async function callOpenAIManagerConversation(
       } catch (error) {
         const errorEventId = await captureAppError(error, {
           functionName: "manager-conversation-stream",
-          operation: "release_success_tool",
+          operation: isOpportunityTool(name) ? "release_opportunity_tool" : "release_success_tool",
           source: "edge",
-          publicMessage: "Release materials could not be checked.",
+          publicMessage: isOpportunityTool(name) ? "Release research could not be completed safely." : "Release materials could not be checked.",
           accountId: input.accountId,
           artistWorkspaceId: input.artistWorkspaceId,
           artistId: input.artistId,
@@ -824,7 +824,7 @@ async function callOpenAIManagerConversation(
             conversation_id: conversationId,
             manager_run_id: runId,
             music_item_id: input.musicSubject?.type === "music_item" ? input.musicSubject.id : null,
-            stage: name,
+            stage: isOpportunityTool(name) ? opportunityToolStage(name) : name,
           },
         });
         releaseSuccessToolResults.push({
@@ -853,6 +853,19 @@ type ReleaseSuccessToolResult = {
 
 function isReleaseSuccessTool(tool: string) {
   return tool === "read_focused_release_success" || tool === "propose_focused_release_date_change";
+}
+
+function isOpportunityTool(tool: string) {
+  return tool === "query_focused_release_opportunities"
+    || tool === "save_focused_release_opportunities"
+    || tool === "record_focused_release_opportunity_outcome"
+    || tool === "create_focused_song_document";
+}
+
+function opportunityToolStage(tool: string) {
+  if (tool === "query_focused_release_opportunities") return "opportunity_search";
+  if (tool === "save_focused_release_opportunities") return "contact_verification";
+  return "opportunity_persistence";
 }
 
 async function streamReleaseSuccessArtifacts(
@@ -929,6 +942,7 @@ function releaseSuccessArtifactFromToolResult(
   latestPacket: Record<string, any> | null,
 ): Record<string, any> | null {
   if (input.musicSubject?.type !== "music_item") return null;
+  if (!isReleaseSuccessTool(toolResult.tool)) return null;
   const result = isRecord(toolResult.result) ? toolResult.result : {};
   const packet = isRecord(result.packet) ? result.packet : latestPacket;
   const musicItem = isRecord(packet?.musicItem) ? packet.musicItem : {};
@@ -1561,6 +1575,10 @@ function safeToolTraceSummary(trace: ManagerAgentToolTrace[]) {
 function managerToolLabel(tool: string) {
   if (tool === "read_focused_release_success") return "Release materials checked";
   if (tool === "propose_focused_release_date_change") return "Release date impact preview ready";
+  if (tool === "query_focused_release_opportunities") return "Researching public release targets";
+  if (tool === "save_focused_release_opportunities") return "Saving release targets";
+  if (tool === "record_focused_release_opportunity_outcome") return "Recording outreach outcome";
+  if (tool === "create_focused_song_document") return "Preparing song document";
   if (tool === "web_search") return "Searching the web";
   if (tool === "query_evidence_items") return "Checking evidence";
   if (tool === "query_active_missions") return "Reviewing mission state";
