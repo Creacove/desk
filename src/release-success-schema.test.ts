@@ -31,6 +31,13 @@ describe("release success foundation schema", () => {
     expect(sql).toMatch(/for update/i);
     expect(sql).toMatch(/expected_plan_revision/i);
     expect(sql).toMatch(/release_plan_changed/i);
+    expect(sql).toMatch(/release_plan_stale/i);
+    expect(sql).toMatch(/release_request_expired/i);
+    expect(sql).toMatch(/release_request_not_pending/i);
+    expect(sql).toMatch(/release_already_live/i);
+    expect(sql).toMatch(/requestId/);
+    expect(sql).toMatch(/previousRevision/);
+    expect(sql).toMatch(/nextDeadline/);
   });
 
   it("keeps tables account-scoped and protected", () => {

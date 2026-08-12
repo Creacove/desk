@@ -416,6 +416,7 @@ declare
   v_existing public.release_date_change_requests%rowtype;
   v_permission_id uuid;
   v_request public.release_date_change_requests%rowtype;
+  v_request_created boolean := false;
 begin
   if p_proposed_date is null then
     raise exception 'release_date_required';
@@ -434,6 +435,21 @@ begin
   end if;
   if p_expected_plan_revision is null or p_expected_plan_revision < 0 then
     raise exception 'release_plan_revision_invalid';
+  end if;
+  if p_requested_by is not null and not exists (
+    select 1
+    from public.account_memberships membership
+    where membership.account_id = p_account_id
+      and membership.user_id = p_requested_by
+      and membership.status = 'active'
+  ) then
+    raise exception 'release_request_owner_invalid';
+  end if;
+  if jsonb_typeof(coalesce(p_preview, '{}'::jsonb)) <> 'object'
+    or p_preview ->> 'proposedDate' is distinct from p_proposed_date::text
+    or p_preview ->> 'expectedRevision' is distinct from p_expected_plan_revision::text
+    or p_preview ->> 'previewHash' is distinct from trim(p_preview_hash) then
+    raise exception 'release_preview_mismatch';
   end if;
 
   select * into v_existing
@@ -534,6 +550,9 @@ begin
   if p_expected_plan_revision <> v_plan.revision then
     raise exception 'release_plan_stale';
   end if;
+  if p_preview ->> 'fromDate' is distinct from v_plan.approved_release_date::text then
+    raise exception 'release_preview_mismatch';
+  end if;
   if v_plan.status in ('released', 'cancelled') then
     raise exception 'release_plan_not_editable';
   end if;
@@ -542,72 +561,119 @@ begin
     raise exception 'release_date_noop';
   end if;
 
-  insert into public.permission_requests (
-    account_id,
-    artist_workspace_id,
-    artist_id,
-    mission_id,
-    request_type,
-    title,
-    body,
-    risk,
-    parameters,
-    status,
-    expires_at,
-    created_from_action_id
-  ) values (
-    p_account_id,
-    p_artist_workspace_id,
-    p_artist_id,
-    v_plan.mission_id,
-    'release_plan_change',
-    'Approve release date change',
-    trim(p_reason),
-    'Changing the release date recalculates only explicitly release-bound mission deadlines.',
-    jsonb_build_object(
-      'music_item_id', p_music_item_id,
-      'release_plan_id', v_plan.id,
-      'from_date', v_plan.approved_release_date,
-      'proposed_date', p_proposed_date,
-      'expected_plan_revision', v_plan.revision,
-      'preview_hash', trim(p_preview_hash)
-    ),
-    'pending',
-    p_expires_at,
-    null
-  ) returning id into v_permission_id;
+  begin
+    insert into public.permission_requests (
+      account_id,
+      artist_workspace_id,
+      artist_id,
+      mission_id,
+      request_type,
+      title,
+      body,
+      risk,
+      parameters,
+      status,
+      expires_at,
+      created_from_action_id
+    ) values (
+      p_account_id,
+      p_artist_workspace_id,
+      p_artist_id,
+      v_plan.mission_id,
+      'release_plan_change',
+      'Approve release date change',
+      trim(p_reason),
+      'Changing the release date recalculates only explicitly release-bound mission deadlines.',
+      jsonb_build_object(
+        'music_item_id', p_music_item_id,
+        'release_plan_id', v_plan.id,
+        'from_date', v_plan.approved_release_date,
+        'proposed_date', p_proposed_date,
+        'expected_plan_revision', v_plan.revision,
+        'preview_hash', trim(p_preview_hash)
+      ),
+      'pending',
+      p_expires_at,
+      null
+    ) returning id into v_permission_id;
 
-  insert into public.release_date_change_requests (
-    account_id,
-    artist_workspace_id,
-    artist_id,
-    release_plan_id,
-    permission_request_id,
-    from_date,
-    proposed_date,
-    reason,
-    expected_plan_revision,
-    preview_hash,
-    preview_json,
-    idempotency_key,
-    expires_at,
-    requested_by
-  ) values (
-    p_account_id,
-    p_artist_workspace_id,
-    p_artist_id,
-    v_plan.id,
-    v_permission_id,
-    v_plan.approved_release_date,
-    p_proposed_date,
-    trim(p_reason),
-    v_plan.revision,
-    trim(p_preview_hash),
-    coalesce(p_preview, '{}'::jsonb),
-    trim(p_idempotency_key),
-    p_expires_at,
-    p_requested_by
-  ) returning * into v_request;
+    insert into public.release_date_change_requests (
+      account_id,
+      artist_workspace_id,
+      artist_id,
+      release_plan_id,
+      permission_request_id,
+      from_date,
+      proposed_date,
+      reason,
+      expected_plan_revision,
+      preview_hash,
+      preview_json,
+      idempotency_key,
+      expires_at,
+      requested_by
+    ) values (
+      p_account_id,
+      p_artist_workspace_id,
+      p_artist_id,
+      v_plan.id,
+      v_permission_id,
+      v_plan.approved_release_date,
+      p_proposed_date,
+      trim(p_reason),
+      v_plan.revision,
+      trim(p_preview_hash),
+      coalesce(p_preview, '{}'::jsonb),
+      trim(p_idempotency_key),
+      p_expires_at,
+      p_requested_by
+    ) on conflict (account_id, idempotency_key) do nothing returning * into v_request;
+    if not found then
+      delete from public.permission_requests
+      where id = v_permission_id;
+      select * into v_request
+      from public.release_date_change_requests
+      where account_id = p_account_id
+        and idempotency_key = trim(p_idempotency_key)
+      for update;
+      if not found then
+        raise exception 'release_idempotency_race';
+      end if;
+    else
+      v_request_created := true;
+    end if;
+  exception when unique_violation then
+    select * into v_request
+    from public.release_date_change_requests
+    where account_id = p_account_id
+      and idempotency_key = trim(p_idempotency_key)
+    for update;
+    if not found then
+      raise;
+    end if;
+  end;
+
+  if not v_request_created then
+    if v_request.release_plan_id is distinct from v_plan.id
+      or v_request.proposed_date is distinct from p_proposed_date
+      or v_request.expected_plan_revision is distinct from p_expected_plan_revision
+      or v_request.preview_hash is distinct from trim(p_preview_hash) then
+      raise exception 'release_idempotency_conflict';
+    end if;
+    return jsonb_build_object(
+      'requestId', v_request.id,
+      'releasePlanId', v_request.release_plan_id,
+      'musicItemId', p_music_item_id,
+      'status', v_request.status,
+      'fromDate', v_request.from_date,
+      'proposedDate', v_request.proposed_date,
+      'expectedPlanRevision', v_request.expected_plan_revision,
+      'previewHash', v_request.preview_hash,
+      'preview', v_request.preview_json,
+      'expiresAt', v_request.expires_at,
+      'result', v_request.result_json
+    );
+  end if;
 
   update public.music_release_plans
   set status = 'pending_approval'
@@ -653,6 +719,8 @@ declare
   v_preview_item jsonb;
   v_from_deadline timestamptz;
   v_new_deadline timestamptz;
+  v_binding_offset integer;
+  v_preview_to date;
   v_moved jsonb := '[]'::jsonb;
   v_preserved jsonb := '[]'::jsonb;
   v_next_task jsonb := null;
@@ -664,6 +732,15 @@ begin
   end if;
   if nullif(trim(p_idempotency_key), '') is null then
     raise exception 'release_idempotency_key_invalid';
+  end if;
+  if p_approved_by is not null and not exists (
+    select 1
+    from public.account_memberships membership
+    where membership.account_id = p_account_id
+      and membership.user_id = p_approved_by
+      and membership.status = 'active'
+  ) then
+    raise exception 'release_approval_owner_invalid';
   end if;
 
   select * into v_request
@@ -702,6 +779,9 @@ begin
     or v_request.preview_hash <> trim(p_preview_hash) then
     raise exception 'release_idempotency_conflict';
   end if;
+  if v_request.preview_json ->> 'previewHash' is distinct from v_request.preview_hash then
+    raise exception 'release_preview_mismatch';
+  end if;
 
   select * into v_plan
   from public.music_release_plans
@@ -718,8 +798,28 @@ begin
     or v_plan.approved_release_date is distinct from v_request.from_date then
     raise exception 'release_plan_stale';
   end if;
+  if v_request.preview_json ->> 'fromDate' is distinct from v_plan.approved_release_date::text
+    or v_request.preview_json ->> 'proposedDate' is distinct from v_request.proposed_date::text
+    or v_request.preview_json ->> 'expectedRevision' is distinct from v_request.expected_plan_revision::text then
+    raise exception 'release_preview_mismatch';
+  end if;
   if v_plan.status in ('released', 'cancelled') then
     raise exception 'release_already_live';
+  end if;
+
+  select * into v_permission
+  from public.permission_requests
+  where id = v_request.permission_request_id
+    and account_id = p_account_id
+    and artist_workspace_id = p_artist_workspace_id
+    and artist_id = p_artist_id
+  for update;
+
+  if not found or v_permission.status <> 'pending' then
+    raise exception 'release_request_not_pending';
+  end if;
+  if v_permission.expires_at is not null and v_permission.expires_at <= now() then
+    raise exception 'release_request_expired';
   end if;
 
   select * into v_song
@@ -753,6 +853,28 @@ begin
     if v_task.deadline is distinct from nullif(v_preview_item ->> 'from', '')::timestamptz then
       raise exception 'release_schedule_stale';
     end if;
+    select binding.offset_days into v_binding_offset
+    from public.release_task_schedule_bindings binding
+    where binding.release_plan_id = v_plan.id
+      and binding.task_id = v_task.id
+      and binding.account_id = p_account_id
+      and binding.artist_workspace_id = p_artist_workspace_id
+      and binding.artist_id = p_artist_id
+      and binding.active
+    for update;
+    if not found then
+      raise exception 'release_schedule_stale';
+    end if;
+    if nullif(v_preview_item ->> 'to', '') !~ '^\d{4}-\d{2}-\d{2}$' then
+      raise exception 'release_preview_mismatch';
+    end if;
+    v_preview_to := to_date(v_preview_item ->> 'to', 'YYYY-MM-DD');
+    if to_char(v_preview_to, 'YYYY-MM-DD') <> v_preview_item ->> 'to' then
+      raise exception 'release_preview_mismatch';
+    end if;
+    if v_preview_to is distinct from v_request.proposed_date + v_binding_offset then
+      raise exception 'release_preview_mismatch';
+    end if;
   end loop;
 
   for v_binding in
@@ -764,16 +886,46 @@ begin
       and binding.artist_workspace_id = p_artist_workspace_id
       and binding.artist_id = p_artist_id
       and binding.active
+      and task.status::text in ('open', 'proposed', 'needs_approval', 'approved', 'in_progress', 'blocked', 'missed', 'completed', 'archived')
     order by binding.offset_days, binding.task_id
     for update of task
   loop
     v_from_deadline := v_binding.deadline;
+    if v_binding.task_status not in ('open', 'proposed', 'needs_approval', 'approved', 'in_progress', 'blocked', 'missed', 'completed', 'archived') then
+      if not exists (
+        select 1
+        from jsonb_array_elements(coalesce(v_request.preview_json -> 'preserved', '[]'::jsonb)) item
+        where item ->> 'taskId' = v_binding.task_id::text
+      ) then
+        raise exception 'release_schedule_stale';
+      end if;
+      v_preserved := v_preserved || jsonb_build_array(jsonb_build_object(
+        'taskId', v_binding.task_id,
+        'reason', 'inactive'
+      ));
+      continue;
+    end if;
     if v_binding.task_status in ('completed', 'archived') then
+      if not exists (
+        select 1
+        from jsonb_array_elements(coalesce(v_request.preview_json -> 'preserved', '[]'::jsonb)) item
+        where item ->> 'taskId' = v_binding.task_id::text
+      ) then
+        raise exception 'release_schedule_stale';
+      end if;
       v_preserved := v_preserved || jsonb_build_array(jsonb_build_object(
         'taskId', v_binding.task_id,
         'reason', case when v_binding.task_status = 'completed' then 'completed' else 'archived' end
       ));
       continue;
+    end if;
+
+    if not exists (
+      select 1
+      from jsonb_array_elements(coalesce(v_request.preview_json -> 'changes', '[]'::jsonb)) item
+      where item ->> 'taskId' = v_binding.task_id::text
+    ) then
+      raise exception 'release_schedule_stale';
     end if;
 
     v_new_deadline := ((v_request.proposed_date + v_binding.offset_days)::timestamp at time zone 'UTC');
@@ -866,7 +1018,7 @@ begin
       'moved_count', jsonb_array_length(v_moved),
       'preserved_count', jsonb_array_length(v_preserved)
     )
-  );
+  ) on conflict (artist_workspace_id, dedupe_key) where dedupe_key is not null do nothing;
 
   update public.release_date_change_requests
   set status = 'approved',
