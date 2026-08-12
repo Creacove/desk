@@ -2761,6 +2761,13 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByText("Matching missions and evidence")).toBeInTheDocument();
   }, 20000);
 
+  it("keeps release-success artifacts as one evolving conversation state outside createdWork", () => {
+    expect(productionAppSource).toContain("release_success.changed");
+    expect(productionAppSource).toContain("releaseSuccessArtifacts");
+    expect(productionAppSource).toContain("mergeReleaseSuccessArtifacts");
+    expect(productionAppSource).not.toContain("createdWork: mergeReleaseSuccessArtifacts");
+  });
+
   it("keeps an existing Manager thread title stable after streamed follow-up completion", async () => {
     const repositories = repositoriesFor("Nova Vale");
     const existingConversation = {

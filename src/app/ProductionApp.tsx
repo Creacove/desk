@@ -43,7 +43,7 @@ import {
 } from "../services/productionSupabase";
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
-import { invalidationsFromManagerRefreshHint } from "../services/managerConversationStream";
+import { invalidationsFromManagerRefreshHint, mergeReleaseSuccessArtifacts } from "../services/managerConversationStream";
 import {
   loadWorkspaceActivityPage,
   type WorkspaceEventCursor,
@@ -1275,6 +1275,18 @@ function CleanProductionWorkspace({
 
     if (event.type === "assistant.delta") {
       updateActiveConversation((conversation) => appendManagerDelta(conversation, event.delta, event.runId));
+      return;
+    }
+
+    if (event.type === "release_success.changed") {
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        releaseSuccessArtifacts: mergeReleaseSuccessArtifacts(
+          conversation.releaseSuccessArtifacts ?? [],
+          [event.artifact],
+        ),
+      }));
+      void refreshFromManagerHint(event.refresh);
       return;
     }
 
@@ -2981,6 +2993,7 @@ function createOptimisticManagerConversation(body: string, musicSubject?: Conver
       },
     ],
     createdWork: [],
+    releaseSuccessArtifacts: [],
   };
 }
 
@@ -3043,11 +3056,14 @@ function conversationFromStartedEvent(
       steps: [{ id: "start", label: "Starting Manager run", status: "completed" }],
     },
     createdWork: event.conversation.createdWork ?? [],
+    releaseSuccessArtifacts: event.conversation.releaseSuccessArtifacts ?? [],
   };
 }
 
 function mergeStartedConversation(current: ConversationViewModel | null, started: ConversationViewModel): ConversationViewModel {
   if (!current || (current.id !== started.id && !current.id.startsWith("pending-conversation-"))) return started;
+  const currentReleaseArtifacts = current.releaseSuccessArtifacts ?? [];
+  const startedReleaseArtifacts = started.releaseSuccessArtifacts ?? [];
   return {
     ...current,
     ...started,
@@ -3056,6 +3072,9 @@ function mergeStartedConversation(current: ConversationViewModel | null, started
     prompt: current.prompt || started.prompt,
     messages: mergeConversationMessages(current.messages, started.messages),
     createdWork: started.createdWork.length ? mergeCreatedWorkItems(current.createdWork, started.createdWork) : current.createdWork,
+    releaseSuccessArtifacts: startedReleaseArtifacts.length
+      ? mergeReleaseSuccessArtifacts(currentReleaseArtifacts, startedReleaseArtifacts)
+      : currentReleaseArtifacts,
     activeRun: started.activeRun ?? current.activeRun,
   };
 }
@@ -3107,13 +3126,24 @@ function appendManagerDelta(conversation: ConversationViewModel, delta: string, 
 }
 
 function mergeCompletedConversation(current: ConversationViewModel | null, completed: ConversationViewModel, preserveCurrentTopic = false): ConversationViewModel {
-  if (!current) return { ...completed, activeRun: completed.activeRun ? { ...completed.activeRun, status: "completed" } : undefined };
+  const completedReleaseArtifacts = completed.releaseSuccessArtifacts ?? [];
+  if (!current) {
+    return {
+      ...completed,
+      releaseSuccessArtifacts: completedReleaseArtifacts,
+      activeRun: completed.activeRun ? { ...completed.activeRun, status: "completed" } : undefined,
+    };
+  }
+  const currentReleaseArtifacts = current.releaseSuccessArtifacts ?? [];
   const incomingMessages = completed.messages.length ? completed.messages : [];
   return {
     ...completed,
     topic: preserveCurrentTopic && current.topic ? current.topic : completed.topic,
     messages: mergeConversationMessages(current.messages.filter((message) => message.status !== "streaming"), incomingMessages),
     createdWork: completed.createdWork.length ? mergeCreatedWorkItems(current.createdWork, completed.createdWork) : current.createdWork,
+    releaseSuccessArtifacts: completedReleaseArtifacts.length
+      ? mergeReleaseSuccessArtifacts(currentReleaseArtifacts, completedReleaseArtifacts)
+      : currentReleaseArtifacts,
     activeRun: current.activeRun ? { ...current.activeRun, status: "completed", streamedText: "" } : completed.activeRun,
   };
 }

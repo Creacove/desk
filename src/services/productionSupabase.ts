@@ -35,7 +35,7 @@ import type {
   TodayBriefGenerationMode,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
-import { consumeManagerConversationEventStream } from "./managerConversationStream";
+import { consumeManagerConversationEventStream, hydrateReleaseSuccessArtifacts } from "./managerConversationStream";
 import { createActiveRunFallback } from "./activeRunFallback";
 import type {
   ProductionAuthAdapter,
@@ -2214,7 +2214,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const row = data as ConversationRow | null;
         if (!row) return null;
 
-        const [{ data: messages, error: messageError }, { data: outputs, error: outputError }, { data: links, error: linkError }] = await Promise.all([
+        const [
+          { data: messages, error: messageError },
+          { data: outputs, error: outputError },
+          { data: links, error: linkError },
+          { data: releaseOutputs, error: releaseOutputError },
+        ] = await Promise.all([
           ownerFilters(client
             .from("conversation_messages")
             .select("id,conversation_id,speaker,label,body,metadata,created_at")
@@ -2241,10 +2246,21 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .in("target_type", ["task", "music_item", "music_project"])
             .eq("relationship", "references")
             .limit(3),
+          ownerFilters(client
+            .from("manager_outputs")
+            .select("id,conversation_id,mission_id,subject_id,summary,render_json,created_at")
+          )
+            .eq("conversation_id", conversationId)
+            .eq("output_type", "release_success_assessment")
+            .eq("subject_type", "music_item")
+            .eq("is_current", true)
+            .order("created_at", { ascending: false })
+            .limit(25),
         ]);
         if (messageError) throw messageError;
         if (outputError) throw outputError;
         if (linkError) throw linkError;
+        if (releaseOutputError) throw releaseOutputError;
         const conversationLinks = (links as ArtifactLinkRow[] | null) ?? [];
         const musicSubjects = await loadConversationMusicSubjects(client, workspace, conversationLinks);
         return conversationFromRows(
@@ -2253,6 +2269,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           ((outputs as ManagerOutputRow[] | null) ?? [])[0],
           conversationLinks.find((link) => link.target_type === "task")?.target_id,
           musicSubjects.get(conversationId),
+          ((releaseOutputs as ManagerOutputRow[] | null) ?? []),
         );
       },
       async loadConversations() {
@@ -2905,6 +2922,8 @@ type ManagerSynthesisRunRow = {
 
 type ManagerOutputRow = {
   id: string;
+  conversation_id?: string | null;
+  mission_id?: string | null;
   source_packet_id?: string | null;
   created_from_run_id?: string | null;
   output_type?: string | null;
@@ -3170,6 +3189,7 @@ function conversationFromRows(
   output?: ManagerOutputRow,
   taskContextId?: string,
   musicSubject?: MusicConversationSubjectViewModel,
+  releaseSuccessOutputs: ManagerOutputRow[] = [],
 ): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
@@ -3186,6 +3206,7 @@ function conversationFromRows(
     messages: mappedMessages,
     ...(output ? { decisionPackage: decisionPackageFromRow(output) } : {}),
     createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
+    releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(releaseSuccessOutputs),
   };
 }
 
@@ -3260,6 +3281,9 @@ function conversationViewModel(input: unknown): ConversationViewModel {
     lastUpdate: typeof input.lastUpdate === "string" ? input.lastUpdate : undefined,
     messages,
     createdWork: createdWork.length ? createdWork : messages.flatMap((message) => message.createdWork ?? []),
+    releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(
+      Array.isArray(input.releaseSuccessArtifacts) ? input.releaseSuccessArtifacts : [],
+    ),
   };
 }
 

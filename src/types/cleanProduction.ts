@@ -1,4 +1,9 @@
 import type { LucideIcon } from "lucide-react";
+import type {
+  ReleaseDateChangeReceipt,
+  ReleaseSchedulePreview,
+  ReleaseSuccessAssessment,
+} from "../../supabase/functions/_shared/release-success/types";
 
 export type CleanProductionView =
   | "connectArtist"
@@ -496,6 +501,56 @@ export type DecisionPackageViewModel = {
   createdAt?: string;
 };
 
+export type ReleaseSuccessArtifactState =
+  | "investigating"
+  | "assessed"
+  | "proposed"
+  | "awaiting_approval"
+  | "applying"
+  | "applied"
+  | "failed";
+
+export type ReleaseSuccessAssessmentViewModel = ReleaseSuccessAssessment;
+export type ReleaseSchedulePreviewViewModel = ReleaseSchedulePreview;
+export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
+
+export type ReleaseDateChangeRequestViewModel = {
+  id: string;
+  releasePlanId: string;
+  musicItemId: string;
+  fromDate?: string;
+  proposedDate: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected" | "superseded" | "expired" | "failed";
+  expectedPlanRevision: number;
+  previewHash: string;
+  preview: ReleaseSchedulePreviewViewModel;
+  expiresAt: string;
+};
+
+export type ReleaseDateChangeProposalInput = {
+  musicItemId: string;
+  proposedDate: string;
+  reason: string;
+  expectedRevision: number;
+  preview: ReleaseSchedulePreviewViewModel;
+  previewHash: string;
+  idempotencyKey: string;
+};
+
+export type ReleaseSuccessArtifactViewModel = {
+  id: string;
+  musicItemId: string;
+  missionId?: string;
+  requestId?: string;
+  state: ReleaseSuccessArtifactState;
+  subject: { title: string; itemType: string; approvedReleaseDate?: string };
+  assessment?: ReleaseSuccessAssessmentViewModel;
+  preview?: ReleaseSchedulePreviewViewModel;
+  receipt?: ReleaseDateChangeReceiptViewModel;
+  error?: { message: string; reference?: string; retryable: boolean };
+};
+
 export type ConversationViewModel = {
   id: string;
   taskContextId?: string;
@@ -519,6 +574,7 @@ export type ConversationViewModel = {
     managerOutputId?: string;
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
+  releaseSuccessArtifacts?: ReleaseSuccessArtifactViewModel[];
 };
 
 export type ManagerConversationStreamEvent =
@@ -561,6 +617,13 @@ export type ManagerConversationStreamEvent =
       type: "artifact.changed";
       runId?: string;
       artifact: ConversationViewModel["createdWork"][number];
+      refresh?: ManagerConversationRefreshHint;
+    }
+  | {
+      type: "release_success.changed";
+      conversationId?: string;
+      runId?: string;
+      artifact: ReleaseSuccessArtifactViewModel;
       refresh?: ManagerConversationRefreshHint;
     }
   | {

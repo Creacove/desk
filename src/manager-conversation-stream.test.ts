@@ -45,4 +45,20 @@ describe("Manager conversation stream parser", () => {
     ]);
     expect(events.filter((event) => event.type === "assistant.delta").map((event) => event.delta).join("")).toBe("Run a capped proof loop.");
   });
+
+  it("parses release-success artifact state changes as first-class stream events", async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({
+          type: "release_success.changed",
+          artifact: { id: "release-artifact-1", musicItemId: "song-1", state: "assessed" },
+        })}\n\n`));
+        controller.close();
+      },
+    });
+
+    const events = await parseManagerConversationEventStream(stream);
+    expect((events[0] as any).type).toBe("release_success.changed");
+    expect((events[0] as any).artifact.id).toBe("release-artifact-1");
+  });
 });
