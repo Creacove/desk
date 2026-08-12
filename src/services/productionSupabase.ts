@@ -28,6 +28,9 @@ import type {
   MusicUploadProgress,
   ManualSongWorkspaceResult,
   PriorityItem,
+  ReleaseDateChangeProposalInput,
+  ReleaseDateChangeReceiptViewModel,
+  ReleaseDateChangeRequestViewModel,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
   SplitConfirmationViewModel,
@@ -2407,6 +2410,42 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         await consumeManagerConversationEventStream(response.body, handlers.onEvent);
       },
+      async proposeReleaseDateChange(input: ReleaseDateChangeProposalInput) {
+        const requestId = createClientRequestId();
+        const { data, error } = await client.functions.invoke("release-plan-change", {
+          headers: { "x-request-id": requestId },
+          body: {
+            action: "propose",
+            musicItemId: input.musicItemId,
+            proposedDate: input.proposedDate,
+            reason: input.reason,
+            expectedRevision: input.expectedRevision,
+            preview: input.preview,
+            previewHash: input.previewHash,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        if (error) await throwReleasePlanChangeError(error, "The release date preview could not be created.", requestId);
+        const request = normalizeReleaseDateChangeRequest(data);
+        if (!request) throw new Error("The release date preview returned an invalid request.");
+        return request;
+      },
+      async approveReleaseDateChange(input: { requestId: string; previewHash: string; idempotencyKey: string }) {
+        const requestId = createClientRequestId();
+        const { data, error } = await client.functions.invoke("release-plan-change", {
+          headers: { "x-request-id": requestId },
+          body: {
+            action: "approve",
+            requestId: input.requestId,
+            previewHash: input.previewHash,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        if (error) await throwReleasePlanChangeError(error, "The release date change could not be applied.", requestId);
+        const receipt = normalizeReleaseDateChangeReceipt(data);
+        if (!receipt) throw new Error("The release date change returned an invalid receipt.");
+        return receipt;
+      },
     },
     missions: {
       async loadMissionList() {
@@ -4092,6 +4131,165 @@ function readErrorMessage(error: unknown, fallback: string) {
     return (error as { message: string }).message;
   }
   return fallback;
+}
+
+export class ReleasePlanChangeError extends Error {
+  readonly status?: number;
+  readonly code?: string;
+  readonly requestId?: string;
+  readonly errorEventId?: string;
+
+  constructor(message: string, details: { status?: number; code?: string; requestId?: string; errorEventId?: string }) {
+    super(message);
+    this.name = "ReleasePlanChangeError";
+    this.status = details.status;
+    this.code = details.code;
+    this.requestId = details.requestId;
+    this.errorEventId = details.errorEventId;
+  }
+}
+
+function normalizeReleaseDateChangeRequest(payload: unknown): ReleaseDateChangeRequestViewModel | null {
+  const wrapper = isPlainRecord(payload) ? payload : {};
+  const value = isPlainRecord(wrapper.request) ? wrapper.request : wrapper;
+  const requestId = readOptionalConversationString(value.requestId) ?? readOptionalConversationString(value.id);
+  const releasePlanId = readOptionalConversationString(value.releasePlanId);
+  const musicItemId = readOptionalConversationString(value.musicItemId);
+  const missionId = readOptionalConversationString(value.missionId);
+  const proposedDate = readOptionalConversationString(value.proposedDate);
+  const reason = readOptionalConversationString(value.reason);
+  const status = value.status;
+  const expectedPlanRevision = value.expectedPlanRevision;
+  const previewHash = readOptionalConversationString(value.previewHash);
+  const expiresAt = readOptionalConversationString(value.expiresAt);
+  const preview = isPlainRecord(value.preview) ? value.preview : null;
+  if (
+    !requestId ||
+    !releasePlanId ||
+    !musicItemId ||
+    !proposedDate ||
+    !previewHash ||
+    !expiresAt ||
+    !preview ||
+    !Number.isInteger(expectedPlanRevision) ||
+    !["pending", "approved", "rejected", "superseded", "expired", "failed"].includes(String(status))
+  ) {
+    return null;
+  }
+
+  const fromDate = readOptionalConversationString(value.fromDate);
+  return {
+    requestId,
+    releasePlanId,
+    musicItemId,
+    ...(missionId ? { missionId } : {}),
+    ...(fromDate ? { fromDate } : {}),
+    proposedDate,
+    ...(reason ? { reason } : {}),
+    status: status as ReleaseDateChangeRequestViewModel["status"],
+    expectedPlanRevision,
+    previewHash,
+    preview: preview as ReleaseDateChangeRequestViewModel["preview"],
+    expiresAt,
+  };
+}
+
+function normalizeReleaseDateChangeReceipt(payload: unknown): ReleaseDateChangeReceiptViewModel | null {
+  const wrapper = isPlainRecord(payload) ? payload : {};
+  const value = isPlainRecord(wrapper.receipt) ? wrapper.receipt : wrapper;
+  const requestId = readOptionalConversationString(value.requestId);
+  const releasePlanId = readOptionalConversationString(value.releasePlanId);
+  const musicItemId = readOptionalConversationString(value.musicItemId);
+  const approvedDate = readOptionalConversationString(value.approvedDate);
+  const previousRevision = value.previousRevision;
+  const revision = value.revision;
+  const moved = normalizeReleaseDateChangeMoved(value.moved);
+  const preserved = normalizeReleaseDateChangePreserved(value.preserved);
+  if (
+    !requestId ||
+    !releasePlanId ||
+    !musicItemId ||
+    !approvedDate ||
+    !Number.isInteger(previousRevision) ||
+    !Number.isInteger(revision) ||
+    !moved ||
+    !preserved
+  ) {
+    return null;
+  }
+
+  const missionId = readOptionalConversationString(value.missionId);
+  const fromDate = readOptionalConversationString(value.fromDate);
+  const operatingEventId = readOptionalConversationString(value.operatingEventId);
+  const nextDeadline = isPlainRecord(value.nextDeadline)
+    ? {
+        taskId: readOptionalConversationString(value.nextDeadline.taskId) ?? "",
+        title: readOptionalConversationString(value.nextDeadline.title) ?? "",
+        deadline: readOptionalConversationString(value.nextDeadline.deadline) ?? "",
+      }
+    : null;
+  if (nextDeadline && (!nextDeadline.taskId || !nextDeadline.title || !nextDeadline.deadline)) return null;
+
+  return {
+    requestId,
+    releasePlanId,
+    musicItemId,
+    ...(missionId ? { missionId } : {}),
+    fromDate: fromDate ?? null,
+    approvedDate,
+    previousRevision,
+    revision,
+    moved,
+    preserved,
+    nextDeadline,
+    ...(operatingEventId ? { operatingEventId } : {}),
+  };
+}
+
+function normalizeReleaseDateChangeMoved(value: unknown): ReleaseDateChangeReceiptViewModel["moved"] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value.map((item) => {
+    const row = isPlainRecord(item) ? item : {};
+    return {
+      taskId: readOptionalConversationString(row.taskId) ?? "",
+      title: readOptionalConversationString(row.title) ?? "",
+      from: readOptionalConversationString(row.from) ?? null,
+      to: readOptionalConversationString(row.to) ?? "",
+    };
+  });
+  return rows.every((row) => row.taskId && row.title && row.to) ? rows : null;
+}
+
+function normalizeReleaseDateChangePreserved(value: unknown): ReleaseDateChangeReceiptViewModel["preserved"] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value.map((item) => {
+    const row = isPlainRecord(item) ? item : {};
+    return {
+      taskId: readOptionalConversationString(row.taskId) ?? "",
+      reason: readOptionalConversationString(row.reason) ?? "",
+    };
+  });
+  return rows.every((row) => row.taskId && row.reason) ? rows : null;
+}
+
+async function throwReleasePlanChangeError(error: unknown, fallback: string, requestId: string): Promise<never> {
+  const body = await readFunctionErrorBody(error);
+  const bodyRecord = isPlainRecord(body) ? body : {};
+  const message = getFunctionErrorBodyMessage(body) ?? readErrorObjectMessage(error) ?? fallback;
+  throw new ReleasePlanChangeError(message, {
+    status: functionErrorStatus(error),
+    code: readOptionalConversationString(bodyRecord.code),
+    requestId,
+    errorEventId: readOptionalConversationString(bodyRecord.errorEventId) ?? readOptionalConversationString(bodyRecord.error_event_id),
+  });
+}
+
+function functionErrorStatus(error: unknown) {
+  if (!error || typeof error !== "object") return undefined;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") return undefined;
+  const status = (context as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
 }
 
 function workspaceFromRpcRow(row: WorkspaceRpcRow): ProductionWorkspace {

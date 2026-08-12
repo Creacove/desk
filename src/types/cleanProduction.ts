@@ -515,12 +515,13 @@ export type ReleaseSchedulePreviewViewModel = ReleaseSchedulePreview;
 export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
 
 export type ReleaseDateChangeRequestViewModel = {
-  id: string;
+  requestId: string;
   releasePlanId: string;
   musicItemId: string;
+  missionId?: string;
   fromDate?: string;
   proposedDate: string;
-  reason: string;
+  reason?: string;
   status: "pending" | "approved" | "rejected" | "superseded" | "expired" | "failed";
   expectedPlanRevision: number;
   previewHash: string;
@@ -843,6 +844,12 @@ export type ManagerRepository = {
     },
     handlers: ManagerConversationStreamHandlers,
   ): Promise<void>;
+  proposeReleaseDateChange?(input: ReleaseDateChangeProposalInput): Promise<ReleaseDateChangeRequestViewModel>;
+  approveReleaseDateChange?(input: {
+    requestId: string;
+    previewHash: string;
+    idempotencyKey: string;
+  }): Promise<ReleaseDateChangeReceiptViewModel>;
 };
 
 export type MissionRepository = {

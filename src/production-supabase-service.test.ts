@@ -4011,6 +4011,132 @@ describe("production Supabase services", () => {
       }),
     ).rejects.toThrow("Missing required environment variable: SPOTIFY_CLIENT_SECRET");
   });
+
+  it("sends release plan change commands with scoped payloads, request IDs, and authoritative errors", async () => {
+    const calls: Array<{ name: string; options: { body: unknown; headers?: Record<string, string> } }> = [];
+    const preview = {
+      fromDate: "2026-08-26",
+      proposedDate: "2026-09-09",
+      expectedRevision: 2,
+      changes: [],
+      preserved: [],
+      previewHash: "a".repeat(64),
+    };
+    const request = {
+      requestId: "request-1",
+      releasePlanId: "plan-1",
+      musicItemId: "song-1",
+      missionId: "mission-1",
+      status: "pending",
+      fromDate: "2026-08-26",
+      proposedDate: "2026-09-09",
+      expectedPlanRevision: 2,
+      previewHash: preview.previewHash,
+      preview,
+      expiresAt: "2026-08-12T23:59:00.000Z",
+    };
+    const receipt = {
+      requestId: "request-1",
+      releasePlanId: "plan-1",
+      musicItemId: "song-1",
+      missionId: "mission-1",
+      fromDate: "2026-08-26",
+      approvedDate: "2026-09-09",
+      previousRevision: 2,
+      revision: 3,
+      moved: [],
+      preserved: [],
+      nextDeadline: null,
+      operatingEventId: "event-1",
+    };
+    const client = createMutableSupabaseClient({}, {
+      invoke: async (name, options) => {
+        calls.push({ name, options });
+        return name === "release-plan-change"
+          ? { data: calls.length === 1 ? { status: "proposed", request } : { status: "applied", receipt }, error: null }
+          : { data: null, error: null };
+      },
+    });
+    const manager = createSupabaseProductionRepositories(client, workspace).manager;
+    const operationalDateBefore = "2026-08-26";
+
+    const proposed = await manager.proposeReleaseDateChange!({
+      musicItemId: "song-1",
+      proposedDate: "2026-09-09",
+      reason: "Create a clean runway for campaign preparation.",
+      expectedRevision: 2,
+      preview,
+      previewHash: preview.previewHash,
+      idempotencyKey: "approval-intent-1",
+    });
+    const applied = await manager.approveReleaseDateChange!({
+      requestId: "request-1",
+      previewHash: preview.previewHash,
+      idempotencyKey: "approval-intent-1",
+    });
+
+    expect(proposed).toEqual(request);
+    expect(applied).toEqual(receipt);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]).toMatchObject({
+      name: "release-plan-change",
+      options: {
+        body: {
+          action: "propose",
+          musicItemId: "song-1",
+          proposedDate: "2026-09-09",
+          reason: "Create a clean runway for campaign preparation.",
+          expectedRevision: 2,
+          preview,
+          previewHash: preview.previewHash,
+          idempotencyKey: "approval-intent-1",
+        },
+        headers: { "x-request-id": expect.any(String) },
+      },
+    });
+    expect(calls[1]).toMatchObject({
+      name: "release-plan-change",
+      options: {
+        body: {
+          action: "approve",
+          requestId: "request-1",
+          previewHash: preview.previewHash,
+          idempotencyKey: "approval-intent-1",
+        },
+        headers: { "x-request-id": expect.any(String) },
+      },
+    });
+    expect(calls[0].options.body).not.toHaveProperty("accountId");
+    expect(operationalDateBefore).toBe("2026-08-26");
+  });
+
+  it("preserves release plan change conflict status, code, request ID, and central error reference", async () => {
+    const client = createMutableSupabaseClient({}, {
+      invoke: async () => ({
+        data: null,
+        error: {
+          context: new Response(JSON.stringify({
+            error: "The release plan changed. Recheck the preview.",
+            code: "release_plan_stale",
+            errorEventId: "error-event-1",
+          }), { status: 409, headers: { "content-type": "application/json" } }),
+        },
+      }),
+    });
+    const manager = createSupabaseProductionRepositories(client, workspace).manager;
+
+    await expect(manager.approveReleaseDateChange!({
+      requestId: "request-1",
+      previewHash: "a".repeat(64),
+      idempotencyKey: "approval-intent-1",
+    })).rejects.toMatchObject({
+      message: "The release plan changed. Recheck the preview.",
+      status: 409,
+      code: "release_plan_stale",
+      errorEventId: "error-event-1",
+      requestId: expect.any(String),
+    });
+  });
 });
 
 function musicManagerReadTables(
@@ -4108,7 +4234,7 @@ function queryResult(data: unknown[]) {
 function createMutableSupabaseClient(
   tableData: Record<string, Array<Record<string, unknown>>>,
   extras: {
-    invoke?: (name: string, options: { body: unknown }) => Promise<{ data: unknown; error: unknown }>;
+    invoke?: (name: string, options: { body: unknown; headers?: Record<string, string> }) => Promise<{ data: unknown; error: unknown }>;
     storage?: {
       from(bucket: string): {
         upload(path: string, file: File, options: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
@@ -4138,7 +4264,7 @@ type ObservedQueryCall = {
 function createObservedSupabaseClient(
   tableData: Record<string, Array<Record<string, unknown>>>,
   extras: {
-    invoke?: (name: string, options: { body: unknown }) => Promise<{ data: unknown; error: unknown }>;
+    invoke?: (name: string, options: { body: unknown; headers?: Record<string, string> }) => Promise<{ data: unknown; error: unknown }>;
   } = {},
 ) {
   const calls: ObservedQueryCall[] = [];
