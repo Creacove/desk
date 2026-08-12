@@ -109,6 +109,269 @@ grant insert, update, delete on public.music_release_plans to service_role;
 grant insert, update, delete on public.release_date_change_requests to service_role;
 grant insert, update, delete on public.release_task_schedule_bindings to service_role;
 
+-- Template-owned release tasks carry a machine key. Legacy/manual tasks stay
+-- null and therefore cannot be inferred into the release schedule by title.
+alter table public.tasks
+  add column if not exists schedule_key text;
+
+create unique index if not exists tasks_release_schedule_key_unique
+  on public.tasks (mission_id, schedule_key)
+  where schedule_key is not null;
+
+create or replace function public.release_schedule_offset_days_v1(p_schedule_key text)
+returns integer
+language sql
+immutable
+strict
+set search_path = public
+as $$
+  select case lower(trim(p_schedule_key))
+    when 'distributor_delivery' then -12
+    when 'spotify_editorial_pitch' then -8
+    when 'playlist_shortlist' then -7
+    when 'epk_press_package' then -6
+    when 'content_rollout_start' then -4
+    when 'release_live_check' then 0
+    when 'post_release_review' then 2
+    else null
+  end;
+$$;
+
+-- The manual and conversational workspace RPCs both finish by linking the
+-- release mission to the song. This forward hook extends both RPCs without
+-- rewriting their applied migrations or creating a second mission.
+create or replace function public.ensure_release_success_workspace_v1(
+  p_account_id uuid,
+  p_artist_workspace_id uuid,
+  p_artist_id uuid,
+  p_music_item_id uuid,
+  p_mission_id uuid default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_song public.music_items%rowtype;
+  v_plan public.music_release_plans%rowtype;
+  v_mission_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtext('release-success:' || p_music_item_id::text));
+
+  select * into v_song
+  from public.music_items
+  where id = p_music_item_id
+    and account_id = p_account_id
+    and artist_workspace_id = p_artist_workspace_id
+    and artist_id = p_artist_id
+  for update;
+
+  if not found then
+    return null;
+  end if;
+
+  if v_song.released_at is not null
+    or v_song.lifecycle_stage in ('released', 'catalog', 'archived') then
+    return null;
+  end if;
+
+  select link.source_id into v_mission_id
+  from public.artifact_links link
+  join public.missions mission on mission.id = link.source_id
+  where link.account_id = p_account_id
+    and link.artist_workspace_id = p_artist_workspace_id
+    and link.artist_id = p_artist_id
+    and link.source_type = 'mission'
+    and (p_mission_id is null or link.source_id = p_mission_id)
+    and link.target_type = 'music_item'
+    and link.target_id = p_music_item_id
+    and link.relationship = 'references'
+    and mission.status not in ('archived', 'cancelled')
+    and mission.pattern_name in ('manual_song_workspace', 'release_planning')
+  order by link.created_at asc, link.source_id asc
+  limit 1;
+
+  if v_mission_id is null then
+    return null;
+  end if;
+
+  select * into v_plan
+  from public.music_release_plans
+  where music_item_id = p_music_item_id
+    and account_id = p_account_id
+    and artist_workspace_id = p_artist_workspace_id
+    and artist_id = p_artist_id
+  for update;
+
+  if not found then
+    insert into public.music_release_plans (
+      account_id,
+      artist_workspace_id,
+      artist_id,
+      music_item_id,
+      mission_id,
+      status,
+      approved_release_date
+    ) values (
+      p_account_id,
+      p_artist_workspace_id,
+      p_artist_id,
+      p_music_item_id,
+      v_mission_id,
+      case when v_song.planned_release_date is null then 'draft' else 'approved' end,
+      v_song.planned_release_date
+    )
+    on conflict (music_item_id) do nothing;
+
+    select * into v_plan
+    from public.music_release_plans
+    where music_item_id = p_music_item_id
+    for update;
+  elsif v_plan.mission_id is null then
+    update public.music_release_plans
+    set mission_id = v_mission_id,
+        updated_at = now()
+    where id = v_plan.id;
+    v_plan.mission_id := v_mission_id;
+  end if;
+
+  insert into public.release_task_schedule_bindings (
+    account_id,
+    artist_workspace_id,
+    artist_id,
+    release_plan_id,
+    task_id,
+    offset_days,
+    applied_plan_revision
+  )
+  select
+    p_account_id,
+    p_artist_workspace_id,
+    p_artist_id,
+    v_plan.id,
+    task.id,
+    public.release_schedule_offset_days_v1(task.schedule_key),
+    v_plan.revision
+  from public.tasks task
+  where task.account_id = p_account_id
+    and task.artist_workspace_id = p_artist_workspace_id
+    and task.artist_id = p_artist_id
+    and task.mission_id = v_mission_id
+    and task.schedule_key is not null
+    and public.release_schedule_offset_days_v1(task.schedule_key) is not null
+    and task.status::text not in ('archived', 'rejected', 'superseded')
+  on conflict (task_id) do nothing;
+
+  return v_plan.id;
+end;
+$$;
+
+create or replace function public.link_release_success_workspace_v1()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_pattern_name text;
+begin
+  if new.source_type = 'mission'
+    and new.target_type = 'music_item'
+    and new.relationship = 'references' then
+    select pattern_name into v_pattern_name
+    from public.missions
+    where id = new.source_id;
+
+    if v_pattern_name in ('manual_song_workspace', 'release_planning') then
+      perform public.ensure_release_success_workspace_v1(
+        new.account_id,
+        new.artist_workspace_id,
+        new.artist_id,
+        new.target_id,
+        new.source_id
+      );
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists artifact_links_release_success_workspace on public.artifact_links;
+create trigger artifact_links_release_success_workspace
+after insert on public.artifact_links
+for each row execute function public.link_release_success_workspace_v1();
+
+create or replace function public.bind_release_success_task_v1()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_plan public.music_release_plans%rowtype;
+  v_offset integer;
+begin
+  if new.schedule_key is null
+    or new.mission_id is null
+    or new.status::text in ('archived', 'rejected', 'superseded') then
+    return new;
+  end if;
+
+  v_offset := public.release_schedule_offset_days_v1(new.schedule_key);
+  if v_offset is null then
+    return new;
+  end if;
+
+  select plan.* into v_plan
+  from public.music_release_plans plan
+  where plan.mission_id = new.mission_id
+    and plan.account_id = new.account_id
+    and plan.artist_workspace_id = new.artist_workspace_id
+    and plan.artist_id = new.artist_id
+  for update;
+
+  if not found then
+    return new;
+  end if;
+
+  insert into public.release_task_schedule_bindings (
+    account_id,
+    artist_workspace_id,
+    artist_id,
+    release_plan_id,
+    task_id,
+    offset_days,
+    applied_plan_revision
+  ) values (
+    new.account_id,
+    new.artist_workspace_id,
+    new.artist_id,
+    v_plan.id,
+    new.id,
+    v_offset,
+    v_plan.revision
+  ) on conflict (task_id) do nothing;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists tasks_release_success_schedule_binding on public.tasks;
+create trigger tasks_release_success_schedule_binding
+after insert or update of schedule_key, mission_id, status on public.tasks
+for each row execute function public.bind_release_success_task_v1();
+
+revoke all on function public.release_schedule_offset_days_v1(text) from public, anon, authenticated;
+revoke all on function public.ensure_release_success_workspace_v1(uuid, uuid, uuid, uuid, uuid) from public, anon, authenticated;
+revoke all on function public.link_release_success_workspace_v1() from public, anon, authenticated;
+revoke all on function public.bind_release_success_task_v1() from public, anon, authenticated;
+grant execute on function public.release_schedule_offset_days_v1(text) to service_role;
+grant execute on function public.ensure_release_success_workspace_v1(uuid, uuid, uuid, uuid, uuid) to service_role;
+grant execute on function public.link_release_success_workspace_v1() to service_role;
+grant execute on function public.bind_release_success_task_v1() to service_role;
+
 -- Release-success assessments are current Manager outputs, not a second
 -- readiness table. The check constraint predates this workflow.
 alter table public.manager_outputs

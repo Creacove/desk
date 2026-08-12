@@ -40,6 +40,7 @@ export type MissionGenesisCheckpoint = {
 
 export type MissionGenesisTask = {
   title: string;
+  scheduleKey?: string;
   ownerRole: string;
   workMode: "artist_action" | "collaborative" | "manager_work";
   primaryCheckpointKey: string;
@@ -218,6 +219,7 @@ export const missionGenesisJsonSchema = {
           required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
           properties: {
             title: { type: "string" },
+            scheduleKey: { type: "string" },
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
             primaryCheckpointKey: { type: "string" },
@@ -327,6 +329,7 @@ export const missionGenesisJsonSchema = {
                 required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
                 properties: {
                   title: { type: "string" },
+                  scheduleKey: { type: "string" },
                   ownerRole: { type: "string" },
                   workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
                   primaryCheckpointKey: { type: "string" },
@@ -388,6 +391,8 @@ const sharedInstructions = [
   "Every sourceRefs value must be an exact id present in the packet. Never invent an id. User intent and preferences are context, not third-party factual proof.",
   "A mission is a durable objective requiring coordinated work and review, not a to-do list. A visible task exists only when the artist or team must decide, approve, perform an external action, or report an offline outcome. A checkpoint is a decision question with a binary pass/fail rule, not a renamed task grouping.",
   "Research, comparison, synthesis, monitoring, and recommendations are Manager work: put the result in checkpoint.managerRead and do not create a task.",
+  "For the Release Success Mission, Manager work includes research, comparison, source inspection, fit judgment, and drafting; artist or team tasks are limited to approvals, private facts or declarations, external submissions, or recording and performing outcomes.",
+  "Template-owned release tasks must carry a stable machine-readable scheduleKey from the approved release schedule vocabulary (distributor_delivery, spotify_editorial_pitch, playlist_shortlist, epk_press_package, content_rollout_start, release_live_check, post_release_review). Never derive a binding from title text. Omit scheduleKey for manual or fixed commitments.",
   "A mission may contain zero tasks when the packet already supports the Manager read and nothing is needed from the artist. Every active mission still requires at least one checkpoint.",
   "Uploads are optional context only. Never create completionMode evidence in a new plan, never make an upload a checkpoint gate, and proceed with a limited or conservative recommendation when private data is unavailable.",
   "checkpoint.managerRead states what the available evidence means now. checkpoint.nextAction names one human action or explicitly says that nothing is needed from the artist while the Manager watches signals.",
@@ -848,6 +853,7 @@ function readTasks(value: unknown): MissionGenesisTask[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isRecord).map((item) => ({
     title: readString(item.title, "tasks.title", true),
+    ...(typeof item.scheduleKey === "string" && item.scheduleKey.trim() ? { scheduleKey: item.scheduleKey.trim() } : {}),
     ownerRole: readString(item.ownerRole, "tasks.ownerRole", true),
     workMode: readOptionalEnum(item.workMode, ["artist_action", "collaborative", "manager_work"], item.completionMode === "manager_draft" ? "collaborative" : "artist_action") as MissionGenesisTask["workMode"],
     primaryCheckpointKey: readString(item.primaryCheckpointKey, "tasks.primaryCheckpointKey", true),

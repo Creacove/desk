@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const migrationPath = resolve(process.cwd(), "supabase/migrations/20260808000100_conversational_song_workspace.sql");
 const repairMigrationPath = resolve(process.cwd(), "supabase/migrations/20260808000200_conversational_release_qa_hardening.sql");
+const releaseSuccessMigrationPath = resolve(process.cwd(), "supabase/migrations/20260812000100_release_success_foundation.sql");
 
 describe("conversational song workspace contract", () => {
   it("adopts a Manager conversation in one versioned workspace command", () => {
@@ -24,5 +25,19 @@ describe("conversational song workspace contract", () => {
     expect(migration).toContain("chr(226) || chr(8364) || chr(8221)");
     expect(migration).toContain("chr(8212)");
     expect([...migration].every((character) => character.charCodeAt(0) < 128)).toBe(true);
+  });
+
+  it("keeps one idempotent mission and lazily attaches one release plan to the song", () => {
+    expect(existsSync(releaseSuccessMigrationPath)).toBe(true);
+    const migration = readFileSync(migrationPath, "utf8");
+    const releaseSuccess = readFileSync(releaseSuccessMigrationPath, "utf8");
+
+    expect(migration).toContain("if v_mission_id is null then");
+    expect(migration).toContain("return jsonb_build_object(");
+    expect(releaseSuccess).toContain("ensure_release_success_workspace_v1");
+    expect(releaseSuccess).toContain("music_release_plans");
+    expect(releaseSuccess).toContain("on conflict (music_item_id) do nothing");
+    expect(releaseSuccess).toContain("release_task_schedule_bindings");
+    expect(releaseSuccess).toContain("schedule_key");
   });
 });
