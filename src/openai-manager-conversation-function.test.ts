@@ -221,7 +221,7 @@ describe("OpenAI Manager Conversation Router", () => {
     const instructions = buildManagerConversationInstructions();
     expect(instructions).toContain("Attached unreleased-song loop");
     expect(instructions).toContain("ask exactly one human-only question");
-    expect(instructions).toContain("After any successful focused-song write, call read_focused_release_readiness again before answering");
+    expect(instructions).toContain("After any successful focused-song write, call the focused release-success read again before answering");
     expect(instructions).toContain("existingMissionId must equal the attached linked mission ID");
     expect(instructions).toContain("Never narrate the full release-readiness checklist");
   });
@@ -230,7 +230,7 @@ describe("OpenAI Manager Conversation Router", () => {
     const instructions = buildManagerConversationInstructions();
 
     expect(instructions).toContain("Manager Conversation Router");
-    expect(instructions).toContain("prototype-style manager office");
+    expect(instructions).not.toContain("prototype-style manager office");
     expect(instructions).toContain("supplied scoped opening brief");
     expect(instructions).toContain("read_manager_output_section");
     expect(instructions).toContain("Do not create a separate evidence-read section");
@@ -242,6 +242,9 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("ISO-8601 timestamp derived from a confirmed release date");
     expect(instructions).toContain("Never reopen pre-release gates for released/catalog music");
     expect(instructions).toContain("Never invent a contact name, email address, outlet, playlist, or result");
+    expect(instructions).toContain("For an attached unreleased-song readiness question, read the exact release-success packet and linked mission before answering.");
+    expect(instructions).toContain("Never claim the change was applied; application requires the user's explicit approval through the release-plan command.");
+    expect(instructions).toContain("If the user keeps the date, produce the strongest realistic recovery plan and name lost opportunities.");
     expect(JSON.stringify(managerConversationJsonSchema)).toContain("workMode");
     expect(instructions).not.toContain("OpenAI");
   });

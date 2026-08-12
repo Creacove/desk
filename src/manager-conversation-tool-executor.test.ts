@@ -184,6 +184,13 @@ describe("Manager output tools", () => {
     });
   });
 
+  it("keeps release-success reads scoped to an attached subject", async () => {
+    const { db } = dbWith([]);
+
+    await expect(executeManagerConversationTool(db, scope, "read_focused_release_success", {}))
+      .rejects.toThrow("focused music conversation");
+  });
+
   it("queries only the identity columns that exist for the focused music record type", async () => {
     const { db, states } = dbWith([{
       id: "project-1",

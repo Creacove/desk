@@ -97,6 +97,23 @@ const focusedMusicReadProperties = {
   properties: {},
 };
 
+const focusedReleaseSuccessProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {},
+};
+
+const focusedReleaseDateProposalProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["proposedDate", "reason"],
+  properties: {
+    proposedDate: { type: "string" },
+    reason: { type: "string" },
+  },
+};
+
 const focusedMusicMetadataProperties = {
   type: "object",
   additionalProperties: false,
@@ -177,6 +194,20 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
     description: "Read the exact attached song or project packet, including its existing metadata, assets, credits, identifiers, and rights readiness. Use only when a song or project is attached to this conversation.",
     strict: true,
     parameters: focusedMusicReadProperties,
+  },
+  {
+    type: "function",
+    name: "read_focused_release_success",
+    description: "Read the exact attached unreleased song's release-success packet, linked mission schedule, evidence-backed gates, canonical documents, and opportunity counts.",
+    strict: true,
+    parameters: focusedReleaseSuccessProperties,
+  },
+  {
+    type: "function",
+    name: "propose_focused_release_date_change",
+    description: "Prepare a deterministic release-date impact preview and permission request for the exact attached unreleased song. This never applies the date change; approval stays with the user.",
+    strict: true,
+    parameters: focusedReleaseDateProposalProperties,
   },
   {
     type: "function",

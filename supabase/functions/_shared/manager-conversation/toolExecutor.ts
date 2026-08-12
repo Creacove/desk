@@ -2,6 +2,9 @@ import { writeWorkspaceEvent } from "../workspaceEvents.ts";
 import { manualSongWorkspaceCopy } from "../manualSongWorkspace.ts";
 import { executeDiscoveryTool } from "../manager-agent/discoveryTools.ts";
 import type { ManagerConversationCreatedWork } from "../openaiManagerConversation.ts";
+import { assessReleaseSuccess } from "../release-success/readiness.ts";
+import { createSchedulePreview } from "../release-success/schedule.ts";
+import type { ReleaseFact, ReleaseSuccessPacket, ReleaseTaskScheduleBindingInput } from "../release-success/types.ts";
 
 type ManagerToolInput = {
   accountId: string;
@@ -9,6 +12,7 @@ type ManagerToolInput = {
   artistId: string;
   conversationId?: string;
   runId?: string;
+  userId?: string;
   musicSubject?: { type: "music_item" | "music_project"; id: string };
   createdWork?: ManagerConversationCreatedWork[];
 };
@@ -31,6 +35,8 @@ export async function executeManagerConversationTool(
   if (name === "query_manager_outputs") return queryManagerOutputs(db, input, args);
   if (name === "read_manager_output_section") return readManagerOutputSection(db, input, args);
   if (name === "read_focused_music_subject") return readFocusedMusicSubject(db, input);
+  if (name === "read_focused_release_success") return readFocusedReleaseSuccess(db, input);
+  if (name === "propose_focused_release_date_change") return proposeFocusedReleaseDateChange(db, input, args);
   if (name === "read_focused_release_readiness") return readFocusedReleaseReadiness(db, input);
   if (name === "refresh_focused_music_intelligence") return refreshFocusedMusicIntelligence(db, input);
   if (name === "update_focused_music_metadata") return updateFocusedMusicMetadata(db, input, args);
@@ -320,6 +326,171 @@ async function readFocusedReleaseReadiness(db: SupabaseLike, input: ManagerToolI
   };
 }
 
+async function readFocusedReleaseSuccess(db: SupabaseLike, input: ManagerToolInput) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Release-success planning is currently scoped to an attached song." };
+  }
+
+  const { data: identity, error: identityError } = await scopedQuery(
+    db,
+    "music_items",
+    "id,title,item_type,lifecycle_stage,planned_release_date,released_at,rights_state,metadata",
+    input,
+  ).eq("id", subject.id).maybeSingle();
+  if (identityError) throw identityError;
+  if (!identity?.id) return { status: "not_found", subject };
+
+  const [plans, assets, identifiers, credits, splits, links] = await Promise.all([
+    selectFocusedRows(db, "music_release_plans", "id,music_item_id,mission_id,status,approved_release_date,revision", input, [["music_item_id", subject.id]], 4),
+    selectFocusedRows(db, "music_assets", "id,asset_type,title,status,version_label,notes,created_at", input, [["music_item_id", subject.id]], 60),
+    selectFocusedRows(db, "music_identifiers", "id,identifier_type,identifier_value,confidence,created_at", input, [["music_item_id", subject.id]], 40),
+    selectFocusedRows(db, "music_credits", "id,role,name,status,created_at", input, [["music_item_id", subject.id]], 60),
+    selectFocusedRows(db, "music_splits", "id,status,summary,publishing_total,master_total,created_at", input, [["music_item_id", subject.id]], 20),
+    selectFocusedRows(db, "artifact_links", "source_type,source_id,target_type,target_id,relationship,metadata,created_at", input, [["target_type", "music_item"], ["target_id", subject.id]], 100),
+  ]);
+
+  const plan = plans[0] as any | undefined;
+  const releasePlanId = stringArg(plan?.id) || null;
+  const missionId = stringArg(plan?.mission_id) || null;
+  const [missions, tasks, bindings, managerOutputs] = await Promise.all([
+    missionId
+      ? selectFocusedRows(db, "missions", "id,title,status,pattern_name,summary,current_recommendation", input, [["id", missionId]], 1)
+      : Promise.resolve([]),
+    missionId
+      ? selectFocusedRows(db, "tasks", "id,mission_id,title,status,deadline,schedule_key,owner_role,purpose", input, [["mission_id", missionId]], 80)
+      : Promise.resolve([]),
+    releasePlanId
+      ? selectFocusedRows(db, "release_task_schedule_bindings", "id,task_id,offset_days,active,applied_plan_revision", input, [["release_plan_id", releasePlanId]], 80)
+      : Promise.resolve([]),
+    selectFocusedRows(db, "manager_outputs", "id,output_type,subject_type,subject_id,render_json,created_at", input, [["subject_type", "music_item"], ["subject_id", subject.id]], 60),
+  ]);
+
+  const musicAssets = (assets as any[]).filter((row) => row.music_item_id == null || row.music_item_id === subject.id);
+  const musicIdentifiers = (identifiers as any[]).filter((row) => row.music_item_id == null || row.music_item_id === subject.id);
+  const musicCredits = (credits as any[]).filter((row) => row.music_item_id == null || row.music_item_id === subject.id);
+  const musicSplits = (splits as any[]).filter((row) => row.music_item_id == null || row.music_item_id === subject.id);
+  const mission = (missions as any[])[0] ?? null;
+  const missionTasks = (tasks as any[])
+    .filter((task) => !["archived", "rejected", "superseded"].includes(stringArg(task.status).toLowerCase()))
+    .sort((left, right) => stringArg(left.id).localeCompare(stringArg(right.id)));
+  const bindingByTaskId = new Map((bindings as any[]).map((binding) => [stringArg(binding.task_id), binding]));
+  const scheduleBindings = (bindings as any[])
+    .map((binding) => {
+      const task = missionTasks.find((candidate) => candidate.id === binding.task_id) ?? (tasks as any[]).find((candidate) => candidate.id === binding.task_id);
+      return {
+        taskId: stringArg(binding.task_id),
+        title: stringArg(task?.title) || "Release task",
+        deadline: typeof task?.deadline === "string" ? task.deadline : null,
+        offsetDays: Number(binding.offset_days ?? 0),
+        active: binding.active !== false,
+        scheduleMode: "release_bound" as const,
+        taskStatus: stringArg(task?.status) || "unknown",
+      } satisfies ReleaseTaskScheduleBindingInput;
+    })
+    .filter((binding) => binding.taskId);
+  const activeTasks = missionTasks.map((task) => ({
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    deadline: task.deadline ?? null,
+    scheduleKey: task.schedule_key ?? null,
+    ownerRole: task.owner_role ?? null,
+    purpose: task.purpose ?? null,
+    binding: bindingByTaskId.get(task.id) ?? null,
+  }));
+
+  const metadata = record(identity.metadata);
+  const releaseSuccess = record(metadata.release_success);
+  const campaign = normalizeCampaignConfig(releaseSuccess.campaign);
+  const packet: ReleaseSuccessPacket & Record<string, unknown> = {
+    musicItemId: identity.id,
+    releasePlanId,
+    releasePlanRevision: integerOrZero(plan?.revision),
+    lifecycleStage: stringArg(identity.lifecycle_stage),
+    releasedAt: stringOrNull(identity.released_at),
+    providerReleaseDate: stringOrNull(identity.planned_release_date),
+    approvedReleaseDate: stringOrNull(plan?.approved_release_date),
+    today: new Date().toISOString().slice(0, 10),
+    assets: {
+      finalMaster: assetFact(musicAssets, "final_master"),
+      artwork: assetFact(musicAssets, "cover_art") ?? assetFact(musicAssets, "alternate_artwork"),
+    },
+    metadata: factFromValue(releaseSuccess.metadata),
+    credits: creditsFact(musicCredits),
+    splits: splitsFact(musicSplits),
+    clearances: factFromValue(releaseSuccess.clearances ?? metadata.clearances ?? identity.rights_state),
+    identifiers: identifiersFact(musicIdentifiers),
+    distributor: factFromValue(releaseSuccess.distributor ?? metadata.distributor) ?? assetFact(musicAssets, "distributor_export"),
+    campaign,
+    campaignFacts: normalizeCampaignFacts(releaseSuccess.campaignFacts),
+    scheduleBindings,
+    musicItem: {
+      id: identity.id,
+      title: identity.title,
+      itemType: identity.item_type,
+      lifecycleStage: identity.lifecycle_stage,
+      rightsState: identity.rights_state ?? null,
+    },
+    releasePlan: plan
+      ? { id: plan.id, status: plan.status, approvedReleaseDate: plan.approved_release_date ?? null, revision: integerOrZero(plan.revision), missionId }
+      : null,
+    mission,
+    activeTasks,
+    assetsRead: musicAssets.map(normalizeAsset),
+    creditsRead: musicCredits,
+    splitsRead: musicSplits,
+    identifiersRead: musicIdentifiers.map((row) => ({ id: row.id, type: row.identifier_type, value: row.identifier_value, confidence: row.confidence })),
+    clearancesRead: packetClearanceView(releaseSuccess, metadata, identity.rights_state),
+    distributorRead: packetDistributorView(releaseSuccess, metadata, musicAssets),
+    canonicalDocuments: { count: countCanonicalDocuments(links as any[]) },
+    opportunityCounts: countOpportunities(links as any[], managerOutputs as any[]),
+  };
+  packet.assessment = assessReleaseSuccess(packet);
+
+  if (packet.releasedAt || ["released", "catalog", "archived"].includes(packet.lifecycleStage)) {
+    return { status: "found", packet: { ...packet, assessment: packet.assessment } };
+  }
+  return { status: "found", packet };
+}
+
+async function proposeFocusedReleaseDateChange(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") return { status: "not_allowed", reason: "Release-date proposals are currently scoped to an attached song." };
+  const packetResult = await readFocusedReleaseSuccess(db, input) as { status: string; packet?: ReleaseSuccessPacket & Record<string, unknown> };
+  if (packetResult.status !== "found" || !packetResult.packet) return packetResult;
+  const packet = packetResult.packet;
+  if (packet.releasedAt || ["released", "catalog", "archived"].includes(packet.lifecycleStage)) {
+    return { status: "not_allowed", reason: "Released and catalog music cannot receive a pre-release date proposal." };
+  }
+  const proposedDate = requiredIsoDate(args.proposedDate, "Proposed release date");
+  const reason = requiredText(args.reason, "Release-date reason", 2_000);
+  const preview = await createSchedulePreview({
+    currentReleaseDate: packet.approvedReleaseDate ?? packet.providerReleaseDate,
+    proposedReleaseDate: proposedDate,
+    expectedRevision: packet.releasePlanRevision,
+    bindings: packet.scheduleBindings ?? [],
+  });
+  if (!db.rpc) throw new Error("Release-date proposal command is unavailable.");
+  const idempotencyKey = `manager:${subject.id}:${packet.releasePlanRevision}:${proposedDate}:${preview.previewHash?.slice(0, 24)}:${stableTextHash(reason)}`;
+  const { data, error } = await db.rpc("propose_release_date_change", {
+    p_account_id: input.accountId,
+    p_artist_workspace_id: input.artistWorkspaceId,
+    p_artist_id: input.artistId,
+    p_music_item_id: subject.id,
+    p_proposed_date: proposedDate,
+    p_reason: reason,
+    p_expected_plan_revision: packet.releasePlanRevision,
+    p_preview: preview,
+    p_preview_hash: preview.previewHash,
+    p_expires_at: new Date(Date.now() + 30 * 60 * 1_000).toISOString(),
+    p_idempotency_key: idempotencyKey,
+    ...(input.userId ? { p_requested_by: input.userId } : {}),
+  });
+  if (error) throw error;
+  return { status: "proposed", request: { ...record(data), preview, previewHash: preview.previewHash } };
+}
+
 async function updateFocusedMusicMetadata(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
   const subject = requireFocusedMusicSubject(input);
   const group = requiredText(args.group, "Metadata group", 100);
@@ -518,6 +689,187 @@ function isReleasedLifecycle(value: unknown) {
   return lifecycleStage === "released" || lifecycleStage === "catalog";
 }
 
+function normalizeCampaignConfig(value: unknown): ReleaseSuccessPacket["campaign"] {
+  const source = record(value);
+  return {
+    spotifyEditorialEnabled: booleanOrUndefined(source.spotifyEditorialEnabled ?? source.spotify_editorial_enabled),
+    independentPlaylistsEnabled: booleanOrUndefined(source.independentPlaylistsEnabled ?? source.independent_playlists_enabled),
+    pressEnabled: booleanOrUndefined(source.pressEnabled ?? source.press_enabled),
+    contentEnabled: booleanOrUndefined(source.contentEnabled ?? source.content_enabled),
+    postReleaseMeasurementEnabled: booleanOrUndefined(source.postReleaseMeasurementEnabled ?? source.post_release_measurement_enabled),
+  };
+}
+
+function normalizeCampaignFacts(value: unknown): ReleaseSuccessPacket["campaignFacts"] {
+  const source = record(value);
+  return {
+    spotifyEditorialPitch: factFromValue(source.spotifyEditorialPitch ?? source.spotify_editorial_pitch),
+    independentPlaylistTargets: factFromValue(source.independentPlaylistTargets ?? source.independent_playlist_targets),
+    pressPackage: factFromValue(source.pressPackage ?? source.press_package),
+    contentPlan: factFromValue(source.contentPlan ?? source.content_plan),
+    postReleaseMeasurement: factFromValue(source.postReleaseMeasurement ?? source.post_release_measurement),
+  };
+}
+
+function factFromValue(value: unknown, fallbackSource = "release_success_packet"): ReleaseFact | undefined {
+  if (value == null || value === "") return undefined;
+  if (typeof value === "string") {
+    return { state: factStateFromText(value), source: fallbackSource, detail: value };
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  return {
+    state: factStateFromText(source.state),
+    source: stringArg(source.source) || fallbackSource,
+    ref: stringArg(source.ref) || undefined,
+    observedAt: stringArg(source.observedAt ?? source.observed_at) || undefined,
+    detail: stringArg(source.detail) || undefined,
+  };
+}
+
+function assetFact(rows: any[], assetType: string): ReleaseFact | undefined {
+  const row = rows.find((candidate) => stringArg(candidate.asset_type).toLowerCase() === assetType);
+  if (!row) return undefined;
+  return {
+    state: assetStatusToFactState(row.status),
+    source: "music_assets",
+    ref: stringArg(row.id) || undefined,
+    observedAt: stringArg(row.created_at) || undefined,
+    detail: stringArg(row.title) || undefined,
+  };
+}
+
+function creditsFact(rows: any[]): ReleaseFact {
+  if (!rows.length) return { state: "missing", source: "music_credits" };
+  const statuses = rows.map((row) => stringArg(row.status).toLowerCase());
+  return {
+    state: statuses.every((status) => ["confirmed", "cleared", "approved"].includes(status)) ? "confirmed" : "pending",
+    source: "music_credits",
+    detail: `${rows.length} credit record${rows.length === 1 ? "" : "s"} supplied.`,
+  };
+}
+
+function splitsFact(rows: any[]): ReleaseFact {
+  if (!rows.length) return { state: "missing", source: "music_splits" };
+  const statuses = rows.map((row) => stringArg(row.status).toLowerCase());
+  return {
+    state: statuses.every((status) => ["confirmed", "cleared", "approved"].includes(status))
+      ? "confirmed"
+      : statuses.some((status) => ["pending", "draft"].includes(status)) ? "pending" : "unknown",
+    source: "music_splits",
+    detail: `${rows.length} split record${rows.length === 1 ? "" : "s"} supplied.`,
+  };
+}
+
+function identifiersFact(rows: any[]): ReleaseFact {
+  const applicable = rows.filter((row) => ["isrc", "upc", "distributor_id"].includes(stringArg(row.identifier_type).toLowerCase()));
+  return applicable.length
+    ? { state: "confirmed", source: "music_identifiers", detail: `${applicable.length} applicable identifier${applicable.length === 1 ? "" : "s"} recorded.` }
+    : { state: "missing", source: "music_identifiers" };
+}
+
+function normalizeAsset(row: any) {
+  return {
+    id: row.id,
+    assetType: row.asset_type,
+    title: row.title,
+    status: row.status,
+    versionLabel: row.version_label ?? null,
+    notes: row.notes ?? null,
+  };
+}
+
+function packetClearanceView(releaseSuccess: Record<string, unknown>, metadata: Record<string, unknown>, rightsState: unknown) {
+  return factFromValue(releaseSuccess.clearances ?? metadata.clearances ?? rightsState, "music_items.rights_state")
+    ?? { state: "unknown", source: "music_items.rights_state" };
+}
+
+function packetDistributorView(releaseSuccess: Record<string, unknown>, metadata: Record<string, unknown>, assets: any[]) {
+  return factFromValue(releaseSuccess.distributor ?? metadata.distributor, "music_items.metadata")
+    ?? assetFact(assets, "distributor_export")
+    ?? { state: "unknown", source: "music_items.metadata" };
+}
+
+function countCanonicalDocuments(links: any[]) {
+  return new Set(links
+    .filter((link) => stringArg(link.source_type).toLowerCase() === "document" && stringArg(link.relationship).toLowerCase() === "references")
+    .map((link) => stringArg(link.source_id))
+    .filter(Boolean)).size;
+}
+
+function countOpportunities(links: any[], outputs: any[]) {
+  const seen = new Set<string>();
+  const counts = { playlist: 0, press: 0, total: 0 };
+  const add = (kind: string, id: string) => {
+    const normalizedKind = kind.toLowerCase();
+    const normalizedId = id || `${normalizedKind}:${counts.total}`;
+    const key = `${normalizedKind}:${normalizedId}`;
+    if (seen.has(key)) return;
+    if (!normalizedKind.includes("playlist") && !normalizedKind.includes("press") && !normalizedKind.includes("media")) return;
+    seen.add(key);
+    if (normalizedKind.includes("playlist")) counts.playlist += 1;
+    else counts.press += 1;
+    counts.total += 1;
+  };
+  for (const link of links) {
+    const sourceType = stringArg(link.source_type).toLowerCase();
+    if (!sourceType.includes("opportunity") && !sourceType.includes("playlist") && !sourceType.includes("press") && !sourceType.includes("media")) continue;
+    const metadata = record(link.metadata);
+    add(stringArg(link.opportunity_type) || stringArg(metadata.opportunityType) || `${sourceType}:${stringArg(link.source_id)}`, stringArg(link.source_id));
+  }
+  for (const output of outputs) {
+    if (stringArg(output.output_type) !== "release_opportunity_brief") continue;
+    const render = record(output.render_json);
+    add(stringArg(render.opportunityType ?? render.opportunity_type), stringArg(output.id));
+  }
+  return counts;
+}
+
+function factStateFromText(value: unknown): ReleaseFact["state"] {
+  const normalized = stringArg(value).toLowerCase();
+  if (["confirmed", "cleared", "approved", "complete", "declared", "accepted"].includes(normalized)) return "confirmed";
+  if (["missing", "required", "blocked"].includes(normalized)) return "missing";
+  if (["pending", "in_review", "awaiting_approval"].includes(normalized)) return "pending";
+  if (["draft", "planned"].includes(normalized)) return "draft";
+  if (normalized === "uploaded") return "uploaded";
+  if (["not_applicable", "n/a"].includes(normalized)) return "not_applicable";
+  return "unknown";
+}
+
+function assetStatusToFactState(value: unknown): ReleaseFact["state"] {
+  return factStateFromText(value);
+}
+
+function booleanOrUndefined(value: unknown) {
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function integerOrZero(value: unknown) {
+  if (typeof value === "number" && Number.isInteger(value) && value >= 0) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : 0;
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function requiredIsoDate(value: unknown, label: string) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error(`${label} is invalid.`);
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) throw new Error(`${label} is invalid.`);
+  return value;
+}
+
+function stableTextHash(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 function releaseManagementMode(value: { lifecycle_stage?: unknown; released_at?: unknown; planned_release_date?: unknown }) {
   if (value.released_at || isReleasedLifecycle(value.lifecycle_stage)) return "post_release";
   if (stringArg(value.lifecycle_stage).toLowerCase() === "scheduled" || stringArg(value.planned_release_date)) return "release_window";
@@ -549,6 +901,21 @@ async function selectScoped(db: SupabaseLike, table: string, columns: string, in
   const { data, error } = await scopedQuery(db, table, columns, input)
     .order("created_at", { ascending: false })
     .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function selectFocusedRows(
+  db: SupabaseLike,
+  table: string,
+  columns: string,
+  input: ManagerToolInput,
+  filters: Array<[string, unknown]>,
+  limit: number,
+) {
+  let query = scopedQuery(db, table, columns, input);
+  for (const [column, value] of filters) query = query.eq(column, value);
+  const { data, error } = await query.order("created_at", { ascending: false }).limit(limit);
   if (error) throw error;
   return data ?? [];
 }
