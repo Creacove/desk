@@ -3,6 +3,7 @@ import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
+  deriveReleaseDateProposalFromContextQuestions,
   managerConversationJsonSchema,
   parseManagerConversationOutput,
   type ManagerConversationOutput,
@@ -119,6 +120,19 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       trigger: "manager_conversation",
       scopedMissionId: finalScopedMissionId,
     }, output);
+    const derivedProposal = deriveReleaseDateProposalFromContextQuestions(output.contextQuestions);
+    if (derivedProposal && input.musicSubject?.type === "music_item") {
+      await executeManagerConversationTool(db as any, {
+        ...input,
+        conversationId,
+        runId: runId ?? undefined,
+        createdWork: toolCreatedWork,
+      }, "propose_focused_release_date_change", {
+        proposedDate: derivedProposal.proposedDate,
+        reason: derivedProposal.reason,
+      });
+      output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
+    }
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
     await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
     output.createdWork = taskDraftWork
@@ -655,6 +669,7 @@ async function callOpenAIManagerConversation(
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
   const tools = selectManagerConversationToolsForTurn({
     body: input.body,
+    contextAnswers: input.contextAnswers,
     hasAttachedUnreleasedSong: await hasAttachedUnreleasedSong(db, input),
   });
   const result = await runManagerAgentLoop({

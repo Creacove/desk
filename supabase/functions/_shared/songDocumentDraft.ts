@@ -91,7 +91,7 @@ export async function persistFocusedSongDocumentDraft(
   const createdLinkIds: string[] = [];
 
   try {
-    const { data: links, error: linksError } = await scopedQuery(db, "artifact_links", scope)
+    const { data: links, error: linksError } = await scopedSelect(db, "artifact_links", scope)
       .eq("source_type", "document")
       .eq("target_type", "music_item")
       .eq("target_id", musicItemId)
@@ -100,7 +100,7 @@ export async function persistFocusedSongDocumentDraft(
 
     const linkedIds = (links ?? []).map((link: any) => link.source_id).filter(Boolean);
     const { data: existingRows, error: existingError } = linkedIds.length
-      ? await scopedQuery(db, "documents", scope)
+      ? await scopedSelect(db, "documents", scope)
         .eq("origin", "manager_generated")
         .eq("document_type", documentType)
         .in("id", linkedIds)
@@ -111,7 +111,7 @@ export async function persistFocusedSongDocumentDraft(
 
     let document = existingRows?.[0] as Record<string, any> | undefined;
     if (!document) {
-      const { data, error } = await scopedQuery(db, "documents", scope)
+      const { data, error } = await db.from("documents")
         .insert({
           account_id: input.accountId,
           artist_workspace_id: input.artistWorkspaceId,
@@ -185,11 +185,10 @@ export async function persistFocusedSongDocumentDraft(
       }
     }
 
-    const { count, error: countError } = await scopedQuery(db, "document_versions", scope)
-      .select("id", { count: "exact", head: true })
+    const { count, error: countError } = await scopedSelect(db, "document_versions", scope, "id", { count: "exact", head: true })
       .eq("document_id", documentId);
     if (countError) throw countError;
-    const { data: version, error: versionError } = await scopedQuery(db, "document_versions", scope)
+    const { data: version, error: versionError } = await db.from("document_versions")
       .insert({
         account_id: input.accountId,
         artist_workspace_id: input.artistWorkspaceId,
@@ -209,14 +208,12 @@ export async function persistFocusedSongDocumentDraft(
     versionId = version.id;
     const canonicalVersionId = version.id;
 
-    const { error: updateError } = await scopedQuery(db, "documents", scope)
-      .update({ current_version_id: canonicalVersionId, status: "draft", created_from_run_id: runId, title })
+    const { error: updateError } = await scopedUpdate(db, "documents", scope, { current_version_id: canonicalVersionId, status: "draft", created_from_run_id: runId, title })
       .eq("id", canonicalDocumentId);
     if (updateError) throw updateError;
     updatedDocument = true;
 
-    const { error: eventError } = await scopedQuery(db, "operating_events", scope)
-      .insert({
+    const { error: eventError } = await db.from("operating_events").insert({
         account_id: input.accountId,
         artist_workspace_id: input.artistWorkspaceId,
         artist_id: input.artistId,
@@ -268,7 +265,7 @@ export async function loadFocusedSongDocuments(db: any, input: Omit<FocusedSongD
     ["artist_workspace_id", input.artistWorkspaceId],
     ["artist_id", input.artistId],
   ] as const;
-  const { data: links, error: linksError } = await scopedQuery(db, "artifact_links", scope)
+  const { data: links, error: linksError } = await scopedSelect(db, "artifact_links", scope)
     .eq("source_type", "document")
     .eq("target_type", "music_item")
     .eq("target_id", musicItemId)
@@ -277,11 +274,11 @@ export async function loadFocusedSongDocuments(db: any, input: Omit<FocusedSongD
   if (linksError) throw linksError;
   const ids = (links ?? []).map((link: any) => link.source_id).filter(Boolean);
   if (!ids.length) return [];
-  const { data: documents, error: documentError } = await scopedQuery(db, "documents", scope)
+  const { data: documents, error: documentError } = await scopedSelect(db, "documents", scope)
     .in("id", ids)
     .limit(24);
   if (documentError) throw documentError;
-  const { data: versions, error: versionError } = await scopedQuery(db, "document_versions", scope)
+  const { data: versions, error: versionError } = await scopedSelect(db, "document_versions", scope)
     .in("document_id", ids)
     .limit(60);
   if (versionError) throw versionError;
@@ -293,8 +290,7 @@ export async function loadFocusedSongDocuments(db: any, input: Omit<FocusedSongD
 }
 
 async function loadAttachedMissionId(db: any, scope: readonly (readonly [string, string])[], musicItemId: string) {
-  const { data, error } = await scopedQuery(db, "artifact_links", scope)
-    .select("source_id")
+  const { data, error } = await scopedSelect(db, "artifact_links", scope, "source_id")
     .eq("source_type", "mission")
     .eq("target_type", "music_item")
     .eq("target_id", musicItemId)
@@ -306,13 +302,12 @@ async function loadAttachedMissionId(db: any, scope: readonly (readonly [string,
 }
 
 async function ensureArtifactLink(db: any, scope: readonly (readonly [string, string])[], link: Record<string, string>) {
-  let query = scopedQuery(db, "artifact_links", scope);
+  let query = scopedSelect(db, "artifact_links", scope, "id");
   for (const [column, value] of Object.entries(link)) query = query.eq(column, value);
-  const { data: existing, error: existingError } = await query.select("id").maybeSingle();
+  const { data: existing, error: existingError } = await query.maybeSingle();
   if (existingError) throw existingError;
   if (existing?.id) return undefined;
-  const { data, error } = await scopedQuery(db, "artifact_links", scope)
-    .insert({ ...Object.fromEntries(scope), ...link })
+  const { data, error } = await db.from("artifact_links").insert({ ...Object.fromEntries(scope), ...link })
     .select("id")
     .single();
   if (error) throw error;
@@ -334,26 +329,37 @@ async function compensateDocumentPersistence(
 ) {
   try {
     if (state.versionId) {
-      await scopedQuery(db, "document_versions", scope).delete().eq("id", state.versionId);
+      await scopedDelete(db, "document_versions", scope).eq("id", state.versionId);
     }
     if (state.documentId && state.updatedDocument && !state.createdDocument && state.priorDocument) {
-      await scopedQuery(db, "documents", scope).update(state.priorDocument).eq("id", state.documentId);
+      await scopedUpdate(db, "documents", scope, state.priorDocument).eq("id", state.documentId);
     }
     for (const linkId of state.createdLinkIds) {
-      await scopedQuery(db, "artifact_links", scope).delete().eq("id", linkId);
+      await scopedDelete(db, "artifact_links", scope).eq("id", linkId);
     }
     if (state.documentId && state.createdDocument) {
-      await scopedQuery(db, "documents", scope).delete().eq("id", state.documentId);
+      await scopedDelete(db, "documents", scope).eq("id", state.documentId);
     }
   } catch {
     // Preserve the original persistence error. The normal error telemetry records the failed stage.
   }
 }
 
-function scopedQuery(db: any, table: string, scope: readonly (readonly [string, string])[]) {
-  let query = db.from(table);
+function applyScope(query: any, scope: readonly (readonly [string, string])[]) {
   for (const [column, value] of scope) query = query.eq(column, value);
   return query;
+}
+
+function scopedSelect(db: any, table: string, scope: readonly (readonly [string, string])[], columns = "*", options?: Record<string, unknown>) {
+  return applyScope(db.from(table).select(columns, options), scope);
+}
+
+function scopedUpdate(db: any, table: string, scope: readonly (readonly [string, string])[], values: Record<string, unknown>) {
+  return applyScope(db.from(table).update(values), scope);
+}
+
+function scopedDelete(db: any, table: string, scope: readonly (readonly [string, string])[]) {
+  return applyScope(db.from(table).delete(), scope);
 }
 
 function requestedDocumentType(value: string): CanonicalSongDocumentType | null {

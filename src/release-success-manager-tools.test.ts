@@ -492,6 +492,7 @@ describe("release success Manager tools", () => {
     expect(result.packet).not.toHaveProperty("unrelatedWorkspace");
     expect(calls.every((call) => call.filters.some(([key]) => key === "account_id"))).toBe(true);
     expect(calls.map((call) => call.table)).not.toContain("music_projects");
+    expect(calls.find((call) => call.table === "artifact_links")?.columns).not.toContain("metadata");
   });
 
   it("creates a preview proposal only for the attached unreleased song and never applies it", async () => {

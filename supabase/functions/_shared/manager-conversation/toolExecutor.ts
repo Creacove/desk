@@ -128,8 +128,9 @@ async function queryActiveMissions(db: SupabaseLike, input: ManagerToolInput, ar
     "change_conditions",
     "review_point",
     "created_at",
-  ].join(","), input).order("created_at", { ascending: false }).limit(numberArg(args.limit, 12, 30));
+  ].join(","), input);
   if (status) query = query.eq("status", status);
+  query = query.order("created_at", { ascending: false }).limit(numberArg(args.limit, 12, 30));
   const { data, error } = await query;
   if (error) throw error;
   const missions = filterRows(data ?? [], args);
@@ -368,7 +369,7 @@ async function readFocusedReleaseSuccess(db: SupabaseLike, input: ManagerToolInp
     selectFocusedRows(db, "music_identifiers", "id,identifier_type,identifier_value,confidence,created_at", input, [["music_item_id", subject.id]], 40),
     selectFocusedRows(db, "music_credits", "id,role,name,status,created_at", input, [["music_item_id", subject.id]], 60),
     selectFocusedRows(db, "music_splits", "id,status,summary,publishing_total,master_total,created_at", input, [["music_item_id", subject.id]], 20),
-    selectFocusedRows(db, "artifact_links", "source_type,source_id,target_type,target_id,relationship,metadata,created_at", input, [["target_type", "music_item"], ["target_id", subject.id]], 100),
+    selectFocusedRows(db, "artifact_links", "source_type,source_id,target_type,target_id,relationship,created_at", input, [["target_type", "music_item"], ["target_id", subject.id]], 100),
   ]);
 
   const plan = plans[0] as any | undefined;
@@ -1273,8 +1274,7 @@ function countOpportunities(links: any[], outputs: any[]) {
   for (const link of links) {
     const sourceType = stringArg(link.source_type).toLowerCase();
     if (!sourceType.includes("opportunity") && !sourceType.includes("playlist") && !sourceType.includes("press") && !sourceType.includes("media")) continue;
-    const metadata = record(link.metadata);
-    add(stringArg(link.opportunity_type) || stringArg(metadata.opportunityType) || `${sourceType}:${stringArg(link.source_id)}`, stringArg(link.source_id));
+    add(`${sourceType}:${stringArg(link.source_id)}`, stringArg(link.source_id));
   }
   for (const output of outputs) {
     if (stringArg(output.output_type) !== "release_opportunity_brief") continue;

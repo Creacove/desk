@@ -5,6 +5,7 @@ type QueryState = { table: string; columns: string; filters: Array<[string, unkn
 
 class QueryDouble {
   state: QueryState;
+  private terminal = false;
 
   constructor(state: QueryState, private readonly rows: unknown[]) {
     this.state = state;
@@ -13,9 +14,13 @@ class QueryDouble {
   select(columns: string) { this.state.columns = columns; return this; }
   update(values: Record<string, unknown>) { this.state.updates = values; return this; }
   insert(values: Record<string, unknown>) { this.state.updates = values; return this; }
-  eq(column: string, value: unknown) { this.state.filters.push([column, value]); return this; }
+  eq(column: string, value: unknown) {
+    if (this.terminal) throw new TypeError("query.eq is not a function");
+    this.state.filters.push([column, value]);
+    return this;
+  }
   order() { return this; }
-  limit() { return this; }
+  limit() { this.terminal = true; return this; }
   async maybeSingle() { return { data: this.rows[0] ?? null, error: null }; }
   then(resolve: (value: { data: unknown[]; error: null }) => unknown) { return Promise.resolve(resolve({ data: this.rows, error: null })); }
 }
@@ -37,6 +42,17 @@ function dbWith(rows: unknown[]) {
 const scope = { accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1" };
 
 describe("Manager output tools", () => {
+  it("applies active mission status before ordering and limiting", async () => {
+    const { db, states } = dbWith([]);
+
+    await executeManagerConversationTool(db, scope, "query_active_missions", {
+      status: "active",
+      limit: 12,
+    });
+
+    expect(states[0].filters).toContainEqual(["status", "active"]);
+  });
+
   it("applies exact song filters before limiting evidence retrieval", async () => {
     const { db, states } = dbWith([]);
 

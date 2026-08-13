@@ -5,8 +5,15 @@ const sql = readFileSync(
   "supabase/migrations/20260812000100_release_success_foundation.sql",
   "utf8",
 );
+const activeScheduleKeySql = readFileSync(
+  "supabase/migrations/20260813000200_active_release_schedule_key_uniqueness.sql",
+  "utf8",
+);
 
 describe("release success RPC transaction contract", () => {
+  it("allows a superseded plan version to release its canonical schedule keys", () => {
+    expect(activeScheduleKeySql).toMatch(/tasks_release_schedule_key_unique[\s\S]*?where schedule_key is not null[\s\S]*?status not in[\s\S]*?'superseded'::public\.task_status[\s\S]*?'archived'::public\.task_status[\s\S]*?'rejected'::public\.task_status/i);
+  });
   it("locks every mutable row and verifies the scoped authenticated owner", () => {
     expect(sql).toMatch(/release_date_change_requests[\s\S]*for update/i);
     expect(sql).toMatch(/music_release_plans[\s\S]*for update/i);

@@ -45,6 +45,17 @@ describe("Manager Agent Responses loop", () => {
     expect(names).not.toContain("record_focused_release_opportunity_outcome");
   });
 
+  it("keeps the release proposal tool available when the artist answers a release-date context question", () => {
+    const tools = selectManagerConversationToolsForTurn({
+      body: "Context answers for Manager mission decision.",
+      contextAnswers: [{ questionKey: "approve_release_date", answer: "Approve August 27, 2026" }],
+      hasAttachedUnreleasedSong: true,
+    });
+
+    expect(tools.filter((tool) => tool.type === "function").map((tool) => tool.name))
+      .toContain("propose_focused_release_date_change");
+  });
+
   it("builds a stateful Responses request with web search, local tools, and strict output format", () => {
     const request = buildManagerAgentRequest({
       model: "gpt-5-mini",

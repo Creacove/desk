@@ -31,7 +31,7 @@ class DocumentDbDouble {
 class DocumentQuery {
   private filters: Array<[string, unknown]> = [];
   private inFilters: Array<[string, unknown[]]> = [];
-  private action: "select" | "insert" | "update" | "delete" = "select";
+  private action: "select" | "insert" | "update" | "delete" | null = null;
   private payload: Row | Row[] | null = null;
   private inserted: Row[] = [];
   private head = false;
@@ -39,6 +39,7 @@ class DocumentQuery {
   constructor(private readonly db: DocumentDbDouble, private readonly table: string) {}
 
   select(_columns: string, options?: { head?: boolean }) {
+    this.action = this.action ?? "select";
     this.head = Boolean(options?.head);
     return this;
   }
@@ -61,6 +62,7 @@ class DocumentQuery {
   }
 
   eq(column: string, value: unknown) {
+    if (!this.action) throw new TypeError("query.eq is not a function");
     this.filters.push([column, value]);
     return this;
   }
@@ -88,7 +90,7 @@ class DocumentQuery {
   }
 
   private async execute() {
-    if (this.db.failTable === this.table && ["insert", "update", "delete"].includes(this.action)) {
+    if (this.db.failTable === this.table && this.action && ["insert", "update", "delete"].includes(this.action)) {
       return { data: null, error: new Error(`${this.table} write failed`) };
     }
 

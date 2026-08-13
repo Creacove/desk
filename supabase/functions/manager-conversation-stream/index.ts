@@ -3,6 +3,7 @@ import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
+  deriveReleaseDateProposalFromContextQuestions,
   managerConversationJsonSchema,
   parseManagerConversationOutput,
   type ManagerConversationOutput,
@@ -164,14 +165,6 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         );
         const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
         const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
-        await streamReleaseSuccessArtifacts(
-          db,
-          input,
-          conversationId,
-          runId,
-          releaseSuccessToolResults,
-          emit,
-        );
         if (toolCreatedWork.length) output.missionGraphDecisions = [];
         const preserveWorkspaceTopic = toolCreatedWork.some((work) => work.type === "music_item");
         if (preserveWorkspaceTopic && finalMusicSubject) {
@@ -200,6 +193,22 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           trigger: "manager_conversation",
           scopedMissionId: finalScopedMissionId,
         }, output);
+        const derivedProposal = deriveReleaseDateProposalFromContextQuestions(output.contextQuestions);
+        if (derivedProposal && input.musicSubject?.type === "music_item"
+          && !releaseSuccessToolResults.some((item) => item.tool === "propose_focused_release_date_change")) {
+          const proposalResult = await executeManagerConversationTool(db as any, {
+            ...input,
+            conversationId,
+            runId: runId ?? undefined,
+            createdWork: toolCreatedWork,
+          }, "propose_focused_release_date_change", {
+            proposedDate: derivedProposal.proposedDate,
+            reason: derivedProposal.reason,
+          });
+          releaseSuccessToolResults.push({ tool: "propose_focused_release_date_change", result: proposalResult });
+          output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
+        }
+        await streamReleaseSuccessArtifacts(db, input, conversationId, runId, releaseSuccessToolResults, emit);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
         const documentToolResult = releaseSuccessToolResults.find((item) => item.tool === "create_focused_song_document");
         const persistedDocument = documentToolResult?.result && isRecord(documentToolResult.result) && documentToolResult.result.status === "drafted"
@@ -801,6 +810,7 @@ async function callOpenAIManagerConversation(
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
   const tools = selectManagerConversationToolsForTurn({
     body: input.body,
+    contextAnswers: input.contextAnswers,
     hasAttachedUnreleasedSong: await hasAttachedUnreleasedSong(db, input),
   });
   const result = await runManagerAgentLoop({
@@ -1046,6 +1056,18 @@ async function persistReleaseSuccessArtifact(
   runId: string | null,
   artifact: Record<string, any>,
 ) {
+  const { data: existingRunOutput, error: existingRunError } = runId
+    ? await db.from("manager_outputs")
+      .select("id")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .eq("output_type", "release_success_assessment")
+      .eq("created_from_run_id", runId)
+      .maybeSingle()
+    : { data: null, error: null };
+  if (existingRunError) throw existingRunError;
+
   const { error: staleError } = await db
     .from("manager_outputs")
     .update({ is_current: false })
@@ -1065,9 +1087,7 @@ async function persistReleaseSuccessArtifact(
     ...(isRecord(assessment.foundation) && Array.isArray(assessment.foundation.gates) ? assessment.foundation.gates : []),
     ...(isRecord(assessment.campaign) && Array.isArray(assessment.campaign.gates) ? assessment.campaign.gates : []),
   ];
-  const { data: output, error: outputError } = await db
-    .from("manager_outputs")
-    .insert({
+  const outputPayload = {
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
@@ -1084,9 +1104,11 @@ async function persistReleaseSuccessArtifact(
       schema_version: "release-success-artifact-v1",
       is_current: true,
       created_from_run_id: runId,
-    })
-    .select("id")
-    .single();
+  };
+  const outputQuery = existingRunOutput?.id
+    ? db.from("manager_outputs").update(outputPayload).eq("id", existingRunOutput.id)
+    : db.from("manager_outputs").insert(outputPayload);
+  const { data: output, error: outputError } = await outputQuery.select("id").single();
   if (outputError) throw outputError;
 
   const links = [

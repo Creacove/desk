@@ -397,12 +397,18 @@ const releaseTurnToolNames = new Set([
 
 export function selectManagerConversationToolsForTurn(input: {
   body: string;
+  contextAnswers?: Array<{ questionKey: string; answer: string }>;
   hasAttachedUnreleasedSong: boolean;
 }): ManagerAgentToolDefinition[] {
   const allowed = new Set<string>();
   const body = input.body.trim().toLowerCase();
   if (input.hasAttachedUnreleasedSong) {
-    const releaseIntent = /\b(release|launch|rollout|campaign|playlist|press|publicity|editorial|epk|press kit|pitch|release date)\b/.test(body);
+    const contextAnswerText = (input.contextAnswers ?? [])
+      .map((answer) => `${answer.questionKey} ${answer.answer}`)
+      .join(" ")
+      .replace(/[_-]+/g, " ")
+      .toLowerCase();
+    const releaseIntent = /\b(release|launch|rollout|campaign|playlist|press|publicity|editorial|epk|press kit|pitch|release date)\b/.test(`${body} ${contextAnswerText}`);
     const documentIntent = /\b(draft|write|prepare|create|make)\b/.test(body)
       && /\b(epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
     if (releaseIntent) {

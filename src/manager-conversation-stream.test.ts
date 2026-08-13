@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { ReadableStream } from "node:stream/web";
+import { readFileSync } from "node:fs";
 
 import { hydrateReleaseSuccessArtifacts, invalidationsFromManagerRefreshHint, parseManagerConversationEventStream } from "./services/managerConversationStream";
 
 describe("Manager conversation stream parser", () => {
+  it("updates the same run artifact while moving from proposed to awaiting approval", () => {
+    const source = readFileSync("supabase/functions/manager-conversation-stream/index.ts", "utf8");
+    expect(source).toContain('eq("created_from_run_id", runId)');
+    expect(source).toContain("existingRunOutput?.id");
+  });
   it("hydrates an authoritative applied receipt over an obsolete approval artifact after refresh", () => {
     const [artifact] = hydrateReleaseSuccessArtifacts([{
       created_at: "2026-08-13T08:00:00.000Z",

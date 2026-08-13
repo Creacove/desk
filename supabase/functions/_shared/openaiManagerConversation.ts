@@ -98,9 +98,10 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+  required: ["title", "scheduleKey", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
   properties: {
     title: { type: "string" },
+    scheduleKey: { type: "string" },
     ownerRole: { type: "string" },
     workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
     primaryCheckpointKey: { type: "string" },
@@ -275,7 +276,7 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "Do not collapse every answer into promoting the strongest track. Use whichever management lenses fit: strategy, positioning, rights, release, market, team operations, reputation, finance, source completeness, or mission design.",
     "When a song or project is attached and the user asks for a release decision, plan, checkpoint, stage, or next move, first read the exact current subject and call read_focused_release_readiness. Reuse known facts and ask the smallest useful batch: one question by default, or up to three tightly related answers only when they unlock the same next decision. Never turn setup into a questionnaire.",
     "Attached unreleased-song loop: read_focused_music_subject and read_focused_release_success for release-success intent; identify the single highest-impact unresolved decision; use available workspace, provider, and web tools before asking; then ask exactly one human-only question if intent, constraint, or approval is still required. After any successful focused-song write, call the focused release-success read again before answering. Acknowledge what was saved, then move to the next decision only when useful. Never narrate the full release-readiness checklist or ask about a gate already satisfied by the song packet.",
-    "For an attached unreleased-song readiness question, read the exact release-success packet and linked mission before answering. Distinguish release foundation, campaign preparation, and unknown evidence. Lead with the decision. Propose a date change only when the evidence and deterministic preview support it. Never claim the change was applied; application requires the user's explicit approval through the release-plan command. If the user keeps the date, produce the strongest realistic recovery plan and name lost opportunities.",
+    "For an attached unreleased-song readiness question, read the exact release-success packet and linked mission before answering. Distinguish release foundation, campaign preparation, and unknown evidence. Lead with the decision. Propose a date change only when the evidence and deterministic preview support it. Never claim the change was applied; application requires the user's explicit approval through the release-plan command. When the same turn creates or revises mission tasks, return one release-date approval contextQuestion instead of calling the proposal tool early; the server promotes it into the canonical approval artifact after task persistence. Otherwise call propose_focused_release_date_change directly. If the user keeps the date, produce the strongest realistic recovery plan and name lost opportunities.",
     "Use release-success tools only for date or readiness intent on the exact attached unreleased song. Ordinary playlist or press research must not call release mutation tools. The Manager may prepare a proposal, but approval is never a model tool.",
     "Playlist workflow: for an attached song, call query_focused_release_opportunities first, use built-in web search with the song metadata and saved evidence, then save only source-backed candidates with song-specific fit and target-specific evidence. Keep the Spotify editorial route as a pitch/handoff with no editor emails or claimed submission; keep independent playlist outreach separate and require public source and contact provenance for actionable targets. Return five to eight strong targets when available, retain watch targets separately, and prefer fewer results over filler.",
     "Press workflow: research demonstrated coverage and public contact routes for the attached artist/song, not generic blog lists. Every saved press target must explain the song angle and the outlet's evidenced editorial fit. Prepare a pitch or target brief only; never send, submit, or claim placement, invent private contacts, or imply guaranteed coverage.",
@@ -283,7 +284,7 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "When the user says they uploaded or changed an attached song, call read_focused_music_subject before answering. Treat its current assets, rights, analysis, and activity as authoritative; acknowledge the durable change and never ask them to prove an upload that the current subject shows.",
     "For a newly created song workspace whose package has no uploaded audio yet, name the song and current stage, direct the artist to Files for the next durable action, and then ask only for the smallest facts that change that action. Audio and documents are user-controlled uploads: never say a file was uploaded, analyzed, or verified unless the current subject says it was. The artist can directly correct inferred metadata in Details, Files, and Rights.",
     "When an unscoped conversation clearly starts a new-song release journey, ask only for the song title and current unreleased stage unless both are already clear. Then call ensure_song_release_workspace exactly once. That command makes the song, its dedicated release mission, initial package task, and links atomically in this same conversation. After it succeeds, acknowledge the workspace and direct the artist to Files; do not create missionGraphDecisions, createdWork, or a duplicate mission in that same turn.",
-    "For an unreleased song, turn an approved release plan into one release mission only when it is operationally warranted. Include only applicable checkpoints from release intent/date and budget, master/artwork delivery, rights and split confirmation, release metadata and distribution readiness, audience/playlist/press preparation, launch assets and communications, then post-release review. Do not manufacture tasks for a gate that is already satisfied or irrelevant to this artist's stage and budget. Set a task deadline only as an ISO-8601 timestamp derived from a confirmed release date or stated commitment; otherwise return an empty deadline.",
+    "For an unreleased song, turn an approved release plan into one release mission only when it is operationally warranted. Include only applicable checkpoints from release intent/date and budget, master/artwork delivery, rights and split confirmation, release metadata and distribution readiness, audience/playlist/press preparation, launch assets and communications, then post-release review. Do not manufacture tasks for a gate that is already satisfied or irrelevant to this artist's stage and budget. Every template-owned release task must include a stable scheduleKey from distributor_delivery, spotify_editorial_pitch, playlist_shortlist, epk_press_package, content_rollout_start, release_live_check, or post_release_review. Set a task deadline only as an ISO-8601 timestamp derived from a confirmed release date or stated commitment; otherwise return an empty deadline.",
     "Never reopen pre-release gates for released/catalog music. Treat release as a handoff: focus post-release evidence, audience response, approved outreach, reporting, and the next strategic move instead of claiming the master, splits, identifiers, or delivery must be redone.",
     "For an imported or released focused song, first read the exact focused subject and its current Manager Read. If the opening brief does not contain the needed read, use query_manager_outputs with that exact subject ID and output type, then read_manager_output_section. Query evidence with the exact subject ID. When current public intelligence materially changes the decision, call refresh_focused_music_intelligence; if connected intelligence is unavailable or incomplete, use web search before concluding that evidence is absent. Do not recite public catalog metrics unless the user asks for them or a specific metric directly supports the decision; answer the user's actual management request.",
     "Never ask the artist for screenshots, exports, typed analytics, or facts the Manager can retrieve from connected intelligence, saved workspace evidence, the current Manager Read, or web search. Missing private-platform metrics do not block a useful answer: state the limitation briefly, provide a useful tool-backed recommendation before requesting private data, and take or recommend the next useful Manager-owned step. Ask only for a private intent, constraint, approval, or fact that cannot be researched and would materially change the decision.",
@@ -381,7 +382,9 @@ function normalizeMissionGraphDecision(value: unknown): ManagerMissionGraphDecis
   if (decision.outcome !== "activate_mission" && decision.outcome !== "update_existing_mission") return null;
   const mission = normalizeMission(decision.mission);
   const checkpoints = Array.isArray(decision.checkpoints) ? decision.checkpoints.map(normalizeCheckpoint).filter(Boolean) as MissionGenesisCheckpoint[] : [];
-  const tasks = Array.isArray(decision.tasks) ? decision.tasks.map(normalizeTask).filter(Boolean) as MissionGenesisTask[] : [];
+  const tasks = normalizeReleaseTaskScheduleKeys(
+    Array.isArray(decision.tasks) ? decision.tasks.map(normalizeTask).filter(Boolean) as MissionGenesisTask[] : [],
+  );
   if (!mission || !checkpoints.length) return null;
   const checkpointKeys = new Set(checkpoints.map((checkpoint) => checkpoint.key));
   if (tasks.some((task) => !checkpointKeys.has(task.primaryCheckpointKey))) return null;
@@ -441,6 +444,9 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
   const task = value as Partial<MissionGenesisTask>;
   const normalized = {
     title: cleanString(task.title, ""),
+    ...(typeof task.scheduleKey === "string" && task.scheduleKey.trim()
+      ? { scheduleKey: task.scheduleKey.trim() }
+      : {}),
     ownerRole: cleanString(task.ownerRole, "Manager"),
     workMode: ["artist_action", "collaborative", "manager_work"].includes(String(task.workMode))
       ? task.workMode as MissionGenesisTask["workMode"]
@@ -468,6 +474,54 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
   return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length && normalized.completionExpectation && normalized.riskIfLate
     ? normalized
     : null;
+}
+
+const releaseTaskScheduleKeys = new Set([
+  "distributor_delivery",
+  "spotify_editorial_pitch",
+  "playlist_shortlist",
+  "epk_press_package",
+  "content_rollout_start",
+  "release_live_check",
+  "post_release_review",
+]);
+
+export function normalizeReleaseTaskScheduleKeys<T extends { scheduleKey?: string }>(tasks: T[]): T[] {
+  const used = new Set<string>();
+  return tasks.map((task) => {
+    const key = typeof task.scheduleKey === "string" ? task.scheduleKey.trim() : "";
+    if (!releaseTaskScheduleKeys.has(key) || used.has(key)) {
+      const { scheduleKey: _ignored, ...unbound } = task;
+      return unbound as T;
+    }
+    used.add(key);
+    return { ...task, scheduleKey: key };
+  });
+}
+
+export function deriveReleaseDateProposalFromContextQuestions(
+  questions: MissionGenesisQuestion[],
+): { proposedDate: string; reason: string; questionKey: string } | null {
+  const question = questions.find((item) =>
+    /(?:approve|confirm).*(?:release|target).*date|(?:release|target).*date.*(?:approve|confirm)/i.test(`${item.key} ${item.question}`)
+  );
+  if (!question) return null;
+  const option = question.options.find((item) => /^\s*(?:approve|confirm)\s+/i.test(item));
+  if (!option) return null;
+  const dateText = `${option} ${question.question}`;
+  const match = dateText.match(/\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})\b/i);
+  if (!match) return null;
+  const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+  const month = months.indexOf(match[1].toLowerCase()) + 1;
+  const day = Number(match[2]);
+  const year = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return null;
+  return {
+    proposedDate: `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day.toString().padStart(2, "0")}`,
+    reason: cleanString(question.reason, "The artist requested this target release date."),
+    questionKey: question.key,
+  };
 }
 
 function normalizeTaskDeadline(value: unknown) {
