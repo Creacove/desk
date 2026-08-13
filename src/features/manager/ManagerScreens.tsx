@@ -25,11 +25,12 @@ import { buildManagerTurns, type ManagerWorkGroup } from "./managerPresentation"
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
-function useTypewriter(target: string, streaming: boolean): string {
-  const [displayed, setDisplayed] = useState(target);
+function useTypewriter(target: string | undefined | null, streaming: boolean): string {
+  const safeTarget = typeof target === "string" ? target : "";
+  const [displayed, setDisplayed] = useState(safeTarget);
   const frameRef = useRef<number | null>(null);
   const lastTickRef = useRef<number>(0);
-  const displayedRef = useRef<string>(target);
+  const displayedRef = useRef<string>(safeTarget);
   const hasStreamedRef = useRef(false);
 
   if (streaming) {
@@ -39,8 +40,8 @@ function useTypewriter(target: string, streaming: boolean): string {
   useEffect(() => {
     if (!hasStreamedRef.current) {
       // Historical or non-streamed message - snap immediately
-      displayedRef.current = target;
-      setDisplayed(target);
+      displayedRef.current = safeTarget;
+      setDisplayed(safeTarget);
       return;
     }
 
@@ -51,12 +52,12 @@ function useTypewriter(target: string, streaming: boolean): string {
       const elapsed = now - lastTickRef.current;
       if (elapsed >= CHAR_INTERVAL_MS) {
         const currentLen = displayedRef.current.length;
-        if (currentLen < target.length) {
+        if (currentLen < safeTarget.length) {
           const charsToAdd = Math.min(
             MAX_CHARS_PER_FRAME,
             Math.max(1, Math.floor(elapsed / CHAR_INTERVAL_MS)),
           );
-          const next = target.slice(0, currentLen + charsToAdd);
+          const next = safeTarget.slice(0, currentLen + charsToAdd);
           displayedRef.current = next;
           setDisplayed(next);
           lastTickRef.current = now;
@@ -79,9 +80,9 @@ function useTypewriter(target: string, streaming: boolean): string {
         frameRef.current = null;
       }
     };
-  }, [target]);
+  }, [safeTarget]);
 
-  return displayed.length <= target.length ? displayed : target;
+  return (displayed ?? "").length <= safeTarget.length ? (displayed ?? "") : safeTarget;
 }
 
 const CHAT_SCROLL_NEAR_BOTTOM_PX = 160;
@@ -209,7 +210,8 @@ function useConversationScroll({
 // Backend values are ISO timestamps; fixtures/tests already pass
 // human-readable strings ("Just now", "14h ago") — parse fails gracefully.
 // ---------------------------------------------------------------------------
-function formatConversationTimestamp(value: string): string {
+function formatConversationTimestamp(value: string | undefined | null): string {
+  if (!value) return "";
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
 
@@ -313,7 +315,7 @@ export function ManagerOfficeScreen({
                     onClick={() => onConversation(conversation)}
                   >
                     <p className="min-w-0 flex-1 truncate text-[14px] font-medium text-foreground">{conversation.topic}</p>
-                    {conversation.lastUpdate ? <span className="shrink-0 text-[12px] text-muted-foreground/65">{conversation.lastUpdate}</span> : null}
+                    {conversation.lastUpdate ? <span className="shrink-0 text-[12px] text-muted-foreground/65">{formatConversationTimestamp(conversation.lastUpdate)}</span> : null}
                   </button>
                 ))}
               </div>
@@ -1007,8 +1009,8 @@ function MessageRow({
   );
 }
 
-function normalizeManagerBody(value: string) {
-  return value.replace(/\s+/g, " ").trim();
+function normalizeManagerBody(value: string | undefined | null) {
+  return (value ?? "").replace(/\s+/g, " ").trim();
 }
 
 function ManagerResultGroup({
@@ -1213,8 +1215,8 @@ function ManagerActivity({ activeRun, prompt }: { activeRun: ConversationViewMod
 }
 
 // Keep background work legible without exposing internal tool names.
-function activityStatusLine(label: string, prompt?: string) {
-  const cleanLabel = label.trim().toLowerCase();
+function activityStatusLine(label: string | undefined | null, prompt?: string) {
+  const cleanLabel = (label ?? "").trim().toLowerCase();
   const query = prompt ? prompt.toLowerCase() : "";
   const has = (...keys: string[]) => keys.some(key => query.includes(key));
 
@@ -1259,8 +1261,8 @@ function activityStatusLine(label: string, prompt?: string) {
 // ---------------------------------------------------------------------------
 // RichMessageBody — ChatGPT-style typewriter during streaming
 // ---------------------------------------------------------------------------
-function RichMessageBody({ body, streaming, failed }: { body: string; streaming?: boolean; failed?: boolean }) {
-  const displayed = useTypewriter(body, !!streaming);
+function RichMessageBody({ body, streaming, failed }: { body: string | undefined | null; streaming?: boolean; failed?: boolean }) {
+  const displayed = useTypewriter(body ?? "", !!streaming);
 
   // ---- Line-by-line markdown parsing ----
   type ParsedNode =
@@ -1269,7 +1271,7 @@ function RichMessageBody({ body, streaming, failed }: { body: string; streaming?
     | { kind: "ordered-list"; items: string[] }
     | { kind: "unordered-list"; items: string[] };
 
-  const rawLines = displayed.split("\n");
+  const rawLines = (displayed ?? "").split("\n");
   const nodes: ParsedNode[] = [];
   let i = 0;
 

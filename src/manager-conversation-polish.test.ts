@@ -17,7 +17,7 @@ describe("Manager conversation premium UI contract", () => {
     expect(manager).toContain('title="Manager\'s Office"');
     expect(manager).toContain('variant="conversation"');
     expect(manager).not.toContain("Ask your Manager anything");
-    expect(manager).not.toContain("formatConversationTimestamp(conversation.lastUpdate)");
+    expect(manager).toContain("formatConversationTimestamp(conversation.lastUpdate)");
   });
 
   it("keeps messages quiet and artifacts turn-owned", () => {

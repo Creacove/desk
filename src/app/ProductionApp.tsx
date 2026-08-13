@@ -1400,7 +1400,9 @@ function CleanProductionWorkspace({
       if (streamCompleted) {
         return;
       }
-      setManagerSendError(readErrorMessage(error, "Manager conversation failed."));
+      const errorMessage = readErrorMessage(error, "Manager conversation failed.");
+      setManagerSendError(errorMessage);
+      applyManagerStreamError(errorMessage);
     } finally {
       setManagerSendPending(false);
     }

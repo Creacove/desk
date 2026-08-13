@@ -22,7 +22,8 @@ export type ManagerTurnViewModel = {
 };
 
 function workKey(item: ManagerWorkItem) {
-  return `${item.type}:${item.id ?? item.managerOutputId ?? item.title.trim().toLowerCase()}`;
+  const label = typeof item.title === "string" ? item.title.trim().toLowerCase() : "untitled";
+  return `${item.type}:${item.id ?? item.managerOutputId ?? label}`;
 }
 
 export function dedupeManagerWork(items: ManagerWorkItem[]) {
