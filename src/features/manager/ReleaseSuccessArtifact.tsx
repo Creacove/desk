@@ -77,8 +77,8 @@ function ReleaseSuccessArtifactContent({
   const request = artifact.request ?? requestFromArtifact(artifact);
   const assessment = artifact.assessment;
   const isApplying = applying || artifact.state === "applying";
-  const foundationGates = assessment?.foundation.gates ?? [];
-  const campaignGates = assessment?.campaign.gates ?? [];
+  const foundationGates = assessment?.foundation?.gates ?? [];
+  const campaignGates = assessment?.campaign?.gates ?? [];
   const blockers = [...foundationGates, ...campaignGates].filter((gate) => gate.state === "blocked" || gate.state === "at_risk" || gate.state === "unknown");
   const visibleBlockers = showAll ? blockers : blockers.slice(0, 3);
   const canApprove = Boolean(request && (artifact.state === "proposed" || artifact.state === "awaiting_approval"));
@@ -146,15 +146,15 @@ function ReleaseSuccessArtifactContent({
             {status.label}
           </div>
 
-          {assessment?.recommendation.reason ? (
+          {assessment?.recommendation?.reason ? (
             <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{assessment.recommendation.reason}</p>
           ) : null}
 
           {assessment && showAll ? (
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-              <Count label={`Foundation · ${assessment.foundation.blockedCount} blocker`} tone={assessment.foundation.blockedCount ? "warning" : "normal"} />
-              <Count label={`Campaign · ${assessment.campaign.atRiskCount} at risk`} tone={assessment.campaign.atRiskCount ? "warning" : "normal"} />
-              <Count label={`Unknown · ${assessment.unknownCount}`} tone={assessment.unknownCount ? "muted" : "normal"} />
+              <Count label={`Foundation · ${assessment.foundation?.blockedCount ?? 0} blocker`} tone={assessment.foundation?.blockedCount ? "warning" : "normal"} />
+              <Count label={`Campaign · ${assessment.campaign?.atRiskCount ?? 0} at risk`} tone={assessment.campaign?.atRiskCount ? "warning" : "normal"} />
+              <Count label={`Unknown · ${assessment.unknownCount ?? 0}`} tone={assessment.unknownCount ? "muted" : "normal"} />
             </div>
           ) : null}
 
