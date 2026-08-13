@@ -1564,7 +1564,7 @@ function toMessageViewModel(message: any) {
     id: message.id,
     speaker: message.speaker === "artist" ? "artist" : "manager",
     label: message.label || (message.speaker === "artist" ? "You" : "Manager"),
-    body: message.body,
+    body: message.body ?? "",
     createdWork: normalizeCreatedWork(metadata.createdWork),
     contextQuestions: normalizeContextQuestions(metadata.contextQuestions),
     contextAnswers: normalizeContextAnswers(metadata.contextAnswers),

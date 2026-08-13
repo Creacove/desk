@@ -3365,7 +3365,7 @@ function mergeConversationMessages(current: ConversationViewModel["messages"], i
     merged.push(message);
   }
   for (const message of incoming) {
-    const normalized = { ...message, status: message.status ?? "sent" };
+    const normalized = { ...message, body: message.body ?? "", status: message.status ?? "sent" };
     const existingIndex = byId.get(message.id);
     if (existingIndex !== undefined) {
       merged[existingIndex] = normalized;
@@ -3388,7 +3388,7 @@ function equivalentConversationMessage(
   incoming: ConversationViewModel["messages"][number],
 ) {
   if (current.speaker !== incoming.speaker) return false;
-  if (current.body.trim() !== incoming.body.trim()) return false;
+  if ((current.body ?? "").trim() !== (incoming.body ?? "").trim()) return false;
   return current.id.startsWith("pending-") || incoming.id.startsWith("pending-");
 }
 
