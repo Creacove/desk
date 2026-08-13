@@ -181,8 +181,8 @@ Cards use a thin neutral border and theme background only when containment aids 
 
 When a turn creates a song workspace, mission, and its first task for the same subject, render one result:
 
-> **Summer is ready for release planning**  
-> Mission and first task are ready  
+> **Summer is ready for release planning**
+> Mission and first task are ready
 > **Add release files** · View mission
 
 The existing music item, mission, and task identifiers remain available to the existing callbacks. The music-item action routes to Files; the secondary action routes to the mission.
