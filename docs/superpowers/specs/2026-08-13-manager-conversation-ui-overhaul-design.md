@@ -4,9 +4,9 @@
 
 ## Outcome
 
-The Manager's Office and Manager conversation become the visual center of the application. The redesign adopts the restraint, reading rhythm, progressive disclosure, and calm state communication associated with ChatGPT while retaining Ordersounds' existing product identity, routes, data contracts, and workflows.
+The Manager's Office and Manager conversation become the visual center of the application. The redesign adopts the restraint, reading rhythm, progressive disclosure, and calm state communication associated with ChatGPT while retaining Ordersounds' existing product identity, routes, storage model, and workflows.
 
-This is a presentation overhaul. It does not add product capabilities, backend behavior, storage models, or navigation destinations.
+This is primarily a presentation overhaul with two deliberately narrow workflow improvements: canonical song-file upload from an already song-scoped conversation, and sequential answering of existing preset Manager context questions through the conversation composer. It does not add temporary chat storage, a second file model, or a new navigation destination.
 
 ## Product principles
 
@@ -17,6 +17,7 @@ This is a presentation overhaul. It does not add product capabilities, backend b
 5. **Canonical destinations remain canonical.** Files manages files, Missions manages missions, tasks remain tasks, and substantial release artifacts keep their existing workflows.
 6. **Hierarchy comes from typography and spacing.** Borders, accent color, icons, shadows, labels, and uppercase text are used sparingly.
 7. **Desktop and mobile preserve the same reading order.** Responsive changes alter density and controls, not meaning.
+8. **Capability follows context.** A control appears only when the current conversation has the durable domain context required to complete the action.
 
 ## Scope
 
@@ -28,18 +29,22 @@ This is a presentation overhaul. It does not add product capabilities, backend b
 - responsive margins, widths, type scale, spacing, touch targets, safe-area behavior, and reduced motion;
 - UI-level suppression and grouping of duplicate `createdWork` results;
 - preservation of existing routes from results to Files, Music, Missions, tasks, and decision packages;
+- canonical file upload from conversations already attached to a song, using the existing Music asset repository, storage, categories, and progress events;
+- sequential, composer-based answering of the existing preset Manager context-question array without a Manager round trip between questions;
 - focused component and browser regression coverage.
 
 ### Excluded
 
-- chat file upload, drag-and-drop, attachment staging, or an attachment data model;
-- a file preview inspector or new media player;
+- uploading from a general Manager conversation, a project-scoped conversation, or the Manager's Office composer;
+- a song picker, song-creation flow, disabled upload affordance, or "choose a song first" prompt inside a general conversation;
+- temporary chat uploads, duplicate file records, or a second attachment storage system;
+- a new file preview inspector or media player beyond reusing an existing preview when one is already available;
 - conversation search, filtering, grouping, pinning, renaming, archiving, or a conversation switcher;
 - a new document editor, split-pane canvas, or document version behavior;
-- changes to Manager prompts, response wording, stream events, persistence, repositories, Supabase, or edge functions;
+- unrelated changes to Manager prompts, stream events, persistence, repositories, Supabase, or edge functions;
 - changes to the application-wide sidebar or primary information architecture.
 
-If a Manager result asks the artist to add files, its action opens the existing song Files tab. The artist uploads through the existing Files experience. The conversation does not pretend to support an upload flow that the product does not currently have.
+The upload improvement may extend the existing Manager message input and message metadata only enough to persist references to canonical `music_assets`. It must not create a conversation-only file entity or move file ownership away from the song.
 
 ## Benchmark interpretation
 
@@ -66,7 +71,7 @@ Mission Genesis appears only when its existing result, question, pending, or err
 
 The composer is the page's visual focal point. It uses the existing text input, send behavior, pending state, and error handling. The copy remains grounded in the existing Manager capability.
 
-The composer uses one contained surface with a generous text area and a single send control. It does not add suggestions, tools, file attachment, or mode selectors in this increment.
+The composer uses one contained surface with a generous text area and a single send control. It does not add suggestions, tools, file attachment, or mode selectors. File upload is never available from the Manager's Office because no song is attached there.
 
 ### Conversation list
 
@@ -232,16 +237,70 @@ Failures use ordinary language, one recovery action, and an optional support ref
 
 Existing Manager context questions remain attached to the message that asked them.
 
-- Questions use one contained form because they require action.
-- Labels use sentence case.
-- Inputs retain current answer kinds, options, recommendation helper, `I'm not sure`, validation, and submission behavior.
-- The form has one primary submit action.
-- When answered, the form collapses to a compact confirmation summary using existing context answers, with no new edit behavior unless the application already supplies it.
-- The resulting Manager response and artifacts follow directly below in chronological order.
+The transcript does not render a second form. When the latest unresolved Manager message contains `contextQuestions`, the existing composer changes into a guided answer mode. The Manager's prose remains in the transcript; the active question and its controls occupy the familiar composer surface.
+
+### Preset sequence
+
+All questions are delivered in the existing Manager response before answering begins. The client holds that complete array and advances through it locally.
+
+- Show one question at a time in the supplied order.
+- Display quiet position text such as `1 of 3` and minimal progress dots.
+- Moving forward or back never starts a Manager run, displays reasoning, or makes a network request.
+- Preserve completed answers while navigating between questions.
+- Submit one existing `contextAnswers` payload only after the last question is complete.
+- While guided answering is active, ordinary free chat is replaced rather than shown as a competing composer.
+
+### Input behavior
+
+The active control is derived from the existing `answerKind`:
+
+- `single_select`: render compact choice buttons; selecting one advances immediately;
+- `multi_select`: render toggle choices and a Continue action;
+- `short_text`: use the composer text field and a Continue action;
+- `money_range`: use a text field with appropriate currency/range guidance and a Continue action, without inventing a rigid numeric schema;
+- `Something else`, when offered or provided as a standard fallback for a select question, switches that question to free-text entry;
+- `recommendedAnswer` appears as a choice marked `Recommended`, with `recommendationReason` available as quiet supporting text rather than a separate card;
+- `I'm not sure` remains a low-emphasis answer that preserves the current semantic instruction for the Manager to use its best recommendation and state the assumption.
+
+Enter submits the current written answer; Shift+Enter adds a line when multiline text is appropriate. Back returns to the preceding question. The final primary action reads `Send answers`; earlier written and multi-select steps use `Continue`. Single-select answers auto-advance unless the selected option requires free text.
+
+### Completion and recovery
+
+On final submission, send every answer together through the existing `contextRequestId` and `contextAnswers` contract. The artist message uses a readable answer summary instead of the internal placeholder `Context answers for Manager mission decision.` The composer returns to ordinary chat while the Manager responds.
+
+The original question area collapses in place to a quiet summary such as `3 answers provided`. The resulting Manager response and artifacts follow in chronological order. If submission fails, retain the complete local answer set, return to the final step, show the existing error in the composer, and offer `Try again`; never force the artist to re-enter previous answers.
+
+## Song-scoped file upload
+
+File upload exists only when `conversation.musicSubject.type === "music_item"`. This requirement is structural, not an error state.
+
+- General conversations expose no attachment button, disabled control, song selector, explanatory tooltip, or upload menu.
+- Project-scoped conversations also expose no song-file upload because the existing canonical upload API requires a music item.
+- A song conversation opened from Music exposes one quiet attachment control in its composer.
+- When an existing flow creates a song and attaches it to the active conversation, the attachment control appears after that durable link is confirmed.
+- The conversation never silently changes its subject in response to an upload attempt.
+
+### Upload interaction
+
+The attachment control is a paperclip with the accessible label and tooltip `Add files to {song title}`. It opens the native file picker directly. Selected files enter a compact staging area above the text row inside the composer.
+
+Each staged row shows filename, inferred or selected existing asset type, progress or state, and remove/retry where applicable. Reuse the current Music upload categories, validation, resumable behavior, and `MusicUploadProgress` phases. Ask for classification only when the existing resolver cannot determine a safe asset type; do not add a general-purpose metadata form.
+
+Upload writes directly through `MusicRepository.uploadAsset(musicItemId, ...)`. The resulting object is a canonical song asset and appears in the existing Files surface. The conversation stores only the asset reference and enough display metadata to render the attachment after refresh.
+
+Send is unavailable while a selected file is preparing, uploading, finalizing, failed without resolution, or awaiting required classification. The artist may type during upload. Removing a staged file detaches it from the pending message; once a canonical upload has completed, removal from the draft must not silently delete the asset from Files.
+
+After send, attachments render as restrained rows beneath the artist message, not as Manager results or announcement cards. Selecting an attachment uses an existing preview/access route when available and otherwise opens the song's Files destination. `Open in Files` remains the canonical secondary route.
 
 ## Composer
 
-The existing conversation composer remains fixed to the conversation viewport and keeps its textarea, Enter-to-send, Shift+Enter, pending lock, error display, safe-area support, and scroll-follow behavior.
+The existing conversation composer remains fixed to the conversation viewport and owns three mutually exclusive modes:
+
+1. ordinary chat;
+2. guided context answering; and
+3. ordinary song chat with optional staged file attachments.
+
+It keeps its textarea, Enter-to-send, Shift+Enter, pending lock, error display, safe-area support, and scroll-follow behavior. Mode changes occur within one stable surface so the user does not lose spatial context.
 
 Visual changes:
 
@@ -250,8 +309,10 @@ Visual changes:
 - neutral border, theme background, moderate radius, and minimal elevation;
 - 16px mobile outer margin, 24px at small desktop, and correct left offset for the existing application rail;
 - textarea starts at one line and grows to the existing maximum height;
-- one circular send action;
-- no attachment button, tool menu, mode selector, or other inactive control;
+- one circular send action in ordinary chat;
+- one paperclip only in a conversation already attached to a song;
+- no paperclip, disabled upload control, tool menu, song selector, or mode selector in every other conversation;
+- guided-answer controls replace the ordinary text row until the preset sequence is submitted or resolved;
 - the existing verification note may remain only if it is visually quiet and does not increase composer height materially.
 
 The transcript tail reserves the measured composer height plus safe-area clearance so activity and results are never covered.
@@ -266,6 +327,8 @@ The transcript tail reserves the measured composer height plus safe-area clearan
 - Artist messages use at most 85% width.
 - Artifact actions wrap or stack with a minimum 44px touch target.
 - Dense details remain collapsed by default.
+- Guided questions remain inside the composer, keep the active option and primary action above the keyboard, and never open a full-screen form.
+- Song upload progress expands the composer upward without covering the latest transcript turn; long staging lists scroll within a bounded region.
 - Fixed composer clears the application mobile navigation and device safe area.
 - No horizontal scrolling at 320px width.
 
@@ -310,18 +373,24 @@ The current `ManagerScreens.tsx` is too broad for reliable iteration. The UI ove
 
 - `ManagerOfficeScreen.tsx`: Office composer, Mission Genesis presentation, sparse history;
 - `ConversationWorkspace.tsx`: conversation shell, turn ordering, context, composer, scroll ownership;
-- `ManagerMessage.tsx`: artist and Manager message presentation, rich body, questions, retry;
+- `ManagerMessage.tsx`: artist and Manager message presentation, rich body, resolved-question summary, attachments, and retry;
+- `ManagerComposer.tsx`: ordinary chat, guided-answer sequence, song-scoped attachment staging, and composer-local errors;
+- `managerContextFlow.ts`: pure question progression, answer normalization, validation, and final payload construction;
+- `ManagerSongAttachments.tsx`: canonical song-asset selection, classification, upload progress, retry, and compact message rows;
 - `ManagerArtifacts.tsx`: created-work normalization and compact task, mission, song, draft, and decision results;
 - existing `ReleaseSuccessArtifact.tsx` and `OpportunityArtifact.tsx`: preserve behavior and adopt shared visual grammar;
 - `ManagerScreens.tsx`: re-export the public screens and retain unrelated investigation/decision screens until separately redesigned.
 
-No server, repository, schema, or type change is required for the visual overhaul.
+The question redesign uses the existing context request and answer contracts. Song upload reuses the existing Music repository and canonical asset storage. A narrow Manager message contract and persistence extension is allowed only if required to associate uploaded asset IDs with the artist message across reloads.
 
 ## Accessibility
 
 - Preserve semantic buttons, headings, forms, labels, lists, and `aria-expanded`.
 - Keep focus visible in both themes.
 - Status changes use a restrained live region without announcing every streamed token.
+- Guided-question position and validation are announced without moving keyboard focus unexpectedly. Auto-advance after a single choice moves focus to the next question heading or first control.
+- Choice buttons expose selected state with `aria-pressed`; progress is not communicated by dots alone.
+- Upload progress has a text state and filename in addition to any progress bar.
 - Loading indicators have accessible text and do not rely on motion.
 - Color is never the only state signal.
 - All touch controls are at least 44px where layout permits and never below 40px.
@@ -337,7 +406,12 @@ No server, repository, schema, or type change is required for the visual overhau
 - Conversation-level artifacts render under the last Manager turn, never after the transcript.
 - Song workspace, mission, and first task collapse into one result with existing Files and Mission callbacks.
 - Independent missions remain individually reachable without full nested descriptions.
-- Context questions remain attached and collapse after submission.
+- Context questions activate one sequential composer flow, advance locally without Manager runs, submit once, and collapse after submission.
+- Every existing answer kind renders the appropriate choice, multi-choice, free-text, or money-range control.
+- Failed final answer submission preserves every completed answer and can be retried.
+- General and project conversations contain no upload affordance.
+- Song conversations expose upload, create canonical song assets, block send until staged files are ready, and preserve message attachment references across reloads.
+- Removing a completed staged upload from a draft does not delete it from Files.
 - Activity uses one visible current status and yields to result or failure.
 - Existing release approval, research, draft expansion, retry, and navigation actions still work.
 - Composer remains usable and does not cover the transcript.
@@ -352,11 +426,11 @@ Check at minimum:
 - 1280×800; and
 - 1440×900.
 
-At each size verify header, horizontal margins, readable measure, long titles, long artist messages, expanded questions, expanded drafts, loading, failure, grouped result, release decision, research result, composer growth, keyboard focus, dark theme, and reduced motion.
+At each size verify header, horizontal margins, readable measure, long titles, long artist messages, every guided-question input kind, back/forward progression, failed answer retry, song attachment staging and progress, expanded drafts, loading, failure, grouped result, release decision, research result, composer growth, keyboard focus, dark theme, and reduced motion.
 
 ### Regression boundary
 
-The existing Manager stream protocol, conversation persistence, title stability, scroll following, Files route, Mission route, task draft content, approval repository boundary, opportunity actions, and application navigation must remain unchanged.
+The existing Manager stream protocol, title stability, scroll following, Files route, Mission route, task draft content, approval repository boundary, opportunity actions, and application navigation must remain unchanged. Persistence may add only durable artist-message references to already canonical song assets.
 
 ## Acceptance criteria
 
@@ -368,5 +442,7 @@ The redesign is accepted when:
 4. loading, completion, and failure visibly replace one another in the owning turn;
 5. every artifact presents only the information required for the next decision, with details disclosed on request;
 6. existing actions still reach Files, Music, Missions, tasks, drafts, approvals, and research workflows exactly as before;
-7. mobile and desktop share the same hierarchy without overlap or horizontal overflow; and
-8. no new application feature or backend contract was introduced to accomplish the overhaul.
+7. mobile and desktop share the same hierarchy without overlap or horizontal overflow;
+8. general conversations remain simpler because upload controls exist only after a durable song is attached;
+9. preset Manager questions are answered one at a time through the same composer with no intermediate Manager run; and
+10. conversation uploads reuse canonical song Files rather than introducing temporary or duplicate storage.
