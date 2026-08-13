@@ -72,7 +72,12 @@ function minimalOpportunityDb(options: { failOn?: "from" | "upsert" } = {}) {
         return query;
       },
       update() { return query; },
-      async maybeSingle() { return { data: rows(table)[0] ?? null, error: null }; },
+      async maybeSingle() {
+        return {
+          data: rows(table)[0] ?? (table === "operating_events" ? { id: "event-1" } : null),
+          error: null,
+        };
+      },
       async single() { return { data: rows(table)[0] ?? { id: "created-1" }, error: null }; },
       then(resolve: (value: { data: unknown[]; error: null }) => unknown) {
         return Promise.resolve({ data: rows(table), error: null }).then(resolve);
@@ -199,6 +204,41 @@ describe("release opportunity normalization", () => {
       candidate({ sourceUrl: "https://example.com/paid", paidPlacementClaim: true }),
     ].map((item) => normalizeOpportunityBrief(item, song)).filter((item): item is NonNullable<typeof item> => Boolean(item && item.status === "shortlisted"));
     expect(shortlist).toEqual([]);
+  });
+
+  it("keeps no-match, excluded, and Spotify editorial outcomes as product states without error telemetry", async () => {
+    captureAppError.mockReset();
+
+    const noMatches = await executeManagerConversationTool(
+      minimalOpportunityDb(),
+      managerScope,
+      "save_focused_release_opportunities",
+      { opportunityType: "playlist", candidates: [] },
+    );
+    expect(noMatches).toMatchObject({ status: "no_matches", saved: [], watch: [], excluded: [] });
+
+    const paid = normalizeOpportunityBrief(candidate({ paidPlacementClaim: true }), song);
+    expect(paid).toMatchObject({ status: "skipped", safetyState: "excluded" });
+
+    const spotify = await executeManagerConversationTool(
+      minimalOpportunityDb(),
+      managerScope,
+      "save_focused_release_opportunities",
+      {
+        opportunityType: "playlist",
+        candidates: [candidate({
+          platform: "Spotify Editorial",
+          targetName: "Spotify Editorial Playlist",
+          publicContact: { kind: "email", value: "editor@example.com", sourceUrl: "https://example.com/contact", verifiedAt: "2026-08-12T10:00:00.000Z" },
+        })],
+      },
+    );
+    expect(spotify).toMatchObject({
+      status: "saved",
+      saved: [expect.objectContaining({ status: "watch", safetyState: "caution" })],
+      handoffs: [expect.objectContaining({ kind: "pitch", contact: null })],
+    });
+    expect(captureAppError).not.toHaveBeenCalled();
   });
 
   it("logs unexpected search, contact verification, and persistence failures with the required stages", async () => {

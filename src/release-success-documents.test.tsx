@@ -182,4 +182,26 @@ describe("release-success canonical documents", () => {
     expect(db.rows.artifact_links.filter((row) => row.source_id === "document-1")).toEqual([]);
     expect(db.rows.operating_events).toEqual([]);
   });
+
+  it("restores the prior document version when a later persistence event fails", async () => {
+    const db = new DocumentDbDouble();
+    const first = await persistFocusedSongDocumentDraft(db, {
+      ...input,
+      documentType: "playlist_pitch",
+      title: "Playlist pitch",
+    } as any, "run-1", "Original draft", false);
+    const originalDocument = { ...db.rows.documents[0] };
+    const originalVersions = db.rows.document_versions.map((row) => ({ ...row }));
+
+    db.failTable = "operating_events";
+    await expect(persistFocusedSongDocumentDraft(db, {
+      ...input,
+      documentType: "playlist_pitch",
+      title: "Playlist pitch",
+    } as any, "run-2", "A replacement draft that must not survive", false)).rejects.toThrow("operating_events write failed");
+
+    expect(db.rows.documents).toEqual([originalDocument]);
+    expect(db.rows.document_versions).toEqual(originalVersions);
+    expect(db.rows.documents[0].current_version_id).toBe(first?.versionId);
+  });
 });

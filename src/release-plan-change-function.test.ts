@@ -54,6 +54,23 @@ describe("release plan change Edge boundary", () => {
     expect(source).toContain("errorEventId");
   });
 
+  it("keeps stale, expired, validation, and ownership outcomes out of unexpected-error telemetry", () => {
+    const unexpectedCapture = source.indexOf("const errorEventId = await captureAppError");
+    expect(unexpectedCapture).toBeGreaterThan(-1);
+    for (const branch of [
+      "if (databaseCode && CONFLICT_CODES.has(databaseCode))",
+      "if (databaseCode && VALIDATION_CODES.has(databaseCode))",
+      "if (databaseCode && OWNERSHIP_CODES.has(databaseCode))",
+    ]) {
+      expect(source.indexOf(branch)).toBeGreaterThan(-1);
+      expect(source.indexOf(branch)).toBeLessThan(unexpectedCapture);
+    }
+    expect(source).toContain('return json({ error: conflictMessage(databaseCode), code: databaseCode }, 409);');
+    expect(source).toContain('return json({ error: validationMessage(databaseCode), code: databaseCode }, 400);');
+    expect(source).toContain('error: "You do not have permission to change this release plan."');
+    expect(source).not.toContain('captureAppError(new Error("The release plan is stale"');
+  });
+
   it("returns proposal or receipt state without logging private preview bodies", () => {
     expect(source).toMatch(/status:\s*"proposed"/);
     expect(source).toMatch(/status:\s*"applied"/);
