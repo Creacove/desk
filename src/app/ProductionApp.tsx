@@ -74,6 +74,8 @@ import type {
   MusicReadTarget,
   PublicContextRefreshResult,
   ReleaseDateChangeRequestViewModel,
+  ReleaseOpportunityArtifactViewModel,
+  ReleaseOpportunityTargetViewModel,
   ReleaseSuccessArtifactViewModel,
   TodayBriefGenerationMode,
   TodayBriefGenerationResponse,
@@ -1125,6 +1127,70 @@ function CleanProductionWorkspace({
       : {});
   }
 
+  function managerConversationSubjectInput(conversation: ConversationViewModel) {
+    return conversation.musicSubject
+      ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } }
+      : {};
+  }
+
+  function prepareOpportunityPitch(artifact: ReleaseOpportunityArtifactViewModel, target: ReleaseOpportunityTargetViewModel) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    void sendManagerMessage(
+      `Prepare a ${artifact.opportunityType} pitch for ${target.targetName}. Use the attached song metadata and verified target evidence. Create the canonical ${artifact.opportunityType === "press" ? "press_pitch" : "playlist_pitch"} document in the song Files, show me the draft for review, and do not send or submit it.`,
+      conversation.id,
+      conversation.topic,
+      managerConversationSubjectInput(conversation),
+    );
+  }
+
+  function recordOpportunityOutcome(
+    artifact: ReleaseOpportunityArtifactViewModel,
+    target: ReleaseOpportunityTargetViewModel,
+    input: { status: ReleaseOpportunityTargetViewModel["status"]; manualOutcome: string },
+  ) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    void sendManagerMessage(
+      `Record the manual ${input.status} outcome for release ${artifact.opportunityType} target ${target.targetName} (opportunity ${target.id}). Outcome note: ${input.manualOutcome}`,
+      conversation.id,
+      conversation.topic,
+      managerConversationSubjectInput(conversation),
+    );
+  }
+
+  function retryOpportunityResearch(artifact: ReleaseOpportunityArtifactViewModel) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    void sendManagerMessage(
+      `Retry only the failed ${artifact.opportunityType} release research stage for the attached song. Preserve verified targets and do not send outreach.`,
+      conversation.id,
+      conversation.topic,
+      managerConversationSubjectInput(conversation),
+    );
+  }
+
+  async function hydrateCompletedConversationArtifacts(conversationId: string) {
+    if (!repositories.manager.loadConversation) return;
+    try {
+      const detail = await repositories.manager.loadConversation(conversationId);
+      if (!detail) return;
+      setSelectedConversation((current) => {
+        if (!current || current.id !== conversationId) return current;
+        const releaseOpportunityArtifacts = detail.releaseOpportunityArtifacts ?? [];
+        const merged = mergeCompletedConversation(
+          current,
+          releaseOpportunityArtifacts.length ? { ...detail, releaseOpportunityArtifacts } : detail,
+          true,
+        );
+        setConversations((items) => [merged, ...items.filter((item) => item.id !== merged.id)]);
+        return merged;
+      });
+    } catch {
+      // The streamed conversation remains usable; a later conversation open retries hydration.
+    }
+  }
+
   async function openConversation(conversation: ConversationViewModel) {
     setManagerTaskContextId(conversation.taskContextId ?? null);
     setSelectedConversation(conversation);
@@ -1318,6 +1384,7 @@ function CleanProductionWorkspace({
         setSelectedMissionId(selectCreatedMissionId(conversation, nextMissions));
       }
       navigate("conversationWorkspace");
+      void hydrateCompletedConversationArtifacts(mergedConversation.id);
     } catch (error) {
       if (streamCompleted) {
         return;
@@ -1415,6 +1482,7 @@ function CleanProductionWorkspace({
       updateCompletedManagerConversation(context.optimisticId, completedConversation, Boolean(context.lockedTopic));
       invalidateConversationCache(completedConversation.id);
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
+      void hydrateCompletedConversationArtifacts(completedConversation.id);
       void refreshFromManagerHint(event.refresh ?? { missions: conversationHasMissionWork(completedConversation) });
       return;
     }
@@ -2131,6 +2199,9 @@ function CleanProductionWorkspace({
                 onKeepReleaseDate={keepReleaseDateAndShowRecoveryPlan}
                 onReviewReleaseSuccess={() => undefined}
                 onRetryReleaseSuccess={retryReleaseSuccessReview}
+                onPrepareOpportunityPitch={prepareOpportunityPitch}
+                onRecordOpportunityOutcome={recordOpportunityOutcome}
+                onRetryOpportunityResearch={retryOpportunityResearch}
                 onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
                 onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
                   taskId: managerTaskContextId ?? undefined,

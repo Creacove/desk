@@ -31,6 +31,8 @@ import type {
   ReleaseDateChangeProposalInput,
   ReleaseDateChangeReceiptViewModel,
   ReleaseDateChangeRequestViewModel,
+  ReleaseOpportunityArtifactViewModel,
+  ReleaseOpportunityTargetViewModel,
   SongDocumentType,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
@@ -2267,13 +2269,18 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (releaseOutputError) throw releaseOutputError;
         const conversationLinks = (links as ArtifactLinkRow[] | null) ?? [];
         const musicSubjects = await loadConversationMusicSubjects(client, workspace, conversationLinks);
+        const musicSubject = musicSubjects.get(conversationId);
+        const releaseOpportunityArtifacts = musicSubject?.type === "music_item"
+          ? await loadReleaseOpportunityArtifacts(client, workspace, musicSubject.id, musicSubject.title)
+          : [];
         return conversationFromRows(
           row,
           (messages as ConversationMessageRow[] | null) ?? [],
           ((outputs as ManagerOutputRow[] | null) ?? [])[0],
           conversationLinks.find((link) => link.target_type === "task")?.target_id,
-          musicSubjects.get(conversationId),
+          musicSubject,
           ((releaseOutputs as ManagerOutputRow[] | null) ?? []),
+          releaseOpportunityArtifacts,
         );
       },
       async loadConversations() {
@@ -3116,6 +3123,33 @@ type DocumentVersionRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+type ReleaseOpportunityRow = {
+  id: string;
+  music_item_id: string;
+  mission_id?: string | null;
+  opportunity_type?: string | null;
+  platform?: string | null;
+  target_name: string;
+  source_url?: string | null;
+  target_url?: string | null;
+  public_organization?: string | null;
+  contact_kind?: string | null;
+  public_contact_value?: string | null;
+  public_contact_source_url?: string | null;
+  contact_verified_at?: string | null;
+  fit_json?: unknown;
+  evidence_json?: unknown;
+  confidence?: string | null;
+  limitations_json?: unknown;
+  safety_state?: string | null;
+  requirements_json?: unknown;
+  package_json?: unknown;
+  pitch_document_id?: string | null;
+  status?: string | null;
+  manual_outcome?: string | null;
+  updated_at?: string | null;
+};
+
 async function applySongDocumentMaterials(
   client: SupabaseClient,
   workspace: ProductionWorkspace,
@@ -3245,6 +3279,7 @@ function conversationFromRows(
   taskContextId?: string,
   musicSubject?: MusicConversationSubjectViewModel,
   releaseSuccessOutputs: ManagerOutputRow[] = [],
+  releaseOpportunityArtifacts: ReleaseOpportunityArtifactViewModel[] = [],
 ): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
@@ -3262,7 +3297,218 @@ function conversationFromRows(
     ...(output ? { decisionPackage: decisionPackageFromRow(output) } : {}),
     createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
     releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(releaseSuccessOutputs),
+    ...(releaseOpportunityArtifacts.length ? { releaseOpportunityArtifacts } : {}),
   };
+}
+
+async function loadReleaseOpportunityArtifacts(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  musicItemId: string,
+  subjectTitle: string,
+): Promise<ReleaseOpportunityArtifactViewModel[]> {
+  const { data, error } = await client
+    .from("release_opportunities")
+    .select("id,music_item_id,mission_id,opportunity_type,platform,target_name,source_url,target_url,public_organization,contact_kind,public_contact_value,public_contact_source_url,contact_verified_at,fit_json,evidence_json,confidence,limitations_json,safety_state,requirements_json,package_json,pitch_document_id,status,manual_outcome,updated_at")
+    .eq("account_id", workspace.accountId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId)
+    .eq("artist_id", workspace.artistId)
+    .eq("music_item_id", musicItemId)
+    .order("updated_at", { ascending: false })
+    .limit(80);
+  if (error) throw error;
+
+  const rows = ((data as ReleaseOpportunityRow[] | null) ?? []).filter((row) => row.music_item_id === musicItemId);
+  if (!rows.length) return [];
+
+  const documentIds = [...new Set(rows.flatMap((row) => row.pitch_document_id ? [row.pitch_document_id] : []))];
+  const documents: DocumentRow[] = [];
+  const versions: DocumentVersionRow[] = [];
+  if (documentIds.length) {
+    const [documentResult, versionResult] = await Promise.all([
+      client
+        .from("documents")
+        .select("id,title,document_type,origin,status,current_version_id,metadata")
+        .eq("account_id", workspace.accountId)
+        .eq("artist_workspace_id", workspace.artistWorkspaceId)
+        .eq("artist_id", workspace.artistId)
+        .in("id", documentIds)
+        .limit(documentIds.length),
+      client
+        .from("document_versions")
+        .select("id,document_id,file_name,metadata")
+        .eq("account_id", workspace.accountId)
+        .eq("artist_workspace_id", workspace.artistWorkspaceId)
+        .eq("artist_id", workspace.artistId)
+        .in("document_id", documentIds)
+        .order("version_number", { ascending: false })
+        .limit(documentIds.length * 3),
+    ]);
+    if (documentResult.error) throw documentResult.error;
+    if (versionResult.error) throw versionResult.error;
+    documents.push(...((documentResult.data as DocumentRow[] | null) ?? []));
+    versions.push(...((versionResult.data as DocumentVersionRow[] | null) ?? []));
+  }
+
+  return hydrateReleaseOpportunityArtifacts(rows, documents, versions, musicItemId, subjectTitle);
+}
+
+function hydrateReleaseOpportunityArtifacts(
+  rows: ReleaseOpportunityRow[],
+  documents: DocumentRow[],
+  versions: DocumentVersionRow[],
+  musicItemId: string,
+  subjectTitle: string,
+): ReleaseOpportunityArtifactViewModel[] {
+  const documentById = new Map(documents.map((document) => [document.id, document]));
+  const versionByDocumentId = new Map<string, DocumentVersionRow>();
+  for (const version of versions) {
+    if (!versionByDocumentId.has(version.document_id)) versionByDocumentId.set(version.document_id, version);
+  }
+
+  const byType = new Map<"playlist" | "press", ReleaseOpportunityTargetViewModel[]>();
+  const missionIds = new Map<"playlist" | "press", string>();
+  for (const row of rows) {
+    const opportunityType = row.opportunity_type === "press" || row.opportunity_type === "playlist" ? row.opportunity_type : undefined;
+    if (!opportunityType) continue;
+    const target = releaseOpportunityTargetFromRow(row, documentById, versionByDocumentId);
+    if (!target) continue;
+    const targets = byType.get(opportunityType) ?? [];
+    targets.push(target);
+    byType.set(opportunityType, targets);
+    if (row.mission_id && !missionIds.has(opportunityType)) missionIds.set(opportunityType, row.mission_id);
+  }
+
+  return (["playlist", "press"] as const).flatMap((opportunityType) => {
+    const targets = byType.get(opportunityType) ?? [];
+    if (!targets.length) return [];
+    const excluded = targets.filter((target) => target.safetyState === "excluded" || target.status === "skipped");
+    const eligible = targets.filter((target) => !excluded.includes(target));
+    const ranked = [...eligible].sort(compareReleaseOpportunityTargets);
+    const shortlist = ranked.filter((target) => target.status !== "watch").slice(0, 8);
+    const shortlistIds = new Set(shortlist.map((target) => target.id));
+    const watch = ranked.filter((target) => !shortlistIds.has(target.id));
+    return [{
+      id: `release-opportunities:${musicItemId}:${opportunityType}`,
+      musicItemId,
+      ...(missionIds.get(opportunityType) ? { missionId: missionIds.get(opportunityType) } : {}),
+      opportunityType,
+      subject: { title: subjectTitle, itemType: "music_item" },
+      shortlist,
+      watch,
+      excluded,
+    } satisfies ReleaseOpportunityArtifactViewModel];
+  });
+}
+
+function releaseOpportunityTargetFromRow(
+  row: ReleaseOpportunityRow,
+  documents: Map<string, DocumentRow>,
+  versions: Map<string, DocumentVersionRow>,
+): ReleaseOpportunityTargetViewModel | null {
+  const sourceUrl = safeOpportunityUrl(row.source_url);
+  const targetName = readConversationString(row.target_name, "");
+  if (!sourceUrl || !targetName) return null;
+  const fit = isPlainRecord(row.fit_json) ? row.fit_json : {};
+  const evidence = Array.isArray(row.evidence_json) ? row.evidence_json : [];
+  const sourceEvidence = evidence.filter(isPlainRecord).map((item) => ({
+    source: readConversationString(item.source ?? item.name, "Public source"),
+    ...(safeOpportunityUrl(item.ref ?? item.url) ? { ref: safeOpportunityUrl(item.ref ?? item.url) } : {}),
+    ...(readOptionalConversationString(item.observedAt ?? item.observed_at) ? { observedAt: readOptionalConversationString(item.observedAt ?? item.observed_at) } : {}),
+  }));
+  const document = row.pitch_document_id ? documents.get(row.pitch_document_id) : undefined;
+  const version = document
+    ? versions.get(document.id)
+    : undefined;
+  const body = typeof version?.metadata?.body === "string"
+    ? version.metadata.body
+    : typeof document?.metadata?.body === "string"
+      ? document.metadata.body
+      : undefined;
+  const documentView = document ? {
+    id: document.id,
+    title: document.title,
+    ...(body ? { body } : {}),
+    ...(document.status ? { status: document.status } : {}),
+  } : undefined;
+  const packageValue = isPlainRecord(row.package_json) ? row.package_json : {};
+  const selectedFiles = readStringList(packageValue.selectedFiles ?? packageValue.selected_files);
+  const pitchBody = readOptionalConversationString(packageValue.pitchBody ?? packageValue.pitch_body) ?? body;
+  const shareUrl = safeOpportunityUrl(packageValue.shareUrl ?? packageValue.share_url);
+  const packageView = selectedFiles.length || pitchBody || shareUrl
+    ? { selectedFiles, ...(pitchBody ? { pitchBody } : {}), ...(shareUrl ? { shareUrl } : {}) }
+    : undefined;
+  const publicContact = releaseOpportunityContactFromRow(row);
+  const confidence = row.confidence === "high" || row.confidence === "medium" || row.confidence === "low" || row.confidence === "unknown"
+    ? row.confidence
+    : "unknown";
+  const safetyState = row.safety_state === "clear" || row.safety_state === "excluded" ? row.safety_state : "caution";
+  const status = ["watch", "shortlisted", "approved", "submitted_manually", "replied", "accepted", "declined", "skipped"].includes(row.status ?? "")
+    ? row.status as ReleaseOpportunityTargetViewModel["status"]
+    : "watch";
+  return {
+    id: row.id,
+    targetName,
+    ...(readOptionalConversationString(row.platform) ? { platform: readOptionalConversationString(row.platform) } : {}),
+    sourceUrl,
+    ...(safeOpportunityUrl(row.target_url) ? { targetUrl: safeOpportunityUrl(row.target_url) } : {}),
+    ...(readOptionalConversationString(row.public_organization) ? { publicOrganization: readOptionalConversationString(row.public_organization) } : {}),
+    ...(publicContact ? { publicContact } : {}),
+    fit: {
+      songCriteria: readStringList(fit.songCriteria ?? fit.song_criteria),
+      targetCriteria: readStringList(fit.targetCriteria ?? fit.target_criteria),
+      explanation: readConversationString(fit.explanation, "Fit was recorded from the Manager's source-backed research."),
+      ...(readOptionalConversationString(fit.recency) ? { recency: readOptionalConversationString(fit.recency) } : {}),
+      ...(readOptionalConversationString(fit.market) ? { market: readOptionalConversationString(fit.market) } : {}),
+    },
+    sourceEvidence,
+    confidence,
+    limitations: readStringList(row.limitations_json),
+    requirements: readStringList(row.requirements_json),
+    safetyState,
+    status,
+    ...(row.manual_outcome ? { manualOutcome: row.manual_outcome } : {}),
+    ...(row.pitch_document_id ? { pitchDocumentId: row.pitch_document_id } : {}),
+    ...(documentView ? { document: documentView } : {}),
+    ...(packageView ? { package: packageView } : {}),
+  };
+}
+
+function releaseOpportunityContactFromRow(row: ReleaseOpportunityRow): ReleaseOpportunityTargetViewModel["publicContact"] {
+  if (row.contact_kind !== "email" && row.contact_kind !== "submission_form" && row.contact_kind !== "contact_page") return undefined;
+  const sourceUrl = safeOpportunityUrl(row.public_contact_source_url);
+  const value = row.contact_kind === "email" ? safeOpportunityEmail(row.public_contact_value) : safeOpportunityUrl(row.public_contact_value);
+  if (!sourceUrl || !value) return undefined;
+  return {
+    kind: row.contact_kind,
+    value,
+    sourceUrl,
+    ...(row.contact_verified_at ? { verifiedAt: row.contact_verified_at } : {}),
+  };
+}
+
+function compareReleaseOpportunityTargets(left: ReleaseOpportunityTargetViewModel, right: ReleaseOpportunityTargetViewModel) {
+  const confidence = { high: 3, medium: 2, low: 1, unknown: 0 };
+  const leftScore = confidence[left.confidence] + Math.min(left.sourceEvidence.length, 4) + (left.publicContact ? 2 : 0) + (left.safetyState === "clear" ? 1 : 0);
+  const rightScore = confidence[right.confidence] + Math.min(right.sourceEvidence.length, 4) + (right.publicContact ? 2 : 0) + (right.safetyState === "clear" ? 1 : 0);
+  return rightScore - leftScore || left.targetName.localeCompare(right.targetName);
+}
+
+function safeOpportunityUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" || url.username || url.password || !url.hostname) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function safeOpportunityEmail(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const email = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
 }
 
 function decisionPackageFromRow(row: ManagerOutputRow): ConversationViewModel["decisionPackage"] {

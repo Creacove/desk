@@ -570,6 +570,58 @@ export type ReleaseSuccessArtifactViewModel = {
   error?: { message: string; reference?: string; retryable: boolean };
 };
 
+export type ReleaseOpportunityType = "playlist" | "press";
+export type ReleaseOpportunitySafetyState = "clear" | "caution" | "excluded";
+export type ReleaseOpportunityStatus = "watch" | "shortlisted" | "approved" | "submitted_manually" | "replied" | "accepted" | "declined" | "skipped";
+
+export type ReleaseOpportunityTargetViewModel = {
+  id: string;
+  targetName: string;
+  platform?: string;
+  sourceUrl: string;
+  targetUrl?: string;
+  publicOrganization?: string;
+  publicContact?: {
+    kind: "email" | "submission_form" | "contact_page";
+    value: string;
+    sourceUrl: string;
+    verifiedAt?: string;
+  };
+  fit: {
+    songCriteria: string[];
+    targetCriteria: string[];
+    explanation: string;
+    recency?: string;
+    market?: string;
+  };
+  sourceEvidence: Array<{ source: string; ref?: string; observedAt?: string }>;
+  confidence: "high" | "medium" | "low" | "unknown";
+  limitations: string[];
+  requirements: string[];
+  safetyState: ReleaseOpportunitySafetyState;
+  status: ReleaseOpportunityStatus;
+  manualOutcome?: string;
+  pitchDocumentId?: string;
+  document?: { id: string; title: string; body?: string; status?: string };
+  package?: {
+    selectedFiles: string[];
+    pitchBody?: string;
+    shareUrl?: string;
+  };
+};
+
+export type ReleaseOpportunityArtifactViewModel = {
+  id: string;
+  musicItemId: string;
+  missionId?: string;
+  opportunityType: ReleaseOpportunityType;
+  subject: { title: string; itemType: string };
+  shortlist: ReleaseOpportunityTargetViewModel[];
+  watch: ReleaseOpportunityTargetViewModel[];
+  excluded: ReleaseOpportunityTargetViewModel[];
+  failure?: { stage: string; message: string; retryable: boolean };
+};
+
 export type ConversationViewModel = {
   id: string;
   taskContextId?: string;
@@ -594,6 +646,7 @@ export type ConversationViewModel = {
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
   releaseSuccessArtifacts?: ReleaseSuccessArtifactViewModel[];
+  releaseOpportunityArtifacts?: ReleaseOpportunityArtifactViewModel[];
 };
 
 export type ManagerConversationStreamEvent =

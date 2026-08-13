@@ -9,12 +9,15 @@ import type {
   MissionGenesisResultViewModel,
   MissionTaskViewModel,
   ReleaseDateChangeRequestViewModel,
+  ReleaseOpportunityArtifactViewModel,
+  ReleaseOpportunityTargetViewModel,
   ReleaseSuccessArtifactViewModel,
 } from "../../types/cleanProduction";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OrbState } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
 import { SongContextAttachment } from "../music/SongRoomAttachments";
+import { OpportunityArtifact } from "./OpportunityArtifact";
 import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
 
 // ---------------------------------------------------------------------------
@@ -467,6 +470,9 @@ export function ConversationWorkspace({
   onKeepReleaseDate,
   onReviewReleaseSuccess,
   onRetryReleaseSuccess,
+  onPrepareOpportunityPitch,
+  onRecordOpportunityOutcome,
+  onRetryOpportunityResearch,
   taskContext,
   onBackToTask,
   sendPending,
@@ -481,6 +487,13 @@ export function ConversationWorkspace({
   onKeepReleaseDate?: (artifact: ReleaseSuccessArtifactViewModel) => void;
   onReviewReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => void;
   onRetryReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => Promise<void>;
+  onPrepareOpportunityPitch?: (artifact: ReleaseOpportunityArtifactViewModel, target: ReleaseOpportunityTargetViewModel) => void | Promise<void>;
+  onRecordOpportunityOutcome?: (
+    artifact: ReleaseOpportunityArtifactViewModel,
+    target: ReleaseOpportunityTargetViewModel,
+    input: { status: ReleaseOpportunityTargetViewModel["status"]; manualOutcome: string },
+  ) => void | Promise<void>;
+  onRetryOpportunityResearch?: (artifact: ReleaseOpportunityArtifactViewModel) => void | Promise<void>;
   taskContext?: MissionTaskViewModel;
   onBackToTask?: () => void;
   onSendMessage: (body: string, conversationId: string) => void;
@@ -501,6 +514,7 @@ export function ConversationWorkspace({
     ? conversation.createdWork
     : messageCreatedWork;
   const releaseSuccessArtifact = conversation.releaseSuccessArtifacts?.[0];
+  const opportunityArtifacts = conversation.releaseOpportunityArtifacts ?? [];
   const resolvedContextRequestIds = new Set(conversation.messages.flatMap((message) =>
     message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length
       ? [message.contextRequestId]
@@ -639,6 +653,33 @@ export function ConversationWorkspace({
               onRetry={onRetryReleaseSuccess ?? (async () => undefined)}
             />
           ) : null}
+
+          {opportunityArtifacts.map((artifact) => (
+            <OpportunityArtifact
+              key={artifact.id}
+              artifact={artifact}
+              onPreparePitch={(target) => onPrepareOpportunityPitch
+                ? onPrepareOpportunityPitch(artifact, target)
+                : onSendMessage(
+                  `Prepare a ${artifact.opportunityType} pitch for ${target.targetName}. Save the canonical document in the attached song Files; do not send it.`,
+                  conversation.id,
+                )}
+              onRecordOutcome={(target, input) => onRecordOpportunityOutcome
+                ? onRecordOpportunityOutcome(artifact, target, input)
+                : onSendMessage(
+                  `Record the ${input.status} outcome for ${target.targetName}: ${input.manualOutcome}`,
+                  conversation.id,
+                )}
+              onOpenFiles={(musicItemId) => onOpenCreatedWork("music_item", musicItemId, "files")}
+              onOpenMission={(missionId) => onOpenCreatedWork("mission", missionId)}
+              onRetry={(failedArtifact) => onRetryOpportunityResearch
+                ? onRetryOpportunityResearch(failedArtifact)
+                : onSendMessage(
+                  `Retry ${failedArtifact.opportunityType} release research for the attached song. Preserve verified results and retry only the failed stage.`,
+                  conversation.id,
+                )}
+            />
+          ))}
 
           {isManagerThinking && !hasStreamingMessage ? (
             <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />

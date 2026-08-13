@@ -23,6 +23,9 @@ const supabaseDiscoveryPoll = vi.hoisted(() => ({
 }));
 
 const productionAppSource = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
+const productionServiceSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
+const managerScreensSource = readFileSync(join(process.cwd(), "src", "features", "manager", "ManagerScreens.tsx"), "utf8");
+const opportunityArtifactSource = readFileSync(join(process.cwd(), "src", "features", "manager", "OpportunityArtifact.tsx"), "utf8");
 
 const analyticsMock = vi.hoisted(() => ({
   identifyAnalyticsUser: vi.fn(),
@@ -135,6 +138,18 @@ afterEach(() => {
 });
 
 describe("Clean production prototype-match shell", () => {
+  it("hydrates playlist opportunity artifacts into the conversation shell", () => {
+    expect(productionAppSource).toContain("releaseOpportunityArtifacts");
+    expect(productionServiceSource).toContain("release_opportunities");
+    expect(managerScreensSource).toContain("OpportunityArtifact");
+  });
+
+  it("keeps press research and target-package actions inside the song conversation", () => {
+    expect(productionAppSource).toContain("onPrepareOpportunityPitch");
+    expect(opportunityArtifactSource).toContain("Open Files to create share link");
+    expect(productionAppSource).not.toContain("navigate(\"opportunitiesWorkspace\")");
+  });
+
   it("forces a fresh mission read before opening task work attached in a Manager conversation", () => {
     expect(productionAppSource).toContain("await hydrateMission(targetMissionId, true)");
   });

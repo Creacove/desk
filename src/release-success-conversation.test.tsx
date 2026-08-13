@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ReadableStream } from "node:stream/web";
 import { ReleaseSuccessArtifact } from "./features/manager/ReleaseSuccessArtifact";
+import { OpportunityArtifact } from "./features/manager/OpportunityArtifact";
 import {
   hydrateReleaseSuccessArtifacts,
   mergeReleaseSuccessArtifacts,
@@ -339,5 +340,132 @@ describe("release success conversation artifact", () => {
     expect(hydrated).toHaveLength(1);
     expect(hydrated[0]).toMatchObject({ id: "release-artifact-1", state: "applied", receipt: { requestId: "request-1" } });
     expect(normalizeReleaseSuccessArtifact({ id: "legacy", state: "assessed" })).toBeNull();
+  });
+});
+
+describe("playlist and press opportunity artifacts", () => {
+  const playlistArtifact = {
+    id: "opportunities:song-1:playlist",
+    musicItemId: "song-1",
+    missionId: "mission-1",
+    opportunityType: "playlist",
+    subject: { title: "After Midnight", itemType: "song" },
+    shortlist: [
+      ...Array.from({ length: 6 }, (_, index) => ({
+        id: `playlist-${index + 1}`,
+        targetName: `Night Drive ${index + 1}`,
+        platform: "Independent playlist",
+        sourceUrl: `https://playlist.example.com/target-${index + 1}`,
+        targetUrl: `https://playlist.example.com/target-${index + 1}/submit`,
+        publicContact: { kind: "submission_form", value: `https://playlist.example.com/target-${index + 1}/submit`, sourceUrl: `https://playlist.example.com/target-${index + 1}/contact`, verifiedAt: "2026-08-12T10:00:00.000Z" },
+        fit: { songCriteria: ["Late-night alt-R&B"], targetCriteria: ["Accepts emerging artists"], explanation: "The song's nocturnal hook matches the playlist's stated lane." },
+        sourceEvidence: [{ source: "Playlist public submission page", ref: `https://playlist.example.com/target-${index + 1}` }],
+        confidence: "high",
+        limitations: ["Public route only; placement is not guaranteed."],
+        requirements: ["Include a private listen link."],
+        safetyState: "clear",
+        status: "shortlisted",
+      })),
+    ],
+    watch: [{
+      id: "playlist-watch",
+      targetName: "Watchlist target",
+      platform: "Independent playlist",
+      sourceUrl: "https://playlist.example.com/watch",
+      fit: { songCriteria: ["Adjacent mood"], targetCriteria: ["Public page found"], explanation: "The fit is plausible, but no verified public contact route is available." },
+      sourceEvidence: [{ source: "Playlist public profile", ref: "https://playlist.example.com/watch" }],
+      confidence: "unknown",
+      limitations: ["Contact route is not verified."],
+      requirements: [],
+      safetyState: "caution",
+      status: "watch",
+    }],
+    excluded: [{
+      id: "playlist-excluded",
+      targetName: "Guaranteed placement service",
+      platform: "Paid playlist",
+      sourceUrl: "https://playlist.example.com/paid",
+      fit: { songCriteria: ["Emerging artist"], targetCriteria: ["Paid placement"], explanation: "The page claims guaranteed placement for payment." },
+      sourceEvidence: [{ source: "Paid placement terms", ref: "https://playlist.example.com/paid" }],
+      confidence: "high",
+      limitations: ["Paid or guaranteed placement is excluded."],
+      requirements: [],
+      safetyState: "excluded",
+      status: "skipped",
+    }],
+  } as any;
+
+  it("renders a playlist opportunity shortlist with inspectable provenance and manual outcome", () => {
+    const onPreparePitch = vi.fn();
+    const onRecordOutcome = vi.fn();
+    const onOpenFiles = vi.fn();
+    render(<OpportunityArtifact artifact={playlistArtifact} onPreparePitch={onPreparePitch} onRecordOutcome={onRecordOutcome} onOpenFiles={onOpenFiles} onRetry={vi.fn()} />);
+
+    const card = screen.getByTestId("release-opportunity-artifact");
+    expect(card).toHaveTextContent("6 shortlisted");
+    expect(card).toHaveTextContent("Watchlist");
+    expect(card).toHaveTextContent("Excluded");
+    expect(card).toHaveTextContent("Source evidence");
+    expect(card).toHaveTextContent("Contact route");
+    expect(card).toHaveTextContent("The song's nocturnal hook matches the playlist's stated lane.");
+    expect(card).toHaveTextContent("high confidence");
+    expect(card).toHaveTextContent("Public route only; placement is not guaranteed.");
+    expect(screen.getByRole("link", { name: "Open source for Night Drive 1" })).toHaveAttribute("rel", "noreferrer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Night Drive 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Prepare pitch for Night Drive 1" }));
+    expect(onPreparePitch).toHaveBeenCalledWith(expect.objectContaining({ id: "playlist-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Record outcome for Night Drive 1" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Outcome note for Night Drive 1" }), { target: { value: "Artist submitted manually." } });
+    fireEvent.click(screen.getByRole("button", { name: "Save outcome for Night Drive 1" }));
+    expect(onRecordOutcome).toHaveBeenCalledWith(expect.objectContaining({ id: "playlist-1" }), expect.objectContaining({ manualOutcome: "Artist submitted manually." }));
+    expect(onOpenFiles).not.toHaveBeenCalled();
+  });
+
+  it("keeps the Spotify editorial opportunity separate and never exposes editor email", () => {
+    const spotifyArtifact = {
+      ...playlistArtifact,
+      id: "opportunities:song-1:spotify",
+      shortlist: [{
+        ...playlistArtifact.shortlist[0],
+        id: "spotify-editorial",
+        targetName: "Spotify Editorial Playlist",
+        platform: "Spotify editorial",
+        targetUrl: "https://artists.spotify.com/c/artist/submit",
+        publicContact: undefined,
+      }],
+      watch: [],
+      excluded: [],
+    };
+    render(<OpportunityArtifact artifact={spotifyArtifact} onPreparePitch={vi.fn()} onRecordOutcome={vi.fn()} onOpenFiles={vi.fn()} onRetry={vi.fn()} />);
+
+    expect(screen.getByText("Spotify editorial handoff")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open Spotify for Artists" })).toHaveAttribute("href", "https://artists.spotify.com/c/artist/submit");
+    expect(screen.queryByText(/editor@|spotify editor email/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Send/i })).not.toBeInTheDocument();
+  });
+
+  it("renders a target package with selected Files, copyable pitch, share link, and retry for partial failure", () => {
+    const targetPackageArtifact = {
+      ...playlistArtifact,
+      failure: { stage: "contact_verification", message: "One contact route still needs verification.", retryable: true },
+      shortlist: [{
+        ...playlistArtifact.shortlist[0],
+        package: { selectedFiles: ["EPK", "Personalized press pitch"], pitchBody: "A copyable song-specific pitch.", shareUrl: "https://desk.ordersounds.com/share/package-1" },
+      }],
+    };
+    const onRetry = vi.fn();
+    render(<OpportunityArtifact artifact={targetPackageArtifact} onPreparePitch={vi.fn()} onRecordOutcome={vi.fn()} onOpenFiles={vi.fn()} onRetry={onRetry} />);
+
+    expect(screen.getByText("Target package")).toBeInTheDocument();
+    expect(screen.getByText("EPK")).toBeInTheDocument();
+    expect(screen.getByText("Personalized press pitch")).toBeInTheDocument();
+    expect(screen.getByText("A copyable song-specific pitch.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy pitch" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Open share link" })).toHaveAttribute("href", "https://desk.ordersounds.com/share/package-1");
+    expect(screen.getByText("One contact route still needs verification.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry contact verification" }));
+    expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({ id: "opportunities:song-1:playlist" }));
+    expect(screen.queryByRole("button", { name: /Send/i })).not.toBeInTheDocument();
   });
 });
