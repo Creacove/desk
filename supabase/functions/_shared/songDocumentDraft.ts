@@ -60,6 +60,24 @@ export async function persistFocusedSongDocumentDraft(
 
   const musicItemId = input.musicSubject.id;
   const title = cleanLongText(input.title, 240) || documentTitle(documentType);
+  if (typeof db.rpc === "function") {
+    const { data, error } = await db.rpc("persist_focused_song_document_v1", {
+      p_account_id: input.accountId,
+      p_artist_workspace_id: input.artistWorkspaceId,
+      p_artist_id: input.artistId,
+      p_music_item_id: musicItemId,
+      p_document_type: documentType,
+      p_title: title,
+      p_body: cleanLongText(responseBody, 60_000),
+      p_run_id: runId,
+      p_manager_output_id: input.managerOutputId ?? null,
+    });
+    if (error) throw error;
+    if (!data || typeof data !== "object" || !("documentId" in data) || !("versionId" in data)) {
+      throw new Error("Manager document transaction returned an invalid receipt.");
+    }
+    return data as PersistedFocusedSongDocument;
+  }
   const scope = [
     ["account_id", input.accountId],
     ["artist_workspace_id", input.artistWorkspaceId],

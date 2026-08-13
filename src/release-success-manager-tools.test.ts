@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { managerConversationTools } from "../supabase/functions/_shared/manager-conversation/agentLoop";
 import { buildManagerConversationInstructions } from "../supabase/functions/_shared/openaiManagerConversation";
 import { executeManagerConversationTool } from "../supabase/functions/_shared/manager-conversation/toolExecutor";
+import { verifyOpportunityPublicContact } from "../supabase/functions/_shared/release-success/opportunities";
 
 type QueryCall = {
   table: string;
@@ -92,6 +93,21 @@ function releaseDb(rows: Record<string, unknown[]>, rpcCalls: Array<{ name: stri
       },
       async rpc(name: string, args: Record<string, unknown>) {
         rpcCalls.push({ name, args });
+        if (name === "persist_focused_song_document_v1") {
+          return {
+            data: {
+              documentId: "document-created",
+              versionId: "version-created",
+              musicItemId: "song-1",
+              missionId: "mission-1",
+              documentType: args.p_document_type,
+              title: args.p_title,
+              status: "draft",
+              created: true,
+            },
+            error: null,
+          };
+        }
         return {
           data: {
             requestId: "request-1",
@@ -202,6 +218,12 @@ const opportunityCandidate = {
   paidPlacementClaim: false,
 };
 
+const verifiedContactFetch = vi.fn(async () => ({
+  ok: true,
+  headers: { get: (name: string) => name.toLowerCase() === "content-type" ? "text/html" : null },
+  text: async () => '<a href="https://example.com/submit">Submit music</a>',
+}) as Response);
+
 describe("release success Manager tools", () => {
   it("exposes strict focused read and proposal tools without exposing approval", () => {
     const names = managerConversationTools
@@ -300,7 +322,7 @@ describe("release success Manager tools", () => {
 
     const result = await executeManagerConversationTool(
       db,
-      { ...scope, musicSubject: subject },
+      { ...scope, musicSubject: subject, fetchImpl: verifiedContactFetch as typeof fetch },
       "query_focused_release_opportunities",
       { opportunityType: "playlist" },
     ) as any;
@@ -323,10 +345,13 @@ describe("release success Manager tools", () => {
   });
 
   it("saves an evidence-backed shortlist idempotently, excludes unsafe placement, and keeps a handoff instead of sending", async () => {
+    expect(await verifyOpportunityPublicContact(opportunityCandidate as any, verifiedContactFetch as typeof fetch))
+      .toMatchObject({ publicContact: expect.objectContaining({ value: "https://example.com/submit" }) });
+    verifiedContactFetch.mockClear();
     const { db, writes } = releaseDb({ ...releaseRows, release_opportunities: [] }) as any;
     const result = await executeManagerConversationTool(
       db,
-      { ...scope, musicSubject: subject },
+      { ...scope, musicSubject: subject, fetchImpl: verifiedContactFetch as typeof fetch },
       "save_focused_release_opportunities",
       {
         opportunityType: "playlist",
@@ -347,6 +372,8 @@ describe("release success Manager tools", () => {
       },
     ) as any;
 
+    expect(verifiedContactFetch).toHaveBeenCalledWith("https://example.com/contact", expect.objectContaining({ method: "GET" }));
+
     expect(result).toMatchObject({
       status: "saved",
       saved: [expect.objectContaining({ targetName: "Night Drive Selects", status: "shortlisted", safetyState: "clear" })],
@@ -359,7 +386,7 @@ describe("release success Manager tools", () => {
 
     const retry = await executeManagerConversationTool(
       db,
-      { ...scope, musicSubject: subject },
+      { ...scope, musicSubject: subject, fetchImpl: verifiedContactFetch as typeof fetch },
       "save_focused_release_opportunities",
       { opportunityType: "playlist", candidates: [opportunityCandidate] },
     ) as any;
@@ -397,15 +424,26 @@ describe("release success Manager tools", () => {
   });
 
   it("creates a song document through the canonical draft pathway", async () => {
-    const { db, writes } = releaseDb({ ...releaseRows, artifact_links: [], documents: [], document_versions: [] }) as any;
+    const { db, writes, rpcCalls } = releaseDb({
+      ...releaseRows,
+      artifact_links: [],
+      documents: [],
+      document_versions: [],
+      release_opportunities: [{ id: "opportunity-1", music_item_id: "song-1", opportunity_type: "press" }],
+    }) as any;
     const result = await executeManagerConversationTool(
       db,
       { ...scope, musicSubject: subject, runId: "run-1" },
       "create_focused_song_document",
-      { documentType: "press_release", title: "After Midnight press release", body: "A concise song-specific press release draft." },
+      { documentType: "press_pitch", title: "After Midnight press pitch", body: "A concise song-specific press pitch draft.", opportunityId: "opportunity-1" },
     ) as any;
-    expect(result).toMatchObject({ status: "drafted", documentType: "press_release", musicItemId: "song-1" });
-    expect(writes.some((write: any) => write.table === "documents")).toBe(true);
+    expect(result).toMatchObject({ status: "drafted", documentType: "press_pitch", musicItemId: "song-1", opportunityId: "opportunity-1" });
+    expect(rpcCalls).toContainEqual(expect.objectContaining({ name: "persist_focused_song_document_v1" }));
+    expect(writes).toContainEqual(expect.objectContaining({
+      table: "release_opportunities",
+      mode: "update",
+      values: expect.objectContaining({ pitch_document_id: expect.any(String) }),
+    }));
   });
 
   it("returns one scoped normalized release packet with dates, mission schedule, evidence, and opportunity counts", async () => {

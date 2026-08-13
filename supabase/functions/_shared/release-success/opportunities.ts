@@ -57,11 +57,14 @@ export async function verifyOpportunityPublicContact(
   }
 
   try {
+    const timeoutSignal = typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(8_000)
+      : undefined;
     const response = await fetchImpl(sourceUrl, {
       method: "GET",
       redirect: "error",
       headers: { Accept: "text/html,text/plain;q=0.9" },
-      signal: AbortSignal.timeout(8_000),
+      ...(timeoutSignal ? { signal: timeoutSignal } : {}),
     });
     const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
     const contentLength = Number(response.headers.get("content-length") ?? "0");

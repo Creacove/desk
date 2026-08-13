@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 import {
   persistFocusedSongDocumentDraft,
@@ -131,6 +132,14 @@ const input = {
 afterEach(() => vi.restoreAllMocks());
 
 describe("release-success canonical documents", () => {
+  it("persists the canonical document, version, links, and event in one database transaction", () => {
+    const sql = readFileSync("supabase/migrations/20260813000100_release_document_persistence.sql", "utf8");
+    expect(sql).toContain("create or replace function public.persist_focused_song_document_v1");
+    expect(sql).toMatch(/music_release_plans[\s\S]*mission_id/is);
+    expect(sql).toMatch(/insert into public\.documents[\s\S]*insert into public\.document_versions[\s\S]*insert into public\.artifact_links[\s\S]*insert into public\.operating_events/is);
+    expect(sql).not.toMatch(/exception\s+when\s+others/is);
+  });
+
   it("supports every Video One release document type", () => {
     expect(releaseSuccessDocumentTypes).toEqual([
       "epk",

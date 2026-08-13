@@ -694,7 +694,19 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
       body,
       false,
     );
-    return { ...persisted, status: "drafted", musicItemId: subject.id, documentType, title };
+    const opportunityId = stringArg(args.opportunityId);
+    if (opportunityId && persisted?.documentId && ["playlist_pitch", "press_pitch", "press_target_brief", "spotify_editorial_pitch"].includes(documentType)) {
+      const { data: opportunity, error: opportunityError } = await scopedUpdate(db, "release_opportunities", {
+        pitch_document_id: persisted.documentId,
+      }, input)
+        .eq("id", opportunityId)
+        .eq("music_item_id", subject.id)
+        .select("id")
+        .maybeSingle();
+      if (opportunityError) throw opportunityError;
+      if (!opportunity?.id) throw new Error("The release opportunity could not be linked to its pitch document.");
+    }
+    return { ...persisted, status: "drafted", musicItemId: subject.id, documentType, title, ...(opportunityId ? { opportunityId } : {}) };
   } catch (error) {
     return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
   }
