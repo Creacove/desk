@@ -481,6 +481,7 @@ begin
       'proposedDate', v_existing.proposed_date,
       'expectedPlanRevision', v_existing.expected_plan_revision,
       'previewHash', v_existing.preview_hash,
+      'idempotencyKey', v_existing.idempotency_key,
       'preview', v_existing.preview_json,
       'expiresAt', v_existing.expires_at,
       'result', v_existing.result_json
@@ -669,6 +670,7 @@ begin
       'proposedDate', v_request.proposed_date,
       'expectedPlanRevision', v_request.expected_plan_revision,
       'previewHash', v_request.preview_hash,
+      'idempotencyKey', v_request.idempotency_key,
       'preview', v_request.preview_json,
       'expiresAt', v_request.expires_at,
       'result', v_request.result_json
@@ -689,6 +691,7 @@ begin
     'proposedDate', v_request.proposed_date,
     'expectedPlanRevision', v_request.expected_plan_revision,
     'previewHash', v_request.preview_hash,
+    'idempotencyKey', v_request.idempotency_key,
     'preview', v_request.preview_json,
     'expiresAt', v_request.expires_at
   );

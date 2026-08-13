@@ -4418,6 +4418,7 @@ function normalizeReleaseDateChangeRequest(payload: unknown): ReleaseDateChangeR
   const wrapper = isPlainRecord(payload) ? payload : {};
   const value = isPlainRecord(wrapper.request) ? wrapper.request : wrapper;
   const requestId = readOptionalConversationString(value.requestId) ?? readOptionalConversationString(value.id);
+  const idempotencyKey = readOptionalConversationString(value.idempotencyKey);
   const releasePlanId = readOptionalConversationString(value.releasePlanId);
   const musicItemId = readOptionalConversationString(value.musicItemId);
   const missionId = readOptionalConversationString(value.missionId);
@@ -4430,6 +4431,7 @@ function normalizeReleaseDateChangeRequest(payload: unknown): ReleaseDateChangeR
   const preview = isPlainRecord(value.preview) ? value.preview : null;
   if (
     !requestId ||
+    !idempotencyKey ||
     !releasePlanId ||
     !musicItemId ||
     !proposedDate ||
@@ -4445,6 +4447,7 @@ function normalizeReleaseDateChangeRequest(payload: unknown): ReleaseDateChangeR
   const fromDate = readOptionalConversationString(value.fromDate);
   return {
     requestId,
+    idempotencyKey,
     releasePlanId,
     musicItemId,
     ...(missionId ? { missionId } : {}),

@@ -249,9 +249,10 @@ function AppliedReceipt({ artifact }: { artifact: ArtifactWithRequest }) {
 }
 
 function requestFromArtifact(artifact: ReleaseSuccessArtifactViewModel): ReleaseDateChangeRequestViewModel | null {
-  if (!artifact.preview || !artifact.requestId) return null;
+  if (!artifact.preview || !artifact.requestId || !artifact.previewHash || !artifact.idempotencyKey) return null;
   return {
     requestId: artifact.requestId,
+    idempotencyKey: artifact.idempotencyKey,
     releasePlanId: "",
     musicItemId: artifact.musicItemId,
     missionId: artifact.missionId,
@@ -259,7 +260,7 @@ function requestFromArtifact(artifact: ReleaseSuccessArtifactViewModel): Release
     proposedDate: artifact.preview.proposedDate,
     status: "pending",
     expectedPlanRevision: artifact.preview.expectedRevision,
-    previewHash: artifact.preview.previewHash ?? "",
+    previewHash: artifact.previewHash,
     preview: artifact.preview,
     expiresAt: "",
   };

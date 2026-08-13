@@ -41,8 +41,12 @@ export function normalizeReleaseSuccessArtifact(value: unknown): ReleaseSuccessA
 
   const missionId = readOptionalString(value.missionId);
   const requestId = readOptionalString(value.requestId);
+  const previewHash = readOptionalString(value.previewHash);
+  const idempotencyKey = readOptionalString(value.idempotencyKey);
   if (missionId) artifact.missionId = missionId;
   if (requestId) artifact.requestId = requestId;
+  if (previewHash) artifact.previewHash = previewHash;
+  if (idempotencyKey) artifact.idempotencyKey = idempotencyKey;
 
   if (isRecord(value.assessment)) artifact.assessment = value.assessment as ReleaseSuccessArtifactViewModel["assessment"];
   if (isRecord(value.preview)) artifact.preview = value.preview as ReleaseSuccessArtifactViewModel["preview"];

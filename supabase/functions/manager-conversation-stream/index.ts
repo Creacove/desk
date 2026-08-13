@@ -985,7 +985,9 @@ function releaseSuccessArtifactFromToolResult(
     return {
       ...base,
       state: "proposed" as const,
-      requestId: stringValue(request.id) || undefined,
+      requestId: stringValue(request.requestId) || undefined,
+      previewHash: stringValue(request.previewHash) || undefined,
+      idempotencyKey: stringValue(request.idempotencyKey) || undefined,
       ...(isRecord(request.preview) ? { preview: request.preview } : {}),
     };
   }

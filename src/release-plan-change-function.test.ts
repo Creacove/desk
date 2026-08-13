@@ -4,8 +4,12 @@ import { describe, expect, it } from "vitest";
 
 const functionPath = resolve(process.cwd(), "supabase/functions/release-plan-change/index.ts");
 const configPath = resolve(process.cwd(), "supabase/config.toml");
+const migrationPath = resolve(process.cwd(), "supabase/migrations/20260812000100_release_success_foundation.sql");
+const managerStreamPath = resolve(process.cwd(), "supabase/functions/manager-conversation-stream/index.ts");
 const source = existsSync(functionPath) ? readFileSync(functionPath, "utf8") : "";
 const config = readFileSync(configPath, "utf8");
+const migration = readFileSync(migrationPath, "utf8");
+const managerStream = readFileSync(managerStreamPath, "utf8");
 
 describe("release plan change Edge boundary", () => {
   it("authenticates the user and derives the song workspace server-side", () => {
@@ -77,6 +81,28 @@ describe("release plan change Edge boundary", () => {
     expect(source).toMatch(/request/);
     expect(source).toMatch(/receipt/);
     expect(source).not.toMatch(/console\.(log|error|warn)[^\n]*preview/i);
+  });
+
+  it("returns the immutable proposal identity on every SQL proposal path and reuses it for approval retries", () => {
+    const proposal = migration.match(/create or replace function public\.propose_release_date_change[\s\S]*?create or replace function public\.approve_release_date_change/i)?.[0] ?? "";
+    const proposalReturns = [...proposal.matchAll(/return jsonb_build_object\(([\s\S]*?)\);/gi)].map((match) => match[1]);
+    expect(proposalReturns).toHaveLength(3);
+    for (const payload of proposalReturns) {
+      expect(payload).toMatch(/'requestId'\s*,/i);
+      expect(payload).toMatch(/'previewHash'\s*,/i);
+      expect(payload).toMatch(/'idempotencyKey'\s*,\s*v_(?:existing|request)\.idempotency_key/i);
+    }
+
+    const approval = migration.match(/create or replace function public\.approve_release_date_change[\s\S]*?revoke all on function public\.propose_release_date_change/i)?.[0] ?? "";
+    expect(approval).toMatch(/v_request\.status\s*=\s*'approved'[\s\S]*?v_request\.idempotency_key\s*<>\s*trim\(p_idempotency_key\)[\s\S]*?return v_request\.result_json/i);
+    expect(approval).toMatch(/v_request\.idempotency_key\s*<>\s*trim\(p_idempotency_key\)[\s\S]*?raise exception 'release_idempotency_conflict'/i);
+  });
+
+  it("maps the SQL-shaped proposal identity into the persisted Manager artifact", () => {
+    expect(managerStream).toMatch(/requestId:\s*stringValue\(request\.requestId\)/);
+    expect(managerStream).toMatch(/previewHash:\s*stringValue\(request\.previewHash\)/);
+    expect(managerStream).toMatch(/idempotencyKey:\s*stringValue\(request\.idempotencyKey\)/);
+    expect(managerStream).not.toMatch(/requestId:\s*stringValue\(request\.id\)/);
   });
 
   it("registers the function behind the authenticated gateway", () => {

@@ -4024,6 +4024,7 @@ describe("production Supabase services", () => {
     };
     const request = {
       requestId: "request-1",
+      idempotencyKey: "approval-intent-1",
       releasePlanId: "plan-1",
       musicItemId: "song-1",
       missionId: "mission-1",

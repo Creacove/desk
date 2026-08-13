@@ -2790,6 +2790,8 @@ describe("Clean production prototype-match shell", () => {
       musicItemId: "song-shell",
       missionId: "mission-shell",
       requestId: "request-shell",
+      previewHash: "a".repeat(64),
+      idempotencyKey: "manager:song-shell:2:2026-09-09:proposal-hash:reason-hash",
       state: "awaiting_approval",
       subject: { title: "After Midnight", itemType: "song", approvedReleaseDate: "2026-08-26" },
       preview: {
@@ -2833,7 +2835,11 @@ describe("Clean production prototype-match shell", () => {
     const card = screen.getByTestId("release-success-artifact");
     expect(within(card).getByText("After Midnight")).toBeInTheDocument();
     fireEvent.click(within(card).getByRole("button", { name: "Approve release date change" }));
-    await waitFor(() => expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({ requestId: "request-shell", previewHash: "a".repeat(64) })));
+    await waitFor(() => expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: "request-shell",
+      previewHash: "a".repeat(64),
+      idempotencyKey: "manager:song-shell:2:2026-09-09:proposal-hash:reason-hash",
+    })));
   });
 
   it("keeps an existing Manager thread title stable after streamed follow-up completion", async () => {

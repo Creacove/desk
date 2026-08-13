@@ -44,6 +44,7 @@ type VideoOneArtifact = ReleaseSuccessArtifactViewModel & { request?: ReleaseDat
 
 const videoOneRequest: ReleaseDateChangeRequestViewModel = {
   requestId: "request-1",
+  idempotencyKey: "manager:song-1:2:2026-09-09:proposal-hash:reason-hash",
   releasePlanId: "plan-1",
   musicItemId: "song-1",
   missionId: "mission-1",
@@ -156,6 +157,8 @@ function videoOneArtifact(
     musicItemId: "song-1",
     missionId: "mission-1",
     requestId: videoOneRequest.requestId,
+    previewHash: videoOneRequest.previewHash,
+    idempotencyKey: videoOneRequest.idempotencyKey,
     state,
     subject: { title: "After Midnight", itemType: "song", approvedReleaseDate: "2026-08-26" },
     assessment: videoOneAssessment,
@@ -239,6 +242,39 @@ describe("release success conversation artifact", () => {
     expect(onKeepDate).toHaveBeenCalledWith(expect.objectContaining({ id: "release-artifact-1" }));
     resolveApproval?.();
     await waitFor(() => expect(onApprove).toHaveBeenCalledTimes(1));
+  });
+
+  it("hydrates persisted proposal identity and reuses its immutable key when approval is clicked", async () => {
+    const onApprove = vi.fn(async () => undefined);
+    const { request: _request, ...persistedArtifact } = videoOneArtifact();
+    const [hydrated] = hydrateReleaseSuccessArtifacts([{
+      id: "output-proposal",
+      created_at: "2026-08-12T11:00:00.000Z",
+      render_json: {
+        ...persistedArtifact,
+        previewHash: videoOneRequest.previewHash,
+        idempotencyKey: videoOneRequest.idempotencyKey,
+      },
+    }]);
+
+    render(
+      <ReleaseSuccessArtifact
+        artifact={hydrated}
+        onApprove={onApprove}
+        onKeepDate={vi.fn()}
+        onReviewAll={vi.fn()}
+        onOpenSong={vi.fn()}
+        onOpenMission={vi.fn()}
+        onRetry={vi.fn(async () => undefined)}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Approve release date change" }));
+    await waitFor(() => expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({
+      requestId: videoOneRequest.requestId,
+      previewHash: videoOneRequest.previewHash,
+      idempotencyKey: videoOneRequest.idempotencyKey,
+    })));
   });
 
   it("renders the persisted receipt and distinguishes a refresh warning from transaction success", () => {

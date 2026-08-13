@@ -94,7 +94,8 @@ function releaseDb(rows: Record<string, unknown[]>, rpcCalls: Array<{ name: stri
         rpcCalls.push({ name, args });
         return {
           data: {
-            id: "request-1",
+            requestId: "request-1",
+            idempotencyKey: args.p_idempotency_key,
             releasePlanId: "plan-1",
             musicItemId: "song-1",
             fromDate: "2026-08-26",
@@ -452,7 +453,14 @@ describe("release success Manager tools", () => {
       reason: "The press package and playlist outreach need a clean runway.",
     }) as any;
 
-    expect(result).toMatchObject({ status: "proposed", request: { id: "request-1", preview: expect.any(Object) } });
+    expect(result).toMatchObject({
+      status: "proposed",
+      request: {
+        requestId: "request-1",
+        idempotencyKey: rpcCalls[0].args.p_idempotency_key,
+        preview: expect.any(Object),
+      },
+    });
     expect(rpcCalls).toHaveLength(1);
     expect(rpcCalls[0].name).toBe("propose_release_date_change");
     expect(rpcCalls[0].name).not.toBe("approve_release_date_change");

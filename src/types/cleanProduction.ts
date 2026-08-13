@@ -534,6 +534,7 @@ export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
 
 export type ReleaseDateChangeRequestViewModel = {
   requestId: string;
+  idempotencyKey: string;
   releasePlanId: string;
   musicItemId: string;
   missionId?: string;
@@ -562,6 +563,8 @@ export type ReleaseSuccessArtifactViewModel = {
   musicItemId: string;
   missionId?: string;
   requestId?: string;
+  previewHash?: string;
+  idempotencyKey?: string;
   state: ReleaseSuccessArtifactState;
   subject: { title: string; itemType: string; approvedReleaseDate?: string };
   assessment?: ReleaseSuccessAssessmentViewModel;

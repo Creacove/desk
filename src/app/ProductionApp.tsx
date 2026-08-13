@@ -44,7 +44,6 @@ import {
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
 import { invalidationsFromManagerRefreshHint, mergeReleaseSuccessArtifacts } from "../services/managerConversationStream";
-import { createClientRequestId } from "../lib/requestId";
 import {
   loadWorkspaceActivityPage,
   type WorkspaceEventCursor,
@@ -652,7 +651,6 @@ function CleanProductionWorkspace({
   const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
   const [managerSendPending, setManagerSendPending] = useState(false);
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
-  const releaseApprovalIdempotencyKeys = useRef(new Map<string, string>());
 
   const loadDeskAggregate = () => resourceRequests.load(resourceWorkspaceId, "workspace", () => repositories.desk.loadDesk());
   const loadActivityResource = () => resourceRequests.load(resourceWorkspaceId, "activity", () =>
@@ -1037,14 +1035,6 @@ function CleanProductionWorkspace({
     }));
   }
 
-  function releaseApprovalIdempotencyKey(artifact: ReleaseSuccessArtifactViewModel, request: ReleaseDateChangeRequestViewModel) {
-    const existing = releaseApprovalIdempotencyKeys.current.get(artifact.id);
-    if (existing) return existing;
-    const key = `release-approval:${artifact.musicItemId}:${request.requestId}:${request.previewHash}:${createClientRequestId()}`;
-    releaseApprovalIdempotencyKeys.current.set(artifact.id, key);
-    return key;
-  }
-
   function releaseErrorReference(error: unknown) {
     if (!error || typeof error !== "object") return undefined;
     const details = error as { errorEventId?: unknown; requestId?: unknown; code?: unknown };
@@ -1066,7 +1056,7 @@ function CleanProductionWorkspace({
       const receipt = await repositories.manager.approveReleaseDateChange({
         requestId: request.requestId,
         previewHash: request.previewHash,
-        idempotencyKey: releaseApprovalIdempotencyKey(artifact, request),
+        idempotencyKey: request.idempotencyKey,
       });
       updateReleaseSuccessArtifact(artifact.id, (current) => ({
         ...current,
