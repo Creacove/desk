@@ -1208,7 +1208,7 @@ function ManagerActivity({ activeRun, prompt }: { activeRun: ConversationViewMod
 
   return (
     <div data-testid="manager-activity" role="status" aria-live="polite" className="manager-conversation-motion flex items-center gap-2.5 py-2 text-[12px] text-muted-foreground animate-in fade-in duration-300">
-      <AppThinkingOrb state={orbState} size={18} />
+      <AppThinkingOrb state={orbState} size={20} />
       <span key={label} className="animate-in fade-in duration-300">{label}</span>
     </div>
   );

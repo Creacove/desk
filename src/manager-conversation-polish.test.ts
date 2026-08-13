@@ -50,4 +50,9 @@ describe("Manager conversation premium UI contract", () => {
     expect(composer).toContain("Recommended");
     expect(composer).toContain("Send answers");
   });
+
+  it("uses the thinking-orbs inline preset while the Manager is working", () => {
+    expect(manager).toContain('<AppThinkingOrb state={orbState} size={20} />');
+    expect(manager).not.toContain('<AppThinkingOrb state={orbState} size={18} />');
+  });
 });
