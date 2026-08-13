@@ -41,6 +41,13 @@ describe("release success RPC transaction contract", () => {
     expect(sql).toMatch(/offset_days/);
   });
 
+  it("deactivates stale task bindings and updates valid bindings when schedule ownership changes", () => {
+    const bindingTrigger = sql.match(/create or replace function public\.bind_release_success_task_v1\(\)[\s\S]*?\$\$;/i)?.[0] ?? "";
+    expect(bindingTrigger).toMatch(/update public\.release_task_schedule_bindings[\s\S]*set active = false[\s\S]*where task_id = new\.id/is);
+    expect(bindingTrigger).toMatch(/on conflict \(task_id\) do update[\s\S]*release_plan_id = excluded\.release_plan_id[\s\S]*offset_days = excluded\.offset_days[\s\S]*active = true/is);
+    expect(bindingTrigger).not.toMatch(/on conflict \(task_id\) do nothing/i);
+  });
+
   it("commits one receipt, one permission transition, and one operating event with retry identity", () => {
     expect(sql).toMatch(/insert into public\.operating_events[\s\S]*release_plan_changed/i);
     expect(sql).toMatch(/update public\.permission_requests[\s\S]*status = 'approved'/i);

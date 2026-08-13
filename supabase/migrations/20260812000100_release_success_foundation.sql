@@ -313,6 +313,14 @@ declare
   v_plan public.music_release_plans%rowtype;
   v_offset integer;
 begin
+  -- A task can stop being release-bound after creation. Clear the previous
+  -- ownership first so removed keys, mission changes, and terminal states
+  -- can never leave a deadline eligible for a later cascade.
+  update public.release_task_schedule_bindings
+  set active = false,
+      updated_at = now()
+  where task_id = new.id;
+
   if new.schedule_key is null
     or new.mission_id is null
     or new.status::text in ('archived', 'rejected', 'superseded') then
@@ -352,7 +360,15 @@ begin
     new.id,
     v_offset,
     v_plan.revision
-  ) on conflict (task_id) do nothing;
+  ) on conflict (task_id) do update
+  set account_id = excluded.account_id,
+      artist_workspace_id = excluded.artist_workspace_id,
+      artist_id = excluded.artist_id,
+      release_plan_id = excluded.release_plan_id,
+      offset_days = excluded.offset_days,
+      active = true,
+      applied_plan_revision = excluded.applied_plan_revision,
+      updated_at = now();
 
   return new;
 end;
