@@ -194,4 +194,15 @@ describe("high-fidelity central error capture", () => {
     expect(toolExecutor).toContain('"contact_verification"');
     expect(toolExecutor).toContain('"opportunity_persistence"');
   });
+
+  it("captures handled browser release failures and receipt rendering with stage correlation", () => {
+    const productionApp = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
+    const artifact = readFileSync(join(process.cwd(), "src", "features", "manager", "ReleaseSuccessArtifact.tsx"), "utf8");
+    const browserCapture = edgeSource("capture-browser-error");
+    expect(productionApp).toContain("reportBrowserServiceError(refreshError");
+    expect(productionApp).toContain('stage: "realtime_refresh"');
+    expect(productionApp).toContain('stage: "reschedule_approval"');
+    expect(artifact).toContain('stage: "receipt_render"');
+    expect(browserCapture).toContain("refs: { stage:");
+  });
 });

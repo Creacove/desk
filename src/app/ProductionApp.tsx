@@ -32,6 +32,7 @@ import {
   trackEventOnce,
 } from "../lib/analytics";
 import { createBrowserSupabaseClient } from "../lib/supabaseClient";
+import { reportBrowserServiceError } from "../lib/errorTelemetry";
 import { createFixtureProductionRuntime, createFixtureRepositories } from "../services/fixtureRepositories";
 import {
   createSupabaseAuthAdapter,
@@ -1073,6 +1074,13 @@ function CleanProductionWorkspace({
           desk: true,
         });
       } catch (refreshError) {
+        reportBrowserServiceError(refreshError, {
+          stage: "realtime_refresh",
+          musicItemId: request.musicItemId,
+          releasePlanId: request.releasePlanId,
+          requestId: request.requestId,
+          missionId: receipt.missionId,
+        });
         updateReleaseSuccessArtifact(artifact.id, (current) => ({
           ...current,
           state: "applied",
@@ -1084,6 +1092,14 @@ function CleanProductionWorkspace({
         }));
       }
     } catch (error) {
+      if (!releaseErrorReference(error)) {
+        reportBrowserServiceError(error, {
+          stage: "reschedule_approval",
+          musicItemId: request.musicItemId,
+          releasePlanId: request.releasePlanId,
+          requestId: request.requestId,
+        });
+      }
       updateReleaseSuccessArtifact(artifact.id, (current) => ({
         ...current,
         state: "failed",
@@ -1176,7 +1192,8 @@ function CleanProductionWorkspace({
         setConversations((items) => [merged, ...items.filter((item) => item.id !== merged.id)]);
         return merged;
       });
-    } catch {
+    } catch (error) {
+      reportBrowserServiceError(error, { stage: "receipt_render", conversationId });
       // The streamed conversation remains usable; a later conversation open retries hydration.
     }
   }

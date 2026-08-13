@@ -56,6 +56,7 @@ Deno.serve(withAppErrorCapture("capture-browser-error", async (request) => {
     accountId: identity.accountId,
     artistWorkspaceId: identity.artistWorkspaceId,
     artistId: identity.artistId,
+    refs: { stage: readContextStage(input.context) },
     context: boundedContext(input.context),
   });
   return json({ ok: true, errorEventId }, 202);
@@ -83,6 +84,12 @@ async function loadActiveIdentity(supabaseUrl: string, serviceRoleKey: string, u
     artistWorkspaceId: workspace?.id as string | undefined,
     artistId: workspace?.artist_id as string | undefined,
   };
+}
+
+function readContextStage(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const stage = (value as Record<string, unknown>).stage;
+  return typeof stage === "string" ? bounded(stage, 120) : undefined;
 }
 
 function boundedContext(value: unknown): Record<string, unknown> {

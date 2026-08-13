@@ -1,6 +1,7 @@
 import { Check, ChevronDown, ChevronRight, Loader2, Music2, RefreshCw, Route, Sparkles } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Component, useMemo, useState, type ErrorInfo, type ReactNode } from "react";
 import { ProductButton } from "../../design-system/components";
+import { reportBrowserServiceError } from "../../lib/errorTelemetry";
 import type {
   ReleaseDateChangeRequestViewModel,
   ReleaseGateResult,
@@ -22,6 +23,47 @@ export type ReleaseSuccessArtifactProps = {
 };
 
 export function ReleaseSuccessArtifact({
+  ...props
+}: ReleaseSuccessArtifactProps) {
+  return (
+    <ReleaseSuccessArtifactBoundary artifact={props.artifact}>
+      <ReleaseSuccessArtifactContent {...props} />
+    </ReleaseSuccessArtifactBoundary>
+  );
+}
+
+class ReleaseSuccessArtifactBoundary extends Component<{
+  artifact: ArtifactWithRequest;
+  children: ReactNode;
+}, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch(error: Error, _info: ErrorInfo) {
+    reportBrowserServiceError(error, {
+      stage: "receipt_render",
+      musicItemId: this.props.artifact.musicItemId,
+      missionId: this.props.artifact.missionId,
+      requestId: this.props.artifact.requestId,
+    });
+  }
+
+  render() {
+    if (this.state.failed) {
+      return (
+        <section role="alert" className="rounded-[18px] border border-red-600/15 bg-red-50/70 p-4 text-[13px] text-red-800">
+          Release details could not be displayed. Refresh this conversation and try again.
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function ReleaseSuccessArtifactContent({
   artifact,
   onApprove,
   onKeepDate,

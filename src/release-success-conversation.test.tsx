@@ -193,6 +193,7 @@ describe("release success conversation artifact", () => {
     expect(screen.getByText("Foundation · 1 blocker")).toBeInTheDocument();
     expect(screen.getByText("Campaign · 1 at risk")).toBeInTheDocument();
     expect(screen.getByText("Unknown · 2")).toBeInTheDocument();
+    expect(card.textContent).not.toMatch(/â|Â|Ã|�/);
     expect(screen.getByText("Metadata")).toBeInTheDocument();
     expect(screen.queryByText("Press angle")).not.toBeInTheDocument();
 

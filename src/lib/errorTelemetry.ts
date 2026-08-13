@@ -20,6 +20,7 @@ type BrowserErrorTelemetryOptions = {
 const MAX_MESSAGE_LENGTH = 8_192;
 const MAX_STACK_LENGTH = 32_768;
 const SENSITIVE_KEY = /authorization|cookie|password|secret|token|api[_-]?key|card|cvv|body|prompt|lyrics|document|content/i;
+let activeSubmit: ((payload: BrowserErrorPayload) => void) | undefined;
 
 export function installBrowserErrorTelemetry({
   capture,
@@ -37,6 +38,7 @@ export function installBrowserErrorTelemetry({
     }
     void Promise.resolve(capture(payload)).catch(() => undefined);
   };
+  activeSubmit = submit;
 
   const onError = (event: ErrorEvent) => {
     const error = event.error instanceof Error ? event.error : null;
@@ -71,7 +73,20 @@ export function installBrowserErrorTelemetry({
     window.removeEventListener("error", onError);
     window.removeEventListener("unhandledrejection", onUnhandledRejection);
     recentlySent.clear();
+    if (activeSubmit === submit) activeSubmit = undefined;
   };
+}
+
+export function reportBrowserServiceError(error: unknown, context: Record<string, unknown> = {}) {
+  if (!activeSubmit) return;
+  const normalized = error instanceof Error ? error : new Error(safeMessage(error));
+  activeSubmit({
+    operation: "service_call_failed",
+    message: bounded(normalized.message || "Browser service call failed", MAX_MESSAGE_LENGTH),
+    stack: normalized.stack ? bounded(normalized.stack, MAX_STACK_LENGTH) : undefined,
+    route: bounded(window.location.pathname, 1_024),
+    context: sanitizeContext(context),
+  });
 }
 
 function sanitizeContext(value: Record<string, unknown>) {
