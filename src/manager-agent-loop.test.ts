@@ -3,11 +3,48 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildManagerAgentRequest,
   managerConversationTools,
+  selectManagerConversationToolsForTurn,
   runManagerAgentLoop,
 } from "../supabase/functions/_shared/manager-conversation/agentLoop";
 import { managerConversationJsonSchema } from "../supabase/functions/_shared/openaiManagerConversation";
 
 describe("Manager Agent Responses loop", () => {
+  it("withholds release mutation tools from unrelated or invalid turns", () => {
+    const tools = selectManagerConversationToolsForTurn({
+      body: "What do my streaming numbers mean?",
+      hasAttachedUnreleasedSong: true,
+    });
+    const names = tools.filter((tool) => tool.type === "function").map((tool) => tool.name);
+    expect(names).not.toEqual(expect.arrayContaining([
+      "propose_focused_release_date_change",
+      "save_focused_release_opportunities",
+      "create_focused_song_document",
+    ]));
+
+    const detachedRelease = selectManagerConversationToolsForTurn({
+      body: "I want to release this song in 14 days",
+      hasAttachedUnreleasedSong: false,
+    });
+    expect(detachedRelease.map((tool) => tool.type === "function" ? tool.name : tool.type))
+      .not.toContain("propose_focused_release_date_change");
+  });
+
+  it("supplies the minimal Video One tool set for a valid release turn", () => {
+    const tools = selectManagerConversationToolsForTurn({
+      body: "I want to release this song in 14 days",
+      hasAttachedUnreleasedSong: true,
+    });
+    const names = tools.filter((tool) => tool.type === "function").map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining([
+      "read_focused_release_success",
+      "propose_focused_release_date_change",
+      "query_focused_release_opportunities",
+      "save_focused_release_opportunities",
+      "create_focused_song_document",
+    ]));
+    expect(names).not.toContain("record_focused_release_opportunity_outcome");
+  });
+
   it("builds a stateful Responses request with web search, local tools, and strict output format", () => {
     const request = buildManagerAgentRequest({
       model: "gpt-5-mini",

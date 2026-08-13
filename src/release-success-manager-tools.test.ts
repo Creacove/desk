@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { managerConversationTools } from "../supabase/functions/_shared/manager-conversation/agentLoop";
+import { managerConversationTools, selectManagerConversationToolsForTurn } from "../supabase/functions/_shared/manager-conversation/agentLoop";
 import { buildManagerConversationInstructions } from "../supabase/functions/_shared/openaiManagerConversation";
 import { executeManagerConversationTool } from "../supabase/functions/_shared/manager-conversation/toolExecutor";
 import { verifyOpportunityPublicContact } from "../supabase/functions/_shared/release-success/opportunities";
@@ -225,6 +225,17 @@ const verifiedContactFetch = vi.fn(async () => ({
 }) as Response);
 
 describe("release success Manager tools", () => {
+  it("does not expose release writes unless the turn targets an attached unreleased song", () => {
+    const unrelated = selectManagerConversationToolsForTurn({ body: "Help me understand my audience", hasAttachedUnreleasedSong: true });
+    const released = selectManagerConversationToolsForTurn({ body: "Plan this release", hasAttachedUnreleasedSong: false });
+    for (const tools of [unrelated, released]) {
+      const names = tools.filter((tool) => tool.type === "function").map((tool) => tool.name);
+      expect(names).not.toContain("propose_focused_release_date_change");
+      expect(names).not.toContain("save_focused_release_opportunities");
+      expect(names).not.toContain("create_focused_song_document");
+    }
+  });
+
   it("exposes strict focused read and proposal tools without exposing approval", () => {
     const names = managerConversationTools
       .filter((tool) => tool.type === "function")

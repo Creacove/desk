@@ -15,8 +15,8 @@ import {
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
-  managerConversationTools,
   runManagerAgentLoop,
+  selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
@@ -799,6 +799,10 @@ async function callOpenAIManagerConversation(
   const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
   const releaseSuccessToolResults: ReleaseSuccessToolResult[] = [];
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
+  const tools = selectManagerConversationToolsForTurn({
+    body: input.body,
+    hasAttachedUnreleasedSong: await hasAttachedUnreleasedSong(db, input),
+  });
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -806,7 +810,7 @@ async function callOpenAIManagerConversation(
     instructions: buildManagerConversationInstructions(playbookInstructions),
     context,
     previousResponseId,
-    tools: managerConversationTools,
+    tools,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: "medium",
     maxOutputTokens: 6000,
@@ -853,6 +857,19 @@ async function callOpenAIManagerConversation(
     toolCreatedWork,
     releaseSuccessToolResults,
   };
+}
+
+async function hasAttachedUnreleasedSong(db: any, input: ManagerConversationInput) {
+  if (input.musicSubject?.type !== "music_item") return false;
+  const { data, error } = await db.from("music_items")
+    .select("id,released_at,lifecycle_stage")
+    .eq("id", input.musicSubject.id)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id && !data.released_at && !["released", "catalogued", "archived"].includes(String(data.lifecycle_stage ?? "").toLowerCase()));
 }
 
 type ReleaseSuccessToolResult = {
