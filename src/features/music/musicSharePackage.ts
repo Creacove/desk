@@ -24,7 +24,19 @@ export type ShareSelection = {
 };
 
 const IDENTITY_KEYS = new Set(["song_title", "primary_artist"]);
-const PRESS_DOCUMENT_TYPES = new Set(["lyrics", "press_release", "press_angle", "artist_biography", "one_sheet", "credits"]);
+const PRESS_DOCUMENT_TYPES = new Set([
+  "lyrics",
+  "press_release",
+  "press_angle",
+  "artist_biography",
+  "one_sheet",
+  "credits",
+  "epk",
+  "spotify_editorial_pitch",
+  "playlist_pitch",
+  "press_target_brief",
+  "press_pitch",
+]);
 const DELIVERY_DOCUMENT_TYPES = new Set(["lyrics", "credits", "distributor_notes"]);
 
 export function availableShareInformation(inventory: ShareInventory) {

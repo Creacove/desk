@@ -682,14 +682,14 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
   const title = requiredText(args.title, "Document title", 240);
   const body = requiredText(args.body, "Document body", 60_000);
   try {
-    await persistFocusedSongDocumentDraft(
+    const persisted = await persistFocusedSongDocumentDraft(
       db,
-      { ...input, body: `Create a draft ${documentType} titled ${title}.` },
+      { ...input, body: `Create a draft ${documentType} titled ${title}.`, documentType, title },
       input.runId ?? `manager-document-${subject.id}`,
       body,
       false,
     );
-    return { status: "drafted", musicItemId: subject.id, documentType, title };
+    return { ...persisted, status: "drafted", musicItemId: subject.id, documentType, title };
   } catch (error) {
     return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
   }
@@ -906,7 +906,7 @@ function requiredOpportunityStatus(value: unknown) {
 
 function requiredSongDocumentType(value: unknown) {
   const type = stringArg(value).toLowerCase();
-  if (!["press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"].includes(type)) {
+  if (!["epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"].includes(type)) {
     throw new Error("Song document type is invalid.");
   }
   return type;

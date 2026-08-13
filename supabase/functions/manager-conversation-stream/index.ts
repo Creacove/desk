@@ -201,10 +201,19 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           scopedMissionId: finalScopedMissionId,
         }, output);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-        await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-        output.createdWork = taskDraftWork
+        const documentToolResult = releaseSuccessToolResults.find((item) => item.tool === "create_focused_song_document");
+        const persistedDocument = documentToolResult?.result && isRecord(documentToolResult.result) && documentToolResult.result.status === "drafted"
+          ? documentToolResult.result
+          : documentToolResult
+            ? undefined
+            : await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
+        const documentWork = persistedDocument ? songDocumentCreatedWork(input, persistedDocument) : undefined;
+        const baseCreatedWork = taskDraftWork
           ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
           : [...toolCreatedWork, ...persistedWork];
+        output.createdWork = documentWork
+          ? upsertServerCreatedWork(baseCreatedWork, documentWork)
+          : baseCreatedWork;
 
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
@@ -1606,6 +1615,29 @@ function normalizeCreatedWorkItem(item: any) {
     parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
     status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",
   };
+}
+
+function songDocumentCreatedWork(input: ManagerConversationInput, persistedDocument: Record<string, unknown>) {
+  const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";
+  const title = typeof persistedDocument.title === "string" && persistedDocument.title.trim()
+    ? persistedDocument.title.trim()
+    : "Release documents";
+  if (!musicItemId) return undefined;
+  return {
+    type: "music_item" as const,
+    id: musicItemId,
+    title,
+    body: "Song Workspace created. Release document saved to Files.",
+    status: "updated" as const,
+  };
+}
+
+function upsertServerCreatedWork(
+  current: ManagerConversationOutput["createdWork"],
+  next: ManagerConversationOutput["createdWork"][number],
+) {
+  const key = `${next.type}:${next.id ?? next.title}`;
+  return [...current.filter((item) => `${item.type}:${item.id ?? item.title}` !== key), next];
 }
 
 function normalizeContextQuestions(value: unknown) {

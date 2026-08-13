@@ -219,7 +219,7 @@ const focusedSongDocumentProperties = {
   additionalProperties: false,
   required: ["documentType", "title", "body"],
   properties: {
-    documentType: { type: "string", enum: ["press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
+    documentType: { type: "string", enum: ["epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
     title: { type: "string" },
     body: { type: "string" },
   },

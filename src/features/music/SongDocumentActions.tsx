@@ -89,7 +89,7 @@ export function SongDocumentActions({
                   {onAskManager ? (
                     <button ref={onWrite ? undefined : firstActionRef} type="button" aria-label="Ask Manager to draft" onClick={() => choose(onAskManager)} className="flex items-center gap-3 rounded-[12px] px-3 py-3 text-left hover:bg-foreground/[0.04]">
                       <Sparkles className="h-4 w-4 text-brand-accent" aria-hidden="true" />
-                      <span><span className="block text-[13px] font-semibold text-foreground">Ask Manager to draft</span><span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Start from the song’s current lyrics, files, and release context.</span></span>
+                      <span><span className="block text-[13px] font-semibold text-foreground">Ask Manager to draft</span><span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Start from the song’s current lyrics, files, and release context. The draft is saved in the song Files for you to review before sharing.</span></span>
                     </button>
                   ) : null}
                   <div className="my-1 border-t border-foreground/8" />

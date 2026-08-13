@@ -31,6 +31,7 @@ import type {
   ReleaseDateChangeProposalInput,
   ReleaseDateChangeReceiptViewModel,
   ReleaseDateChangeRequestViewModel,
+  SongDocumentType,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
   SplitConfirmationViewModel,
@@ -3200,9 +3201,24 @@ async function applySongDocumentMaterials(
   });
 }
 
-function normalizeSongDocumentType(value?: string | null): "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes" | "other" {
-  return ["lyrics", "press_release", "press_angle", "artist_biography", "one_sheet", "credits", "distributor_notes"].includes(value ?? "")
-    ? value as "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes"
+function normalizeSongDocumentType(value?: string | null): SongDocumentType {
+  return [
+    "lyrics",
+    "press_release",
+    "press_angle",
+    "artist_biography",
+    "one_sheet",
+    "credits",
+    "distributor_notes",
+    "epk",
+    "spotify_editorial_pitch",
+    "playlist_pitch",
+    "press_target_brief",
+    "press_pitch",
+    "content_plan",
+    "release_calendar",
+  ].includes(value ?? "")
+    ? value as SongDocumentType
     : "other";
 }
 

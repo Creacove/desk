@@ -312,7 +312,22 @@ export type MusicManagerRunStatus =
   | "failed"
   | "cancelled";
 
-export type SongDocumentType = "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes" | "other";
+export type SongDocumentType =
+  | "lyrics"
+  | "press_release"
+  | "press_angle"
+  | "artist_biography"
+  | "one_sheet"
+  | "credits"
+  | "distributor_notes"
+  | "epk"
+  | "spotify_editorial_pitch"
+  | "playlist_pitch"
+  | "press_target_brief"
+  | "press_pitch"
+  | "content_plan"
+  | "release_calendar"
+  | "other";
 
 export type SongMaterialViewModel =
   | {
