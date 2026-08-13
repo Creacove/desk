@@ -45,4 +45,8 @@ describe("release success foundation schema", () => {
     expect(sql).toMatch(/artist_workspace_id uuid not null/gi);
     expect(sql).toMatch(/grant execute on function public\.approve_release_date_change/gi);
   });
+
+  it("preserves legacy Manager output types when extending the constraint", () => {
+    expect(sql).toMatch(/'task_draft'/i);
+  });
 });

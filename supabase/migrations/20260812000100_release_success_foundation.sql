@@ -403,6 +403,7 @@ alter table public.manager_outputs
     'chat_answer',
     'decision_package',
     'review_read',
+    'task_draft',
     'release_success_assessment',
     'release_opportunity_brief'
   ));
