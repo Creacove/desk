@@ -221,6 +221,7 @@ export function WorkspaceShell({
   children,
   showBack = true,
   punctuateTitle = true,
+  variant = "default",
 }: {
   eyebrow: string;
   title: string;
@@ -228,10 +229,25 @@ export function WorkspaceShell({
   children: ReactNode;
   showBack?: boolean;
   punctuateTitle?: boolean;
+  variant?: "default" | "conversation";
 }) {
   return (
     <div className="app-workspace app-workspace-reveal">
-      {showBack ? (
+      {showBack && variant === "conversation" ? (
+        <div className="sticky top-0 z-30 -mx-3 mb-2 border-b border-foreground/8 bg-background/92 px-3 py-2.5 backdrop-blur-xl lg:-mx-4 lg:px-4">
+          <div className="mx-auto flex max-w-[48rem] items-center gap-3">
+            <button
+              type="button"
+              onClick={onBack}
+              aria-label="Back to Manager"
+              className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <h1 className="min-w-0 truncate text-[14px] font-semibold text-foreground sm:text-[15px]">{title}</h1>
+          </div>
+        </div>
+      ) : showBack ? (
         <div className="sticky top-0 z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-sm lg:-mx-4 lg:px-4">
           <button
             type="button"
@@ -245,10 +261,10 @@ export function WorkspaceShell({
           </button>
         </div>
       ) : null}
-      <div className="mb-5 lg:mb-8">
+      {variant === "default" ? <div className="mb-5 lg:mb-8">
         <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
         <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.55rem] lg:text-[1.3rem]">{title}{punctuateTitle ? "." : ""}</h1>
-      </div>
+      </div> : null}
       {children}
     </div>
   );

@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import type {
@@ -257,7 +257,7 @@ export function ManagerOfficeScreen({
 
   return (
     <WorkspaceShell eyebrow="Manager" title="Manager's Office" onBack={onBack}>
-      <div className="max-w-5xl">
+      <div data-testid="manager-office-content" className="mx-auto w-full max-w-[48rem]">
         <MissionGenesisManagerPanel
           result={missionGenesisResult}
           answers={missionGenesisAnswers}
@@ -267,15 +267,16 @@ export function ManagerOfficeScreen({
           onSubmit={onSubmitMissionGenesisAnswers}
           onOpenCreatedMission={onOpenCreatedMission}
         />
-        <section className="rounded-[18px] border border-foreground/10 bg-background p-6 shadow-sm sm:p-8">
-              <div className="max-w-2xl">
+        <section className="mt-8">
+              <div className="max-w-[44rem]">
                 <p className="text-[14px] font-semibold leading-relaxed text-muted-foreground/85">Ask your Manager anything — a decision, a plan, or a review of what's happening.</p>
-                <div className="relative mt-6">
+                <div className="relative mt-4 overflow-hidden rounded-[1.25rem] border border-foreground/12 bg-background shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
                   <textarea
                     value={askText}
                     onChange={(event) => setAskText(event.target.value)}
                     placeholder="Ask the Manager for a directive or review..."
-                    className="min-h-[126px] w-full resize-none rounded-[16px] border border-foreground/10 bg-foreground/[0.015] p-5 pr-16 font-ui text-[15px] leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/60 focus:border-brand-accent/40 focus:bg-background"
+                    aria-label="Ask the Manager"
+                    className="min-h-[118px] w-full resize-none bg-transparent p-4 pr-16 font-ui text-[15px] leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/55 focus:bg-background sm:p-5"
                   />
                   <button
                     type="button"
@@ -287,39 +288,35 @@ export function ManagerOfficeScreen({
                     }}
                     disabled={!askText.trim() || askManagerPending}
                     aria-label="Ask Manager"
-                    className="absolute bottom-4 right-4 flex h-10 w-10 items-center justify-center rounded-full bg-brand-accent text-primary-foreground shadow-lg transition-transform hover:scale-105 disabled:opacity-25"
+                    className="absolute bottom-3 right-3 flex h-9 w-9 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 disabled:opacity-25 sm:bottom-4 sm:right-4"
                   >
                     <ArrowRight className="h-5 w-5" aria-hidden="true" />
                   </button>
                 </div>
                 {askManagerError ? <p role="alert" className="mt-3 text-[12px] font-semibold text-red-700">{askManagerError}</p> : null}
-                {askManagerPending ? <p className="mt-3 text-[12px] font-semibold text-muted-foreground">Manager is reading the workspace packet.</p> : null}
+                {askManagerPending ? <p className="mt-3 text-[12px] text-muted-foreground">Manager is reading your workspace.</p> : null}
               </div>
         </section>
 
-        {conversations.length > 0 ? <section className="mt-8">
-              <div className="mb-4 flex items-center justify-between border-b border-foreground/8 px-1 pb-4">
+        {conversations.length > 0 ? <section className="mt-10">
+              <div className="mb-3 border-b border-foreground/8 px-1 pb-3">
                 <div>
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/88">Conversation History</p>
-                  <p className="mt-1 text-[12px] text-muted-foreground/78">Pick up a prior thread or start a new run.</p>
+                  <p className="font-ui text-[11px] font-semibold text-muted-foreground">Conversations</p>
                 </div>
               </div>
-              <div className="flex flex-col gap-1">
+              <div className="flex flex-col">
                 {conversations.map((conversation) => (
                   <button
                     key={conversation.id}
                     type="button"
                     aria-label={conversation.topic}
-                    className="group flex items-center gap-4 rounded-xl border border-transparent p-4 text-left transition-colors hover:border-foreground/8 hover:bg-foreground/[0.025]"
+                    className="group flex min-h-12 items-center gap-3 border-b border-foreground/6 px-1 py-3 text-left transition-colors hover:bg-foreground/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/35"
                     onClick={() => onConversation(conversation)}
                   >
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-foreground/5 text-foreground/80 transition-colors group-hover:bg-brand-accent/10 group-hover:text-brand-accent">
-                      <MessageSquareText className="h-4 w-4" aria-hidden="true" />
-                    </span>
-                    <p className="min-w-0 flex-1 truncate text-[14px] font-bold text-foreground transition-colors group-hover:text-brand-accent">{conversation.topic}</p>
-                    <div className="flex shrink-0 items-center gap-4">
-                      {conversation.lastUpdate ? <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground/60">{formatConversationTimestamp(conversation.lastUpdate)}</span> : null}
-                      <ChevronRight className="h-4 w-4 text-foreground/20 transition-colors group-hover:text-brand-accent" aria-hidden="true" />
+                    <p className="min-w-0 flex-1 truncate text-[14px] font-medium text-foreground">{conversation.topic}</p>
+                    <div className="flex shrink-0 items-center gap-3">
+                      {conversation.lastUpdate ? <span className="text-[11px] text-muted-foreground/65">{formatConversationTimestamp(conversation.lastUpdate)}</span> : null}
+                      <ChevronRight className="h-4 w-4 text-foreground/20 transition-colors group-hover:text-foreground/60" aria-hidden="true" />
                     </div>
                   </button>
                 ))}
@@ -553,7 +550,7 @@ export function ConversationWorkspace({
   };
 
   return (
-    <WorkspaceShell eyebrow="Direct message" title={conversation.topic} onBack={onBack} punctuateTitle={false}>
+    <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={onBack} punctuateTitle={false} variant="conversation">
       {/*
         ChatGPT layout pattern:
         — A centered, width-constrained reading column gives the breathing room.
@@ -561,7 +558,7 @@ export function ConversationWorkspace({
         — User message is a right-aligned soft pill within the same column.
         — Side whitespace is the product of the column constraint, not padding hacks.
       */}
-      <div className="mx-auto max-w-[680px] pb-44">
+      <div data-testid="manager-conversation-column" className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(9rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pt-5 lg:px-0">
         {conversation.musicSubject?.type === "music_item" ? (
           <div data-testid="conversation-song-context" className="mb-5">
             <SongContextAttachment
@@ -599,16 +596,16 @@ export function ConversationWorkspace({
           </section>
         ) : null}
         {taskContext ? (
-          <div className="mb-6 flex items-start justify-between gap-4 rounded-[16px] border border-brand-accent/20 bg-brand-accent/[0.045] p-4">
+          <div className="mb-6 flex items-start justify-between gap-4 border-b border-foreground/8 pb-4">
             <div className="min-w-0">
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Working on task</p>
-              <p className="mt-1 text-[14px] font-bold text-foreground">{taskContext.title}</p>
+              <p className="text-[11px] font-semibold text-muted-foreground">Working on task</p>
+              <p className="mt-1 text-[14px] font-semibold text-foreground">{taskContext.title}</p>
               {taskContext.completionExpectation ? (
                 <p className="mt-1 text-[12px] font-semibold leading-relaxed text-muted-foreground">{taskContext.completionExpectation}</p>
               ) : null}
             </div>
             {onBackToTask ? (
-              <button type="button" onClick={onBackToTask} className="shrink-0 text-[11px] font-bold text-brand-accent hover:underline">
+              <button type="button" onClick={onBackToTask} className="shrink-0 text-[11px] font-semibold text-muted-foreground hover:text-foreground hover:underline">
                 Back to task
               </button>
             ) : null}
