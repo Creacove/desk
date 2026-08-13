@@ -179,5 +179,5 @@ export type ReleaseOpportunityCandidate = {
 export type ReleaseOpportunityBrief = ReleaseOpportunityCandidate & {
   dedupeKey: string;
   safetyState: "clear" | "caution" | "excluded";
-  status: "watch" | "shortlisted" | "approved";
+  status: "watch" | "shortlisted" | "approved" | "skipped";
 };

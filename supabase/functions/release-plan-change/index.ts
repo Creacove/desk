@@ -67,7 +67,7 @@ type Scope = {
   releasePlanId?: string;
 };
 
-type SupabaseLike = ReturnType<typeof createClient>;
+type SupabaseLike = { from(table: string): any };
 
 class ValidationError extends Error {}
 class NotFoundError extends Error {}
