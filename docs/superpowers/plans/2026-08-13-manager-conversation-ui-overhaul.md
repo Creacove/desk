@@ -2,19 +2,62 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Rebuild the existing Manager's Office and conversation presentation into a restrained, ChatGPT-caliber interface without adding capabilities or changing Manager, repository, persistence, upload, or navigation behavior.
+**Goal:** Rebuild the Manager's Office and conversation into a restrained, ChatGPT-caliber work surface with compact turn results, sequential composer questions, canonical song-scoped uploads, and one unified Manager working state.
 
-**Architecture:** Preserve ConversationViewModel, callbacks, stream handling, and application routes. Extract the oversized Manager presentation into focused components, add a pure UI projection that assigns conversation-level artifacts to the final Manager turn and groups duplicate created-work announcements, then restyle each existing surface around one centered conversation grid and one compact artifact grammar.
+**Architecture:** Preserve existing routes and Manager stream semantics while extracting the oversized Manager presentation into focused components. Use pure presentation projections for turn ownership and guided questions, reuse `MusicRepository.uploadAsset` and `music_assets` for uploads, persist only validated canonical asset references in artist-message metadata, and render every active Manager run through one existing `AppThinkingOrb` that is replaced in place by prose, result, or failure.
 
-**Tech Stack:** React 18, TypeScript, Tailwind CSS, Lucide React, Vitest, Testing Library, Vite.
+**Tech Stack:** React 18, TypeScript, Tailwind CSS, Lucide React, `thinking-orbs`, Vitest, Testing Library, Vite, Supabase client/storage, and Supabase Edge Functions with SSE.
 
 ---
 
 ## Scope guardrails
 
-Do not add conversation search, filters, grouping, pinning, archive, rename, thread switching, chat uploads, drag-and-drop, attachment staging, file previews, a split-pane editor, a new route, a new repository method, a new stream event, or a database change.
+Do not add conversation search, filters, grouping, pinning, archive, rename, thread switching, general-conversation uploads, a song picker in chat, temporary attachment storage, drag-and-drop, a new preview system, a split-pane editor, a new route, a new stream event, parallel Manager runs, or new background execution semantics.
 
-Preserve starting and opening conversations, title stability, streaming, retry, context answers, task-draft expansion, existing navigation, release approval, opportunity actions, scroll ownership, and composer safe-area behavior.
+Preserve starting and opening conversations, title stability, streaming, retry, context-answer contracts, task-draft expansion, existing navigation, release approval, opportunity actions, scroll ownership, composer safe-area behavior, canonical Files ownership, and existing durable activity-center behavior.
+
+## LunaMax implementation protocol
+
+This plan is intentionally prescriptive. LunaMax should implement it task by task in order and must not substitute a different product pattern because another pattern is faster to generate.
+
+At the start of implementation:
+
+1. Create an isolated `codex/manager-conversation-overhaul` worktree or branch from the commit containing this plan.
+2. Read the complete design spec at `docs/superpowers/specs/2026-08-13-manager-conversation-ui-overhaul-design.md` before editing code.
+3. Record the existing untracked `.playwright-cli` files and leave them untouched.
+4. Run the focused baseline tests used by Tasks 1, 7, and 8 before changing implementation.
+5. Complete one task, run its named tests, inspect the diff, and commit before beginning the next task.
+
+Non-negotiable product invariants:
+
+- A general or project conversation has no paperclip, disabled upload control, song selector, or explanatory upload copy.
+- A file is uploaded only after a durable `music_item` is already attached to the conversation.
+- Upload creates one canonical `music_assets` record through `MusicRepository.uploadAsset`; conversation metadata stores only its validated reference.
+- Preset context questions advance locally. No repository call, loading state, or Manager run occurs between questions.
+- Exactly one Manager activity indicator is visible. It uses one existing `AppThinkingOrb`; prose/result/failure replaces it.
+- The Office conversation list remains title plus optional time only.
+- Do not retain both old and new UI behind flags. Remove superseded form, card, and loader markup after the replacement passes tests.
+
+If repository behavior differs from a code snippet in this plan, preserve the invariant and existing security boundary, make the smallest compatible adjustment, and document that adjustment in the task commit. Do not broaden scope without user approval.
+
+Composer state precedence is fixed:
+
+| Priority | Condition | Visible composer |
+|---|---|---|
+| 1 | Latest Manager context request is unresolved | One guided question; no chat textarea or paperclip |
+| 2 | Ordinary song conversation | Textarea, song-only paperclip, staged canonical uploads, Send |
+| 3 | General or project conversation | Textarea and Send only |
+
+Manager-turn state precedence is also fixed:
+
+| Priority | Condition | Visible Manager turn |
+|---|---|---|
+| 1 | Failed Manager message/run | Plain failure and Retry; no orb |
+| 2 | Manager prose has started | Streamed prose; no orb or activity history |
+| 3 | Active run before prose | One 16–18px `AppThinkingOrb` and one status sentence |
+| 4 | Completed run | Final prose/result only; no loading receipt |
+
+Visual constants LunaMax should use unless an existing token already expresses the same value: 768px conversation maximum width, 16px mobile page margin, 24px tablet margin, 32px desktop clearance, 15–16px conversation text, 12–13px activity/supporting text, 40–44px interactive targets, neutral alpha borders, and elevation only on the floating composer or temporary overlays.
 
 ## File map
 
@@ -26,17 +69,37 @@ Create:
 - src/features/manager/ConversationWorkspace.tsx
 - src/features/manager/ManagerMessage.tsx
 - src/features/manager/ManagerArtifacts.tsx
+- src/features/manager/ManagerComposer.tsx
+- src/features/manager/managerContextFlow.ts
+- src/features/manager/managerContextFlow.test.ts
+- src/features/manager/ManagerSongAttachments.tsx
+- src/features/manager/ManagerActivity.tsx
+- src/features/music/musicUploadClassification.ts
+- src/features/music/musicUploadClassification.test.ts
+- supabase/functions/_shared/manager-conversation/attachments.ts
 
 Modify:
 
 - src/features/manager/ManagerScreens.tsx
 - src/features/manager/ReleaseSuccessArtifact.tsx
 - src/features/manager/OpportunityArtifact.tsx
+- src/features/music/MusicScreens.tsx
 - src/design-system/components.tsx
+- src/types/cleanProduction.ts
+- src/services/productionSupabase.ts
+- src/services/fixtureRepositories.ts
+- src/app/ProductionApp.tsx
+- supabase/functions/_shared/manager-conversation/context.ts
+- supabase/functions/manager-conversation/index.ts
+- supabase/functions/manager-conversation-stream/index.ts
 - src/index.css
 - src/production-app-shell.test.tsx
+- src/production-supabase-service.test.ts
+- src/manager-conversation-context.test.ts
+- src/manager-conversation-attachments.test.ts
+- src/openai-manager-conversation-function.test.ts
 
-Do not modify behavior in src/app/ProductionApp.tsx, src/types/cleanProduction.ts, src/services/managerConversationStream.ts, repositories, Supabase, edge functions, or upload services.
+Do not create a migration: `conversation_messages.metadata` already stores structured context data and can hold canonical attachment references. Do not modify unrelated Manager tools, `src/services/managerConversationStream.ts`, storage buckets, or upload authorization.
 
 ## Task 1: Create the turn-owned presentation projection
 
@@ -411,50 +474,49 @@ Show title, one-line summary, and existing Open package action only.
 
 Expected: PASS before commit.
 
-## Task 5: Normalize context, questions, activity, and composer
+## Task 5: Extract the stable composer shell and simplify conversation context
 
 **Files:**
 
 - Modify: src/features/manager/ManagerMessage.tsx
 - Modify: src/features/manager/ConversationWorkspace.tsx
+- Create: src/features/manager/ManagerComposer.tsx
 - Modify: src/production-app-shell.test.tsx
 
 - [ ] **Step 1: Write failing assertions**
 
     expect(screen.getByTestId("conversation-song-context")).not.toHaveClass("shadow-sm");
-    expect(screen.getAllByTestId("manager-activity-current")).toHaveLength(1);
     expect(screen.getByTestId("manager-composer-dock")).toHaveClass("pointer-events-none");
     expect(screen.getByTestId("manager-composer-surface")).toHaveClass("pointer-events-auto", "max-w-[48rem]");
 
 - [ ] **Step 2: Verify failure**
 
-    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "activity|composer|song context|context questions"
+    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "composer|song context|scroll"
 
-Expected: FAIL against current stacked activity and footer.
+Expected: FAIL against the current footer and context cards.
 
 - [ ] **Step 3: Simplify existing context**
 
 Song context shows title, lifecycle stage, and existing open action. Task context shows title and Back to task. Remove uppercase labels, descriptive duplication, accent-filled panels, and shadows.
 
-- [ ] **Step 4: Show one current observable activity**
+- [ ] **Step 4: Extract ManagerComposer with explicit mode inputs**
 
-    const currentStep =
-      [...run.steps].reverse().find((step) => step.status === "running") ??
-      run.steps.at(-1);
-    const label = currentStep?.label ?? "Manager is working";
+Define a focused component that initially supports ordinary chat and accepts optional `guidedQuestion` and `attachments` slots for later tasks:
 
-    <div data-testid="manager-activity-current" role="status" aria-live="polite" className="mt-3 flex items-center gap-2 text-[12px] text-muted-foreground">
-      <span className="manager-activity-dot h-1.5 w-1.5 rounded-full bg-muted-foreground/65" aria-hidden="true" />
-      <span>{normalizeActivityLabel(label)}</span>
-    </div>
+    type ManagerComposerProps = {
+      draft: string;
+      onDraftChange(value: string): void;
+      onSend(): void;
+      sendPending: boolean;
+      sendError?: string | null;
+      guidedQuestion?: ReactNode;
+      attachments?: ReactNode;
+      leadingAction?: ReactNode;
+    };
 
-Do not add percentages, promises, tool payloads, or reasoning.
+Render `guidedQuestion` instead of the ordinary text row when present. Render `attachments` above the row and `leadingAction` before the textarea only in ordinary mode.
 
-- [ ] **Step 5: Restyle the existing question form**
-
-Keep answer kinds, options, recommendation helper, I'm not sure, validation, contextResolved, and submission. Use sentence case, one neutral form boundary, minimum 44px controls, and one primary submit action.
-
-- [ ] **Step 6: Float and align the existing composer**
+- [ ] **Step 5: Float and align ManagerComposer**
 
     <div
       data-testid="manager-composer-dock"
@@ -497,17 +559,339 @@ Keep answer kinds, options, recommendation helper, I'm not sure, validation, con
       </div>
     </div>
 
-Preserve placeholder, Enter, Shift+Enter, growth to 200px, send lock, error, safe area, rail offset, and verification note. Add no tool or attachment button.
+Preserve placeholder, Enter, Shift+Enter, growth to 200px, send lock, error, safe area, rail offset, and verification note. Do not add the song-only attachment action until Task 9; the `leadingAction` slot must remain empty elsewhere.
+
+- [ ] **Step 6: Wire ConversationWorkspace and remove the old inline composer markup**
+
+Keep draft ownership and send handlers in `ConversationWorkspace`; pass state into `ManagerComposer`. Keep `useConversationScroll` as the only transcript scroll owner.
 
 - [ ] **Step 7: Test and commit**
 
-    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "activity|composer|song context|context questions|scroll"
-    git add src/features/manager/ManagerMessage.tsx src/features/manager/ConversationWorkspace.tsx src/production-app-shell.test.tsx
-    git commit -m "refactor: calm manager activity and composer states"
+    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "composer|song context|scroll"
+    git add src/features/manager/ManagerComposer.tsx src/features/manager/ManagerMessage.tsx src/features/manager/ConversationWorkspace.tsx src/production-app-shell.test.tsx
+    git commit -m "refactor: extract manager conversation composer"
 
 Expected: PASS before commit.
 
-## Task 6: Make release and research artifacts progressively disclosed
+## Task 6: Move preset Manager questions into a sequential composer flow
+
+**Files:**
+
+- Create: src/features/manager/managerContextFlow.ts
+- Create: src/features/manager/managerContextFlow.test.ts
+- Modify: src/features/manager/ManagerComposer.tsx
+- Modify: src/features/manager/ManagerMessage.tsx
+- Modify: src/features/manager/ConversationWorkspace.tsx
+- Modify: src/app/ProductionApp.tsx
+- Modify: src/production-app-shell.test.tsx
+
+- [ ] **Step 1: Write failing pure-flow tests**
+
+Test a three-question array containing `short_text`, `single_select`, and `multi_select`. Assert that answering question one changes only local state, Back preserves prior answers, single-select advances, multi-select requires Continue, and `buildContextAnswerPayload` returns all answers once at the final step.
+
+    expect(nextContextQuestionIndex(0, questions)).toBe(1);
+    expect(buildContextAnswerPayload(questions, answers)).toEqual([
+      { questionKey: "release_date", answer: "August 27" },
+      { questionKey: "budget", answer: "Under ₦500,000" },
+      { questionKey: "priority", answer: "Playlist pitching, Short-form content" },
+    ]);
+
+- [ ] **Step 2: Run the pure tests and verify failure**
+
+    npx vitest run src/features/manager/managerContextFlow.test.ts
+
+Expected: FAIL because the module does not exist.
+
+- [ ] **Step 3: Implement deterministic question helpers**
+
+Export these exact functions and keep them free of React and network calls:
+
+    export type ContextDraftAnswers = Record<string, string[]>;
+
+    export function answerValues(answer?: string | string[]) {
+      return Array.isArray(answer) ? answer.filter(Boolean) : answer?.trim() ? [answer.trim()] : [];
+    }
+
+    export function buildContextAnswerPayload(
+      questions: ManagerMissionContextQuestion[],
+      answers: ContextDraftAnswers,
+    ): ManagerConversationContextAnswer[] {
+      return questions.map((question) => ({
+        questionKey: question.key,
+        answer: (answers[question.key] ?? []).join(", ").trim(),
+      })).filter((answer) => answer.answer);
+    }
+
+Also export `isContextQuestionAnswered`, bounded previous/next-index helpers, and `formatContextAnswerSummary(questions, answers)`. The summary must use the question text and selected answer, not the internal placeholder sentence.
+
+- [ ] **Step 4: Write failing composer interaction tests**
+
+Assert `1 of 3`, question text, choice buttons, `aria-pressed`, Recommended, I'm not sure, Something else, Back, Continue, Send answers, and preservation after a rejected final submit. Assert the Manager repository is not called while moving from questions one to three and is called exactly once at final submission.
+
+- [ ] **Step 5: Implement GuidedContextComposer inside ManagerComposer**
+
+Use the active question's existing `answerKind`:
+
+- `single_select`: buttons, auto-advance after an ordinary selection;
+- `multi_select`: toggle buttons plus Continue;
+- `short_text`: composer textarea plus Continue;
+- `money_range`: text input with `Enter an amount or range` guidance plus Continue;
+- `Something else`: reveal free text and stop auto-advance;
+- `recommendedAnswer`: inject or mark one choice with a small `Recommended` label;
+- `I'm not sure`: store `I'm not sure — use your best recommendation and state the assumption.`.
+
+Keep all question state in `ConversationWorkspace` so a failed final request does not reset it. During final submission, keep the final step visible and change `Send answers` to `Sending…`. Only clear state after the submitted `contextRequestId` is present on a server-started or completed artist message; do not mark the optimistic-only message resolved. Extend the `onSendContextAnswers` body argument to use `formatContextAnswerSummary` instead of `Context answers for Manager mission decision.`
+
+- [ ] **Step 6: Collapse resolved questions in the owning Manager turn**
+
+Remove `ManagerContextQuestionForm`. An unresolved question message renders no inputs. A resolved one renders `N answers provided` beneath its Manager prose. Use the existing resolved-request comparison and preserve chronological ordering.
+
+- [ ] **Step 7: Test and commit**
+
+    npx vitest run src/features/manager/managerContextFlow.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "guided context|context questions|answers provided"
+    git add src/features/manager/managerContextFlow.ts src/features/manager/managerContextFlow.test.ts src/features/manager/ManagerComposer.tsx src/features/manager/ManagerMessage.tsx src/features/manager/ConversationWorkspace.tsx src/app/ProductionApp.tsx src/production-app-shell.test.tsx
+    git commit -m "feat: answer manager questions through the composer"
+
+Expected: PASS; tests prove zero intermediate sends and one final payload.
+
+## Task 7: Make canonical song uploads return durable attachment references
+
+**Files:**
+
+- Create: src/features/music/musicUploadClassification.ts
+- Create: src/features/music/musicUploadClassification.test.ts
+- Modify: src/features/music/MusicScreens.tsx
+- Modify: src/types/cleanProduction.ts
+- Modify: src/services/productionSupabase.ts
+- Modify: src/services/fixtureRepositories.ts
+- Modify: src/production-supabase-service.test.ts
+
+- [ ] **Step 1: Write failing upload-contract tests**
+
+Add `ManagerConversationAttachmentViewModel` with `id`, `musicItemId`, `title`, `assetType`, `group`, and `status`. Change `MusicRepository.uploadAsset` to return it. In the Supabase service test, assert `music_assets.insert(...).select("id,music_item_id,asset_type,title,status")` and assert the resolved attachment contains the inserted asset ID.
+
+- [ ] **Step 2: Verify failure**
+
+    npx vitest run src/production-supabase-service.test.ts -t "uploads a music asset"
+
+Expected: FAIL because upload currently returns no canonical ID.
+
+- [ ] **Step 3: Return the inserted canonical asset**
+
+Replace the unselected `music_assets` insert with:
+
+    const { data: assetRow, error: assetError } = await client
+      .from("music_assets")
+      .insert({ ...existingInsert })
+      .select("id,music_item_id,asset_type,title,status")
+      .single();
+
+Return `{ id: assetRow.id, musicItemId, title, assetType, group: assetGroup(assetType), status: "Uploaded" }`. Update the fixture repository to return the same shape. Do not create a second record or table.
+
+- [ ] **Step 4: Extract and test shared classification**
+
+Move file-to-category logic out of `MusicScreens.tsx` into `musicUploadClassification.ts`. Export `inferMusicUpload(file)` returning `{ group, suggestedAssetType, confidence }`. Preserve current MIME behavior, add only deterministic filename hints for existing types (`master`, `instrumental`, `clean`, `stem`, `cover`, `artwork`, `press`, `lyrics`, `split`), and return `confidence: "needs_confirmation"` when semantic type is ambiguous.
+
+- [ ] **Step 5: Reuse classification in Music Files**
+
+Replace `resolveUploadAsset`'s private MIME logic with the shared helper while preserving existing labels and upload behavior. Do not redesign the Files UI in this task.
+
+- [ ] **Step 6: Test and commit**
+
+    npx vitest run src/features/music/musicUploadClassification.test.ts src/production-supabase-service.test.ts -t "upload|classification"
+    git add src/features/music/musicUploadClassification.ts src/features/music/musicUploadClassification.test.ts src/features/music/MusicScreens.tsx src/types/cleanProduction.ts src/services/productionSupabase.ts src/services/fixtureRepositories.ts src/production-supabase-service.test.ts
+    git commit -m "feat: return canonical song upload references"
+
+Expected: PASS with existing storage and progress behavior unchanged.
+
+## Task 8: Persist and validate song attachments on artist messages
+
+**Files:**
+
+- Modify: src/types/cleanProduction.ts
+- Modify: src/services/productionSupabase.ts
+- Modify: src/services/fixtureRepositories.ts
+- Modify: src/app/ProductionApp.tsx
+- Create: supabase/functions/_shared/manager-conversation/attachments.ts
+- Modify: supabase/functions/_shared/manager-conversation/context.ts
+- Modify: supabase/functions/manager-conversation/index.ts
+- Modify: supabase/functions/manager-conversation-stream/index.ts
+- Modify: src/production-supabase-service.test.ts
+- Modify: src/manager-conversation-context.test.ts
+- Create: src/manager-conversation-attachments.test.ts
+- Modify: src/openai-manager-conversation-function.test.ts
+
+- [ ] **Step 1: Write failing contract tests**
+
+Add `attachments?: ManagerConversationAttachmentViewModel[]` to artist messages and `attachmentIds?: string[]` to both Manager send methods. Assert the client sends IDs only. Assert loaded message metadata hydrates attachments. Assert the shared edge resolver rejects assets not owned by the active workspace and attached `music_item`; source-contract tests must confirm both edge functions call it before inserting the artist message.
+
+- [ ] **Step 2: Verify failure**
+
+    npx vitest run src/production-supabase-service.test.ts src/manager-conversation-context.test.ts src/manager-conversation-attachments.test.ts src/openai-manager-conversation-function.test.ts -t "attachment"
+
+Expected: FAIL because attachment contracts and normalization do not exist.
+
+- [ ] **Step 3: Add shared normalization types**
+
+Use one persisted metadata shape:
+
+    type ManagerMessageAttachment = {
+      id: string;
+      musicItemId: string;
+      title: string;
+      assetType: string;
+      group: "Audio" | "Artwork" | "Documents";
+      status: string;
+    };
+
+Add a bounded browser normalizer in `productionSupabase.ts`. Put edge normalization and validation once in `attachments.ts`; do not copy it into both endpoints. Limit one message to 12 attachments, deduplicate requested IDs, and reject blank IDs/titles.
+
+- [ ] **Step 4: Resolve attachments server-side before inserting the artist message**
+
+Export this exact shared boundary:
+
+    export async function resolveManagerMessageAttachments(
+      db: any,
+      owner: { accountId: string; artistWorkspaceId: string; artistId: string },
+      subject: { type: "music_item" | "music_project"; id: string } | null,
+      attachmentIds: unknown,
+    ): Promise<ManagerMessageAttachment[]>;
+
+In both Manager edge functions, after `ensureMusicConversationSubjectLink` and before `insertConversationMessage`, call it with the confirmed subject. It returns `[]` when no IDs were requested. If IDs were requested without a `music_item`, throw `Files can only be attached to a song conversation.` Otherwise query `music_assets` using account, workspace, artist, `music_item_id`, and `.in("id", uniqueIds)`. Throw `One or more attached files do not belong to this song.` if the validated count differs from the unique requested count.
+
+Pass the validated rows—not client titles—into `managerArtistMessageMetadata(input, attachments)`.
+
+- [ ] **Step 5: Give the Manager exact attachment context**
+
+Extend `buildManagerConversationModelContext` with validated `attachments` in `common`:
+
+    attachments: normalizeManagerAttachments(input.attachments),
+
+Keep the existing focused-song packet, body, and previous-response behavior. Do not append hidden text to the visible artist body.
+
+- [ ] **Step 6: Hydrate streamed, non-streamed, loaded, and optimistic messages**
+
+Normalize metadata attachments in `toMessageViewModel`, `toConversationViewModel`, `conversationMessageFromRow`, and `conversationViewModel`. Extend `sendManagerMessage` options with attachments; include IDs in `managerInput`, and include full attachment view models in optimistic artist messages so they do not disappear before the completion event.
+
+- [ ] **Step 7: Test and commit**
+
+    npx vitest run src/production-supabase-service.test.ts src/manager-conversation-context.test.ts src/manager-conversation-attachments.test.ts src/openai-manager-conversation-function.test.ts src/production-app-shell.test.tsx -t "attachment"
+    git add src/types/cleanProduction.ts src/services/productionSupabase.ts src/services/fixtureRepositories.ts src/app/ProductionApp.tsx supabase/functions/_shared/manager-conversation/attachments.ts supabase/functions/_shared/manager-conversation/context.ts supabase/functions/manager-conversation/index.ts supabase/functions/manager-conversation-stream/index.ts src/production-supabase-service.test.ts src/manager-conversation-context.test.ts src/manager-conversation-attachments.test.ts src/openai-manager-conversation-function.test.ts src/production-app-shell.test.tsx
+    git commit -m "feat: persist manager song attachments"
+
+Expected: PASS; no database migration is present.
+
+## Task 9: Add song-only upload staging to the conversation composer
+
+**Files:**
+
+- Create: src/features/manager/ManagerSongAttachments.tsx
+- Modify: src/features/manager/ManagerComposer.tsx
+- Modify: src/features/manager/ManagerMessage.tsx
+- Modify: src/features/manager/ConversationWorkspace.tsx
+- Modify: src/app/ProductionApp.tsx
+- Modify: src/production-app-shell.test.tsx
+
+- [ ] **Step 1: Write failing visibility tests**
+
+Render general, project, and song conversations. Assert `Add files to Summer` exists only for the song. Assert there is no disabled paperclip, Choose song, Create song, or upload explanation in the other two states.
+
+- [ ] **Step 2: Write failing staging tests**
+
+Select multiple files through a hidden `input[type=file][multiple]`. Assert confident files begin canonical upload, ambiguous files require an existing asset type, progress rows use filename and percent, send remains disabled until every job is complete, failed jobs expose Retry, and removing a completed job does not call a delete method.
+
+- [ ] **Step 3: Implement attachment job state**
+
+Use this discriminated state in `ConversationWorkspace`:
+
+    type ManagerAttachmentJob = {
+      localId: string;
+      file: File;
+      assetType?: string;
+      group: "Audio" | "Artwork" | "Documents";
+      state: "needs_classification" | "uploading" | "ready" | "failed";
+      progress: MusicUploadProgress;
+      attachment?: ManagerConversationAttachmentViewModel;
+      error?: string;
+    };
+
+Upload with the existing `musicRepository.uploadAsset(conversation.musicSubject.id, ...)`. Do not upload before a song ID exists. Revoke no canonical asset when removing a ready job; only remove it from local pending-message state.
+
+- [ ] **Step 4: Build the compact staging UI**
+
+`ManagerSongAttachments` renders bounded rows above the text field: filename, type, textual phase/percent, and remove or retry. Ambiguous type selection uses only existing asset values: Audio (`final_master`, `rough_mix`, `clean_version`, `instrumental`, `stems`), Artwork (`cover_art`, `press_photo`, `alternate_artwork`), and Documents (`lyrics`, `split_sheet`, `rights_document`, `other`). Labels are humanized; raw values never appear in the UI. Keep the list internally scrollable after three rows. The paperclip is 40–44px, has tooltip and `aria-label="Add files to Summer"`, and opens the native picker directly.
+
+- [ ] **Step 5: Send and render ready attachments**
+
+`handleSend` requires non-empty text or at least one ready attachment. For an attachment-only send, construct the visible body as `Attached {filename}.` or `Attached {N} files: {comma-separated filenames}.` so the existing non-empty Manager directive contract remains valid. Send all ready attachment IDs and view models, then clear jobs only after optimistic insertion succeeds. Artist messages render quiet attachment rows beneath the bubble. On click, use `musicRepository.getAssetAccessUrl` when available; otherwise call the existing Files navigation callback. Always expose `Open in Files` as the secondary action.
+
+- [ ] **Step 6: Verify composer-mode precedence**
+
+Guided context mode replaces ordinary chat and hides the paperclip. A file upload in progress prevents entering guided mode only if the current response cannot yet exist; once the Manager has asked context questions, there can be no unsent prior draft jobs. Add an invariant test to prevent both modes rendering simultaneously.
+
+- [ ] **Step 7: Test and commit**
+
+    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "song attachments|paperclip|upload progress|guided context"
+    git add src/features/manager/ManagerSongAttachments.tsx src/features/manager/ManagerComposer.tsx src/features/manager/ManagerMessage.tsx src/features/manager/ConversationWorkspace.tsx src/app/ProductionApp.tsx src/production-app-shell.test.tsx
+    git commit -m "feat: upload song files from manager conversations"
+
+Expected: PASS with no upload affordance outside song conversations.
+
+## Task 10: Replace redundant Manager loaders with one evolving activity turn
+
+**Files:**
+
+- Create: src/features/manager/ManagerActivity.tsx
+- Modify: src/features/manager/ManagerMessage.tsx
+- Modify: src/features/manager/ConversationWorkspace.tsx
+- Modify: src/features/manager/ManagerScreens.tsx
+- Modify: src/production-app-shell.test.tsx
+
+- [ ] **Step 1: Write failing activity hierarchy tests**
+
+Assert a pending turn contains exactly one `AppThinkingOrb`, one normalized status, and no Manager avatar, speaker label, `BorderBeam`, bordered activity card, duplicate orb, or expanded step list. After `assistant.delta`, assert the activity disappears and prose occupies the same Manager turn. After failure, assert only the failure and Retry remain.
+
+- [ ] **Step 2: Verify failure**
+
+    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "single manager activity"
+
+Expected: FAIL against `ThinkingIndicator` and `ManagerActivityStatus`.
+
+- [ ] **Step 3: Implement one status normalizer**
+
+Move the useful mappings from `activityStatusLine` into `ManagerActivity.tsx`. Export `normalizeManagerActivityLabel(label, prompt)` and `currentObservableStep(run)`. Preserve existing event-derived specificity, but map internal tool labels to plain actions and never produce percentages, elapsed time, promises, or reasoning claims.
+
+- [ ] **Step 4: Implement one inline activity component**
+
+    export function ManagerActivity({ run, prompt }: Props) {
+      const step = currentObservableStep(run);
+      return (
+        <div data-testid="manager-activity-current" role="status" aria-live="polite" className="flex items-center gap-2 text-[12px] text-muted-foreground">
+          <AppThinkingOrb state={orbStateForLabel(step?.label ?? "")} size={18} />
+          <span>{normalizeManagerActivityLabel(step?.label ?? "Manager is working", prompt)}</span>
+        </div>
+      );
+    }
+
+Render it only while the active Manager turn has no prose and no failure. Remove `ThinkingIndicator`, `ManagerActivityStatus`, their details disclosure, duplicate icon wrappers, and the manager-feature import of `BorderBeam`.
+
+- [ ] **Step 5: Keep durable background work outside chat**
+
+Add regression assertions that the sparse conversation list still shows only title and optional time; do not add running badges or spinners. Leave `WorkspaceActivityCenter`, `activeWorkspaceRuns`, and full-screen branded loading unchanged.
+
+- [ ] **Step 6: Add reduced-motion behavior**
+
+Pass or style the existing orb so `prefers-reduced-motion` removes decorative motion while retaining text status. Ensure upload progress and guided-question transitions do not instantiate `ManagerActivity`.
+
+- [ ] **Step 7: Test and commit**
+
+    npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads -t "single manager activity|conversation list|reduced motion"
+    git add src/features/manager/ManagerActivity.tsx src/features/manager/ManagerMessage.tsx src/features/manager/ConversationWorkspace.tsx src/features/manager/ManagerScreens.tsx src/production-app-shell.test.tsx
+    git commit -m "refactor: unify manager conversation loading"
+
+Expected: PASS with exactly one conversation activity indicator.
+
+## Task 11: Make release and research artifacts progressively disclosed
 
 **Files:**
 
@@ -553,7 +937,7 @@ Default shows "Best match", total reviewed count, strongest target, and View all
 
 Expected: PASS before commit.
 
-## Task 7: Add responsive, accessibility, theme, and motion safeguards
+## Task 12: Add responsive, accessibility, theme, and motion safeguards
 
 **Files:**
 
@@ -561,19 +945,18 @@ Expected: PASS before commit.
 - Modify: src/features/manager/ConversationWorkspace.tsx
 - Modify: src/features/manager/ManagerMessage.tsx
 - Modify: src/features/manager/ManagerArtifacts.tsx
+- Modify: src/features/manager/ManagerComposer.tsx
+- Modify: src/features/manager/ManagerSongAttachments.tsx
+- Modify: src/features/manager/ManagerActivity.tsx
 - Modify: src/production-app-shell.test.tsx
 
 - [ ] **Step 1: Write failing safeguards**
 
-Assert polite activity status, aria-expanded on draft and research disclosure, safe-area syntax in ConversationWorkspace, and absence of hover lift and shadow-md in ManagerArtifacts.
+Assert polite activity status, `aria-pressed` on guided choices, labelled question position, text-labelled upload progress, `aria-expanded` on draft and research disclosure, safe-area syntax in ConversationWorkspace, and absence of hover lift and `shadow-md` in ManagerArtifacts.
 
 - [ ] **Step 2: Add CSS safeguards**
 
     @media (prefers-reduced-motion: reduce) {
-      .manager-activity-dot {
-        animation: none !important;
-      }
-
       .manager-conversation-motion {
         transition-duration: 0.01ms !important;
       }
@@ -595,17 +978,17 @@ Assert polite activity status, aria-expanded on draft and research disclosure, s
 
 - [ ] **Step 3: Audit semantics**
 
-Use article for messages, section for contained results, button for actions, anchor only for external URLs, label for inputs, visible focus, and 40–44px minimum controls. Ensure color is not the only state signal. Verify both themes use existing tokens.
+Use article for messages, section for contained results, button for actions, anchor only for external URLs, label for inputs, visible focus, and 40–44px minimum controls. Ensure question progress is not conveyed by dots alone, upload state is not conveyed by a bar alone, and color is not the only state signal. Verify both themes use existing tokens. `thinking-orbs` already renders a static frame for `prefers-reduced-motion`; verify that behavior instead of replacing the design-system orb.
 
 - [ ] **Step 4: Run focused tests and commit**
 
     npx vitest run src/features/manager/managerPresentation.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
-    git add src/index.css src/features/manager/ConversationWorkspace.tsx src/features/manager/ManagerMessage.tsx src/features/manager/ManagerArtifacts.tsx src/production-app-shell.test.tsx
+    git add src/index.css src/features/manager/ConversationWorkspace.tsx src/features/manager/ManagerMessage.tsx src/features/manager/ManagerArtifacts.tsx src/features/manager/ManagerComposer.tsx src/features/manager/ManagerSongAttachments.tsx src/features/manager/ManagerActivity.tsx src/production-app-shell.test.tsx
     git commit -m "fix: harden manager conversation responsiveness"
 
 Expected: PASS before commit.
 
-## Task 8: Verify the complete application and every key visual state
+## Task 13: Verify the complete application and every key visual state
 
 **Files:**
 
@@ -635,7 +1018,7 @@ Verify composer priority; title-and-time-only rows; long-title truncation; absen
 
 - [ ] **Step 5: Inspect conversation states at all widths**
 
-Verify ordinary dialogue, long rich text, song/task context, thinking, streaming activity, retry, questions before/after submission, grouped workspace result, independent missions, draft collapsed/expanded, every release state, research collapsed/expanded, decision package, composer growth, both themes, reduced motion, no 320px overflow, and tail clearance.
+Verify ordinary dialogue, long rich text, song/task context, the single working indicator, replacement by streaming prose, retry, every guided-question type, Back, final submission failure recovery, general/project conversations without upload, song attachment classification/upload/remove/retry, grouped workspace result, independent missions, draft collapsed/expanded, every release state, research collapsed/expanded, decision package, composer growth, both themes, reduced motion, no 320px overflow, and tail clearance.
 
 - [ ] **Step 6: Verify routes and callbacks**
 
@@ -646,23 +1029,27 @@ Verify ordinary dialogue, long rich text, song/task context, thinking, streaming
 5. Release approval shows the exact change and uses the existing approval boundary.
 6. Opportunity actions prepare pitch, record outcome, open source, open Files, and retry.
 7. Back returns to Manager's Office.
-8. No chat upload or file-preview control exists.
+8. General and project conversations expose no upload control.
+9. A song conversation uploads to canonical Files and its sent attachment survives conversation reload.
+10. Removing a completed staged upload does not delete the canonical song asset.
+11. Preset questions make no intermediate Manager request and submit one complete answer payload.
+12. Manager thinking shows exactly one small `AppThinkingOrb`; prose, failure, or result replaces it.
 
 - [ ] **Step 7: Inspect the diff**
 
     git diff --check
     git status --short
-    git diff --stat HEAD~7..HEAD
+    git diff --stat 4703763..HEAD
 
-Expected: no whitespace errors; only planned UI, shell, CSS, and test files changed; unrelated user files remain untouched.
+Expected: no whitespace errors; only files listed in this plan changed; unrelated user files remain untouched.
 
 - [ ] **Step 8: Commit verification corrections only when needed**
 
-    git add src/features/manager src/design-system/components.tsx src/index.css src/production-app-shell.test.tsx
+    git add src/features/manager src/features/music src/app/ProductionApp.tsx src/types/cleanProduction.ts src/services/productionSupabase.ts src/services/fixtureRepositories.ts supabase/functions/_shared/manager-conversation/context.ts supabase/functions/manager-conversation/index.ts supabase/functions/manager-conversation-stream/index.ts src/design-system/components.tsx src/index.css src/production-app-shell.test.tsx src/production-supabase-service.test.ts src/manager-conversation-context.test.ts src/openai-manager-conversation-function.test.ts
     git commit -m "fix: polish manager conversation visual states"
 
 Do not create an empty commit.
 
 ## Final acceptance gate
 
-Confirm every acceptance criterion in docs/superpowers/specs/2026-08-13-manager-conversation-ui-overhaul-design.md against implementation and browser evidence. The result fails if it adds a feature, leaves an artifact detached from its turn, repeats created objects, exposes conversation previews in the Office, or overlaps/overflows on mobile.
+Confirm every acceptance criterion in docs/superpowers/specs/2026-08-13-manager-conversation-ui-overhaul-design.md against implementation and browser evidence. The result fails if it leaves an artifact detached from its turn, repeats created objects, exposes conversation previews in the Office, allows upload without a song, creates temporary attachment storage, sends between preset questions, duplicates Manager loading indicators, or overlaps/overflows on mobile.
