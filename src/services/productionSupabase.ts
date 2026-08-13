@@ -2267,6 +2267,18 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         if (outputError) throw outputError;
         if (linkError) throw linkError;
         if (releaseOutputError) throw releaseOutputError;
+        const releaseSuccessOutputs = ((releaseOutputs as ManagerOutputRow[] | null) ?? []);
+        const persistedReleaseArtifacts = hydrateReleaseSuccessArtifacts(releaseSuccessOutputs);
+        const releaseRequestIds = [...new Set(persistedReleaseArtifacts.flatMap((artifact) => artifact.requestId ? [artifact.requestId] : []))];
+        let releaseRequests: unknown[] = [];
+        if (releaseRequestIds.length) {
+          const { data: requestRows, error: requestError } = await ownerFilters(client
+            .from("release_date_change_requests")
+            .select("id,status,result_json,updated_at")
+          ).in("id", releaseRequestIds);
+          if (requestError) throw requestError;
+          releaseRequests = requestRows ?? [];
+        }
         const conversationLinks = (links as ArtifactLinkRow[] | null) ?? [];
         const musicSubjects = await loadConversationMusicSubjects(client, workspace, conversationLinks);
         const musicSubject = musicSubjects.get(conversationId);
@@ -2279,8 +2291,9 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           ((outputs as ManagerOutputRow[] | null) ?? [])[0],
           conversationLinks.find((link) => link.target_type === "task")?.target_id,
           musicSubject,
-          ((releaseOutputs as ManagerOutputRow[] | null) ?? []),
+          releaseSuccessOutputs,
           releaseOpportunityArtifacts,
+          releaseRequests,
         );
       },
       async loadConversations() {
@@ -3280,6 +3293,7 @@ function conversationFromRows(
   musicSubject?: MusicConversationSubjectViewModel,
   releaseSuccessOutputs: ManagerOutputRow[] = [],
   releaseOpportunityArtifacts: ReleaseOpportunityArtifactViewModel[] = [],
+  releaseRequests: unknown[] = [],
 ): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
@@ -3296,7 +3310,7 @@ function conversationFromRows(
     messages: mappedMessages,
     ...(output ? { decisionPackage: decisionPackageFromRow(output) } : {}),
     createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
-    releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(releaseSuccessOutputs),
+    releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(releaseSuccessOutputs, releaseRequests),
     ...(releaseOpportunityArtifacts.length ? { releaseOpportunityArtifacts } : {}),
   };
 }

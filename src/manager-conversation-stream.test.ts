@@ -1,9 +1,45 @@
 import { describe, expect, it } from "vitest";
 import { ReadableStream } from "node:stream/web";
 
-import { invalidationsFromManagerRefreshHint, parseManagerConversationEventStream } from "./services/managerConversationStream";
+import { hydrateReleaseSuccessArtifacts, invalidationsFromManagerRefreshHint, parseManagerConversationEventStream } from "./services/managerConversationStream";
 
 describe("Manager conversation stream parser", () => {
+  it("hydrates an authoritative applied receipt over an obsolete approval artifact after refresh", () => {
+    const [artifact] = hydrateReleaseSuccessArtifacts([{
+      created_at: "2026-08-13T08:00:00.000Z",
+      render_json: {
+        id: "release-success:conversation-1:song-1",
+        musicItemId: "song-1",
+        requestId: "request-1",
+        idempotencyKey: "proposal-key-1",
+        previewHash: "hash-1",
+        state: "awaiting_approval",
+        subject: { title: "Debbie", itemType: "song" },
+        preview: { fromDate: "2026-08-26", proposedDate: "2026-09-09", expectedRevision: 2, changes: [], preserved: [] },
+      },
+    }], [{
+      id: "request-1",
+      status: "approved",
+      result_json: {
+        requestId: "request-1",
+        releasePlanId: "plan-1",
+        musicItemId: "song-1",
+        approvedDate: "2026-09-09",
+        previousRevision: 2,
+        revision: 3,
+        moved: [],
+        preserved: [],
+        nextDeadline: null,
+      },
+    }]);
+
+    expect(artifact).toMatchObject({
+      requestId: "request-1",
+      state: "applied",
+      receipt: { approvedDate: "2026-09-09", previousRevision: 2, revision: 3 },
+    });
+  });
+
   it("maps stream refresh hints onto the shared workspace invalidation contract", () => {
     expect(invalidationsFromManagerRefreshHint({
       conversations: true,

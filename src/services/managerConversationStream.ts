@@ -82,7 +82,7 @@ export function mergeReleaseSuccessArtifacts(
   return [...byId.values()];
 }
 
-export function hydrateReleaseSuccessArtifacts(rows: unknown[] = []): ReleaseSuccessArtifactViewModel[] {
+export function hydrateReleaseSuccessArtifacts(rows: unknown[] = [], requestRows: unknown[] = []): ReleaseSuccessArtifactViewModel[] {
   const ordered = rows
     .map((row, index) => ({ row, index, createdAt: readRowCreatedAt(row) }))
     .sort((left, right) => {
@@ -95,7 +95,32 @@ export function hydrateReleaseSuccessArtifacts(rows: unknown[] = []): ReleaseSuc
     const normalized = normalizeReleaseSuccessArtifact(renderJson);
     if (normalized && !byId.has(normalized.id)) byId.set(normalized.id, normalized);
   }
-  return [...byId.values()];
+  const requestsById = new Map<string, Record<string, any>>();
+  for (const value of requestRows) {
+    if (!isRecord(value)) continue;
+    const id = readOptionalString(value.id);
+    if (id) requestsById.set(id, value);
+  }
+  return [...byId.values()].map((artifact) => {
+    if (!artifact.requestId) return artifact;
+    const request = requestsById.get(artifact.requestId);
+    if (!request || request.status !== "approved" || !isReleaseReceipt(request.result_json)) return artifact;
+    return { ...artifact, state: "applied", receipt: request.result_json, error: undefined };
+  });
+}
+
+function isReleaseReceipt(value: unknown): value is NonNullable<ReleaseSuccessArtifactViewModel["receipt"]> {
+  return Boolean(
+    isRecord(value)
+      && readRequiredString(value.requestId)
+      && readRequiredString(value.releasePlanId)
+      && readRequiredString(value.musicItemId)
+      && readRequiredString(value.approvedDate)
+      && Number.isInteger(value.previousRevision)
+      && Number.isInteger(value.revision)
+      && Array.isArray(value.moved)
+      && Array.isArray(value.preserved),
+  );
 }
 
 export function releaseSuccessProgressLabel(tool: string): string {
