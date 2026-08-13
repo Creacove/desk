@@ -34,6 +34,7 @@ import { qualifyManagerMemoryCandidates } from "../_shared/manager-conversation/
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_shared/songDocumentDraft.ts";
+import { attachmentMetadata, resolveManagerConversationAttachments, type ManagerConversationAttachment } from "../_shared/manager-conversation/attachments.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,6 +52,7 @@ type ManagerConversationInput = {
   body: string;
   contextRequestId?: string;
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
+  attachmentIds?: string[];
 };
 
 Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) => {
@@ -104,6 +106,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         conversationId = await ensureConversation(db, input);
         failureStage = "focused_music_subject";
         const focusedMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+        const attachments = await resolveManagerConversationAttachments(db, input, focusedMusicSubject ?? undefined);
         failureStage = "mission_scope";
         const scopedMissionId = await resolveConversationMissionScope(db, input, conversationId, focusedMusicSubject);
         failureStage = "artist_message";
@@ -111,7 +114,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           speaker: "artist",
           label: "You",
           body: input.body.trim(),
-          metadata: managerArtistMessageMetadata(input),
+          metadata: managerArtistMessageMetadata(input, attachments),
         });
 
         emit({
@@ -1565,6 +1568,7 @@ function toMessageViewModel(message: any) {
     createdWork: normalizeCreatedWork(metadata.createdWork),
     contextQuestions: normalizeContextQuestions(metadata.contextQuestions),
     contextAnswers: normalizeContextAnswers(metadata.contextAnswers),
+    attachments: normalizeConversationAttachments(metadata.attachments),
     contextRequestId: typeof metadata.contextRequestId === "string" && metadata.contextRequestId.trim() ? metadata.contextRequestId.trim() : undefined,
     createdAt: message.created_at,
     status: "sent",
@@ -1607,11 +1611,12 @@ function readPlaybookKeyList(value: unknown): PlaybookKey[] {
   return value.filter((item): item is PlaybookKey => typeof item === "string" && allowed.has(item as PlaybookKey));
 }
 
-function managerArtistMessageMetadata(input: ManagerConversationInput) {
+function managerArtistMessageMetadata(input: ManagerConversationInput, attachments: ManagerConversationAttachment[] = []) {
   return {
     taskId: input.taskId ?? "",
     contextRequestId: input.contextRequestId ?? "",
     contextAnswers: normalizeContextAnswers(input.contextAnswers),
+    attachments: attachmentMetadata(attachments),
   };
 }
 
@@ -1706,6 +1711,20 @@ function normalizeContextAnswers(value: unknown) {
       answer: String(item.answer || "").trim(),
     }))
     .filter((item) => item.questionKey && item.answer);
+}
+
+function normalizeConversationAttachments(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item) => item && typeof item === "object")
+    .map((item: any) => ({
+      id: String(item.id || "").trim(),
+      musicItemId: String(item.musicItemId || "").trim(),
+      title: String(item.title || "Attached file").trim(),
+      assetType: String(item.assetType || "other").trim(),
+      status: String(item.status || "uploaded").trim(),
+    }))
+    .filter((item) => item.id && item.musicItemId);
 }
 
 function refreshHintForCreatedWork(work: ManagerConversationOutput["createdWork"][number]) {

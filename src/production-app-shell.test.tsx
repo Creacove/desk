@@ -2174,14 +2174,13 @@ describe("Clean production prototype-match shell", () => {
 
     openManagerFromDesk();
     expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
-    expect(await screen.findByText("Conversation History")).toBeInTheDocument();
+    expect(await screen.findByText("Conversations")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Night Bus release planning" }));
-    expect(screen.getByText("Direct message")).toBeInTheDocument();
     expect(await screen.findByText("I want to drop a new song next week.")).toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: "Open created mission" })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "View mission" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Open created mission" }));
+    fireEvent.click(screen.getByRole("button", { name: "View mission" }));
     expect((await screen.findAllByText("Release Night Bus on June 12")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Executive summary")).toBeInTheDocument();
   }, 20000);
@@ -2289,9 +2288,9 @@ describe("Clean production prototype-match shell", () => {
       handlers.onEvent({ type: "assistant.delta", conversationId: "conv-stream", delta: "Run a capped" });
     });
 
-    expect(screen.getByRole("button", { name: /Details/i })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Details/i }));
-    expect(screen.getByText("Reading workspace packet")).toBeInTheDocument();
+    expect(screen.queryByTestId("manager-activity")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Details/i })).not.toBeInTheDocument();
+    expect(screen.queryByText("Reading workspace packet")).not.toBeInTheDocument();
     expect(screen.getByText(/Run a capped/)).toBeInTheDocument();
 
     await act(async () => {
@@ -2424,7 +2423,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send Manager context answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
 
     expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
       {
@@ -2436,6 +2435,85 @@ describe("Clean production prototype-match shell", () => {
       expect.any(Object),
     );
   }, 20000);
+
+  it("advances through preset context questions one at a time before sending once", async () => {
+    const onSendContextAnswers = vi.fn();
+    const conversation: ConversationViewModel = {
+      id: "conv-guided-sequence",
+      topic: "Release context",
+      status: "Manager needs context",
+      summary: "The Manager needs three answers.",
+      prompt: "Plan the release.",
+      messages: [
+        {
+          id: "msg-guided-manager",
+          speaker: "manager",
+          label: "Manager",
+          body: "I need three decisions before I can schedule the release.",
+          contextRequestId: "ctx-guided-sequence",
+          contextQuestions: [
+            {
+              key: "release_date",
+              question: "When should the release go live?",
+              reason: "The date determines every downstream deadline.",
+              answerKind: "single_select",
+              options: ["August 27", "September 10"],
+            },
+            {
+              key: "release_assets",
+              question: "Which assets are ready?",
+              reason: "I will use this to scope the remaining work.",
+              answerKind: "multi_select",
+              options: ["Final audio", "Cover art"],
+            },
+            {
+              key: "release_note",
+              question: "What should the launch communicate?",
+              reason: "Keep the final decision grounded in the artist’s intent.",
+              answerKind: "short_text",
+              options: [],
+            },
+          ],
+        },
+      ],
+      createdWork: [],
+    };
+
+    render(
+      <ConversationWorkspace
+        conversation={conversation}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={onSendContextAnswers}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    expect(screen.getByText("When should the release go live?")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "August 27" }));
+    expect(await screen.findByText("Which assets are ready?")).toBeInTheDocument();
+    expect(onSendContextAnswers).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cover art" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    expect(await screen.findByText("What should the launch communicate?")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "What should the launch communicate?" }), { target: { value: "A focused summer release." } });
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+
+    expect(onSendContextAnswers).toHaveBeenCalledWith(
+      "Context answers for Manager mission decision.",
+      "conv-guided-sequence",
+      "ctx-guided-sequence",
+      [
+        { questionKey: "release_date", answer: "August 27" },
+        { questionKey: "release_assets", answer: "Cover art" },
+        { questionKey: "release_note", answer: "A focused summer release." },
+      ],
+    );
+  });
 
   it("keeps the completed context-answer turn when the conversation is reopened", async () => {
     const repositories = repositoriesFor("Nova Vale");
@@ -2518,7 +2596,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send Manager context answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
     await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledTimes(1));
 
     persistedConversation = completedConversation;
@@ -2527,11 +2605,11 @@ describe("Clean production prototype-match shell", () => {
     });
     expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Manager" }));
     fireEvent.click(await screen.findByRole("button", { name: "Mission context" }));
 
     expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Send Manager context answers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
     expect(repositories.manager.loadConversation).toHaveBeenCalledTimes(2);
   }, 20000);
 
@@ -2731,7 +2809,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
     fireEvent.click(await screen.findByRole("button", { name: "Canonical task routing" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open task: Confirm task routing" }));
+    fireEvent.click(screen.getByRole("button", { name: "View task" }));
 
     expect(await screen.findByRole("heading", { name: "Build manager-created audience loop" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: /Tasks/i }).find((button) => button.getAttribute("aria-pressed") === "true")).toBeTruthy();
@@ -2766,14 +2844,11 @@ describe("Clean production prototype-match shell", () => {
       handlers.onEvent({ type: "assistant.delta", conversationId: "conv-activity", delta: "Draft the mission" });
     });
 
-    expect(screen.getByText("Planning next steps…")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Details/i })).toBeInTheDocument();
-    expect(screen.queryByText("Manager activity")).not.toBeInTheDocument();
+    expect(screen.getByText("Draft the mission")).toBeInTheDocument();
+    expect(screen.queryByTestId("manager-activity")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Details/i })).not.toBeInTheDocument();
     expect(screen.queryByText("Reading workspace packet")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Details/i }));
-    expect(screen.getByText("Reading workspace packet")).toBeInTheDocument();
-    expect(screen.getByText("Matching missions and evidence")).toBeInTheDocument();
+    expect(screen.queryByText("Matching missions and evidence")).not.toBeInTheDocument();
   }, 20000);
 
   it("keeps release-success artifacts as one evolving conversation state outside createdWork", () => {
@@ -2990,7 +3065,7 @@ describe("Clean production prototype-match shell", () => {
     });
     expect(await screen.findByRole("heading", { name: /Budget validation/i })).toBeInTheDocument();
     expect(screen.getByText("Hold scale spend and run a capped proof loop tied to verified city response, rights clearance, and conversion proof.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open task: Define capped spend proof loop" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "View task" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Investigation" })).not.toBeInTheDocument();
   }, 20000);
 
@@ -3059,7 +3134,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(screen.getByText("Validate Lagos audience pull")).toBeInTheDocument();
     expect(screen.getByText("Tighten release rights readiness")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Open created mission" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "View mission" })).toHaveLength(2);
     expect(screen.getAllByText("1 task")).toHaveLength(2);
     expect(screen.queryByText("2 tasks")).not.toBeInTheDocument();
   });
@@ -3133,16 +3208,12 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    const openDraft = screen.getByRole("button", { name: "Open draft: REVIVAL positioning thesis" });
-    expect(openDraft).toHaveAttribute("aria-expanded", "false");
+    const documentResult = screen.getByTestId("manager-document-result");
+    expect(within(documentResult).getByText("Draft saved")).toBeInTheDocument();
+    expect(within(documentResult).getByText("REVIVAL positioning thesis")).toBeInTheDocument();
+    expect(within(documentResult).getByRole("button", { name: "Open draft" })).toBeInTheDocument();
     expect(screen.queryByText("FULL DRAFT CONTENT")).not.toBeInTheDocument();
     expect(screen.queryByText("Mission created")).not.toBeInTheDocument();
-
-    fireEvent.click(openDraft);
-
-    expect(screen.getByText("FULL DRAFT CONTENT")).toBeInTheDocument();
-    expect(screen.getByText("Audience promise", { selector: "strong" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Close draft: REVIVAL positioning thesis" })).toHaveAttribute("aria-expanded", "true");
   });
 
   it("keeps the Manager composer in a stable pane-level dock", () => {
@@ -3168,11 +3239,82 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(screen.getByTestId("manager-composer-dock")).toHaveClass("border-t");
+    expect(screen.getByTestId("manager-composer-dock")).toHaveClass("fixed");
+    expect(screen.getByTestId("manager-composer-surface")).toHaveClass("rounded-[1.5rem]");
     const source = readFileSync(join(process.cwd(), "src", "features", "manager", "ManagerScreens.tsx"), "utf8");
     expect(source).not.toContain("shadow-[0_8px_40px_rgba(0,0,0,0.1)]");
     const css = readFileSync(join(process.cwd(), "src", "index.css"), "utf8");
     expect(css).toMatch(/\.app-workspace-reveal\s*\{[^}]*animation:[^;]*backwards;/);
+  });
+
+  it("keeps file attachment inside song conversations and sends durable asset ids", async () => {
+    const onSendMessage = vi.fn();
+    const uploadAsset = vi.fn(async (musicItemId: string, input: any) => {
+      input.onProgress?.({ phase: "complete", percent: 100 });
+      return {
+        id: "asset-conversation-1",
+        musicItemId,
+        group: "Audio" as const,
+        label: input.title,
+        status: "Uploaded",
+        action: "Uploaded",
+        assetType: input.assetType,
+      };
+    });
+    const musicRepository = { uploadAsset } as any;
+    const baseConversation: ConversationViewModel = {
+      id: "conv-attach",
+      topic: "Release planning",
+      status: "active",
+      summary: "Release planning thread.",
+      prompt: "Plan the release.",
+      messages: [],
+      createdWork: [],
+    };
+    const songConversation: ConversationViewModel = {
+      ...baseConversation,
+      musicSubject: { type: "music_item", id: "song-attach", title: "After Hours", lifecycleStage: "mixing" },
+    };
+
+    const { rerender } = render(
+      <ConversationWorkspace
+        conversation={baseConversation}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={onSendMessage}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Attach file to song" })).not.toBeInTheDocument();
+
+    rerender(
+      <ConversationWorkspace
+        conversation={songConversation}
+        musicRepository={musicRepository}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={onSendMessage}
+        onSendContextAnswers={() => undefined}
+        sendPending={false}
+        sendError={null}
+      />,
+    );
+
+    const file = new File(["audio"], "final-mix.mp3", { type: "audio/mpeg" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText("final-mix.mp3")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
+    expect(onSendMessage).toHaveBeenCalledWith(
+      "Review the attached files and tell me what matters for this song.",
+      "conv-attach",
+      ["asset-conversation-1"],
+    );
+    expect(uploadAsset).toHaveBeenCalledWith("song-attach", expect.objectContaining({ assetType: "rough_mix", title: "final-mix.mp3" }));
   });
 
   it("uses one tail scroll controller while Manager content streams", async () => {
@@ -3325,13 +3467,13 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    const receipt = screen.getByTestId("song-workspace-artifact");
-    expect(receipt).toHaveTextContent("Song Workspace ready");
-    expect(receipt).toHaveTextContent("Files, rights, and release planning are connected here.");
+    const receipt = screen.getByTestId("manager-result-group");
+    expect(receipt).toHaveTextContent("Song ready");
+    expect(receipt).toHaveTextContent("After Hours");
     expect(screen.getByRole("heading", { name: "After Hours — release planning", exact: true })).toBeInTheDocument();
-    expect(within(receipt).getByRole("button", { name: "Open music item: After Hours" })).toHaveTextContent("Add files");
-    fireEvent.click(within(receipt).getByRole("button", { name: "Open music item: After Hours" }));
-    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours", "files");
+    expect(within(receipt).getByRole("button", { name: "Open song" })).toBeInTheDocument();
+    fireEvent.click(within(receipt).getByRole("button", { name: "Open song" }));
+    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours");
   });
 
   it("opens a chat-created song directly on its requested Files destination", async () => {

@@ -992,6 +992,8 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       },
       async uploadAsset(_musicItemId, input) {
         const uploaded = {
+          id: `fixture-asset-${Date.now()}`,
+          musicItemId: _musicItemId,
           group: input.assetType === "cover_art"
             ? "Artwork" as const
             : ["final_master", "master", "mix", "stem", "demo", "instrumental", "acapella", "clean", "audio"].some((type) => input.assetType.includes(type))

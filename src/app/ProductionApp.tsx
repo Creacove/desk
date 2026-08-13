@@ -1284,6 +1284,7 @@ function CleanProductionWorkspace({
     options: {
       contextRequestId?: string;
       contextAnswers?: ManagerConversationContextAnswer[];
+      attachmentIds?: string[];
       taskId?: string;
       musicSubject?: ManagerConversationMusicSubject;
     } = {},
@@ -1335,6 +1336,7 @@ function CleanProductionWorkspace({
         ...(conversationId ? { conversationId } : {}),
         ...(options.contextRequestId ? { contextRequestId: options.contextRequestId } : {}),
         ...(options.contextAnswers?.length ? { contextAnswers: options.contextAnswers } : {}),
+        ...(options.attachmentIds?.length ? { attachmentIds: options.attachmentIds } : {}),
         ...(options.taskId ? { taskId: options.taskId } : {}),
         ...(effectiveMusicSubject ? { musicSubject: effectiveMusicSubject } : {}),
       };
@@ -2213,11 +2215,13 @@ function CleanProductionWorkspace({
                 onPrepareOpportunityPitch={prepareOpportunityPitch}
                 onRecordOpportunityOutcome={recordOpportunityOutcome}
                 onRetryOpportunityResearch={retryOpportunityResearch}
-                onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
-                onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
-                  taskId: managerTaskContextId ?? undefined,
-                  ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
-                })}
+                 onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
+                 musicRepository={repositories.music}
+                 onSendMessage={(body, conversationId, attachmentIds) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
+                   taskId: managerTaskContextId ?? undefined,
+                   attachmentIds,
+                   ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
+                 })}
                 onSendContextAnswers={(body, conversationId, contextRequestId, contextAnswers) =>
                   void sendManagerMessage(body, conversationId, activeConversation.topic, {
                     contextRequestId,

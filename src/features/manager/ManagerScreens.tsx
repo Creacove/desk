@@ -1,24 +1,27 @@
-import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, Music2, Route, Sparkles, UsersRound } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, Music2, Paperclip, Route, Sparkles, UsersRound, X } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import type {
   CleanProductionView,
   ConversationViewModel,
   ManagerConversationContextAnswer,
+  ManagerConversationAttachmentViewModel,
   ManagerMissionContextQuestion,
   MissionGenesisResultViewModel,
+  MusicRepository,
   MissionTaskViewModel,
   ReleaseDateChangeRequestViewModel,
   ReleaseOpportunityArtifactViewModel,
   ReleaseOpportunityTargetViewModel,
   ReleaseSuccessArtifactViewModel,
 } from "../../types/cleanProduction";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { OrbState } from "thinking-orbs";
-import { BorderBeam } from "border-beam";
 import { SongContextAttachment } from "../music/SongRoomAttachments";
 import { OpportunityArtifact } from "./OpportunityArtifact";
 import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
+import { GuidedContextQuestion, ManagerComposer } from "./ManagerComposer";
+import { buildManagerTurns, type ManagerWorkGroup } from "./managerPresentation";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
@@ -454,11 +457,28 @@ function MissionGenesisManagerPanel({
 // ---------------------------------------------------------------------------
 // ConversationWorkspace — the main chat view
 // ---------------------------------------------------------------------------
+type ComposerAttachment = {
+  id: string;
+  fileName: string;
+  status: "uploading" | "uploaded" | "failed";
+  percent: number;
+  attachment?: ManagerConversationAttachmentViewModel;
+  error?: string;
+};
+
+function classifyManagerAttachment(file: File) {
+  const mime = file.type.toLowerCase();
+  if (mime.startsWith("audio/")) return "rough_mix";
+  if (mime.startsWith("image/")) return "cover_art";
+  return "other";
+}
+
 export function ConversationWorkspace({
   conversation,
   onBack,
   onOpenCreatedWork,
   onOpenMusicSubject,
+  musicRepository,
   onSendMessage,
   onSendContextAnswers,
   onRetryLastMessage,
@@ -479,6 +499,7 @@ export function ConversationWorkspace({
   onBack: () => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
+  musicRepository?: MusicRepository;
   onOpenDecisionPackage?: () => void;
   onApproveReleaseDateChange?: (request: ReleaseDateChangeRequestViewModel) => Promise<void>;
   onKeepReleaseDate?: (artifact: ReleaseSuccessArtifactViewModel) => void;
@@ -493,7 +514,7 @@ export function ConversationWorkspace({
   onRetryOpportunityResearch?: (artifact: ReleaseOpportunityArtifactViewModel) => void | Promise<void>;
   taskContext?: MissionTaskViewModel;
   onBackToTask?: () => void;
-  onSendMessage: (body: string, conversationId: string) => void;
+  onSendMessage: (body: string, conversationId: string, attachmentIds?: string[]) => void;
   onSendContextAnswers: (
     body: string,
     conversationId: string,
@@ -505,11 +526,9 @@ export function ConversationWorkspace({
   sendError: string | null;
 }) {
   const [draft, setDraft] = useState("");
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const messageCreatedWork = conversation.messages.flatMap((message) => message.createdWork ?? []);
-  const allCreatedWork = conversation.createdWork.length
-    ? conversation.createdWork
-    : messageCreatedWork;
+  const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const managerTurns = useMemo(() => buildManagerTurns(conversation), [conversation]);
   const releaseSuccessArtifact = conversation.releaseSuccessArtifacts?.[0];
   const opportunityArtifacts = conversation.releaseOpportunityArtifacts ?? [];
   const resolvedContextRequestIds = new Set(conversation.messages.flatMap((message) =>
@@ -517,11 +536,39 @@ export function ConversationWorkspace({
       ? [message.contextRequestId]
       : [],
   ));
-  const shouldShowCreatedWorkSummary = allCreatedWork.length > 0 && messageCreatedWork.length === 0;
+  const [guidedContextRequestId, setGuidedContextRequestId] = useState<string | null>(null);
+  const [guidedContextStep, setGuidedContextStep] = useState(0);
+  const [guidedContextAnswers, setGuidedContextAnswers] = useState<Record<string, string>>({});
+  const [submittedContextRequestIds, setSubmittedContextRequestIds] = useState<string[]>([]);
+  const [editingContextRequestId, setEditingContextRequestId] = useState<string | null>(null);
+  const activeContextMessage = [...conversation.messages]
+    .reverse()
+    .find((message) => {
+      const requestId = message.contextRequestId;
+      return Boolean(
+        message.speaker === "manager"
+          && requestId
+          && message.contextQuestions?.length
+          && (
+            editingContextRequestId === requestId
+              || (!resolvedContextRequestIds.has(requestId) && !submittedContextRequestIds.includes(requestId))
+          ),
+      );
+    });
+  const activeContextRequestId = activeContextMessage?.contextRequestId ?? null;
+  const activeContextQuestions = activeContextMessage?.contextQuestions ?? [];
+  const activeContextQuestion = activeContextQuestions[Math.min(guidedContextStep, Math.max(activeContextQuestions.length - 1, 0))];
   const activeRun = conversation.activeRun;
   const isManagerThinking = sendPending || activeRun?.status === "running";
   const hasStreamingMessage = conversation.messages.some((message) => message.status === "streaming");
   const hasFailedManagerMessage = conversation.messages.some((message) => message.speaker === "manager" && message.status === "failed");
+
+  useEffect(() => {
+    if (activeContextRequestId === guidedContextRequestId) return;
+    setGuidedContextRequestId(activeContextRequestId);
+    setGuidedContextStep(0);
+    setGuidedContextAnswers({});
+  }, [activeContextRequestId, guidedContextRequestId]);
   const { messageListRef, scrollAnchorRef, resumeFollowing } = useConversationScroll({
     conversationId: conversation.id,
     messageCount: conversation.messages.length,
@@ -530,23 +577,103 @@ export function ConversationWorkspace({
     hasStreamingMessage,
   });
 
-  // Auto-resize textarea
-  const handleDraftChange = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDraft(event.target.value);
-    const el = event.target;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  const canAttachToSong = Boolean(musicRepository && conversation.musicSubject?.type === "music_item");
+  const uploadingAttachments = composerAttachments.some((attachment) => attachment.status === "uploading");
+  const uploadedAttachmentIds = composerAttachments.flatMap((attachment) => attachment.attachment?.id ? [attachment.attachment.id] : []);
+
+  const handleAttachmentFiles = async (files: FileList | null) => {
+    const musicItemId = conversation.musicSubject?.type === "music_item" ? conversation.musicSubject.id : null;
+    if (!musicRepository || !musicItemId || !files?.length) return;
+    const selectedFiles = Array.from(files);
+    const pending = selectedFiles.map((file) => ({
+      id: `composer-attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+    }));
+    setComposerAttachments((current) => [
+      ...current,
+      ...pending.map(({ id, file }) => ({ id, fileName: file.name, status: "uploading" as const, percent: 0 })),
+    ]);
+    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+
+    await Promise.all(pending.map(async ({ id, file }) => {
+      try {
+        const uploaded = await musicRepository.uploadAsset(musicItemId, {
+          assetType: classifyManagerAttachment(file),
+          title: file.name,
+          file,
+          onProgress: (progress) => setComposerAttachments((current) => current.map((attachment) => attachment.id === id
+            ? { ...attachment, percent: progress.percent }
+            : attachment)),
+        });
+        setComposerAttachments((current) => current.map((attachment) => attachment.id === id
+          ? {
+              ...attachment,
+              status: "uploaded",
+              percent: 100,
+              attachment: {
+                id: uploaded.id,
+                musicItemId: uploaded.musicItemId,
+                title: uploaded.label,
+                assetType: uploaded.assetType,
+                status: uploaded.status,
+              },
+            }
+          : attachment));
+      } catch (error) {
+        setComposerAttachments((current) => current.map((attachment) => attachment.id === id
+          ? { ...attachment, status: "failed", error: error instanceof Error ? error.message : "Upload failed." }
+          : attachment));
+      }
+    }));
   };
 
   const handleSend = () => {
     const body = draft.trim();
-    if (!body || sendPending) return;
+    const messageBody = body || (uploadedAttachmentIds.length ? "Review the attached files and tell me what matters for this song." : "");
+    if (!messageBody || sendPending || uploadingAttachments) return;
     resumeFollowing();
-    onSendMessage(body, conversation.id);
+    onSendMessage(messageBody, conversation.id, uploadedAttachmentIds);
     setDraft("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+    setComposerAttachments([]);
+  };
+
+  const handleGuidedContextAnswer = (answerOverride?: string) => {
+    if (!activeContextMessage || !activeContextRequestId || !activeContextQuestion || sendPending) return;
+    const currentAnswer = (answerOverride ?? guidedContextAnswers[activeContextQuestion.key] ?? "").trim();
+    if (!currentAnswer) return;
+
+    const nextAnswers = { ...guidedContextAnswers, [activeContextQuestion.key]: currentAnswer };
+    setGuidedContextAnswers(nextAnswers);
+
+    if (guidedContextStep < activeContextQuestions.length - 1) {
+      setGuidedContextStep((step) => step + 1);
+      return;
     }
+
+    const answers = activeContextQuestions.map((question) => ({
+      questionKey: question.key,
+      answer: nextAnswers[question.key]?.trim() ?? "",
+    }));
+    if (answers.some((answer) => !answer.answer)) return;
+    setSubmittedContextRequestIds((current) => current.includes(activeContextRequestId) ? current : [...current, activeContextRequestId]);
+    setEditingContextRequestId(null);
+    resumeFollowing();
+    onSendContextAnswers(
+      "Context answers for Manager mission decision.",
+      conversation.id,
+      activeContextRequestId,
+      answers,
+    );
+  };
+
+  const handleEditContext = (requestId: string) => {
+    const previousAnswers = conversation.messages.find((message) =>
+      message.speaker === "artist" && message.contextRequestId === requestId,
+    )?.contextAnswers ?? [];
+    setGuidedContextRequestId(requestId);
+    setGuidedContextStep(0);
+    setGuidedContextAnswers(Object.fromEntries(previousAnswers.map((answer) => [answer.questionKey, answer.answer])));
+    setEditingContextRequestId(requestId);
   };
 
   return (
@@ -612,31 +739,24 @@ export function ConversationWorkspace({
           </div>
         ) : null}
         <div ref={messageListRef} className="flex flex-col gap-8">
-          {conversation.messages.map((message) => (
-            <MessageRow
-              key={message.id}
-              message={message}
-              activeRun={activeRun}
-              prompt={conversation.prompt}
-              onRetryLastMessage={onRetryLastMessage ? () => {
-                resumeFollowing();
-                onRetryLastMessage();
+           {managerTurns.map((turn) => (
+             <MessageRow
+               key={turn.message.id}
+               message={turn.message}
+               work={turn.work}
+               activeRun={activeRun}
+               prompt={conversation.prompt}
+               onRetryLastMessage={onRetryLastMessage ? () => {
+                 resumeFollowing();
+                 onRetryLastMessage();
               } : undefined}
               sendPending={sendPending}
-              onSendContextAnswers={(answers) => {
-                resumeFollowing();
-                onSendContextAnswers(
-                  "Context answers for Manager mission decision.",
-                  conversation.id,
-                  message.contextRequestId ?? message.id,
-                  answers,
-                );
-              }}
-              onOpenCreatedWork={onOpenCreatedWork}
-              suppressMissionArtifacts={Boolean(taskContext)}
-              contextResolved={Boolean(message.contextRequestId && resolvedContextRequestIds.has(message.contextRequestId))}
-            />
-          ))}
+               onOpenCreatedWork={onOpenCreatedWork}
+               suppressMissionArtifacts={Boolean(taskContext)}
+               contextResolved={Boolean(turn.message.contextRequestId && resolvedContextRequestIds.has(turn.message.contextRequestId) && editingContextRequestId !== turn.message.contextRequestId)}
+               onChangeContext={turn.message.contextRequestId ? () => handleEditContext(turn.message.contextRequestId!) : undefined}
+             />
+           ))}
 
           {/* Thinking indicator — only shown when no streaming message exists yet */}
           {releaseSuccessArtifact ? (
@@ -678,19 +798,12 @@ export function ConversationWorkspace({
             />
           ))}
 
-          {isManagerThinking && !hasStreamingMessage ? (
-            <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />
+           {isManagerThinking && !hasStreamingMessage ? (
+             <ManagerActivity activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}
 
           <div data-testid="manager-chat-tail" ref={scrollAnchorRef} className="h-32 shrink-0" aria-hidden="true" />
         </div>
-
-        {/* Created work summary */}
-        {shouldShowCreatedWorkSummary ? (
-          <aside className="mt-10">
-            <WorkArtifactGroup items={allCreatedWork} onOpenCreatedWork={onOpenCreatedWork} />
-          </aside>
-        ) : null}
 
         {/* Decision package */}
         {conversation.decisionPackage ? (
@@ -716,45 +829,56 @@ export function ConversationWorkspace({
         ) : null}
       </div>
 
-      <div
-        data-testid="manager-composer-dock"
-        className="fixed bottom-0 left-0 right-0 z-40 border-t border-foreground/10 bg-background/95 px-4 pt-3 backdrop-blur-xl lg:left-[13.5rem]"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <div className="mx-auto max-w-[680px] pb-2 lg:pb-3">
-          <div className="overflow-hidden rounded-[14px] border border-foreground/12 bg-background">
-            <div className="flex items-end gap-2 px-4 py-2">
-              <textarea
-                ref={textareaRef}
-                value={draft}
-                onChange={handleDraftChange}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
-                    event.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Message the Manager…"
-                aria-label="Message the Manager"
-                rows={1}
-                className="min-h-[44px] w-full resize-none bg-transparent py-3 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/40"
-                style={{ maxHeight: "200px", overflowY: "auto" }}
-              />
-              <button
-                type="button"
-                onClick={handleSend}
-                disabled={!draft.trim() || sendPending}
-                aria-label="Send Manager message"
-                className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-all hover:bg-foreground/85 disabled:opacity-20"
-              >
-                <ArrowRight className="h-[14px] w-[14px]" aria-hidden="true" />
-              </button>
-            </div>
-            {sendError && !hasFailedManagerMessage ? <p role="alert" className="px-4 pb-2 text-[11px] font-medium text-red-600">{sendError}</p> : null}
-          </div>
-          <p className="mt-1.5 text-center text-[10px] text-muted-foreground/40">Verify important decisions before acting.</p>
-        </div>
-      </div>
+      <ManagerComposer
+        draft={draft}
+        onDraftChange={setDraft}
+        onSend={handleSend}
+        sendPending={sendPending}
+        canSend={!activeContextQuestion && !uploadingAttachments && (Boolean(draft.trim()) || uploadedAttachmentIds.length > 0)}
+        sendError={sendError && !hasFailedManagerMessage ? sendError : null}
+        attachments={composerAttachments.length ? (
+          <ManagerAttachmentTray
+            attachments={composerAttachments}
+            onRemove={(id) => setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id))}
+          />
+        ) : undefined}
+        leadingAction={canAttachToSong && !activeContextQuestion ? (
+          <>
+            <input
+              ref={attachmentInputRef}
+              type="file"
+              multiple
+              accept="audio/*,image/*,video/*,application/pdf,.doc,.docx,.txt"
+              className="sr-only"
+              onChange={(event) => void handleAttachmentFiles(event.target.files)}
+            />
+            <button
+              type="button"
+              aria-label="Attach file to song"
+              onClick={() => attachmentInputRef.current?.click()}
+              disabled={sendPending || uploadingAttachments}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30"
+            >
+              <Paperclip className="h-4 w-4" aria-hidden="true" />
+            </button>
+          </>
+        ) : undefined}
+        guidedQuestion={activeContextQuestion ? (
+          <GuidedContextQuestion
+            question={activeContextQuestion}
+            position={guidedContextStep}
+            total={activeContextQuestions.length}
+            value={guidedContextAnswers[activeContextQuestion.key] ?? ""}
+            onChange={(value) => setGuidedContextAnswers((current) => ({ ...current, [activeContextQuestion.key]: value }))}
+            onUseRecommendation={() => setGuidedContextAnswers((current) => ({
+              ...current,
+              [activeContextQuestion.key]: activeContextQuestion.recommendedAnswer ?? "",
+            }))}
+            onSubmit={handleGuidedContextAnswer}
+            sendPending={sendPending}
+          />
+        ) : undefined}
+      />
     </WorkspaceShell>
   );
 }
@@ -764,31 +888,38 @@ export function ConversationWorkspace({
 // ---------------------------------------------------------------------------
 function MessageRow({
   message,
+  work,
   activeRun,
   onRetryLastMessage,
   sendPending,
-  onSendContextAnswers,
   onOpenCreatedWork,
   suppressMissionArtifacts,
   contextResolved = false,
+  onChangeContext,
   prompt,
 }: {
   message: ConversationViewModel["messages"][number];
+  work: ManagerWorkGroup[];
   activeRun: ConversationViewModel["activeRun"];
   onRetryLastMessage?: () => void;
   sendPending: boolean;
-  onSendContextAnswers: (answers: ManagerConversationContextAnswer[]) => void;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   suppressMissionArtifacts?: boolean;
   contextResolved?: boolean;
+  onChangeContext?: () => void;
   prompt?: string;
 }) {
   const isArtist = message.speaker === "artist";
   const isStreaming = message.status === "streaming";
-  const taskDraft = message.createdWork?.find((item) => item.artifactKind === "task_draft");
-  const visibleCreatedWork = (message.createdWork ?? []).filter(
-    (item) => item.artifactKind !== "task_draft" && (!suppressMissionArtifacts || item.type !== "mission"),
-  );
+  const hidesDocumentBody = !isArtist && work.some((group) => {
+    if (group.kind !== "draft" || !group.item.content) return false;
+    const body = normalizeManagerBody(message.body);
+    const content = normalizeManagerBody(group.item.content);
+    return content.length >= 40 && (body === content || body.includes(content));
+  });
+  const visibleWork = suppressMissionArtifacts
+    ? work.filter((group) => group.kind !== "mission" && group.kind !== "workspace")
+    : work;
 
   return (
     <div className={`flex flex-col ${isArtist ? "items-end" : "items-start"}`}>
@@ -817,22 +948,16 @@ function MessageRow({
         // User message — subtle pill, no dark fill
         <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-foreground/[0.055] px-5 py-3.5 text-foreground">
           <p className="text-[15px] leading-[1.65]">{message.body}</p>
+          {message.attachments?.length ? <ConversationAttachmentList attachments={message.attachments} /> : null}
         </div>
       ) : (
         // Manager message — full width, no card border
         <div className="w-full">
-          {taskDraft && !isStreaming ? (
-            <p className="text-[15px] leading-[1.65] text-foreground/90">
-              I saved the working draft below. Open it to review the full document, then tell me what you want to change.
-            </p>
+          {hidesDocumentBody ? (
+            <p className="text-[15px] leading-[1.65] text-foreground">The draft is saved to the task and ready to review.</p>
           ) : (
             <RichMessageBody body={message.body} streaming={isStreaming} failed={message.status === "failed"} />
           )}
-
-          {/* Inline activity status during streaming */}
-          {isStreaming && activeRun?.steps.length ? (
-            <ManagerActivityStatus run={activeRun} prompt={prompt} />
-          ) : null}
 
           {/* Retry button on failed */}
           {message.status === "failed" && onRetryLastMessage ? (
@@ -845,28 +970,180 @@ function MessageRow({
             </button>
           ) : null}
 
-          {/* Context questions */}
-          {message.contextQuestions?.length ? contextResolved ? (
-            <p className="mt-4 text-[12px] font-semibold text-muted-foreground">Context captured</p>
-          ) : (
-            <ManagerContextQuestionForm
-              questions={message.contextQuestions}
-              disabled={sendPending}
-              onSubmit={onSendContextAnswers}
-            />
-          ) : null}
+           {message.contextQuestions?.length && contextResolved ? (
+             <ContextAnswerSummary answers={message.contextAnswers ?? []} onChange={onChangeContext} />
+           ) : null}
 
-          {taskDraft && !isStreaming ? (
-            <TaskDraftArtifactCard item={taskDraft} onOpenCreatedWork={onOpenCreatedWork} />
-          ) : null}
-
-          {/* Created work — rendered as hierarchical artifact, not a flat list */}
-          {visibleCreatedWork.length ? (
-            <WorkArtifactGroup items={visibleCreatedWork} onOpenCreatedWork={onOpenCreatedWork} />
-          ) : null}
+           {!isStreaming && visibleWork.length ? (
+             <ManagerResultGroup groups={visibleWork} onOpenCreatedWork={onOpenCreatedWork} />
+           ) : null}
         </div>
       )}
     </div>
+  );
+}
+
+function normalizeManagerBody(value: string) {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function ManagerResultGroup({
+  groups,
+  onOpenCreatedWork,
+}: {
+  groups: ManagerWorkGroup[];
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  return (
+    <div data-testid="manager-result-group" className="mt-5 grid gap-2.5">
+      {groups.map((group, index) => {
+        if (group.kind === "workspace") {
+          return <WorkspaceResultCard key={`workspace-${index}`} group={group} onOpenCreatedWork={onOpenCreatedWork} />;
+        }
+        if (group.kind === "draft") {
+          return <DocumentResultCard key={`draft-${group.item.id ?? group.item.title}-${index}`} item={group.item} onOpenCreatedWork={onOpenCreatedWork} />;
+        }
+        if (group.kind === "mission") {
+          return <CompactMissionResult key={`mission-${group.mission.id ?? group.mission.title}-${index}`} group={group} onOpenCreatedWork={onOpenCreatedWork} />;
+        }
+        if (group.kind === "tasks") {
+          return <CompactTasksResult key={`tasks-${index}`} group={group} onOpenCreatedWork={onOpenCreatedWork} />;
+        }
+        return <CompactMusicResult key={`music-${group.item.id ?? group.item.title}-${index}`} item={group.item} onOpenCreatedWork={onOpenCreatedWork} />;
+      })}
+    </div>
+  );
+}
+
+function ResultAction({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-full border border-foreground/12 px-2.5 py-1.5 text-[11px] font-semibold text-foreground/75 transition-colors hover:border-foreground/25 hover:bg-foreground/[0.04] hover:text-foreground"
+    >
+      {children}
+    </button>
+  );
+}
+
+function WorkspaceResultCard({
+  group,
+  onOpenCreatedWork,
+}: {
+  group: Extract<ManagerWorkGroup, { kind: "workspace" }>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  const title = group.musicItem?.title ?? group.mission?.title ?? "Release workspace";
+  return (
+    <article data-testid="manager-workspace-result" className="rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3.5">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+          <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-foreground">Release workspace created</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{title} · Mission and first task ready</p>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 pl-10">
+        {group.musicItem?.id ? (
+          <ResultAction onClick={() => void onOpenCreatedWork("music_item", group.musicItem?.id, "files")}>Add release files</ResultAction>
+        ) : null}
+        {group.mission?.id ? (
+          <ResultAction onClick={() => void onOpenCreatedWork("mission", group.mission?.id)}>
+            View mission
+            <ChevronRight className="h-3 w-3" aria-hidden="true" />
+          </ResultAction>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
+function DocumentResultCard({
+  item,
+  onOpenCreatedWork,
+}: {
+  item: WorkItem;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  return (
+    <article data-testid="manager-document-result" className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+      </div>
+      {item.id ? <ResultAction onClick={() => void onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
+    </article>
+  );
+}
+
+function CompactMissionResult({
+  group,
+  onOpenCreatedWork,
+}: {
+  group: Extract<ManagerWorkGroup, { kind: "mission" }>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  return (
+    <article className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+        <Route className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-muted-foreground">Mission {group.mission.status === "updated" ? "updated" : "ready"}</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.mission.title}</p>
+        {group.tasks.length ? <p className="mt-0.5 text-[11px] text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</p> : null}
+      </div>
+      {group.mission.id ? <ResultAction onClick={() => void onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction> : null}
+    </article>
+  );
+}
+
+function CompactTasksResult({
+  group,
+  onOpenCreatedWork,
+}: {
+  group: Extract<ManagerWorkGroup, { kind: "tasks" }>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  const firstTask = group.tasks[0];
+  return (
+    <article className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+        <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{firstTask?.title}</p>
+      </div>
+      {firstTask?.id ? <ResultAction onClick={() => void onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction> : null}
+    </article>
+  );
+}
+
+function CompactMusicResult({
+  item,
+  onOpenCreatedWork,
+}: {
+  item: WorkItem;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  return (
+    <article className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+        <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold text-muted-foreground">Song ready</p>
+        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+      </div>
+      {item.id ? <ResultAction onClick={() => void onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction> : null}
+    </article>
   );
 }
 
@@ -894,90 +1171,20 @@ function mapLabelToOrbState(label: string, prompt?: string): OrbState {
 // ---------------------------------------------------------------------------
 // Thinking indicator — replaces the old dual-line card
 // ---------------------------------------------------------------------------
-function ThinkingIndicator({ activeRun, prompt }: { activeRun: ConversationViewModel["activeRun"]; prompt?: string }) {
+function ManagerActivity({ activeRun, prompt }: { activeRun: ConversationViewModel["activeRun"]; prompt?: string }) {
   const latestStep = activeRun?.steps.length ? activeRun.steps.at(-1) : null;
   const label = latestStep ? activityStatusLine(latestStep.label, prompt) : "Reading your workspace…";
   const orbState = mapLabelToOrbState(label, prompt);
 
   return (
-    <div className="flex flex-col items-start animate-in fade-in duration-300">
-      {/* Speaker label row */}
-      <div className="mb-2 flex items-center gap-2">
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent">
-          <AppThinkingOrb state={orbState} size={20} />
-        </span>
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
-          Manager
-        </p>
-      </div>
-
-      <div className="relative mt-1 overflow-hidden rounded-xl border border-foreground/8 bg-foreground/[0.012]">
-        <BorderBeam size="sm" colorVariant="mono" active={true} />
-        <div className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-bold text-foreground/80 transition-all duration-300 animate-in fade-in slide-in-from-bottom-1 max-w-full w-fit">
-          <AppThinkingOrb state={orbState} size={20} />
-          <span key={label} className="truncate animate-in fade-in duration-300">
-            {label}
-          </span>
-        </div>
-      </div>
+    <div data-testid="manager-activity" className="flex items-center gap-2.5 py-2 text-[13px] font-medium text-muted-foreground animate-in fade-in duration-300">
+      <AppThinkingOrb state={orbState} size={20} />
+      <span key={label} className="animate-in fade-in duration-300">{label}</span>
     </div>
   );
 }
 
-function ManagerActivityStatus({ run, prompt }: { run: NonNullable<ConversationViewModel["activeRun"]>; prompt?: string }) {
-  const [expanded, setExpanded] = useState(false);
-  const latestStep = run.steps.at(-1);
-  const statusText = latestStep ? activityStatusLine(latestStep.label, prompt) : "Getting your answer ready…";
-
-  return (
-    <div className="mt-4 border-t border-foreground/6 pt-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div key={statusText} className="flex items-center gap-2 animate-in fade-in duration-300">
-          <AppThinkingOrb state={mapLabelToOrbState(statusText, prompt)} size={20} />
-          <p className="text-[12px] font-medium text-muted-foreground/80">
-            {statusText}
-          </p>
-        </div>
-        <button
-          type="button"
-          aria-expanded={expanded}
-          onClick={() => setExpanded((v) => !v)}
-          className="text-[11px] font-semibold text-brand-accent/70 transition-colors hover:text-brand-accent"
-        >
-          {expanded ? "Hide details" : "Details"}
-        </button>
-      </div>
-      {expanded ? (
-        <div className="mt-3 grid gap-1.5">
-          {run.steps.map((step) => (
-            <div key={step.id} className="flex min-w-0 items-start gap-2.5 rounded-[8px] bg-foreground/[0.025] px-3 py-2">
-              <span
-                className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
-                  step.status === "failed"
-                    ? "bg-red-500"
-                    : step.status === "completed"
-                    ? "bg-success"
-                    : step.status === "running"
-                    ? "bg-brand-accent"
-                    : "bg-foreground/20"
-                }`}
-                aria-hidden="true"
-              />
-              <span className="min-w-0">
-                <span className="block text-[12px] font-semibold text-foreground">{step.label}</span>
-                {step.detail ? <span className="mt-0.5 block text-[11px] text-muted-foreground/80">{step.detail}</span> : null}
-              </span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-// Always returns a present-progressive string — status is no longer needed
-// since both ThinkingIndicator and ManagerActivityStatus show the most-recent
-// step in present-progressive mode regardless of actual run state.
+// Keep background work legible without exposing internal tool names.
 function activityStatusLine(label: string, prompt?: string) {
   const cleanLabel = label.trim().toLowerCase();
   const query = prompt ? prompt.toLowerCase() : "";
@@ -1189,6 +1396,71 @@ function BlinkingCursor() {
       className="ml-0.5 inline-block h-[1.1em] w-[2px] translate-y-[2px] animate-pulse rounded-sm bg-foreground/60"
       aria-hidden="true"
     />
+  );
+}
+
+function ContextAnswerSummary({ answers, onChange }: { answers: ManagerConversationContextAnswer[]; onChange?: () => void }) {
+  const firstAnswer = answers.find((answer) => answer.answer.trim());
+  const label = firstAnswer?.questionKey
+    ? firstAnswer.questionKey.replace(/_/g, " ").replace(/^./, (character) => character.toUpperCase())
+    : "Context";
+  const remainingAnswerCount = Math.max(0, answers.filter((answer) => answer.answer.trim()).length - 1);
+  return (
+    <div data-testid="manager-context-answer-summary" className="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] font-medium text-muted-foreground">
+      <span className="font-semibold text-foreground/80">{label} confirmed:</span>
+      {firstAnswer ? <span className="truncate">{firstAnswer.answer}</span> : null}
+      {remainingAnswerCount ? <span>+{remainingAnswerCount} more</span> : null}
+      <button type="button" onClick={onChange} className="font-semibold text-foreground/70 underline decoration-foreground/20 underline-offset-2 hover:text-foreground">
+        Change
+      </button>
+    </div>
+  );
+}
+
+function ManagerAttachmentTray({
+  attachments,
+  onRemove,
+}: {
+  attachments: ComposerAttachment[];
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div data-testid="manager-attachment-tray" className="flex flex-wrap gap-2 pb-2">
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className="flex min-w-0 max-w-full items-center gap-2 rounded-full border border-foreground/10 bg-foreground/[0.035] px-2.5 py-1.5 text-[11px]">
+          {attachment.status === "uploading" ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" /> : null}
+          {attachment.status === "uploaded" ? <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
+          {attachment.status === "failed" ? <X className="h-3 w-3 shrink-0 text-red-600" aria-hidden="true" /> : null}
+          <span className="min-w-0 truncate font-medium text-foreground/80">
+            {attachment.status === "uploading" ? `Uploading ${attachment.fileName} ${Math.round(attachment.percent)}%` : attachment.fileName}
+          </span>
+          {attachment.status === "failed" ? <span className="max-w-[12rem] truncate text-red-600">{attachment.error}</span> : null}
+          {attachment.status !== "uploading" ? (
+            <button
+              type="button"
+              aria-label={`Remove ${attachment.fileName}`}
+              onClick={() => onRemove(attachment.id)}
+              className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground"
+            >
+              <X className="h-3 w-3" aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ConversationAttachmentList({ attachments }: { attachments: ManagerConversationAttachmentViewModel[] }) {
+  return (
+    <div data-testid="conversation-message-attachments" className="mt-3 flex flex-wrap gap-1.5 border-t border-foreground/10 pt-2.5">
+      {attachments.map((attachment) => (
+        <span key={attachment.id} className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-foreground/10 bg-background/60 px-2.5 py-1 text-[10px] font-medium text-foreground/75">
+          <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="max-w-[12rem] truncate">{attachment.title}</span>
+        </span>
+      ))}
+    </div>
   );
 }
 

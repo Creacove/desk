@@ -2149,7 +2149,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         input.onProgress?.({ phase: "finalizing", percent: 100, bytesUploaded: input.file.size, bytesTotal: input.file.size });
         await client.from("uploaded_files").update({ status: "uploaded" }).eq("id", uploadedFileRow.id);
 
-        const { error: assetError } = await client.from("music_assets").insert({
+        const { data: createdAsset, error: assetError } = await client.from("music_assets").insert({
           account_id: workspace.accountId,
           artist_workspace_id: workspace.artistWorkspaceId,
           artist_id: workspace.artistId,
@@ -2160,9 +2160,10 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           status: "uploaded",
           created_by_type: "user",
           notes: `Stored in ${MUSIC_UPLOADS_BUCKET}/${storagePath}.`,
-        });
+        }).select("id,music_item_id,asset_type,title,status").single();
 
         if (assetError) throw assetError;
+        if (!createdAsset) throw new Error("The uploaded file was saved without an asset record.");
 
         await writeOperatingEvent(client, workspace, {
           eventType: "music_asset_uploaded",
@@ -2177,6 +2178,8 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         input.onProgress?.({ phase: "complete", percent: 100, bytesUploaded: input.file.size, bytesTotal: input.file.size });
 
         return {
+          id: createdAsset.id,
+          musicItemId: createdAsset.music_item_id,
           group: assetGroup(input.assetType),
           label: input.title.trim(),
           status: "Uploaded",
@@ -2388,6 +2391,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             ...(input.musicSubject ? { musicSubject: input.musicSubject } : {}),
             ...(input.contextRequestId ? { contextRequestId: input.contextRequestId } : {}),
             ...(input.contextAnswers?.length ? { contextAnswers: input.contextAnswers } : {}),
+            ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
           },
         });
         if (error) await throwFunctionInvokeError(error, "Manager conversation failed.");
@@ -2421,6 +2425,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             ...(input.musicSubject ? { musicSubject: input.musicSubject } : {}),
             ...(input.contextRequestId ? { contextRequestId: input.contextRequestId } : {}),
             ...(input.contextAnswers?.length ? { contextAnswers: input.contextAnswers } : {}),
+            ...(input.attachmentIds?.length ? { attachmentIds: input.attachmentIds } : {}),
           }),
         });
 
@@ -3548,6 +3553,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
   const createdWork = normalizeCreatedWork(metadata.createdWork);
   const contextQuestions = normalizeContextQuestions(metadata.contextQuestions);
   const contextAnswers = normalizeContextAnswers(metadata.contextAnswers);
+  const attachments = normalizeConversationAttachments(metadata.attachments);
   const contextRequestId = readOptionalConversationString(metadata.contextRequestId);
   return {
     id: row.id,
@@ -3557,6 +3563,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
     ...(createdWork.length ? { createdWork } : {}),
     ...(contextQuestions.length ? { contextQuestions } : {}),
     ...(contextAnswers.length ? { contextAnswers } : {}),
+    ...(attachments.length ? { attachments } : {}),
     ...(contextRequestId ? { contextRequestId } : {}),
   };
 }
@@ -3570,6 +3577,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
         const createdWork = normalizeCreatedWork(message.createdWork);
         const contextQuestions = normalizeContextQuestions(message.contextQuestions);
         const contextAnswers = normalizeContextAnswers(message.contextAnswers);
+        const attachments = normalizeConversationAttachments(message.attachments);
         const contextRequestId = readOptionalConversationString(message.contextRequestId);
         return {
           id: readConversationString(message.id, `message-${index}`),
@@ -3579,6 +3587,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
           ...(createdWork.length ? { createdWork } : {}),
           ...(contextQuestions.length ? { contextQuestions } : {}),
           ...(contextAnswers.length ? { contextAnswers } : {}),
+          ...(attachments.length ? { attachments } : {}),
           ...(contextRequestId ? { contextRequestId } : {}),
         };
       })
@@ -3662,6 +3671,20 @@ function normalizeContextAnswers(value: unknown): NonNullable<ConversationViewMo
       answer: readConversationString(item.answer, ""),
     }))
     .filter((item) => item.questionKey && item.answer);
+}
+
+function normalizeConversationAttachments(value: unknown): NonNullable<ConversationViewModel["messages"][number]["attachments"]> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter(isPlainRecord)
+    .map((item) => ({
+      id: readConversationString(item.id, ""),
+      musicItemId: readConversationString(item.musicItemId, ""),
+      title: readConversationString(item.title, "Attached file"),
+      assetType: readOptionalConversationString(item.assetType),
+      status: readOptionalConversationString(item.status),
+    }))
+    .filter((item) => item.id && item.musicItemId);
 }
 
 function normalizeProposedActions(value: unknown): NonNullable<ConversationViewModel["decisionPackage"]>["proposedActions"] {

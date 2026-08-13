@@ -482,6 +482,7 @@ export type ConversationMessageViewModel = {
   contextRequestId?: string;
   contextQuestions?: ManagerMissionContextQuestion[];
   contextAnswers?: ManagerConversationContextAnswer[];
+  attachments?: ManagerConversationAttachmentViewModel[];
 };
 
 export type ManagerRunStepViewModel = {
@@ -741,6 +742,14 @@ export type ManagerConversationContextAnswer = {
   answer: string;
 };
 
+export type ManagerConversationAttachmentViewModel = {
+  id: string;
+  musicItemId: string;
+  title: string;
+  assetType?: string;
+  status?: string;
+};
+
 export type ManagerConversationMusicSubject = {
   type: "music_item" | "music_project";
   id: string;
@@ -885,7 +894,15 @@ export type MusicRepository = {
   uploadAsset(
     musicItemId: string,
     input: { assetType: string; title: string; file: File; onProgress?: (progress: MusicUploadProgress) => void },
-  ): Promise<{ group: "Audio" | "Artwork" | "Documents"; label: string; status: string; action: string; assetType?: string }>;
+  ): Promise<{
+    id: string;
+    musicItemId: string;
+    group: "Audio" | "Artwork" | "Documents";
+    label: string;
+    status: string;
+    action: string;
+    assetType?: string;
+  }>;
 };
 
 export type MusicUploadProgress = {
@@ -906,6 +923,7 @@ export type ManagerRepository = {
     musicSubject?: ManagerConversationMusicSubject;
     contextRequestId?: string;
     contextAnswers?: ManagerConversationContextAnswer[];
+    attachmentIds?: string[];
   }): Promise<ConversationViewModel>;
   sendMessageStream?(
     input: {
@@ -915,6 +933,7 @@ export type ManagerRepository = {
       musicSubject?: ManagerConversationMusicSubject;
       contextRequestId?: string;
       contextAnswers?: ManagerConversationContextAnswer[];
+      attachmentIds?: string[];
     },
     handlers: ManagerConversationStreamHandlers,
   ): Promise<void>;
