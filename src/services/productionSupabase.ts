@@ -3570,11 +3570,16 @@ function conversationViewModel(input: unknown): ConversationViewModel {
       })
     : [];
   const createdWork = normalizeCreatedWork(input.createdWork);
+  const taskContextId = readOptionalConversationString(input.taskContextId);
+  const musicSubject = musicConversationSubjectViewModel(input.musicSubject);
+  const releaseSuccessArtifacts = hydrateReleaseSuccessArtifacts(
+    Array.isArray(input.releaseSuccessArtifacts) ? input.releaseSuccessArtifacts : [],
+  );
 
   return {
     id: readConversationString(input.id, ""),
-    taskContextId: readOptionalConversationString(input.taskContextId),
-    musicSubject: musicConversationSubjectViewModel(input.musicSubject),
+    ...(taskContextId ? { taskContextId } : {}),
+    ...(musicSubject ? { musicSubject } : {}),
     topic: readConversationString(input.topic, "Manager conversation"),
     status: readConversationString(input.status, "Manager responded"),
     summary: readConversationString(input.summary, "Manager answered the directive."),
@@ -3582,9 +3587,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
     lastUpdate: typeof input.lastUpdate === "string" ? input.lastUpdate : undefined,
     messages,
     createdWork: createdWork.length ? createdWork : messages.flatMap((message) => message.createdWork ?? []),
-    releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(
-      Array.isArray(input.releaseSuccessArtifacts) ? input.releaseSuccessArtifacts : [],
-    ),
+    ...(releaseSuccessArtifacts.length ? { releaseSuccessArtifacts } : {}),
   };
 }
 

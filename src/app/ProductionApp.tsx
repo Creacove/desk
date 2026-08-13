@@ -1384,7 +1384,9 @@ function CleanProductionWorkspace({
         setSelectedMissionId(selectCreatedMissionId(conversation, nextMissions));
       }
       navigate("conversationWorkspace");
-      void hydrateCompletedConversationArtifacts(mergedConversation.id);
+      if (shouldHydrateCompletedConversationArtifacts(mergedConversation, trimmedBody)) {
+        void hydrateCompletedConversationArtifacts(mergedConversation.id);
+      }
     } catch (error) {
       if (streamCompleted) {
         return;
@@ -1482,7 +1484,9 @@ function CleanProductionWorkspace({
       updateCompletedManagerConversation(context.optimisticId, completedConversation, Boolean(context.lockedTopic));
       invalidateConversationCache(completedConversation.id);
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
-      void hydrateCompletedConversationArtifacts(completedConversation.id);
+      if (shouldHydrateCompletedConversationArtifacts(completedConversation, context.userBody)) {
+        void hydrateCompletedConversationArtifacts(completedConversation.id);
+      }
       void refreshFromManagerHint(event.refresh ?? { missions: conversationHasMissionWork(completedConversation) });
       return;
     }
@@ -3327,6 +3331,17 @@ function mergeCompletedConversation(current: ConversationViewModel | null, compl
       : currentReleaseArtifacts,
     activeRun: current.activeRun ? { ...current.activeRun, status: "completed", streamedText: "" } : completed.activeRun,
   };
+}
+
+function shouldHydrateCompletedConversationArtifacts(conversation: ConversationViewModel, userBody: string) {
+  const searchableText = [
+    userBody,
+    conversation.topic,
+    conversation.summary,
+    conversation.prompt,
+    conversation.messages.at(-1)?.body,
+  ].filter(Boolean).join(" ");
+  return /\b(?:playlist|press|opportunit(?:y|ies)|release[- ]success|release[- ]ready|release date|recovery plan|epk|pitch)\b/i.test(searchableText);
 }
 
 function mergeConversationMessages(current: ConversationViewModel["messages"], incoming: ConversationViewModel["messages"]) {
