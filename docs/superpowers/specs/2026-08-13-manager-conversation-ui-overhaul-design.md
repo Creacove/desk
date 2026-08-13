@@ -155,16 +155,51 @@ No artifact summary is rendered after the transcript as a detached footer.
 
 The UI communicates observable work, not hidden chain-of-thought.
 
-Before Manager text begins, one low-emphasis row shows the latest useful existing activity label with a subtle animated indicator. During streaming, the same row sits below the partial Manager text. Completed historical steps are available through the existing activity disclosure only when the current run provides them.
+The current implementation repeats Manager identity and progress through a Manager icon, multiple `AppThinkingOrb` instances, a `BorderBeam`, an activity card, and expandable step cards. The overhaul replaces these with one inline activity state occupying the same turn and position as the forthcoming Manager answer.
+
+### Foreground Manager work
+
+Before Manager text begins, render one low-emphasis row:
+
+> `AppThinkingOrb` Reviewing Summer's files…
+
+- Use the existing theme-aware `AppThinkingOrb` exactly once at 16–18px.
+- Show one 12–13px sentence-case status label derived from the latest useful existing run or tool event.
+- Render no Manager avatar, speaker label, containing card, border, background, shadow, `BorderBeam`, second spinner, or decorative progress treatment.
+- Replace the status sentence in place as existing run events advance. Historical steps never stack in the transcript.
+- Use plain, user-understandable actions such as `Reviewing Summer's files…`, `Checking release requirements…`, or `Preparing your release plan…`. Do not expose tool names, internal prompts, hidden reasoning, or implementation vocabulary.
+
+When the first Manager text arrives, the answer takes over that exact turn position. The activity indicator fades out rather than remaining above or below the response. If an existing tool event genuinely occurs between streamed text segments, the same single activity row may temporarily appear after the current prose and must disappear when streaming resumes.
+
+Completion leaves no permanent thinking receipt, duration, step count, or default `View activity` control. The answer or compact result is the durable record of what happened.
+
+### Durable background work
+
+Do not label ordinary streamed Manager work as background work. Conversation loading remains foreground unless the existing application has a durable run that can continue after navigation and report completion independently.
+
+Existing durable processes continue through the application's existing activity center and completion notifications. This overhaul does not add conversation-list spinners, reconnect controls, parallel Manager runs, or new background execution semantics.
+
+When a Manager action starts existing durable work, the owning turn may confirm that it started and link to the canonical destination. Ongoing global progress remains in the existing activity system rather than being duplicated inside chat.
+
+### Other progress states
+
+- Song file upload uses its compact filename row and real `MusicUploadProgress`; it does not also show the Manager orb.
+- Guided context questions have no loading state between preset questions. The Manager activity state begins only after the complete answer set is submitted.
+- Pending artifact actions change only the action that was invoked. They do not start a second conversation-level loader.
+- The full-screen branded application loader remains separate and must not lend its logo tile, large orb, floating motion, or `BorderBeam` treatment to conversation loading.
+
+### Failure and accessibility
+
+Failure replaces activity in the same Manager turn with one plain-language message and the existing retry action. No spinner or animated border remains after failure.
 
 Rules:
 
 - one active status is visible at a time;
-- activity wording comes from the existing run and step labels;
+- activity wording is normalized from existing run and step labels;
 - no fake percentage, elapsed-time promise, or invented intermediate step;
-- the activity row collapses when the final result is present;
-- failure replaces activity in the same turn and preserves the existing retry action;
-- animation respects `prefers-reduced-motion`.
+- the activity row is removed when prose, result, or failure replaces it;
+- the status uses one polite live region and does not announce every label change or streamed token;
+- under `prefers-reduced-motion`, the orb is visually static while text updates continue.
 
 ## Inline result system
 
@@ -377,6 +412,7 @@ The current `ManagerScreens.tsx` is too broad for reliable iteration. The UI ove
 - `ManagerComposer.tsx`: ordinary chat, guided-answer sequence, song-scoped attachment staging, and composer-local errors;
 - `managerContextFlow.ts`: pure question progression, answer normalization, validation, and final payload construction;
 - `ManagerSongAttachments.tsx`: canonical song-asset selection, classification, upload progress, retry, and compact message rows;
+- `ManagerActivity.tsx`: one inline `AppThinkingOrb`, normalized observable status text, replacement by prose/result/failure, and reduced-motion behavior;
 - `ManagerArtifacts.tsx`: created-work normalization and compact task, mission, song, draft, and decision results;
 - existing `ReleaseSuccessArtifact.tsx` and `OpportunityArtifact.tsx`: preserve behavior and adopt shared visual grammar;
 - `ManagerScreens.tsx`: re-export the public screens and retain unrelated investigation/decision screens until separately redesigned.
@@ -412,7 +448,9 @@ The question redesign uses the existing context request and answer contracts. So
 - General and project conversations contain no upload affordance.
 - Song conversations expose upload, create canonical song assets, block send until staged files are ready, and preserve message attachment references across reloads.
 - Removing a completed staged upload from a draft does not delete it from Files.
-- Activity uses one visible current status and yields to result or failure.
+- Activity uses exactly one small `AppThinkingOrb` and one current status with no identity tile, `BorderBeam`, container, duplicate spinner, or stacked step cards.
+- The activity turn is replaced in place by streamed prose, result, or failure and leaves no completed loading receipt.
+- Existing durable background jobs remain represented by the activity center rather than duplicated in the conversation or conversation list.
 - Existing release approval, research, draft expansion, retry, and navigation actions still work.
 - Composer remains usable and does not cover the transcript.
 
@@ -445,4 +483,5 @@ The redesign is accepted when:
 7. mobile and desktop share the same hierarchy without overlap or horizontal overflow;
 8. general conversations remain simpler because upload controls exist only after a durable song is attached;
 9. preset Manager questions are answered one at a time through the same composer with no intermediate Manager run; and
-10. conversation uploads reuse canonical song Files rather than introducing temporary or duplicate storage.
+10. conversation uploads reuse canonical song Files rather than introducing temporary or duplicate storage; and
+11. Manager work is communicated by one restrained, existing design-system indicator that evolves in place and disappears when the outcome arrives.
