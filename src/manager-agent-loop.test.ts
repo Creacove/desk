@@ -3,11 +3,59 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildManagerAgentRequest,
   managerConversationTools,
+  selectManagerConversationToolsForTurn,
   runManagerAgentLoop,
 } from "../supabase/functions/_shared/manager-conversation/agentLoop";
 import { managerConversationJsonSchema } from "../supabase/functions/_shared/openaiManagerConversation";
 
 describe("Manager Agent Responses loop", () => {
+  it("withholds release mutation tools from unrelated or invalid turns", () => {
+    const tools = selectManagerConversationToolsForTurn({
+      body: "What do my streaming numbers mean?",
+      hasAttachedUnreleasedSong: true,
+    });
+    const names = tools.filter((tool) => tool.type === "function").map((tool) => tool.name);
+    expect(names).not.toEqual(expect.arrayContaining([
+      "propose_focused_release_date_change",
+      "save_focused_release_opportunities",
+      "create_focused_song_document",
+    ]));
+
+    const detachedRelease = selectManagerConversationToolsForTurn({
+      body: "I want to release this song in 14 days",
+      hasAttachedUnreleasedSong: false,
+    });
+    expect(detachedRelease.map((tool) => tool.type === "function" ? tool.name : tool.type))
+      .not.toContain("propose_focused_release_date_change");
+  });
+
+  it("supplies the minimal Video One tool set for a valid release turn", () => {
+    const tools = selectManagerConversationToolsForTurn({
+      body: "I want to release this song in 14 days",
+      hasAttachedUnreleasedSong: true,
+    });
+    const names = tools.filter((tool) => tool.type === "function").map((tool) => tool.name);
+    expect(names).toEqual(expect.arrayContaining([
+      "read_focused_release_success",
+      "propose_focused_release_date_change",
+      "query_focused_release_opportunities",
+      "save_focused_release_opportunities",
+      "create_focused_song_document",
+    ]));
+    expect(names).not.toContain("record_focused_release_opportunity_outcome");
+  });
+
+  it("keeps the release proposal tool available when the artist answers a release-date context question", () => {
+    const tools = selectManagerConversationToolsForTurn({
+      body: "Context answers for Manager mission decision.",
+      contextAnswers: [{ questionKey: "approve_release_date", answer: "Approve August 27, 2026" }],
+      hasAttachedUnreleasedSong: true,
+    });
+
+    expect(tools.filter((tool) => tool.type === "function").map((tool) => tool.name))
+      .toContain("propose_focused_release_date_change");
+  });
+
   it("builds a stateful Responses request with web search, local tools, and strict output format", () => {
     const request = buildManagerAgentRequest({
       model: "gpt-5-mini",
@@ -45,6 +93,12 @@ describe("Manager Agent Responses loop", () => {
       expect.objectContaining({ type: "function", name: "query_manager_outputs" }),
       expect.objectContaining({ type: "function", name: "read_manager_output_section" }),
       expect.objectContaining({ type: "function", name: "read_focused_music_subject", strict: true }),
+      expect.objectContaining({ type: "function", name: "read_focused_release_success", strict: true }),
+      expect.objectContaining({ type: "function", name: "propose_focused_release_date_change", strict: true }),
+      expect.objectContaining({ type: "function", name: "query_focused_release_opportunities", strict: true }),
+      expect.objectContaining({ type: "function", name: "save_focused_release_opportunities", strict: true }),
+      expect.objectContaining({ type: "function", name: "record_focused_release_opportunity_outcome", strict: true }),
+      expect.objectContaining({ type: "function", name: "create_focused_song_document", strict: true }),
       expect.objectContaining({ type: "function", name: "read_focused_release_readiness", strict: true }),
       expect.objectContaining({ type: "function", name: "refresh_focused_music_intelligence", strict: true }),
       expect.objectContaining({ type: "function", name: "update_focused_music_metadata", strict: true }),

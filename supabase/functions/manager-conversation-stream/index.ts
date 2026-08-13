@@ -3,6 +3,7 @@ import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
+  deriveReleaseDateProposalFromContextQuestions,
   managerConversationJsonSchema,
   parseManagerConversationOutput,
   type ManagerConversationOutput,
@@ -15,8 +16,8 @@ import {
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
-  managerConversationTools,
   runManagerAgentLoop,
+  selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
@@ -135,7 +136,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "running" });
 
         const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
-        const { output, usage, responseId, toolTrace, toolCreatedWork } = await callOpenAIManagerConversation(
+        const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(
           db,
           input,
           buildManagerConversationModelContext(input, packet, conversationId, previousResponseId),
@@ -144,6 +145,14 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           conversationId,
           runId,
           (event) => {
+            if (event.status === "started" && isReleaseSuccessTool(event.tool) && input?.musicSubject?.type === "music_item") {
+              emit({
+                type: "release_success.changed",
+                conversationId,
+                runId: runId ?? undefined,
+                artifact: investigatingReleaseSuccessArtifact(input.musicSubject?.id ?? "", conversationId ?? "", "Attached song"),
+              });
+            }
             emit({
               type: event.status === "started" ? "tool.started" : "tool.completed",
               runId: runId ?? undefined,
@@ -184,11 +193,36 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           trigger: "manager_conversation",
           scopedMissionId: finalScopedMissionId,
         }, output);
+        const derivedProposal = deriveReleaseDateProposalFromContextQuestions(output.contextQuestions);
+        if (derivedProposal && input.musicSubject?.type === "music_item"
+          && !releaseSuccessToolResults.some((item) => item.tool === "propose_focused_release_date_change")) {
+          const proposalResult = await executeManagerConversationTool(db as any, {
+            ...input,
+            conversationId,
+            runId: runId ?? undefined,
+            createdWork: toolCreatedWork,
+          }, "propose_focused_release_date_change", {
+            proposedDate: derivedProposal.proposedDate,
+            reason: derivedProposal.reason,
+          });
+          releaseSuccessToolResults.push({ tool: "propose_focused_release_date_change", result: proposalResult });
+          output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
+        }
+        await streamReleaseSuccessArtifacts(db, input, conversationId, runId, releaseSuccessToolResults, emit);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-        await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-        output.createdWork = taskDraftWork
+        const documentToolResult = releaseSuccessToolResults.find((item) => item.tool === "create_focused_song_document");
+        const persistedDocument = documentToolResult?.result && isRecord(documentToolResult.result) && documentToolResult.result.status === "drafted"
+          ? documentToolResult.result
+          : documentToolResult
+            ? undefined
+            : await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
+        const documentWork = persistedDocument ? songDocumentCreatedWork(input, persistedDocument) : undefined;
+        const baseCreatedWork = taskDraftWork
           ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
           : [...toolCreatedWork, ...persistedWork];
+        output.createdWork = documentWork
+          ? upsertServerCreatedWork(baseCreatedWork, documentWork)
+          : baseCreatedWork;
 
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
@@ -772,7 +806,13 @@ async function callOpenAIManagerConversation(
 ) {
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
+  const releaseSuccessToolResults: ReleaseSuccessToolResult[] = [];
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
+  const tools = selectManagerConversationToolsForTurn({
+    body: input.body,
+    contextAnswers: input.contextAnswers,
+    hasAttachedUnreleasedSong: await hasAttachedUnreleasedSong(db, input),
+  });
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -780,14 +820,43 @@ async function callOpenAIManagerConversation(
     instructions: buildManagerConversationInstructions(playbookInstructions),
     context,
     previousResponseId,
-    tools: managerConversationTools,
+    tools,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: "medium",
     maxOutputTokens: 6000,
     contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
     promptCacheMode: "explicit",
-    executeTool: (name, args) => executeManagerConversationTool(db, toolInput, name, args),
+    executeTool: async (name, args) => {
+      if (!isReleaseSuccessTool(name) && !isOpportunityTool(name)) return executeManagerConversationTool(db, toolInput, name, args);
+      try {
+        const result = await executeManagerConversationTool(db, toolInput, name, args);
+        releaseSuccessToolResults.push({ tool: name, result });
+        return result;
+      } catch (error) {
+        const errorEventId = await captureAppError(error, {
+          functionName: "manager-conversation-stream",
+          operation: isOpportunityTool(name) ? "release_opportunity_tool" : "release_success_tool",
+          source: "edge",
+          publicMessage: isOpportunityTool(name) ? "Release research could not be completed safely." : "Release materials could not be checked.",
+          accountId: input.accountId,
+          artistWorkspaceId: input.artistWorkspaceId,
+          artistId: input.artistId,
+          provider: "release-success",
+          refs: {
+            conversation_id: conversationId,
+            manager_run_id: runId,
+            music_item_id: input.musicSubject?.type === "music_item" ? input.musicSubject.id : null,
+            stage: isOpportunityTool(name) ? opportunityToolStage(name) : name,
+          },
+        });
+        releaseSuccessToolResults.push({
+          tool: name,
+          result: { status: "failed", reference: errorEventId ?? undefined },
+        });
+        throw error;
+      }
+    },
     onToolEvent,
   });
   return {
@@ -796,7 +865,290 @@ async function callOpenAIManagerConversation(
     responseId: result.responseId,
     toolTrace: result.toolTrace,
     toolCreatedWork,
+    releaseSuccessToolResults,
   };
+}
+
+async function hasAttachedUnreleasedSong(db: any, input: ManagerConversationInput) {
+  if (input.musicSubject?.type !== "music_item") return false;
+  const { data, error } = await db.from("music_items")
+    .select("id,released_at,lifecycle_stage")
+    .eq("id", input.musicSubject.id)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id && !data.released_at && !["released", "catalogued", "archived"].includes(String(data.lifecycle_stage ?? "").toLowerCase()));
+}
+
+type ReleaseSuccessToolResult = {
+  tool: string;
+  result: unknown;
+};
+
+function isReleaseSuccessTool(tool: string) {
+  return tool === "read_focused_release_success" || tool === "propose_focused_release_date_change";
+}
+
+function isOpportunityTool(tool: string) {
+  return tool === "query_focused_release_opportunities"
+    || tool === "save_focused_release_opportunities"
+    || tool === "record_focused_release_opportunity_outcome"
+    || tool === "create_focused_song_document";
+}
+
+function opportunityToolStage(tool: string) {
+  if (tool === "query_focused_release_opportunities") return "opportunity_search";
+  if (tool === "save_focused_release_opportunities") return "contact_verification";
+  return "opportunity_persistence";
+}
+
+async function streamReleaseSuccessArtifacts(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  runId: string | null,
+  toolResults: ReleaseSuccessToolResult[],
+  emit: (event: unknown) => void,
+) {
+  let latestPacket: Record<string, any> | null = null;
+  for (const toolResult of toolResults) {
+    const result = isRecord(toolResult.result) ? toolResult.result : {};
+    if (isRecord(result.packet)) latestPacket = result.packet;
+
+    const artifact = releaseSuccessArtifactFromToolResult(
+      toolResult,
+      input,
+      conversationId,
+      latestPacket,
+    );
+    if (!artifact) continue;
+
+    const artifacts = artifact.state === "proposed"
+      ? [artifact, { ...artifact, state: "awaiting_approval" as const }]
+      : [artifact];
+
+    for (const nextArtifact of artifacts) {
+      try {
+        await persistReleaseSuccessArtifact(db, input, conversationId, runId, nextArtifact);
+        emit({
+          type: "release_success.changed",
+          conversationId,
+          runId: runId ?? undefined,
+          artifact: nextArtifact,
+          refresh: {
+            music: true,
+            missions: Boolean(nextArtifact.missionId),
+            desk: true,
+          },
+        });
+      } catch (error) {
+        const errorEventId = await captureAppError(error, {
+          functionName: "manager-conversation-stream",
+          operation: "release_success_artifact_persistence",
+          source: "database",
+          publicMessage: "Release materials were checked, but the result could not be saved.",
+          accountId: input.accountId,
+          artistWorkspaceId: input.artistWorkspaceId,
+          artistId: input.artistId,
+          refs: {
+            conversation_id: conversationId,
+            manager_run_id: runId,
+            music_item_id: nextArtifact.musicItemId,
+            stage: nextArtifact.state,
+          },
+        });
+        emit({
+          type: "release_success.changed",
+          conversationId,
+          runId: runId ?? undefined,
+          artifact: failedReleaseSuccessArtifact(nextArtifact, errorEventId ?? undefined),
+          refresh: { music: true, missions: Boolean(nextArtifact.missionId), desk: true },
+        });
+      }
+    }
+  }
+}
+
+function releaseSuccessArtifactFromToolResult(
+  toolResult: ReleaseSuccessToolResult,
+  input: ManagerConversationInput,
+  conversationId: string,
+  latestPacket: Record<string, any> | null,
+): Record<string, any> | null {
+  if (input.musicSubject?.type !== "music_item") return null;
+  if (!isReleaseSuccessTool(toolResult.tool)) return null;
+  const result = isRecord(toolResult.result) ? toolResult.result : {};
+  const packet = isRecord(result.packet) ? result.packet : latestPacket;
+  const musicItem = isRecord(packet?.musicItem) ? packet.musicItem : {};
+  const musicItemId = stringValue(musicItem.id) || input.musicSubject.id;
+  const title = stringValue(musicItem.title) || "Attached song";
+  const itemType = stringValue(musicItem.itemType) || "song";
+  const mission = isRecord(packet?.mission) ? packet.mission : {};
+  const releasePlan = isRecord(packet?.releasePlan) ? packet.releasePlan : {};
+  const missionId = stringValue(mission.id) || stringValue(releasePlan.missionId);
+  const base = {
+    id: `release-success:${conversationId}:${musicItemId}`,
+    musicItemId,
+    ...(missionId ? { missionId } : {}),
+    subject: {
+      title,
+      itemType,
+      ...(stringValue(packet?.approvedReleaseDate) ? { approvedReleaseDate: stringValue(packet?.approvedReleaseDate) } : {}),
+    },
+  };
+
+  if (toolResult.tool === "read_focused_release_success" && result.status === "found" && isRecord(result.packet)) {
+    return {
+      ...base,
+      state: "assessed" as const,
+      ...(isRecord(result.packet.assessment) ? { assessment: result.packet.assessment } : {}),
+    };
+  }
+
+  if (toolResult.tool === "propose_focused_release_date_change" && result.status === "proposed" && isRecord(result.request)) {
+    const request = result.request;
+    return {
+      ...base,
+      state: "proposed" as const,
+      requestId: stringValue(request.requestId) || undefined,
+      previewHash: stringValue(request.previewHash) || undefined,
+      idempotencyKey: stringValue(request.idempotencyKey) || undefined,
+      ...(isRecord(request.preview) ? { preview: request.preview } : {}),
+    };
+  }
+
+  if (result.status === "failed") {
+    return failedReleaseSuccessArtifact(base, stringValue(result.reference));
+  }
+  return null;
+}
+
+function investigatingReleaseSuccessArtifact(musicItemId: string, conversationId: string, title: string) {
+  return {
+    id: `release-success:${conversationId}:${musicItemId}`,
+    musicItemId,
+    state: "investigating" as const,
+    subject: { title: title || "Attached song", itemType: "song" },
+  };
+}
+
+function failedReleaseSuccessArtifact(
+  base: Record<string, any>,
+  reference?: string,
+): Record<string, any> {
+  return {
+    ...base,
+    state: "failed" as const,
+    error: {
+      message: "Release materials could not be checked or saved. Try again.",
+      retryable: true,
+      ...(reference ? { reference } : {}),
+    },
+  };
+}
+
+async function persistReleaseSuccessArtifact(
+  db: any,
+  input: ManagerConversationInput,
+  conversationId: string,
+  runId: string | null,
+  artifact: Record<string, any>,
+) {
+  const { data: existingRunOutput, error: existingRunError } = runId
+    ? await db.from("manager_outputs")
+      .select("id")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .eq("output_type", "release_success_assessment")
+      .eq("created_from_run_id", runId)
+      .maybeSingle()
+    : { data: null, error: null };
+  if (existingRunError) throw existingRunError;
+
+  const { error: staleError } = await db
+    .from("manager_outputs")
+    .update({ is_current: false })
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("conversation_id", conversationId)
+    .eq("output_type", "release_success_assessment")
+    .eq("subject_type", "music_item")
+    .eq("subject_id", artifact.musicItemId)
+    .eq("is_current", true);
+  if (staleError) throw staleError;
+
+  const assessment = isRecord(artifact.assessment) ? artifact.assessment : {};
+  const recommendation = isRecord(assessment.recommendation) ? assessment.recommendation : {};
+  const gates = [
+    ...(isRecord(assessment.foundation) && Array.isArray(assessment.foundation.gates) ? assessment.foundation.gates : []),
+    ...(isRecord(assessment.campaign) && Array.isArray(assessment.campaign.gates) ? assessment.campaign.gates : []),
+  ];
+  const outputPayload = {
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      conversation_id: conversationId,
+      mission_id: artifact.missionId ?? null,
+      output_type: "release_success_assessment",
+      subject_type: "music_item",
+      subject_id: artifact.musicItemId,
+      summary: releaseSuccessArtifactSummary(artifact),
+      primary_recommendation_json: artifact.preview ?? recommendation,
+      confidence_json: { state: artifact.state },
+      supporting_evidence_json: gates.flatMap((gate: any) => Array.isArray(gate?.evidence) ? gate.evidence : []).slice(0, 50),
+      render_json: artifact,
+      schema_version: "release-success-artifact-v1",
+      is_current: true,
+      created_from_run_id: runId,
+  };
+  const outputQuery = existingRunOutput?.id
+    ? db.from("manager_outputs").update(outputPayload).eq("id", existingRunOutput.id)
+    : db.from("manager_outputs").insert(outputPayload);
+  const { data: output, error: outputError } = await outputQuery.select("id").single();
+  if (outputError) throw outputError;
+
+  const links = [
+    {
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      source_type: "manager_output",
+      source_id: output.id,
+      target_type: "music_item",
+      target_id: artifact.musicItemId,
+      relationship: "references",
+      created_from_run_id: runId,
+    },
+    ...(artifact.missionId ? [{
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      source_type: "manager_output",
+      source_id: output.id,
+      target_type: "mission",
+      target_id: artifact.missionId,
+      relationship: "references",
+      created_from_run_id: runId,
+    }] : []),
+  ];
+  const { error: linkError } = await db.from("artifact_links").insert(links);
+  if (linkError) throw linkError;
+  return output.id as string;
+}
+
+function releaseSuccessArtifactSummary(artifact: Record<string, any>) {
+  const title = stringValue(artifact.subject?.title) || "the song";
+  if (artifact.state === "awaiting_approval" || artifact.state === "proposed") return `Release date impact preview is ready for ${title}.`;
+  if (artifact.state === "failed") return `Release-success review failed for ${title}.`;
+  return `Release materials checked for ${title}.`;
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : "";
 }
 
 async function createManagerRun(db: any, input: ManagerConversationInput, conversationId: string, packet: unknown) {
@@ -1194,6 +1546,7 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
     lastUpdate: conversation.last_update_at || "",
     messages: normalizedMessages,
     createdWork: normalizedMessages.flatMap((message) => message.createdWork ?? []),
+    releaseSuccessArtifacts: [],
   };
 }
 
@@ -1270,6 +1623,12 @@ function safeToolTraceSummary(trace: ManagerAgentToolTrace[]) {
 }
 
 function managerToolLabel(tool: string) {
+  if (tool === "read_focused_release_success") return "Release materials checked";
+  if (tool === "propose_focused_release_date_change") return "Release date impact preview ready";
+  if (tool === "query_focused_release_opportunities") return "Researching public release targets";
+  if (tool === "save_focused_release_opportunities") return "Saving release targets";
+  if (tool === "record_focused_release_opportunity_outcome") return "Recording outreach outcome";
+  if (tool === "create_focused_song_document") return "Preparing song document";
   if (tool === "web_search") return "Searching the web";
   if (tool === "query_evidence_items") return "Checking evidence";
   if (tool === "query_active_missions") return "Reviewing mission state";
@@ -1297,6 +1656,29 @@ function normalizeCreatedWorkItem(item: any) {
     parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
     status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",
   };
+}
+
+function songDocumentCreatedWork(input: ManagerConversationInput, persistedDocument: Record<string, unknown>) {
+  const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";
+  const title = typeof persistedDocument.title === "string" && persistedDocument.title.trim()
+    ? persistedDocument.title.trim()
+    : "Release documents";
+  if (!musicItemId) return undefined;
+  return {
+    type: "music_item" as const,
+    id: musicItemId,
+    title,
+    body: "Song Workspace created. Release document saved to Files.",
+    status: "updated" as const,
+  };
+}
+
+function upsertServerCreatedWork(
+  current: ManagerConversationOutput["createdWork"],
+  next: ManagerConversationOutput["createdWork"][number],
+) {
+  const key = `${next.type}:${next.id ?? next.title}`;
+  return [...current.filter((item) => `${item.type}:${item.id ?? item.title}` !== key), next];
 }
 
 function normalizeContextQuestions(value: unknown) {

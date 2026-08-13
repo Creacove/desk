@@ -3,6 +3,7 @@ import {
   getMissionPatternRegistry,
   selectMissionPatternsForPacket,
 } from "../supabase/functions/_shared/mission-patterns/missionPatternRegistry";
+import { buildMissionGenesisInstructions } from "../supabase/functions/_shared/openaiMissionGenesis";
 
 describe("Mission pattern registry", () => {
   it("ships management-domain patterns with evidence, checkpoint, permission, and task guidance", () => {
@@ -82,5 +83,34 @@ describe("Mission pattern registry", () => {
     const sourcePattern = registry.find((candidate) => candidate.key === "data_source_completeness");
     expect(sourcePattern?.blockageState).toMatch(/limitation|conservative recommendation/i);
     expect(sourcePattern?.taskTypes.join(" ")).not.toMatch(/upload CSV|upload file/i);
+  });
+
+  it("defines release planning as the six-workstream Release Success Mission", () => {
+    const pattern = getMissionPatternRegistry().find((candidate) => candidate.key === "release_planning");
+
+    expect(pattern).toEqual(expect.objectContaining({
+      name: "Release Success Mission",
+      taskTypes: [
+        "release foundation",
+        "playlist and discovery",
+        "press and media",
+        "content rollout",
+        "launch",
+        "post-release",
+      ],
+    }));
+    expect(pattern?.successState).toMatch(/campaign execution/i);
+    expect(pattern?.taskTypes.join(" ")).not.toMatch(/research|comparison|drafting|find emails/i);
+    expect(pattern?.permissionBoundaries.join(" ")).toMatch(/submission/i);
+    expect(pattern?.permissionBoundaries.join(" ")).toMatch(/external outreach/i);
+  });
+
+  it("requires stable schedule keys while keeping Manager research out of artist tasks", () => {
+    const instructions = buildMissionGenesisInstructions("initial");
+
+    expect(instructions).toMatch(/research|comparison|synthesis.*Manager work/i);
+    expect(instructions).toMatch(/artist.*(approval|private facts|external submissions|recording outcomes)/i);
+    expect(instructions).toContain("scheduleKey");
+    expect(instructions).toMatch(/title text/i);
   });
 });

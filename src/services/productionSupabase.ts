@@ -28,6 +28,12 @@ import type {
   MusicUploadProgress,
   ManualSongWorkspaceResult,
   PriorityItem,
+  ReleaseDateChangeProposalInput,
+  ReleaseDateChangeReceiptViewModel,
+  ReleaseDateChangeRequestViewModel,
+  ReleaseOpportunityArtifactViewModel,
+  ReleaseOpportunityTargetViewModel,
+  SongDocumentType,
   SpotifyCatalogSearchResult,
   SpotifyImportResult,
   SplitConfirmationViewModel,
@@ -35,7 +41,7 @@ import type {
   TodayBriefGenerationMode,
   TodayBriefViewModel,
 } from "../types/cleanProduction";
-import { consumeManagerConversationEventStream } from "./managerConversationStream";
+import { consumeManagerConversationEventStream, hydrateReleaseSuccessArtifacts } from "./managerConversationStream";
 import { createActiveRunFallback } from "./activeRunFallback";
 import type {
   ProductionAuthAdapter,
@@ -2214,7 +2220,12 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         const row = data as ConversationRow | null;
         if (!row) return null;
 
-        const [{ data: messages, error: messageError }, { data: outputs, error: outputError }, { data: links, error: linkError }] = await Promise.all([
+        const [
+          { data: messages, error: messageError },
+          { data: outputs, error: outputError },
+          { data: links, error: linkError },
+          { data: releaseOutputs, error: releaseOutputError },
+        ] = await Promise.all([
           ownerFilters(client
             .from("conversation_messages")
             .select("id,conversation_id,speaker,label,body,metadata,created_at")
@@ -2241,18 +2252,48 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .in("target_type", ["task", "music_item", "music_project"])
             .eq("relationship", "references")
             .limit(3),
+          ownerFilters(client
+            .from("manager_outputs")
+            .select("id,conversation_id,mission_id,subject_id,summary,render_json,created_at")
+          )
+            .eq("conversation_id", conversationId)
+            .eq("output_type", "release_success_assessment")
+            .eq("subject_type", "music_item")
+            .eq("is_current", true)
+            .order("created_at", { ascending: false })
+            .limit(25),
         ]);
         if (messageError) throw messageError;
         if (outputError) throw outputError;
         if (linkError) throw linkError;
+        if (releaseOutputError) throw releaseOutputError;
+        const releaseSuccessOutputs = ((releaseOutputs as ManagerOutputRow[] | null) ?? []);
+        const persistedReleaseArtifacts = hydrateReleaseSuccessArtifacts(releaseSuccessOutputs);
+        const releaseRequestIds = [...new Set(persistedReleaseArtifacts.flatMap((artifact) => artifact.requestId ? [artifact.requestId] : []))];
+        let releaseRequests: unknown[] = [];
+        if (releaseRequestIds.length) {
+          const { data: requestRows, error: requestError } = await ownerFilters(client
+            .from("release_date_change_requests")
+            .select("id,status,result_json,updated_at")
+          ).in("id", releaseRequestIds);
+          if (requestError) throw requestError;
+          releaseRequests = requestRows ?? [];
+        }
         const conversationLinks = (links as ArtifactLinkRow[] | null) ?? [];
         const musicSubjects = await loadConversationMusicSubjects(client, workspace, conversationLinks);
+        const musicSubject = musicSubjects.get(conversationId);
+        const releaseOpportunityArtifacts = musicSubject?.type === "music_item"
+          ? await loadReleaseOpportunityArtifacts(client, workspace, musicSubject.id, musicSubject.title)
+          : [];
         return conversationFromRows(
           row,
           (messages as ConversationMessageRow[] | null) ?? [],
           ((outputs as ManagerOutputRow[] | null) ?? [])[0],
           conversationLinks.find((link) => link.target_type === "task")?.target_id,
-          musicSubjects.get(conversationId),
+          musicSubject,
+          releaseSuccessOutputs,
+          releaseOpportunityArtifacts,
+          releaseRequests,
         );
       },
       async loadConversations() {
@@ -2389,6 +2430,42 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
         }
 
         await consumeManagerConversationEventStream(response.body, handlers.onEvent);
+      },
+      async proposeReleaseDateChange(input: ReleaseDateChangeProposalInput) {
+        const requestId = createClientRequestId();
+        const { data, error } = await client.functions.invoke("release-plan-change", {
+          headers: { "x-request-id": requestId },
+          body: {
+            action: "propose",
+            musicItemId: input.musicItemId,
+            proposedDate: input.proposedDate,
+            reason: input.reason,
+            expectedRevision: input.expectedRevision,
+            preview: input.preview,
+            previewHash: input.previewHash,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        if (error) await throwReleasePlanChangeError(error, "The release date preview could not be created.", requestId);
+        const request = normalizeReleaseDateChangeRequest(data);
+        if (!request) throw new Error("The release date preview returned an invalid request.");
+        return request;
+      },
+      async approveReleaseDateChange(input: { requestId: string; previewHash: string; idempotencyKey: string }) {
+        const requestId = createClientRequestId();
+        const { data, error } = await client.functions.invoke("release-plan-change", {
+          headers: { "x-request-id": requestId },
+          body: {
+            action: "approve",
+            requestId: input.requestId,
+            previewHash: input.previewHash,
+            idempotencyKey: input.idempotencyKey,
+          },
+        });
+        if (error) await throwReleasePlanChangeError(error, "The release date change could not be applied.", requestId);
+        const receipt = normalizeReleaseDateChangeReceipt(data);
+        if (!receipt) throw new Error("The release date change returned an invalid receipt.");
+        return receipt;
       },
     },
     missions: {
@@ -2905,6 +2982,8 @@ type ManagerSynthesisRunRow = {
 
 type ManagerOutputRow = {
   id: string;
+  conversation_id?: string | null;
+  mission_id?: string | null;
   source_packet_id?: string | null;
   created_from_run_id?: string | null;
   output_type?: string | null;
@@ -3057,6 +3136,33 @@ type DocumentVersionRow = {
   metadata?: Record<string, unknown> | null;
 };
 
+type ReleaseOpportunityRow = {
+  id: string;
+  music_item_id: string;
+  mission_id?: string | null;
+  opportunity_type?: string | null;
+  platform?: string | null;
+  target_name: string;
+  source_url?: string | null;
+  target_url?: string | null;
+  public_organization?: string | null;
+  contact_kind?: string | null;
+  public_contact_value?: string | null;
+  public_contact_source_url?: string | null;
+  contact_verified_at?: string | null;
+  fit_json?: unknown;
+  evidence_json?: unknown;
+  confidence?: string | null;
+  limitations_json?: unknown;
+  safety_state?: string | null;
+  requirements_json?: unknown;
+  package_json?: unknown;
+  pitch_document_id?: string | null;
+  status?: string | null;
+  manual_outcome?: string | null;
+  updated_at?: string | null;
+};
+
 async function applySongDocumentMaterials(
   client: SupabaseClient,
   workspace: ProductionWorkspace,
@@ -3142,9 +3248,24 @@ async function applySongDocumentMaterials(
   });
 }
 
-function normalizeSongDocumentType(value?: string | null): "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes" | "other" {
-  return ["lyrics", "press_release", "press_angle", "artist_biography", "one_sheet", "credits", "distributor_notes"].includes(value ?? "")
-    ? value as "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes"
+function normalizeSongDocumentType(value?: string | null): SongDocumentType {
+  return [
+    "lyrics",
+    "press_release",
+    "press_angle",
+    "artist_biography",
+    "one_sheet",
+    "credits",
+    "distributor_notes",
+    "epk",
+    "spotify_editorial_pitch",
+    "playlist_pitch",
+    "press_target_brief",
+    "press_pitch",
+    "content_plan",
+    "release_calendar",
+  ].includes(value ?? "")
+    ? value as SongDocumentType
     : "other";
 }
 
@@ -3170,6 +3291,9 @@ function conversationFromRows(
   output?: ManagerOutputRow,
   taskContextId?: string,
   musicSubject?: MusicConversationSubjectViewModel,
+  releaseSuccessOutputs: ManagerOutputRow[] = [],
+  releaseOpportunityArtifacts: ReleaseOpportunityArtifactViewModel[] = [],
+  releaseRequests: unknown[] = [],
 ): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
@@ -3186,7 +3310,219 @@ function conversationFromRows(
     messages: mappedMessages,
     ...(output ? { decisionPackage: decisionPackageFromRow(output) } : {}),
     createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
+    releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(releaseSuccessOutputs, releaseRequests),
+    ...(releaseOpportunityArtifacts.length ? { releaseOpportunityArtifacts } : {}),
   };
+}
+
+async function loadReleaseOpportunityArtifacts(
+  client: SupabaseClient,
+  workspace: ProductionWorkspace,
+  musicItemId: string,
+  subjectTitle: string,
+): Promise<ReleaseOpportunityArtifactViewModel[]> {
+  const { data, error } = await client
+    .from("release_opportunities")
+    .select("id,music_item_id,mission_id,opportunity_type,platform,target_name,source_url,target_url,public_organization,contact_kind,public_contact_value,public_contact_source_url,contact_verified_at,fit_json,evidence_json,confidence,limitations_json,safety_state,requirements_json,package_json,pitch_document_id,status,manual_outcome,updated_at")
+    .eq("account_id", workspace.accountId)
+    .eq("artist_workspace_id", workspace.artistWorkspaceId)
+    .eq("artist_id", workspace.artistId)
+    .eq("music_item_id", musicItemId)
+    .order("updated_at", { ascending: false })
+    .limit(80);
+  if (error) throw error;
+
+  const rows = ((data as ReleaseOpportunityRow[] | null) ?? []).filter((row) => row.music_item_id === musicItemId);
+  if (!rows.length) return [];
+
+  const documentIds = [...new Set(rows.flatMap((row) => row.pitch_document_id ? [row.pitch_document_id] : []))];
+  const documents: DocumentRow[] = [];
+  const versions: DocumentVersionRow[] = [];
+  if (documentIds.length) {
+    const [documentResult, versionResult] = await Promise.all([
+      client
+        .from("documents")
+        .select("id,title,document_type,origin,status,current_version_id,metadata")
+        .eq("account_id", workspace.accountId)
+        .eq("artist_workspace_id", workspace.artistWorkspaceId)
+        .eq("artist_id", workspace.artistId)
+        .in("id", documentIds)
+        .limit(documentIds.length),
+      client
+        .from("document_versions")
+        .select("id,document_id,file_name,metadata")
+        .eq("account_id", workspace.accountId)
+        .eq("artist_workspace_id", workspace.artistWorkspaceId)
+        .eq("artist_id", workspace.artistId)
+        .in("document_id", documentIds)
+        .order("version_number", { ascending: false })
+        .limit(documentIds.length * 3),
+    ]);
+    if (documentResult.error) throw documentResult.error;
+    if (versionResult.error) throw versionResult.error;
+    documents.push(...((documentResult.data as DocumentRow[] | null) ?? []));
+    versions.push(...((versionResult.data as DocumentVersionRow[] | null) ?? []));
+  }
+
+  return hydrateReleaseOpportunityArtifacts(rows, documents, versions, musicItemId, subjectTitle);
+}
+
+function hydrateReleaseOpportunityArtifacts(
+  rows: ReleaseOpportunityRow[],
+  documents: DocumentRow[],
+  versions: DocumentVersionRow[],
+  musicItemId: string,
+  subjectTitle: string,
+): ReleaseOpportunityArtifactViewModel[] {
+  const documentById = new Map(documents.map((document) => [document.id, document]));
+  const versionByDocumentId = new Map<string, DocumentVersionRow>();
+  for (const version of versions) {
+    if (!versionByDocumentId.has(version.document_id)) versionByDocumentId.set(version.document_id, version);
+  }
+
+  const byType = new Map<"playlist" | "press", ReleaseOpportunityTargetViewModel[]>();
+  const missionIds = new Map<"playlist" | "press", string>();
+  for (const row of rows) {
+    const opportunityType = row.opportunity_type === "press" || row.opportunity_type === "playlist" ? row.opportunity_type : undefined;
+    if (!opportunityType) continue;
+    const target = releaseOpportunityTargetFromRow(row, documentById, versionByDocumentId);
+    if (!target) continue;
+    const targets = byType.get(opportunityType) ?? [];
+    targets.push(target);
+    byType.set(opportunityType, targets);
+    if (row.mission_id && !missionIds.has(opportunityType)) missionIds.set(opportunityType, row.mission_id);
+  }
+
+  return (["playlist", "press"] as const).flatMap((opportunityType) => {
+    const targets = byType.get(opportunityType) ?? [];
+    if (!targets.length) return [];
+    const excluded = targets.filter((target) => target.safetyState === "excluded" || target.status === "skipped");
+    const eligible = targets.filter((target) => !excluded.includes(target));
+    const ranked = [...eligible].sort(compareReleaseOpportunityTargets);
+    const shortlist = ranked.filter((target) => target.status !== "watch").slice(0, 8);
+    const shortlistIds = new Set(shortlist.map((target) => target.id));
+    const watch = ranked.filter((target) => !shortlistIds.has(target.id));
+    return [{
+      id: `release-opportunities:${musicItemId}:${opportunityType}`,
+      musicItemId,
+      ...(missionIds.get(opportunityType) ? { missionId: missionIds.get(opportunityType) } : {}),
+      opportunityType,
+      subject: { title: subjectTitle, itemType: "music_item" },
+      shortlist,
+      watch,
+      excluded,
+    } satisfies ReleaseOpportunityArtifactViewModel];
+  });
+}
+
+function releaseOpportunityTargetFromRow(
+  row: ReleaseOpportunityRow,
+  documents: Map<string, DocumentRow>,
+  versions: Map<string, DocumentVersionRow>,
+): ReleaseOpportunityTargetViewModel | null {
+  const sourceUrl = safeOpportunityUrl(row.source_url);
+  const targetName = readConversationString(row.target_name, "");
+  if (!sourceUrl || !targetName) return null;
+  const fit = isPlainRecord(row.fit_json) ? row.fit_json : {};
+  const evidence = Array.isArray(row.evidence_json) ? row.evidence_json : [];
+  const sourceEvidence = evidence.filter(isPlainRecord).map((item) => ({
+    source: readConversationString(item.source ?? item.name, "Public source"),
+    ...(safeOpportunityUrl(item.ref ?? item.url) ? { ref: safeOpportunityUrl(item.ref ?? item.url) } : {}),
+    ...(readOptionalConversationString(item.observedAt ?? item.observed_at) ? { observedAt: readOptionalConversationString(item.observedAt ?? item.observed_at) } : {}),
+  }));
+  const document = row.pitch_document_id ? documents.get(row.pitch_document_id) : undefined;
+  const version = document
+    ? versions.get(document.id)
+    : undefined;
+  const body = typeof version?.metadata?.body === "string"
+    ? version.metadata.body
+    : typeof document?.metadata?.body === "string"
+      ? document.metadata.body
+      : undefined;
+  const documentView = document ? {
+    id: document.id,
+    title: document.title,
+    ...(body ? { body } : {}),
+    ...(document.status ? { status: document.status } : {}),
+  } : undefined;
+  const packageValue = isPlainRecord(row.package_json) ? row.package_json : {};
+  const selectedFiles = readStringList(packageValue.selectedFiles ?? packageValue.selected_files);
+  const pitchBody = readOptionalConversationString(packageValue.pitchBody ?? packageValue.pitch_body) ?? body;
+  const shareUrl = safeOpportunityUrl(packageValue.shareUrl ?? packageValue.share_url);
+  const packageView = selectedFiles.length || pitchBody || shareUrl
+    ? { selectedFiles, ...(pitchBody ? { pitchBody } : {}), ...(shareUrl ? { shareUrl } : {}) }
+    : undefined;
+  const publicContact = releaseOpportunityContactFromRow(row);
+  const confidence = row.confidence === "high" || row.confidence === "medium" || row.confidence === "low" || row.confidence === "unknown"
+    ? row.confidence
+    : "unknown";
+  const safetyState = row.safety_state === "clear" || row.safety_state === "excluded" ? row.safety_state : "caution";
+  const status = ["watch", "shortlisted", "approved", "submitted_manually", "replied", "accepted", "declined", "skipped"].includes(row.status ?? "")
+    ? row.status as ReleaseOpportunityTargetViewModel["status"]
+    : "watch";
+  return {
+    id: row.id,
+    targetName,
+    ...(readOptionalConversationString(row.platform) ? { platform: readOptionalConversationString(row.platform) } : {}),
+    sourceUrl,
+    ...(safeOpportunityUrl(row.target_url) ? { targetUrl: safeOpportunityUrl(row.target_url) } : {}),
+    ...(readOptionalConversationString(row.public_organization) ? { publicOrganization: readOptionalConversationString(row.public_organization) } : {}),
+    ...(publicContact ? { publicContact } : {}),
+    fit: {
+      songCriteria: readStringList(fit.songCriteria ?? fit.song_criteria),
+      targetCriteria: readStringList(fit.targetCriteria ?? fit.target_criteria),
+      explanation: readConversationString(fit.explanation, "Fit was recorded from the Manager's source-backed research."),
+      ...(readOptionalConversationString(fit.recency) ? { recency: readOptionalConversationString(fit.recency) } : {}),
+      ...(readOptionalConversationString(fit.market) ? { market: readOptionalConversationString(fit.market) } : {}),
+    },
+    sourceEvidence,
+    confidence,
+    limitations: readStringList(row.limitations_json),
+    requirements: readStringList(row.requirements_json),
+    safetyState,
+    status,
+    ...(row.manual_outcome ? { manualOutcome: row.manual_outcome } : {}),
+    ...(row.pitch_document_id ? { pitchDocumentId: row.pitch_document_id } : {}),
+    ...(documentView ? { document: documentView } : {}),
+    ...(packageView ? { package: packageView } : {}),
+  };
+}
+
+function releaseOpportunityContactFromRow(row: ReleaseOpportunityRow): ReleaseOpportunityTargetViewModel["publicContact"] {
+  if (row.contact_kind !== "email" && row.contact_kind !== "submission_form" && row.contact_kind !== "contact_page") return undefined;
+  const sourceUrl = safeOpportunityUrl(row.public_contact_source_url);
+  const value = row.contact_kind === "email" ? safeOpportunityEmail(row.public_contact_value) : safeOpportunityUrl(row.public_contact_value);
+  if (!sourceUrl || !value) return undefined;
+  return {
+    kind: row.contact_kind,
+    value,
+    sourceUrl,
+    ...(row.contact_verified_at ? { verifiedAt: row.contact_verified_at } : {}),
+  };
+}
+
+function compareReleaseOpportunityTargets(left: ReleaseOpportunityTargetViewModel, right: ReleaseOpportunityTargetViewModel) {
+  const confidence = { high: 3, medium: 2, low: 1, unknown: 0 };
+  const leftScore = confidence[left.confidence] + Math.min(left.sourceEvidence.length, 4) + (left.publicContact ? 2 : 0) + (left.safetyState === "clear" ? 1 : 0);
+  const rightScore = confidence[right.confidence] + Math.min(right.sourceEvidence.length, 4) + (right.publicContact ? 2 : 0) + (right.safetyState === "clear" ? 1 : 0);
+  return rightScore - leftScore || left.targetName.localeCompare(right.targetName);
+}
+
+function safeOpportunityUrl(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== "https:" || url.username || url.password || !url.hostname) return undefined;
+    return url.toString();
+  } catch {
+    return undefined;
+  }
+}
+
+function safeOpportunityEmail(value: unknown) {
+  if (typeof value !== "string") return undefined;
+  const email = value.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : undefined;
 }
 
 function decisionPackageFromRow(row: ManagerOutputRow): ConversationViewModel["decisionPackage"] {
@@ -3248,11 +3584,16 @@ function conversationViewModel(input: unknown): ConversationViewModel {
       })
     : [];
   const createdWork = normalizeCreatedWork(input.createdWork);
+  const taskContextId = readOptionalConversationString(input.taskContextId);
+  const musicSubject = musicConversationSubjectViewModel(input.musicSubject);
+  const releaseSuccessArtifacts = hydrateReleaseSuccessArtifacts(
+    Array.isArray(input.releaseSuccessArtifacts) ? input.releaseSuccessArtifacts : [],
+  );
 
   return {
     id: readConversationString(input.id, ""),
-    taskContextId: readOptionalConversationString(input.taskContextId),
-    musicSubject: musicConversationSubjectViewModel(input.musicSubject),
+    ...(taskContextId ? { taskContextId } : {}),
+    ...(musicSubject ? { musicSubject } : {}),
     topic: readConversationString(input.topic, "Manager conversation"),
     status: readConversationString(input.status, "Manager responded"),
     summary: readConversationString(input.summary, "Manager answered the directive."),
@@ -3260,6 +3601,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
     lastUpdate: typeof input.lastUpdate === "string" ? input.lastUpdate : undefined,
     messages,
     createdWork: createdWork.length ? createdWork : messages.flatMap((message) => message.createdWork ?? []),
+    ...(releaseSuccessArtifacts.length ? { releaseSuccessArtifacts } : {}),
   };
 }
 
@@ -4068,6 +4410,168 @@ function readErrorMessage(error: unknown, fallback: string) {
     return (error as { message: string }).message;
   }
   return fallback;
+}
+
+export class ReleasePlanChangeError extends Error {
+  readonly status?: number;
+  readonly code?: string;
+  readonly requestId?: string;
+  readonly errorEventId?: string;
+
+  constructor(message: string, details: { status?: number; code?: string; requestId?: string; errorEventId?: string }) {
+    super(message);
+    this.name = "ReleasePlanChangeError";
+    this.status = details.status;
+    this.code = details.code;
+    this.requestId = details.requestId;
+    this.errorEventId = details.errorEventId;
+  }
+}
+
+function normalizeReleaseDateChangeRequest(payload: unknown): ReleaseDateChangeRequestViewModel | null {
+  const wrapper = isPlainRecord(payload) ? payload : {};
+  const value = isPlainRecord(wrapper.request) ? wrapper.request : wrapper;
+  const requestId = readOptionalConversationString(value.requestId) ?? readOptionalConversationString(value.id);
+  const idempotencyKey = readOptionalConversationString(value.idempotencyKey);
+  const releasePlanId = readOptionalConversationString(value.releasePlanId);
+  const musicItemId = readOptionalConversationString(value.musicItemId);
+  const missionId = readOptionalConversationString(value.missionId);
+  const proposedDate = readOptionalConversationString(value.proposedDate);
+  const reason = readOptionalConversationString(value.reason);
+  const status = value.status;
+  const expectedPlanRevision = value.expectedPlanRevision;
+  const previewHash = readOptionalConversationString(value.previewHash);
+  const expiresAt = readOptionalConversationString(value.expiresAt);
+  const preview = isPlainRecord(value.preview) ? value.preview : null;
+  if (
+    !requestId ||
+    !idempotencyKey ||
+    !releasePlanId ||
+    !musicItemId ||
+    !proposedDate ||
+    !previewHash ||
+    !expiresAt ||
+    !preview ||
+    !Number.isInteger(expectedPlanRevision) ||
+    !["pending", "approved", "rejected", "superseded", "expired", "failed"].includes(String(status))
+  ) {
+    return null;
+  }
+
+  const fromDate = readOptionalConversationString(value.fromDate);
+  return {
+    requestId,
+    idempotencyKey,
+    releasePlanId,
+    musicItemId,
+    ...(missionId ? { missionId } : {}),
+    ...(fromDate ? { fromDate } : {}),
+    proposedDate,
+    ...(reason ? { reason } : {}),
+    status: status as ReleaseDateChangeRequestViewModel["status"],
+    expectedPlanRevision,
+    previewHash,
+    preview: preview as ReleaseDateChangeRequestViewModel["preview"],
+    expiresAt,
+  };
+}
+
+function normalizeReleaseDateChangeReceipt(payload: unknown): ReleaseDateChangeReceiptViewModel | null {
+  const wrapper = isPlainRecord(payload) ? payload : {};
+  const value = isPlainRecord(wrapper.receipt) ? wrapper.receipt : wrapper;
+  const requestId = readOptionalConversationString(value.requestId);
+  const releasePlanId = readOptionalConversationString(value.releasePlanId);
+  const musicItemId = readOptionalConversationString(value.musicItemId);
+  const approvedDate = readOptionalConversationString(value.approvedDate);
+  const previousRevision = value.previousRevision;
+  const revision = value.revision;
+  const moved = normalizeReleaseDateChangeMoved(value.moved);
+  const preserved = normalizeReleaseDateChangePreserved(value.preserved);
+  if (
+    !requestId ||
+    !releasePlanId ||
+    !musicItemId ||
+    !approvedDate ||
+    !Number.isInteger(previousRevision) ||
+    !Number.isInteger(revision) ||
+    !moved ||
+    !preserved
+  ) {
+    return null;
+  }
+
+  const missionId = readOptionalConversationString(value.missionId);
+  const fromDate = readOptionalConversationString(value.fromDate);
+  const operatingEventId = readOptionalConversationString(value.operatingEventId);
+  const nextDeadline = isPlainRecord(value.nextDeadline)
+    ? {
+        taskId: readOptionalConversationString(value.nextDeadline.taskId) ?? "",
+        title: readOptionalConversationString(value.nextDeadline.title) ?? "",
+        deadline: readOptionalConversationString(value.nextDeadline.deadline) ?? "",
+      }
+    : null;
+  if (nextDeadline && (!nextDeadline.taskId || !nextDeadline.title || !nextDeadline.deadline)) return null;
+
+  return {
+    requestId,
+    releasePlanId,
+    musicItemId,
+    ...(missionId ? { missionId } : {}),
+    fromDate: fromDate ?? null,
+    approvedDate,
+    previousRevision,
+    revision,
+    moved,
+    preserved,
+    nextDeadline,
+    ...(operatingEventId ? { operatingEventId } : {}),
+  };
+}
+
+function normalizeReleaseDateChangeMoved(value: unknown): ReleaseDateChangeReceiptViewModel["moved"] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value.map((item) => {
+    const row = isPlainRecord(item) ? item : {};
+    return {
+      taskId: readOptionalConversationString(row.taskId) ?? "",
+      title: readOptionalConversationString(row.title) ?? "",
+      from: readOptionalConversationString(row.from) ?? null,
+      to: readOptionalConversationString(row.to) ?? "",
+    };
+  });
+  return rows.every((row) => row.taskId && row.title && row.to) ? rows : null;
+}
+
+function normalizeReleaseDateChangePreserved(value: unknown): ReleaseDateChangeReceiptViewModel["preserved"] | null {
+  if (!Array.isArray(value)) return null;
+  const rows = value.map((item) => {
+    const row = isPlainRecord(item) ? item : {};
+    return {
+      taskId: readOptionalConversationString(row.taskId) ?? "",
+      reason: readOptionalConversationString(row.reason) ?? "",
+    };
+  });
+  return rows.every((row) => row.taskId && row.reason) ? rows : null;
+}
+
+async function throwReleasePlanChangeError(error: unknown, fallback: string, requestId: string): Promise<never> {
+  const body = await readFunctionErrorBody(error);
+  const bodyRecord = isPlainRecord(body) ? body : {};
+  const message = getFunctionErrorBodyMessage(body) ?? readErrorObjectMessage(error) ?? fallback;
+  throw new ReleasePlanChangeError(message, {
+    status: functionErrorStatus(error),
+    code: readOptionalConversationString(bodyRecord.code),
+    requestId,
+    errorEventId: readOptionalConversationString(bodyRecord.errorEventId) ?? readOptionalConversationString(bodyRecord.error_event_id),
+  });
+}
+
+function functionErrorStatus(error: unknown) {
+  if (!error || typeof error !== "object") return undefined;
+  const context = (error as { context?: unknown }).context;
+  if (!context || typeof context !== "object") return undefined;
+  const status = (context as { status?: unknown }).status;
+  return typeof status === "number" ? status : undefined;
 }
 
 function workspaceFromRpcRow(row: WorkspaceRpcRow): ProductionWorkspace {

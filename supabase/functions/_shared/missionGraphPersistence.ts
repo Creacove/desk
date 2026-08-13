@@ -263,6 +263,7 @@ async function writeMissionPlan(
       mission_plan_version_id: plan.id,
       primary_checkpoint_id: checkpointId,
       title: task.title,
+      schedule_key: task.scheduleKey || null,
       owner_role: task.ownerRole || "Manager",
       work_mode: task.workMode,
       priority: 1,

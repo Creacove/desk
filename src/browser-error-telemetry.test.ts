@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { installBrowserErrorTelemetry } from "./lib/errorTelemetry";
+import { installBrowserErrorTelemetry, reportBrowserServiceError } from "./lib/errorTelemetry";
 
 describe("browser error telemetry", () => {
   it("captures window errors and unhandled rejections without throwing", async () => {
@@ -40,6 +40,24 @@ describe("browser error telemetry", () => {
     event();
 
     expect(capture).toHaveBeenCalledTimes(1);
+    dispose();
+  });
+
+  it("captures handled release workflow failures with a stage and safe identifiers", () => {
+    const capture = vi.fn().mockResolvedValue(undefined);
+    const dispose = installBrowserErrorTelemetry({ capture });
+    reportBrowserServiceError(new Error("refresh failed"), {
+      stage: "realtime_refresh",
+      musicItemId: "song-1",
+      requestId: "request-1",
+      prompt: "private prompt",
+    });
+    expect(capture).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "service_call_failed",
+      message: "refresh failed",
+      context: expect.objectContaining({ stage: "realtime_refresh", musicItemId: "song-1", requestId: "request-1" }),
+    }));
+    expect(JSON.stringify(capture.mock.calls)).not.toContain("private prompt");
     dispose();
   });
 

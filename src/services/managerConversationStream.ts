@@ -1,5 +1,133 @@
-import type { ManagerConversationRefreshHint, ManagerConversationStreamEvent } from "../types/cleanProduction";
+import type {
+  ManagerConversationRefreshHint,
+  ManagerConversationStreamEvent,
+  ReleaseSuccessArtifactState,
+  ReleaseSuccessArtifactViewModel,
+} from "../types/cleanProduction";
 import type { WorkspaceInvalidation } from "./workspaceLiveSync";
+
+const RELEASE_SUCCESS_STATES: readonly ReleaseSuccessArtifactState[] = [
+  "investigating",
+  "assessed",
+  "proposed",
+  "awaiting_approval",
+  "applying",
+  "applied",
+  "failed",
+];
+
+export function normalizeReleaseSuccessArtifact(value: unknown): ReleaseSuccessArtifactViewModel | null {
+  if (!isRecord(value)) return null;
+  const id = readRequiredString(value.id);
+  const musicItemId = readRequiredString(value.musicItemId);
+  const state = isReleaseSuccessArtifactState(value.state) ? value.state : null;
+  const subject = isRecord(value.subject) ? value.subject : null;
+  const title = readRequiredString(subject?.title);
+  const itemType = readRequiredString(subject?.itemType);
+  if (!id || !musicItemId || !state || !title || !itemType) return null;
+
+  const artifact: ReleaseSuccessArtifactViewModel = {
+    id,
+    musicItemId,
+    state,
+    subject: {
+      title,
+      itemType,
+      ...(readOptionalString(subject?.approvedReleaseDate)
+        ? { approvedReleaseDate: readOptionalString(subject?.approvedReleaseDate) }
+        : {}),
+    },
+  };
+
+  const missionId = readOptionalString(value.missionId);
+  const requestId = readOptionalString(value.requestId);
+  const previewHash = readOptionalString(value.previewHash);
+  const idempotencyKey = readOptionalString(value.idempotencyKey);
+  if (missionId) artifact.missionId = missionId;
+  if (requestId) artifact.requestId = requestId;
+  if (previewHash) artifact.previewHash = previewHash;
+  if (idempotencyKey) artifact.idempotencyKey = idempotencyKey;
+
+  if (isRecord(value.assessment)) artifact.assessment = value.assessment as ReleaseSuccessArtifactViewModel["assessment"];
+  if (isRecord(value.preview)) artifact.preview = value.preview as ReleaseSuccessArtifactViewModel["preview"];
+  if (isRecord(value.receipt)) artifact.receipt = value.receipt as ReleaseSuccessArtifactViewModel["receipt"];
+
+  if (isRecord(value.error)) {
+    const message = readOptionalString(value.error.message);
+    if (message && typeof value.error.retryable === "boolean") {
+      artifact.error = {
+        message,
+        retryable: value.error.retryable,
+        ...(readOptionalString(value.error.reference) ? { reference: readOptionalString(value.error.reference) } : {}),
+      };
+    }
+  }
+
+  return artifact;
+}
+
+export function mergeReleaseSuccessArtifacts(
+  current: ReleaseSuccessArtifactViewModel[] = [],
+  next: ReleaseSuccessArtifactViewModel[] = [],
+): ReleaseSuccessArtifactViewModel[] {
+  const byId = new Map<string, ReleaseSuccessArtifactViewModel>();
+  for (const item of current) {
+    const normalized = normalizeReleaseSuccessArtifact(item);
+    if (normalized) byId.set(normalized.id, normalized);
+  }
+  for (const item of next) {
+    const normalized = normalizeReleaseSuccessArtifact(item);
+    if (normalized) byId.set(normalized.id, normalized);
+  }
+  return [...byId.values()];
+}
+
+export function hydrateReleaseSuccessArtifacts(rows: unknown[] = [], requestRows: unknown[] = []): ReleaseSuccessArtifactViewModel[] {
+  const ordered = rows
+    .map((row, index) => ({ row, index, createdAt: readRowCreatedAt(row) }))
+    .sort((left, right) => {
+      const dateOrder = right.createdAt.localeCompare(left.createdAt);
+      return dateOrder || right.index - left.index;
+    });
+  const byId = new Map<string, ReleaseSuccessArtifactViewModel>();
+  for (const entry of ordered) {
+    const renderJson = isRecord(entry.row) && "render_json" in entry.row ? entry.row.render_json : entry.row;
+    const normalized = normalizeReleaseSuccessArtifact(renderJson);
+    if (normalized && !byId.has(normalized.id)) byId.set(normalized.id, normalized);
+  }
+  const requestsById = new Map<string, Record<string, any>>();
+  for (const value of requestRows) {
+    if (!isRecord(value)) continue;
+    const id = readOptionalString(value.id);
+    if (id) requestsById.set(id, value);
+  }
+  return [...byId.values()].map((artifact) => {
+    if (!artifact.requestId) return artifact;
+    const request = requestsById.get(artifact.requestId);
+    if (!request || request.status !== "approved" || !isReleaseReceipt(request.result_json)) return artifact;
+    return { ...artifact, state: "applied", receipt: request.result_json, error: undefined };
+  });
+}
+
+function isReleaseReceipt(value: unknown): value is NonNullable<ReleaseSuccessArtifactViewModel["receipt"]> {
+  return Boolean(
+    isRecord(value)
+      && readRequiredString(value.requestId)
+      && readRequiredString(value.releasePlanId)
+      && readRequiredString(value.musicItemId)
+      && readRequiredString(value.approvedDate)
+      && Number.isInteger(value.previousRevision)
+      && Number.isInteger(value.revision)
+      && Array.isArray(value.moved)
+      && Array.isArray(value.preserved),
+  );
+}
+
+export function releaseSuccessProgressLabel(tool: string): string {
+  if (tool === "read_focused_release_success") return "Release materials checked";
+  if (tool === "propose_focused_release_date_change") return "Release date impact preview ready";
+  return "Release plan review in progress";
+}
 
 export function invalidationsFromManagerRefreshHint(hint?: ManagerConversationRefreshHint): WorkspaceInvalidation[] {
   if (!hint) return [];
@@ -101,4 +229,26 @@ function isManagerConversationStreamEvent(value: unknown): value is ManagerConve
       "type" in value &&
       typeof (value as { type?: unknown }).type === "string",
   );
+}
+
+function isReleaseSuccessArtifactState(value: unknown): value is ReleaseSuccessArtifactState {
+  return typeof value === "string" && RELEASE_SUCCESS_STATES.includes(value as ReleaseSuccessArtifactState);
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function readRequiredString(value: unknown): string | null {
+  const normalized = readOptionalString(value);
+  return normalized || null;
+}
+
+function readOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function readRowCreatedAt(value: unknown): string {
+  if (!isRecord(value) || typeof value.created_at !== "string") return "";
+  return value.created_at;
 }

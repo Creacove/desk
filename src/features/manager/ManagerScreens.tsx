@@ -1,11 +1,24 @@
 import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, MessageSquareText, Music2, Route, Sparkles, UsersRound } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
-import type { CleanProductionView, ConversationViewModel, ManagerConversationContextAnswer, ManagerMissionContextQuestion, MissionGenesisResultViewModel, MissionTaskViewModel } from "../../types/cleanProduction";
+import type {
+  CleanProductionView,
+  ConversationViewModel,
+  ManagerConversationContextAnswer,
+  ManagerMissionContextQuestion,
+  MissionGenesisResultViewModel,
+  MissionTaskViewModel,
+  ReleaseDateChangeRequestViewModel,
+  ReleaseOpportunityArtifactViewModel,
+  ReleaseOpportunityTargetViewModel,
+  ReleaseSuccessArtifactViewModel,
+} from "../../types/cleanProduction";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { OrbState } from "thinking-orbs";
 import { BorderBeam } from "border-beam";
 import { SongContextAttachment } from "../music/SongRoomAttachments";
+import { OpportunityArtifact } from "./OpportunityArtifact";
+import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
 
 // ---------------------------------------------------------------------------
 // ChatGPT-style typewriter hook
@@ -453,6 +466,13 @@ export function ConversationWorkspace({
   onSendContextAnswers,
   onRetryLastMessage,
   onOpenDecisionPackage,
+  onApproveReleaseDateChange,
+  onKeepReleaseDate,
+  onReviewReleaseSuccess,
+  onRetryReleaseSuccess,
+  onPrepareOpportunityPitch,
+  onRecordOpportunityOutcome,
+  onRetryOpportunityResearch,
   taskContext,
   onBackToTask,
   sendPending,
@@ -463,6 +483,17 @@ export function ConversationWorkspace({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   onOpenDecisionPackage?: () => void;
+  onApproveReleaseDateChange?: (request: ReleaseDateChangeRequestViewModel) => Promise<void>;
+  onKeepReleaseDate?: (artifact: ReleaseSuccessArtifactViewModel) => void;
+  onReviewReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => void;
+  onRetryReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => Promise<void>;
+  onPrepareOpportunityPitch?: (artifact: ReleaseOpportunityArtifactViewModel, target: ReleaseOpportunityTargetViewModel) => void | Promise<void>;
+  onRecordOpportunityOutcome?: (
+    artifact: ReleaseOpportunityArtifactViewModel,
+    target: ReleaseOpportunityTargetViewModel,
+    input: { status: ReleaseOpportunityTargetViewModel["status"]; manualOutcome: string },
+  ) => void | Promise<void>;
+  onRetryOpportunityResearch?: (artifact: ReleaseOpportunityArtifactViewModel) => void | Promise<void>;
   taskContext?: MissionTaskViewModel;
   onBackToTask?: () => void;
   onSendMessage: (body: string, conversationId: string) => void;
@@ -482,6 +513,8 @@ export function ConversationWorkspace({
   const allCreatedWork = conversation.createdWork.length
     ? conversation.createdWork
     : messageCreatedWork;
+  const releaseSuccessArtifact = conversation.releaseSuccessArtifacts?.[0];
+  const opportunityArtifacts = conversation.releaseOpportunityArtifacts ?? [];
   const resolvedContextRequestIds = new Set(conversation.messages.flatMap((message) =>
     message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length
       ? [message.contextRequestId]
@@ -609,6 +642,45 @@ export function ConversationWorkspace({
           ))}
 
           {/* Thinking indicator — only shown when no streaming message exists yet */}
+          {releaseSuccessArtifact ? (
+            <ReleaseSuccessArtifact
+              artifact={releaseSuccessArtifact}
+              onApprove={onApproveReleaseDateChange ?? (async () => undefined)}
+              onKeepDate={onKeepReleaseDate ?? (() => undefined)}
+              onReviewAll={onReviewReleaseSuccess ?? (() => undefined)}
+              onOpenSong={(musicItemId) => void onOpenCreatedWork("music_item", musicItemId)}
+              onOpenMission={(missionId) => void onOpenCreatedWork("mission", missionId)}
+              onRetry={onRetryReleaseSuccess ?? (async () => undefined)}
+            />
+          ) : null}
+
+          {opportunityArtifacts.map((artifact) => (
+            <OpportunityArtifact
+              key={artifact.id}
+              artifact={artifact}
+              onPreparePitch={(target) => onPrepareOpportunityPitch
+                ? onPrepareOpportunityPitch(artifact, target)
+                : onSendMessage(
+                  `Prepare a ${artifact.opportunityType} pitch for ${target.targetName}. Save the canonical document in the attached song Files; do not send it.`,
+                  conversation.id,
+                )}
+              onRecordOutcome={(target, input) => onRecordOpportunityOutcome
+                ? onRecordOpportunityOutcome(artifact, target, input)
+                : onSendMessage(
+                  `Record the ${input.status} outcome for ${target.targetName}: ${input.manualOutcome}`,
+                  conversation.id,
+                )}
+              onOpenFiles={(musicItemId) => onOpenCreatedWork("music_item", musicItemId, "files")}
+              onOpenMission={(missionId) => onOpenCreatedWork("mission", missionId)}
+              onRetry={(failedArtifact) => onRetryOpportunityResearch
+                ? onRetryOpportunityResearch(failedArtifact)
+                : onSendMessage(
+                  `Retry ${failedArtifact.opportunityType} release research for the attached song. Preserve verified results and retry only the failed stage.`,
+                  conversation.id,
+                )}
+            />
+          ))}
+
           {isManagerThinking && !hasStreamingMessage ? (
             <ThinkingIndicator activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}

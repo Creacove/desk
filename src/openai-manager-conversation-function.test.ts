@@ -3,7 +3,9 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   buildManagerConversationInstructions,
+  deriveReleaseDateProposalFromContextQuestions,
   managerConversationJsonSchema,
+  normalizeReleaseTaskScheduleKeys,
   parseManagerConversationOutput,
 } from "../supabase/functions/_shared/openaiManagerConversation";
 import { getPlaybooksInstructions } from "../supabase/functions/_shared/manager-intelligence/playbooks/playbookDefinitions";
@@ -78,6 +80,7 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(graphPersistenceSource).toContain("mission_plan_versions");
     expect(graphPersistenceSource).toContain("mission_plan_checkpoints");
     expect(graphPersistenceSource).toContain("permission_requests");
+    expect(graphPersistenceSource).toContain("schedule_key: task.scheduleKey || null");
     expect(graphPersistenceSource).toContain("parentMissionId");
     expect(streamFunctionSource.indexOf("persistManagerMissionGraphDecisions")).toBeLessThan(streamFunctionSource.indexOf("artifact.changed"));
     expect(streamFunctionSource).not.toContain("insertManagerCheckpoint");
@@ -221,7 +224,7 @@ describe("OpenAI Manager Conversation Router", () => {
     const instructions = buildManagerConversationInstructions();
     expect(instructions).toContain("Attached unreleased-song loop");
     expect(instructions).toContain("ask exactly one human-only question");
-    expect(instructions).toContain("After any successful focused-song write, call read_focused_release_readiness again before answering");
+    expect(instructions).toContain("After any successful focused-song write, call the focused release-success read again before answering");
     expect(instructions).toContain("existingMissionId must equal the attached linked mission ID");
     expect(instructions).toContain("Never narrate the full release-readiness checklist");
   });
@@ -230,7 +233,7 @@ describe("OpenAI Manager Conversation Router", () => {
     const instructions = buildManagerConversationInstructions();
 
     expect(instructions).toContain("Manager Conversation Router");
-    expect(instructions).toContain("prototype-style manager office");
+    expect(instructions).not.toContain("prototype-style manager office");
     expect(instructions).toContain("supplied scoped opening brief");
     expect(instructions).toContain("read_manager_output_section");
     expect(instructions).toContain("Do not create a separate evidence-read section");
@@ -242,6 +245,11 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("ISO-8601 timestamp derived from a confirmed release date");
     expect(instructions).toContain("Never reopen pre-release gates for released/catalog music");
     expect(instructions).toContain("Never invent a contact name, email address, outlet, playlist, or result");
+    expect(instructions).toContain("For an attached unreleased-song readiness question, read the exact release-success packet and linked mission before answering.");
+    expect(instructions).toContain("Never claim the change was applied; application requires the user's explicit approval through the release-plan command.");
+    expect(instructions).toContain("the server promotes it into the canonical approval artifact after task persistence");
+    expect(instructions).toContain("scheduleKey");
+    expect(instructions).toContain("If the user keeps the date, produce the strongest realistic recovery plan and name lost opportunities.");
     expect(JSON.stringify(managerConversationJsonSchema)).toContain("workMode");
     expect(instructions).not.toContain("OpenAI");
   });
@@ -416,6 +424,7 @@ describe("OpenAI Manager Conversation Router", () => {
           tasks: [
             {
               title: "Define the London return-behavior baseline",
+              scheduleKey: "content_rollout_start",
               ownerRole: "Manager",
               workMode: "collaborative",
               primaryCheckpointKey: "london_return_signal",
@@ -445,6 +454,51 @@ describe("OpenAI Manager Conversation Router", () => {
       tasks: [expect.objectContaining({ primaryCheckpointKey: "london_return_signal" })],
     });
     expect(output.missionGraphDecisions[0].tasks[0].workMode).toBe("collaborative");
+    expect(output.missionGraphDecisions[0].tasks[0].scheduleKey).toBe("content_rollout_start");
+  });
+
+  it("derives a deterministic proposal from a release-date approval question", () => {
+    expect(deriveReleaseDateProposalFromContextQuestions([{
+      key: "approve_release_date",
+      question: "Do you approve August 27, 2026 as the target release date?",
+      reason: "The release plan needs an explicit approval boundary.",
+      answerKind: "single_select",
+      options: ["Approve August 27, 2026", "Choose a later date"],
+      recommendedAnswer: "Approve August 27, 2026",
+      recommendationReason: "The critical path is achievable.",
+    }])).toEqual({
+      proposedDate: "2026-08-27",
+      reason: "The release plan needs an explicit approval boundary.",
+      questionKey: "approve_release_date",
+    });
+  });
+
+  it("reads the date from the question when the approval option is abbreviated", () => {
+    expect(deriveReleaseDateProposalFromContextQuestions([{
+      key: "approve_august_27_release_date",
+      question: "Do you approve August 27, 2026 as the operational release date?",
+      reason: "The date controls the schedule.",
+      answerKind: "single_select",
+      options: ["Approve August 27 conditionally", "Choose a different date"],
+      recommendedAnswer: "Approve August 27 conditionally",
+      recommendationReason: "The date remains gated.",
+    }])?.proposedDate).toBe("2026-08-27");
+  });
+
+  it("keeps at most one task bound to each canonical release schedule key", () => {
+    const tasks = [
+      { title: "First", scheduleKey: "playlist_shortlist" },
+      { title: "Second", scheduleKey: "playlist_shortlist" },
+      { title: "Third", scheduleKey: "post_release_review" },
+      { title: "Manual", scheduleKey: "made_up_key" },
+    ] as any[];
+
+    expect(normalizeReleaseTaskScheduleKeys(tasks).map((task) => task.scheduleKey)).toEqual([
+      "playlist_shortlist",
+      undefined,
+      "post_release_review",
+      undefined,
+    ]);
   });
 
   it("parses Manager context questions without creating mission graph work", () => {

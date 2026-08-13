@@ -32,6 +32,7 @@ import {
   trackEventOnce,
 } from "../lib/analytics";
 import { createBrowserSupabaseClient } from "../lib/supabaseClient";
+import { reportBrowserServiceError } from "../lib/errorTelemetry";
 import { createFixtureProductionRuntime, createFixtureRepositories } from "../services/fixtureRepositories";
 import {
   createSupabaseAuthAdapter,
@@ -43,7 +44,7 @@ import {
 } from "../services/productionSupabase";
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
-import { invalidationsFromManagerRefreshHint } from "../services/managerConversationStream";
+import { invalidationsFromManagerRefreshHint, mergeReleaseSuccessArtifacts } from "../services/managerConversationStream";
 import {
   loadWorkspaceActivityPage,
   type WorkspaceEventCursor,
@@ -72,6 +73,10 @@ import type {
   MusicObjectViewModel,
   MusicReadTarget,
   PublicContextRefreshResult,
+  ReleaseDateChangeRequestViewModel,
+  ReleaseOpportunityArtifactViewModel,
+  ReleaseOpportunityTargetViewModel,
+  ReleaseSuccessArtifactViewModel,
   TodayBriefGenerationMode,
   TodayBriefGenerationResponse,
   TodayBriefViewModel,
@@ -1019,6 +1024,180 @@ function CleanProductionWorkspace({
     navigate("musicWorkspace");
   }
 
+  function updateReleaseSuccessArtifact(
+    artifactId: string,
+    updater: (artifact: ReleaseSuccessArtifactViewModel) => ReleaseSuccessArtifactViewModel,
+  ) {
+    updateActiveConversation((conversation) => ({
+      ...conversation,
+      releaseSuccessArtifacts: (conversation.releaseSuccessArtifacts ?? []).map((artifact) =>
+        artifact.id === artifactId ? updater(artifact) : artifact,
+      ),
+    }));
+  }
+
+  function releaseErrorReference(error: unknown) {
+    if (!error || typeof error !== "object") return undefined;
+    const details = error as { errorEventId?: unknown; requestId?: unknown; code?: unknown };
+    if (typeof details.errorEventId === "string" && details.errorEventId) return details.errorEventId;
+    if (typeof details.requestId === "string" && details.requestId) return details.requestId;
+    if (typeof details.code === "string" && details.code) return details.code;
+    return undefined;
+  }
+
+  async function approveReleaseDateChange(request: ReleaseDateChangeRequestViewModel) {
+    const artifact = selectedConversation?.releaseSuccessArtifacts?.find((item) =>
+      (request.requestId && item.requestId === request.requestId) || item.musicItemId === request.musicItemId,
+    );
+    if (!artifact) return;
+
+    updateReleaseSuccessArtifact(artifact.id, (current) => ({ ...current, state: "applying", error: undefined }));
+    try {
+      if (!repositories.manager.approveReleaseDateChange) throw new Error("Release date approval is unavailable.");
+      const receipt = await repositories.manager.approveReleaseDateChange({
+        requestId: request.requestId,
+        previewHash: request.previewHash,
+        idempotencyKey: request.idempotencyKey,
+      });
+      updateReleaseSuccessArtifact(artifact.id, (current) => ({
+        ...current,
+        state: "applied",
+        receipt,
+        error: undefined,
+      }));
+      try {
+        await refreshFromManagerHint({
+          music: true,
+          missions: Boolean(receipt.missionId),
+          missionIds: receipt.missionId ? [receipt.missionId] : [],
+          taskIds: receipt.moved.map((item) => item.taskId),
+          desk: true,
+        });
+      } catch (refreshError) {
+        reportBrowserServiceError(refreshError, {
+          stage: "realtime_refresh",
+          musicItemId: request.musicItemId,
+          releasePlanId: request.releasePlanId,
+          requestId: request.requestId,
+          missionId: receipt.missionId,
+        });
+        updateReleaseSuccessArtifact(artifact.id, (current) => ({
+          ...current,
+          state: "applied",
+          error: {
+            message: "Release date updated, but the workspace refresh needs a retry.",
+            retryable: true,
+            ...(releaseErrorReference(refreshError) ? { reference: releaseErrorReference(refreshError) } : {}),
+          },
+        }));
+      }
+    } catch (error) {
+      if (!releaseErrorReference(error)) {
+        reportBrowserServiceError(error, {
+          stage: "reschedule_approval",
+          musicItemId: request.musicItemId,
+          releasePlanId: request.releasePlanId,
+          requestId: request.requestId,
+        });
+      }
+      updateReleaseSuccessArtifact(artifact.id, (current) => ({
+        ...current,
+        state: "failed",
+        error: {
+          message: readErrorMessage(error, "The release date change could not be applied."),
+          retryable: true,
+          ...(releaseErrorReference(error) ? { reference: releaseErrorReference(error) } : {}),
+        },
+      }));
+    }
+  }
+
+  function keepReleaseDateAndShowRecoveryPlan(artifact: ReleaseSuccessArtifactViewModel) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    const currentDate = artifact.subject.approvedReleaseDate ?? artifact.preview?.fromDate ?? "the current release date";
+    void sendManagerMessage(
+      `Keep ${currentDate} for ${artifact.subject.title} and show me the recovery plan for release success. Do not approve a date change.`,
+      conversation.id,
+      conversation.topic,
+      conversation.musicSubject ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } } : {},
+    );
+  }
+
+  function retryReleaseSuccessReview(artifact: ReleaseSuccessArtifactViewModel) {
+    const conversation = selectedConversation;
+    const lastArtistMessage = conversation?.messages.filter((message) => message.speaker === "artist").at(-1);
+    if (!conversation || !lastArtistMessage) return Promise.resolve();
+    return sendManagerMessage(lastArtistMessage.body, conversation.id, conversation.topic, conversation.musicSubject
+      ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } }
+      : {});
+  }
+
+  function managerConversationSubjectInput(conversation: ConversationViewModel) {
+    return conversation.musicSubject
+      ? { musicSubject: { type: conversation.musicSubject.type, id: conversation.musicSubject.id } }
+      : {};
+  }
+
+  function prepareOpportunityPitch(artifact: ReleaseOpportunityArtifactViewModel, target: ReleaseOpportunityTargetViewModel) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    void sendManagerMessage(
+      `Prepare a ${artifact.opportunityType} pitch for ${target.targetName}. Use the attached song metadata and verified target evidence. Create the canonical ${artifact.opportunityType === "press" ? "press_pitch" : "playlist_pitch"} document in the song Files, show me the draft for review, and do not send or submit it.`,
+      conversation.id,
+      conversation.topic,
+      managerConversationSubjectInput(conversation),
+    );
+  }
+
+  function recordOpportunityOutcome(
+    artifact: ReleaseOpportunityArtifactViewModel,
+    target: ReleaseOpportunityTargetViewModel,
+    input: { status: ReleaseOpportunityTargetViewModel["status"]; manualOutcome: string },
+  ) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    void sendManagerMessage(
+      `Record the manual ${input.status} outcome for release ${artifact.opportunityType} target ${target.targetName} (opportunity ${target.id}). Outcome note: ${input.manualOutcome}`,
+      conversation.id,
+      conversation.topic,
+      managerConversationSubjectInput(conversation),
+    );
+  }
+
+  function retryOpportunityResearch(artifact: ReleaseOpportunityArtifactViewModel) {
+    const conversation = selectedConversation;
+    if (!conversation) return;
+    void sendManagerMessage(
+      `Retry only the failed ${artifact.opportunityType} release research stage for the attached song. Preserve verified targets and do not send outreach.`,
+      conversation.id,
+      conversation.topic,
+      managerConversationSubjectInput(conversation),
+    );
+  }
+
+  async function hydrateCompletedConversationArtifacts(conversationId: string) {
+    if (!repositories.manager.loadConversation) return;
+    try {
+      const detail = await repositories.manager.loadConversation(conversationId);
+      if (!detail) return;
+      setSelectedConversation((current) => {
+        if (!current || current.id !== conversationId) return current;
+        const releaseOpportunityArtifacts = detail.releaseOpportunityArtifacts ?? [];
+        const merged = mergeCompletedConversation(
+          current,
+          releaseOpportunityArtifacts.length ? { ...detail, releaseOpportunityArtifacts } : detail,
+          true,
+        );
+        setConversations((items) => [merged, ...items.filter((item) => item.id !== merged.id)]);
+        return merged;
+      });
+    } catch (error) {
+      reportBrowserServiceError(error, { stage: "receipt_render", conversationId });
+      // The streamed conversation remains usable; a later conversation open retries hydration.
+    }
+  }
+
   async function openConversation(conversation: ConversationViewModel) {
     setManagerTaskContextId(conversation.taskContextId ?? null);
     setSelectedConversation(conversation);
@@ -1212,6 +1391,9 @@ function CleanProductionWorkspace({
         setSelectedMissionId(selectCreatedMissionId(conversation, nextMissions));
       }
       navigate("conversationWorkspace");
+      if (shouldHydrateCompletedConversationArtifacts(mergedConversation, trimmedBody)) {
+        void hydrateCompletedConversationArtifacts(mergedConversation.id);
+      }
     } catch (error) {
       if (streamCompleted) {
         return;
@@ -1278,6 +1460,18 @@ function CleanProductionWorkspace({
       return;
     }
 
+    if (event.type === "release_success.changed") {
+      updateActiveConversation((conversation) => ({
+        ...conversation,
+        releaseSuccessArtifacts: mergeReleaseSuccessArtifacts(
+          conversation.releaseSuccessArtifacts ?? [],
+          [event.artifact],
+        ),
+      }));
+      void refreshFromManagerHint(event.refresh);
+      return;
+    }
+
     if (event.type === "artifact.changed") {
       updateActiveConversation((conversation) => ({
         ...conversation,
@@ -1297,6 +1491,9 @@ function CleanProductionWorkspace({
       updateCompletedManagerConversation(context.optimisticId, completedConversation, Boolean(context.lockedTopic));
       invalidateConversationCache(completedConversation.id);
       trackEvent("chat message sent", { agent_type: "manager", is_test_user: isTestUser });
+      if (shouldHydrateCompletedConversationArtifacts(completedConversation, context.userBody)) {
+        void hydrateCompletedConversationArtifacts(completedConversation.id);
+      }
       void refreshFromManagerHint(event.refresh ?? { missions: conversationHasMissionWork(completedConversation) });
       return;
     }
@@ -2009,6 +2206,13 @@ function CleanProductionWorkspace({
                 onBackToTask={managerTaskContextId ? returnToManagerTask : undefined}
                 onOpenCreatedWork={openCreatedWork}
                 onOpenDecisionPackage={() => navigate("decisionPackage")}
+                onApproveReleaseDateChange={approveReleaseDateChange}
+                onKeepReleaseDate={keepReleaseDateAndShowRecoveryPlan}
+                onReviewReleaseSuccess={() => undefined}
+                onRetryReleaseSuccess={retryReleaseSuccessReview}
+                onPrepareOpportunityPitch={prepareOpportunityPitch}
+                onRecordOpportunityOutcome={recordOpportunityOutcome}
+                onRetryOpportunityResearch={retryOpportunityResearch}
                 onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
                 onSendMessage={(body, conversationId) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
                   taskId: managerTaskContextId ?? undefined,
@@ -2981,6 +3185,7 @@ function createOptimisticManagerConversation(body: string, musicSubject?: Conver
       },
     ],
     createdWork: [],
+    releaseSuccessArtifacts: [],
   };
 }
 
@@ -3043,11 +3248,14 @@ function conversationFromStartedEvent(
       steps: [{ id: "start", label: "Starting Manager run", status: "completed" }],
     },
     createdWork: event.conversation.createdWork ?? [],
+    releaseSuccessArtifacts: event.conversation.releaseSuccessArtifacts ?? [],
   };
 }
 
 function mergeStartedConversation(current: ConversationViewModel | null, started: ConversationViewModel): ConversationViewModel {
   if (!current || (current.id !== started.id && !current.id.startsWith("pending-conversation-"))) return started;
+  const currentReleaseArtifacts = current.releaseSuccessArtifacts ?? [];
+  const startedReleaseArtifacts = started.releaseSuccessArtifacts ?? [];
   return {
     ...current,
     ...started,
@@ -3056,6 +3264,9 @@ function mergeStartedConversation(current: ConversationViewModel | null, started
     prompt: current.prompt || started.prompt,
     messages: mergeConversationMessages(current.messages, started.messages),
     createdWork: started.createdWork.length ? mergeCreatedWorkItems(current.createdWork, started.createdWork) : current.createdWork,
+    releaseSuccessArtifacts: startedReleaseArtifacts.length
+      ? mergeReleaseSuccessArtifacts(currentReleaseArtifacts, startedReleaseArtifacts)
+      : currentReleaseArtifacts,
     activeRun: started.activeRun ?? current.activeRun,
   };
 }
@@ -3107,15 +3318,37 @@ function appendManagerDelta(conversation: ConversationViewModel, delta: string, 
 }
 
 function mergeCompletedConversation(current: ConversationViewModel | null, completed: ConversationViewModel, preserveCurrentTopic = false): ConversationViewModel {
-  if (!current) return { ...completed, activeRun: completed.activeRun ? { ...completed.activeRun, status: "completed" } : undefined };
+  const completedReleaseArtifacts = completed.releaseSuccessArtifacts ?? [];
+  if (!current) {
+    return {
+      ...completed,
+      releaseSuccessArtifacts: completedReleaseArtifacts,
+      activeRun: completed.activeRun ? { ...completed.activeRun, status: "completed" } : undefined,
+    };
+  }
+  const currentReleaseArtifacts = current.releaseSuccessArtifacts ?? [];
   const incomingMessages = completed.messages.length ? completed.messages : [];
   return {
     ...completed,
     topic: preserveCurrentTopic && current.topic ? current.topic : completed.topic,
     messages: mergeConversationMessages(current.messages.filter((message) => message.status !== "streaming"), incomingMessages),
     createdWork: completed.createdWork.length ? mergeCreatedWorkItems(current.createdWork, completed.createdWork) : current.createdWork,
+    releaseSuccessArtifacts: completedReleaseArtifacts.length
+      ? mergeReleaseSuccessArtifacts(currentReleaseArtifacts, completedReleaseArtifacts)
+      : currentReleaseArtifacts,
     activeRun: current.activeRun ? { ...current.activeRun, status: "completed", streamedText: "" } : completed.activeRun,
   };
+}
+
+function shouldHydrateCompletedConversationArtifacts(conversation: ConversationViewModel, userBody: string) {
+  const searchableText = [
+    userBody,
+    conversation.topic,
+    conversation.summary,
+    conversation.prompt,
+    conversation.messages.at(-1)?.body,
+  ].filter(Boolean).join(" ");
+  return /\b(?:playlist|press|opportunit(?:y|ies)|release[- ]success|release[- ]ready|release date|recovery plan|epk|pitch)\b/i.test(searchableText);
 }
 
 function mergeConversationMessages(current: ConversationViewModel["messages"], incoming: ConversationViewModel["messages"]) {

@@ -334,6 +334,9 @@ begin
   if not exists (select 1 from vault.decrypted_secrets where name = 'workflow_worker_secret') then
     raise exception 'Vault secret workflow_worker_secret must exist before scheduling workflow recovery';
   end if;
+  if not exists (select 1 from vault.decrypted_secrets where name = 'project_url') then
+    raise exception 'Vault secret project_url must contain this environment''s Supabase URL before scheduling workflow recovery';
+  end if;
 
   perform cron.unschedule(jobid) from cron.job where jobname = 'workflow-recovery-observer';
   perform cron.unschedule(jobid) from cron.job where jobname = 'workflow-recovery-worker';
@@ -343,7 +346,7 @@ begin
     '* * * * *',
     $workflow_schedule$
       select net.http_post(
-        url := 'https://bbwbxmnanccwottrmkqu.supabase.co/functions/v1/workflow-recovery',
+        url := regexp_replace(endpoint.decrypted_secret, '/$', '') || '/functions/v1/workflow-recovery',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'x-workflow-worker-secret', secret.decrypted_secret
@@ -351,7 +354,9 @@ begin
         body := jsonb_build_object('mode', 'run')
       )
       from vault.decrypted_secrets as secret
+      cross join vault.decrypted_secrets as endpoint
       where secret.name = 'workflow_worker_secret'
+        and endpoint.name = 'project_url'
         and exists (
           select 1
           from public.workspace_setup_runs as setup

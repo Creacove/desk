@@ -397,6 +397,9 @@ verify_jwt = false
 [functions.initialize-song-workspace]
 verify_jwt = true
 
+[functions.release-plan-change]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

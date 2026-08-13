@@ -249,7 +249,7 @@ function LinkList({ links, empty, onRevoke }: { links: MusicShareLinkHistoryView
 }
 
 function buildInventory(song: MusicObjectViewModel): ShareInventory {
-  const documents = (song.materials ?? []).filter((material): material is DocumentMaterial => material.kind === "document" && material.reviewState !== "needs_review" && Boolean(material.body?.trim()));
+  const documents = (song.materials ?? []).filter((material): material is DocumentMaterial => isShareableSongDocument(material));
   return {
     assets: (song.fileAssets ?? []).filter((asset) => Boolean(asset.assetId) && ["uploaded", "confirmed", "cleared"].includes(asset.status.toLowerCase())).map((asset) => ({ id: asset.assetId!, group: asset.group, label: asset.label, assetType: asset.assetType })),
     documents: documents.map((document) => ({ id: document.id, title: document.title, documentType: document.materialType, body: document.body, ready: true })),
@@ -261,6 +261,14 @@ function buildInventory(song: MusicObjectViewModel): ShareInventory {
       { key: "label", label: "Record label", value: fieldValue(song, "Record label") || fieldValue(song, "Label") },
     ],
   };
+}
+
+export function isShareableSongDocument(material: DocumentMaterial) {
+  if (material.reviewState === "needs_review" || !material.body?.trim()) return false;
+  if (material.origin === "manager_generated") {
+    return ["accepted", "ready", "published"].includes(material.status.trim().toLowerCase());
+  }
+  return true;
 }
 
 function fieldValue(song: MusicObjectViewModel, label: string) {

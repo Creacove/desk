@@ -12,6 +12,9 @@ begin
   if not exists (select 1 from vault.decrypted_secrets where name = 'billing_worker_secret') then
     raise exception 'Vault secret billing_worker_secret must exist before scheduling billing recovery';
   end if;
+  if not exists (select 1 from vault.decrypted_secrets where name = 'project_url') then
+    raise exception 'Vault secret project_url must contain this environment''s Supabase URL before scheduling recovery';
+  end if;
 
   perform cron.unschedule(jobid) from cron.job where jobname = 'workflow-recovery-observer';
   perform cron.unschedule(jobid) from cron.job where jobname = 'billing-webhook-recovery';
@@ -21,7 +24,7 @@ begin
     '* * * * *',
     $workflow_schedule$
       select net.http_post(
-        url := 'https://bbwbxmnanccwottrmkqu.supabase.co/functions/v1/workflow-recovery',
+        url := regexp_replace(endpoint.decrypted_secret, '/$', '') || '/functions/v1/workflow-recovery',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'x-workflow-worker-secret', secret.decrypted_secret
@@ -29,7 +32,9 @@ begin
         body := jsonb_build_object('mode', 'observe')
       )
       from vault.decrypted_secrets as secret
+      cross join vault.decrypted_secrets as endpoint
       where secret.name = 'workflow_worker_secret'
+        and endpoint.name = 'project_url'
         and (
           exists (
             select 1 from public.manager_synthesis_runs as run
@@ -64,7 +69,7 @@ begin
     '* * * * *',
     $billing_schedule$
       select net.http_post(
-        url := 'https://bbwbxmnanccwottrmkqu.supabase.co/functions/v1/paddle-process-webhooks',
+        url := regexp_replace(endpoint.decrypted_secret, '/$', '') || '/functions/v1/paddle-process-webhooks',
         headers := jsonb_build_object(
           'Content-Type', 'application/json',
           'x-billing-worker-secret', secret.decrypted_secret
@@ -72,7 +77,9 @@ begin
         body := jsonb_build_object('source', 'scheduled-recovery')
       )
       from vault.decrypted_secrets as secret
+      cross join vault.decrypted_secrets as endpoint
       where secret.name = 'billing_worker_secret'
+        and endpoint.name = 'project_url'
         and exists (
           select 1 from public.billing_webhook_events as event
           where event.provider = 'paddle'

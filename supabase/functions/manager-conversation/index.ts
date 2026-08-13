@@ -3,6 +3,7 @@ import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
+  deriveReleaseDateProposalFromContextQuestions,
   managerConversationJsonSchema,
   parseManagerConversationOutput,
   type ManagerConversationOutput,
@@ -15,8 +16,8 @@ import {
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
-  managerConversationTools,
   runManagerAgentLoop,
+  selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
@@ -119,6 +120,19 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       trigger: "manager_conversation",
       scopedMissionId: finalScopedMissionId,
     }, output);
+    const derivedProposal = deriveReleaseDateProposalFromContextQuestions(output.contextQuestions);
+    if (derivedProposal && input.musicSubject?.type === "music_item") {
+      await executeManagerConversationTool(db as any, {
+        ...input,
+        conversationId,
+        runId: runId ?? undefined,
+        createdWork: toolCreatedWork,
+      }, "propose_focused_release_date_change", {
+        proposedDate: derivedProposal.proposedDate,
+        reason: derivedProposal.reason,
+      });
+      output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
+    }
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
     await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
     output.createdWork = taskDraftWork
@@ -653,6 +667,11 @@ async function callOpenAIManagerConversation(
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
+  const tools = selectManagerConversationToolsForTurn({
+    body: input.body,
+    contextAnswers: input.contextAnswers,
+    hasAttachedUnreleasedSong: await hasAttachedUnreleasedSong(db, input),
+  });
   const result = await runManagerAgentLoop({
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
@@ -660,7 +679,7 @@ async function callOpenAIManagerConversation(
     instructions: buildManagerConversationInstructions(playbookInstructions),
     context,
     previousResponseId,
-    tools: managerConversationTools,
+    tools,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: "medium",
     maxOutputTokens: 6000,
@@ -676,6 +695,19 @@ async function callOpenAIManagerConversation(
     toolTrace: result.toolTrace,
     toolCreatedWork,
   };
+}
+
+async function hasAttachedUnreleasedSong(db: any, input: ManagerConversationInput) {
+  if (input.musicSubject?.type !== "music_item") return false;
+  const { data, error } = await db.from("music_items")
+    .select("id,released_at,lifecycle_stage")
+    .eq("id", input.musicSubject.id)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+  return Boolean(data?.id && !data.released_at && !["released", "catalogued", "archived"].includes(String(data.lifecycle_stage ?? "").toLowerCase()));
 }
 
 async function createManagerRun(db: any, input: ManagerConversationInput, conversationId: string, packet: unknown) {

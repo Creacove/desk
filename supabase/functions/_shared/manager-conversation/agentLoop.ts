@@ -97,6 +97,135 @@ const focusedMusicReadProperties = {
   properties: {},
 };
 
+const focusedReleaseSuccessProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: [],
+  properties: {},
+};
+
+const focusedReleaseDateProposalProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["proposedDate", "reason"],
+  properties: {
+    proposedDate: { type: "string" },
+    reason: { type: "string" },
+  },
+};
+
+const focusedReleaseOpportunityQueryProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["opportunityType"],
+  properties: {
+    opportunityType: { type: "string", enum: ["playlist", "press"] },
+  },
+};
+
+const focusedReleaseOpportunitySaveProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["opportunityType", "candidates"],
+  properties: {
+    opportunityType: { type: "string", enum: ["playlist", "press"] },
+    candidates: {
+      type: "array",
+      maxItems: 12,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "opportunityType",
+          "platform",
+          "targetName",
+          "sourceUrl",
+          "targetUrl",
+          "publicOrganization",
+          "publicContact",
+          "fit",
+          "sourceEvidence",
+          "confidence",
+          "limitations",
+          "paidPlacementClaim",
+          "requirements",
+        ],
+        properties: {
+          opportunityType: { type: "string", enum: ["playlist", "press"] },
+          platform: { type: ["string", "null"] },
+          targetName: { type: "string" },
+          sourceUrl: { type: "string" },
+          targetUrl: { type: ["string", "null"] },
+          publicOrganization: { type: ["string", "null"] },
+          publicContact: {
+            type: ["object", "null"],
+            additionalProperties: false,
+            required: ["kind", "value", "sourceUrl", "verifiedAt"],
+            properties: {
+              kind: { type: "string", enum: ["email", "submission_form", "contact_page"] },
+              value: { type: "string" },
+              sourceUrl: { type: "string" },
+              verifiedAt: { type: ["string", "null"] },
+            },
+          },
+          fit: {
+            type: "object",
+            additionalProperties: false,
+            required: ["songCriteria", "targetCriteria", "explanation", "recency", "market"],
+            properties: {
+              songCriteria: { type: "array", items: { type: "string" } },
+              targetCriteria: { type: "array", items: { type: "string" } },
+              explanation: { type: "string" },
+              recency: { type: ["string", "null"] },
+              market: { type: ["string", "null"] },
+            },
+          },
+          sourceEvidence: {
+            type: "array",
+            items: {
+              type: "object",
+              additionalProperties: false,
+              required: ["source", "ref", "observedAt"],
+              properties: {
+                source: { type: "string" },
+                ref: { type: ["string", "null"] },
+                observedAt: { type: ["string", "null"] },
+              },
+            },
+          },
+          confidence: { type: "string", enum: ["high", "medium", "low", "unknown"] },
+          limitations: { type: "array", items: { type: "string" } },
+          paidPlacementClaim: { type: "boolean" },
+          requirements: { type: "array", items: { type: "string" } },
+        },
+      },
+    },
+  },
+};
+
+const focusedReleaseOpportunityOutcomeProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["opportunityId", "status", "manualOutcome"],
+  properties: {
+    opportunityId: { type: "string" },
+    status: { type: "string", enum: ["watch", "shortlisted", "approved", "submitted_manually", "replied", "accepted", "declined", "skipped"] },
+    manualOutcome: { type: "string" },
+  },
+};
+
+const focusedSongDocumentProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["documentType", "title", "body", "opportunityId"],
+  properties: {
+    documentType: { type: "string", enum: ["epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
+    title: { type: "string" },
+    body: { type: "string" },
+    opportunityId: { type: ["string", "null"] },
+  },
+};
+
 const focusedMusicMetadataProperties = {
   type: "object",
   additionalProperties: false,
@@ -180,6 +309,48 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   },
   {
     type: "function",
+    name: "read_focused_release_success",
+    description: "Read the exact attached unreleased song's release-success packet, linked mission schedule, evidence-backed gates, canonical documents, and opportunity counts.",
+    strict: true,
+    parameters: focusedReleaseSuccessProperties,
+  },
+  {
+    type: "function",
+    name: "propose_focused_release_date_change",
+    description: "Prepare a deterministic release-date impact preview and permission request for the exact attached unreleased song. This never applies the date change; approval stays with the user.",
+    strict: true,
+    parameters: focusedReleaseDateProposalProperties,
+  },
+  {
+    type: "function",
+    name: "query_focused_release_opportunities",
+    description: "Read the exact attached song, its scoped evidence, and existing playlist or press opportunities before public web research. Use only for the attached song.",
+    strict: true,
+    parameters: focusedReleaseOpportunityQueryProperties,
+  },
+  {
+    type: "function",
+    name: "save_focused_release_opportunities",
+    description: "Save a normalized, source-backed playlist or press shortlist for the exact attached song. This stores preparation and public provenance only; it never sends or submits anything.",
+    strict: true,
+    parameters: focusedReleaseOpportunitySaveProperties,
+  },
+  {
+    type: "function",
+    name: "record_focused_release_opportunity_outcome",
+    description: "Record a manual outcome for one saved playlist or press target on the exact attached song. The artist still performs any submission or outreach.",
+    strict: true,
+    parameters: focusedReleaseOpportunityOutcomeProperties,
+  },
+  {
+    type: "function",
+    name: "create_focused_song_document",
+    description: "Create or version one canonical song document through the existing Files pathway for the exact attached song. The document is a draft for review and sharing; it is never sent or published.",
+    strict: true,
+    parameters: focusedSongDocumentProperties,
+  },
+  {
+    type: "function",
     name: "read_focused_release_readiness",
     description: "Read a deterministic release readiness view for the exact attached song or project. It reports pre-release gaps only before release; released/catalog music returns post-release priorities and never reopens master, split, or delivery gates.",
     strict: true,
@@ -214,6 +385,49 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
     parameters: ensureSongReleaseWorkspaceProperties,
   },
 ];
+
+const releaseTurnToolNames = new Set([
+  "read_focused_release_success",
+  "propose_focused_release_date_change",
+  "query_focused_release_opportunities",
+  "save_focused_release_opportunities",
+  "record_focused_release_opportunity_outcome",
+  "create_focused_song_document",
+]);
+
+export function selectManagerConversationToolsForTurn(input: {
+  body: string;
+  contextAnswers?: Array<{ questionKey: string; answer: string }>;
+  hasAttachedUnreleasedSong: boolean;
+}): ManagerAgentToolDefinition[] {
+  const allowed = new Set<string>();
+  const body = input.body.trim().toLowerCase();
+  if (input.hasAttachedUnreleasedSong) {
+    const contextAnswerText = (input.contextAnswers ?? [])
+      .map((answer) => `${answer.questionKey} ${answer.answer}`)
+      .join(" ")
+      .replace(/[_-]+/g, " ")
+      .toLowerCase();
+    const releaseIntent = /\b(release|launch|rollout|campaign|playlist|press|publicity|editorial|epk|press kit|pitch|release date)\b/.test(`${body} ${contextAnswerText}`);
+    const documentIntent = /\b(draft|write|prepare|create|make)\b/.test(body)
+      && /\b(epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
+    if (releaseIntent) {
+      allowed.add("read_focused_release_success");
+      allowed.add("propose_focused_release_date_change");
+      allowed.add("query_focused_release_opportunities");
+      allowed.add("save_focused_release_opportunities");
+      allowed.add("create_focused_song_document");
+    } else if (documentIntent) {
+      allowed.add("create_focused_song_document");
+    }
+    if (/\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body)) {
+      allowed.add("record_focused_release_opportunity_outcome");
+    }
+  }
+  return managerConversationTools.filter((tool) => tool.type !== "function"
+    || !releaseTurnToolNames.has(tool.name)
+    || allowed.has(tool.name));
+}
 
 export function buildManagerAgentRequest(input: ManagerAgentRequestInput) {
   return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId);

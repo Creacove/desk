@@ -1,4 +1,12 @@
 import type { LucideIcon } from "lucide-react";
+import type {
+  ReleaseDateChangeReceipt,
+  ReleaseGateResult,
+  ReleaseSchedulePreview,
+  ReleaseSuccessAssessment,
+} from "../../supabase/functions/_shared/release-success/types";
+
+export type { ReleaseGateResult } from "../../supabase/functions/_shared/release-success/types";
 
 export type CleanProductionView =
   | "connectArtist"
@@ -304,7 +312,22 @@ export type MusicManagerRunStatus =
   | "failed"
   | "cancelled";
 
-export type SongDocumentType = "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes" | "other";
+export type SongDocumentType =
+  | "lyrics"
+  | "press_release"
+  | "press_angle"
+  | "artist_biography"
+  | "one_sheet"
+  | "credits"
+  | "distributor_notes"
+  | "epk"
+  | "spotify_editorial_pitch"
+  | "playlist_pitch"
+  | "press_target_brief"
+  | "press_pitch"
+  | "content_plan"
+  | "release_calendar"
+  | "other";
 
 export type SongMaterialViewModel =
   | {
@@ -496,6 +519,112 @@ export type DecisionPackageViewModel = {
   createdAt?: string;
 };
 
+export type ReleaseSuccessArtifactState =
+  | "investigating"
+  | "assessed"
+  | "proposed"
+  | "awaiting_approval"
+  | "applying"
+  | "applied"
+  | "failed";
+
+export type ReleaseSuccessAssessmentViewModel = ReleaseSuccessAssessment;
+export type ReleaseSchedulePreviewViewModel = ReleaseSchedulePreview;
+export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
+
+export type ReleaseDateChangeRequestViewModel = {
+  requestId: string;
+  idempotencyKey: string;
+  releasePlanId: string;
+  musicItemId: string;
+  missionId?: string;
+  fromDate?: string;
+  proposedDate: string;
+  reason?: string;
+  status: "pending" | "approved" | "rejected" | "superseded" | "expired" | "failed";
+  expectedPlanRevision: number;
+  previewHash: string;
+  preview: ReleaseSchedulePreviewViewModel;
+  expiresAt: string;
+};
+
+export type ReleaseDateChangeProposalInput = {
+  musicItemId: string;
+  proposedDate: string;
+  reason: string;
+  expectedRevision: number;
+  preview: ReleaseSchedulePreviewViewModel;
+  previewHash: string;
+  idempotencyKey: string;
+};
+
+export type ReleaseSuccessArtifactViewModel = {
+  id: string;
+  musicItemId: string;
+  missionId?: string;
+  requestId?: string;
+  previewHash?: string;
+  idempotencyKey?: string;
+  state: ReleaseSuccessArtifactState;
+  subject: { title: string; itemType: string; approvedReleaseDate?: string };
+  assessment?: ReleaseSuccessAssessmentViewModel;
+  preview?: ReleaseSchedulePreviewViewModel;
+  receipt?: ReleaseDateChangeReceiptViewModel;
+  error?: { message: string; reference?: string; retryable: boolean };
+};
+
+export type ReleaseOpportunityType = "playlist" | "press";
+export type ReleaseOpportunitySafetyState = "clear" | "caution" | "excluded";
+export type ReleaseOpportunityStatus = "watch" | "shortlisted" | "approved" | "submitted_manually" | "replied" | "accepted" | "declined" | "skipped";
+
+export type ReleaseOpportunityTargetViewModel = {
+  id: string;
+  targetName: string;
+  platform?: string;
+  sourceUrl: string;
+  targetUrl?: string;
+  publicOrganization?: string;
+  publicContact?: {
+    kind: "email" | "submission_form" | "contact_page";
+    value: string;
+    sourceUrl: string;
+    verifiedAt?: string;
+  };
+  fit: {
+    songCriteria: string[];
+    targetCriteria: string[];
+    explanation: string;
+    recency?: string;
+    market?: string;
+  };
+  sourceEvidence: Array<{ source: string; ref?: string; observedAt?: string }>;
+  confidence: "high" | "medium" | "low" | "unknown";
+  limitations: string[];
+  requirements: string[];
+  safetyState: ReleaseOpportunitySafetyState;
+  status: ReleaseOpportunityStatus;
+  manualOutcome?: string;
+  pitchDocumentId?: string;
+  document?: { id: string; title: string; body?: string; status?: string };
+  package?: {
+    selectedFiles: string[];
+    pitchBody?: string;
+    shareUrl?: string;
+  };
+};
+
+export type ReleaseOpportunityArtifactViewModel = {
+  id: string;
+  musicItemId: string;
+  missionId?: string;
+  opportunityType: ReleaseOpportunityType;
+  subject: { title: string; itemType: string };
+  shortlist: ReleaseOpportunityTargetViewModel[];
+  watch: ReleaseOpportunityTargetViewModel[];
+  excluded: ReleaseOpportunityTargetViewModel[];
+  failure?: { stage: string; message: string; retryable: boolean };
+};
+
 export type ConversationViewModel = {
   id: string;
   taskContextId?: string;
@@ -519,6 +648,8 @@ export type ConversationViewModel = {
     managerOutputId?: string;
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
+  releaseSuccessArtifacts?: ReleaseSuccessArtifactViewModel[];
+  releaseOpportunityArtifacts?: ReleaseOpportunityArtifactViewModel[];
 };
 
 export type ManagerConversationStreamEvent =
@@ -561,6 +692,13 @@ export type ManagerConversationStreamEvent =
       type: "artifact.changed";
       runId?: string;
       artifact: ConversationViewModel["createdWork"][number];
+      refresh?: ManagerConversationRefreshHint;
+    }
+  | {
+      type: "release_success.changed";
+      conversationId?: string;
+      runId?: string;
+      artifact: ReleaseSuccessArtifactViewModel;
       refresh?: ManagerConversationRefreshHint;
     }
   | {
@@ -780,6 +918,12 @@ export type ManagerRepository = {
     },
     handlers: ManagerConversationStreamHandlers,
   ): Promise<void>;
+  proposeReleaseDateChange?(input: ReleaseDateChangeProposalInput): Promise<ReleaseDateChangeRequestViewModel>;
+  approveReleaseDateChange?(input: {
+    requestId: string;
+    previewHash: string;
+    idempotencyKey: string;
+  }): Promise<ReleaseDateChangeReceiptViewModel>;
 };
 
 export type MissionRepository = {

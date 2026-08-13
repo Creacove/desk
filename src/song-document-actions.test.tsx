@@ -51,4 +51,13 @@ describe("SongDocumentActions", () => {
     expect(upload).toHaveBeenCalledWith({ label: "Split sheet / rights document", assetType: "split_sheet" });
     expect(screen.queryByRole("dialog", { name: "Add document" })).not.toBeInTheDocument();
   });
+
+  it("makes the canonical Files destination explicit for Manager drafts", () => {
+    render(<SongDocumentActions onWrite={vi.fn()} onAskManager={vi.fn()} onUpload={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add document" }));
+
+    expect(screen.getByRole("dialog", { name: "Add document" })).toHaveTextContent("song Files");
+    expect(screen.getByRole("dialog", { name: "Add document" })).toHaveTextContent("review before sharing");
+  });
 });

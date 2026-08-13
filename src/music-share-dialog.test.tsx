@@ -63,4 +63,20 @@ describe("MusicShareDialog", () => {
     expect(screen.getByRole("button", { name: "Revoke link" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create another" })).toBeInTheDocument();
   });
+
+  it("offers approved release pitches while keeping Manager drafts out of a share package", () => {
+    const releaseDocumentsSong = {
+      ...song,
+      materials: [
+        ...(song.materials ?? []),
+        { id: "press-pitch", kind: "document" as const, group: "Documents" as const, materialType: "press_pitch" as const, title: "Personalized press pitch", status: "Accepted", origin: "manager_generated" as const, reviewState: "ready" as const, body: "Pitch the song to the right outlet." },
+        { id: "spotify-draft", kind: "document" as const, group: "Documents" as const, materialType: "spotify_editorial_pitch" as const, title: "Spotify editorial pitch", status: "Draft", origin: "manager_generated" as const, reviewState: "needs_review" as const, body: "Unapproved pitch." },
+      ],
+    };
+
+    render(<MusicShareDialog song={releaseDocumentsSong} onCancel={vi.fn()} onCreate={vi.fn()} />);
+
+    expect(screen.getByRole("checkbox", { name: "Personalized press pitch" })).toBeChecked();
+    expect(screen.queryByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeInTheDocument();
+  });
 });
