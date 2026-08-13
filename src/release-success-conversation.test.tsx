@@ -169,7 +169,7 @@ function videoOneArtifact(
 }
 
 describe("release success conversation artifact", () => {
-  it("renders one decision-first Video One artifact with attached song, gate counts, blockers, and deadline impact", () => {
+  it("renders one decision-first release result with the consequential date impact", () => {
     const onOpenSong = vi.fn();
     const onOpenMission = vi.fn();
     const onReviewAll = vi.fn();
@@ -188,18 +188,10 @@ describe("release success conversation artifact", () => {
     const card = screen.getByTestId("release-success-artifact");
     expect(card).toHaveTextContent("After Midnight");
     expect(card).toHaveTextContent("Attached song");
-    expect(screen.getByRole("heading", { name: "Release success review" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Release date impact preview ready" })).toBeInTheDocument();
     expect(screen.getByText("Move the release to create a clean campaign runway.")).toBeInTheDocument();
-    expect(screen.getByText("Foundation · 1 blocker")).toBeInTheDocument();
-    expect(screen.getByText("Campaign · 1 at risk")).toBeInTheDocument();
-    expect(screen.getByText("Unknown · 2")).toBeInTheDocument();
     expect(card.textContent).not.toMatch(/â|Â|Ã|�/);
-    expect(screen.getByText("Metadata")).toBeInTheDocument();
     expect(screen.queryByText("Press angle")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Show all blockers" }));
-    expect(onReviewAll).toHaveBeenCalledWith(expect.objectContaining({ id: "release-artifact-1" }));
-    expect(screen.getByText("Press angle")).toBeInTheDocument();
     expect(screen.getByText("Moved deadlines")).toBeInTheDocument();
     expect(screen.getByText("Playlist pitch")).toBeInTheDocument();
     expect(screen.getByText("Preserved deadlines")).toBeInTheDocument();
@@ -439,6 +431,10 @@ describe("playlist and press opportunity artifacts", () => {
     render(<OpportunityArtifact artifact={playlistArtifact} onPreparePitch={onPreparePitch} onRecordOutcome={onRecordOutcome} onOpenFiles={onOpenFiles} onRetry={vi.fn()} />);
 
     const card = screen.getByTestId("release-opportunity-artifact");
+    expect(card).toHaveTextContent("Best match");
+    expect(card).toHaveTextContent("8 matches reviewed");
+    expect(card).not.toHaveTextContent("Watchlist");
+    fireEvent.click(screen.getByRole("button", { name: "View all matches" }));
     expect(card).toHaveTextContent("6 shortlisted");
     expect(card).toHaveTextContent("Watchlist");
     expect(card).toHaveTextContent("Excluded");
@@ -476,6 +472,7 @@ describe("playlist and press opportunity artifacts", () => {
     };
     render(<OpportunityArtifact artifact={spotifyArtifact} onPreparePitch={vi.fn()} onRecordOutcome={vi.fn()} onOpenFiles={vi.fn()} onRetry={vi.fn()} />);
 
+    fireEvent.click(screen.getByRole("button", { name: "View all matches" }));
     expect(screen.getByText("Spotify editorial handoff")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Spotify for Artists" })).toHaveAttribute("href", "https://artists.spotify.com/c/artist/submit");
     expect(screen.queryByText(/editor@|spotify editor email/i)).not.toBeInTheDocument();
@@ -494,6 +491,7 @@ describe("playlist and press opportunity artifacts", () => {
     const onRetry = vi.fn();
     render(<OpportunityArtifact artifact={targetPackageArtifact} onPreparePitch={vi.fn()} onRecordOutcome={vi.fn()} onOpenFiles={vi.fn()} onRetry={onRetry} />);
 
+    fireEvent.click(screen.getByRole("button", { name: "View all matches" }));
     expect(screen.getByText("Target package")).toBeInTheDocument();
     expect(screen.getByText("EPK")).toBeInTheDocument();
     expect(screen.getByText("Personalized press pitch")).toBeInTheDocument();

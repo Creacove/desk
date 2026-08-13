@@ -222,6 +222,7 @@ export function WorkspaceShell({
   showBack = true,
   punctuateTitle = true,
   variant = "default",
+  backLabel = "Back",
 }: {
   eyebrow: string;
   title: string;
@@ -230,6 +231,7 @@ export function WorkspaceShell({
   showBack?: boolean;
   punctuateTitle?: boolean;
   variant?: "default" | "conversation";
+  backLabel?: string;
 }) {
   return (
     <div className="app-workspace app-workspace-reveal">
@@ -239,7 +241,7 @@ export function WorkspaceShell({
             <button
               type="button"
               onClick={onBack}
-              aria-label="Back to Manager"
+              aria-label={backLabel}
               className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />

@@ -22,6 +22,7 @@ export function OpportunityArtifact({
   const [outcomeStatus, setOutcomeStatus] = useState<ReleaseOpportunityTargetViewModel["status"]>("submitted_manually");
   const [outcomeNote, setOutcomeNote] = useState("");
   const [copied, setCopied] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
 
   const allTargets = useMemo(() => [...artifact.shortlist, ...artifact.watch, ...artifact.excluded], [artifact]);
   const selectedTarget = allTargets.find((target) => target.id === selectedId) ?? allTargets[0];
@@ -52,7 +53,15 @@ export function OpportunityArtifact({
   }
 
   return (
-    <article data-testid="release-opportunity-artifact" className="mt-6 overflow-hidden rounded-[18px] border border-foreground/12 bg-background shadow-sm">
+    <article data-testid="release-opportunity-artifact" className="mt-5 border-l-2 border-foreground/12 py-1 pl-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold text-muted-foreground">Best match · {allTargets.length} {allTargets.length === 1 ? "match" : "matches"} reviewed</p>
+          <p className="mt-1 truncate text-[14px] font-semibold text-foreground">{allTargets[0]?.targetName ?? "No actionable match yet"}</p>
+        </div>
+        {allTargets.length ? <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded((expanded) => !expanded)} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-foreground/75 hover:bg-foreground/[0.05]">{detailsExpanded ? "Hide matches" : "View all matches"}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`} aria-hidden="true" /></button> : null}
+      </div>
+      {detailsExpanded ? <>
       <header className="border-b border-foreground/8 bg-foreground/[0.02] px-4 py-4 sm:px-5">
         <div className="flex items-start gap-3">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-accent/10 text-brand-accent"><Target className="h-4 w-4" aria-hidden="true" /></span>
@@ -126,6 +135,7 @@ export function OpportunityArtifact({
           </div>
         ) : null}
       </div>
+      </> : null}
     </article>
   );
 }

@@ -106,24 +106,24 @@ function ReleaseSuccessArtifactContent({
   return (
     <section
       data-testid="release-success-artifact"
-      className="rounded-[18px] border border-foreground/10 bg-background p-4 shadow-sm sm:p-5"
+      className="mt-5 border-l-2 border-foreground/12 py-1 pl-4"
     >
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-ghost text-brand-accent">
+        <span className="hidden">
           <Sparkles className="h-4 w-4" aria-hidden="true" />
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Release success mission</p>
-              <h2 className="mt-1 text-[17px] font-semibold leading-tight text-foreground">Release success review</h2>
+              <p className="sr-only">Release success</p>
+              <h2 className="text-[14px] font-semibold leading-tight text-foreground">{artifact.state === "assessed" && blockers.length ? `Your release plan needs ${blockers.length} ${blockers.length === 1 ? "thing" : "things"} before launch` : status.label}</h2>
             </div>
-            <span className="rounded-full border border-foreground/10 px-2.5 py-1 font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+            <span className="sr-only">
               {artifact.state.replace("_", " ")}
             </span>
           </div>
 
-          <div className="mt-4 flex items-center justify-between gap-3 rounded-[13px] border border-foreground/8 bg-foreground/[0.025] p-3">
+          <div className="hidden">
             <div className="flex min-w-0 items-center gap-2.5">
               <Music2 className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
               <div className="min-w-0">
@@ -141,16 +141,16 @@ function ReleaseSuccessArtifactContent({
             </button>
           </div>
 
-          <div role="status" aria-live="polite" className={status.tone === "success" ? "mt-4 flex items-center gap-2 text-[13px] font-semibold text-emerald-700" : status.tone === "error" ? "mt-4 flex items-center gap-2 text-[13px] font-semibold text-red-700" : "mt-4 flex items-center gap-2 text-[13px] font-semibold text-foreground"}>
+          <div role="status" aria-live="polite" className={status.tone === "success" ? "mt-3 flex items-center gap-2 text-[13px] font-semibold text-emerald-700" : status.tone === "error" ? "mt-3 flex items-center gap-2 text-[13px] font-semibold text-red-700" : isApplying ? "mt-3 flex items-center gap-2 text-[13px] font-semibold text-foreground" : "sr-only"}>
             {status.tone === "success" ? <Check className="h-4 w-4" aria-hidden="true" /> : status.tone === "progress" && isApplying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : status.tone === "error" ? <RefreshCw className="h-4 w-4" aria-hidden="true" /> : <Route className="h-4 w-4" aria-hidden="true" />}
             {status.label}
           </div>
 
           {assessment?.recommendation.reason ? (
-            <p className="mt-3 text-[14px] font-semibold leading-relaxed text-foreground">{assessment.recommendation.reason}</p>
+            <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{assessment.recommendation.reason}</p>
           ) : null}
 
-          {assessment ? (
+          {assessment && showAll ? (
             <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <Count label={`Foundation · ${assessment.foundation.blockedCount} blocker`} tone={assessment.foundation.blockedCount ? "warning" : "normal"} />
               <Count label={`Campaign · ${assessment.campaign.atRiskCount} at risk`} tone={assessment.campaign.atRiskCount ? "warning" : "normal"} />
@@ -158,11 +158,23 @@ function ReleaseSuccessArtifactContent({
             </div>
           ) : null}
 
-          {visibleBlockers.length ? (
+          {!showAll && blockers.length && !canApprove ? (
+            <button
+              type="button"
+              onClick={() => { setShowAll(true); onReviewAll(artifact); }}
+              aria-expanded={false}
+              className="mt-2 inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-foreground/75 hover:bg-foreground/[0.05]"
+            >
+              View all {blockers.length} items
+              <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          ) : null}
+
+          {showAll && visibleBlockers.length ? (
             <div className="mt-5">
               <div className="flex items-center justify-between gap-3">
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">Top blockers</p>
-                {blockers.length > 3 ? (
+                {blockers.length ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -171,11 +183,11 @@ function ReleaseSuccessArtifactContent({
                       if (next) onReviewAll(artifact);
                     }}
                     aria-expanded={showAll}
-                    aria-label={showAll ? "Show fewer blockers" : "Show all blockers"}
+                    aria-label="Hide release details"
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-brand-accent hover:underline focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
                   >
-                    {showAll ? "Show fewer" : "Show all"}
-                    {showAll ? <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />}
+                    Hide details
+                    <ChevronDown className="h-3.5 w-3.5 rotate-180" aria-hidden="true" />
                   </button>
                 ) : null}
               </div>

@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileText, Loader2, Music2, Paperclip, Route, Sparkles, UsersRound, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileAudio, FileImage, FileText, Loader2, Music2, Plus, Route, X } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import type {
@@ -259,8 +259,8 @@ export function ManagerOfficeScreen({
   const [askText, setAskText] = useState("");
 
   return (
-    <WorkspaceShell eyebrow="Manager" title="Manager's Office" onBack={onBack}>
-      <div data-testid="manager-office-content" className="mx-auto w-full max-w-[48rem]">
+    <WorkspaceShell eyebrow="Manager" title="Manager's Office" onBack={onBack} variant="conversation" backLabel="Back to Desk HQ">
+      <div data-testid="manager-office-content" className="mx-auto w-full max-w-[48rem] px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-0">
         <MissionGenesisManagerPanel
           result={missionGenesisResult}
           answers={missionGenesisAnswers}
@@ -270,10 +270,10 @@ export function ManagerOfficeScreen({
           onSubmit={onSubmitMissionGenesisAnswers}
           onOpenCreatedMission={onOpenCreatedMission}
         />
-        <section className="mt-8">
-              <div className="max-w-[44rem]">
-                <p className="text-[14px] font-semibold leading-relaxed text-muted-foreground/85">Ask your Manager anything — a decision, a plan, or a review of what's happening.</p>
-                <div className="relative mt-4 overflow-hidden rounded-[1.25rem] border border-foreground/12 bg-background shadow-[0_8px_30px_rgba(0,0,0,0.05)]">
+        <section>
+              <div>
+                <h2 className="text-[14px] font-semibold text-foreground">What do you want to work on?</h2>
+                <div className="relative mt-3 overflow-hidden rounded-[1.5rem] border border-foreground/12 bg-background shadow-[0_8px_30px_rgba(0,0,0,0.06)]">
                   <textarea
                     value={askText}
                     onChange={(event) => setAskText(event.target.value)}
@@ -302,25 +302,18 @@ export function ManagerOfficeScreen({
         </section>
 
         {conversations.length > 0 ? <section className="mt-10">
-              <div className="mb-3 border-b border-foreground/8 px-1 pb-3">
-                <div>
-                  <p className="font-ui text-[11px] font-semibold text-muted-foreground">Conversations</p>
-                </div>
-              </div>
+              <h2 className="mb-2 px-2 text-[13px] font-semibold text-foreground">Conversations</h2>
               <div className="flex flex-col">
                 {conversations.map((conversation) => (
                   <button
                     key={conversation.id}
                     type="button"
                     aria-label={conversation.topic}
-                    className="group flex min-h-12 items-center gap-3 border-b border-foreground/6 px-1 py-3 text-left transition-colors hover:bg-foreground/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/35"
+                    className="group flex min-h-12 items-center gap-4 rounded-xl px-2 py-3 text-left transition-colors hover:bg-foreground/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/35"
                     onClick={() => onConversation(conversation)}
                   >
                     <p className="min-w-0 flex-1 truncate text-[14px] font-medium text-foreground">{conversation.topic}</p>
-                    <div className="flex shrink-0 items-center gap-3">
-                      {conversation.lastUpdate ? <span className="text-[11px] text-muted-foreground/65">{formatConversationTimestamp(conversation.lastUpdate)}</span> : null}
-                      <ChevronRight className="h-4 w-4 text-foreground/20 transition-colors group-hover:text-foreground/60" aria-hidden="true" />
-                    </div>
+                    {conversation.lastUpdate ? <span className="shrink-0 text-[12px] text-muted-foreground/65">{conversation.lastUpdate}</span> : null}
                   </button>
                 ))}
               </div>
@@ -459,19 +452,20 @@ function MissionGenesisManagerPanel({
 // ---------------------------------------------------------------------------
 type ComposerAttachment = {
   id: string;
+  file: File;
   fileName: string;
+  assetType: string;
   status: "uploading" | "uploaded" | "failed";
   percent: number;
   attachment?: ManagerConversationAttachmentViewModel;
   error?: string;
 };
 
-function classifyManagerAttachment(file: File) {
-  const mime = file.type.toLowerCase();
-  if (mime.startsWith("audio/")) return "rough_mix";
-  if (mime.startsWith("image/")) return "cover_art";
-  return "other";
-}
+const managerAttachmentCategories = [
+  { label: "Audio", icon: FileAudio, accept: "audio/*", types: [["Final master", "final_master"], ["Rough mix", "rough_mix"], ["Demo", "demo"], ["Stems", "stems"]] },
+  { label: "Artwork & images", icon: FileImage, accept: "image/*", types: [["Cover artwork", "cover_art"], ["Press photo", "press_photo"], ["Alternate artwork", "alternate_artwork"]] },
+  { label: "Document", icon: FileText, accept: "application/pdf,.doc,.docx,.txt", types: [["Split sheet", "split_sheet"], ["Rights document", "rights_document"], ["Lyrics", "lyrics"], ["Other document", "other"]] },
+] as const;
 
 export function ConversationWorkspace({
   conversation,
@@ -527,10 +521,14 @@ export function ConversationWorkspace({
 }) {
   const [draft, setDraft] = useState("");
   const [composerAttachments, setComposerAttachments] = useState<ComposerAttachment[]>([]);
+  const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [attachmentCategory, setAttachmentCategory] = useState<(typeof managerAttachmentCategories)[number] | null>(null);
+  const [selectedAssetType, setSelectedAssetType] = useState<string | null>(null);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
   const managerTurns = useMemo(() => buildManagerTurns(conversation), [conversation]);
   const releaseSuccessArtifact = conversation.releaseSuccessArtifacts?.[0];
   const opportunityArtifacts = conversation.releaseOpportunityArtifacts ?? [];
+  const lastManagerMessageId = [...conversation.messages].reverse().find((message) => message.speaker === "manager")?.id;
   const resolvedContextRequestIds = new Set(conversation.messages.flatMap((message) =>
     message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length
       ? [message.contextRequestId]
@@ -577,28 +575,26 @@ export function ConversationWorkspace({
     hasStreamingMessage,
   });
 
+  useEffect(() => {
+    if (!activeContextQuestion) return;
+    const frame = window.requestAnimationFrame(() => {
+      const anchor = scrollAnchorRef.current;
+      if (anchor && typeof anchor.scrollIntoView === "function") anchor.scrollIntoView({ block: "end", behavior: "smooth" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeContextRequestId, guidedContextStep, activeContextQuestion, scrollAnchorRef]);
+
   const canAttachToSong = Boolean(musicRepository && conversation.musicSubject?.type === "music_item");
   const uploadingAttachments = composerAttachments.some((attachment) => attachment.status === "uploading");
   const uploadedAttachmentIds = composerAttachments.flatMap((attachment) => attachment.attachment?.id ? [attachment.attachment.id] : []);
 
-  const handleAttachmentFiles = async (files: FileList | null) => {
+  const uploadComposerAttachment = async (id: string, file: File, assetType: string) => {
     const musicItemId = conversation.musicSubject?.type === "music_item" ? conversation.musicSubject.id : null;
-    if (!musicRepository || !musicItemId || !files?.length) return;
-    const selectedFiles = Array.from(files);
-    const pending = selectedFiles.map((file) => ({
-      id: `composer-attachment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      file,
-    }));
-    setComposerAttachments((current) => [
-      ...current,
-      ...pending.map(({ id, file }) => ({ id, fileName: file.name, status: "uploading" as const, percent: 0 })),
-    ]);
-    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
-
-    await Promise.all(pending.map(async ({ id, file }) => {
+    if (!musicRepository || !musicItemId) return;
+    setComposerAttachments((current) => current.map((item) => item.id === id ? { ...item, status: "uploading", percent: 0, error: undefined } : item));
       try {
         const uploaded = await musicRepository.uploadAsset(musicItemId, {
-          assetType: classifyManagerAttachment(file),
+          assetType,
           title: file.name,
           file,
           onProgress: (progress) => setComposerAttachments((current) => current.map((attachment) => attachment.id === id
@@ -624,7 +620,24 @@ export function ConversationWorkspace({
           ? { ...attachment, status: "failed", error: error instanceof Error ? error.message : "Upload failed." }
           : attachment));
       }
+  };
+
+  const handleAttachmentFiles = async (files: FileList | null) => {
+    if (!selectedAssetType || !files?.length) return;
+    const pending = Array.from(files).map((file, index) => ({
+      id: `composer-attachment-${Date.now()}-${index}`,
+      file,
+      fileName: file.name,
+      assetType: selectedAssetType,
+      status: "uploading" as const,
+      percent: 0,
     }));
+    setComposerAttachments((current) => [...current, ...pending]);
+    setAttachmentMenuOpen(false);
+    setAttachmentCategory(null);
+    setSelectedAssetType(null);
+    if (attachmentInputRef.current) attachmentInputRef.current.value = "";
+    await Promise.all(pending.map((item) => uploadComposerAttachment(item.id, item.file, item.assetType)));
   };
 
   const handleSend = () => {
@@ -677,7 +690,7 @@ export function ConversationWorkspace({
   };
 
   return (
-    <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={onBack} punctuateTitle={false} variant="conversation">
+    <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office">
       {/*
         ChatGPT layout pattern:
         — A centered, width-constrained reading column gives the breathing room.
@@ -753,51 +766,24 @@ export function ConversationWorkspace({
               sendPending={sendPending}
                onOpenCreatedWork={onOpenCreatedWork}
                suppressMissionArtifacts={Boolean(taskContext)}
-               contextResolved={Boolean(turn.message.contextRequestId && resolvedContextRequestIds.has(turn.message.contextRequestId) && editingContextRequestId !== turn.message.contextRequestId)}
-               onChangeContext={turn.message.contextRequestId ? () => handleEditContext(turn.message.contextRequestId!) : undefined}
-             />
+                contextResolved={Boolean(turn.message.contextRequestId && resolvedContextRequestIds.has(turn.message.contextRequestId) && editingContextRequestId !== turn.message.contextRequestId)}
+                onChangeContext={turn.message.contextRequestId ? () => handleEditContext(turn.message.contextRequestId!) : undefined}
+                releaseSuccessArtifact={turn.message.id === lastManagerMessageId ? releaseSuccessArtifact : undefined}
+                opportunityArtifacts={turn.message.id === lastManagerMessageId ? opportunityArtifacts : []}
+                decisionPackage={turn.message.id === lastManagerMessageId ? conversation.decisionPackage : undefined}
+                onOpenDecisionPackage={onOpenDecisionPackage}
+                onApproveReleaseDateChange={onApproveReleaseDateChange}
+                onKeepReleaseDate={onKeepReleaseDate}
+                onReviewReleaseSuccess={onReviewReleaseSuccess}
+                onRetryReleaseSuccess={onRetryReleaseSuccess}
+                onPrepareOpportunityPitch={onPrepareOpportunityPitch}
+                onRecordOpportunityOutcome={onRecordOpportunityOutcome}
+                onRetryOpportunityResearch={onRetryOpportunityResearch}
+                conversationId={conversation.id}
+              />
            ))}
 
           {/* Thinking indicator — only shown when no streaming message exists yet */}
-          {releaseSuccessArtifact ? (
-            <ReleaseSuccessArtifact
-              artifact={releaseSuccessArtifact}
-              onApprove={onApproveReleaseDateChange ?? (async () => undefined)}
-              onKeepDate={onKeepReleaseDate ?? (() => undefined)}
-              onReviewAll={onReviewReleaseSuccess ?? (() => undefined)}
-              onOpenSong={(musicItemId) => void onOpenCreatedWork("music_item", musicItemId)}
-              onOpenMission={(missionId) => void onOpenCreatedWork("mission", missionId)}
-              onRetry={onRetryReleaseSuccess ?? (async () => undefined)}
-            />
-          ) : null}
-
-          {opportunityArtifacts.map((artifact) => (
-            <OpportunityArtifact
-              key={artifact.id}
-              artifact={artifact}
-              onPreparePitch={(target) => onPrepareOpportunityPitch
-                ? onPrepareOpportunityPitch(artifact, target)
-                : onSendMessage(
-                  `Prepare a ${artifact.opportunityType} pitch for ${target.targetName}. Save the canonical document in the attached song Files; do not send it.`,
-                  conversation.id,
-                )}
-              onRecordOutcome={(target, input) => onRecordOpportunityOutcome
-                ? onRecordOpportunityOutcome(artifact, target, input)
-                : onSendMessage(
-                  `Record the ${input.status} outcome for ${target.targetName}: ${input.manualOutcome}`,
-                  conversation.id,
-                )}
-              onOpenFiles={(musicItemId) => onOpenCreatedWork("music_item", musicItemId, "files")}
-              onOpenMission={(missionId) => onOpenCreatedWork("mission", missionId)}
-              onRetry={(failedArtifact) => onRetryOpportunityResearch
-                ? onRetryOpportunityResearch(failedArtifact)
-                : onSendMessage(
-                  `Retry ${failedArtifact.opportunityType} release research for the attached song. Preserve verified results and retry only the failed stage.`,
-                  conversation.id,
-                )}
-            />
-          ))}
-
            {isManagerThinking && !hasStreamingMessage ? (
              <ManagerActivity activeRun={activeRun} prompt={conversation.prompt} />
           ) : null}
@@ -805,28 +791,6 @@ export function ConversationWorkspace({
           <div data-testid="manager-chat-tail" ref={scrollAnchorRef} className="h-32 shrink-0" aria-hidden="true" />
         </div>
 
-        {/* Decision package */}
-        {conversation.decisionPackage ? (
-          <aside className="mt-6 rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Decision package</p>
-                <h3 className="mt-2 text-[16px] font-semibold leading-tight text-foreground">{conversation.decisionPackage.title}</h3>
-                <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/86">{conversation.decisionPackage.summary}</p>
-              </div>
-              {onOpenDecisionPackage ? (
-                <button
-                  type="button"
-                  onClick={onOpenDecisionPackage}
-                  className="flex shrink-0 items-center justify-center gap-2 rounded-lg bg-foreground/[0.045] px-4 py-2.5 text-[11px] font-bold uppercase tracking-[0.04em] text-foreground/80 transition-colors hover:bg-foreground/[0.07]"
-                >
-                  Open package
-                  <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </button>
-              ) : null}
-            </div>
-          </aside>
-        ) : null}
       </div>
 
       <ManagerComposer
@@ -840,28 +804,71 @@ export function ConversationWorkspace({
           <ManagerAttachmentTray
             attachments={composerAttachments}
             onRemove={(id) => setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id))}
+            onRetry={(id) => {
+              const item = composerAttachments.find((attachment) => attachment.id === id);
+              if (item) void uploadComposerAttachment(item.id, item.file, item.assetType);
+            }}
           />
         ) : undefined}
         leadingAction={canAttachToSong && !activeContextQuestion ? (
-          <>
+          <div className="relative">
             <input
               ref={attachmentInputRef}
               type="file"
               multiple
-              accept="audio/*,image/*,video/*,application/pdf,.doc,.docx,.txt"
+              accept={attachmentCategory?.accept}
+              aria-hidden="true"
+              tabIndex={-1}
               className="sr-only"
               onChange={(event) => void handleAttachmentFiles(event.target.files)}
             />
             <button
               type="button"
-              aria-label="Attach file to song"
-              onClick={() => attachmentInputRef.current?.click()}
+              aria-label={`Add files to ${conversation.musicSubject.title}`}
+              aria-expanded={attachmentMenuOpen}
+              onClick={() => {
+                setAttachmentMenuOpen((open) => !open);
+                setAttachmentCategory(null);
+              }}
               disabled={sendPending || uploadingAttachments}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30"
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30"
             >
-              <Paperclip className="h-4 w-4" aria-hidden="true" />
+              <Plus className="h-4 w-4" aria-hidden="true" />
             </button>
-          </>
+            {attachmentMenuOpen ? (
+              <div className="absolute bottom-12 left-0 z-50 w-64 overflow-hidden rounded-2xl border border-foreground/10 bg-background p-2 shadow-[0_18px_55px_rgba(0,0,0,0.18)]">
+                <div className="flex items-center gap-2 px-2 py-1.5">
+                  {attachmentCategory ? <button type="button" onClick={() => setAttachmentCategory(null)} className="text-[12px] text-muted-foreground hover:text-foreground">Back</button> : null}
+                  <p className="truncate text-[13px] font-semibold text-foreground">Add to {conversation.musicSubject.title}</p>
+                </div>
+                <div className="mt-1 grid gap-0.5">
+                  {(attachmentCategory ? attachmentCategory.types : managerAttachmentCategories).map((item) => {
+                    const isCategory = "label" in item;
+                    const label = isCategory ? item.label : item[0];
+                    const Icon = isCategory ? item.icon : FileText;
+                    return (
+                      <button
+                        key={label}
+                        type="button"
+                        onClick={() => {
+                          if (isCategory) {
+                            setAttachmentCategory(item);
+                            return;
+                          }
+                          setSelectedAssetType(item[1]);
+                          window.setTimeout(() => attachmentInputRef.current?.click(), 0);
+                        }}
+                        className="flex min-h-10 w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-[13px] text-foreground transition-colors hover:bg-foreground/[0.05]"
+                      >
+                        <Icon className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : undefined}
         guidedQuestion={activeContextQuestion ? (
           <GuidedContextQuestion
@@ -874,6 +881,7 @@ export function ConversationWorkspace({
               ...current,
               [activeContextQuestion.key]: activeContextQuestion.recommendedAnswer ?? "",
             }))}
+            onBack={() => setGuidedContextStep((step) => Math.max(0, step - 1))}
             onSubmit={handleGuidedContextAnswer}
             sendPending={sendPending}
           />
@@ -897,6 +905,18 @@ function MessageRow({
   contextResolved = false,
   onChangeContext,
   prompt,
+  releaseSuccessArtifact,
+  opportunityArtifacts,
+  decisionPackage,
+  onOpenDecisionPackage,
+  onApproveReleaseDateChange,
+  onKeepReleaseDate,
+  onReviewReleaseSuccess,
+  onRetryReleaseSuccess,
+  onPrepareOpportunityPitch,
+  onRecordOpportunityOutcome,
+  onRetryOpportunityResearch,
+  conversationId,
 }: {
   message: ConversationViewModel["messages"][number];
   work: ManagerWorkGroup[];
@@ -908,6 +928,18 @@ function MessageRow({
   contextResolved?: boolean;
   onChangeContext?: () => void;
   prompt?: string;
+  releaseSuccessArtifact?: ReleaseSuccessArtifactViewModel;
+  opportunityArtifacts: ReleaseOpportunityArtifactViewModel[];
+  decisionPackage?: ConversationViewModel["decisionPackage"];
+  onOpenDecisionPackage?: () => void;
+  onApproveReleaseDateChange?: (request: ReleaseDateChangeRequestViewModel) => Promise<void>;
+  onKeepReleaseDate?: (artifact: ReleaseSuccessArtifactViewModel) => void;
+  onReviewReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => void;
+  onRetryReleaseSuccess?: (artifact: ReleaseSuccessArtifactViewModel) => Promise<void>;
+  onPrepareOpportunityPitch?: (artifact: ReleaseOpportunityArtifactViewModel, target: ReleaseOpportunityTargetViewModel) => void | Promise<void>;
+  onRecordOpportunityOutcome?: (artifact: ReleaseOpportunityArtifactViewModel, target: ReleaseOpportunityTargetViewModel, input: { status: ReleaseOpportunityTargetViewModel["status"]; manualOutcome: string }) => void | Promise<void>;
+  onRetryOpportunityResearch?: (artifact: ReleaseOpportunityArtifactViewModel) => void | Promise<void>;
+  conversationId: string;
 }) {
   const isArtist = message.speaker === "artist";
   const isStreaming = message.status === "streaming";
@@ -922,31 +954,10 @@ function MessageRow({
     : work;
 
   return (
-    <div className={`flex flex-col ${isArtist ? "items-end" : "items-start"}`}>
-      {/* Speaker label row */}
-      <div className={`mb-2 flex items-center gap-2 ${isArtist ? "flex-row-reverse" : ""}`}>
-        <span
-          className={`flex items-center justify-center ${
-            isArtist
-              ? "h-6 w-6 rounded-md bg-foreground/[0.06] text-foreground/70"
-              : "h-7 w-7 rounded-lg bg-brand-accent/10 border border-brand-accent/20 text-brand-accent"
-          }`}
-        >
-          {isArtist ? (
-            <UsersRound className="h-3.5 w-3.5" aria-hidden="true" />
-          ) : (
-            <Sparkles className="h-4 w-4" aria-hidden="true" />
-          )}
-        </span>
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70">
-          {message.label}
-        </p>
-      </div>
-
-      {/* Message body */}
+    <article data-testid={`manager-message-${isArtist ? "artist" : "manager"}`} className={`flex flex-col ${isArtist ? "items-end" : "items-start"}`}>
       {isArtist ? (
         // User message — subtle pill, no dark fill
-        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-foreground/[0.055] px-5 py-3.5 text-foreground">
+        <div className="max-w-[85%] rounded-[1.25rem] bg-foreground/[0.06] px-4 py-2.5 text-foreground sm:max-w-[75%]">
           <p className="text-[15px] leading-[1.65]">{message.body}</p>
           {message.attachments?.length ? <ConversationAttachmentList attachments={message.attachments} /> : null}
         </div>
@@ -977,9 +988,22 @@ function MessageRow({
            {!isStreaming && visibleWork.length ? (
              <ManagerResultGroup groups={visibleWork} onOpenCreatedWork={onOpenCreatedWork} />
            ) : null}
+           {!isStreaming && releaseSuccessArtifact ? (
+             <ReleaseSuccessArtifact artifact={releaseSuccessArtifact} onApprove={onApproveReleaseDateChange ?? (async () => undefined)} onKeepDate={onKeepReleaseDate ?? (() => undefined)} onReviewAll={onReviewReleaseSuccess ?? (() => undefined)} onOpenSong={(id) => void onOpenCreatedWork("music_item", id)} onOpenMission={(id) => void onOpenCreatedWork("mission", id)} onRetry={onRetryReleaseSuccess ?? (async () => undefined)} />
+           ) : null}
+           {!isStreaming ? opportunityArtifacts.map((artifact) => (
+             <OpportunityArtifact key={artifact.id} artifact={artifact} onPreparePitch={(target) => onPrepareOpportunityPitch ? onPrepareOpportunityPitch(artifact, target) : undefined} onRecordOutcome={(target, input) => onRecordOpportunityOutcome ? onRecordOpportunityOutcome(artifact, target, input) : undefined} onOpenFiles={(id) => onOpenCreatedWork("music_item", id, "files")} onOpenMission={(id) => onOpenCreatedWork("mission", id)} onRetry={(failed) => onRetryOpportunityResearch ? onRetryOpportunityResearch(failed) : undefined} />
+           )) : null}
+           {!isStreaming && decisionPackage ? (
+             <section className="mt-5 border-l-2 border-foreground/12 pl-4">
+               <p className="text-[14px] font-semibold text-foreground">{decisionPackage.title}</p>
+               <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{decisionPackage.summary}</p>
+               {onOpenDecisionPackage ? <div className="mt-2"><ResultAction onClick={onOpenDecisionPackage}>Open package</ResultAction></div> : null}
+             </section>
+           ) : null}
         </div>
       )}
-    </div>
+    </article>
   );
 }
 
@@ -1015,14 +1039,21 @@ function ManagerResultGroup({
   );
 }
 
-function ResultAction({ children, onClick }: { children: ReactNode; onClick?: () => void }) {
+function ResultAction({ children, onClick, pendingLabel = "Opening…" }: { children: ReactNode; onClick?: () => void | Promise<void>; pendingLabel?: string }) {
+  const [pending, setPending] = useState(false);
   return (
     <button
       type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1 rounded-full border border-foreground/12 px-2.5 py-1.5 text-[11px] font-semibold text-foreground/75 transition-colors hover:border-foreground/25 hover:bg-foreground/[0.04] hover:text-foreground"
+      onClick={async () => {
+        if (!onClick || pending) return;
+        setPending(true);
+        try { await onClick(); } finally { setPending(false); }
+      }}
+      disabled={pending}
+      aria-busy={pending}
+      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold text-foreground/72 transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-60"
     >
-      {children}
+      {pending ? <><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{pendingLabel}</> : children}
     </button>
   );
 }
@@ -1036,22 +1067,19 @@ function WorkspaceResultCard({
 }) {
   const title = group.musicItem?.title ?? group.mission?.title ?? "Release workspace";
   return (
-    <article data-testid="manager-workspace-result" className="rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3.5">
+    <article data-testid="manager-workspace-result" className="border-l-2 border-foreground/12 py-1 pl-4">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
-          <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
-        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-semibold text-foreground">Release workspace created</p>
+          <p className="text-[14px] font-semibold text-foreground"><Check className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />Release workspace created</p>
           <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{title} · Mission and first task ready</p>
         </div>
       </div>
-      <div className="mt-3 flex flex-wrap gap-2 pl-10">
+      <div className="mt-2 flex flex-wrap gap-1">
         {group.musicItem?.id ? (
-          <ResultAction onClick={() => void onOpenCreatedWork("music_item", group.musicItem?.id, "files")}>Add release files</ResultAction>
+          <ResultAction pendingLabel="Opening Files…" onClick={() => onOpenCreatedWork("music_item", group.musicItem?.id, "files")}>Add release files</ResultAction>
         ) : null}
         {group.mission?.id ? (
-          <ResultAction onClick={() => void onOpenCreatedWork("mission", group.mission?.id)}>
+          <ResultAction onClick={() => onOpenCreatedWork("mission", group.mission?.id)}>
             View mission
             <ChevronRight className="h-3 w-3" aria-hidden="true" />
           </ResultAction>
@@ -1069,15 +1097,15 @@ function DocumentResultCard({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   return (
-    <article data-testid="manager-document-result" className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+    <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+      <span className="hidden">
         <FileText className="h-3.5 w-3.5" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
       </div>
-      {item.id ? <ResultAction onClick={() => void onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
+      {item.id ? <ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
     </article>
   );
 }
@@ -1090,8 +1118,8 @@ function CompactMissionResult({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   return (
-    <article className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+      <span className="hidden">
         <Route className="h-3.5 w-3.5" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
@@ -1099,7 +1127,7 @@ function CompactMissionResult({
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.mission.title}</p>
         {group.tasks.length ? <p className="mt-0.5 text-[11px] text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</p> : null}
       </div>
-      {group.mission.id ? <ResultAction onClick={() => void onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction> : null}
+      {group.mission.id ? <ResultAction onClick={() => onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction> : null}
     </article>
   );
 }
@@ -1113,15 +1141,15 @@ function CompactTasksResult({
 }) {
   const firstTask = group.tasks[0];
   return (
-    <article className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+      <span className="hidden">
         <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{firstTask?.title}</p>
       </div>
-      {firstTask?.id ? <ResultAction onClick={() => void onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction> : null}
+      {firstTask?.id ? <ResultAction onClick={() => onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction> : null}
     </article>
   );
 }
@@ -1134,15 +1162,15 @@ function CompactMusicResult({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
   return (
-    <article className="flex items-center gap-3 rounded-[14px] border border-foreground/12 bg-foreground/[0.018] px-4 py-3">
-      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-foreground/[0.06] text-foreground/65">
+    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+      <span className="hidden">
         <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
       </span>
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">Song ready</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
       </div>
-      {item.id ? <ResultAction onClick={() => void onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction> : null}
+      {item.id ? <ResultAction onClick={() => onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction> : null}
     </article>
   );
 }
@@ -1177,8 +1205,8 @@ function ManagerActivity({ activeRun, prompt }: { activeRun: ConversationViewMod
   const orbState = mapLabelToOrbState(label, prompt);
 
   return (
-    <div data-testid="manager-activity" className="flex items-center gap-2.5 py-2 text-[13px] font-medium text-muted-foreground animate-in fade-in duration-300">
-      <AppThinkingOrb state={orbState} size={20} />
+    <div data-testid="manager-activity" role="status" aria-live="polite" className="manager-conversation-motion flex items-center gap-2.5 py-2 text-[12px] text-muted-foreground animate-in fade-in duration-300">
+      <AppThinkingOrb state={orbState} size={18} />
       <span key={label} className="animate-in fade-in duration-300">{label}</span>
     </div>
   );
@@ -1420,21 +1448,24 @@ function ContextAnswerSummary({ answers, onChange }: { answers: ManagerConversat
 function ManagerAttachmentTray({
   attachments,
   onRemove,
+  onRetry,
 }: {
   attachments: ComposerAttachment[];
   onRemove: (id: string) => void;
+  onRetry: (id: string) => void;
 }) {
   return (
     <div data-testid="manager-attachment-tray" className="flex flex-wrap gap-2 pb-2">
       {attachments.map((attachment) => (
         <div key={attachment.id} className="flex min-w-0 max-w-full items-center gap-2 rounded-full border border-foreground/10 bg-foreground/[0.035] px-2.5 py-1.5 text-[11px]">
           {attachment.status === "uploading" ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" /> : null}
-          {attachment.status === "uploaded" ? <Paperclip className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
+          {attachment.status === "uploaded" ? <Check className="h-3 w-3 shrink-0 text-muted-foreground" aria-hidden="true" /> : null}
           {attachment.status === "failed" ? <X className="h-3 w-3 shrink-0 text-red-600" aria-hidden="true" /> : null}
           <span className="min-w-0 truncate font-medium text-foreground/80">
             {attachment.status === "uploading" ? `Uploading ${attachment.fileName} ${Math.round(attachment.percent)}%` : attachment.fileName}
           </span>
           {attachment.status === "failed" ? <span className="max-w-[12rem] truncate text-red-600">{attachment.error}</span> : null}
+          {attachment.status === "failed" ? <button type="button" onClick={() => onRetry(attachment.id)} className="font-semibold text-foreground hover:underline">Retry</button> : null}
           {attachment.status !== "uploading" ? (
             <button
               type="button"

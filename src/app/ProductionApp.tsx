@@ -1652,6 +1652,7 @@ function CleanProductionWorkspace({
     }
 
     if (type === "mission" || type === "task") {
+      navigate("missionsWorkspace");
       const nextMissions = await reloadMissionList();
       setMissions(nextMissions);
       const targetMissionId = type === "task"
@@ -1666,7 +1667,6 @@ function CleanProductionWorkspace({
       } else {
         setMissionListOpenRequestKey((current) => current + 1);
       }
-      navigate("missionsWorkspace");
     }
   }
 

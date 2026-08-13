@@ -2173,7 +2173,7 @@ describe("Clean production prototype-match shell", () => {
     await enterDeskHq();
 
     openManagerFromDesk();
-    expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
     expect(await screen.findByText("Conversations")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Night Bus release planning" }));
@@ -2423,7 +2423,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
 
     expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
       {
@@ -2501,7 +2501,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByText("What should the launch communicate?")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "What should the launch communicate?" }), { target: { value: "A focused summer release." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
 
     expect(onSendContextAnswers).toHaveBeenCalledWith(
       "Context answers for Manager mission decision.",
@@ -2596,7 +2596,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
     await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledTimes(1));
 
     persistedConversation = completedConversation;
@@ -2605,11 +2605,11 @@ describe("Clean production prototype-match shell", () => {
     });
     expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Back to Manager" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Manager's Office" }));
     fireEvent.click(await screen.findByRole("button", { name: "Mission context" }));
 
     expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Send answer" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send answers" })).not.toBeInTheDocument();
     expect(repositories.manager.loadConversation).toHaveBeenCalledTimes(2);
   }, 20000);
 
@@ -3288,7 +3288,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Attach file to song" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Add files to/ })).not.toBeInTheDocument();
 
     rerender(
       <ConversationWorkspace
@@ -3303,6 +3303,9 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("button", { name: "Add files to After Hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Audio" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rough mix" }));
     const file = new File(["audio"], "final-mix.mp3", { type: "audio/mpeg" });
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [file] } });
@@ -3989,7 +3992,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
     openManagerFromDesk();
-    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
     expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
   }, 20000);
 
@@ -4012,7 +4015,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Back" }).parentElement).toHaveClass("top-0");
+    expect(screen.getByRole("button", { name: "Back to Desk HQ" }).parentElement?.parentElement).toHaveClass("top-0");
     expect(screen.queryByText("Conversation History")).not.toBeInTheDocument();
   });
 
@@ -4031,7 +4034,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
     openManagerFromDesk();
-    expect(screen.getByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByTestId("settings-mobile-profile-summary")).toHaveClass("sm:hidden");
@@ -4134,7 +4137,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));
 
-    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
     expect(repositories.manager.sendMessage).not.toHaveBeenCalled();
     expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
   }, 20000);
@@ -4257,13 +4260,13 @@ describe("Clean production prototype-match shell", () => {
       candidateMissionId: "candidate-generated",
     });
 
-    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
     expect(screen.getByText("Mission candidate needs context")).toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Mission Genesis needs context/i }));
-    expect(await screen.findByRole("heading", { name: "Manager's Office." })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("What should the Manager optimize for over the next 90 days?"), { target: { value: "Market entry" } });
     fireEvent.change(screen.getByLabelText("What budget range can the Manager plan around before asking for explicit spend approval?"), { target: { value: "$5,000" } });

@@ -706,6 +706,7 @@ export const productionFixtureData: ProductionFixtureData = {
       status: "Music record and release mission prepared",
       summary: "Release-song thread that creates a Music record first, then links mission work to it.",
       prompt: "I want to drop a new song next week.",
+      musicSubject: { type: "music_item", id: "song-night-bus", title: "Night Bus", lifecycleStage: "Mastering" },
       messages: [
         { id: "m1", speaker: "artist", label: "You asked", body: "I want to drop a new song next week." },
         {
