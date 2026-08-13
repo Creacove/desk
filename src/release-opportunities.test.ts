@@ -93,7 +93,16 @@ function minimalOpportunityDb(options: { failOn?: "from" | "upsert" } = {}) {
   };
 }
 
-const managerScope = { accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1", musicSubject: { type: "music_item" as const, id: "song-1" } };
+const managerScope = {
+  accountId: "account-1",
+  artistWorkspaceId: "workspace-1",
+  artistId: "artist-1",
+  musicSubject: { type: "music_item" as const, id: "song-1" },
+  fetchImpl: vi.fn(async () => new Response('<a href="https://example.com/submit">Submit</a> editor@example.com', {
+    status: 200,
+    headers: { "content-type": "text/html", "content-length": "80" },
+  })),
+};
 
 describe("release opportunity normalization", () => {
   it("normalizes HTTPS URLs and collapses case/trailing-slash duplicates", () => {
@@ -239,6 +248,23 @@ describe("release opportunity normalization", () => {
       handoffs: [expect.objectContaining({ kind: "pitch", contact: null })],
     });
     expect(captureAppError).not.toHaveBeenCalled();
+  });
+
+  it("downgrades a fabricated public contact that is absent from its cited source", async () => {
+    const result = await executeManagerConversationTool(
+      minimalOpportunityDb(),
+      { ...managerScope, fetchImpl: vi.fn(async () => new Response("Official contact page with no listed address.", { status: 200 })) },
+      "save_focused_release_opportunities",
+      { opportunityType: "playlist", candidates: [candidate({ publicContact: {
+        kind: "email",
+        value: "invented@example.com",
+        sourceUrl: "https://example.com/contact",
+        verifiedAt: "2026-08-12T10:00:00.000Z",
+      } })] },
+    ) as any;
+
+    expect(result.saved[0]).toMatchObject({ status: "watch", safetyState: "caution", publicContact: undefined });
+    expect(result.saved[0].limitations).toContain("The cited public page did not confirm this contact route.");
   });
 
   it("logs unexpected search, contact verification, and persistence failures with the required stages", async () => {

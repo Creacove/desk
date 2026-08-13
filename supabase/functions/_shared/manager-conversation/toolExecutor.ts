@@ -9,6 +9,7 @@ import {
   normalizeOpportunityBrief,
   normalizePublicEmail,
   normalizePublicUrl,
+  verifyOpportunityPublicContact,
 } from "../release-success/opportunities.ts";
 import { createSchedulePreview } from "../release-success/schedule.ts";
 import type {
@@ -30,6 +31,7 @@ type ManagerToolInput = {
   userId?: string;
   musicSubject?: { type: "music_item" | "music_project"; id: string };
   createdWork?: ManagerConversationCreatedWork[];
+  fetchImpl?: typeof fetch;
 };
 
 type SupabaseLike = {
@@ -582,7 +584,10 @@ async function saveFocusedReleaseOpportunities(db: SupabaseLike, input: ManagerT
       // Spotify editorial is a pitch/handoff route. Never carry an editor email
       // into the record, even if a model tries to attach one.
       if (isSpotifyEditorial(candidate)) candidate.publicContact = undefined;
-      const brief = normalizeOpportunityBrief(candidate, context.song);
+      const verifiedCandidate = isSpotifyEditorial(candidate)
+        ? candidate
+        : await verifyOpportunityPublicContact(candidate, input.fetchImpl ?? fetch);
+      const brief = normalizeOpportunityBrief(verifiedCandidate, context.song);
       if (!brief) {
         rejected.push({ targetName: candidate.targetName || "Unnamed target", reason: "The candidate lacks song-specific fit or public evidence." });
         continue;

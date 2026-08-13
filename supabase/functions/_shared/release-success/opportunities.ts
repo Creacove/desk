@@ -11,6 +11,7 @@ const CONFIDENCE_WEIGHT: Record<ReleaseOpportunityCandidate["confidence"], numbe
   low: 1,
   unknown: 0,
 };
+const MAX_CONTACT_SOURCE_BYTES = 512_000;
 
 export function normalizePublicUrl(value: string): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -42,6 +43,56 @@ export function normalizePublicEmail(value: string): string | null {
   if (email.length < 6 || email.length > 320) return null;
   if (!/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(email)) return null;
   return email;
+}
+
+export async function verifyOpportunityPublicContact(
+  candidate: ReleaseOpportunityCandidate,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ReleaseOpportunityCandidate> {
+  const contact = normalizePublicContact(candidate.publicContact);
+  if (!contact) return { ...candidate, publicContact: undefined };
+  const sourceUrl = normalizePublicUrl(contact.sourceUrl);
+  if (!sourceUrl || !isPublicHostname(new URL(sourceUrl).hostname)) {
+    return unverifiedContact(candidate);
+  }
+
+  try {
+    const response = await fetchImpl(sourceUrl, {
+      method: "GET",
+      redirect: "error",
+      headers: { Accept: "text/html,text/plain;q=0.9" },
+      signal: AbortSignal.timeout(8_000),
+    });
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    const contentLength = Number(response.headers.get("content-length") ?? "0");
+    if (!response.ok || (contentLength > MAX_CONTACT_SOURCE_BYTES) || (contentType && !/text\/html|text\/plain/.test(contentType))) {
+      return unverifiedContact(candidate);
+    }
+    const body = (await response.text()).slice(0, MAX_CONTACT_SOURCE_BYTES).toLowerCase().replace(/&amp;/g, "&");
+    const expected = contact.kind === "email" ? contact.value.toLowerCase() : normalizePublicUrl(contact.value)?.toLowerCase();
+    const sourceProvesRoute = Boolean(expected) && (body.includes(expected!) || (contact.kind !== "email" && expected === sourceUrl.toLowerCase()));
+    return sourceProvesRoute ? { ...candidate, publicContact: contact } : unverifiedContact(candidate);
+  } catch {
+    return unverifiedContact(candidate);
+  }
+}
+
+function unverifiedContact(candidate: ReleaseOpportunityCandidate): ReleaseOpportunityCandidate {
+  return {
+    ...candidate,
+    publicContact: undefined,
+    limitations: [...candidate.limitations, "The cited public page did not confirm this contact route."],
+  };
+}
+
+function isPublicHostname(hostname: string) {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".local") || host === "::1") return false;
+  const ipv4 = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/)?.slice(1).map(Number);
+  if (!ipv4) return true;
+  if (ipv4.some((part) => part > 255)) return false;
+  const [a, b] = ipv4;
+  return !(a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168));
 }
 
 export function dedupeOpportunityCandidates(candidates: ReleaseOpportunityCandidate[]): ReleaseOpportunityCandidate[] {
