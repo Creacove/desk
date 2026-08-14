@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileAudio, FileImage, FileText, Loader2, Music2, Plus, Route, X } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, ClipboardCheck, FileAudio, FileImage, FileText, Loader2, Music2, Paperclip, Plus, Route, X } from "lucide-react";
 import { ProductButton, WorkspaceShell } from "../../design-system/components";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import type {
@@ -475,6 +475,7 @@ export function ConversationWorkspace({
   onOpenCreatedWork,
   onOpenMusicSubject,
   musicRepository,
+  onRefreshMusicObject,
   onSendMessage,
   onSendContextAnswers,
   onRetryLastMessage,
@@ -496,6 +497,7 @@ export function ConversationWorkspace({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   musicRepository?: MusicRepository;
+  onRefreshMusicObject?: (musicItemId: string) => Promise<void> | void;
   onOpenDecisionPackage?: () => void;
   onApproveReleaseDateChange?: (request: ReleaseDateChangeRequestViewModel) => Promise<void>;
   onKeepReleaseDate?: (artifact: ReleaseSuccessArtifactViewModel) => void;
@@ -594,34 +596,40 @@ export function ConversationWorkspace({
     const musicItemId = conversation.musicSubject?.type === "music_item" ? conversation.musicSubject.id : null;
     if (!musicRepository || !musicItemId) return;
     setComposerAttachments((current) => current.map((item) => item.id === id ? { ...item, status: "uploading", percent: 0, error: undefined } : item));
+    try {
+      const uploaded = await musicRepository.uploadAsset(musicItemId, {
+        assetType,
+        title: file.name,
+        file,
+        onProgress: (progress) => setComposerAttachments((current) => current.map((attachment) => attachment.id === id
+          ? { ...attachment, percent: progress.percent }
+          : attachment)),
+      });
+      setComposerAttachments((current) => current.map((attachment) => attachment.id === id
+        ? {
+            ...attachment,
+            status: "uploaded",
+            percent: 100,
+            attachment: {
+              id: uploaded.id,
+              musicItemId: uploaded.musicItemId,
+              title: uploaded.label,
+              assetType: uploaded.assetType,
+              status: uploaded.status,
+            },
+          }
+        : attachment));
       try {
-        const uploaded = await musicRepository.uploadAsset(musicItemId, {
-          assetType,
-          title: file.name,
-          file,
-          onProgress: (progress) => setComposerAttachments((current) => current.map((attachment) => attachment.id === id
-            ? { ...attachment, percent: progress.percent }
-            : attachment)),
-        });
-        setComposerAttachments((current) => current.map((attachment) => attachment.id === id
-          ? {
-              ...attachment,
-              status: "uploaded",
-              percent: 100,
-              attachment: {
-                id: uploaded.id,
-                musicItemId: uploaded.musicItemId,
-                title: uploaded.label,
-                assetType: uploaded.assetType,
-                status: uploaded.status,
-              },
-            }
-          : attachment));
-      } catch (error) {
-        setComposerAttachments((current) => current.map((attachment) => attachment.id === id
-          ? { ...attachment, status: "failed", error: error instanceof Error ? error.message : "Upload failed." }
-          : attachment));
+        await onRefreshMusicObject?.(uploaded.musicItemId);
+      } catch {
+        // The upload is already committed to the canonical Files data. A refresh
+        // failure must not turn a successful upload into a misleading error.
       }
+    } catch (error) {
+      setComposerAttachments((current) => current.map((attachment) => attachment.id === id
+        ? { ...attachment, status: "failed", error: error instanceof Error ? error.message : "Upload failed." }
+        : attachment));
+    }
   };
 
   const handleAttachmentFiles = async (files: FileList | null) => {
@@ -809,6 +817,11 @@ export function ConversationWorkspace({
             onRetry={(id) => {
               const item = composerAttachments.find((attachment) => attachment.id === id);
               if (item) void uploadComposerAttachment(item.id, item.file, item.assetType);
+            }}
+            onOpenFiles={() => {
+              if (conversation.musicSubject?.type === "music_item") {
+                void onOpenCreatedWork("music_item", conversation.musicSubject.id, "files");
+              }
             }}
           />
         ) : undefined}
@@ -1451,10 +1464,12 @@ function ManagerAttachmentTray({
   attachments,
   onRemove,
   onRetry,
+  onOpenFiles,
 }: {
   attachments: ComposerAttachment[];
   onRemove: (id: string) => void;
   onRetry: (id: string) => void;
+  onOpenFiles?: () => void;
 }) {
   return (
     <div data-testid="manager-attachment-tray" className="flex flex-wrap gap-2 pb-2">
@@ -1466,6 +1481,12 @@ function ManagerAttachmentTray({
           <span className="min-w-0 truncate font-medium text-foreground/80">
             {attachment.status === "uploading" ? `Uploading ${attachment.fileName} ${Math.round(attachment.percent)}%` : attachment.fileName}
           </span>
+          {attachment.status === "uploaded" ? <span className="hidden shrink-0 text-[10px] text-muted-foreground sm:inline">Saved to Files</span> : null}
+          {attachment.status === "uploaded" && onOpenFiles ? (
+            <button type="button" onClick={onOpenFiles} className="shrink-0 font-semibold text-foreground/70 hover:text-foreground hover:underline">
+              Open Files
+            </button>
+          ) : null}
           {attachment.status === "failed" ? <span className="max-w-[12rem] truncate text-red-600">{attachment.error}</span> : null}
           {attachment.status === "failed" ? <button type="button" onClick={() => onRetry(attachment.id)} className="font-semibold text-foreground hover:underline">Retry</button> : null}
           {attachment.status !== "uploading" ? (

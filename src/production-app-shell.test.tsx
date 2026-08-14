@@ -3249,6 +3249,8 @@ describe("Clean production prototype-match shell", () => {
 
   it("keeps file attachment inside song conversations and sends durable asset ids", async () => {
     const onSendMessage = vi.fn();
+    const onOpenCreatedWork = vi.fn();
+    const onRefreshMusicObject = vi.fn(async () => undefined);
     const uploadAsset = vi.fn(async (musicItemId: string, input: any) => {
       input.onProgress?.({ phase: "complete", percent: 100 });
       return {
@@ -3280,7 +3282,7 @@ describe("Clean production prototype-match shell", () => {
       <ConversationWorkspace
         conversation={baseConversation}
         onBack={() => undefined}
-        onOpenCreatedWork={() => undefined}
+        onOpenCreatedWork={onOpenCreatedWork}
         onSendMessage={onSendMessage}
         onSendContextAnswers={() => undefined}
         sendPending={false}
@@ -3294,8 +3296,9 @@ describe("Clean production prototype-match shell", () => {
       <ConversationWorkspace
         conversation={songConversation}
         musicRepository={musicRepository}
+        onRefreshMusicObject={onRefreshMusicObject}
         onBack={() => undefined}
-        onOpenCreatedWork={() => undefined}
+        onOpenCreatedWork={onOpenCreatedWork}
         onSendMessage={onSendMessage}
         onSendContextAnswers={() => undefined}
         sendPending={false}
@@ -3310,6 +3313,11 @@ describe("Clean production prototype-match shell", () => {
     const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(fileInput, { target: { files: [file] } });
     await waitFor(() => expect(screen.getByText("final-mix.mp3")).toBeInTheDocument());
+    await waitFor(() => expect(onRefreshMusicObject).toHaveBeenCalledWith("song-attach"));
+    expect(onSendMessage).not.toHaveBeenCalled();
+    expect(screen.getByText("Saved to Files")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Open Files" }));
+    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-attach", "files");
 
     fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
     expect(onSendMessage).toHaveBeenCalledWith(

@@ -55,4 +55,8 @@ describe("Manager conversation premium UI contract", () => {
     expect(manager).toContain('<AppThinkingOrb state={orbState} size={20} />');
     expect(manager).not.toContain('<AppThinkingOrb state={orbState} size={18} />');
   });
+
+  it("imports the attachment icon used by durable conversation receipts", () => {
+    expect(manager).toMatch(/import\s+\{[^}]*\bPaperclip\b[^}]*\}\s+from "lucide-react"/s);
+  });
 });

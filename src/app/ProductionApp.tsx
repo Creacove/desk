@@ -2217,9 +2217,12 @@ function CleanProductionWorkspace({
                 onPrepareOpportunityPitch={prepareOpportunityPitch}
                 onRecordOpportunityOutcome={recordOpportunityOutcome}
                 onRetryOpportunityResearch={retryOpportunityResearch}
-                 onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
-                 musicRepository={repositories.music}
-                 onSendMessage={(body, conversationId, attachmentIds) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
+                onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
+                musicRepository={repositories.music}
+                onRefreshMusicObject={async (musicItemId) => {
+                  await refreshMusicObject(musicItemId, "music_item");
+                }}
+                onSendMessage={(body, conversationId, attachmentIds) => void sendManagerMessage(body, conversationId, activeConversation.topic, {
                    taskId: managerTaskContextId ?? undefined,
                    attachmentIds,
                    ...(activeConversation.musicSubject ? { musicSubject: { type: activeConversation.musicSubject.type, id: activeConversation.musicSubject.id } } : {}),
