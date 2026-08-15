@@ -258,6 +258,69 @@ jobs:
       - name: Reject high or critical production dependency vulnerabilities
         run: npm audit --omit=dev --audit-level=high
 
+  browser-smoke:
+    name: Real Chromium production-shell smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production shell with explicit fixture runtime
+        env:
+          VITE_PRODUCTION_FIXTURES: "true"
+          VITE_APP_MODE: production
+        run: npm run build
+
+      - name: Start preview and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/desk-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          echo "$PREVIEW_PID" > /tmp/desk-preview.pid
+          for attempt in {1..40}; do
+            if curl --fail --silent http://127.0.0.1:4173 >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:4173 >/dev/null
+
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$CHROME_BIN" ]; then
+            echo 'Google Chrome is not installed on the runner.' >&2
+            exit 1
+          fi
+          "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu \
+            --remote-debugging-port=9222 --user-data-dir=/tmp/desk-chrome about:blank \
+            > /tmp/desk-chrome.log 2>&1 &
+          echo $! > /tmp/desk-chrome.pid
+
+      - name: Exercise production shell in real Chromium
+        run: node scripts/chrome-production-smoke.mjs
+
+      - name: Show browser/server logs on failure
+        if: failure()
+        run: |
+          echo '--- preview ---'
+          cat /tmp/desk-preview.log || true
+          echo '--- chrome ---'
+          cat /tmp/desk-chrome.log || true
+
+      - name: Stop browser and preview
+        if: always()
+        run: |
+          kill "$(cat /tmp/desk-chrome.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat /tmp/desk-preview.pid 2>/dev/null)" 2>/dev/null || true
+
   build:
     name: Production build
     runs-on: ubuntu-latest
