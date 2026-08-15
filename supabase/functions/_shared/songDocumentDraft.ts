@@ -10,7 +10,7 @@ export const releaseSuccessDocumentTypes = [
 
 export type ReleaseSuccessDocumentType = typeof releaseSuccessDocumentTypes[number];
 export type LegacySongDocumentType = "lyrics" | "press_release" | "press_angle" | "artist_biography" | "one_sheet" | "credits" | "distributor_notes";
-export type CanonicalSongDocumentType = ReleaseSuccessDocumentType | LegacySongDocumentType;
+export type CanonicalSongDocumentType = "release_narrative" | ReleaseSuccessDocumentType | LegacySongDocumentType;
 
 export type FocusedSongDraftInput = {
   accountId: string;
@@ -36,6 +36,7 @@ export type PersistedFocusedSongDocument = {
 };
 
 const allCanonicalDocumentTypes = new Set<string>([
+  "release_narrative",
   ...releaseSuccessDocumentTypes,
   "lyrics",
   "press_release",
@@ -54,9 +55,18 @@ export async function persistFocusedSongDocumentDraft(
   hasContextQuestions: boolean,
 ): Promise<PersistedFocusedSongDocument | undefined> {
   if (hasContextQuestions || input.musicSubject?.type !== "music_item") return;
+
+  // Manager documents must now be created through an explicit document tool call.
+  // Do not infer a document from the final conversational response: doing so can
+  // overwrite a structured v2 artifact with generic assistant prose from the same run.
+  if (!input.documentType) return;
+
   const request = input.body.toLowerCase();
   const documentType = normalizeDocumentType(input.documentType) ?? requestedDocumentType(request);
-  if (!documentType || (!input.documentType && !/\b(draft|write|prepare|create)\b/.test(request))) return;
+  if (!documentType) return;
+  if (documentType === "release_narrative") {
+    throw new Error("Release narrative requires structured document persistence.");
+  }
 
   const musicItemId = input.musicSubject.id;
   const title = cleanLongText(input.title, 240) || documentTitle(documentType);
@@ -214,26 +224,26 @@ export async function persistFocusedSongDocumentDraft(
     updatedDocument = true;
 
     const { error: eventError } = await db.from("operating_events").insert({
-        account_id: input.accountId,
-        artist_workspace_id: input.artistWorkspaceId,
-        artist_id: input.artistId,
-        event_type: "song_document_created",
-        actor_type: "manager",
-        target_type: "music_item",
-        target_id: musicItemId,
-        source_type: "document",
-        source_id: canonicalDocumentId,
+      account_id: input.accountId,
+      artist_workspace_id: input.artistWorkspaceId,
+      artist_id: input.artistId,
+      event_type: "song_document_created",
+      actor_type: "manager",
+      target_type: "music_item",
+      target_id: musicItemId,
+      source_type: "document",
+      source_id: canonicalDocumentId,
+      mission_id: missionId ?? null,
+      display_mode: "activity",
+      refresh_scope: ["music-list", "activity"],
+      summary: `${title} is ready to review in Files.`,
+      payload: {
+        document_id: canonicalDocumentId,
+        document_type: documentType,
+        version_id: canonicalVersionId,
         mission_id: missionId ?? null,
-        display_mode: "activity",
-        refresh_scope: ["music-list", "activity"],
-        summary: `${title} is ready to review in Files.`,
-        payload: {
-          document_id: canonicalDocumentId,
-          document_type: documentType,
-          version_id: canonicalVersionId,
-          mission_id: missionId ?? null,
-        },
-      });
+      },
+    });
     if (eventError) throw eventError;
 
     return {
@@ -270,22 +280,34 @@ export async function loadFocusedSongDocuments(db: any, input: Omit<FocusedSongD
     .eq("target_type", "music_item")
     .eq("target_id", musicItemId)
     .eq("relationship", "references")
-    .limit(24);
+    .limit(40);
   if (linksError) throw linksError;
   const ids = (links ?? []).map((link: any) => link.source_id).filter(Boolean);
   if (!ids.length) return [];
   const { data: documents, error: documentError } = await scopedSelect(db, "documents", scope)
     .in("id", ids)
-    .limit(24);
+    .limit(40);
   if (documentError) throw documentError;
   const { data: versions, error: versionError } = await scopedSelect(db, "document_versions", scope)
     .in("document_id", ids)
-    .limit(60);
+    .order("version_number", { ascending: false })
+    .limit(100);
   if (versionError) throw versionError;
   return (documents ?? []).map((document: any) => {
     const version = (versions ?? []).find((item: any) => item.id === document.current_version_id)
       ?? (versions ?? []).find((item: any) => item.document_id === document.id);
-    return { id: document.id, title: document.title, documentType: document.document_type, status: document.status, origin: document.origin, content: cleanLongText(version?.metadata?.body, 60_000) };
+    const metadata = version?.metadata && typeof version.metadata === "object" ? version.metadata : {};
+    return {
+      id: document.id,
+      title: document.title,
+      documentType: document.document_type,
+      status: document.status,
+      origin: document.origin,
+      content: cleanLongText(metadata.body, 60_000),
+      ...(metadata.structure && typeof metadata.structure === "object" ? { structure: metadata.structure } : {}),
+      ...(metadata.quality && typeof metadata.quality === "object" ? { quality: metadata.quality } : {}),
+      ...(typeof metadata.schemaVersion === "string" ? { schemaVersion: metadata.schemaVersion } : {}),
+    };
   });
 }
 
@@ -363,6 +385,7 @@ function scopedDelete(db: any, table: string, scope: readonly (readonly [string,
 }
 
 function requestedDocumentType(value: string): CanonicalSongDocumentType | null {
+  if (value.includes("release narrative") || value.includes("campaign narrative") || value.includes("campaign spine")) return "release_narrative";
   if (value.includes("spotify") && value.includes("pitch")) return "spotify_editorial_pitch";
   if (value.includes("playlist") && value.includes("pitch")) return "playlist_pitch";
   if (value.includes("press target") || value.includes("target brief")) return "press_target_brief";
@@ -387,6 +410,7 @@ function normalizeDocumentType(value?: string | null): CanonicalSongDocumentType
 
 function documentTitle(type: CanonicalSongDocumentType) {
   return ({
+    release_narrative: "Release narrative",
     epk: "EPK",
     spotify_editorial_pitch: "Spotify editorial pitch",
     playlist_pitch: "Playlist pitch",
