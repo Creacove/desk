@@ -222,11 +222,11 @@ const focusedSongDocumentProperties = {
   additionalProperties: false,
   required: ["documentType", "title", "body", "opportunityId"],
   properties: {
-    documentType: { type: "string", enum: ["release_narrative", "epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
+    documentType: { type: "string", enum: ["epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
     title: { type: "string" },
     body: {
       type: "string",
-      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. Do not send markdown or generic prose here. Unknown facts belong in missingInputs, never placeholders.",
+      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. Do not send markdown or generic prose here. Unknown facts belong in missingInputs, never placeholders. To create the internal Release Narrative, use documentType press_angle, title exactly Release narrative, and sections positioning, story, audience, campaign_thesis, proof, creative_world, and language_guardrails.",
     },
     opportunityId: { type: ["string", "null"] },
   },
@@ -351,7 +351,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Use release_narrative as the internal campaign spine before external campaign documents. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
