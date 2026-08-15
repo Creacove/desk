@@ -3621,7 +3621,7 @@ describe("Clean production prototype-match shell", () => {
       title: "North Star press release",
       body: "North Star opens a new chapter.",
     })));
-    expect(screen.queryByRole("dialog", { name: /Write here/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Write manually/i })).not.toBeInTheDocument();
   });
 
   it("does not replay a consumed song navigation intent after repository refresh", async () => {
@@ -3845,8 +3845,8 @@ describe("Clean production prototype-match shell", () => {
     expect(within(songRoom).getByRole("button", { name: "Details" })).toBeInTheDocument();
     expect(
       within(songRoom)
-        .getByRole("button", { name: "Details" })
-        .compareDocumentPosition(within(songRoom).getByRole("button", { name: "Files" })) & Node.DOCUMENT_POSITION_FOLLOWING,
+        .getByRole("button", { name: "Files" })
+        .compareDocumentPosition(within(songRoom).getByRole("button", { name: "Details" })) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(within(songRoom).getByRole("button", { name: "Rights" })).toBeInTheDocument();
 
