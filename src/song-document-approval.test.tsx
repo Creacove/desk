@@ -48,8 +48,8 @@ describe("Manager document approval", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Approve for sharing" })).not.toBeInTheDocument();
-    expect(screen.getByText("Internal campaign spine")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve for sharing" })).toBeNull();
+    expect(screen.getByText("Internal campaign spine")).toBeTruthy();
   });
 
   it("withholds approval while the artifact still needs review", () => {
@@ -63,8 +63,8 @@ describe("Manager document approval", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Approve for sharing" })).not.toBeInTheDocument();
-    expect(screen.getByText("Review draft")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve for sharing" })).toBeNull();
+    expect(screen.getByText("Review draft")).toBeTruthy();
   });
 
   it("shows the approved state without asking for approval twice", () => {
@@ -78,7 +78,7 @@ describe("Manager document approval", () => {
       />,
     );
 
-    expect(screen.getByText("Approved")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Approve for sharing" })).not.toBeInTheDocument();
+    expect(screen.getByText("Approved")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve for sharing" })).toBeNull();
   });
 });
