@@ -129,7 +129,7 @@ jobs:
       - name: Start fresh database and apply all migrations
         run: supabase db start
 
-      - name: Exercise campaign persistence, packages and RLS against Postgres
+      - name: Exercise campaign persistence, packages, approval and RLS against Postgres
         shell: bash
         run: |
           set -euo pipefail
@@ -139,6 +139,7 @@ jobs:
             exit 1
           fi
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/structured_campaign_documents_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/song_document_approval_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/rls_isolation_smoke.sql
 
       - name: Stop local Supabase
@@ -214,6 +215,7 @@ jobs:
           src/song-document-persistence-v2.test.ts
           src/song-document-quality-gate.test.ts
           src/song-document-standards.test.ts
+          src/song-document-approval.test.tsx
           src/music-share-internal-narrative.test.ts
           src/music-share-backend-safety.test.ts
           src/manager-release-share-package.test.ts
