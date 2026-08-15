@@ -36,13 +36,13 @@ function mission(overrides: Partial<MissionViewModel> = {}): MissionViewModel {
   };
 }
 
-function document(materialType: string): SongMaterialViewModel {
+function document(materialType: string, title = materialType): SongMaterialViewModel {
   return {
-    id: `document-${materialType}`,
+    id: `document-${materialType}-${title}`,
     kind: "document",
     group: "Documents",
     materialType: materialType as Extract<SongMaterialViewModel, { kind: "document" }>["materialType"],
-    title: materialType,
+    title,
     status: "draft",
     origin: "manager_generated",
     body: "Draft body",
@@ -107,9 +107,18 @@ describe("deriveSongCampaignState", () => {
     expect(state.mission).toBeUndefined();
   });
 
-  it("reveals Campaign when a durable campaign document exists", () => {
+  it("keeps an isolated campaign artifact in build mode until the narrative spine exists", () => {
     const state = deriveSongCampaignState(song({ materials: [document("epk")] }), []);
     expect(state.visible).toBe(true);
+    expect(state.documents).toHaveLength(1);
+    expect(state.narrative).toBeUndefined();
+    expect(state.nextMove).toBe("build_release_kit");
+  });
+
+  it("continues the campaign only after a release narrative and external artifact both exist", () => {
+    const narrative = document("other", "Release narrative");
+    const state = deriveSongCampaignState(song({ materials: [narrative, document("epk")] }), []);
+    expect(state.narrative?.title).toBe("Release narrative");
     expect(state.documents).toHaveLength(1);
     expect(state.nextMove).toBe("continue_campaign");
   });
