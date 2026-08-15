@@ -214,14 +214,20 @@ const focusedReleaseOpportunityOutcomeProperties = {
   },
 };
 
+// The body remains a string to keep the existing tool API stable, but it is now a
+// JSON-encoded structured artifact. The server parses it, renders the readable body,
+// scores it against document-specific standards and refuses weak artifacts.
 const focusedSongDocumentProperties = {
   type: "object",
   additionalProperties: false,
   required: ["documentType", "title", "body", "opportunityId"],
   properties: {
-    documentType: { type: "string", enum: ["epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
+    documentType: { type: "string", enum: ["release_narrative", "epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
     title: { type: "string" },
-    body: { type: "string" },
+    body: {
+      type: "string",
+      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. Do not send markdown or generic prose here. Unknown facts belong in missingInputs, never placeholders.",
+    },
     opportunityId: { type: ["string", "null"] },
   },
 };
@@ -303,7 +309,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "read_focused_music_subject",
-    description: "Read the exact attached song or project packet, including its existing metadata, assets, credits, identifiers, and rights readiness. Use only when a song or project is attached to this conversation.",
+    description: "Read the exact attached song or project packet, including its existing metadata, assets, credits, identifiers, rights readiness, and current canonical documents. Use only when a song or project is attached to this conversation.",
     strict: true,
     parameters: focusedMusicReadProperties,
   },
@@ -345,7 +351,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one canonical song document through the existing Files pathway for the exact attached song. The document is a draft for review and sharing; it is never sent or published.",
+    description: "Create or version one premium canonical song artifact in Files. Use release_narrative as the internal campaign spine before external campaign documents. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
@@ -409,8 +415,8 @@ export function selectManagerConversationToolsForTurn(input: {
     .toLowerCase();
   const intentText = `${body} ${contextAnswerText}`;
   const servicingIntent = /\b(playlist(?:ing)?|playlist opportunities?|curator|press|publicity|editorial|media|outreach|record servicing|service this (?:song|release)|pitch(?:ing)?(?:\s+(?:this|the))?\s+(?:song|release|record))\b/.test(intentText);
-  const documentIntent = /\b(draft|write|prepare|create|make)\b/.test(body)
-    && /\b(epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
+  const documentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh)\b/.test(body)
+    && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
   const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
 
   if (servicingIntent) {
@@ -620,7 +626,7 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "read_manager_output_section") return "Reading the relevant Manager document section.";
   if (name === "query_focused_release_opportunities") return "Checking saved playlist and press targets.";
   if (name === "save_focused_release_opportunities") return "Saving verified release opportunities.";
-  if (name === "create_focused_song_document") return "Preparing a song document for review.";
+  if (name === "create_focused_song_document") return "Building and quality-checking a campaign document.";
   if (name === "record_focused_release_opportunity_outcome") return "Recording the opportunity outcome.";
   return "Manager is checking the workspace.";
 }
