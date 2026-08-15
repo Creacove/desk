@@ -71,25 +71,25 @@ export function SongDocumentActions({
               <section className="max-h-[88dvh] w-full overflow-y-auto rounded-t-[22px] border border-foreground/10 bg-background shadow-[0_24px_70px_rgba(17,19,24,0.22)] sm:w-[min(100%,28rem)] sm:rounded-[22px]">
                 <header className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 py-4">
                   <div>
-                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Add to song</p>
-                    <h3 className="mt-1 font-display text-[22px] font-bold leading-tight text-foreground">Add document</h3>
-                    <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">Write it here, ask the Manager for a draft, or add a file you already have.</p>
+                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Song files</p>
+                    <h3 className="mt-1 font-display text-[22px] font-bold leading-tight text-foreground">Add a document</h3>
+                    <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">Build a campaign artifact with Manager, write something manually, or bring in a document you already have.</p>
                   </div>
                   <button type="button" aria-label="Close Add document" onClick={close} className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
                     <X className="h-4 w-4" aria-hidden="true" />
                   </button>
                 </header>
                 <div className="grid gap-1 p-2">
-                  {onWrite ? (
-                    <button ref={firstActionRef} type="button" aria-label="Write here" onClick={() => choose(onWrite)} className="flex items-center gap-3 rounded-[12px] px-3 py-3 text-left hover:bg-foreground/[0.04]">
-                      <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                      <span><span className="block text-[13px] font-semibold text-foreground">Write here</span><span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Create lyrics, press notes, or another song document.</span></span>
+                  {onAskManager ? (
+                    <button ref={firstActionRef} type="button" aria-label="Build with Manager" onClick={() => choose(onAskManager)} className="flex items-center gap-3 rounded-[12px] bg-brand-accent/[0.045] px-3 py-3 text-left hover:bg-brand-accent/[0.075]">
+                      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-brand-accent/10 text-brand-accent"><Sparkles className="h-4 w-4" aria-hidden="true" /></span>
+                      <span><span className="block text-[13px] font-semibold text-foreground">Build with Manager</span><span className="mt-0.5 block text-[11px] font-medium leading-relaxed text-muted-foreground">Manager starts from the song’s current evidence and campaign narrative, builds the right artifact, quality-checks it, then saves the canonical draft here for review.</span></span>
                     </button>
                   ) : null}
-                  {onAskManager ? (
-                    <button ref={onWrite ? undefined : firstActionRef} type="button" aria-label="Ask Manager to draft" onClick={() => choose(onAskManager)} className="flex items-center gap-3 rounded-[12px] px-3 py-3 text-left hover:bg-foreground/[0.04]">
-                      <Sparkles className="h-4 w-4 text-brand-accent" aria-hidden="true" />
-                      <span><span className="block text-[13px] font-semibold text-foreground">Ask Manager to draft</span><span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Start from the song’s current lyrics, files, and release context. The draft is saved in the song Files for you to review before sharing.</span></span>
+                  {onWrite ? (
+                    <button ref={onAskManager ? undefined : firstActionRef} type="button" aria-label="Write manually" onClick={() => choose(onWrite)} className="flex items-center gap-3 rounded-[12px] px-3 py-3 text-left hover:bg-foreground/[0.04]">
+                      <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      <span><span className="block text-[13px] font-semibold text-foreground">Write manually</span><span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">Create or take direct control of a song document yourself.</span></span>
                     </button>
                   ) : null}
                   <div className="my-1 border-t border-foreground/8" />

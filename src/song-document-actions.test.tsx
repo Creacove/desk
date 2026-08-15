@@ -23,8 +23,8 @@ describe("SongDocumentActions", () => {
     const dialog = screen.getByRole("dialog", { name: "Add document" });
     expect(dialog.parentElement).toBe(document.body);
     for (const label of [
-      "Write here",
-      "Ask Manager to draft",
+      "Build with Manager",
+      "Write manually",
       "Lyrics",
       "EPK / press kit",
       "Press material",
@@ -57,7 +57,8 @@ describe("SongDocumentActions", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Add document" }));
 
-    expect(screen.getByRole("dialog", { name: "Add document" })).toHaveTextContent("song Files");
-    expect(screen.getByRole("dialog", { name: "Add document" })).toHaveTextContent("review before sharing");
+    const dialog = screen.getByRole("dialog", { name: "Add document" });
+    expect(dialog).toHaveTextContent("Song files");
+    expect(dialog).toHaveTextContent("saves the canonical draft here for review");
   });
 });

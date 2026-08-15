@@ -1,17 +1,36 @@
 import { ArrowRight, BriefcaseBusiness, MessageCircle, Play } from "lucide-react";
 
 import type { MissionViewModel } from "../../types/cleanProduction";
+import type { SongCampaignState } from "./songCampaign";
 
 export function ReleaseWorkAttachment({
   missions = [],
+  campaign,
   onOpenPlan,
   onTalkToManager,
+  onOpenCampaign,
 }: {
   missions?: MissionViewModel[];
+  campaign?: SongCampaignState;
   onOpenPlan?: (missionId: string) => void;
   onTalkToManager?: () => void;
+  onOpenCampaign?: () => void;
 }) {
   if (!missions.length && !onTalkToManager) return null;
+
+  const postRelease = campaign?.phase === "post_release";
+  const activeCampaign = Boolean(campaign?.visible);
+  const title = activeCampaign
+    ? postRelease ? "Campaign" : "Release campaign"
+    : postRelease ? "Grow this record" : "Work on this song";
+  const copy = activeCampaign
+    ? postRelease
+      ? "The servicing work, materials and next move for this record live here."
+      : "The release story, materials and active work live here."
+    : postRelease
+      ? "Start with Manager when you want to actively service this record."
+      : "Manager can turn the current song state into a focused release plan.";
+  const managerLabel = activeCampaign ? "Continue with Manager" : postRelease ? "Start with Manager" : "Talk to Manager";
 
   return (
     <section role="region" aria-label="Work on this song" className="surface-elevated overflow-hidden rounded-[16px] shadow-sm lg:sticky lg:top-5 lg:rounded-[22px]">
@@ -19,12 +38,24 @@ export function ReleaseWorkAttachment({
         <span className="inline-flex h-9 w-9 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
           <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
         </span>
-        <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight text-foreground">Work on this song</h4>
-        <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">Continue the conversation or open a linked mission.</p>
+        <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight text-foreground">{title}</h4>
+        <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{copy}</p>
+
+        {activeCampaign && onOpenCampaign ? (
+          <button type="button" aria-label="Open campaign" onClick={onOpenCampaign} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+            Open campaign
+            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        ) : null}
         {onTalkToManager ? (
-          <button type="button" aria-label="Talk to Manager" onClick={onTalkToManager} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+          <button
+            type="button"
+            aria-label="Talk to Manager"
+            onClick={onTalkToManager}
+            className={`${activeCampaign ? "mt-2 border border-foreground/10 text-foreground hover:bg-foreground/[0.035]" : "mt-4 bg-foreground text-background hover:opacity-85"} inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-accent/25`}
+          >
             <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-            Talk to Manager
+            {managerLabel}
           </button>
         ) : null}
       </div>

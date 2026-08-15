@@ -214,6 +214,9 @@ const focusedReleaseOpportunityOutcomeProperties = {
   },
 };
 
+// The body remains a string to keep the existing tool API stable, but it is now a
+// JSON-encoded structured artifact. The server parses it, renders the readable body,
+// scores it against document-specific standards and refuses weak artifacts.
 const focusedSongDocumentProperties = {
   type: "object",
   additionalProperties: false,
@@ -221,8 +224,22 @@ const focusedSongDocumentProperties = {
   properties: {
     documentType: { type: "string", enum: ["epk", "spotify_editorial_pitch", "playlist_pitch", "press_target_brief", "press_pitch", "content_plan", "release_calendar", "press_release", "press_angle", "artist_biography", "one_sheet", "lyrics", "credits", "distributor_notes"] },
     title: { type: "string" },
-    body: { type: "string" },
+    body: {
+      type: "string",
+      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. Do not send markdown or generic prose here. Unknown facts belong in missingInputs, never placeholders. To create the internal Release Narrative, use documentType press_angle, title exactly Release narrative, and sections positioning, story, audience, campaign_thesis, proof, creative_world, and language_guardrails.",
+    },
     opportunityId: { type: ["string", "null"] },
+  },
+};
+
+const focusedReleaseSharePackageProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["preset", "opportunityId", "label"],
+  properties: {
+    preset: { type: "string", enum: ["listen", "epk_press", "delivery", "custom"] },
+    opportunityId: { type: ["string", "null"] },
+    label: { type: ["string", "null"] },
   },
 };
 
@@ -303,7 +320,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "read_focused_music_subject",
-    description: "Read the exact attached song or project packet, including its existing metadata, assets, credits, identifiers, and rights readiness. Use only when a song or project is attached to this conversation.",
+    description: "Read the exact attached song or project packet, including its existing metadata, assets, credits, identifiers, rights readiness, and current canonical documents. Use only when a song or project is attached to this conversation.",
     strict: true,
     parameters: focusedMusicReadProperties,
   },
@@ -345,10 +362,17 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one canonical song document through the existing Files pathway for the exact attached song. The document is a draft for review and sharing; it is never sent or published.",
+    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
+  {
+  type: "function",
+  name: "prepare_focused_release_share_package",
+  description: "Prepare a frozen, revocable private package for the exact attached song from approved canonical Files content. Optionally bind it to one saved release opportunity. This only prepares a reviewable link; it never emails, submits, posts, spends, or contacts anyone.",
+  strict: true,
+  parameters: focusedReleaseSharePackageProperties,
+},
   {
     type: "function",
     name: "read_focused_release_readiness",
@@ -393,6 +417,7 @@ const releaseTurnToolNames = new Set([
   "save_focused_release_opportunities",
   "record_focused_release_opportunity_outcome",
   "create_focused_song_document",
+  "prepare_focused_release_share_package",
 ]);
 
 export function selectManagerConversationToolsForTurn(input: {
@@ -402,28 +427,36 @@ export function selectManagerConversationToolsForTurn(input: {
 }): ManagerAgentToolDefinition[] {
   const allowed = new Set<string>();
   const body = input.body.trim().toLowerCase();
+  const contextAnswerText = (input.contextAnswers ?? [])
+    .map((answer) => `${answer.questionKey} ${answer.answer}`)
+    .join(" ")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  const intentText = `${body} ${contextAnswerText}`;
+  const servicingIntent = /\b(playlist(?:ing)?|playlist opportunities?|curator|press|publicity|editorial|media|outreach|record servicing|service this (?:song|release)|pitch(?:ing)?(?:\s+(?:this|the))?\s+(?:song|release|record))\b/.test(intentText);
+  const documentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh)\b/.test(body)
+    && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
+  const packageIntent = /\b(prepare|build|create|make|assemble)\b/.test(body)
+  && /\b(package|share link|private link|delivery link|press kit|epk package)\b/.test(body);
+  const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
+
+  if (servicingIntent) {
+    allowed.add("query_focused_release_opportunities");
+    allowed.add("save_focused_release_opportunities");
+    allowed.add("create_focused_song_document");
+  }
+  if (documentIntent) allowed.add("create_focused_song_document");
+  if (packageIntent) allowed.add("prepare_focused_release_share_package");
+  if (outcomeIntent) allowed.add("record_focused_release_opportunity_outcome");
+
   if (input.hasAttachedUnreleasedSong) {
-    const contextAnswerText = (input.contextAnswers ?? [])
-      .map((answer) => `${answer.questionKey} ${answer.answer}`)
-      .join(" ")
-      .replace(/[_-]+/g, " ")
-      .toLowerCase();
-    const releaseIntent = /\b(release|launch|rollout|campaign|playlist|press|publicity|editorial|epk|press kit|pitch|release date)\b/.test(`${body} ${contextAnswerText}`);
-    const documentIntent = /\b(draft|write|prepare|create|make)\b/.test(body)
-      && /\b(epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
-    if (releaseIntent) {
+    const releaseManagementIntent = /\b(release date|release readiness|readiness|ready to release|ready for release|release (?:this|the) (?:song|record)|move (?:the )?release|delay (?:the )?release|postpone|reschedule|release plan|plan this release|launch date)\b/.test(intentText);
+    if (releaseManagementIntent) {
       allowed.add("read_focused_release_success");
       allowed.add("propose_focused_release_date_change");
-      allowed.add("query_focused_release_opportunities");
-      allowed.add("save_focused_release_opportunities");
-      allowed.add("create_focused_song_document");
-    } else if (documentIntent) {
-      allowed.add("create_focused_song_document");
-    }
-    if (/\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body)) {
-      allowed.add("record_focused_release_opportunity_outcome");
     }
   }
+
   return managerConversationTools.filter((tool) => tool.type !== "function"
     || !releaseTurnToolNames.has(tool.name)
     || allowed.has(tool.name));
@@ -613,6 +646,11 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "query_durable_memory") return "Reading durable Manager memory.";
   if (name === "query_manager_outputs") return "Reviewing prior Manager outputs.";
   if (name === "read_manager_output_section") return "Reading the relevant Manager document section.";
+  if (name === "query_focused_release_opportunities") return "Checking saved playlist and press targets.";
+  if (name === "save_focused_release_opportunities") return "Saving verified release opportunities.";
+  if (name === "create_focused_song_document") return "Building and quality-checking a campaign document.";
+  if (name === "prepare_focused_release_share_package") return "Preparing a private release package.";
+  if (name === "record_focused_release_opportunity_outcome") return "Recording the opportunity outcome.";
   return "Manager is checking the workspace.";
 }
 
@@ -643,7 +681,9 @@ function summarizeToolResult(name: string, value: unknown) {
     const status = typeof value.status === "string" && value.status.trim() ? value.status.trim() : "";
     const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
       ? value.evidenceCount
-      : null;
+      : Array.isArray(value.evidence)
+        ? value.evidence.length
+        : null;
     const snapshotId = typeof value.snapshotId === "string" && value.snapshotId.trim() ? value.snapshotId.trim() : "";
     const memoryId = typeof value.memoryId === "string" && value.memoryId.trim() ? value.memoryId.trim() : "";
     const evidenceId = typeof value.evidenceId === "string" && value.evidenceId.trim() ? value.evidenceId.trim() : "";
@@ -655,7 +695,7 @@ function summarizeToolResult(name: string, value: unknown) {
       const normalizedStatus = status || "completed";
       const suffix = evidenceCount === null
         ? ""
-        : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;
+        : ` with ${evidenceCount} saved evidence item${evidenceCount === 1 ? "" : "s"}`;
       return `Manager tool ${normalizedStatus}${suffix}.`;
     }
   }
@@ -667,7 +707,7 @@ function summarizeToolResult(name: string, value: unknown) {
 function summarizeDiscoveryToolResult(name: string, status: string, evidenceCount: number | null) {
   const countText = evidenceCount === null
     ? ""
-    : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;
+    : ` with ${evidenceCount} saved evidence item${evidenceCount === 1 ? "" : "s"}`;
   const normalizedStatus = status.toLowerCase();
   if (name === "chartmetric_artist_enrich") {
     if (normalizedStatus === "cached") return `Artist intelligence is already up to date${countText}.`;

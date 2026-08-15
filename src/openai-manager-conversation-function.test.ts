@@ -34,7 +34,7 @@ const musicSubjectGrantMigrationPath = join(
 describe("OpenAI Manager Conversation Router", () => {
   it("defines the document text normalizer used while loading focused song context", () => {
     expect(songDocumentDraftSource).toContain("function cleanLongText");
-    expect(songDocumentDraftSource).toContain("cleanLongText(version?.metadata?.body");
+    expect(songDocumentDraftSource).toContain("cleanLongText(metadata.body, 60_000)");
   });
   it("has a deployed Edge Function contract for authenticated Manager chat routing", () => {
     expect(existsSync(functionPath)).toBe(true);

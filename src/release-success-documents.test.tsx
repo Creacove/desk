@@ -131,6 +131,34 @@ const input = {
   musicSubject: { type: "music_item" as const, id: "song-1" },
 };
 
+const documentSections = {
+  press_pitch: ["subject_line", "opening", "why_them", "story", "proof", "cta"],
+  playlist_pitch: ["subject_line", "opening", "fit", "song_story", "proof", "cta"],
+  epk: ["artist_snapshot", "release_story", "why_now", "sound_and_context", "proof", "press_angles", "assets_and_links", "contact"],
+} as const;
+
+function structuredBody(type: keyof typeof documentSections, revision: string) {
+  const sections = documentSections[type].map((key, index) => ({
+    key,
+    title: key.replace(/_/g, " "),
+    content: `After Midnight ${revision} section ${index + 1} uses verified workspace context to explain the song, its late-night Afrobeats direction, the intended audience, and the concrete campaign action without inventing unsupported performance claims or recipient details.`,
+    evidenceRefs: ["workspace:song-1"],
+  }));
+  return JSON.stringify({
+    purpose: "Prepare a specific review-ready campaign document for this recorded song.",
+    audience: "Verified music industry recipients reviewing this release.",
+    coreNarrative: "After Midnight is positioned as a late-night Afrobeats record whose restrained mood and direct release story give the campaign one consistent, evidence-grounded angle across every recipient-facing asset.",
+    sections,
+    claims: [{
+      text: "The workspace identifies After Midnight as an Afrobeats song with a late-night mood.",
+      basis: "workspace",
+      sourceRef: "workspace:song-1",
+      confidence: "high",
+    }],
+    missingInputs: [],
+  });
+}
+
 afterEach(() => vi.restoreAllMocks());
 
 describe("release-success canonical documents", () => {
@@ -160,14 +188,14 @@ describe("release-success canonical documents", () => {
       ...input,
       documentType: "press_pitch",
       title: "Personalized press pitch",
-    } as any, "run-1", "First approved-safe draft", false);
+    } as any, "run-1", structuredBody("press_pitch", "first"), false);
     const second = await persistFocusedSongDocumentDraft(db, {
       ...input,
       documentType: "press_pitch",
       title: "Personalized press pitch",
-    } as any, "run-2", "Updated draft", false);
+    } as any, "run-2", structuredBody("press_pitch", "updated"), false);
 
-    expect(first).toEqual(expect.objectContaining({ documentId: "document-1", missionId: "mission-1", status: "draft" }));
+    expect(first).toEqual(expect.objectContaining({ documentId: "document-1", missionId: "mission-1", status: "draft", schemaVersion: "song_document_v2" }));
     expect(second).toEqual(expect.objectContaining({ documentId: "document-1", versionId: expect.not.stringMatching(first?.versionId ?? "^$") }));
     expect(db.rows.documents).toHaveLength(1);
     expect(db.rows.document_versions.map((row) => row.version_number)).toEqual([1, 2]);
@@ -186,7 +214,7 @@ describe("release-success canonical documents", () => {
       ...input,
       documentType: "epk",
       title: "EPK",
-    } as any, "run-failed", "A draft that must not survive", false)).rejects.toThrow("operating_events write failed");
+    } as any, "run-failed", structuredBody("epk", "failed"), false)).rejects.toThrow("operating_events write failed");
 
     expect(db.rows.documents).toEqual([]);
     expect(db.rows.document_versions).toEqual([]);
@@ -200,7 +228,7 @@ describe("release-success canonical documents", () => {
       ...input,
       documentType: "playlist_pitch",
       title: "Playlist pitch",
-    } as any, "run-1", "Original draft", false);
+    } as any, "run-1", structuredBody("playlist_pitch", "original"), false);
     const originalDocument = { ...db.rows.documents[0] };
     const originalVersions = db.rows.document_versions.map((row) => ({ ...row }));
 
@@ -209,7 +237,7 @@ describe("release-success canonical documents", () => {
       ...input,
       documentType: "playlist_pitch",
       title: "Playlist pitch",
-    } as any, "run-2", "A replacement draft that must not survive", false)).rejects.toThrow("operating_events write failed");
+    } as any, "run-2", structuredBody("playlist_pitch", "replacement"), false)).rejects.toThrow("operating_events write failed");
 
     expect(db.rows.documents).toEqual([originalDocument]);
     expect(db.rows.document_versions).toEqual(originalVersions);

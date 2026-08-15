@@ -424,20 +424,21 @@ describe("playlist and press opportunity artifacts", () => {
     }],
   } as any;
 
-  it("renders a playlist opportunity shortlist with inspectable provenance and manual outcome", () => {
+  it("renders a playlist servicing decision with inspectable provenance and manual outcome", () => {
     const onPreparePitch = vi.fn();
     const onRecordOutcome = vi.fn();
     const onOpenFiles = vi.fn();
     render(<OpportunityArtifact artifact={playlistArtifact} onPreparePitch={onPreparePitch} onRecordOutcome={onRecordOutcome} onOpenFiles={onOpenFiles} onRetry={vi.fn()} />);
 
     const card = screen.getByTestId("release-opportunity-artifact");
-    expect(card).toHaveTextContent("Best match");
-    expect(card).toHaveTextContent("8 matches reviewed");
-    expect(card).not.toHaveTextContent("Watchlist");
-    fireEvent.click(screen.getByRole("button", { name: "View all matches" }));
-    expect(card).toHaveTextContent("6 shortlisted");
-    expect(card).toHaveTextContent("Watchlist");
-    expect(card).toHaveTextContent("Excluded");
+    expect(card).toHaveTextContent("PITCH NOW");
+    expect(screen.getByRole("heading", { name: "6 playlist opportunities worth pitching now" })).toBeInTheDocument();
+    expect(card).toHaveTextContent("Pitch now");
+    expect(card).toHaveTextContent("Watch");
+    expect(card).toHaveTextContent("Skip");
+    expect(card).not.toHaveTextContent("Night Drive 1");
+    fireEvent.click(screen.getByRole("button", { name: "Review targets" }));
+    expect(card).toHaveTextContent("Night Drive 1");
     expect(card).toHaveTextContent("Source evidence");
     expect(card).toHaveTextContent("Contact route");
     expect(card).toHaveTextContent("The song's nocturnal hook matches the playlist's stated lane.");
@@ -472,7 +473,7 @@ describe("playlist and press opportunity artifacts", () => {
     };
     render(<OpportunityArtifact artifact={spotifyArtifact} onPreparePitch={vi.fn()} onRecordOutcome={vi.fn()} onOpenFiles={vi.fn()} onRetry={vi.fn()} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "View all matches" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review targets" }));
     expect(screen.getByText("Spotify editorial handoff")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open Spotify for Artists" })).toHaveAttribute("href", "https://artists.spotify.com/c/artist/submit");
     expect(screen.queryByText(/editor@|spotify editor email/i)).not.toBeInTheDocument();
@@ -491,7 +492,7 @@ describe("playlist and press opportunity artifacts", () => {
     const onRetry = vi.fn();
     render(<OpportunityArtifact artifact={targetPackageArtifact} onPreparePitch={vi.fn()} onRecordOutcome={vi.fn()} onOpenFiles={vi.fn()} onRetry={onRetry} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "View all matches" }));
+    fireEvent.click(screen.getByRole("button", { name: "Review targets" }));
     expect(screen.getByText("Target package")).toBeInTheDocument();
     expect(screen.getByText("EPK")).toBeInTheDocument();
     expect(screen.getByText("Personalized press pitch")).toBeInTheDocument();

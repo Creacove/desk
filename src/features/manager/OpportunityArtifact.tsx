@@ -28,6 +28,18 @@ export function OpportunityArtifact({
   const selectedTarget = allTargets.find((target) => target.id === selectedId) ?? allTargets[0];
   const outcomeTarget = allTargets.find((target) => target.id === outcomeTargetId);
   const isSpotifyEditorial = selectedTarget ? /spotify\s+(?:editorial|for artists)|editorial\s+playlist/i.test(`${selectedTarget.platform ?? ""} ${selectedTarget.targetName}`) : false;
+  const preparedCount = artifact.shortlist.filter((target) => Boolean(target.package?.pitchBody || target.pitchDocumentId)).length;
+  const decisionLabel = artifact.shortlist.length ? "PITCH NOW" : artifact.watch.length ? "WATCH" : "SKIP";
+  const targetLabel = artifact.opportunityType === "playlist" ? "playlist" : "press";
+  const decisionTitle = artifact.shortlist.length
+    ? `${artifact.shortlist.length} ${targetLabel} ${artifact.shortlist.length === 1 ? "opportunity" : "opportunities"} worth pitching now`
+    : artifact.watch.length
+      ? `No ${targetLabel} target is ready to pitch yet`
+      : `No worthwhile ${targetLabel} target found`;
+  const thesis = artifact.shortlist[0]?.fit.explanation
+    ?? artifact.watch[0]?.fit.explanation
+    ?? artifact.failure?.message
+    ?? "No evidence-backed target is ready yet.";
 
   useEffect(() => {
     if (!allTargets.some((target) => target.id === selectedId)) setSelectedId(allTargets[0]?.id ?? "");
@@ -54,88 +66,99 @@ export function OpportunityArtifact({
 
   return (
     <article data-testid="release-opportunity-artifact" className="mt-5 border-l-2 border-foreground/12 py-1 pl-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold text-muted-foreground">Best match · {allTargets.length} {allTargets.length === 1 ? "match" : "matches"} reviewed</p>
-          <p className="mt-1 truncate text-[14px] font-semibold text-foreground">{allTargets[0]?.targetName ?? "No actionable match yet"}</p>
-        </div>
-        {allTargets.length ? <button type="button" aria-expanded={detailsExpanded} onClick={() => setDetailsExpanded((expanded) => !expanded)} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-foreground/75 hover:bg-foreground/[0.05]">{detailsExpanded ? "Hide matches" : "View all matches"}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`} aria-hidden="true" /></button> : null}
-      </div>
-      {detailsExpanded ? <>
-      <header className="border-b border-foreground/8 bg-foreground/[0.02] px-4 py-4 sm:px-5">
-        <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-brand-accent/10 text-brand-accent"><Target className="h-4 w-4" aria-hidden="true" /></span>
+      <section aria-label={`${artifact.subject.title} ${artifact.opportunityType} servicing decision`}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Release targets · {artifact.opportunityType}</p>
-            <h3 className="mt-1 text-[16px] font-bold text-foreground">{artifact.subject.title}</h3>
-            <p className="mt-1 text-[12px] font-semibold text-muted-foreground">Evidence-backed targets for this song. Preparation only — no outreach is sent.</p>
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">{artifact.subject.title} · {artifact.opportunityType} servicing</p>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] ${decisionLabel === "PITCH NOW" ? "bg-success/10 text-success" : decisionLabel === "SKIP" ? "bg-danger/10 text-danger" : "bg-foreground/[0.06] text-muted-foreground"}`}>{decisionLabel}</span>
+              <span className="text-[10px] font-semibold text-muted-foreground">Preparation only — no outreach is sent.</span>
+            </div>
+            <h3 className="mt-3 text-[18px] font-bold leading-tight text-foreground">{decisionTitle}</h3>
+            <p className="mt-2 max-w-[46rem] text-[12px] font-semibold leading-relaxed text-muted-foreground">{thesis}</p>
           </div>
           {artifact.missionId && onOpenMission ? <button type="button" onClick={() => void onOpenMission(artifact.missionId!)} className="shrink-0 rounded-lg border border-foreground/10 px-2.5 py-2 text-[10px] font-bold text-foreground hover:bg-foreground/[0.04]">Open mission</button> : null}
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-2" aria-label="Opportunity result counts">
-          <Count label="Shortlisted" value={artifact.shortlist.length} tone="accent" />
-          <Count label="Watchlist" value={artifact.watch.length} tone="muted" />
-          <Count label="Excluded" value={artifact.excluded.length} tone="danger" />
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Opportunity decision counts">
+          <Count label="Pitch now" value={artifact.shortlist.length} tone="accent" />
+          <Count label="Watch" value={artifact.watch.length} tone="muted" />
+          <Count label="Skip" value={artifact.excluded.length} tone="danger" />
+          <Count label="Prepared" value={preparedCount} tone="muted" />
         </div>
-      </header>
 
-      <div className="grid gap-4 p-4 sm:p-5">
-        <TargetSection title={`${artifact.shortlist.length} shortlisted`} targets={artifact.shortlist} selectedId={selectedId} onSelect={setSelectedId} />
-        <TargetSection title="Watchlist" targets={artifact.watch} selectedId={selectedId} onSelect={setSelectedId} muted />
-        <TargetSection title="Excluded" targets={artifact.excluded} selectedId={selectedId} onSelect={setSelectedId} excluded />
-
-        {selectedTarget ? (
-          <section className="rounded-[15px] border border-foreground/10 bg-foreground/[0.018] p-4" aria-label={`Details for ${selectedTarget.targetName}`}>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-ui text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Target detail</p>
-                <h4 className="mt-1 text-[17px] font-bold text-foreground">{selectedTarget.targetName}</h4>
-                <p className="mt-1 text-[11px] font-semibold capitalize text-muted-foreground">{selectedTarget.platform ?? artifact.opportunityType} · {selectedTarget.confidence} confidence</p>
-              </div>
-              <SafetyBadge state={selectedTarget.safetyState} />
-            </div>
-
-            {isSpotifyEditorial ? (
-              <div className="mt-4 rounded-[12px] border border-[#1ed760]/20 bg-[#1ed760]/[0.07] p-3">
-                <p className="text-[11px] font-bold text-foreground">Spotify editorial handoff</p>
-                <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Use Spotify for Artists' official route. The Manager does not expose editor emails or claim a submission was made.</p>
-                {selectedTarget.targetUrl ? <ExternalAnchor href={selectedTarget.targetUrl} label="Open Spotify for Artists" /> : null}
-              </div>
-            ) : null}
-
-            <DetailGrid target={selectedTarget} />
-
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button type="button" onClick={() => void onPreparePitch(selectedTarget)} className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-bold text-background hover:bg-foreground/85"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />Prepare pitch for {selectedTarget.targetName}</button>
-              {selectedTarget.package?.shareUrl ? <ExternalAnchor href={selectedTarget.package.shareUrl} label="Open share link" icon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />} /> : <button type="button" onClick={() => void onOpenFiles(artifact.musicItemId)} className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]"><FileText className="h-3.5 w-3.5" aria-hidden="true" />Open Files to create share link</button>}
-              <button type="button" onClick={() => { setOutcomeTargetId(selectedTarget.id); setOutcomeNote(selectedTarget.manualOutcome ?? ""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]"><Check className="h-3.5 w-3.5" aria-hidden="true" />Record outcome for {selectedTarget.targetName}</button>
-            </div>
-
-            {outcomeTarget ? (
-              <div className="mt-3 rounded-[12px] border border-brand-accent/20 bg-brand-accent/[0.045] p-3">
-                <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold text-foreground">Manual outcome</p><button type="button" aria-label="Close manual outcome" onClick={() => setOutcomeTargetId(null)} className="rounded-md p-1 text-muted-foreground hover:bg-foreground/5"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div>
-                <div className="mt-2 grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
-                  <select aria-label={`Outcome status for ${outcomeTarget.targetName}`} value={outcomeStatus} onChange={(event) => setOutcomeStatus(event.target.value as ReleaseOpportunityTargetViewModel["status"])} className="h-9 rounded-lg border border-foreground/10 bg-background px-2 text-[11px] font-semibold text-foreground">
-                    {(["submitted_manually", "replied", "accepted", "declined", "watch"] as const).map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
-                  </select>
-                  <input aria-label={`Outcome note for ${outcomeTarget.targetName}`} value={outcomeNote} onChange={(event) => setOutcomeNote(event.target.value)} placeholder="What happened?" className="h-9 min-w-0 rounded-lg border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground outline-none" />
-                  <button type="button" aria-label={`Save outcome for ${outcomeTarget.targetName}`} disabled={!outcomeNote.trim()} onClick={() => void saveOutcome()} className="h-9 rounded-lg bg-foreground px-3 text-[11px] font-bold text-background disabled:opacity-40">Save outcome</button>
-                </div>
-              </div>
-            ) : null}
-
-            {selectedTarget.package ? <TargetPackage target={selectedTarget} copied={copied} onCopy={() => void copyPitch()} onOpenFiles={() => void onOpenFiles(artifact.musicItemId)} /> : null}
-          </section>
-        ) : <p className="rounded-[12px] border border-dashed border-foreground/12 px-4 py-5 text-center text-[12px] font-semibold text-muted-foreground">No target is ready to inspect yet.</p>}
-
-        {artifact.failure ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-danger/20 bg-danger/[0.045] px-3.5 py-3" role="alert">
-            <div><p className="text-[11px] font-bold text-danger">Research paused at {artifact.failure.stage.replace(/_/g, " ")}</p><p className="mt-1 text-[11px] font-semibold text-muted-foreground">{artifact.failure.message}</p></div>
-            {artifact.failure.retryable ? <button type="button" onClick={() => void onRetry(artifact)} className="inline-flex items-center gap-1.5 rounded-lg border border-danger/20 px-3 py-2 text-[11px] font-bold text-danger hover:bg-danger/5"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />Retry {artifact.failure.stage.replace(/_/g, " ")}</button> : null}
-          </div>
+        {allTargets.length ? (
+          <button
+            type="button"
+            aria-expanded={detailsExpanded}
+            aria-label={detailsExpanded ? "Hide targets" : "Review targets"}
+            onClick={() => setDetailsExpanded((expanded) => !expanded)}
+            className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-foreground/75 hover:bg-foreground/[0.05]"
+          >
+            {detailsExpanded ? "Hide targets" : "Review targets"}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
         ) : null}
-      </div>
-      </> : null}
+      </section>
+
+      {detailsExpanded ? (
+        <div className="mt-4 grid gap-4 border-t border-foreground/8 pt-4">
+          <TargetSection title="Pitch now" targets={artifact.shortlist} selectedId={selectedId} onSelect={setSelectedId} />
+          <TargetSection title="Watch" targets={artifact.watch} selectedId={selectedId} onSelect={setSelectedId} muted />
+          <TargetSection title="Skip" targets={artifact.excluded} selectedId={selectedId} onSelect={setSelectedId} excluded />
+
+          {selectedTarget ? (
+            <section className="rounded-[15px] border border-foreground/10 bg-foreground/[0.018] p-4" aria-label={`Details for ${selectedTarget.targetName}`}>
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-ui text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Target detail</p>
+                  <h4 className="mt-1 text-[17px] font-bold text-foreground">{selectedTarget.targetName}</h4>
+                  <p className="mt-1 text-[11px] font-semibold capitalize text-muted-foreground">{selectedTarget.platform ?? artifact.opportunityType} · {selectedTarget.confidence} confidence</p>
+                </div>
+                <SafetyBadge state={selectedTarget.safetyState} />
+              </div>
+
+              {isSpotifyEditorial ? (
+                <div className="mt-4 rounded-[12px] border border-[#1ed760]/20 bg-[#1ed760]/[0.07] p-3">
+                  <p className="text-[11px] font-bold text-foreground">Spotify editorial handoff</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Use Spotify for Artists' official route. The Manager does not expose editor emails or claim a submission was made.</p>
+                  {selectedTarget.targetUrl ? <ExternalAnchor href={selectedTarget.targetUrl} label="Open Spotify for Artists" /> : null}
+                </div>
+              ) : null}
+
+              <DetailGrid target={selectedTarget} />
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => void onPreparePitch(selectedTarget)} className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-bold text-background hover:bg-foreground/85"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />Prepare pitch for {selectedTarget.targetName}</button>
+                {selectedTarget.package?.shareUrl ? <ExternalAnchor href={selectedTarget.package.shareUrl} label="Open share link" icon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />} /> : <button type="button" onClick={() => void onOpenFiles(artifact.musicItemId)} className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]"><FileText className="h-3.5 w-3.5" aria-hidden="true" />Open Files to create share link</button>}
+                <button type="button" onClick={() => { setOutcomeTargetId(selectedTarget.id); setOutcomeNote(selectedTarget.manualOutcome ?? ""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]"><Check className="h-3.5 w-3.5" aria-hidden="true" />Record outcome for {selectedTarget.targetName}</button>
+              </div>
+
+              {outcomeTarget ? (
+                <div className="mt-3 rounded-[12px] border border-brand-accent/20 bg-brand-accent/[0.045] p-3">
+                  <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold text-foreground">Manual outcome</p><button type="button" aria-label="Close manual outcome" onClick={() => setOutcomeTargetId(null)} className="rounded-md p-1 text-muted-foreground hover:bg-foreground/5"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
+                    <select aria-label={`Outcome status for ${outcomeTarget.targetName}`} value={outcomeStatus} onChange={(event) => setOutcomeStatus(event.target.value as ReleaseOpportunityTargetViewModel["status"])} className="h-9 rounded-lg border border-foreground/10 bg-background px-2 text-[11px] font-semibold text-foreground">
+                      {(["submitted_manually", "replied", "accepted", "declined", "watch"] as const).map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
+                    </select>
+                    <input aria-label={`Outcome note for ${outcomeTarget.targetName}`} value={outcomeNote} onChange={(event) => setOutcomeNote(event.target.value)} placeholder="What happened?" className="h-9 min-w-0 rounded-lg border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground outline-none" />
+                    <button type="button" aria-label={`Save outcome for ${outcomeTarget.targetName}`} disabled={!outcomeNote.trim()} onClick={() => void saveOutcome()} className="h-9 rounded-lg bg-foreground px-3 text-[11px] font-bold text-background disabled:opacity-40">Save outcome</button>
+                  </div>
+                </div>
+              ) : null}
+
+              {selectedTarget.package ? <TargetPackage target={selectedTarget} copied={copied} onCopy={() => void copyPitch()} onOpenFiles={() => void onOpenFiles(artifact.musicItemId)} /> : null}
+            </section>
+          ) : <p className="rounded-[12px] border border-dashed border-foreground/12 px-4 py-5 text-center text-[12px] font-semibold text-muted-foreground">No target is ready to inspect yet.</p>}
+
+          {artifact.failure ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-danger/20 bg-danger/[0.045] px-3.5 py-3" role="alert">
+              <div><p className="text-[11px] font-bold text-danger">Research paused at {artifact.failure.stage.replace(/_/g, " ")}</p><p className="mt-1 text-[11px] font-semibold text-muted-foreground">{artifact.failure.message}</p></div>
+              {artifact.failure.retryable ? <button type="button" onClick={() => void onRetry(artifact)} className="inline-flex items-center gap-1.5 rounded-lg border border-danger/20 px-3 py-2 text-[11px] font-bold text-danger hover:bg-danger/5"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />Retry {artifact.failure.stage.replace(/_/g, " ")}</button> : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </article>
   );
 }

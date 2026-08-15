@@ -1,0 +1,355 @@
+name: PR Safety
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-safety-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  VITE_SUPABASE_URL: http://localhost:54321
+  VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+
+jobs:
+  type-regression:
+    name: Browser type regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout PR head with base history
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compare TypeScript diagnostics with main
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_SHA="${{ github.event.pull_request.head.sha }}"
+          BASE_SHA="${{ github.event.pull_request.base.sha }}"
+
+          git checkout --detach "$BASE_SHA"
+          npx tsc --noEmit --pretty false > /tmp/tsc-base.txt 2>&1 || true
+
+          git checkout --detach "$HEAD_SHA"
+          npx tsc --noEmit --pretty false > /tmp/tsc-head.txt 2>&1 || true
+
+          python - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import re
+          import sys
+
+          location = re.compile(r'\(\d+,\d+\)')
+
+          def diagnostics(path):
+              lines = []
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  line = location.sub('(LINE,COL)', raw.strip())
+                  if line.startswith('supabase/functions/') and 'error TS5097:' in line:
+                      continue
+                  lines.append(line)
+              return Counter(lines)
+
+          base = diagnostics('/tmp/tsc-base.txt')
+          head = diagnostics('/tmp/tsc-head.txt')
+          added = head - base
+          removed = base - head
+
+          if added:
+              print('New TypeScript diagnostics introduced by this PR:')
+              for line, count in sorted(added.items()):
+                  for _ in range(count):
+                      print(f'  + {line}')
+              if removed:
+                  print('\nBaseline diagnostics removed or moved:')
+                  for line, count in sorted(removed.items()):
+                      for _ in range(count):
+                          print(f'  - {line}')
+              sys.exit(1)
+
+          print('No new browser TypeScript diagnostics were introduced.')
+          if removed:
+              print(f'The PR removes {sum(removed.values())} baseline diagnostic line(s).')
+          PY
+
+  edge-typecheck:
+    name: Manager, sharing and telemetry Deno check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check production Edge boundaries
+        run: >-
+          deno check
+          supabase/functions/_shared/appError.ts
+          supabase/functions/_shared/songDocumentStandards.ts
+          supabase/functions/_shared/songDocumentDraft.ts
+          supabase/functions/_shared/manager-conversation/agentLoop.ts
+          supabase/functions/_shared/manager-conversation/toolExecutor.ts
+          supabase/functions/manager-conversation/index.ts
+          supabase/functions/music-share-links/index.ts
+          supabase/functions/public-music-share/index.ts
+          supabase/functions/capture-browser-error/index.ts
+
+  database-smoke:
+    name: Fresh Supabase migration, RPC and RLS smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+
+      - name: Add disposable local-only Vault prerequisites
+        shell: bash
+        run: |
+          cat > supabase/migrations/20260525000000_ci_vault_prereqs.sql <<'SQL'
+          create extension if not exists supabase_vault with schema vault;
+          select vault.create_secret('http://host.docker.internal:54321', 'project_url');
+          select vault.create_secret('ci-billing-worker-secret', 'billing_worker_secret');
+          select vault.create_secret('ci-workflow-worker-secret', 'workflow_worker_secret');
+          SQL
+
+      - name: Start fresh database and apply all migrations
+        run: supabase db start
+
+      - name: Exercise campaign persistence, packages, approval and RLS against Postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then
+            echo 'Supabase database container was not found.' >&2
+            exit 1
+          fi
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/structured_campaign_documents_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/song_document_approval_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/rls_isolation_smoke.sql
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true
+
+  production-config:
+    name: Production configuration contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VITE_APP_MODE: production
+      APP_ENVIRONMENT: production
+      VITE_SUPABASE_URL: https://ci-project.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-anon-key-value
+      SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key-value
+      OPENAI_API_KEY: ci-openai-key-value
+      APP_RELEASE: ci-release-sha
+      PUBLIC_APP_URL: https://app.ordersounds.com
+      SPOTIFY_CLIENT_ID: ci-spotify-client
+      SPOTIFY_CLIENT_SECRET: ci-spotify-secret
+      SPOTIFY_REDIRECT_URI: https://app.ordersounds.com/auth/spotify/callback
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Accept a production-safe configuration
+        run: npm run env:check:production
+
+      - name: Reject localhost and prototype production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if PUBLIC_APP_URL=http://localhost:5173 npm run env:check:production; then
+            echo 'Production config validator accepted localhost.' >&2
+            exit 1
+          fi
+          if VITE_APP_MODE=prototype npm run env:check:production; then
+            echo 'Production config validator accepted prototype mode.' >&2
+            exit 1
+          fi
+          echo 'Unsafe production configurations were rejected as expected.'
+
+  focused-tests:
+    name: Record servicing and campaign tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run affected product tests
+        run: >-
+          npx vitest run --environment jsdom --pool=vmThreads
+          src/record-servicing-tool-selection.test.ts
+          src/record-servicing-opportunity-ui.test.tsx
+          src/release-success-conversation.test.tsx
+          src/song-campaign-state.test.ts
+          src/song-campaign-ui.test.tsx
+          src/song-document-persistence-v2.test.ts
+          src/song-document-quality-gate.test.ts
+          src/song-document-standards.test.ts
+          src/song-document-approval.test.tsx
+          src/music-share-internal-narrative.test.ts
+          src/music-share-backend-safety.test.ts
+          src/manager-release-share-package.test.ts
+
+  full-tests:
+    name: Full repository test suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run full suite with no compatibility allowlist
+        run: npm test
+
+  dependency-audit:
+    name: Production dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reject high or critical production dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+
+  browser-smoke:
+    name: Real Chromium production-shell smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production shell with explicit fixture runtime
+        env:
+          VITE_APP_MODE: production
+          VITE_PRODUCTION_FIXTURES: "true"
+        run: npm run build
+
+      - name: Start preview and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/desk-preview.log 2>&1 &
+          PREVIEW_PID=$!
+          echo "$PREVIEW_PID" > /tmp/desk-preview.pid
+          for attempt in {1..40}; do
+            if curl --fail --silent http://127.0.0.1:4173 >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:4173 >/dev/null
+
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          if [ -z "$CHROME_BIN" ]; then
+            echo 'Google Chrome is not installed on the runner.' >&2
+            exit 1
+          fi
+          "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu \
+            --remote-debugging-port=9222 --user-data-dir=/tmp/desk-chrome about:blank \
+            > /tmp/desk-chrome.log 2>&1 &
+          echo $! > /tmp/desk-chrome.pid
+
+      - name: Exercise production shell in real Chromium
+        run: node scripts/chrome-production-smoke.mjs
+
+      - name: Show browser/server logs on failure
+        if: failure()
+        run: |
+          echo '--- preview ---'
+          cat /tmp/desk-preview.log || true
+          echo '--- chrome ---'
+          cat /tmp/desk-chrome.log || true
+
+      - name: Stop browser and preview
+        if: always()
+        run: |
+          kill "$(cat /tmp/desk-chrome.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat /tmp/desk-preview.pid 2>/dev/null)" 2>/dev/null || true
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build

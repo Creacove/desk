@@ -93,7 +93,7 @@ function releaseDb(rows: Record<string, unknown[]>, rpcCalls: Array<{ name: stri
       },
       async rpc(name: string, args: Record<string, unknown>) {
         rpcCalls.push({ name, args });
-        if (name === "persist_focused_song_document_v1") {
+        if (name === "persist_focused_song_document_v1" || name === "persist_focused_song_document_v2") {
           return {
             data: {
               documentId: "document-created",
@@ -131,6 +131,32 @@ function releaseDb(rows: Record<string, unknown[]>, rpcCalls: Array<{ name: stri
 
 const scope = { accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1" };
 const subject = { type: "music_item" as const, id: "song-1" };
+
+const validPressPitchBody = JSON.stringify({
+  purpose: "Prepare a specific review-ready press pitch for a verified music editor.",
+  audience: "Independent music editors reviewing current Afrobeats releases.",
+  coreNarrative: "After Midnight is a late-night Afrobeats record built around restrained tension and direct storytelling, giving the campaign one specific angle that can travel consistently across press outreach without unsupported claims.",
+  sections: [
+    ["subject_line", "Subject line"],
+    ["opening", "Opening"],
+    ["why_them", "Why this outlet"],
+    ["story", "Story"],
+    ["proof", "Proof"],
+    ["cta", "Call to action"],
+  ].map(([key, title], index) => ({
+    key,
+    title,
+    content: `After Midnight press section ${index + 1} uses verified workspace context to explain the late-night Afrobeats direction, intended listener context, release story, and concrete editorial relevance without inventing audience numbers, quotes, recipient history, or placement claims.`,
+    evidenceRefs: ["workspace:song-1"],
+  })),
+  claims: [{
+    text: "The workspace identifies After Midnight as an Afrobeats song with a late-night mood.",
+    basis: "workspace",
+    sourceRef: "workspace:song-1",
+    confidence: "high",
+  }],
+  missingInputs: [],
+});
 
 const releaseRows = {
   music_items: [{
@@ -446,10 +472,10 @@ describe("release success Manager tools", () => {
       db,
       { ...scope, musicSubject: subject, runId: "run-1" },
       "create_focused_song_document",
-      { documentType: "press_pitch", title: "After Midnight press pitch", body: "A concise song-specific press pitch draft.", opportunityId: "opportunity-1" },
+      { documentType: "press_pitch", title: "After Midnight press pitch", body: validPressPitchBody, opportunityId: "opportunity-1" },
     ) as any;
     expect(result).toMatchObject({ status: "drafted", documentType: "press_pitch", musicItemId: "song-1", opportunityId: "opportunity-1" });
-    expect(rpcCalls).toContainEqual(expect.objectContaining({ name: "persist_focused_song_document_v1" }));
+    expect(rpcCalls).toContainEqual(expect.objectContaining({ name: "persist_focused_song_document_v2" }));
     expect(writes).toContainEqual(expect.objectContaining({
       table: "release_opportunities",
       mode: "update",

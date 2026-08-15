@@ -1864,6 +1864,19 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
           currentVersionId: nextVersion.id,
         };
       },
+      async approveSongDocument(documentId) {
+  const { data, error } = await client.rpc("approve_song_document_for_sharing_v1", {
+    p_account_id: workspace.accountId,
+    p_artist_workspace_id: workspace.artistWorkspaceId,
+    p_artist_id: workspace.artistId,
+    p_document_id: documentId,
+  });
+  if (error) throw error;
+  const receipt = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  if (receipt.status !== "accepted" || receipt.documentId !== documentId) {
+    throw new Error("Document approval returned an invalid receipt.");
+  }
+},
       async saveIdentifier(musicItemId, input) {
         const { error } = await client.from("music_identifiers").insert({
           account_id: workspace.accountId,

@@ -3517,7 +3517,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Song assets" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "files" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Files" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("presents Files as a quiet music-first asset library", async () => {
@@ -3605,23 +3605,23 @@ describe("Clean production prototype-match shell", () => {
     );
 
     fireEvent.click((await screen.findByTestId("music-song-detail")).querySelector('[aria-label="Add document"]')!);
-    expect(screen.getByRole("button", { name: "Write here" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ask Manager to draft" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Write manually" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Build with Manager" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lyrics" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "EPK / press kit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Press material" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Split sheet / rights document" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Write here" }));
+    fireEvent.click(screen.getByRole("button", { name: "Write manually" }));
     fireEvent.change(screen.getByLabelText("Document title"), { target: { value: "North Star press release" } });
     fireEvent.change(screen.getByLabelText("Document content"), { target: { value: "North Star opens a new chapter." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save document" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
 
     await waitFor(() => expect(createSongDocument).toHaveBeenCalledWith("song-jam", expect.objectContaining({
       documentType: "press_release",
       title: "North Star press release",
       body: "North Star opens a new chapter.",
     })));
-    expect(screen.queryByRole("dialog", { name: /Write here/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: /Write manually/i })).not.toBeInTheDocument();
   });
 
   it("does not replay a consumed song navigation intent after repository refresh", async () => {
@@ -3643,11 +3643,11 @@ describe("Clean production prototype-match shell", () => {
     const { rerender } = render(workspaceView([song]));
 
     expect(await screen.findByTestId("music-song-detail")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "rights" }));
-    expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Rights" }));
+    expect(screen.getByRole("button", { name: "Rights" })).toHaveAttribute("aria-pressed", "true");
 
     rerender(workspaceView([{ ...song, blocker: "Split proposal updated" }]));
-    expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Rights" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("keeps real upload progress inside Files instead of blocking the song room", async () => {
@@ -3685,7 +3685,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Progress" }));
-    fireEvent.click(screen.getByRole("button", { name: "files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
     fireEvent.click(screen.getByRole("button", { name: "Upload Final master" }));
     fireEvent.change(screen.getByLabelText("File"), {
       target: { files: [new File(["audio"], "progress.wav", { type: "audio/wav" })] },
@@ -3842,19 +3842,19 @@ describe("Clean production prototype-match shell", () => {
     let songRoom = screen.getByTestId("music-song-detail");
     expect(songRoom).toHaveTextContent("Song room");
     expect(songRoom).toHaveTextContent("Confirm split sheet");
-    expect(within(songRoom).getByRole("button", { name: "details" })).toBeInTheDocument();
+    expect(within(songRoom).getByRole("button", { name: "Details" })).toBeInTheDocument();
     expect(
       within(songRoom)
-        .getByRole("button", { name: "details" })
-        .compareDocumentPosition(within(songRoom).getByRole("button", { name: "files" })) & Node.DOCUMENT_POSITION_FOLLOWING,
+        .getByRole("button", { name: "Files" })
+        .compareDocumentPosition(within(songRoom).getByRole("button", { name: "Details" })) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
-    expect(within(songRoom).getByRole("button", { name: "rights" })).toBeInTheDocument();
+    expect(within(songRoom).getByRole("button", { name: "Rights" })).toBeInTheDocument();
 
-    fireEvent.click(within(songRoom).getByRole("button", { name: "details" }));
+    fireEvent.click(within(songRoom).getByRole("button", { name: "Details" }));
     expect(songRoom).toHaveTextContent("Song identity");
     expect(songRoom).toHaveTextContent("ISRC");
 
-    fireEvent.click(within(songRoom).getByRole("button", { name: "rights" }));
+    fireEvent.click(within(songRoom).getByRole("button", { name: "Rights" }));
     expect(songRoom).toHaveTextContent("Song rights");
     expect(songRoom).toHaveTextContent("Set up song rights");
 
@@ -3922,14 +3922,14 @@ describe("Clean production prototype-match shell", () => {
     expect(desktopSongTop).toHaveClass("hidden", "lg:block");
     expect(mobileSongTitle.nextElementSibling).toBeNull();
     expect(within(desktopSongTop).queryByTestId("music-situation-line")).not.toBeInTheDocument();
-    expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
+    expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-5");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
     expect(within(songRoom).queryByTestId("track-intelligence-card")).not.toBeInTheDocument();
     expect(within(songRoom).getByRole("region", { name: "Work on this song" })).toBeInTheDocument();
     expect(within(songRoom).queryByTestId("music-linked-work")).not.toBeInTheDocument();
 
-    fireEvent.click(within(songRoom).getByRole("button", { name: "details" }));
+    fireEvent.click(within(songRoom).getByRole("button", { name: "Details" }));
     const mobileDetails = within(songRoom).getByTestId("song-room-mobile-details");
     expect(mobileDetails).toHaveClass("lg:hidden");
     expect(mobileDetails).toHaveClass("rounded-[16px]");
@@ -5137,7 +5137,7 @@ describe("Clean production prototype-match shell", () => {
     const room = screen.getByTestId("music-song-detail");
     expect(within(room).queryByRole("button", { name: "Share files" })).not.toBeInTheDocument();
 
-    fireEvent.click(within(room).getByRole("button", { name: "files" }));
+    fireEvent.click(within(room).getByRole("button", { name: "Files" }));
     fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
 
     expect(screen.getByRole("dialog", { name: "Share Jam files" })).toBeInTheDocument();
@@ -5183,7 +5183,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const room = screen.getByTestId("music-song-detail");
-    fireEvent.click(within(room).getByRole("button", { name: "files" }));
+    fireEvent.click(within(room).getByRole("button", { name: "Files" }));
     fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
     fireEvent.click(screen.getByRole("button", { name: "Create link" }));
     expect(await screen.findByRole("heading", { name: "Link ready" })).toBeInTheDocument();
@@ -5388,7 +5388,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Add song" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Songs" }));
     fireEvent.click(screen.getByRole("button", { name: "Open song Night Bus" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "files" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Files" }));
     expect(screen.getByRole("button", { name: "Add audio" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add image" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add document" })).toBeInTheDocument();
@@ -5406,7 +5406,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("music-workspace-content")).toHaveClass("blur-[6px]");
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
 
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "details" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Details" }));
     expect(screen.getByRole("button", { name: "Edit ISRC" })).toHaveTextContent("");
     expect(screen.getByRole("button", { name: "Edit Mix engineer" })).toHaveTextContent("");
   }, 20000);
@@ -5711,7 +5711,7 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Upload Failure" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "files" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Files" }));
     fireEvent.click(screen.getByRole("button", { name: "Upload Final master" }));
     fireEvent.change(screen.getByLabelText("File"), {
       target: { files: [new File(["audio"], "master.wav", { type: "audio/wav" })] },
@@ -6175,7 +6175,7 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Split Ready" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "rights" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Rights" }));
 
     expect(screen.getByText("Publishing / composition is currently 80%.")).toBeInTheDocument();
     expect(screen.getByText("Master recording is currently 80%.")).toBeInTheDocument();
@@ -6189,7 +6189,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add collaborator" }));
     await waitFor(() => expect(actions).toContain("save:Lena Cruz:lena@example.com:20:20"));
     expect(await screen.findByText("Lena Cruz")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "rights" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Rights" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.queryByRole("button", { name: "Add collaborator" })).not.toBeInTheDocument();
     expect(screen.getByText(/Allocation complete/i)).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Send split confirmation links" })).toHaveLength(1);
@@ -6239,7 +6239,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Open song QA Release Flow" }));
-    fireEvent.click(screen.getByRole("button", { name: "rights" }));
+    fireEvent.click(screen.getByRole("button", { name: "Rights" }));
 
     expect(await screen.findByText("1 of 2 collaborators confirmed")).toBeInTheDocument();
     expect(screen.getByText("Publishing allocated")).toBeInTheDocument();

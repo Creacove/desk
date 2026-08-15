@@ -8,6 +8,8 @@ import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
 import { ReleaseWorkAttachment } from "./SongRoomAttachments";
+import { SongCampaignWorkspace } from "./SongCampaignWorkspace";
+import { deriveSongCampaignState } from "./songCampaign";
 import { SongDocumentEditor } from "./SongDocumentEditor";
 import { SongDocumentActions } from "./SongDocumentActions";
 import { MusicShareDialog as PolishedMusicShareDialog } from "./MusicShareDialog";
@@ -29,7 +31,7 @@ import type {
 
 type MusicTab = "songs" | "projects";
 type DetailMode = "library" | "songDetail" | "projectDetail";
-type SongRoomTab = "overview" | "files" | "details" | "rights";
+type SongRoomTab = "overview" | "campaign" | "files" | "details" | "rights";
 type MusicStatus = "Missing" | "Draft" | "Uploaded" | "Confirmed" | "Pending" | "Cleared" | string;
 type MusicDetailField = { label: string; value: string; status: string };
 type FocusedMusicOverlay = {
@@ -600,6 +602,18 @@ export function MusicWorkspace({
     }, `${input.title} saved.`);
   }
 
+  async function approveSongDocument() {
+    if (!documentEditorTarget?.document) return;
+    const target = documentEditorTarget;
+    const document = target.document!;
+    await runMusicAction(async () => {
+      if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+      await musicRepository.approveSongDocument(document.id);
+      await refreshFocusedSong(target.song.id);
+      setDocumentEditorTarget(null);
+    }, `${document.title} approved for sharing.`);
+  }
+
   async function performMusicAssetUpload(job: MusicUploadJob) {
     setUploadJobs((current) => ({
       ...current,
@@ -757,6 +771,7 @@ export function MusicWorkspace({
           onWriteDocument={musicRepository.createSongDocument ? () => { setActionError(null); setDocumentEditorTarget({ song: selected }); } : undefined}
           onEditDocument={musicRepository.updateSongDocument ? (document) => { setActionError(null); setDocumentEditorTarget({ song: selected, document }); } : undefined}
           onAskManagerForDocument={() => onOpenManager?.(selected, `Draft a press release for ${selected.title}. Use the song's current files, lyrics, metadata, and release context. Save the draft to this song for my review.`)}
+          onStartCampaignWork={onOpenManager ? (starterPrompt) => onOpenManager(selected, starterPrompt) : undefined}
           onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(selected.id, assetId) : undefined}
           uploadJobs={Object.values(uploadJobs).filter((job) => job.songId === selected.id)}
           onRetryUpload={(job) => void performMusicAssetUpload(job)}
@@ -857,6 +872,7 @@ export function MusicWorkspace({
           error={actionError}
           onCancel={() => setDocumentEditorTarget(null)}
           onSave={saveSongDocument}
+          onApprove={documentEditorTarget.document?.origin === "manager_generated" && musicRepository.approveSongDocument ? approveSongDocument : undefined}
         />
       ) : null}
 
@@ -1078,6 +1094,7 @@ function MusicSongDetail({
   onWriteDocument,
   onEditDocument,
   onAskManagerForDocument,
+  onStartCampaignWork,
   onRequestAssetAccess,
   uploadJobs,
   onRetryUpload,
@@ -1105,6 +1122,7 @@ function MusicSongDetail({
   onWriteDocument?: () => void;
   onEditDocument?: (document: Extract<SongMaterialViewModel, { kind: "document" }>) => void;
   onAskManagerForDocument?: () => void;
+  onStartCampaignWork?: (starterPrompt: string) => void;
   onRequestAssetAccess?: (assetId: string) => Promise<string>;
   uploadJobs: MusicUploadJob[];
   onRetryUpload: (job: MusicUploadJob) => void;
@@ -1159,6 +1177,14 @@ function MusicSongDetail({
     hasConversation: Boolean(song.managerConversationId),
   });
   const hasSecondaryReadAction = readControls.readActionPriority === "secondary";
+  const campaign = useMemo(() => deriveSongCampaignState(song, linkedMissions), [song, linkedMissions]);
+  const effectiveTab: SongRoomTab = activeTab === "campaign" && !campaign.visible ? "overview" : activeTab;
+  const songTabs: SongRoomTab[] = campaign.visible
+    ? ["overview", "campaign", "files", "details", "rights"]
+    : ["overview", "files", "details", "rights"];
+  const releaseKitPrompt = campaign.phase === "post_release"
+    ? `Build the campaign kit for ${song.title}. This record is already released, so do not reopen pre-release gates or Spotify editorial pitching. Start from the current files, lyrics, metadata, rights, public context, and existing campaign work. Create only the EPK, bio, one-sheet, press angles, pitches, or other canonical materials this servicing campaign actually needs, save each document to the song, and ask me only for information you cannot verify.`
+    : `Build the release kit for ${song.title}. Start from the song's current files, lyrics, metadata, rights, release context, and existing campaign work. Create the EPK, bio, one-sheet, press angles, channel-ready pitches, and other canonical materials this release actually needs, save each document to the song, and ask me only for information you cannot verify.`;
 
   async function playAsset(asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) {
     if (!asset.assetId || !onRequestAssetAccess) return;
@@ -1182,13 +1208,13 @@ function MusicSongDetail({
       <WorkspaceTabRail
         ariaLabel="Song sections"
         testId="song-room-mobile-tabs"
-        className="grid-cols-4"
-        active={activeTab}
+        className={campaign.visible ? "grid-cols-5" : "grid-cols-4"}
+        active={effectiveTab}
         onChange={onTabChange}
-        items={(["overview", "details", "files", "rights"] as const).map((id) => ({ id, label: id }))}
+        items={songTabs.map((id) => ({ id, label: titleCaseStatus(id) }))}
       />
 
-      {activeTab === "overview" ? (
+      {effectiveTab === "overview" ? (
         <div className="grid items-start gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
           <div data-testid="song-room-mobile-overview" className="surface-elevated space-y-5 overflow-hidden rounded-[16px] p-4 shadow-sm sm:p-5 lg:space-y-6 lg:rounded-[22px] lg:p-6">
             <div>
@@ -1229,13 +1255,26 @@ function MusicSongDetail({
           </div>
           <ReleaseWorkAttachment
             missions={linkedMissions}
+            campaign={campaign}
             onTalkToManager={onContinueWithManager}
+            onOpenCampaign={campaign.visible ? () => onTabChange("campaign") : undefined}
             onOpenPlan={onOpenMission}
           />
         </div>
       ) : null}
 
-      {activeTab === "files" ? (
+      {effectiveTab === "campaign" && campaign.visible ? (
+        <SongCampaignWorkspace
+          song={song}
+          campaign={campaign}
+          onContinueManager={onContinueWithManager}
+          onBuildReleaseKit={onStartCampaignWork ? () => onStartCampaignWork(releaseKitPrompt) : onContinueWithManager}
+          onOpenFiles={() => onTabChange("files")}
+          onOpenMission={onOpenMission}
+        />
+      ) : null}
+
+      {effectiveTab === "files" ? (
         <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
           <div className="flex flex-col gap-4 border-b border-foreground/8 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-5">
             <div className="max-w-xl">
@@ -1345,7 +1384,7 @@ function MusicSongDetail({
         </div>
       ) : null}
 
-      {activeTab === "details" ? (
+      {effectiveTab === "details" ? (
         <div className="grid gap-4">
           <div data-testid="song-room-mobile-details" className="surface-elevated rounded-[16px] p-4 shadow-sm lg:hidden">
             <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-3">
@@ -1437,7 +1476,7 @@ function MusicSongDetail({
         </div>
       ) : null}
 
-      {activeTab === "rights" ? (
+      {effectiveTab === "rights" ? (
         <MusicRightsWorkspace
           song={song}
           onSaveContributor={onSaveSplitContributor}
