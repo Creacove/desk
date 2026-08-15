@@ -52,13 +52,20 @@ begin
     raise exception 'song_document_quality_generic_language';
   end if;
 
-  -- Recipient-facing campaign collateral must inherit one internal campaign spine.
-  -- Lyrics, credits and distributor notes are operational records rather than campaign
-  -- storytelling, so they do not require a release narrative.
+  -- The edge executor predates release_narrative as a literal document type. Until
+  -- that compatibility surface is retired, Manager transports the internal spine as
+  -- press_angle with the exact title "Release narrative". The product still treats
+  -- that artifact as internal strategy everywhere: Campaign recognizes it by title
+  -- and the share inventory always excludes it.
+  --
+  -- Recipient-facing campaign collateral must inherit that spine. Lyrics, credits
+  -- and distributor notes are operational records and do not require it.
   if p_document_type in (
     'epk','spotify_editorial_pitch','playlist_pitch','press_target_brief','press_pitch',
     'content_plan','release_calendar','press_release','press_angle','artist_biography','one_sheet'
-  ) and not exists (
+  )
+  and not (p_document_type = 'press_angle' and lower(trim(p_title)) = 'release narrative')
+  and not exists (
     select 1
     from public.documents narrative
     join public.artifact_links link
@@ -70,10 +77,13 @@ begin
     where narrative.account_id = p_account_id
       and narrative.artist_workspace_id = p_artist_workspace_id
       and narrative.artist_id = p_artist_id
-      and narrative.document_type = 'release_narrative'
+      and (
+        narrative.document_type = 'release_narrative'
+        or (narrative.document_type = 'press_angle' and lower(trim(narrative.title)) = 'release narrative')
+      )
       and narrative.status not in ('superseded', 'revoked', 'failed')
   ) then
-    raise exception 'song_document_release_narrative_required: create or refresh release_narrative before %', p_document_type;
+    raise exception 'song_document_release_narrative_required: create or refresh the Release narrative before %', p_document_type;
   end if;
 
   -- All existing public artifact types retain the battle-tested v1 transaction.
@@ -109,7 +119,7 @@ begin
     );
   end if;
 
-  -- Release narrative is an internal campaign-spine artifact introduced in v2.
+  -- release_narrative remains a first-class v2 path for the future executor upgrade.
   if not exists (
     select 1 from public.music_items item
     where item.id = p_music_item_id and item.account_id = p_account_id
