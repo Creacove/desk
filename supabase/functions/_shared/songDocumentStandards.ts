@@ -374,15 +374,26 @@ export function assessStructuredSongDocument(
   const sectionMap = new Map(structure.sections.map((section) => [section.key, section]));
   for (const required of standard.requiredSections) {
     const section = sectionMap.get(required.key);
+    const declaredMissing = inputDeclaresSectionMissing(structure.missingInputs, required);
     if (!section) {
-      blockers.push(`Add the required ${required.title} section.`);
-      score -= 12;
+      if (declaredMissing) {
+        warnings.push(`${required.title} is waiting on a verified input.`);
+        score -= 4;
+      } else {
+        blockers.push(`Add the required ${required.title} section or declare the missing input explicitly.`);
+        score -= 12;
+      }
       continue;
     }
     const words = wordCount(section.content);
     if (words < Math.max(4, Math.floor(standard.minSectionWords * 0.55))) {
-      blockers.push(`${required.title} is too thin to be useful.`);
-      score -= 9;
+      if (declaredMissing) {
+        warnings.push(`${required.title} is intentionally incomplete until a verified input is available.`);
+        score -= 4;
+      } else {
+        blockers.push(`${required.title} is too thin to be useful.`);
+        score -= 9;
+      }
     } else if (words < standard.minSectionWords) {
       warnings.push(`${required.title} should be more specific.`);
       score -= 4;
@@ -390,9 +401,13 @@ export function assessStructuredSongDocument(
   }
 
   const totalWords = structure.sections.reduce((total, section) => total + wordCount(section.content), 0);
-  if (totalWords < standard.minTotalWords) {
-    blockers.push(`${standard.label} is underdeveloped at ${totalWords} words; target at least ${standard.minTotalWords}.`);
+  const hardMinimum = Math.max(10, Math.floor(standard.minTotalWords * 0.65));
+  if (totalWords < hardMinimum) {
+    blockers.push(`${standard.label} is underdeveloped at ${totalWords} words; a useful draft needs at least ${hardMinimum} words even when inputs are missing.`);
     score -= 14;
+  } else if (totalWords < standard.minTotalWords) {
+    warnings.push(`${standard.label} is usable but incomplete at ${totalWords} words; target ${standard.minTotalWords} when the missing inputs are available.`);
+    score -= 6;
   } else if (totalWords > standard.maxTotalWords) {
     warnings.push(`${standard.label} is longer than the ${standard.maxTotalWords}-word working limit; tighten it.`);
     score -= 5;
@@ -489,6 +504,18 @@ export function documentStandardSummary(documentType: PremiumSongDocumentType) {
       "Keep every artifact aligned to the current release narrative.",
     ],
   };
+}
+
+function inputDeclaresSectionMissing(missingInputs: string[], required: { key: string; title: string }) {
+  const needles = [normalizeSearchText(required.key), normalizeSearchText(required.title)].filter(Boolean);
+  return missingInputs.some((input) => {
+    const haystack = normalizeSearchText(input);
+    return needles.some((needle) => haystack.includes(needle) || needle.includes(haystack));
+  });
+}
+
+function normalizeSearchText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
 function wordCount(value: string) {
