@@ -41,7 +41,7 @@ export function ReleaseWorkAttachment({
         <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight text-foreground">{title}</h4>
         <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{copy}</p>
         {onTalkToManager ? (
-          <button type="button" aria-label={managerLabel} onClick={onTalkToManager} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+          <button type="button" aria-label="Talk to Manager" onClick={onTalkToManager} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
             <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
             {managerLabel}
           </button>
