@@ -139,8 +139,8 @@ jobs:
           src/song-document-standards.test.ts
           src/music-share-internal-narrative.test.ts
 
-  compatibility-audit:
-    name: Full-suite compatibility audit
+  full-tests:
+    name: Full repository test suite
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -156,65 +156,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run full suite and reject unexpected failures
-        shell: bash
-        run: |
-          set +e
-          NO_COLOR=1 npm test > /tmp/full-suite.log 2>&1
-          TEST_STATUS=$?
-          set -e
-
-          if [ "$TEST_STATUS" -eq 0 ]; then
-            echo "Full repository test suite passed."
-            exit 0
-          fi
-
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          import sys
-
-          text = Path('/tmp/full-suite.log').read_text(errors='replace')
-          ansi = re.compile(r'\x1b\[[0-9;]*m')
-          failures = []
-          for raw in text.splitlines():
-              line = ansi.sub('', raw).strip()
-              if line.startswith('FAIL '):
-                  failures.append(re.sub(r'^FAIL\s+', '', line).strip())
-
-          known = {
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > keeps the created secure link usable when its optional email delivery fails",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > keeps selected-asset sharing inside the song Files surface",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > uses mobile-native song and project room layouts after opening Music items",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > rebuilds Music as a durable recorded-work area with song/project rooms",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > keeps real upload progress inside Files instead of blocking the song room",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > does not replay a consumed song navigation intent after repository refresh",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > creates a native song document from the Documents section",
-              "src/production-app-shell.test.tsx > Clean production prototype-match shell > opens a chat-created song directly on its requested Files destination",
-              "src/openai-manager-conversation-function.test.ts > OpenAI Manager Conversation Router > defines the document text normalizer used while loading focused song context",
-              "src/manager-agent-loop.test.ts > Manager Agent Responses loop > supplies the minimal Video One tool set for a valid release turn",
-          }
-
-          if not failures:
-              print('The full suite failed, but Vitest failure titles could not be parsed. Tail of log:')
-              print('\n'.join(text.splitlines()[-160:]))
-              sys.exit(1)
-
-          unexpected = sorted(set(failures) - known)
-          if unexpected:
-              print('Unexpected full-suite failures:')
-              for failure in unexpected:
-                  print(f'  - {failure}')
-              print('\nTail of full-suite log:')
-              print('\n'.join(text.splitlines()[-200:]))
-              sys.exit(1)
-
-          accepted = sorted(set(failures) & known)
-          print('Full-suite audit found only explicitly documented compatibility assertions:')
-          for failure in accepted:
-              print(f'  - {failure}')
-          print('Focused replacement coverage is enforced by the separate product-test job.')
-          PY
+      - name: Run full suite
+        run: npm test
 
   build:
     name: Production build
