@@ -36,7 +36,7 @@ function mission(overrides: Partial<MissionViewModel> = {}): MissionViewModel {
   };
 }
 
-function document(materialType: SongMaterialViewModel extends never ? never : string): SongMaterialViewModel {
+function document(materialType: string): SongMaterialViewModel {
   return {
     id: `document-${materialType}`,
     kind: "document",
