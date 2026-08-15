@@ -23,12 +23,15 @@ jobs:
 
           path = Path('supabase/functions/music-share-links/index.ts')
           source = path.read_text()
-          old = '''  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status"), input).in("id", linkedIds).limit(40);
-          if (documentsError) throw documentsError;
-          const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);'''
-          new = '''  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status,origin"), input).in("id", linkedIds).limit(40);
-          if (documentsError) throw documentsError;
-          if ((documents ?? []).length !== linkedIds.length) throw new Error("One or more selected documents are unavailable.");
+
+          select_old = 'db.from("documents").select("id,title,document_type,current_version_id,status")'
+          select_new = 'db.from("documents").select("id,title,document_type,current_version_id,status,origin")'
+          if source.count(select_old) != 1:
+            raise SystemExit(f'Expected one document select anchor, found {source.count(select_old)}.')
+          source = source.replace(select_old, select_new, 1)
+
+          error_anchor = '  if (documentsError) throw documentsError;\n'
+          safety = '''  if ((documents ?? []).length !== linkedIds.length) throw new Error("One or more selected documents are unavailable.");
           for (const document of documents ?? []) {
             const internalNarrative = document.document_type === "release_narrative"
               || cleanText(document.title, 180).toLowerCase() === "release narrative";
@@ -37,18 +40,20 @@ jobs:
               throw new Error("Manager-built documents must be approved before sharing.");
             }
           }
-          const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);'''
-          if old not in source:
-            raise SystemExit('Expected music-share-links document block was not found; refusing broad patch.')
-          path.write_text(source.replace(old, new, 1))
+          '''
+          target = error_anchor + safety
+          if source.count(error_anchor) < 1:
+            raise SystemExit('Document error anchor was not found.')
+          if 'The internal Release Narrative cannot be shared.' not in source:
+            source = source.replace(error_anchor, target, 1)
 
-          workflow = Path('.github/workflows/one-shot-share-safety.yml')
-          workflow.unlink()
+          path.write_text(source)
+          Path('.github/workflows/one-shot-share-safety.yml').unlink()
 
       - name: Commit patch and remove one-shot workflow
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/functions/music-share-links/index.ts src/music-share-backend-safety.test.ts .github/workflows/one-shot-share-safety.yml
+          git add supabase/functions/music-share-links/index.ts .github/workflows/one-shot-share-safety.yml
           git commit -m "fix: enforce share safety on the server"
           git push origin HEAD:agent/record-servicing-manager-mode
