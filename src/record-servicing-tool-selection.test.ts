@@ -26,6 +26,20 @@ describe("record servicing tool selection", () => {
     expect(names).toContain("create_focused_song_document");
   });
 
+  it("gives the Campaign CTA the premium document write tool", () => {
+    const released = functionNames("Build the campaign kit for this record", false);
+    const unreleased = functionNames("Build the release kit for this song", true);
+
+    expect(released).toContain("create_focused_song_document");
+    expect(unreleased).toContain("create_focused_song_document");
+    expect(released).not.toContain("propose_focused_release_date_change");
+  });
+
+  it("allows a release narrative to be built directly", () => {
+    const names = functionNames("Build the release narrative for this song", true);
+    expect(names).toContain("create_focused_song_document");
+  });
+
   it("does not expose servicing writes for an unrelated released-song turn", () => {
     const names = functionNames("Help me understand the audience for this song", false);
 
