@@ -4,10 +4,8 @@ on:
   pull_request:
     branches: [main]
 
-# contents:write is temporary for the repair-release-candidate job below.
-# It is removed immediately after that deterministic patch commits.
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: pr-safety-${{ github.event.pull_request.number }}
@@ -18,39 +16,6 @@ env:
   VITE_SUPABASE_ANON_KEY: ci-test-anon-key
 
 jobs:
-  repair-release-candidate:
-    name: Apply deterministic release-candidate fixes
-    if: github.actor != 'github-actions[bot]'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout writable PR branch
-        uses: actions/checkout@v5
-        with:
-          ref: agent/record-servicing-manager-mode
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
-      - name: Apply exact failure-driven edits
-        run: node scripts/apply-release-candidate-fixes.mjs
-
-      - name: Commit repaired product files
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            supabase/functions/_shared/manager-conversation/agentLoop.ts \
-            src/features/music/MusicScreens.tsx \
-            src/manager-agent-loop.test.ts \
-            scripts/chrome-production-smoke.mjs
-          git diff --cached --quiet && { echo 'Repair produced no changes.' >&2; exit 1; }
-          git commit -m "fix: resolve release-candidate validation failures"
-          git push origin HEAD:agent/record-servicing-manager-mode
-
   type-regression:
     name: Browser type regression
     runs-on: ubuntu-latest
