@@ -152,6 +152,7 @@ jobs:
     timeout-minutes: 10
     env:
       VITE_APP_MODE: production
+      APP_ENVIRONMENT: production
       VITE_SUPABASE_URL: https://ci-project.supabase.co
       VITE_SUPABASE_ANON_KEY: ci-anon-key-value
       SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key-value
