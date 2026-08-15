@@ -58,6 +58,7 @@ export async function executeManagerConversationTool(
   if (name === "save_focused_release_opportunities") return saveFocusedReleaseOpportunities(db, input, args);
   if (name === "record_focused_release_opportunity_outcome") return recordFocusedReleaseOpportunityOutcome(db, input, args);
   if (name === "create_focused_song_document") return createFocusedSongDocument(db, input, args);
+  if (name === "prepare_focused_release_share_package") return prepareFocusedReleaseSharePackage(db, input, args);
   if (name === "read_focused_release_readiness") return readFocusedReleaseReadiness(db, input);
   if (name === "refresh_focused_music_intelligence") return refreshFocusedMusicIntelligence(db, input);
   if (name === "update_focused_music_metadata") return updateFocusedMusicMetadata(db, input, args);
@@ -711,6 +712,48 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
   } catch (error) {
     return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
   }
+}
+
+async function prepareFocusedReleaseSharePackage(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Release share packages are currently scoped to an attached song." };
+  }
+  if (typeof db.rpc !== "function") throw new Error("Release share package persistence is unavailable.");
+
+  const preset = requiredReleaseSharePreset(args.preset);
+  const opportunityId = stringArg(args.opportunityId) || null;
+  const label = stringArg(args.label) || null;
+  const { data, error } = await db.rpc("prepare_focused_release_share_package_v1", {
+    p_account_id: input.accountId,
+    p_artist_workspace_id: input.artistWorkspaceId,
+    p_artist_id: input.artistId,
+    p_music_item_id: subject.id,
+    p_preset: preset,
+    p_label: label,
+    p_opportunity_id: opportunityId,
+    p_run_id: input.runId ?? null,
+  });
+  if (error) throw error;
+  const receipt = record(data);
+  const rawToken = stringArg(receipt.rawToken).toLowerCase();
+  const shareLinkId = stringArg(receipt.shareLinkId);
+  if (!shareLinkId || !/^[0-9a-f]{64}$/.test(rawToken)) {
+    throw new Error("Release share package transaction returned an invalid receipt.");
+  }
+
+  return {
+    status: "prepared",
+    shareLinkId,
+    url: releaseShareUrl(rawToken),
+    label: stringArg(receipt.label),
+    preset: stringArg(receipt.preset) || preset,
+    musicItemId: subject.id,
+    ...(opportunityId ? { opportunityId } : {}),
+    documentCount: integerOrZero(receipt.documentCount),
+    assetCount: integerOrZero(receipt.assetCount),
+    note: "Preparation only — nothing was sent or submitted.",
+  };
 }
 
 async function loadOpportunityContext(db: SupabaseLike, input: ManagerToolInput, opportunityType: "playlist" | "press") {
@@ -1431,6 +1474,18 @@ function haystack(row: unknown) {
 
 function numberArg(value: unknown, fallback: number, max: number) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.min(Math.floor(value), max) : fallback;
+}
+
+function requiredReleaseSharePreset(value: unknown): "listen" | "epk_press" | "delivery" | "custom" {
+  const preset = stringArg(value);
+  if (preset === "listen" || preset === "epk_press" || preset === "delivery" || preset === "custom") return preset;
+  throw new Error("Release share package preset is invalid.");
+}
+
+function releaseShareUrl(token: string) {
+  const deno = (globalThis as any).Deno;
+  const origin = deno?.env?.get?.("PUBLIC_APP_URL") ?? deno?.env?.get?.("APP_ORIGIN") ?? "https://app.ordersounds.com";
+  return `${String(origin).replace(/\/$/, "")}/share?token=${encodeURIComponent(token)}`;
 }
 
 function stringArg(value: unknown) {

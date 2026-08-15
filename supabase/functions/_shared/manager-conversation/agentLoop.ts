@@ -232,6 +232,17 @@ const focusedSongDocumentProperties = {
   },
 };
 
+const focusedReleaseSharePackageProperties = {
+  type: "object",
+  additionalProperties: false,
+  required: ["preset", "opportunityId", "label"],
+  properties: {
+    preset: { type: "string", enum: ["listen", "epk_press", "delivery", "custom"] },
+    opportunityId: { type: ["string", "null"] },
+    label: { type: ["string", "null"] },
+  },
+};
+
 const focusedMusicMetadataProperties = {
   type: "object",
   additionalProperties: false,
@@ -356,6 +367,13 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
     parameters: focusedSongDocumentProperties,
   },
   {
+  type: "function",
+  name: "prepare_focused_release_share_package",
+  description: "Prepare a frozen, revocable private package for the exact attached song from approved canonical Files content. Optionally bind it to one saved release opportunity. This only prepares a reviewable link; it never emails, submits, posts, spends, or contacts anyone.",
+  strict: true,
+  parameters: focusedReleaseSharePackageProperties,
+},
+  {
     type: "function",
     name: "read_focused_release_readiness",
     description: "Read a deterministic release readiness view for the exact attached song or project. It reports pre-release gaps only before release; released/catalog music returns post-release priorities and never reopens master, split, or delivery gates.",
@@ -399,6 +417,7 @@ const releaseTurnToolNames = new Set([
   "save_focused_release_opportunities",
   "record_focused_release_opportunity_outcome",
   "create_focused_song_document",
+  "prepare_focused_release_share_package",
 ]);
 
 export function selectManagerConversationToolsForTurn(input: {
@@ -417,6 +436,8 @@ export function selectManagerConversationToolsForTurn(input: {
   const servicingIntent = /\b(playlist(?:ing)?|playlist opportunities?|curator|press|publicity|editorial|media|outreach|record servicing|service this (?:song|release)|pitch(?:ing)?(?:\s+(?:this|the))?\s+(?:song|release|record))\b/.test(intentText);
   const documentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh)\b/.test(body)
     && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
+  const packageIntent = /\b(prepare|build|create|make|assemble)\b/.test(body)
+  && /\b(package|share link|private link|delivery link|press kit|epk package)\b/.test(body);
   const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
 
   if (servicingIntent) {
@@ -425,6 +446,7 @@ export function selectManagerConversationToolsForTurn(input: {
     allowed.add("create_focused_song_document");
   }
   if (documentIntent) allowed.add("create_focused_song_document");
+  if (packageIntent) allowed.add("prepare_focused_release_share_package");
   if (outcomeIntent) allowed.add("record_focused_release_opportunity_outcome");
 
   if (input.hasAttachedUnreleasedSong) {
@@ -627,6 +649,7 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "query_focused_release_opportunities") return "Checking saved playlist and press targets.";
   if (name === "save_focused_release_opportunities") return "Saving verified release opportunities.";
   if (name === "create_focused_song_document") return "Building and quality-checking a campaign document.";
+  if (name === "prepare_focused_release_share_package") return "Preparing a private release package.";
   if (name === "record_focused_release_opportunity_outcome") return "Recording the opportunity outcome.";
   return "Manager is checking the workspace.";
 }
