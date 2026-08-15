@@ -1,0 +1,104 @@
+name: One-shot release candidate fixes v2
+
+on:
+  push:
+    branches: [agent/record-servicing-manager-mode]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/record-servicing-manager-mode
+
+      - name: Apply failure-driven fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          # Manager progress: derive count from saved evidence arrays as well as evidenceCount.
+          path = Path('supabase/functions/_shared/manager-conversation/agentLoop.ts')
+          source = path.read_text()
+          old = '''    const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
+            ? value.evidenceCount
+            : null;'''
+          new = '''    const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
+            ? value.evidenceCount
+            : Array.isArray(value.evidence)
+              ? value.evidence.length
+              : null;'''
+          if source.count(old) != 1:
+            raise SystemExit(f'evidence-count anchor count={source.count(old)}')
+          source = source.replace(old, new, 1)
+          source = source.replace(
+            '` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`',
+            '` with ${evidenceCount} saved evidence item${evidenceCount === 1 ? "" : "s"}`',
+          )
+          path.write_text(source)
+
+          # Stable document narrowing across the async action closure.
+          path = Path('src/features/music/MusicScreens.tsx')
+          source = path.read_text()
+          pattern = re.compile(
+            r'  async function approveSongDocument\(\) \{\n'
+            r'\s*if \(!documentEditorTarget\?\.document\) return;\n'
+            r'\s*const target = documentEditorTarget;\n'
+            r'\s*await runMusicAction\(async \(\) => \{\n'
+            r'\s*if \(!musicRepository\.approveSongDocument\) throw new Error\("Document approval is not available yet\."\);\n'
+            r'\s*await musicRepository\.approveSongDocument\(target\.document!\.id\);\n'
+            r'\s*await refreshFocusedSong\(target\.song\.id\);\n'
+            r'\s*setDocumentEditorTarget\(null\);\n'
+            r'\s*\}, `\$\{target\.document\.title\} approved for sharing\.`\);\n'
+            r'\s*\}\n'
+          )
+          replacement = '''  async function approveSongDocument() {
+            if (!documentEditorTarget?.document) return;
+            const target = documentEditorTarget;
+            const document = target.document;
+            await runMusicAction(async () => {
+              if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+              await musicRepository.approveSongDocument(document.id);
+              await refreshFocusedSong(target.song.id);
+              setDocumentEditorTarget(null);
+            }, `${document.title} approved for sharing.`);
+          }
+          '''
+          source, count = pattern.subn(replacement, source, count=1)
+          if count != 1:
+            raise SystemExit(f'approval narrowing replacements={count}')
+          path.write_text(source)
+
+          # Void-return async event hooks in TypeScript tests.
+          path = Path('src/manager-agent-loop.test.ts')
+          source = path.read_text()
+          source, count = re.subn(
+            r'onToolEvent: \(event\) => ([A-Za-z_$][\w$]*)\.push\(event\),',
+            lambda m: f'onToolEvent: (event) => {{ {m.group(1)}.push(event); }},',
+            source,
+          )
+          if count < 1:
+            raise SystemExit('no onToolEvent push callbacks found')
+          path.write_text(source)
+
+          # Production fixture mode is an explicit URL query parameter.
+          path = Path('scripts/chrome-production-smoke.mjs')
+          source = path.read_text()
+          old = 'const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173";'
+          new = 'const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173/?fixtures=true";'
+          if old not in source:
+            raise SystemExit('Chromium appUrl anchor missing')
+          path.write_text(source.replace(old, new, 1))
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/_shared/manager-conversation/agentLoop.ts src/features/music/MusicScreens.tsx src/manager-agent-loop.test.ts scripts/chrome-production-smoke.mjs
+          git commit -m "fix: resolve release-candidate validation failures"
+          git push origin HEAD:agent/record-servicing-manager-mode
