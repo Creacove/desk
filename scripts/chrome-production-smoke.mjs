@@ -1,7 +1,7 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 const debugOrigin = process.env.CHROME_DEBUG_ORIGIN || "http://127.0.0.1:9222";
-const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173";
+const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173/?fixtures=true";
 
 async function waitForJson(url, attempts = 40) {
   let lastError;

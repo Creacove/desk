@@ -681,7 +681,9 @@ function summarizeToolResult(name: string, value: unknown) {
     const status = typeof value.status === "string" && value.status.trim() ? value.status.trim() : "";
     const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
       ? value.evidenceCount
-      : null;
+      : Array.isArray(value.evidence)
+        ? value.evidence.length
+        : null;
     const snapshotId = typeof value.snapshotId === "string" && value.snapshotId.trim() ? value.snapshotId.trim() : "";
     const memoryId = typeof value.memoryId === "string" && value.memoryId.trim() ? value.memoryId.trim() : "";
     const evidenceId = typeof value.evidenceId === "string" && value.evidenceId.trim() ? value.evidenceId.trim() : "";
@@ -693,7 +695,7 @@ function summarizeToolResult(name: string, value: unknown) {
       const normalizedStatus = status || "completed";
       const suffix = evidenceCount === null
         ? ""
-        : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;
+        : ` with ${evidenceCount} saved evidence item${evidenceCount === 1 ? "" : "s"}`;
       return `Manager tool ${normalizedStatus}${suffix}.`;
     }
   }
@@ -705,7 +707,7 @@ function summarizeToolResult(name: string, value: unknown) {
 function summarizeDiscoveryToolResult(name: string, status: string, evidenceCount: number | null) {
   const countText = evidenceCount === null
     ? ""
-    : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;
+    : ` with ${evidenceCount} saved evidence item${evidenceCount === 1 ? "" : "s"}`;
   const normalizedStatus = status.toLowerCase();
   if (name === "chartmetric_artist_enrich") {
     if (normalizedStatus === "cached") return `Artist intelligence is already up to date${countText}.`;

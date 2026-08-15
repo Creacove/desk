@@ -603,15 +603,16 @@ export function MusicWorkspace({
   }
 
   async function approveSongDocument() {
-  if (!documentEditorTarget?.document) return;
-  const target = documentEditorTarget;
-  await runMusicAction(async () => {
-    if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
-    await musicRepository.approveSongDocument(target.document!.id);
-    await refreshFocusedSong(target.song.id);
-    setDocumentEditorTarget(null);
-  }, `${target.document.title} approved for sharing.`);
-}
+    if (!documentEditorTarget?.document) return;
+    const target = documentEditorTarget;
+    const document = target.document;
+    await runMusicAction(async () => {
+      if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+      await musicRepository.approveSongDocument(document.id);
+      await refreshFocusedSong(target.song.id);
+      setDocumentEditorTarget(null);
+    }, `${document.title} approved for sharing.`);
+  }
 
   async function performMusicAssetUpload(job: MusicUploadJob) {
     setUploadJobs((current) => ({

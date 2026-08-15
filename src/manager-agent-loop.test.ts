@@ -172,7 +172,7 @@ describe("Manager Agent Responses loop", () => {
       jsonSchema: { name: "manager", schema: { type: "object" } },
       fetchImpl: fetchImpl as typeof fetch,
       executeTool: async (name, args) => ({ name, args, rows: 3 }),
-      onToolEvent: (event) => toolEvents.push(event),
+      onToolEvent: (event) => { toolEvents.push(event); },
     });
 
     expect(requests).toHaveLength(2);
@@ -205,7 +205,7 @@ describe("Manager Agent Responses loop", () => {
       jsonSchema: { name: "manager", schema: { type: "object" } },
       fetchImpl: fetchImpl as typeof fetch,
       executeTool: async () => ({ status: "completed", evidence: [{}, {}, {}], sourceSnapshotId: "snapshot-secret" }),
-      onToolEvent: (event) => events.push(event),
+      onToolEvent: (event) => { events.push(event); },
     });
 
     expect(events.at(-1)?.summary).toContain("3 saved evidence item");
@@ -271,7 +271,7 @@ describe("Manager Agent Responses loop", () => {
       jsonSchema: { name: "manager", schema: { type: "object" } },
       fetchImpl: fetchImpl as typeof fetch,
       executeTool: async () => { throw { message: "provider unavailable" }; },
-      onToolEvent: (event) => traces.push(event),
+      onToolEvent: (event) => { traces.push(event); },
     });
 
     expect(traces.find((event) => event.status === "failed")?.summary).toContain("provider unavailable");
