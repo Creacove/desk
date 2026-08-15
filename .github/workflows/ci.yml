@@ -288,9 +288,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build production shell
+      - name: Build production shell with explicit fixture runtime
         env:
           VITE_APP_MODE: production
+          VITE_PRODUCTION_FIXTURES: "true"
         run: npm run build
 
       - name: Start preview and Chromium
