@@ -321,7 +321,7 @@ export function normalizeStructuredSongDocument(value: unknown): StructuredSongD
         return [{ key, title, content, evidenceRefs: cleanStringList(section.evidenceRefs, 20, 500) }];
       })
     : [];
-  const claims = Array.isArray(value.claims)
+  const claims: SongDocumentClaim[] = Array.isArray(value.claims)
     ? value.claims.flatMap((claim) => {
         if (!isRecord(claim)) return [];
         const text = cleanText(claim.text, 1600);
