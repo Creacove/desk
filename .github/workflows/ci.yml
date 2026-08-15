@@ -91,9 +91,9 @@ jobs:
           PY
 
   edge-typecheck:
-    name: Structured document Deno check
+    name: Manager and structured document Deno check
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -103,11 +103,47 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Check new Edge helpers
+      - name: Check Manager and release Edge boundaries
         run: >-
           deno check
           supabase/functions/_shared/songDocumentStandards.ts
           supabase/functions/_shared/songDocumentDraft.ts
+          supabase/functions/_shared/manager-conversation/agentLoop.ts
+          supabase/functions/_shared/manager-conversation/toolExecutor.ts
+          supabase/functions/manager-conversation/index.ts
+          supabase/functions/music-share-links/index.ts
+          supabase/functions/public-music-share/index.ts
+
+  database-smoke:
+    name: Fresh Supabase migration and RPC smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+
+      - name: Start fresh database and apply all migrations
+        run: supabase db start
+
+      - name: Exercise structured campaign persistence against Postgres
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then
+            echo 'Supabase database container was not found.' >&2
+            exit 1
+          fi
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/structured_campaign_documents_smoke.sql
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true
 
   focused-tests:
     name: Record servicing and campaign tests
@@ -159,6 +195,26 @@ jobs:
       # Raw npm test is the gate. No stale UI contract or known-failure allowlist may pass here.
       - name: Run full suite
         run: npm test
+
+  dependency-audit:
+    name: Production dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reject high or critical production dependency vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
 
   build:
     name: Production build
