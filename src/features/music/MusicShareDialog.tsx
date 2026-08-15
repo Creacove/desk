@@ -264,11 +264,17 @@ function buildInventory(song: MusicObjectViewModel): ShareInventory {
 }
 
 export function isShareableSongDocument(material: DocumentMaterial) {
+  if (isInternalCampaignDocument(material)) return false;
   if (material.reviewState === "needs_review" || !material.body?.trim()) return false;
   if (material.origin === "manager_generated") {
     return ["accepted", "ready", "published"].includes(material.status.trim().toLowerCase());
   }
   return true;
+}
+
+function isInternalCampaignDocument(material: DocumentMaterial) {
+  const type = String(material.materialType).trim().toLowerCase().replace(/[\s-]+/g, "_");
+  return type === "release_narrative" || material.title.trim().toLowerCase() === "release narrative";
 }
 
 function fieldValue(song: MusicObjectViewModel, label: string) {
