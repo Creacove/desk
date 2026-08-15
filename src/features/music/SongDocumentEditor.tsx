@@ -40,6 +40,7 @@ export function SongDocumentEditor({
   const [title, setTitle] = useState(document?.title ?? "Press release");
   const [body, setBody] = useState(document?.body ?? "");
   const preview = useMemo(() => parseStructuredMarkdown(body), [body]);
+  const structuredArtifact = managerArtifact && Boolean(preview.purpose && preview.audience && (preview.sections.length || preview.coreNarrative));
   const internalNarrative = document?.title.trim().toLowerCase() === "release narrative";
 
   function submit(event: FormEvent) {
@@ -57,8 +58,8 @@ export function SongDocumentEditor({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">{internalNarrative ? "Internal campaign spine" : managerArtifact ? "Manager-built artifact" : "Song document"}</p>
-                {managerArtifact ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-success/9 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-success"><ShieldCheck className="h-3 w-3" /> Structured</span>
+                {structuredArtifact ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-success/9 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-success"><ShieldCheck className="h-3 w-3" /> Quality checked</span>
                 ) : null}
                 {document?.reviewState === "needs_review" ? <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-warning">Review draft</span> : null}
               </div>
@@ -76,7 +77,7 @@ export function SongDocumentEditor({
 
         {editing ? (
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 sm:p-6">
-            {managerArtifact ? <p className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3 text-[11px] font-medium leading-relaxed text-muted-foreground">This is a quality-gated Manager artifact. Saving a manual edit creates a user-controlled revision of the readable copy.</p> : null}
+            {structuredArtifact ? <p className="rounded-[12px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3 text-[11px] font-medium leading-relaxed text-muted-foreground">This Manager artifact passed the structured document pipeline. Saving a manual edit creates a user-controlled revision of the readable copy.</p> : null}
             <div className="grid gap-4 sm:grid-cols-[190px_minmax(0,1fr)]">
               <label className="grid gap-1.5 text-[11px] font-semibold text-muted-foreground">Type
                 <select aria-label="Document type" value={documentType} disabled={Boolean(document)} onChange={(event) => setDocumentType(event.target.value as SongDocumentType)} className="h-10 rounded-[10px] border border-foreground/12 bg-background px-3 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-brand-accent/25">
@@ -153,11 +154,20 @@ function parseStructuredMarkdown(body: string) {
   const purpose = normalized.match(/^\*\*Purpose:\*\*\s*(.+)$/m)?.[1]?.trim() ?? "";
   const audience = normalized.match(/^\*\*Audience:\*\*\s*(.+)$/m)?.[1]?.trim() ?? "";
   const coreNarrative = normalized.match(/^\*\*Core narrative:\*\*\s*(.+)$/m)?.[1]?.trim() ?? "";
-  const sectionMatches = [...normalized.matchAll(/^##\s+(.+)\n([\s\S]*?)(?=^##\s+|\z)/gm)];
-  const sections = sectionMatches
-    .map((match) => ({ title: match[1].trim(), content: match[2].trim() }))
-    .filter((section) => section.title.toLowerCase() !== "needs verification");
-  const needsSection = sectionMatches.find((match) => match[1].trim().toLowerCase() === "needs verification")?.[2] ?? "";
+  const parsedSections = normalized
+    .split(/^##\s+/m)
+    .slice(1)
+    .map((chunk) => {
+      const lineBreak = chunk.indexOf("\n");
+      if (lineBreak < 0) return { title: chunk.trim(), content: "" };
+      return {
+        title: chunk.slice(0, lineBreak).trim(),
+        content: chunk.slice(lineBreak + 1).trim(),
+      };
+    })
+    .filter((section) => section.title);
+  const needsSection = parsedSections.find((section) => section.title.toLowerCase() === "needs verification")?.content ?? "";
+  const sections = parsedSections.filter((section) => section.title.toLowerCase() !== "needs verification");
   const needsVerification = needsSection.split("\n").map((line) => line.replace(/^[-*]\s*/, "").trim()).filter(Boolean);
   const fallback = normalized
     .replace(/^#\s+.*$/m, "")
