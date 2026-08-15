@@ -156,7 +156,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Keep this as raw npm test: stale UI contracts must fail instead of being silently accepted.
+      # Raw npm test is the gate. No stale UI contract or known-failure allowlist may pass here.
       - name: Run full suite
         run: npm test
 
