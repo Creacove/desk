@@ -27,12 +27,14 @@ export function SongDocumentEditor({
   error,
   onCancel,
   onSave,
+  onApprove,
 }: {
   document?: Extract<SongMaterialViewModel, { kind: "document" }>;
   pending: boolean;
   error?: string | null;
   onCancel: () => void;
   onSave: (input: { documentType: SongDocumentType; title: string; body: string }) => Promise<void> | void;
+  onApprove?: () => Promise<void> | void;
 }) {
   const managerArtifact = Boolean(document?.origin === "manager_generated" && document.body?.trim());
   const [editing, setEditing] = useState(!managerArtifact);
@@ -42,6 +44,8 @@ export function SongDocumentEditor({
   const preview = useMemo(() => parseStructuredMarkdown(body), [body]);
   const structuredArtifact = managerArtifact && Boolean(preview.purpose && preview.audience && (preview.sections.length || preview.coreNarrative));
   const internalNarrative = document?.title.trim().toLowerCase() === "release narrative";
+  const approved = document?.status === "accepted";
+  const canApprove = Boolean(managerArtifact && !internalNarrative && !approved && document?.reviewState === "ready" && onApprove);
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -61,10 +65,11 @@ export function SongDocumentEditor({
                 {structuredArtifact ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-success/9 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-success"><ShieldCheck className="h-3 w-3" /> Quality checked</span>
                 ) : null}
+                {approved ? <span className="inline-flex items-center gap-1 rounded-full bg-success/9 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-success"><Check className="h-3 w-3" /> Approved</span> : null}
                 {document?.reviewState === "needs_review" ? <span className="rounded-full bg-warning/10 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.06em] text-warning">Review draft</span> : null}
               </div>
               <h2 id="song-document-editor-title" className="mt-1 truncate font-display text-[22px] font-semibold text-foreground">{document ? title : "Write here"}</h2>
-              {managerArtifact && !editing ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">Read the artifact first. Edit only when you want to take manual control of the copy.</p> : null}
+              {managerArtifact && !editing ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">Read the artifact first. Approve the exact canonical version when it is ready to leave Desk, or edit only when you want to take manual control of the copy.</p> : null}
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -98,10 +103,11 @@ export function SongDocumentEditor({
         )}
 
         <footer className="flex items-center justify-between gap-3 border-t border-foreground/8 px-5 py-4 sm:px-6">
-          <p className="hidden text-[10px] font-medium text-muted-foreground sm:block">{managerArtifact && !editing ? "Canonical copy saved in this song’s Files." : "Changes stay attached to this song."}</p>
+          <p className="hidden text-[10px] font-medium text-muted-foreground sm:block">{approved ? "This exact version is approved for private sharing." : managerArtifact && !editing ? "Canonical copy saved in this song’s Files." : "Changes stay attached to this song."}</p>
           <div className="ml-auto flex gap-2">
             {editing && managerArtifact ? <button type="button" onClick={() => { setTitle(document?.title ?? title); setBody(document?.body ?? body); setEditing(false); }} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Back to preview</button> : null}
             <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Close</button>
+            {canApprove && !editing ? <button type="button" disabled={pending} onClick={() => void onApprove?.()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-[12px] font-semibold text-background disabled:opacity-40"><Check className="h-3.5 w-3.5" /> {pending ? "Approving…" : "Approve for sharing"}</button> : null}
             {editing ? <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save revision"}</button> : null}
           </div>
         </footer>
