@@ -1,4 +1,4 @@
-import { ArrowRight, BriefcaseBusiness, FileText, MessageCircle } from "lucide-react";
+import { ArrowRight, BookOpenText, BriefcaseBusiness, FileText, MessageCircle } from "lucide-react";
 import type { ReactNode } from "react";
 
 import type { MusicObjectViewModel } from "../../types/cleanProduction";
@@ -21,9 +21,10 @@ export function SongCampaignWorkspace({
 }) {
   const postRelease = campaign.phase === "post_release";
   const hasDocuments = campaign.documents.length > 0;
+  const hasNarrative = Boolean(campaign.narrative);
   const primaryAction = campaign.nextMove === "build_release_kit" ? onBuildReleaseKit ?? onContinueManager : onContinueManager;
   const primaryLabel = campaign.nextMove === "build_release_kit"
-    ? "Build release kit with Manager"
+    ? hasNarrative ? "Complete release kit with Manager" : "Build campaign with Manager"
     : "Continue with Manager";
 
   return (
@@ -33,12 +34,12 @@ export function SongCampaignWorkspace({
           {postRelease ? "Record campaign" : "Release campaign"}
         </p>
         <h2 className="mt-2 max-w-2xl font-display text-[28px] font-semibold leading-[1.06] tracking-tight text-foreground sm:text-[34px]">
-          {postRelease ? "Keep this record moving." : "Manage the release from one place."}
+          {postRelease ? "Keep this record moving." : "One story. One release system."}
         </h2>
         <p className="mt-3 max-w-2xl text-[13px] font-medium leading-6 text-muted-foreground">
           {postRelease
-            ? "Manager keeps the current materials, servicing work and next campaign decision attached to this record."
-            : "Manager keeps the release materials, active work and next decision together without making you manage separate tools."}
+            ? "The campaign keeps one narrative, the current materials, servicing work and next decision attached to this record."
+            : "The narrative comes first. Manager then turns that strategy into the specific materials and work this release actually needs."}
         </p>
         {primaryAction ? (
           <button
@@ -54,32 +55,24 @@ export function SongCampaignWorkspace({
 
       <div className="divide-y divide-foreground/8">
         <CampaignRow
-          eyebrow="Next move"
-          title={campaign.nextMove === "build_release_kit"
-            ? postRelease
-              ? "Build the materials this record needs for the next servicing wave."
-              : "Build the release kit before outreach starts."
-            : postRelease
-              ? "Continue from the work already attached to this record."
-              : "Continue the campaign from the materials already prepared."}
-          body={campaign.nextMove === "build_release_kit"
-            ? postRelease
-              ? "Manager can create the relevant EPK, bio, one-sheet, press angles and pitches without reopening pre-release gates."
-              : "Manager can prepare the EPK, bio, one-sheet, press angles, channel-ready pitches and other materials this release actually needs."
-            : "Manager should inspect the current campaign state first, then recommend the highest-value next action instead of making you choose a tool."}
-          icon={<MessageCircle className="h-4 w-4" aria-hidden="true" />}
-          actionLabel={primaryAction ? primaryLabel : undefined}
-          onAction={primaryAction}
+          eyebrow="Campaign spine"
+          title={hasNarrative ? "Release narrative established" : "Start with the release narrative"}
+          body={hasNarrative
+            ? "This is the internal source story for positioning, audience, proof, creative world and language. The EPK, bio, one-sheet, press copy and pitches should inherit it."
+            : "Before making assets, Manager should establish what this release means, who it is for, why it matters now, what proves the story and what language the campaign should avoid."}
+          icon={<BookOpenText className="h-4 w-4" aria-hidden="true" />}
+          actionLabel={hasNarrative ? "Open in Files" : primaryAction ? primaryLabel : undefined}
+          onAction={hasNarrative ? onOpenFiles : primaryAction}
         />
 
         <CampaignRow
           eyebrow="Release kit"
           title={hasDocuments
-            ? `${campaign.documents.length} campaign ${campaign.documents.length === 1 ? "material" : "materials"} in Files`
-            : "No campaign materials prepared yet"}
+            ? `${campaign.documents.length} campaign ${campaign.documents.length === 1 ? "artifact" : "artifacts"} prepared`
+            : hasNarrative ? "Narrative ready. Build only the artifacts the campaign needs." : "No disconnected templates"}
           body={hasDocuments
-            ? "These are canonical song documents. Open Files when you want to inspect or revise the underlying material."
-            : "The kit stays empty until there is real work to save. Manager can create it when the campaign needs it."}
+            ? "These are canonical song artifacts, not chat answers. Open Files to read the structured copy first and edit only when you want to take manual control."
+            : "Manager should not manufacture an EPK, one-sheet, bio, press release and pitches just to fill a checklist. It should create the smallest high-quality kit justified by the release and its next move."}
           icon={<FileText className="h-4 w-4" aria-hidden="true" />}
           actionLabel="Open Files"
           onAction={onOpenFiles}
@@ -98,10 +91,10 @@ export function SongCampaignWorkspace({
 
         <CampaignRow
           eyebrow="Opportunities"
-          title={postRelease ? "Playlist and press servicing stays with Manager." : "Research starts when the campaign is ready for outreach."}
+          title={postRelease ? "Research only when it can move the record." : "Outreach begins when the story and material are ready."}
           body={postRelease
             ? "Manager can research, rank and prepare target-specific playlist or press opportunities without turning this song into a CRM dashboard."
-            : "When it is time to pitch, Manager can research the right targets, prepare the outreach and keep the evidence attached to this song."}
+            : "Manager can research the right targets, prepare recipient-specific material and preserve the evidence behind each recommendation when the campaign reaches that point."}
           icon={<ArrowRight className="h-4 w-4" aria-hidden="true" />}
           actionLabel={onContinueManager ? "Review with Manager" : undefined}
           onAction={onContinueManager}
