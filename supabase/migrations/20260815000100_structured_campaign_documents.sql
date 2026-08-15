@@ -42,6 +42,40 @@ begin
     raise exception 'song_document_structure_invalid';
   end if;
 
+  -- Generic AI/music-marketing language is never allowed to become a canonical
+  -- campaign artifact just because all of the expected headings are present.
+  if exists (
+    select 1
+    from jsonb_array_elements_text(coalesce(p_quality_json->'warnings', '[]'::jsonb)) warning(value)
+    where warning.value ilike '%generic music-marketing language%'
+  ) then
+    raise exception 'song_document_quality_generic_language';
+  end if;
+
+  -- Recipient-facing campaign collateral must inherit one internal campaign spine.
+  -- Lyrics, credits and distributor notes are operational records rather than campaign
+  -- storytelling, so they do not require a release narrative.
+  if p_document_type in (
+    'epk','spotify_editorial_pitch','playlist_pitch','press_target_brief','press_pitch',
+    'content_plan','release_calendar','press_release','press_angle','artist_biography','one_sheet'
+  ) and not exists (
+    select 1
+    from public.documents narrative
+    join public.artifact_links link
+      on link.source_type = 'document'
+      and link.source_id = narrative.id
+      and link.target_type = 'music_item'
+      and link.target_id = p_music_item_id
+      and link.relationship = 'references'
+    where narrative.account_id = p_account_id
+      and narrative.artist_workspace_id = p_artist_workspace_id
+      and narrative.artist_id = p_artist_id
+      and narrative.document_type = 'release_narrative'
+      and narrative.status not in ('superseded', 'revoked', 'failed')
+  ) then
+    raise exception 'song_document_release_narrative_required: create or refresh release_narrative before %', p_document_type;
+  end if;
+
   -- All existing public artifact types retain the battle-tested v1 transaction.
   -- We enrich the created version after the transaction with the v2 contract.
   if p_document_type <> 'release_narrative' then
