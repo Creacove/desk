@@ -38,11 +38,13 @@ describe("Manager Agent Responses loop", () => {
     expect(names).toEqual(expect.arrayContaining([
       "read_focused_release_success",
       "propose_focused_release_date_change",
+    ]));
+    expect(names).not.toEqual(expect.arrayContaining([
       "query_focused_release_opportunities",
       "save_focused_release_opportunities",
       "create_focused_song_document",
+      "record_focused_release_opportunity_outcome",
     ]));
-    expect(names).not.toContain("record_focused_release_opportunity_outcome");
   });
 
   it("keeps the release proposal tool available when the artist answers a release-date context question", () => {

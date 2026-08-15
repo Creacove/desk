@@ -428,7 +428,7 @@ export function selectManagerConversationToolsForTurn(input: {
   if (outcomeIntent) allowed.add("record_focused_release_opportunity_outcome");
 
   if (input.hasAttachedUnreleasedSong) {
-    const releaseManagementIntent = /\b(release date|release readiness|readiness|ready to release|ready for release|move (?:the )?release|delay (?:the )?release|postpone|reschedule|release plan|plan this release|launch date)\b/.test(intentText);
+    const releaseManagementIntent = /\b(release date|release readiness|readiness|ready to release|ready for release|release (?:this|the) (?:song|record)|move (?:the )?release|delay (?:the )?release|postpone|reschedule|release plan|plan this release|launch date)\b/.test(intentText);
     if (releaseManagementIntent) {
       allowed.add("read_focused_release_success");
       allowed.add("propose_focused_release_date_change");
