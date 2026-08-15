@@ -66,7 +66,7 @@ describe("song Campaign UX", () => {
     expect(onCampaign).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps the Campaign workspace restrained and sends deeper work back to Manager, Files, or Mission", () => {
+  it("leads Campaign with one narrative spine and keeps deeper work in Manager, Files, or Mission", () => {
     const onManager = vi.fn();
     const onBuildKit = vi.fn();
     const onFiles = vi.fn();
@@ -84,12 +84,14 @@ describe("song Campaign UX", () => {
 
     expect(screen.getByRole("region", { name: "Campaign for Down Below" })).toBeInTheDocument();
     expect(screen.getByText("Keep this record moving.")).toBeInTheDocument();
+    expect(screen.getByText("Campaign spine")).toBeInTheDocument();
+    expect(screen.getByText("Start with the release narrative")).toBeInTheDocument();
     expect(screen.getByText("Release kit")).toBeInTheDocument();
     expect(screen.getByText("Active work")).toBeInTheDocument();
     expect(screen.getByText("Opportunities")).toBeInTheDocument();
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: /Build release kit with Manager/i })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: /Build campaign with Manager/i })[0]);
     fireEvent.click(screen.getByRole("button", { name: /Open Files/i }));
     fireEvent.click(screen.getByRole("button", { name: /Open mission/i }));
     expect(onBuildKit).toHaveBeenCalledTimes(1);
