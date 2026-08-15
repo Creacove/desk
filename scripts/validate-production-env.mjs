@@ -30,8 +30,11 @@ function productionUrl(errors, name, value) {
 export function validateProductionEnv(env = process.env) {
   const errors = [];
 
-  if (text(env.VITE_APP_MODE).toLowerCase() === "prototype") {
-    errors.push("VITE_APP_MODE must not be prototype in production.");
+  if (text(env.VITE_APP_MODE).toLowerCase() !== "production") {
+    errors.push("VITE_APP_MODE must be production for a production deploy.");
+  }
+  if (text(env.APP_ENVIRONMENT).toLowerCase() !== "production") {
+    errors.push("APP_ENVIRONMENT must be production so telemetry is attributed to the correct environment.");
   }
 
   productionUrl(errors, "VITE_SUPABASE_URL", env.VITE_SUPABASE_URL);
