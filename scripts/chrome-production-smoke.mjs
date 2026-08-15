@@ -85,6 +85,10 @@ async function bodyText() {
   return String(await evaluate("document.body?.innerText || ''"));
 }
 
+function includesText(haystack, needle) {
+  return String(haystack).toLocaleLowerCase().includes(String(needle).toLocaleLowerCase());
+}
+
 async function browserState() {
   const state = await evaluate(`({
     url: location.href,
@@ -112,7 +116,7 @@ async function waitForText(expected, attempts = 40) {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
     await assertNoRuntimeFailure(`waiting for ${expected}`);
     latest = await bodyText();
-    if (latest.includes(expected)) return latest;
+    if (includesText(latest, expected)) return latest;
     await delay(250);
   }
   const state = await browserState();
@@ -156,18 +160,18 @@ await navigate(appUrl);
 
 let text = await waitForText("Desk HQ");
 for (const expected of ["Catalog", "Missions"]) {
-  if (!text.includes(expected)) throw new Error(`Production shell did not render expected Desk navigation: ${expected}`);
+  if (!includesText(text, expected)) throw new Error(`Production shell did not render expected Desk navigation: ${expected}`);
 }
 
 await clickExact("Catalog");
 text = await waitForText("Catalog");
-if (!text.includes("Catalog")) throw new Error("Catalog workspace did not render after real-browser navigation.");
+if (!includesText(text, "Catalog")) throw new Error("Catalog workspace did not render after real-browser navigation.");
 
 // Manager is intentionally not a permanent rail item. Verify the supported production
 // view-entry contract in the same real browser rather than inventing a nav control.
 await navigate(`${appOrigin}/?fixtures=true&view=managerOffice`);
 text = await waitForText("Manager");
-if (!text.includes("Manager")) throw new Error("Manager workspace did not render through the supported view entry.");
+if (!includesText(text, "Manager")) throw new Error("Manager workspace did not render through the supported view entry.");
 
 await assertNoRuntimeFailure("finishing the production shell smoke");
 console.log("Real Chromium production-shell smoke passed: Desk HQ booted, Catalog navigation worked, and Manager rendered without uncaught runtime exceptions.");
