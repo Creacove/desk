@@ -40,11 +40,21 @@ describe("record servicing tool selection", () => {
     expect(names).toContain("create_focused_song_document");
   });
 
+  it("lets Manager prepare a private package for a servicing target without exposing send actions", () => {
+    const released = functionNames("Prepare the package for this curator", false);
+    const unreleased = functionNames("Build a private press package for this release", true);
+
+    expect(released).toContain("prepare_focused_release_share_package");
+    expect(unreleased).toContain("prepare_focused_release_share_package");
+    expect(released).not.toContain("propose_focused_release_date_change");
+  });
+
   it("does not expose servicing writes for an unrelated released-song turn", () => {
     const names = functionNames("Help me understand the audience for this song", false);
 
     expect(names).not.toContain("save_focused_release_opportunities");
     expect(names).not.toContain("create_focused_song_document");
+    expect(names).not.toContain("prepare_focused_release_share_package");
     expect(names).not.toContain("propose_focused_release_date_change");
   });
 
