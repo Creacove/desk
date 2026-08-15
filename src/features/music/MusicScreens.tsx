@@ -605,7 +605,7 @@ export function MusicWorkspace({
   async function approveSongDocument() {
     if (!documentEditorTarget?.document) return;
     const target = documentEditorTarget;
-    const document = target.document;
+    const document = target.document!;
     await runMusicAction(async () => {
       if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
       await musicRepository.approveSongDocument(document.id);
