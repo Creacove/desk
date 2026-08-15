@@ -6,7 +6,9 @@ dist/
 !.env.example
 .netlify/
 .playwright-mcp/
+.playwright-cli/
 .codex/
+.codex-vite-*.log
 artifacts/
 output/
 scratch/
