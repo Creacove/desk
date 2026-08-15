@@ -3,6 +3,7 @@ import {
   isPremiumSongDocumentType,
   normalizeStructuredSongDocument,
   renderStructuredSongDocument,
+  type PremiumSongDocumentType,
   type SongDocumentQuality,
   type StructuredSongDocument,
 } from "./songDocumentStandards.ts";
@@ -77,15 +78,18 @@ export async function persistFocusedSongDocumentDraft(
 
   const musicItemId = input.musicSubject.id;
   const title = cleanLongText(input.title, 240) || documentTitle(documentType);
+  const artifactType: PremiumSongDocumentType = isReleaseNarrativeTransport(documentType, title)
+    ? "release_narrative"
+    : documentType;
   const structure = parseStructuredToolBody(responseBody);
   if (!structure) {
     throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");
   }
-  const quality = assessStructuredSongDocument(documentType, structure);
+  const quality = assessStructuredSongDocument(artifactType, structure);
   if (quality.blockers.length) {
     throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);
   }
-  const renderedBody = renderStructuredSongDocument(documentType, title, structure);
+  const renderedBody = renderStructuredSongDocument(artifactType, title, structure);
 
   if (typeof db.rpc === "function") {
     const { data, error } = await db.rpc("persist_focused_song_document_v2", {
@@ -107,14 +111,14 @@ export async function persistFocusedSongDocumentDraft(
     }
     return {
       ...(data as PersistedFocusedSongDocument),
-      documentType,
+      documentType: artifactType,
       title,
       quality,
       schemaVersion: "song_document_v2",
     };
   }
 
-  if (documentType === "release_narrative") {
+  if (artifactType === "release_narrative") {
     throw new Error("Structured release narrative persistence requires the v2 document transaction.");
   }
 
@@ -465,6 +469,10 @@ function documentTitle(type: CanonicalSongDocumentType) {
     credits: "Credits",
     distributor_notes: "Distributor notes",
   } as Record<CanonicalSongDocumentType, string>)[type];
+}
+
+function isReleaseNarrativeTransport(documentType: CanonicalSongDocumentType, title: string) {
+  return documentType === "press_angle" && title.trim().toLowerCase() === "release narrative";
 }
 
 function parseStructuredToolBody(value: string): StructuredSongDocument | null {
