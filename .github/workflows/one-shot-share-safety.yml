@@ -1,0 +1,54 @@
+name: One-shot share safety patch
+
+on:
+  push:
+    branches: [agent/record-servicing-manager-mode]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/record-servicing-manager-mode
+
+      - name: Harden document sharing at the Edge boundary
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('supabase/functions/music-share-links/index.ts')
+          source = path.read_text()
+          old = '''  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status"), input).in("id", linkedIds).limit(40);
+          if (documentsError) throw documentsError;
+          const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);'''
+          new = '''  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status,origin"), input).in("id", linkedIds).limit(40);
+          if (documentsError) throw documentsError;
+          if ((documents ?? []).length !== linkedIds.length) throw new Error("One or more selected documents are unavailable.");
+          for (const document of documents ?? []) {
+            const internalNarrative = document.document_type === "release_narrative"
+              || cleanText(document.title, 180).toLowerCase() === "release narrative";
+            if (internalNarrative) throw new Error("The internal Release Narrative cannot be shared.");
+            if (document.origin === "manager_generated" && document.status !== "accepted") {
+              throw new Error("Manager-built documents must be approved before sharing.");
+            }
+          }
+          const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);'''
+          if old not in source:
+            raise SystemExit('Expected music-share-links document block was not found; refusing broad patch.')
+          path.write_text(source.replace(old, new, 1))
+
+          workflow = Path('.github/workflows/one-shot-share-safety.yml')
+          workflow.unlink()
+
+      - name: Commit patch and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/music-share-links/index.ts src/music-share-backend-safety.test.ts .github/workflows/one-shot-share-safety.yml
+          git commit -m "fix: enforce share safety on the server"
+          git push origin HEAD:agent/record-servicing-manager-mode
