@@ -550,7 +550,7 @@ function serializeToolOutput(value: unknown) {
 async function postResponses(fetchImpl: typeof fetch, endpoint: string, apiKey: string, body: Record<string, unknown>) {
   const response = await fetchImpl(endpoint, {
     method: "POST",
-    headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
