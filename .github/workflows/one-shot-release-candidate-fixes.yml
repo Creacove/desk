@@ -1,0 +1,113 @@
+name: One-shot release candidate fixes
+
+on:
+  push:
+    branches: [agent/record-servicing-manager-mode]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/record-servicing-manager-mode
+
+      - name: Apply failure-driven fixes
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+            count = source.count(old)
+            if count != 1:
+              raise SystemExit(f'{label}: expected one anchor, found {count}')
+            return source.replace(old, new, 1)
+
+          # Preserve useful saved-evidence counts in public Manager tool progress.
+          path = Path('supabase/functions/_shared/manager-conversation/agentLoop.ts')
+          source = path.read_text()
+          old = '''    const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
+              ? value.evidenceCount
+              : null;'''
+          new = '''    const evidenceCount = typeof value.evidenceCount === "number" && Number.isFinite(value.evidenceCount)
+              ? value.evidenceCount
+              : Array.isArray(value.evidence)
+                ? value.evidence.length
+                : null;'''
+          source = replace_once(source, old, new, 'evidence-count fallback')
+          source = replace_once(
+            source,
+            '''  const countText = evidenceCount === null
+              ? ""
+              : ` with ${evidenceCount} supporting signal${evidenceCount === 1 ? "" : "s"}`;''',
+            '''  const countText = evidenceCount === null
+              ? ""
+              : ` with ${evidenceCount} saved evidence item${evidenceCount === 1 ? "" : "s"}`;''',
+            'discovery progress copy',
+          )
+          path.write_text(source)
+
+          # Keep the document narrowing stable through the async action closure.
+          path = Path('src/features/music/MusicScreens.tsx')
+          source = path.read_text()
+          old = '''  async function approveSongDocument() {
+            if (!documentEditorTarget?.document) return;
+            const target = documentEditorTarget;
+            await runMusicAction(async () => {
+              if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+              await musicRepository.approveSongDocument(target.document!.id);
+              await refreshFocusedSong(target.song.id);
+              setDocumentEditorTarget(null);
+            }, `${target.document.title} approved for sharing.`);
+          }
+          '''
+          new = '''  async function approveSongDocument() {
+            if (!documentEditorTarget?.document) return;
+            const target = documentEditorTarget;
+            const document = target.document;
+            await runMusicAction(async () => {
+              if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+              await musicRepository.approveSongDocument(document.id);
+              await refreshFocusedSong(target.song.id);
+              setDocumentEditorTarget(null);
+            }, `${document.title} approved for sharing.`);
+          }
+          '''
+          source = replace_once(source, old, new, 'approval narrowing')
+          path.write_text(source)
+
+          # Async tool-event callbacks must return void, not Array.push's numeric result.
+          path = Path('src/manager-agent-loop.test.ts')
+          source = path.read_text()
+          source, replacements = re.subn(
+            r'onToolEvent: \(event\) => ([A-Za-z_$][\w$]*)\.push\(event\),',
+            lambda match: f'onToolEvent: (event) => {{ {match.group(1)}.push(event); }},',
+            source,
+          )
+          if replacements < 1:
+            raise SystemExit('manager-agent-loop callbacks: no push callback anchors found')
+          path.write_text(source)
+
+          # The production app enables its supported fixture runtime by URL contract.
+          path = Path('scripts/chrome-production-smoke.mjs')
+          source = path.read_text()
+          source = replace_once(
+            source,
+            'const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173";',
+            'const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173/?fixtures=true";',
+            'Chromium fixture URL',
+          )
+          path.write_text(source)
+
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/_shared/manager-conversation/agentLoop.ts src/features/music/MusicScreens.tsx src/manager-agent-loop.test.ts scripts/chrome-production-smoke.mjs
+          git commit -m "fix: resolve release-candidate validation failures"
+          git push origin HEAD:agent/record-servicing-manager-mode
