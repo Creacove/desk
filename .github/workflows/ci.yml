@@ -156,7 +156,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # No compatibility allowlist: the repository suite itself must exit cleanly.
+      # Keep this as raw npm test: stale UI contracts must fail instead of being silently accepted.
       - name: Run full suite
         run: npm test
 
