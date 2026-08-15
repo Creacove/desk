@@ -46,10 +46,15 @@ jobs:
           if 'const focusedReleaseSharePackageProperties' not in agent:
             agent = replace_once(agent, schema_anchor, package_schema + schema_anchor, 'package schema')
 
-          readiness_anchor = '''  {
-            type: "function",
-            name: "read_focused_release_readiness",'''
-          package_tool = '''  {
+          if 'name: "prepare_focused_release_share_package"' not in agent:
+            marker = '    name: "read_focused_release_readiness",'
+            marker_index = agent.find(marker)
+            if marker_index < 0:
+              raise SystemExit('package tool: readiness marker not found')
+            block_start = agent.rfind('  {', 0, marker_index)
+            if block_start < 0:
+              raise SystemExit('package tool: readiness block start not found')
+            package_tool = '''  {
             type: "function",
             name: "prepare_focused_release_share_package",
             description: "Prepare a frozen, revocable private package for the exact attached song from approved canonical Files content. Optionally bind it to one saved release opportunity. This only prepares a reviewable link; it never emails, submits, posts, spends, or contacts anyone.",
@@ -57,12 +62,14 @@ jobs:
             parameters: focusedReleaseSharePackageProperties,
           },
           '''
-          if 'name: "prepare_focused_release_share_package"' not in agent:
-            agent = replace_once(agent, readiness_anchor, package_tool + readiness_anchor, 'package tool')
+            agent = agent[:block_start] + package_tool + agent[block_start:]
 
-          set_anchor = '  "create_focused_song_document",\n]);'
-          if '  "prepare_focused_release_share_package",\n]);' not in agent:
-            agent = replace_once(agent, set_anchor, '  "create_focused_song_document",\n  "prepare_focused_release_share_package",\n]);', 'release tool set')
+          if '"prepare_focused_release_share_package"' not in agent[agent.find('const releaseTurnToolNames'):agent.find('export function selectManagerConversationToolsForTurn')]:
+            set_start = agent.find('const releaseTurnToolNames = new Set([')
+            set_end = agent.find(']);', set_start)
+            if set_start < 0 or set_end < 0:
+              raise SystemExit('release tool set markers not found')
+            agent = agent[:set_end] + '  "prepare_focused_release_share_package",\n' + agent[set_end:]
 
           intent_anchor = '  const outcomeIntent = /\\b(submitted|replied|accepted|declined|outcome|response from|heard back)\\b/.test(body);'
           package_intent = '''  const packageIntent = /\\b(prepare|build|create|make|assemble)\\b/.test(body)
@@ -169,7 +176,6 @@ jobs:
 
           executor_path.write_text(executor)
 
-          # Normalize indentation from the prior safe one-shot patch while this file is already being reviewed.
           share_path = Path('supabase/functions/music-share-links/index.ts')
           share = share_path.read_text()
           share = share.replace('\nfor (const document of documents ?? []) {\n', '\n  for (const document of documents ?? []) {\n', 1)
