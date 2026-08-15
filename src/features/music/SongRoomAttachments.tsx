@@ -25,11 +25,11 @@ export function ReleaseWorkAttachment({
     : postRelease ? "Grow this record" : "Work on this song";
   const copy = activeCampaign
     ? postRelease
-      ? "Continue servicing this record with Manager, or open the campaign when you want the full operating view."
-      : "Continue the release with Manager, or open the campaign when you want the full operating view."
+      ? "The servicing work, materials and next move for this record live here."
+      : "The release story, materials and active work live here."
     : postRelease
-      ? "Manager can research opportunities and prepare the materials this record needs when you decide to work it."
-      : "Continue the conversation or open a linked mission.";
+      ? "Start with Manager when you want to actively service this record."
+      : "Manager can turn the current song state into a focused release plan.";
   const managerLabel = activeCampaign ? "Continue with Manager" : postRelease ? "Start with Manager" : "Talk to Manager";
 
   return (
@@ -40,16 +40,22 @@ export function ReleaseWorkAttachment({
         </span>
         <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight text-foreground">{title}</h4>
         <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{copy}</p>
-        {onTalkToManager ? (
-          <button type="button" aria-label="Talk to Manager" onClick={onTalkToManager} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
-            <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-            {managerLabel}
-          </button>
-        ) : null}
+
         {activeCampaign && onOpenCampaign ? (
-          <button type="button" aria-label="Open campaign" onClick={onOpenCampaign} className="mt-2 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg border border-foreground/10 px-3 text-[11px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.035] focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+          <button type="button" aria-label="Open campaign" onClick={onOpenCampaign} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
             Open campaign
             <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        ) : null}
+        {onTalkToManager ? (
+          <button
+            type="button"
+            aria-label="Talk to Manager"
+            onClick={onTalkToManager}
+            className={`${activeCampaign ? "mt-2 border border-foreground/10 text-foreground hover:bg-foreground/[0.035]" : "mt-4 bg-foreground text-background hover:opacity-85"} inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-accent/25`}
+          >
+            <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
+            {managerLabel}
           </button>
         ) : null}
       </div>
