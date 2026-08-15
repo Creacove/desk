@@ -143,8 +143,17 @@ async function loadDocumentFields(db: any, input: ShareInput, musicItemId: strin
   if (linksError) throw linksError;
   const linkedIds = [...new Set((links ?? []).map((link: any) => link.source_id).filter((id: unknown): id is string => typeof id === "string"))];
   if (linkedIds.length !== documentIds.length) throw new Error("One or more selected documents do not belong to this song.");
-  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status"), input).in("id", linkedIds).limit(40);
+  const { data: documents, error: documentsError } = await owned(db.from("documents").select("id,title,document_type,current_version_id,status,origin"), input).in("id", linkedIds).limit(40);
   if (documentsError) throw documentsError;
+  if ((documents ?? []).length !== linkedIds.length) throw new Error("One or more selected documents are unavailable.");
+for (const document of documents ?? []) {
+  const internalNarrative = document.document_type === "release_narrative"
+    || cleanText(document.title, 180).toLowerCase() === "release narrative";
+  if (internalNarrative) throw new Error("The internal Release Narrative cannot be shared.");
+  if (document.origin === "manager_generated" && document.status !== "accepted") {
+    throw new Error("Manager-built documents must be approved before sharing.");
+  }
+}
   const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);
   if (versionsError) throw versionsError;
   return (documents ?? []).flatMap((document: any) => {
