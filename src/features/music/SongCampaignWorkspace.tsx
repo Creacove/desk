@@ -1,4 +1,5 @@
 import { ArrowRight, BriefcaseBusiness, FileText, MessageCircle } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { MusicObjectViewModel } from "../../types/cleanProduction";
 import type { SongCampaignState } from "./songCampaign";
@@ -121,7 +122,7 @@ function CampaignRow({
   eyebrow: string;
   title: string;
   body: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
   actionLabel?: string;
   onAction?: () => void;
 }) {
