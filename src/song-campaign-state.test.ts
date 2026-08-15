@@ -59,12 +59,34 @@ describe("deriveSongCampaignState", () => {
     }));
   });
 
-  it("reveals Campaign for a released song after Manager is linked", () => {
-    expect(deriveSongCampaignState(song({ managerConversationId: "conversation-1" }), [])).toEqual(expect.objectContaining({
+  it("reveals Campaign for a released song after campaign-shaped Manager work is linked", () => {
+    expect(deriveSongCampaignState(song({
+      managerConversationId: "conversation-1",
+      managerConversation: {
+        id: "conversation-1",
+        topic: "Push Down Below further",
+        summary: "Research playlist and press opportunities for this record.",
+        status: "active",
+      },
+    }), [])).toEqual(expect.objectContaining({
       visible: true,
       phase: "post_release",
       managerStarted: true,
     }));
+  });
+
+  it("does not reveal Campaign for unrelated Manager work", () => {
+    const state = deriveSongCampaignState(song({
+      managerConversationId: "conversation-rights",
+      managerConversation: {
+        id: "conversation-rights",
+        topic: "Check the ISRC",
+        summary: "Confirm the identifier and rights metadata for this song.",
+        status: "active",
+      },
+    }), []);
+    expect(state.visible).toBe(false);
+    expect(state.managerStarted).toBe(false);
   });
 
   it("reveals Campaign for an unreleased song with active release work", () => {
@@ -72,6 +94,17 @@ describe("deriveSongCampaignState", () => {
     expect(state.visible).toBe(true);
     expect(state.phase).toBe("pre_release");
     expect(state.mission?.id).toBe("mission-1");
+  });
+
+  it("does not reveal Campaign for an unrelated linked mission", () => {
+    const state = deriveSongCampaignState(song(), [mission({
+      title: "Confirm song ownership",
+      summary: "Resolve rights records.",
+      recommendation: "Confirm contributor shares.",
+      nextTask: "Check split sheet",
+    })]);
+    expect(state.visible).toBe(false);
+    expect(state.mission).toBeUndefined();
   });
 
   it("reveals Campaign when a durable campaign document exists", () => {
@@ -87,7 +120,7 @@ describe("deriveSongCampaignState", () => {
     expect(state.documents).toEqual([]);
   });
 
-  it("prefers active work over a completed mission", () => {
+  it("prefers active campaign work over a completed campaign mission", () => {
     const completed = mission({ id: "mission-complete", status: "complete" });
     const active = mission({ id: "mission-active", status: "active" });
     expect(deriveSongCampaignState(song(), [completed, active]).mission?.id).toBe("mission-active");
