@@ -3606,7 +3606,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click((await screen.findByTestId("music-song-detail")).querySelector('[aria-label="Add document"]')!);
     expect(screen.getByRole("button", { name: "Write manually" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Ask Manager to draft" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Build with Manager" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Lyrics" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "EPK / press kit" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Press material" })).toBeInTheDocument();
