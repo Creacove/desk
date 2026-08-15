@@ -26,6 +26,7 @@ declare
   v_version_number integer;
   v_mission_id uuid;
   v_created boolean := false;
+  v_release_narrative_alias boolean := false;
 begin
   if p_document_type not in (
     'release_narrative','epk','spotify_editorial_pitch','playlist_pitch','press_target_brief','press_pitch',
@@ -42,6 +43,8 @@ begin
     raise exception 'song_document_structure_invalid';
   end if;
 
+  v_release_narrative_alias := p_document_type = 'press_angle' and lower(trim(p_title)) = 'release narrative';
+
   -- Generic AI/music-marketing language is never allowed to become a canonical
   -- campaign artifact just because all of the expected headings are present.
   if exists (
@@ -54,17 +57,15 @@ begin
 
   -- The edge executor predates release_narrative as a literal document type. Until
   -- that compatibility surface is retired, Manager transports the internal spine as
-  -- press_angle with the exact title "Release narrative". The product still treats
-  -- that artifact as internal strategy everywhere: Campaign recognizes it by title
-  -- and the share inventory always excludes it.
-  --
+  -- press_angle with the exact title "Release narrative". This alias must bypass the
+  -- v1 press-angle upsert and land in the canonical release_narrative record below.
   -- Recipient-facing campaign collateral must inherit that spine. Lyrics, credits
   -- and distributor notes are operational records and do not require it.
   if p_document_type in (
     'epk','spotify_editorial_pitch','playlist_pitch','press_target_brief','press_pitch',
     'content_plan','release_calendar','press_release','press_angle','artist_biography','one_sheet'
   )
-  and not (p_document_type = 'press_angle' and lower(trim(p_title)) = 'release narrative')
+  and not v_release_narrative_alias
   and not exists (
     select 1
     from public.documents narrative
@@ -88,7 +89,7 @@ begin
 
   -- All existing public artifact types retain the battle-tested v1 transaction.
   -- We enrich the created version after the transaction with the v2 contract.
-  if p_document_type <> 'release_narrative' then
+  if p_document_type <> 'release_narrative' and not v_release_narrative_alias then
     v_receipt := public.persist_focused_song_document_v1(
       p_account_id,
       p_artist_workspace_id,
@@ -119,7 +120,7 @@ begin
     );
   end if;
 
-  -- release_narrative remains a first-class v2 path for the future executor upgrade.
+  -- release_narrative and its legacy transport alias use one canonical record.
   if not exists (
     select 1 from public.music_items item
     where item.id = p_music_item_id and item.account_id = p_account_id
@@ -152,8 +153,8 @@ begin
       account_id, artist_workspace_id, artist_id, title, document_type, origin,
       status, summary, created_by_type, created_from_run_id
     ) values (
-      p_account_id, p_artist_workspace_id, p_artist_id, trim(p_title), 'release_narrative',
-      'manager_generated', 'draft', 'Internal campaign narrative for ' || trim(p_title) || '.', 'agent', p_run_id
+      p_account_id, p_artist_workspace_id, p_artist_id, 'Release narrative', 'release_narrative',
+      'manager_generated', 'draft', 'Internal campaign narrative for Release narrative.', 'agent', p_run_id
     ) returning * into v_document;
     v_created := true;
   end if;
@@ -177,7 +178,7 @@ begin
   ) returning id into v_version_id;
 
   update public.documents set current_version_id = v_version_id, status = 'draft',
-    created_from_run_id = p_run_id, title = trim(p_title), updated_at = now()
+    created_from_run_id = p_run_id, title = 'Release narrative', updated_at = now()
   where id = v_document.id;
 
   insert into public.artifact_links (
@@ -237,7 +238,7 @@ begin
     'musicItemId', p_music_item_id,
     'missionId', v_mission_id,
     'documentType', 'release_narrative',
-    'title', trim(p_title),
+    'title', 'Release narrative',
     'status', 'draft',
     'created', v_created,
     'quality', coalesce(p_quality_json, '{}'::jsonb),
