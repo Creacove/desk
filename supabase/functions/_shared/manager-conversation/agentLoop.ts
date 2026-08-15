@@ -402,28 +402,33 @@ export function selectManagerConversationToolsForTurn(input: {
 }): ManagerAgentToolDefinition[] {
   const allowed = new Set<string>();
   const body = input.body.trim().toLowerCase();
+  const contextAnswerText = (input.contextAnswers ?? [])
+    .map((answer) => `${answer.questionKey} ${answer.answer}`)
+    .join(" ")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  const intentText = `${body} ${contextAnswerText}`;
+  const servicingIntent = /\b(playlist(?:ing)?|playlist opportunities?|curator|press|publicity|editorial|media|outreach|record servicing|service this (?:song|release)|pitch(?:ing)?(?:\s+(?:this|the))?\s+(?:song|release|record))\b/.test(intentText);
+  const documentIntent = /\b(draft|write|prepare|create|make)\b/.test(body)
+    && /\b(epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
+  const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
+
+  if (servicingIntent) {
+    allowed.add("query_focused_release_opportunities");
+    allowed.add("save_focused_release_opportunities");
+    allowed.add("create_focused_song_document");
+  }
+  if (documentIntent) allowed.add("create_focused_song_document");
+  if (outcomeIntent) allowed.add("record_focused_release_opportunity_outcome");
+
   if (input.hasAttachedUnreleasedSong) {
-    const contextAnswerText = (input.contextAnswers ?? [])
-      .map((answer) => `${answer.questionKey} ${answer.answer}`)
-      .join(" ")
-      .replace(/[_-]+/g, " ")
-      .toLowerCase();
-    const releaseIntent = /\b(release|launch|rollout|campaign|playlist|press|publicity|editorial|epk|press kit|pitch|release date)\b/.test(`${body} ${contextAnswerText}`);
-    const documentIntent = /\b(draft|write|prepare|create|make)\b/.test(body)
-      && /\b(epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
-    if (releaseIntent) {
+    const releaseManagementIntent = /\b(release date|release readiness|readiness|ready to release|ready for release|move (?:the )?release|delay (?:the )?release|postpone|reschedule|release plan|plan this release|launch date)\b/.test(intentText);
+    if (releaseManagementIntent) {
       allowed.add("read_focused_release_success");
       allowed.add("propose_focused_release_date_change");
-      allowed.add("query_focused_release_opportunities");
-      allowed.add("save_focused_release_opportunities");
-      allowed.add("create_focused_song_document");
-    } else if (documentIntent) {
-      allowed.add("create_focused_song_document");
-    }
-    if (/\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body)) {
-      allowed.add("record_focused_release_opportunity_outcome");
     }
   }
+
   return managerConversationTools.filter((tool) => tool.type !== "function"
     || !releaseTurnToolNames.has(tool.name)
     || allowed.has(tool.name));
@@ -545,7 +550,7 @@ function serializeToolOutput(value: unknown) {
 async function postResponses(fetchImpl: typeof fetch, endpoint: string, apiKey: string, body: Record<string, unknown>) {
   const response = await fetchImpl(endpoint, {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    headers: { Authorization: `Bearer ${input.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
   if (!response.ok) {
@@ -613,6 +618,10 @@ function safeToolSummary(name: string, args: Record<string, unknown>) {
   if (name === "query_durable_memory") return "Reading durable Manager memory.";
   if (name === "query_manager_outputs") return "Reviewing prior Manager outputs.";
   if (name === "read_manager_output_section") return "Reading the relevant Manager document section.";
+  if (name === "query_focused_release_opportunities") return "Checking saved playlist and press targets.";
+  if (name === "save_focused_release_opportunities") return "Saving verified release opportunities.";
+  if (name === "create_focused_song_document") return "Preparing a song document for review.";
+  if (name === "record_focused_release_opportunity_outcome") return "Recording the opportunity outcome.";
   return "Manager is checking the workspace.";
 }
 
