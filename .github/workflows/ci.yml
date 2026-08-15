@@ -115,7 +115,7 @@ jobs:
           supabase/functions/public-music-share/index.ts
 
   database-smoke:
-    name: Fresh Supabase migration and RPC smoke
+    name: Fresh Supabase migration, RPC and RLS smoke
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -140,6 +140,7 @@ jobs:
             exit 1
           fi
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/structured_campaign_documents_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/rls_isolation_smoke.sql
 
       - name: Stop local Supabase
         if: always()
