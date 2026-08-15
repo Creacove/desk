@@ -1,3 +1,12 @@
+import {
+  assessStructuredSongDocument,
+  isPremiumSongDocumentType,
+  normalizeStructuredSongDocument,
+  renderStructuredSongDocument,
+  type SongDocumentQuality,
+  type StructuredSongDocument,
+} from "./songDocumentStandards.ts";
+
 export const releaseSuccessDocumentTypes = [
   "epk",
   "spotify_editorial_pitch",
@@ -33,6 +42,8 @@ export type PersistedFocusedSongDocument = {
   title: string;
   status: "draft";
   created: boolean;
+  quality?: SongDocumentQuality;
+  schemaVersion?: "song_document_v2";
 };
 
 const allCanonicalDocumentTypes = new Set<string>([
@@ -56,29 +67,37 @@ export async function persistFocusedSongDocumentDraft(
 ): Promise<PersistedFocusedSongDocument | undefined> {
   if (hasContextQuestions || input.musicSubject?.type !== "music_item") return;
 
-  // Manager documents must now be created through an explicit document tool call.
-  // Do not infer a document from the final conversational response: doing so can
-  // overwrite a structured v2 artifact with generic assistant prose from the same run.
+  // Manager documents must be created through an explicit document tool call. The
+  // conversational response is not a document and must never overwrite a quality-gated artifact.
   if (!input.documentType) return;
 
   const request = input.body.toLowerCase();
   const documentType = normalizeDocumentType(input.documentType) ?? requestedDocumentType(request);
-  if (!documentType) return;
-  if (documentType === "release_narrative") {
-    throw new Error("Release narrative requires structured document persistence.");
-  }
+  if (!documentType || !isPremiumSongDocumentType(documentType)) return;
 
   const musicItemId = input.musicSubject.id;
   const title = cleanLongText(input.title, 240) || documentTitle(documentType);
+  const structure = parseStructuredToolBody(responseBody);
+  if (!structure) {
+    throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");
+  }
+  const quality = assessStructuredSongDocument(documentType, structure);
+  if (quality.blockers.length) {
+    throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);
+  }
+  const renderedBody = renderStructuredSongDocument(documentType, title, structure);
+
   if (typeof db.rpc === "function") {
-    const { data, error } = await db.rpc("persist_focused_song_document_v1", {
+    const { data, error } = await db.rpc("persist_focused_song_document_v2", {
       p_account_id: input.accountId,
       p_artist_workspace_id: input.artistWorkspaceId,
       p_artist_id: input.artistId,
       p_music_item_id: musicItemId,
       p_document_type: documentType,
       p_title: title,
-      p_body: cleanLongText(responseBody, 60_000),
+      p_body: cleanLongText(renderedBody, 60_000),
+      p_structure_json: structure,
+      p_quality_json: quality,
       p_run_id: runId,
       p_manager_output_id: input.managerOutputId ?? null,
     });
@@ -86,8 +105,19 @@ export async function persistFocusedSongDocumentDraft(
     if (!data || typeof data !== "object" || !("documentId" in data) || !("versionId" in data)) {
       throw new Error("Manager document transaction returned an invalid receipt.");
     }
-    return data as PersistedFocusedSongDocument;
+    return {
+      ...(data as PersistedFocusedSongDocument),
+      documentType,
+      title,
+      quality,
+      schemaVersion: "song_document_v2",
+    };
   }
+
+  if (documentType === "release_narrative") {
+    throw new Error("Structured release narrative persistence requires the v2 document transaction.");
+  }
+
   const scope = [
     ["account_id", input.accountId],
     ["artist_workspace_id", input.artistWorkspaceId],
@@ -208,7 +238,12 @@ export async function persistFocusedSongDocumentDraft(
         manager_output_id: input.managerOutputId ?? null,
         file_type: "text/markdown",
         extraction_status: "not_required",
-        metadata: { body: cleanLongText(responseBody, 60_000) },
+        metadata: {
+          body: cleanLongText(renderedBody, 60_000),
+          structure,
+          quality,
+          schemaVersion: "song_document_v2",
+        },
         created_from_run_id: runId,
       })
       .select("id,document_id")
@@ -242,6 +277,8 @@ export async function persistFocusedSongDocumentDraft(
         document_type: documentType,
         version_id: canonicalVersionId,
         mission_id: missionId ?? null,
+        quality,
+        schema_version: "song_document_v2",
       },
     });
     if (eventError) throw eventError;
@@ -255,6 +292,8 @@ export async function persistFocusedSongDocumentDraft(
       title,
       status: "draft",
       created: createdDocument,
+      quality,
+      schemaVersion: "song_document_v2",
     };
   } catch (error) {
     await compensateDocumentPersistence(db, scope, {
@@ -426,6 +465,15 @@ function documentTitle(type: CanonicalSongDocumentType) {
     credits: "Credits",
     distributor_notes: "Distributor notes",
   } as Record<CanonicalSongDocumentType, string>)[type];
+}
+
+function parseStructuredToolBody(value: string): StructuredSongDocument | null {
+  try {
+    const parsed = JSON.parse(value);
+    return normalizeStructuredSongDocument(parsed);
+  } catch {
+    return null;
+  }
 }
 
 function cleanLongText(value: unknown, maxChars: number) {
