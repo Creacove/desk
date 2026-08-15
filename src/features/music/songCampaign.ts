@@ -26,6 +26,7 @@ export type SongCampaignState = {
   visible: boolean;
   phase: SongCampaignPhase;
   managerStarted: boolean;
+  narrative?: SongDocument;
   documents: SongDocument[];
   mission?: MissionViewModel;
   nextMove: SongCampaignNextMove;
@@ -36,7 +37,9 @@ export function deriveSongCampaignState(
   missions: MissionViewModel[] = [],
 ): SongCampaignState {
   const phase: SongCampaignPhase = isReleasedSong(song) ? "post_release" : "pre_release";
-  const documents = (song.materials ?? []).filter(isCampaignDocument);
+  const materials = song.materials ?? [];
+  const narrative = materials.find(isReleaseNarrative);
+  const documents = materials.filter(isCampaignDocument).filter((material) => !isReleaseNarrative(material));
   const campaignMissions = missions.filter(isCampaignMission);
   const mission = campaignMissions.find((candidate) => candidate.status !== "complete") ?? campaignMissions[0];
   const managerStarted = isCampaignConversation(song);
@@ -45,15 +48,16 @@ export function deriveSongCampaignState(
   // until the artist actually asks Manager to run campaign/servicing work or durable
   // campaign records exist. Rights, metadata, lyrics and unrelated Manager work do not
   // grow another navigation tab by accident.
-  const visible = Boolean(managerStarted || mission || documents.length);
+  const visible = Boolean(managerStarted || mission || narrative || documents.length);
 
   return {
     visible,
     phase,
     managerStarted,
+    ...(narrative ? { narrative } : {}),
     documents,
     ...(mission ? { mission } : {}),
-    nextMove: documents.length ? "continue_campaign" : "build_release_kit",
+    nextMove: narrative && documents.length ? "continue_campaign" : "build_release_kit",
   };
 }
 
@@ -65,8 +69,14 @@ export function isReleasedSong(song: MusicObjectViewModel) {
   return RELEASED_STAGES.has(stage);
 }
 
+function isReleaseNarrative(material: SongMaterialViewModel): material is SongDocument {
+  if (material.kind !== "document") return false;
+  return material.materialType === ("release_narrative" as SongDocument["materialType"])
+    || material.title.trim().toLowerCase() === "release narrative";
+}
+
 function isCampaignDocument(material: SongMaterialViewModel): material is SongDocument {
-  return material.kind === "document" && CAMPAIGN_DOCUMENT_TYPES.has(material.materialType);
+  return material.kind === "document" && (CAMPAIGN_DOCUMENT_TYPES.has(material.materialType) || isReleaseNarrative(material));
 }
 
 function isCampaignMission(mission: MissionViewModel) {
