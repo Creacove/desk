@@ -7,6 +7,7 @@
     "beta:batch": "node --env-file=.env scripts/create-beta-batch.mjs",
     "dev": "vite",
     "build": "vite build",
+    "env:check:production": "node scripts/validate-production-env.mjs",
     "preview": "vite preview",
     "secrets:splits": "powershell -ExecutionPolicy Bypass -File scripts/set-split-confirmation-secrets.ps1",
     "test": "vitest run --environment jsdom --pool=vmThreads"
