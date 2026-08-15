@@ -873,6 +873,7 @@ export type MusicRepository = {
   saveIdentifier(musicItemId: string, input: { identifierType: string; identifierValue: string }): Promise<void>;
   createSongDocument?(musicItemId: string, input: { documentType: SongDocumentType; title: string; body: string }): Promise<SongMaterialViewModel>;
   updateSongDocument?(documentId: string, input: { title?: string; body: string }): Promise<SongMaterialViewModel>;
+  approveSongDocument?(documentId: string): Promise<void>;
   saveSplitContributor(musicItemId: string, input: SplitContributorInput): Promise<void>;
   removeSplitContributor(musicItemId: string, contributorId: string): Promise<void>;
   sendSplitConfirmationLinks(musicItemId: string): Promise<void>;

@@ -602,6 +602,17 @@ export function MusicWorkspace({
     }, `${input.title} saved.`);
   }
 
+  async function approveSongDocument() {
+  if (!documentEditorTarget?.document) return;
+  const target = documentEditorTarget;
+  await runMusicAction(async () => {
+    if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+    await musicRepository.approveSongDocument(target.document!.id);
+    await refreshFocusedSong(target.song.id);
+    setDocumentEditorTarget(null);
+  }, `${target.document.title} approved for sharing.`);
+}
+
   async function performMusicAssetUpload(job: MusicUploadJob) {
     setUploadJobs((current) => ({
       ...current,
@@ -860,6 +871,7 @@ export function MusicWorkspace({
           error={actionError}
           onCancel={() => setDocumentEditorTarget(null)}
           onSave={saveSongDocument}
+          onApprove={documentEditorTarget.document?.origin === "manager_generated" && musicRepository.approveSongDocument ? approveSongDocument : undefined}
         />
       ) : null}
 
