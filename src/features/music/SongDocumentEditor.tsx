@@ -4,11 +4,18 @@ import { FileText, X } from "lucide-react";
 import type { SongDocumentType, SongMaterialViewModel } from "../../types/cleanProduction";
 
 const DOCUMENT_TYPES: Array<{ value: SongDocumentType; label: string }> = [
-  { value: "lyrics", label: "Lyrics" },
-  { value: "press_release", label: "Press release" },
-  { value: "press_angle", label: "Press angle" },
+  { value: "epk", label: "EPK" },
   { value: "artist_biography", label: "Artist biography" },
   { value: "one_sheet", label: "One-sheet" },
+  { value: "press_release", label: "Press release" },
+  { value: "press_angle", label: "Press angles" },
+  { value: "spotify_editorial_pitch", label: "Spotify editorial pitch" },
+  { value: "playlist_pitch", label: "Playlist pitch" },
+  { value: "press_target_brief", label: "Press target brief" },
+  { value: "press_pitch", label: "Press pitch" },
+  { value: "content_plan", label: "Content plan" },
+  { value: "release_calendar", label: "Release calendar" },
+  { value: "lyrics", label: "Lyrics" },
   { value: "credits", label: "Credits" },
   { value: "distributor_notes", label: "Distributor notes" },
   { value: "other", label: "Other document" },
@@ -68,7 +75,7 @@ export function SongDocumentEditor({
         </div>
         <footer className="flex justify-end gap-2 border-t border-foreground/8 px-5 py-4 sm:px-6">
           <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Cancel</button>
-          <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save document"}</button>
+          <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save document"}</button>
         </footer>
       </form>
     </div>
