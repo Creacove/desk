@@ -1,7 +1,8 @@
 import { setTimeout as delay } from "node:timers/promises";
 
 const debugOrigin = process.env.CHROME_DEBUG_ORIGIN || "http://127.0.0.1:9222";
-const appUrl = process.env.APP_SMOKE_URL || "http://127.0.0.1:4173/?fixtures=true";
+const appOrigin = process.env.APP_SMOKE_ORIGIN || "http://127.0.0.1:4173";
+const appUrl = process.env.APP_SMOKE_URL || `${appOrigin}/?fixtures=true&view=labelHQ`;
 
 async function waitForJson(url, attempts = 40) {
   let lastError;
@@ -79,6 +80,16 @@ async function bodyText() {
   return String(await evaluate("document.body?.innerText || ''"));
 }
 
+async function waitForText(expected, attempts = 40) {
+  let latest = "";
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    latest = await bodyText();
+    if (latest.includes(expected)) return latest;
+    await delay(250);
+  }
+  throw new Error(`Timed out waiting for production UI text: ${expected}\nRendered body excerpt:\n${latest.slice(0, 2_000)}`);
+}
+
 async function clickExact(label) {
   const clicked = await evaluate(`(() => {
     const target = [...document.querySelectorAll('button,a')]
@@ -87,37 +98,42 @@ async function clickExact(label) {
     target.click();
     return true;
   })()`);
-  if (!clicked) throw new Error(`Could not find a visible ${label} navigation control.`);
+  if (!clicked) throw new Error(`Could not find the ${label} navigation control.`);
   await delay(500);
+}
+
+async function navigate(url) {
+  await command("Page.navigate", { url });
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const ready = await evaluate("document.readyState === 'complete' && document.body && document.body.innerText.length > 0");
+    if (ready) break;
+    await delay(250);
+  }
+  await delay(750);
 }
 
 await command("Runtime.enable");
 await command("Page.enable");
-await command("Page.navigate", { url: appUrl });
+await navigate(appUrl);
 
-for (let attempt = 0; attempt < 40; attempt += 1) {
-  const ready = await evaluate("document.readyState === 'complete' && document.body && document.body.innerText.length > 0");
-  if (ready) break;
-  await delay(250);
-}
-await delay(750);
-
-let text = await bodyText();
-for (const expected of ["Music", "Manager", "Missions", "Settings"]) {
-  if (!text.includes(expected)) throw new Error(`Production shell did not render expected navigation: ${expected}`);
+let text = await waitForText("Desk HQ");
+for (const expected of ["Catalog", "Missions"]) {
+  if (!text.includes(expected)) throw new Error(`Production shell did not render expected Desk navigation: ${expected}`);
 }
 
-await clickExact("Music");
-text = await bodyText();
-if (!text.includes("Music")) throw new Error("Music workspace did not render after real-browser navigation.");
+await clickExact("Catalog");
+text = await waitForText("Catalog");
+if (!text.includes("Catalog")) throw new Error("Catalog workspace did not render after real-browser navigation.");
 
-await clickExact("Manager");
-text = await bodyText();
-if (!text.includes("Manager")) throw new Error("Manager workspace did not render after real-browser navigation.");
+// Manager is intentionally not a permanent rail item. Verify the supported production
+// view-entry contract in the same real browser rather than inventing a nav control.
+await navigate(`${appOrigin}/?fixtures=true&view=managerOffice`);
+text = await waitForText("Manager");
+if (!text.includes("Manager")) throw new Error("Manager workspace did not render through the supported view entry.");
 
 if (exceptions.length) {
   throw new Error(`Uncaught browser exception(s):\n${exceptions.join("\n---\n")}`);
 }
 
-console.log("Real Chromium production-shell smoke passed: app booted and Music/Manager navigation executed without uncaught runtime exceptions.");
+console.log("Real Chromium production-shell smoke passed: Desk HQ booted, Catalog navigation worked, and Manager rendered without uncaught runtime exceptions.");
 socket.close();
