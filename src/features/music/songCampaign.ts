@@ -15,6 +15,7 @@ const CAMPAIGN_DOCUMENT_TYPES = new Set([
 ]);
 
 const RELEASED_STAGES = new Set(["released", "catalog", "archived"]);
+const CAMPAIGN_LANGUAGE = /\b(release|launch|campaign|rollout|playlist|press|publicity|media|pitch|outreach|promotion|promote|servic(?:e|ing)|push (?:this|the) record|grow (?:this|the) record)\b/i;
 
 type SongDocument = Extract<SongMaterialViewModel, { kind: "document" }>;
 
@@ -36,13 +37,14 @@ export function deriveSongCampaignState(
 ): SongCampaignState {
   const phase: SongCampaignPhase = isReleasedSong(song) ? "post_release" : "pre_release";
   const documents = (song.materials ?? []).filter(isCampaignDocument);
-  const mission = missions.find((candidate) => candidate.status !== "complete") ?? missions[0];
-  const managerStarted = Boolean(song.managerConversationId || song.managerConversation?.id);
+  const campaignMissions = missions.filter(isCampaignMission);
+  const mission = campaignMissions.find((candidate) => candidate.status !== "complete") ?? campaignMissions[0];
+  const managerStarted = isCampaignConversation(song);
 
   // Campaign is progressively disclosed. A newly imported released song stays simple
-  // until the artist actually asks Manager to work it or durable campaign work exists.
-  // Unreleased song workspaces normally have a linked release mission, which makes the
-  // same surface available without introducing a second campaign record.
+  // until the artist actually asks Manager to run campaign/servicing work or durable
+  // campaign records exist. Rights, metadata, lyrics and unrelated Manager work do not
+  // grow another navigation tab by accident.
   const visible = Boolean(managerStarted || mission || documents.length);
 
   return {
@@ -65,4 +67,20 @@ export function isReleasedSong(song: MusicObjectViewModel) {
 
 function isCampaignDocument(material: SongMaterialViewModel): material is SongDocument {
   return material.kind === "document" && CAMPAIGN_DOCUMENT_TYPES.has(material.materialType);
+}
+
+function isCampaignMission(mission: MissionViewModel) {
+  return CAMPAIGN_LANGUAGE.test([
+    mission.title,
+    mission.summary,
+    mission.recommendation,
+    mission.nextTask,
+    mission.review,
+  ].filter(Boolean).join(" "));
+}
+
+function isCampaignConversation(song: MusicObjectViewModel) {
+  const conversation = song.managerConversation;
+  if (!conversation?.id) return false;
+  return CAMPAIGN_LANGUAGE.test(`${conversation.topic} ${conversation.summary}`);
 }
