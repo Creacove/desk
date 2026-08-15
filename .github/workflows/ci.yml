@@ -60,9 +60,6 @@ jobs:
               lines = []
               for raw in Path(path).read_text(errors='replace').splitlines():
                   line = location.sub('(LINE,COL)', raw.strip())
-                  # Root tsc is a browser-oriented check. Supabase Edge modules use
-                  # explicit .ts specifiers by Deno convention and are checked below
-                  # with Deno instead of treating TS5097 as a browser regression.
                   if line.startswith('supabase/functions/') and 'error TS5097:' in line:
                       continue
                   lines.append(line)
@@ -91,7 +88,7 @@ jobs:
           PY
 
   edge-typecheck:
-    name: Manager and structured document Deno check
+    name: Manager, sharing and telemetry Deno check
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -103,9 +100,10 @@ jobs:
         with:
           deno-version: v2.x
 
-      - name: Check Manager and release Edge boundaries
+      - name: Check production Edge boundaries
         run: >-
           deno check
+          supabase/functions/_shared/appError.ts
           supabase/functions/_shared/songDocumentStandards.ts
           supabase/functions/_shared/songDocumentDraft.ts
           supabase/functions/_shared/manager-conversation/agentLoop.ts
@@ -113,6 +111,7 @@ jobs:
           supabase/functions/manager-conversation/index.ts
           supabase/functions/music-share-links/index.ts
           supabase/functions/public-music-share/index.ts
+          supabase/functions/capture-browser-error/index.ts
 
   database-smoke:
     name: Fresh Supabase migration, RPC and RLS smoke
@@ -130,7 +129,7 @@ jobs:
       - name: Start fresh database and apply all migrations
         run: supabase db start
 
-      - name: Exercise structured campaign persistence against Postgres
+      - name: Exercise campaign persistence, packages and RLS against Postgres
         shell: bash
         run: |
           set -euo pipefail
@@ -145,6 +144,47 @@ jobs:
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true
+
+  production-config:
+    name: Production configuration contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VITE_APP_MODE: production
+      VITE_SUPABASE_URL: https://ci-project.supabase.co
+      VITE_SUPABASE_ANON_KEY: ci-anon-key-value
+      SUPABASE_SERVICE_ROLE_KEY: ci-service-role-key-value
+      OPENAI_API_KEY: ci-openai-key-value
+      APP_RELEASE: ci-release-sha
+      PUBLIC_APP_URL: https://app.ordersounds.com
+      SPOTIFY_CLIENT_ID: ci-spotify-client
+      SPOTIFY_CLIENT_SECRET: ci-spotify-secret
+      SPOTIFY_REDIRECT_URI: https://app.ordersounds.com/auth/spotify/callback
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Accept a production-safe configuration
+        run: npm run env:check:production
+
+      - name: Reject localhost and prototype production configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if PUBLIC_APP_URL=http://localhost:5173 npm run env:check:production; then
+            echo 'Production config validator accepted localhost.' >&2
+            exit 1
+          fi
+          if VITE_APP_MODE=prototype npm run env:check:production; then
+            echo 'Production config validator accepted prototype mode.' >&2
+            exit 1
+          fi
+          echo 'Unsafe production configurations were rejected as expected.'
 
   focused-tests:
     name: Record servicing and campaign tests
@@ -175,6 +215,8 @@ jobs:
           src/song-document-quality-gate.test.ts
           src/song-document-standards.test.ts
           src/music-share-internal-narrative.test.ts
+          src/music-share-backend-safety.test.ts
+          src/manager-release-share-package.test.ts
 
   full-tests:
     name: Full repository test suite
@@ -193,8 +235,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # Raw npm test is the gate. No stale UI contract or known-failure allowlist may pass here.
-      - name: Run full suite
+      - name: Run full suite with no compatibility allowlist
         run: npm test
 
   dependency-audit:
