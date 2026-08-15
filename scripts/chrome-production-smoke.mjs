@@ -20,7 +20,7 @@ async function waitForJson(url, attempts = 40) {
 }
 
 const pages = await waitForJson(`${debugOrigin}/json/list`);
-const target = pages.find((page) => page.webSocketDebuggerUrl) ?? pages[0];
+const target = pages.find((page) => page.type === "page" && page.webSocketDebuggerUrl) ?? pages.find((page) => page.webSocketDebuggerUrl) ?? pages[0];
 if (!target?.webSocketDebuggerUrl) throw new Error("Chrome DevTools page target was not available.");
 
 const socket = new WebSocket(target.webSocketDebuggerUrl);
@@ -39,6 +39,7 @@ await new Promise((resolve, reject) => {
 let sequence = 0;
 const pending = new Map();
 const exceptions = [];
+const consoleErrors = [];
 
 socket.addEventListener("message", (event) => {
   const message = JSON.parse(String(event.data));
@@ -53,6 +54,10 @@ socket.addEventListener("message", (event) => {
   if (message.method === "Runtime.exceptionThrown") {
     const details = message.params?.exceptionDetails ?? {};
     exceptions.push(details.exception?.description || details.text || "Unknown browser runtime exception");
+  }
+  if (message.method === "Runtime.consoleAPICalled" && message.params?.type === "error") {
+    const values = (message.params.args ?? []).map((arg) => arg.value ?? arg.description ?? "").filter(Boolean);
+    consoleErrors.push(values.join(" "));
   }
 });
 
@@ -80,14 +85,44 @@ async function bodyText() {
   return String(await evaluate("document.body?.innerText || ''"));
 }
 
+async function browserState() {
+  const state = await evaluate(`({
+    url: location.href,
+    readyState: document.readyState,
+    bodyText: document.body?.innerText || '',
+    html: document.documentElement?.outerHTML || ''
+  })`);
+  return state && typeof state === "object" ? state : {};
+}
+
+async function assertNoRuntimeFailure(context) {
+  if (!exceptions.length && !consoleErrors.length) return;
+  const state = await browserState();
+  throw new Error([
+    `Browser runtime failure while ${context}.`,
+    exceptions.length ? `Exceptions:\n${exceptions.join("\n---\n")}` : "",
+    consoleErrors.length ? `Console errors:\n${consoleErrors.join("\n---\n")}` : "",
+    `URL: ${state.url ?? "unknown"}`,
+    `DOM excerpt:\n${String(state.html ?? "").slice(0, 3_000)}`,
+  ].filter(Boolean).join("\n\n"));
+}
+
 async function waitForText(expected, attempts = 40) {
   let latest = "";
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    await assertNoRuntimeFailure(`waiting for ${expected}`);
     latest = await bodyText();
     if (latest.includes(expected)) return latest;
     await delay(250);
   }
-  throw new Error(`Timed out waiting for production UI text: ${expected}\nRendered body excerpt:\n${latest.slice(0, 2_000)}`);
+  const state = await browserState();
+  throw new Error([
+    `Timed out waiting for production UI text: ${expected}`,
+    `URL: ${state.url ?? "unknown"}`,
+    `readyState: ${state.readyState ?? "unknown"}`,
+    `Rendered body excerpt:\n${String(state.bodyText ?? latest).slice(0, 2_000)}`,
+    `DOM excerpt:\n${String(state.html ?? "").slice(0, 3_000)}`,
+  ].join("\n\n"));
 }
 
 async function clickExact(label) {
@@ -100,16 +135,19 @@ async function clickExact(label) {
   })()`);
   if (!clicked) throw new Error(`Could not find the ${label} navigation control.`);
   await delay(500);
+  await assertNoRuntimeFailure(`navigating with ${label}`);
 }
 
 async function navigate(url) {
   await command("Page.navigate", { url });
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const ready = await evaluate("document.readyState === 'complete' && document.body && document.body.innerText.length > 0");
+    await assertNoRuntimeFailure(`loading ${url}`);
+    const ready = await evaluate("document.readyState === 'complete'");
     if (ready) break;
     await delay(250);
   }
   await delay(750);
+  await assertNoRuntimeFailure(`loading ${url}`);
 }
 
 await command("Runtime.enable");
@@ -131,9 +169,6 @@ await navigate(`${appOrigin}/?fixtures=true&view=managerOffice`);
 text = await waitForText("Manager");
 if (!text.includes("Manager")) throw new Error("Manager workspace did not render through the supported view entry.");
 
-if (exceptions.length) {
-  throw new Error(`Uncaught browser exception(s):\n${exceptions.join("\n---\n")}`);
-}
-
+await assertNoRuntimeFailure("finishing the production shell smoke");
 console.log("Real Chromium production-shell smoke passed: Desk HQ booted, Catalog navigation worked, and Manager rendered without uncaught runtime exceptions.");
 socket.close();
