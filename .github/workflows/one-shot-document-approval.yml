@@ -1,0 +1,91 @@
+name: One-shot document approval wiring
+
+on:
+  push:
+    branches: [agent/record-servicing-manager-mode]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/record-servicing-manager-mode
+
+      - name: Wire document approval through repository and Song Room
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_once(source: str, old: str, new: str, label: str) -> str:
+            count = source.count(old)
+            if count != 1:
+              raise SystemExit(f'{label}: expected one anchor, found {count}')
+            return source.replace(old, new, 1)
+
+          types_path = Path('src/types/cleanProduction.ts')
+          types = types_path.read_text()
+          anchor = '  updateSongDocument?(documentId: string, input: { title?: string; body: string }): Promise<SongMaterialViewModel>;'
+          addition = anchor + '\n  approveSongDocument?(documentId: string): Promise<void>;'
+          if 'approveSongDocument?(documentId: string)' not in types:
+            types = replace_once(types, anchor, addition, 'MusicRepository approval method')
+          types_path.write_text(types)
+
+          service_path = Path('src/services/productionSupabase.ts')
+          service = service_path.read_text()
+          marker = '      async saveIdentifier(musicItemId, input) {'
+          approval_method = '''      async approveSongDocument(documentId) {
+            const { data, error } = await client.rpc("approve_song_document_for_sharing_v1", {
+              p_account_id: workspace.accountId,
+              p_artist_workspace_id: workspace.artistWorkspaceId,
+              p_artist_id: workspace.artistId,
+              p_document_id: documentId,
+            });
+            if (error) throw error;
+            const receipt = data && typeof data === "object" ? data as Record<string, unknown> : {};
+            if (receipt.status !== "accepted" || receipt.documentId !== documentId) {
+              throw new Error("Document approval returned an invalid receipt.");
+            }
+          },
+          '''
+          if 'async approveSongDocument(documentId)' not in service:
+            service = replace_once(service, marker, approval_method + marker, 'Supabase approval method')
+          service_path.write_text(service)
+
+          screens_path = Path('src/features/music/MusicScreens.tsx')
+          screens = screens_path.read_text()
+          function_marker = '  async function performMusicAssetUpload(job: MusicUploadJob) {'
+          approval_function = '''  async function approveSongDocument() {
+            if (!documentEditorTarget?.document) return;
+            const target = documentEditorTarget;
+            await runMusicAction(async () => {
+              if (!musicRepository.approveSongDocument) throw new Error("Document approval is not available yet.");
+              await musicRepository.approveSongDocument(target.document!.id);
+              await refreshFocusedSong(target.song.id);
+              setDocumentEditorTarget(null);
+            }, `${target.document.title} approved for sharing.`);
+          }
+
+          '''
+          if 'async function approveSongDocument()' not in screens:
+            screens = replace_once(screens, function_marker, approval_function + function_marker, 'Song Room approval function')
+
+          prop_anchor = '          onSave={saveSongDocument}\n'
+          prop_new = prop_anchor + '          onApprove={documentEditorTarget.document?.origin === "manager_generated" && musicRepository.approveSongDocument ? approveSongDocument : undefined}\n'
+          if 'onApprove={documentEditorTarget.document?.origin' not in screens:
+            screens = replace_once(screens, prop_anchor, prop_new, 'SongDocumentEditor approval prop')
+          screens_path.write_text(screens)
+
+          Path('.github/workflows/one-shot-document-approval.yml').unlink()
+
+      - name: Commit wiring and remove one-shot workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/types/cleanProduction.ts src/services/productionSupabase.ts src/features/music/MusicScreens.tsx .github/workflows/one-shot-document-approval.yml
+          git commit -m "feat: wire quality-gated document approval"
+          git push origin HEAD:agent/record-servicing-manager-mode
