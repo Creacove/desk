@@ -27,7 +27,7 @@ jobs:
       - name: Focused song room contract
         run: npx vitest run src/song-room-red-antler-overview.test.ts --environment jsdom --pool=vmThreads
       - name: Full repository test suite
-        run: npx vitest run --pool=vmThreads
+        run: npx vitest run --environment jsdom --pool=vmThreads
       - name: Production build
         run: npm run build
         env:
