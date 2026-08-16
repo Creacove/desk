@@ -3316,7 +3316,7 @@ function conversationFromRows(
 ): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
-  const latestManagerPresentation = [...mappedMessages].reverse().find((message) => message.speaker === "manager")?.presentation;
+  const latestManagerPresentation = ([...mappedMessages].reverse().find((message) => message.speaker === "manager") as ManagerConversationMessageWire | undefined)?.presentation;
   const visibleDecisionPackage = output && (
     !latestManagerPresentation
     || (latestManagerPresentation.surfaces.includes("decision_package")
@@ -3576,7 +3576,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
   const attachments = normalizeConversationAttachments(metadata.attachments);
   const contextRequestId = readOptionalConversationString(metadata.contextRequestId);
   const presentation = normalizeManagerTurnPresentation(metadata.presentation);
-  return {
+  return ({
     id: row.id,
     speaker,
     label: row.label ?? (speaker === "artist" ? "You" : "Manager"),
@@ -3587,7 +3587,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
     ...(attachments.length ? { attachments } : {}),
     ...(contextRequestId ? { contextRequestId } : {}),
     ...(presentation ? { presentation } : {}),
-  };
+  } as ManagerConversationMessageWire);
 }
 
 function conversationViewModel(input: unknown): ConversationViewModel {
@@ -3602,7 +3602,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
         const attachments = normalizeConversationAttachments(message.attachments);
         const contextRequestId = readOptionalConversationString(message.contextRequestId);
         const presentation = normalizeManagerTurnPresentation(message.presentation);
-        return {
+        return ({
           id: readConversationString(message.id, `message-${index}`),
           speaker,
           label: readConversationString(message.label, speaker === "artist" ? "You" : "Manager"),
@@ -3613,7 +3613,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
           ...(attachments.length ? { attachments } : {}),
           ...(contextRequestId ? { contextRequestId } : {}),
           ...(presentation ? { presentation } : {}),
-        };
+        } as ManagerConversationMessageWire);
       })
     : [];
   const createdWork = normalizeCreatedWork(input.createdWork);
@@ -3653,6 +3653,8 @@ function musicConversationSubjectViewModel(input: unknown): MusicConversationSub
 }
 
 type ManagerTurnPresentationWire = { version: 1; surfaces: Array<"release_success" | "release_opportunities" | "decision_package" | "release_share_package">; visibleArtifactIds: string[]; decisionPackageId?: string };
+type ManagerConversationMessageWire = ConversationViewModel["messages"][number] & { presentation?: ManagerTurnPresentationWire };
+type ManagerCreatedWorkWire = NonNullable<ConversationViewModel["createdWork"]>[number] & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };
 
 function normalizeManagerTurnPresentation(value: unknown): ManagerTurnPresentationWire | undefined {
   if (!isPlainRecord(value) || value.version !== 1 || !Array.isArray(value.surfaces)) return undefined;
@@ -3669,7 +3671,7 @@ function normalizeCreatedWork(value: unknown): ConversationViewModel["createdWor
   if (!Array.isArray(value)) return [];
   return value
     .filter(isPlainRecord)
-    .map((item): ConversationViewModel["createdWork"][number] => ({
+    .map((item): ManagerCreatedWorkWire => ({
       type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
       title: readConversationString(item.title, ""),
       body: readConversationString(item.body, ""),
