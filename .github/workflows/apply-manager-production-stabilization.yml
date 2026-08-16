@@ -6,6 +6,7 @@ on:
       - fix/manager-production-stabilization
     paths:
       - scripts/apply-manager-stabilization.py
+      - scripts/update-manager-stabilization-tests.py
       - .github/workflows/apply-manager-production-stabilization.yml
 
 permissions:
@@ -22,6 +23,9 @@ jobs:
 
       - name: Apply audited production fixes
         run: python scripts/apply-manager-stabilization.py
+
+      - name: Update stabilization contracts
+        run: python scripts/update-manager-stabilization-tests.py
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -55,8 +59,8 @@ jobs:
           supabase/functions/manager-conversation/index.ts
           supabase/functions/manager-conversation-stream/index.ts
 
-      - name: Remove one-shot patcher
-        run: rm scripts/apply-manager-stabilization.py .github/workflows/apply-manager-production-stabilization.yml
+      - name: Remove one-shot patchers
+        run: rm scripts/apply-manager-stabilization.py scripts/update-manager-stabilization-tests.py .github/workflows/apply-manager-production-stabilization.yml
 
       - name: Commit stabilization
         shell: bash
