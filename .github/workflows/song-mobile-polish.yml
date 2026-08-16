@@ -1,0 +1,40 @@
+name: Song mobile polish
+on:
+  push:
+    paths:
+      - scripts/song_mobile_polish.py
+      - .github/workflows/song-mobile-polish.yml
+permissions:
+  contents: write
+jobs:
+  polish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply UI polish
+        run: python3 scripts/song_mobile_polish.py
+      - run: npm ci
+      - name: Focused song room tests
+        run: npx vitest run src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit polish
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/music/MusicScreens.tsx
+          git commit -m 'fix: polish song room mobile typography and rights'
+          git push origin main
