@@ -1,5 +1,6 @@
 import type { ComponentProps } from "react";
 import { useMemo } from "react";
+import type { ConversationMessageViewModel, ConversationViewModel } from "../../types/cleanProduction";
 import {
   ConversationWorkspace as LegacyConversationWorkspace,
   DecisionPackageScreen,
@@ -15,8 +16,7 @@ import {
 export { DecisionPackageScreen, InvestigationScreen, ManagerOfficeScreen };
 
 type ConversationWorkspaceProps = ComponentProps<typeof LegacyConversationWorkspace>;
-type ConversationView = ConversationWorkspaceProps["conversation"];
-type CreatedWork = ConversationView["createdWork"][number];
+type CreatedWork = NonNullable<ConversationMessageViewModel["createdWork"]>[number];
 
 const RELEASED_STAGES = new Set(["released", "catalog", "catalogued", "archived"]);
 const RELEASE_MANAGEMENT_INTENT = /\b(release date|release readiness|ready (?:to|for) release|release plan|launch date|get (?:this |the )?song ready|check (?:the )?release|release(?:-| )success review|retry release(?:-| )success|move (?:the )?release|delay (?:the )?release|postpone|reschedule|keep (?:the )?date|recovery plan)\b/i;
@@ -24,7 +24,7 @@ const OPPORTUNITY_DISCOVERY_INTENT = /\b(playlisting|playlist opportunities?|pla
 const DECISION_PACKAGE_INTENT = /\bdecision package\b/i;
 const DOCUMENT_TITLE_HINT = /\b(epk|electronic press kit|playlist (?:pitch|submission)|spotify editorial pitch|press (?:pitch|release|brief)|one[- ]sheet|bio(?:graphy)?|content plan|release calendar|distributor notes|credits|lyrics)\b/i;
 
-export function prepareManagerConversationForPresentation(conversation: ConversationView): ConversationView {
+export function prepareManagerConversationForPresentation(conversation: ConversationViewModel): ConversationViewModel {
   const messages = conversation.messages ?? [];
   const lastManagerIndex = messages.reduce((last, message, index) => message.speaker === "manager" ? index : last, -1);
   const latestManagerFailed = lastManagerIndex >= 0 && messages[lastManagerIndex]?.status === "failed";
@@ -35,6 +35,22 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
   const lifecycleStage = conversation.musicSubject?.lifecycleStage?.trim().toLowerCase() ?? "";
   const isReleased = RELEASED_STAGES.has(lifecycleStage);
   const subject = conversation.musicSubject;
+
+  const projectedMessages: ConversationMessageViewModel[] = messages.map((message): ConversationMessageViewModel => {
+    const contextQuestions = message.contextQuestions?.filter((question) => !parseManagerWorkspaceAction(question));
+    const createdWork = (message.createdWork ?? []).flatMap((item) => {
+      const normalized = normalizeHistoricalDocumentWork(item, message.id, subject);
+      return normalized ? [normalized] : [];
+    });
+    return {
+      ...message,
+      ...(message.contextQuestions?.length ? {
+        contextQuestions,
+        contextRequestId: contextQuestions?.length ? message.contextRequestId : undefined,
+      } : {}),
+      ...(message.createdWork !== undefined ? { createdWork } : {}),
+    };
+  });
 
   return {
     ...conversation,
@@ -50,28 +66,14 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
     decisionPackage: !latestManagerFailed && DECISION_PACKAGE_INTENT.test(directive)
       ? conversation.decisionPackage
       : undefined,
-    messages: messages.map((message) => {
-      const contextQuestions = message.contextQuestions?.filter((question) => !parseManagerWorkspaceAction(question));
-      const createdWork = (message.createdWork ?? []).flatMap((item) => {
-        const normalized = normalizeHistoricalDocumentWork(item, message.id, subject);
-        return normalized ? [normalized] : [];
-      });
-      return {
-        ...message,
-        ...(message.contextQuestions?.length ? {
-          contextQuestions,
-          contextRequestId: contextQuestions?.length ? message.contextRequestId : undefined,
-        } : {}),
-        ...(message.createdWork ? { createdWork } : {}),
-      };
-    }),
+    messages: projectedMessages,
   };
 }
 
 function normalizeHistoricalDocumentWork(
   item: CreatedWork,
   messageId: string,
-  subject: ConversationView["musicSubject"],
+  subject: ConversationViewModel["musicSubject"],
 ): CreatedWork | null {
   const title = item.title.trim();
   const documentType = item.documentType?.trim().toLowerCase();
