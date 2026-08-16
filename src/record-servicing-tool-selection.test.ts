@@ -40,13 +40,29 @@ describe("record servicing tool selection", () => {
     expect(names).toContain("create_focused_song_document");
   });
 
-  it("lets Manager prepare a private package for a servicing target without exposing send actions", () => {
-    const released = functionNames("Prepare the package for this curator", false);
-    const unreleased = functionNames("Build a private press package for this release", true);
+  it("does not mistake an EPK or press kit for a private share package", () => {
+    const epk = functionNames("Create an EPK for this released song", false);
+    const pressKit = functionNames("Build a press kit for this song", false);
+
+    expect(epk).toContain("create_focused_song_document");
+    expect(pressKit).toContain("create_focused_song_document");
+    expect(epk).not.toContain("prepare_focused_release_share_package");
+    expect(pressKit).not.toContain("prepare_focused_release_share_package");
+  });
+
+  it("lets Manager prepare a private package only when share or delivery intent is explicit", () => {
+    const released = functionNames("Prepare a private share package for this curator", false);
+    const unreleased = functionNames("Build a private delivery package for this release", true);
 
     expect(released).toContain("prepare_focused_release_share_package");
     expect(unreleased).toContain("prepare_focused_release_share_package");
     expect(released).not.toContain("propose_focused_release_date_change");
+  });
+
+  it("lets an unsaved artifact be retried as a document operation", () => {
+    const names = functionNames("Retry saving the EPK draft to Files", false);
+    expect(names).toContain("create_focused_song_document");
+    expect(names).not.toContain("prepare_focused_release_share_package");
   });
 
   it("does not expose servicing writes for an unrelated released-song turn", () => {
