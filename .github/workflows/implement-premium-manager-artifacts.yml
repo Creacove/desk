@@ -21,7 +21,18 @@ jobs:
           ref: agent/premium-manager-artifact-experience
 
       - name: Apply product and backend fixes
-        run: python scripts/implement-premium-manager-artifacts.py
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/implement-premium-manager-artifacts.py')
+          text = path.read_text()
+          text = text.replace(
+              'next_text, n = re.subn(pattern, replacement, text, count=count, flags=flags)',
+              'next_text, n = re.subn(pattern, lambda _match: replacement, text, count=count, flags=flags)',
+          )
+          path.write_text(text)
+          PY
+          python scripts/implement-premium-manager-artifacts.py
 
       - name: Commit implementation
         run: |
