@@ -1,5 +1,6 @@
 name: Prepare Manager deploy bundles
 
+# Rebuild marker: multi-document Manager tool-budget hotfix.
 on:
   push:
     branches:
