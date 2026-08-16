@@ -20,7 +20,7 @@ type CreatedWork = ConversationView["createdWork"][number];
 
 const RELEASED_STAGES = new Set(["released", "catalog", "catalogued", "archived"]);
 const RELEASE_MANAGEMENT_INTENT = /\b(release date|release readiness|ready (?:to|for) release|release plan|launch date|move (?:the )?release|delay (?:the )?release|postpone|reschedule|keep (?:the )?date|recovery plan)\b/i;
-const OPPORTUNITY_DISCOVERY_INTENT = /\b(playlist(?:ing)?|playlist opportunities?|playlist targets?|curators?|press targets?|publicity targets?|media targets?|record servicing|service this (?:song|release)|research (?:playlist|press)|find (?:playlist|press|media|curator))\b/i;
+const OPPORTUNITY_DISCOVERY_INTENT = /\b(playlisting|playlist opportunities?|playlist targets?|curators?|press targets?|publicity targets?|media targets?|record servicing|service this (?:song|release)|research (?:playlist|press)|find (?:playlist|playlists|press|media|curators?)|help (?:me )?with playlisting)\b/i;
 const DECISION_PACKAGE_INTENT = /\bdecision package\b/i;
 const DOCUMENT_TITLE_HINT = /\b(epk|electronic press kit|playlist (?:pitch|submission)|spotify editorial pitch|press (?:pitch|release|brief)|one[- ]sheet|bio(?:graphy)?|content plan|release calendar|distributor notes|credits|lyrics)\b/i;
 
