@@ -28,6 +28,7 @@ jobs:
           show supabase/functions/_shared/manager-conversation/toolExecutor.ts 'create_focused_song_document|createdWork|artifactKind|Release narrative|release_narrative'
           show supabase/functions/_shared/openaiManagerConversationLegacy.ts 'actionPolicy|create_decision_package|createdWork|decision package'
           show src/services/productionSupabase.ts 'createdWork|decisionPackage|conversation_messages|releaseSuccessArtifacts|releaseOpportunityArtifacts'
+          show src/services/productionSupabase.ts 'document_type|current_version_id|materialType|manager_generated|loadFocusedSongDocuments'
           show src/features/manager/ManagerScreens.tsx 'decisionPackage|releaseSuccess|opportunity|latest|playlist|regex|RegExp'
           show src/features/manager/ManagerScreensLegacy.tsx 'decisionPackage|releaseSuccess|opportunityArtifacts|visibleWork|release_narrative'
           show src/features/manager/managerPresentation.ts 'createdWork|release_narrative|song_document|compat'
