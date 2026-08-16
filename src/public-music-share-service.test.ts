@@ -22,14 +22,13 @@ describe("loadPublicMusicShare", () => {
 
   it("does not expose malformed or provider error details to a public page", async () => {
     const invoke = vi.fn(async () => ({ data: { error: "raw storage details" }, error: null }));
-
     await expect(loadPublicMusicShare({ functions: { invoke } }, "b".repeat(64))).rejects.toThrow("Share package is unavailable.");
   });
 
-  it("normalizes music identity and separate inline and download media URLs", async () => {
+  it("normalizes identity and first-class shared documents", async () => {
     const invoke = vi.fn(async () => ({
       data: {
-        label: "Jam private package",
+        label: "Jam press kit",
         preset: "epk_press",
         title: "Jam",
         artist: "Nova Vale",
@@ -43,7 +42,13 @@ describe("loadPublicMusicShare", () => {
           inlineUrl: "https://files.example/inline-master",
           downloadUrl: "https://files.example/download-master",
         }],
-        information: [{ key: "document:press", title: "Press release", value: "Jam is the new single.", documentType: "press_release" }],
+        documents: [{
+          id: "press",
+          title: "Jam — Press Release (Updated Draft)",
+          documentType: "press_release",
+          body: "**Purpose:** Internal use\n\n# Jam\n\nJam is the new single.\n\n## Needs Verification\nTBD",
+        }],
+        information: [{ key: "genre", title: "Genre", value: "Alté" }],
       },
       error: null,
     }));
@@ -51,12 +56,33 @@ describe("loadPublicMusicShare", () => {
     await expect(loadPublicMusicShare({ functions: { invoke } }, "c".repeat(64))).resolves.toMatchObject({
       title: "Jam",
       artist: "Nova Vale",
-      createdAt: "2026-08-09T10:00:00Z",
-      assets: [{
-        inlineUrl: "https://files.example/inline-master",
-        downloadUrl: "https://files.example/download-master",
+      documents: [{
+        id: "press",
+        title: "Jam — Press Release",
+        documentType: "press_release",
+        body: "# Jam\n\nJam is the new single.",
       }],
-      information: [{ documentType: "press_release" }],
+      information: [{ key: "genre", title: "Genre", value: "Alté" }],
+    });
+  });
+
+  it("upgrades old information-based document snapshots without duplicating them as release info", async () => {
+    const invoke = vi.fn(async () => ({
+      data: {
+        label: "Legacy package",
+        preset: "epk_press",
+        assets: [],
+        information: [
+          { key: "document:epk", title: "Jam EPK (Draft)", value: "# Jam EPK\n\nPress copy.", documentType: "epk" },
+          { key: "genre", title: "Genre", value: "Alté" },
+        ],
+      },
+      error: null,
+    }));
+
+    await expect(loadPublicMusicShare({ functions: { invoke } }, "d".repeat(64))).resolves.toMatchObject({
+      documents: [{ id: "epk", title: "Jam EPK", documentType: "epk" }],
+      information: [{ key: "genre", title: "Genre", value: "Alté" }],
     });
   });
 });
