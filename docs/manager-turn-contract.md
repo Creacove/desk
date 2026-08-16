@@ -20,3 +20,5 @@ The same contract applies across pre-release and post-release work, including re
 ## Implementation
 
 Manager messages persist `metadata.presentation` with a versioned list of turn surfaces and visible artifact IDs. Server-created work carries an explicit presentation role and visibility. The browser treats this structured contract as authoritative for new turns and uses text inference only for historical messages created before the contract existed.
+
+The presentation metadata is intentionally wire-scoped at the Manager boundary rather than widening shared browser domain types. This keeps the release-workflow contract explicit without changing unrelated fixtures or application surfaces.
