@@ -40,6 +40,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/music/MusicScreens.tsx src/features/manager/ManagerScreensLegacy.tsx src/features/manager/ManagerScreens.tsx src/features/manager/ManagerComposer.tsx src/design-system/components.tsx src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts
+          git add src/features/music/MusicScreens.tsx src/features/manager/ManagerScreensLegacy.tsx src/features/manager/ManagerScreens.tsx src/features/manager/ManagerComposer.tsx src/design-system/components.tsx src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx
           git commit -m 'fix: widen desktop workspaces and clarify song overview'
           git push origin main
