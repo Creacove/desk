@@ -1,0 +1,81 @@
+name: Apply label-grade Manager document prompts
+
+on:
+  push:
+    branches:
+      - fix/label-grade-documents
+    paths:
+      - .github/workflows/apply-label-grade-manager.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: fix/label-grade-documents
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Apply label-grade document intelligence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          agent = Path('supabase/functions/_shared/manager-conversation/agentLoop.ts')
+          text = agent.read_text()
+          old = '      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. Do not send markdown or generic prose here. Unknown facts belong in missingInputs, never placeholders. To create the internal Release Narrative, use documentType press_angle, title exactly Release narrative, and sections positioning, story, audience, campaign_thesis, proof, creative_world, and language_guardrails.",'
+          new = '''      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. purpose/audience/coreNarrative/claims/missingInputs are INTERNAL grounding metadata and must never be repeated inside public section copy. Unknown facts go in missingInputs and are omitted from recipient copy, never exposed as TBD/TK/Needs verification. Use real artifact-native sections: EPK artist_bio/focus_release/music_links/visuals/contact (+ verified highlights_press/live/team when useful); artist_biography short_bio/full_bio; one_sheet artist_snapshot/career_highlights/music_and_dsp/links_contact (+ verified press_and_quotes/live/team); press_release headline/dek/dateline_lede/body/artist_quote/release_details/about_artist/press_contact, but omit artist_quote unless an approved/sourced quote exists; spotify_editorial_pitch release_info/editor_note/genre_mood_culture/song_story/marketing_plan/audience_territory/credits; content_plan campaign_goal/content_pillars/schedule/assets/measurement with schedule as a Markdown table; release_calendar timeline/key_deadlines/approvals/post_release with timeline as a Markdown table; credits release_identity/songwriting_publishing/production_engineering/performers/recording_details/identifiers, using role/value tables; distributor_notes release_metadata/track_metadata/rights_credits/assets/delivery, using delivery-sheet tables. For the internal Release Narrative, use title exactly Release narrative and sections positioning/story/audience/campaign_thesis/proof/creative_world/language_guardrails.",'''
+          text = replace_once(text, old, new, 'structured document schema guidance')
+
+          old = '    description: "Create or version one premium canonical song artifact in Files. For recipient-facing campaign work, first ensure a current internal Release Narrative exists; create or materially refresh it only when needed, using documentType press_angle and title exactly Release narrative. The Release Narrative is internal Manager support and is never a user-facing deliverable. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",'
+          new = '    description: "Create or version one label-grade canonical song artifact in Files. Recipient-facing documents are real work products, not AI reports: use the exact industry form for the requested artifact and keep Desk planning/quality metadata internal. Before EPK, biography, one-sheet, press release/angle, editorial/playlist/press pitch, press brief, or artist-specific content-plan creation, use current public web research plus the focused workspace unless authoritative artist-supplied context makes public research irrelevant. Prefer official artist/label/DSP sources and reputable editorial coverage. Never invent quotes, achievements, credits, contacts, links, identifiers, dates or performance claims. For recipient-facing campaign work, first ensure a current internal Release Narrative exists only when needed. The body MUST be the JSON-encoded structured artifact described by the schema. Structurally valid drafts may persist while facts are missing, but missing facts stay internal and are omitted from public copy. Never pad sections to hit a word count. Never send or publish the document.",'
+          text = replace_once(text, old, new, 'document tool description')
+          agent.write_text(text)
+
+          prompt = Path('supabase/functions/_shared/openaiManagerConversationLegacy.ts')
+          text = prompt.read_text()
+          anchor = '    "Canonical artifact rule: when the artist asks to draft, create, build, prepare, revise, refresh, update, finish, or complete an EPK, press release, bio, one-sheet, pitch, release/campaign kit, content plan, release calendar, press angle, lyrics, credits, or distributor notes for an attached song, use create_focused_song_document for every requested artifact. Never satisfy an artifact request by placing the full draft only in responseBody.",'
+          replacement = anchor + '''\n    "Label-grade document rule: a recipient-facing Files artifact must look like the real document a major label, publicist, distributor, manager or editorial team would use. Never expose Desk-internal Purpose, Audience, Core narrative, Needs verification, quality scores, workflow/persistence language, release gates or canonical-version instructions in the artifact. Keep those facts in structured metadata only. Less is more: omit empty/unverified public sections rather than explaining that they are missing.",\n    "Research-before-writing rule: before creating or materially revising an EPK, artist biography, one-sheet, press release, press angle, Spotify editorial pitch, playlist pitch, press target brief, press pitch, or artist-specific content plan, use web_search for current public artist context in addition to read_focused_music_subject. Prefer the artist/label/DSP's official pages and reputable editorial coverage. Use researched facts only when supported; attach source URLs through claims/evidenceRefs rather than dumping citations into recipient copy. If public research finds nothing reliable, continue from verified workspace/artist input and record the limitation internally.",\n    "Artist biography rule: write in third person and make the artist the subject. Cover identity/origin, musical world, journey, verified achievements/collaborations/live moments and current direction. The current song may be context, but ISRC, splits, metadata, clearance, distributor readiness, workspace state and release-package gates never belong in an artist biography.",\n    "One-sheet and EPK rule: build press-facing artist materials, not release-readiness reports. A one-sheet must stay single-page/scannable: short artist snapshot, strongest verified highlights, music/DSP proof, useful press/live/team items when they exist, links and contact. An EPK may be richer: artist bio, focus release/music, selected verified highlights/press, photos/artwork/video links, DSP/social/site links and professional contact. Omit categories that have no verified content instead of printing internal missing-field warnings.",\n    "Press-release rule: write newsroom-ready copy in real press-release form: headline, optional dek, dateline/lead, concise body, release details, short artist boilerplate and media contact. Include an artist quote only when the workspace/artist input or a reliable public source contains an approved attributable quote; never manufacture one.",\n    "Spotify editorial-pitch rule: make the artifact a compact copy/paste aid for Spotify for Artists, not an essay. Include release identity, concise editor note, supported genre/mood/culture/instrument context, song story/creation context, audience or territory relevance, actual marketing plan and verified credits. Never claim editorial placement or submission.",\n    "Credit-sheet rule: use role-based label copy rather than prose. Include release identity; songwriters/composers/lyricists and publishing/PRO data when known; producers; recording/mix/master engineers; performers with role/instrument; other creative roles; sample status; recording location/date/source/mix-format information when known; label/content owner; and identifiers such as ISRC/ISNI/ISWC. Unknown fields remain internal rather than visible TBD rows.",\n    "Distribution-delivery rule: distributor_notes means a distribution delivery sheet/label-copy handoff, not a prose memo. Structure release metadata, per-track metadata, contributors/rights, assets and delivery instructions. Include UPC/EAN/catalog number, release/original date, label, P/C lines, territories, genre/language/explicit state, versions, ISRC and contributor roles only when verified. Unknown delivery metadata remains internal.",\n    "Content-plan and release-calendar rule: these are operating documents, not narrative essays. Content-plan schedule rows should state date/phase, channel, format, concept/hook, source asset, CTA, objective and owner/status when known. Release-calendar rows should state date or T-minus, milestone/action, owner, dependency/approval and status. Cover applicable pre-release, release-day and post-release work without inventing work just to fill a template.",'''
+          text = replace_once(text, anchor, replacement, 'label-grade prompt anchor')
+          prompt.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run document and Manager regression tests
+        run: npx vitest run --environment jsdom --pool=vmThreads src/song-document-standards.test.ts src/song-document-approval.test.tsx src/song-document-actions.test.tsx src/release-success-documents.test.tsx src/manager-turn-contract.test.ts src/manager-conversation-tool-executor.test.ts
+
+      - name: Check Manager Edge functions
+        run: deno check supabase/functions/manager-conversation/index.ts supabase/functions/manager-conversation-stream/index.ts
+
+      - name: Build production frontend
+        run: npm run build
+
+      - name: Commit validated document intelligence
+        run: |
+          git rm .github/workflows/apply-label-grade-manager.yml
+          git add supabase/functions/_shared/manager-conversation/agentLoop.ts supabase/functions/_shared/openaiManagerConversationLegacy.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "fix: make Manager documents research-first and label-grade"
+          git push origin HEAD:fix/label-grade-documents
