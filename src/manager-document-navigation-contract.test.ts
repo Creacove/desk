@@ -1,18 +1,21 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-describe("Manager canonical document navigation contract", () => {
-  it("carries the saved document id from Manager into the song document editor", () => {
-    const manager = readFileSync("src/features/manager/ManagerScreensLegacy.tsx", "utf8");
-    const app = readFileSync("src/app/ProductionApp.tsx", "utf8");
-    const music = readFileSync("src/features/music/MusicScreens.tsx", "utf8");
+describe("Manager canonical document preview contract", () => {
+  it("opens saved song documents in the conversation and keeps Files as a secondary destination", () => {
+    const manager = readFileSync("src/features/manager/ManagerScreens.tsx", "utf8");
+    const editor = readFileSync("src/features/music/SongDocumentEditor.tsx", "utf8");
+    const legacy = readFileSync("src/features/manager/ManagerScreensLegacy.tsx", "utf8");
 
-    expect(manager).toContain('onOpenCreatedWork("music_item", musicItemId, "files", item.id)');
-    expect(app).toContain("targetSongDocumentId");
-    expect(app).toContain("targetDocumentId={targetSongDocumentId}");
-    expect(app).toContain("artifactId?: string");
-    expect(music).toContain("targetDocumentId?: string | null");
-    expect(music).toContain('material.kind === "document" && material.id === targetDocumentId');
-    expect(music).toContain("setDocumentEditorTarget({ song: refreshed, document })");
+    expect(manager).toContain('musicRepository.loadMusicObject(id, "music_item")');
+    expect(manager).toContain('material.kind === "document" && material.id === artifactId');
+    expect(manager).toContain("setDocumentPreviewTarget({ song, document })");
+    expect(manager).toContain("onOpenCreatedWork={openCreatedWorkInContext}");
+    expect(manager).toContain("previewOnly");
+    expect(manager).toContain("You can find this document there anytime.");
+    expect(manager).toContain('onOpenCreatedWork("music_item", target.song.id, "files", target.document.id)');
+    expect(editor).toContain("previewOnly = false");
+    expect(editor).toContain("Open in Files");
+    expect(legacy).toContain('return "View document"');
   });
 });

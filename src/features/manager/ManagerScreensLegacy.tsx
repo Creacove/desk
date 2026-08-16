@@ -1189,9 +1189,9 @@ function managerDocumentLabel(documentType: string | undefined, title: string) {
 
 function managerDocumentOpenLabel(documentType: string | undefined) {
   const type = (documentType ?? "").toLowerCase();
-  if (type === "epk") return "Open EPK";
-  if (type.includes("pitch")) return "Open pitch";
-  return "Open document";
+  if (type === "epk") return "View EPK";
+  if (type.includes("pitch")) return "View pitch";
+  return "View document";
 }
 
 function stripMissingInputPrefix(value: string) {

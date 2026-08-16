@@ -28,6 +28,9 @@ export function SongDocumentEditor({
   onCancel,
   onSave,
   onApprove,
+  previewOnly = false,
+  contextNote,
+  onOpenFiles,
 }: {
   document?: Extract<SongMaterialViewModel, { kind: "document" }>;
   pending: boolean;
@@ -35,6 +38,9 @@ export function SongDocumentEditor({
   onCancel: () => void;
   onSave: (input: { documentType: SongDocumentType; title: string; body: string }) => Promise<void> | void;
   onApprove?: () => Promise<void> | void;
+  previewOnly?: boolean;
+  contextNote?: string;
+  onOpenFiles?: () => void;
 }) {
   const managerArtifact = Boolean(document?.origin === "manager_generated" && document.body?.trim());
   const internalNarrative = document?.title.trim().toLowerCase() === "release narrative";
@@ -42,12 +48,12 @@ export function SongDocumentEditor({
     () => internalNarrative ? (document?.body ?? "") : recipientSafeDocumentBody(document?.body ?? ""),
     [document?.body, internalNarrative],
   );
-  const [editing, setEditing] = useState(!managerArtifact);
+  const [editing, setEditing] = useState(!managerArtifact && !previewOnly);
   const [documentType, setDocumentType] = useState<SongDocumentType>(document?.materialType ?? "press_release");
   const [title, setTitle] = useState(document?.title ?? "Press release");
   const [body, setBody] = useState(initialBody);
   const approved = document?.status === "accepted";
-  const canApprove = Boolean(managerArtifact && !internalNarrative && !approved && document?.reviewState === "ready" && onApprove);
+  const canApprove = Boolean(!previewOnly && managerArtifact && !internalNarrative && !approved && document?.reviewState === "ready" && onApprove);
   const typeLabel = documentTypeLabel(documentType);
 
   function submit(event: FormEvent) {
@@ -74,7 +80,7 @@ export function SongDocumentEditor({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            {managerArtifact && !editing ? (
+            {managerArtifact && !editing && !previewOnly ? (
               <button type="button" onClick={() => setEditing(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-foreground/10 px-3 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.04]"><Pencil className="h-3.5 w-3.5" /> Edit</button>
             ) : null}
             <button type="button" aria-label="Close document editor" onClick={onCancel} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"><X className="h-4 w-4" /></button>
@@ -102,8 +108,10 @@ export function SongDocumentEditor({
           <DocumentPreview body={initialBody} internalNarrative={internalNarrative} documentType={documentType} />
         )}
 
-        <footer className="flex items-center justify-end gap-2 border-t border-foreground/8 px-5 py-3.5 sm:px-7 sm:py-4">
+        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-foreground/8 px-5 py-3.5 sm:px-7 sm:py-4">
+          {contextNote ? <p className="mr-auto min-w-0 flex-1 basis-full text-[11px] font-medium leading-relaxed text-muted-foreground sm:basis-auto">{contextNote}</p> : null}
           {editing && managerArtifact ? <button type="button" onClick={resetPreview} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Cancel edit</button> : null}
+          {onOpenFiles && !editing ? <button type="button" onClick={onOpenFiles} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground hover:bg-foreground/[0.04]">Open in Files</button> : null}
           <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Close</button>
           {canApprove && !editing ? <button type="button" disabled={pending} onClick={() => void onApprove?.()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-[12px] font-semibold text-background disabled:opacity-40"><Check className="h-3.5 w-3.5" /> {pending ? "Approving…" : "Approve"}</button> : null}
           {editing ? <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save"}</button> : null}

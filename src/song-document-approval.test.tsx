@@ -102,3 +102,29 @@ describe("Manager document approval", () => {
     expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
   });
 });
+
+
+describe("SongDocumentEditor conversation preview", () => {
+  it("keeps a Manager document read-only in conversation while exposing its canonical Files location", () => {
+    const onOpenFiles = vi.fn();
+    render(
+      <SongDocumentEditor
+        document={managerDocument()}
+        pending={false}
+        onCancel={() => undefined}
+        onSave={() => undefined}
+        onApprove={() => undefined}
+        previewOnly
+        contextNote="Saved to Dance → Files. You can find this document there anytime."
+        onOpenFiles={onOpenFiles}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+    expect(screen.getByText("Saved to Dance → Files. You can find this document there anytime.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Open in Files" }));
+    expect(onOpenFiles).toHaveBeenCalledTimes(1);
+  });
+});

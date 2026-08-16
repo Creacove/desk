@@ -1,6 +1,6 @@
 import type { ComponentProps } from "react";
-import { useMemo } from "react";
-import type { ConversationMessageViewModel, ConversationViewModel } from "../../types/cleanProduction";
+import { useMemo, useState } from "react";
+import type { ConversationMessageViewModel, ConversationViewModel, MusicObjectViewModel, SongMaterialViewModel } from "../../types/cleanProduction";
 import {
   ConversationWorkspace as LegacyConversationWorkspace,
   DecisionPackageScreen,
@@ -12,6 +12,7 @@ import {
   parseManagerWorkspaceAction,
   type ManagerWorkspaceAction,
 } from "./ManagerComposer";
+import { SongDocumentEditor } from "../music/SongDocumentEditor";
 
 export { DecisionPackageScreen, InvestigationScreen, ManagerOfficeScreen };
 
@@ -19,6 +20,10 @@ type ConversationWorkspaceProps = ComponentProps<typeof LegacyConversationWorksp
 type CreatedWork = NonNullable<ConversationMessageViewModel["createdWork"]>[number];
 type TurnPresentation = { version: 1; surfaces: Array<"release_success" | "release_opportunities" | "decision_package" | "release_share_package">; visibleArtifactIds: string[]; decisionPackageId?: string };
 type PresentationCreatedWork = CreatedWork & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };
+type DocumentPreviewTarget = {
+  song: MusicObjectViewModel;
+  document: Extract<SongMaterialViewModel, { kind: "document" }>;
+};
 
 const RELEASED_STAGES = new Set(["released", "catalog", "catalogued", "archived"]);
 const RELEASE_MANAGEMENT_INTENT = /\b(release date|release readiness|release[- ]ready|ready (?:to|for) release|release plan|launch date|get (?:this |the )?song ready|check (?:the )?release|release(?:-| )success review|retry release(?:-| )success|move (?:the )?release|delay (?:the )?release|postpone|reschedule|keep (?:the )?date|recovery plan)\b/i;
@@ -140,7 +145,32 @@ function slug(value: string) {
 }
 
 export function ConversationWorkspace(props: ConversationWorkspaceProps) {
-  const { conversation, onOpenCreatedWork, onOpenMusicSubject, sendPending } = props;
+  const { conversation, onOpenCreatedWork, onOpenMusicSubject, sendPending, musicRepository } = props;
+  const [documentPreviewTarget, setDocumentPreviewTarget] = useState<DocumentPreviewTarget | null>(null);
+
+  async function openCreatedWorkInContext(
+    type: "music_item" | "mission" | "task",
+    id?: string,
+    destination?: "files",
+    artifactId?: string,
+  ) {
+    if (type === "music_item" && destination === "files" && id && artifactId && musicRepository) {
+      try {
+        const song = await musicRepository.loadMusicObject(id, "music_item");
+        const document = (song?.materials ?? []).find(
+          (material): material is Extract<SongMaterialViewModel, { kind: "document" }> =>
+            material.kind === "document" && material.id === artifactId,
+        );
+        if (song && document) {
+          setDocumentPreviewTarget({ song, document });
+          return;
+        }
+      } catch {
+        // If the canonical preview cannot hydrate, preserve the existing Files fallback.
+      }
+    }
+    return onOpenCreatedWork(type, id, destination, artifactId);
+  }
 
   const activeWorkspaceActions = useMemo(() => {
     const messages = conversation.messages ?? [];
@@ -174,7 +204,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
 
   return (
     <>
-      <LegacyConversationWorkspace {...props} conversation={conversationalConversation} />
+      <LegacyConversationWorkspace {...props} conversation={conversationalConversation} onOpenCreatedWork={openCreatedWorkInContext} />
       {activeWorkspaceActions.length ? (
         <div className="pointer-events-none fixed bottom-[calc(5.75rem+env(safe-area-inset-bottom))] left-0 right-0 z-[45] px-4 sm:px-6 lg:left-[13.5rem]">
           <div className="pointer-events-auto mx-auto w-full max-w-[48rem]">
@@ -185,6 +215,21 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
             />
           </div>
         </div>
+      ) : null}
+      {documentPreviewTarget ? (
+        <SongDocumentEditor
+          document={documentPreviewTarget.document}
+          pending={false}
+          onCancel={() => setDocumentPreviewTarget(null)}
+          onSave={() => undefined}
+          previewOnly
+          contextNote={`Saved to ${documentPreviewTarget.song.title} → Files. You can find this document there anytime.`}
+          onOpenFiles={() => {
+            const target = documentPreviewTarget;
+            setDocumentPreviewTarget(null);
+            void onOpenCreatedWork("music_item", target.song.id, "files", target.document.id);
+          }}
+        />
       ) : null}
     </>
   );
