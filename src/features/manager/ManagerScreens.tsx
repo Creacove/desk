@@ -80,19 +80,18 @@ function normalizeHistoricalDocumentWork(
   if (documentType === "release_narrative" || title.toLowerCase() === "release narrative") return null;
   if (item.artifactKind === "song_document") return item;
 
-  // Older Manager versions represented a generated document as if the song itself
-  // had been created/updated. Convert those receipts at presentation time so old
-  // conversations immediately get the new document UX without rewriting history.
-  const isLegacySongDocument = subject?.type === "music_item"
+  // Older/current compatibility payloads can represent a generated canonical document
+  // as type=music_item while using either the song id OR the actual document id. Title
+  // and focused-song context identify the work product; never downgrade it to "Song ready".
+  const isSongDocumentReceipt = subject?.type === "music_item"
     && item.type === "music_item"
-    && item.id === subject.id
     && title.toLowerCase() !== subject.title.trim().toLowerCase()
     && DOCUMENT_TITLE_HINT.test(title);
-  if (!isLegacySongDocument) return item;
+  if (!isSongDocumentReceipt) return item;
 
   return {
     ...item,
-    id: `legacy-document:${messageId}:${slug(title)}`,
+    id: item.id || `legacy-document:${messageId}:${slug(title)}`,
     musicItemId: subject.id,
     artifactKind: "song_document",
     documentType: inferDocumentType(title),
