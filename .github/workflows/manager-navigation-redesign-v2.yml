@@ -5,6 +5,7 @@ on:
     branches:
       - design/catalog-manager-unification
     paths:
+      - scripts/manager_navigation_compat.py
       - .github/workflows/manager-navigation-redesign-v2.yml
 
 permissions:
@@ -23,91 +24,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Apply navigation visual redesign
-        run: |
-          python3 scripts/manager_navigation_redesign.py
-          git checkout HEAD -- src/app/ProductionApp.tsx
-          rm -f src/manager-navigation-redesign.test.ts
-      - name: Wire Manager without deleting legacy internal routes
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path('src/app/ProductionApp.tsx')
-          text = path.read_text()
-
-          def once(old, new, label):
-              global text
-              if old not in text:
-                  raise SystemExit(f'missing anchor: {label}')
-              text = text.replace(old, new, 1)
-
-          once(
-              '    activeSection === "staff" ? "Team Agents" :',
-              '    activeSection === "manager" ? "Manager" :',
-              'mobile Manager title',
-          )
-          once(
-              '    view === "staffWorkspace" ||\n    view === "artistProfileWorkspace" ||',
-              '    view === "staffWorkspace" ||\n    view === "managerOffice" ||\n    view === "artistProfileWorkspace" ||',
-              'Manager Office mobile topbar',
-          )
-          once(
-              '        <DeskRail active={activeSection} activeMissionCount={missions.filter((mission) => mission.status !== "complete").length} onNavigate={navigateFromMenu} onSignOut={onSignOut} />',
-              '''        <DeskRail
-          active={activeSection}
-          activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
-          recentManagerConversations={conversations.slice(0, 3).map((conversation) => ({ id: conversation.id, topic: conversation.topic }))}
-          onOpenManagerConversation={(conversationId) => {
-            const conversation = conversations.find((candidate) => candidate.id === conversationId);
-            if (conversation) void openConversation(conversation);
-          }}
-          onNavigate={navigateFromMenu}
-          onSignOut={onSignOut}
-        />''',
-              'Manager recents wiring',
-          )
-
-          path.write_text(text)
-          PY
-      - name: Add compatibility-safe navigation contract
-        run: |
-          cat > src/manager-navigation-redesign.test.ts <<'EOF'
-          import { describe, expect, it } from "vitest";
-          import { readFileSync } from "node:fs";
-
-          const components = readFileSync("src/design-system/components.tsx", "utf8");
-          const app = readFileSync("src/app/ProductionApp.tsx", "utf8");
-
-          describe("Manager-first navigation", () => {
-            it("replaces Team Agents in product navigation with one direct Manager destination", () => {
-              expect(components).toContain('{ label: "Manager", active: "manager", view: "managerOffice"');
-              expect(components).not.toContain('{ label: "Team Agents"');
-              expect(components).toContain('aria-label={item.label === "Catalog" ? "Open Catalog workspace" : item.label === "Manager" ? "Open Manager" : item.label}');
-            });
-
-            it("keeps old staff screens internal while Manager owns the visible navigation section", () => {
-              expect(app).toContain('import { LockedAgentWorkspace, StaffWorkspace }');
-              expect(app).toContain('<StaffWorkspace');
-              expect(app).toContain('<LockedAgentWorkspace');
-              expect(components).toContain('view === "staffWorkspace"');
-              expect(components).toContain('return "manager"');
-            });
-
-            it("surfaces only three recent Manager conversations in the desktop rail", () => {
-              expect(components).toContain('data-testid="desktop-manager-recents"');
-              expect(components).toContain('recentManagerConversations.slice(0, 3)');
-              expect(app).toContain('recentManagerConversations={conversations.slice(0, 3)');
-            });
-
-            it("uses a flat mobile dock and theme-safe mission counts", () => {
-              expect(components).toContain('className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t');
-              expect(components).not.toContain('className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-[18px]');
-              expect(components).toContain('data-testid="mobile-mission-count"');
-              expect(components).toContain('bg-brand-accent px-1 text-[9px] font-bold text-background');
-            });
-          });
-          EOF
+      - name: Apply Manager navigation redesign
+        run: python3 scripts/manager_navigation_compat.py
       - run: npm ci
       - name: Manager navigation contract
         run: npx vitest run src/manager-navigation-redesign.test.ts --environment jsdom --pool=vmThreads
