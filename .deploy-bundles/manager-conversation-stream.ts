@@ -3290,7 +3290,7 @@ var managerConversationTools = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties
   },
@@ -3433,6 +3433,7 @@ async function runManagerAgentLoop(input) {
   let requestBody = buildManagerAgentRequest(input);
   let responseId = "";
   let toolCallsUsed = 0;
+  const attemptedMutationSignatures = /* @__PURE__ */ new Set();
   for (let iteration = 0; iteration <= (input.maxToolCalls ?? 8); iteration += 1) {
     await input.beforeModelRequest?.();
     const payload = await postResponses(fetchImpl, input.endpoint, input.apiKey, requestBody);
@@ -3457,6 +3458,27 @@ async function runManagerAgentLoop(input) {
     }
     toolCallsUsed += calls.length;
     const executeCall = async (call) => {
+      const mutationSignature = managerMutationSignature(call);
+      if (mutationSignature && attemptedMutationSignatures.has(mutationSignature)) {
+        const completed = {
+          tool: call.name,
+          callId: call.callId,
+          status: "completed",
+          summary: "Duplicate write suppressed; the first result for this mutation remains authoritative."
+        };
+        toolTrace.push(completed);
+        await input.onToolEvent?.(publicToolEvent(completed));
+        return {
+          type: "function_call_output",
+          call_id: call.callId,
+          output: JSON.stringify({
+            status: "duplicate_suppressed",
+            retryable: false,
+            reason: "The same mutation was already attempted in this Manager turn."
+          })
+        };
+      }
+      if (mutationSignature) attemptedMutationSignatures.add(mutationSignature);
       const started = {
         tool: call.name,
         callId: call.callId,
@@ -3521,20 +3543,57 @@ function serializeToolOutput(value) {
     excerpt: serialized.slice(0, MAX_TOOL_OUTPUT_CHARS)
   });
 }
+var MANAGER_MUTATION_TOOLS = /* @__PURE__ */ new Set([
+  "propose_focused_release_date_change",
+  "save_focused_release_opportunities",
+  "record_focused_release_opportunity_outcome",
+  "create_focused_song_document",
+  "prepare_focused_release_share_package",
+  "update_focused_music_metadata",
+  "update_focused_music_lifecycle",
+  "ensure_song_release_workspace"
+]);
+function managerMutationSignature(call) {
+  if (!MANAGER_MUTATION_TOOLS.has(call.name)) return "";
+  const sortedArgs = Object.fromEntries(Object.entries(call.args).sort(([left], [right]) => left.localeCompare(right)));
+  return `${call.name}:${JSON.stringify(sortedArgs)}`;
+}
+var MAX_PROVIDER_RETRIES = 2;
 async function postResponses(fetchImpl, endpoint, apiKey, body) {
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
-  });
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= MAX_PROVIDER_RETRIES; attempt += 1) {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(body)
+    });
+    if (response.ok) return await response.json();
     const errorBody = await response.text();
+    const retryable = response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504;
+    if (retryable && attempt < MAX_PROVIDER_RETRIES) {
+      await sleep(providerRetryDelayMs(response, errorBody, attempt));
+      continue;
+    }
     throw new Error(`Manager agent request failed with status ${response.status}: ${errorBody.slice(0, 500)}`);
   }
-  return await response.json();
+  throw new Error("Manager agent request exhausted provider retries.");
+}
+function providerRetryDelayMs(response, errorBody, attempt) {
+  const retryAfterSeconds = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return Math.min(15e3, Math.ceil(retryAfterSeconds * 1e3) + 150);
+  }
+  const bodyDelay = errorBody.match(/try again in\s+([\d.]+)s/i);
+  if (bodyDelay) {
+    const seconds = Number(bodyDelay[1]);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(15e3, Math.ceil(seconds * 1e3) + 150);
+  }
+  return Math.min(15e3, 750 * 2 ** attempt);
+}
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function extractFunctionCalls(payload) {
   const output = Array.isArray(payload.output) ? payload.output : [];
@@ -7003,9 +7062,6 @@ async function persistFocusedSongDocumentDraft(db, input, runId, responseBody, h
     throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");
   }
   const quality = assessStructuredSongDocument(artifactType, structure);
-  if (quality.blockers.length) {
-    throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);
-  }
   const renderedBody = renderStructuredSongDocument(artifactType, title, structure);
   if (typeof db.rpc === "function") {
     const { data, error } = await db.rpc("persist_focused_song_document_v2", {
@@ -8015,12 +8071,12 @@ async function saveFocusedReleaseOpportunities(db, input, args) {
     rejected: []
   };
   if (rawCandidates.length > 12) throw new Error("A shortlist can contain at most 12 candidates.");
-  rawCandidates.forEach((raw) => assertPublicOpportunityProvenance(record(raw)));
   let saved = [];
   const watch = [];
   const excluded = [];
   const rejected = [];
   try {
+    rawCandidates.forEach((raw) => assertPublicOpportunityProvenance(record(raw)));
     const context = await loadOpportunityContext(db, input, opportunityType);
     if (!context) return {
       status: "not_found",
@@ -8197,7 +8253,7 @@ async function createFocusedSongDocument(db, input, args) {
       } : {}
     };
   } catch (error) {
-    return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
+    return failedDocumentResult(error, input);
   }
 }
 async function prepareFocusedReleaseSharePackage(db, input, args) {
@@ -8440,15 +8496,15 @@ function opportunityRow(brief, input, musicItemId, missionId) {
   };
 }
 function assertPublicOpportunityProvenance(source) {
-  if (!normalizePublicUrl(stringArg(source.sourceUrl))) throw new Error("A public HTTPS source URL is required for opportunity provenance.");
+  if (!normalizePublicUrl(stringArg(source.sourceUrl))) throw new OpportunityCandidateError("A public HTTPS source URL is required for opportunity provenance.");
   if (source.publicContact == null) return;
   const contact = record(source.publicContact);
   const sourceUrl = normalizePublicUrl(stringArg(contact.sourceUrl));
-  if (!sourceUrl) throw new Error("A public contact must include its source URL.");
+  if (!sourceUrl) throw new OpportunityCandidateError("A public contact must include its source URL.");
   const kind = stringArg(contact.kind);
   const value = stringArg(contact.value);
   const validValue = kind === "email" ? normalizePublicEmail(value) : normalizePublicUrl(value);
-  if (!validValue || !stringArg(contact.verifiedAt)) throw new Error("A public contact must be verifiable from its cited source.");
+  if (!validValue || !stringArg(contact.verifiedAt)) throw new OpportunityCandidateError("A public contact must be verifiable from its cited source.");
 }
 function isSpotifyEditorial(candidate) {
   return /spotify\s+editorial|spotify\s+for\s+artists|editorial\s+playlist/i.test(`${candidate.platform ?? ""} ${candidate.targetName}`);
@@ -8498,7 +8554,48 @@ function requiredSongDocumentType(value) {
 }
 var OpportunityCandidateError = class extends Error {
 };
+async function failedDocumentResult(error, input) {
+  const message = error instanceof Error && error.message.trim() ? error.message.trim() : typeof error === "string" && error.trim() ? error.trim() : "Song document creation failed.";
+  if (/document quality gate failed/i.test(message)) {
+    return {
+      status: "invalid_draft",
+      stage: "document_validation",
+      retryable: false,
+      reason: message
+    };
+  }
+  const errorEventId = await captureAppError(error, {
+    functionName: "manager-conversation-tool-executor",
+    operation: "song_document_workflow",
+    source: "edge",
+    publicMessage: "The song document could not be saved.",
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    refs: {
+      conversation_id: input.conversationId,
+      manager_run_id: input.runId,
+      music_item_id: input.musicSubject?.type === "music_item" ? input.musicSubject.id : null,
+      stage: "document_persistence"
+    }
+  });
+  return {
+    status: "failed",
+    stage: "document_persistence",
+    retryable: true,
+    reference: errorEventId ?? void 0
+  };
+}
 async function failedOpportunityResult(error, input, stage, publicMessage) {
+  const message = error instanceof Error && error.message.trim() ? error.message.trim() : typeof error === "string" && error.trim() ? error.trim() : publicMessage;
+  if (stage === "contact_verification") {
+    return {
+      status: "rejected",
+      stage,
+      retryable: false,
+      reason: message
+    };
+  }
   const errorEventId = await captureAppError(error, {
     functionName: "manager-conversation-tool-executor",
     operation: "release_opportunity_workflow",
@@ -9084,7 +9181,7 @@ function selectOutputSection(content, query) {
 }
 
 // supabase/functions/_shared/manager-conversation/context.ts
-var MAX_OPENING_BRIEF_BYTES = 8e4;
+var MAX_OPENING_BRIEF_BYTES = 48e3;
 var encoder = new TextEncoder();
 function buildManagerConversationModelContext(input, packet, conversationId, previousResponseId = "") {
   const scope = {
@@ -9118,7 +9215,7 @@ function classifyManagerConversationError(error, fallback = "Manager could not c
     };
   }
   if (/status 429|rate.limit/.test(normalized)) {
-    if (/request too large|tokens per min|token limit|context length|context window|too many tokens/.test(normalized)) {
+    if (/request too large|context length|context window|maximum context|too many tokens/.test(normalized)) {
       return {
         publicMessage: "This Manager session is larger than it can safely process right now. Start a focused follow-up or try again after the workspace refreshes.",
         internalMessage
@@ -9627,14 +9724,25 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
   }, 405);
   const encoder2 = new TextEncoder();
   let eventIndex = 0;
+  let streamClosed = false;
   const stream = new ReadableStream({
     async start(controller) {
       const emit = (event) => {
-        eventIndex += 1;
-        controller.enqueue(encoder2.encode(`id: ${eventIndex}
+        if (streamClosed) return;
+        try {
+          eventIndex += 1;
+          controller.enqueue(encoder2.encode(`id: ${eventIndex}
 data: ${JSON.stringify(event)}
 
 `));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error ?? "");
+          if (error instanceof TypeError && /close|enqueue|state|controller/i.test(message)) {
+            streamClosed = true;
+            return;
+          }
+          throw error;
+        }
       };
       let input = null;
       let runId = null;
@@ -9719,7 +9827,7 @@ data: ${JSON.stringify(event)}
           label: "Matching missions and evidence",
           status: "running"
         });
-        const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
+        const previousResponseId = "";
         const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId, (event) => {
           if (event.status === "started" && isReleaseSuccessTool(event.tool) && input?.musicSubject?.type === "music_item") {
             emit({
@@ -9909,8 +10017,17 @@ data: ${JSON.stringify(event)}
           errorEventId
         });
       } finally {
-        controller.close();
+        if (!streamClosed) {
+          streamClosed = true;
+          try {
+            controller.close();
+          } catch {
+          }
+        }
       }
+    },
+    cancel() {
+      streamClosed = true;
     }
   });
   return new Response(stream, {
@@ -9922,9 +10039,14 @@ data: ${JSON.stringify(event)}
     }
   });
 }));
+var UUID_PATTERN4 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 function validateInput(input) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId) throw new Error("Manager conversation workspace input is incomplete.");
   if (!input.body || !input.body.trim()) throw new Error("Manager conversation requires a directive or question.");
+  if (input.conversationId && !UUID_PATTERN4.test(input.conversationId)) {
+    if (/^pending-conversation-\d+$/i.test(input.conversationId)) input.conversationId = void 0;
+    else throw new Error("Manager conversation ID is invalid.");
+  }
   input.musicSubject = parseMusicConversationSubject(input.musicSubject) ?? void 0;
 }
 async function assertWorkspace(db, input) {
@@ -10267,14 +10389,6 @@ async function selectConversationMessages(db, input, conversationId) {
   });
   if (error) throw error;
   return data ?? [];
-}
-async function loadPreviousOpenAIResponseId(db, input, conversationId) {
-  const { data, error } = await db.from("conversation_messages").select("metadata").eq("conversation_id", conversationId).eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).eq("speaker", "manager").order("created_at", {
-    ascending: false
-  }).limit(1);
-  if (error) throw error;
-  const metadata = isRecord10(data?.[0]?.metadata) ? data[0].metadata : {};
-  return typeof metadata.openaiResponseId === "string" ? metadata.openaiResponseId : "";
 }
 async function callOpenAIManagerConversation(db, input, context, previousResponseId, playbookKeys, conversationId, runId, onToolEvent) {
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
