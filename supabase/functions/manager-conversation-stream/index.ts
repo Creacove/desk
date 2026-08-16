@@ -16,6 +16,7 @@ import {
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
+  managerConversationRequiresCanonicalDocumentTool,
   runManagerAgentLoop,
   selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
@@ -824,6 +825,10 @@ async function callOpenAIManagerConversation(
     context,
     previousResponseId,
     tools,
+    initialToolChoice: managerConversationRequiresCanonicalDocumentTool({
+      body: input.body,
+      contextAnswers: input.contextAnswers,
+    }) ? "create_focused_song_document" : undefined,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: "medium",
     maxOutputTokens: 6000,
@@ -891,7 +896,9 @@ type ReleaseSuccessToolResult = {
 };
 
 function isReleaseSuccessTool(tool: string) {
-  return tool === "read_focused_release_success" || tool === "propose_focused_release_date_change";
+  return tool === "read_focused_release_success"
+    || tool === "propose_focused_release_date_change"
+    || tool === "create_focused_song_document";
 }
 
 function isOpportunityTool(tool: string) {
