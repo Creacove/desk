@@ -1010,10 +1010,14 @@ function MessageRow({
              <OpportunityArtifact key={artifact.id} artifact={artifact} onPreparePitch={(target) => onPrepareOpportunityPitch ? onPrepareOpportunityPitch(artifact, target) : undefined} onRecordOutcome={(target, input) => onRecordOpportunityOutcome ? onRecordOpportunityOutcome(artifact, target, input) : undefined} onOpenFiles={(id) => onOpenCreatedWork("music_item", id, "files")} onOpenMission={(id) => onOpenCreatedWork("mission", id)} onRetry={(failed) => onRetryOpportunityResearch ? onRetryOpportunityResearch(failed) : undefined} />
            )) : null}
            {!isStreaming && decisionPackage ? (
-             <section className="mt-5 border-l-2 border-foreground/12 pl-4">
-               <p className="text-[14px] font-semibold text-foreground">{decisionPackage.title}</p>
-               <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{decisionPackage.summary}</p>
-               {onOpenDecisionPackage ? <div className="mt-2"><ResultAction onClick={onOpenDecisionPackage}>Open package</ResultAction></div> : null}
+             <section data-artifact-kind="document" className="mt-5 flex items-start gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+               <ArtifactGlyph kind="document" />
+               <div className="min-w-0 flex-1">
+                 <p className="text-[11px] font-semibold text-muted-foreground">Decision package</p>
+                 <p className="mt-0.5 text-[13px] font-semibold text-foreground">{decisionPackage.title}</p>
+                 <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{decisionPackage.summary}</p>
+                 {onOpenDecisionPackage ? <div className="mt-2"><ResultAction onClick={onOpenDecisionPackage}>View package</ResultAction></div> : null}
+               </div>
              </section>
            ) : null}
         </div>
@@ -1054,6 +1058,35 @@ function ManagerResultGroup({
   );
 }
 
+function ArtifactGlyph({
+  kind,
+  updated = false,
+}: {
+  kind: "workspace" | "document" | "mission" | "task" | "song";
+  updated?: boolean;
+}) {
+  const icon = kind === "document"
+    ? <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+    : kind === "mission"
+      ? <Route className="h-3.5 w-3.5" aria-hidden="true" />
+      : kind === "task"
+        ? <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />
+        : kind === "song"
+          ? <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
+          : <Check className="h-3.5 w-3.5" aria-hidden="true" />;
+
+  return (
+    <span
+      data-testid={`manager-artifact-icon-${kind}`}
+      className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-foreground/10 bg-foreground/[0.035] text-foreground/62"
+      aria-hidden="true"
+    >
+      {icon}
+      {updated ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-background bg-brand-accent" /> : null}
+    </span>
+  );
+}
+
 function ResultAction({ children, onClick, pendingLabel = "Opening…" }: { children: ReactNode; onClick?: () => void | Promise<void>; pendingLabel?: string }) {
   const [pending, setPending] = useState(false);
   return (
@@ -1082,8 +1115,9 @@ function WorkspaceResultCard({
 }) {
   const title = group.musicItem?.title ?? group.mission?.title ?? "Release workspace";
   return (
-    <article data-testid="manager-workspace-result" className="border-l-2 border-foreground/12 py-1 pl-4">
+    <article data-testid="manager-workspace-result" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
       <div className="flex items-start gap-3">
+        <ArtifactGlyph kind="workspace" />
         <div className="min-w-0 flex-1">
           <p className="text-[14px] font-semibold text-foreground"><Check className="mr-1.5 inline h-3.5 w-3.5" aria-hidden="true" />Release workspace created</p>
           <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{title} · Mission and first task ready</p>
@@ -1115,7 +1149,8 @@ function DocumentResultCard({
   const isSongDocument = item.artifactKind === "song_document";
   if (!isSongDocument) {
     return (
-      <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+      <article data-testid="manager-document-result" data-artifact-kind="document" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+        <ArtifactGlyph kind="document" />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
           <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
@@ -1134,8 +1169,9 @@ function DocumentResultCard({
   const musicItemId = item.musicItemId;
 
   return (
-    <article data-testid="manager-document-result" className="border-l-2 border-foreground/12 py-2 pl-4">
+    <article data-testid="manager-document-result" data-artifact-kind="document" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
       <div className="flex items-start gap-3">
+        <ArtifactGlyph kind="document" />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold text-muted-foreground">{documentLabel}</p>
           <p className="mt-0.5 text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>
@@ -1148,19 +1184,19 @@ function DocumentResultCard({
         ) : null}
       </div>
       {missingInputs.length ? (
-        <div className="mt-2.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+        <div className="ml-11 mt-2.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">
           {required.length ? <p><span className="font-semibold text-foreground/80">Before external use:</span> {required.map(stripMissingInputPrefix).join(" · ")}</p> : null}
           {optional.length ? <p><span className="font-semibold text-foreground/80">Improve this:</span> {optional.map(stripMissingInputPrefix).join(" · ")}</p> : null}
         </div>
       ) : null}
       {saveFailed && item.content ? (
-        <div className="mt-2 flex flex-wrap gap-1">
+        <div className="ml-11 mt-2 flex flex-wrap gap-1">
           <ResultAction onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide draft" : "View draft"}</ResultAction>
           {musicItemId ? <ResultAction onClick={() => onOpenCreatedWork("music_item", musicItemId, "files")}>Open Files</ResultAction> : null}
         </div>
       ) : null}
       {expanded && item.content ? (
-        <div className="mt-3 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-3">
+        <div className="ml-11 mt-3 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-3">
           <RichMessageBody body={item.content} />
         </div>
       ) : null}
@@ -1206,10 +1242,8 @@ function CompactMissionResult({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
-    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
-      <span className="hidden">
-        <Route className="h-3.5 w-3.5" aria-hidden="true" />
-      </span>
+    <article data-artifact-kind="mission" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+      <ArtifactGlyph kind="mission" updated={group.mission.status === "updated"} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">Mission {group.mission.status === "updated" ? "updated" : "ready"}</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.mission.title}</p>
@@ -1229,10 +1263,8 @@ function CompactTasksResult({
 }) {
   const firstTask = group.tasks[0];
   return (
-    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
-      <span className="hidden">
-        <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />
-      </span>
+    <article data-artifact-kind="task" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+      <ArtifactGlyph kind="task" updated={group.tasks.some((task) => task.status === "updated")} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{firstTask?.title}</p>
@@ -1250,10 +1282,8 @@ function CompactMusicResult({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
-    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
-      <span className="hidden">
-        <Music2 className="h-3.5 w-3.5" aria-hidden="true" />
-      </span>
+    <article data-artifact-kind="song" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+      <ArtifactGlyph kind="song" updated={item.status === "updated"} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">Song ready</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
