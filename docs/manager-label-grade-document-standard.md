@@ -61,6 +61,8 @@ Public artifacts render only title + artifact-native content. Internal metadata 
 - a visual single-page hierarchy for one-sheets;
 - a media-rich structured page for EPKs.
 
+The document editor uses short product actions such as `Save`, `Edit`, `Approve`, and `Close`; process explanations do not sit above the work product.
+
 ## Acceptance rules
 
 A generated recipient-facing document fails product acceptance if it contains any of: `Purpose:`, `Audience:`, `Core narrative:`, `Needs verification`, `Quality checked`, `Manager-built artifact`, instructions about canonical versions, retry/persistence language, workspace gate language unrelated to the recipient, or fabricated placeholders such as `TBD`/`TK`.
