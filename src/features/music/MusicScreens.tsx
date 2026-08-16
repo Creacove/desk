@@ -1253,11 +1253,11 @@ function MusicSongDetail({
       ) : null}
 
       {effectiveTab === "files" ? (
-        <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-          <div className="flex flex-col gap-4 border-b border-foreground/8 px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-5">
+        <div data-testid="song-room-files" className="mx-auto w-full max-w-4xl">
+          <div className="flex flex-col gap-4 border-b border-foreground/8 pb-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-xl">
-              <h4 className="font-display text-[20px] font-semibold leading-tight text-foreground">Song assets</h4>
-              <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground/82">Everything your team needs for this song, in one place.</p>
+              <h4 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">Song assets</h4>
+              <p className="mt-1.5 text-[12px] font-medium leading-5 text-muted-foreground/78">Everything your team needs for this song, in one place.</p>
             </div>
             <div className="flex items-center gap-2">
               {onShareFiles && (shareableAssets.length || nativeDocuments.length) ? (
@@ -1274,10 +1274,10 @@ function MusicSongDetail({
             </div>
           </div>
 
-          <div className="grid gap-7 px-4 py-5 sm:px-5 sm:py-6">
-            <section aria-labelledby="song-assets-audio">
+          <div className="grid">
+            <section aria-labelledby="song-assets-audio" className="border-b border-foreground/8 py-5 sm:py-6">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2"><FileAudio className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" /><h5 id="song-assets-audio" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Audio</h5></div>
+                <div className="flex items-center gap-2"><FileAudio className="h-4 w-4 text-muted-foreground/70" aria-hidden="true" /><h5 id="song-assets-audio" className="font-ui text-[10px] font-bold uppercase tracking-[0.09em] text-muted-foreground/70">Audio</h5></div>
                 <button type="button" aria-label="Add audio" onClick={() => onUploadAsset(uploadTarget)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> Add audio</button>
               </div>
               {primaryAudio ? (
@@ -1341,9 +1341,9 @@ function MusicSongDetail({
               onUploadAsset={onUploadAsset}
             />
             {uploadJobs.filter((job) => job.asset.group === "Artwork").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
-            <section aria-labelledby="song-assets-documents">
+            <section aria-labelledby="song-assets-documents" className="py-5 sm:py-6">
               <div className="mb-3 flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2 text-muted-foreground/70"><FileText className="h-4 w-4" /><h5 id="song-assets-documents" className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">Documents</h5></div>
+                <div className="flex items-center gap-2 text-muted-foreground/70"><FileText className="h-4 w-4" /><h5 id="song-assets-documents" className="font-ui text-[10px] font-bold uppercase tracking-[0.09em] text-muted-foreground/70">Documents</h5></div>
                 <SongDocumentActions
                   onWrite={onWriteDocument}
                   onAskManager={onAskManagerForDocument}
@@ -1355,7 +1355,7 @@ function MusicSongDetail({
                   {nativeDocuments.map((document) => <button key={document.id} type="button" onClick={() => onEditDocument?.(document)} className="flex min-h-[56px] w-full items-center gap-3 px-4 py-3 text-left hover:bg-foreground/[0.025]"><FileText className="h-4 w-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-semibold text-foreground">{document.title}</span>{document.reviewState === "needs_review" ? <span className="mt-0.5 block text-[10px] font-semibold text-warning">Needs review</span> : null}</span><span className="text-[11px] font-semibold text-muted-foreground">Open</span></button>)}
                   {documentFiles.map((asset) => <MusicStoredAssetRow key={asset.assetId ?? asset.label} asset={asset} onUploadAsset={onUploadAsset} />)}
                 </div>
-              ) : <p className="rounded-[14px] border border-dashed border-foreground/10 px-4 py-3 text-[11px] font-medium text-muted-foreground/72">Write lyrics and press materials here, ask Manager for a draft, or upload an existing file.</p>}
+              ) : <p className="py-2 text-[12px] font-medium leading-5 text-muted-foreground/68">No documents yet.</p>}
             </section>
             {uploadJobs.filter((job) => job.asset.group === "Documents").map((job) => <MusicInlineUpload key={job.id} job={job} onRetry={onRetryUpload} />)}
           </div>
@@ -1363,87 +1363,60 @@ function MusicSongDetail({
       ) : null}
 
       {effectiveTab === "details" ? (
-        <div className="grid gap-4">
-          <div data-testid="song-room-mobile-details" className="surface-elevated rounded-[16px] p-4 shadow-sm lg:hidden">
-            <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-3">
-              <div className="min-w-0">
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Details</p>
-                <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Song identity</h4>
-              </div>
-            </div>
+        <div data-testid="song-room-details" className="mx-auto w-full max-w-4xl">
+          <div className="border-b border-foreground/8 pb-5">
+            <h4 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">Song identity</h4>
+            <p className="mt-1.5 text-[12px] font-medium leading-5 text-muted-foreground/78">Core release information and metadata.</p>
+          </div>
 
-            <div className="mt-3 grid gap-3">
+          <div data-testid="song-room-mobile-details" className="rounded-[16px] lg:hidden">
+            <div className="divide-y divide-foreground/8">
               {detailGroups.map((group) => (
-                <section key={group.title} className="overflow-hidden rounded-[14px] border border-foreground/8 bg-background/72">
-                  <div className="flex items-center justify-between gap-3 border-b border-foreground/8 bg-foreground/[0.025] px-3 py-2.5">
-                    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
-                  </div>
-                  <div className="divide-y divide-foreground/6">
-                    {group.fields.map((field) => (
-                      <div
-                        key={`${group.title}-mobile-${field.label}`}
-                        data-testid={mobileDetailFieldTestId(field.label)}
-                        className="grid min-h-[64px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2.5"
-                      >
-                        <span className="min-w-0">
-                          <span className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
-                          <span className={cn("mt-0.5 block truncate text-[13px] font-medium", field.status === "Missing" ? "text-muted-foreground/65" : "text-foreground")}>{field.status === "Missing" ? "Not added" : field.value}</span>
-                        </span>
-                        <span className="flex shrink-0 items-center gap-1.5">
+                <section key={group.title} className="py-5">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.09em] text-muted-foreground/70">{group.title}</p>
+                  <div className="mt-3 overflow-hidden rounded-[14px] border border-foreground/8 bg-background">
+                    <div className="divide-y divide-foreground/7">
+                      {group.fields.map((field) => (
+                        <div
+                          key={`${group.title}-mobile-${field.label}`}
+                          data-testid={mobileDetailFieldTestId(field.label)}
+                          className="grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3.5 py-2.5"
+                        >
+                          <span className="min-w-0">
+                            <span className="block text-[11px] font-medium leading-4 text-muted-foreground/72">{field.label}</span>
+                            <span className={cn("mt-0.5 block truncate text-[13px] font-semibold leading-5", field.status === "Missing" ? "text-muted-foreground/58" : "text-foreground")}>{field.status === "Missing" ? "Not added" : field.value}</span>
+                          </span>
                           {canEditDetailField(field) ? (
-                            <button
-                              type="button"
-                              aria-label={`Edit mobile ${field.label}`}
-                              title={`Edit ${field.label}`}
-                              onClick={() => onEditDetail(group.title, field)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
-                            >
+                            <button type="button" aria-label={`Edit mobile ${field.label}`} title={`Edit ${field.label}`} onClick={() => onEditDetail(group.title, field)} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                           ) : null}
-                        </span>
-                      </div>
-                    ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </section>
               ))}
             </div>
           </div>
 
-          <div data-testid="song-room-desktop-details" className="surface-elevated hidden rounded-[22px] p-5 shadow-sm lg:block">
-            <div className="flex flex-wrap items-start justify-between gap-4 border-b border-foreground/8 pb-4">
-              <div>
-                <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Details</p>
-                <h4 className="mt-1 font-display text-[18px] font-semibold leading-tight text-foreground">Everything about this song</h4>
-              </div>
-            </div>
-
-            <div className="mt-4 grid gap-4">
+          <div data-testid="song-room-desktop-details" className="hidden lg:block">
+            <div className="divide-y divide-foreground/8">
               {detailGroups.map((group) => (
-                <section key={group.title} className="rounded-[16px] border border-foreground/8 bg-background/72">
-                  <div className="flex items-center justify-between gap-4 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
-                    <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{group.title}</p>
-                  </div>
-                  <div className="grid divide-y divide-foreground/6 lg:grid-cols-2 lg:divide-x lg:divide-y-0">
+                <section key={group.title} className="py-6">
+                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.09em] text-muted-foreground/70">{group.title}</p>
+                  <div className="mt-3 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-background sm:grid-cols-2">
                     {group.fields.map((field) => (
-                      <div key={`${group.title}-${field.label}`} className="flex min-h-[74px] items-center justify-between gap-4 border-b border-foreground/6 px-4 py-3 last:border-b-0 lg:[&:nth-last-child(-n+2)]:border-b-0">
+                      <div key={`${group.title}-${field.label}`} className="flex min-h-[64px] items-center justify-between gap-4 border-t border-foreground/7 px-4 py-3 first:border-t-0 sm:[&:nth-child(-n+2)]:border-t-0 sm:[&:nth-child(odd)]:border-r">
                         <span className="min-w-0">
-                          <span className="block text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/75">{field.label}</span>
-                          <span className={cn("mt-1 block truncate text-[14px] font-medium", field.status === "Missing" ? "text-muted-foreground/65" : "text-foreground")}>{field.status === "Missing" ? "Not added" : field.value}</span>
+                          <span className="block text-[11px] font-medium leading-4 text-muted-foreground/72">{field.label}</span>
+                          <span className={cn("mt-0.5 block truncate text-[13px] font-semibold leading-5", field.status === "Missing" ? "text-muted-foreground/58" : "text-foreground")}>{field.status === "Missing" ? "Not added" : field.value}</span>
                         </span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          {canEditDetailField(field) ? (
-                            <button
-                              type="button"
-                              aria-label={`Edit ${field.label}`}
-                              title={`Edit ${field.label}`}
-                              onClick={() => onEditDetail(group.title, field)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-foreground/10 bg-background text-foreground transition-colors hover:border-foreground/20 hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                          ) : null}
-                        </span>
+                        {canEditDetailField(field) ? (
+                          <button type="button" aria-label={`Edit ${field.label}`} title={`Edit ${field.label}`} onClick={() => onEditDetail(group.title, field)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        ) : null}
                       </div>
                     ))}
                   </div>
@@ -1525,9 +1498,9 @@ function MusicAssetGroup({
 }) {
   const [addMenuOpen, setAddMenuOpen] = useState(false);
   return (
-    <section className="relative" aria-labelledby={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+    <section className="relative border-b border-foreground/8 py-5 sm:py-6" aria-labelledby={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-muted-foreground/70">{icon}<h5 id={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="font-ui text-[11px] font-semibold uppercase tracking-[0.05em] text-muted-foreground">{title}</h5></div>
+        <div className="flex items-center gap-2 text-muted-foreground/70">{icon}<h5 id={`song-assets-${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`} className="font-ui text-[10px] font-bold uppercase tracking-[0.09em] text-muted-foreground/70">{title}</h5></div>
         {addLabel && addTargets?.length ? <button type="button" aria-label={addLabel} aria-expanded={addMenuOpen} onClick={() => setAddMenuOpen((open) => !open)} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045]"><Plus className="h-3.5 w-3.5" /> {addLabel}</button> : null}
       </div>
       {addMenuOpen ? (
@@ -1540,7 +1513,7 @@ function MusicAssetGroup({
           {assets.map((asset) => <MusicStoredAssetRow key={asset.assetId ?? asset.label} asset={asset} onUploadAsset={onUploadAsset} />)}
         </div>
       ) : (
-        <p className="rounded-[14px] border border-dashed border-foreground/10 px-4 py-3 text-[11px] font-medium text-muted-foreground/72">{emptyCopy}</p>
+        <p className="py-2 text-[12px] font-medium leading-5 text-muted-foreground/68">{emptyCopy}</p>
       )}
     </section>
   );
@@ -1553,9 +1526,11 @@ function MusicStoredAssetRow({
   asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number];
   onUploadAsset: (asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) => void;
 }) {
+  const StoredAssetIcon = asset.group === "Artwork" ? ImageIcon : asset.group === "Documents" ? FileText : FileAudio;
   return (
-    <div className="flex min-h-[52px] items-center gap-3 px-3.5 py-2.5 sm:px-4">
-      <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-foreground">{asset.label}</span>
+    <div className="flex min-h-[56px] items-center gap-3 px-3.5 py-2.5 sm:px-4">
+      <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] bg-foreground/[0.05] text-muted-foreground"><StoredAssetIcon className="h-3.5 w-3.5" aria-hidden="true" /></span>
+      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{asset.label}</span>
       {canActOnAsset(asset) ? (
         <button
           type="button"
@@ -2115,8 +2090,8 @@ function MusicRightsWorkspace({
   const allocationComplete = totalPublishing === 100 && totalMaster === 100;
   const canSendLinks = !locked && !pending && contributors.length > 0 && contributors.every((contributor) => contributor.email?.trim()) && allocationComplete;
   const ledgerColumns = locked
-    ? "grid-cols-[1.3fr_1fr_1.25fr_0.85fr_0.85fr_1.15fr]"
-    : "grid-cols-[1.3fr_1fr_1.25fr_0.85fr_0.85fr_1.1fr_44px]";
+    ? "grid-cols-2 sm:grid-cols-[1.3fr_1fr_1.25fr_0.85fr_0.85fr_1.15fr]"
+    : "grid-cols-2 sm:grid-cols-[1.3fr_1fr_1.25fr_0.85fr_0.85fr_1.1fr_44px]";
 
   function exportRecord() {
     const blob = new Blob([buildSplitRecord(song)], { type: "text/plain;charset=utf-8" });
@@ -2152,14 +2127,13 @@ function MusicRightsWorkspace({
   }
 
   return (
-    <div className="grid gap-4">
+    <div data-testid="song-room-rights" className="mx-auto w-full max-w-4xl">
       <span className="sr-only">split sheet document confirm split sheet publishing splits master share</span>
-      <div className="surface-elevated rounded-[22px] p-5 shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-foreground/8 pb-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="max-w-3xl">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-brand-accent">Song rights</p>
-            <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">{rights.headline}</h4>
-            <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/84">{rights.description}</p>
+      <div>
+        <div className="flex flex-col gap-3 border-b border-foreground/8 pb-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="max-w-2xl">
+            <h4 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">Song rights</h4>
+            {contributors.length ? <p className="mt-1.5 text-[12px] font-medium leading-5 text-muted-foreground/78">{rights.headline}</p> : null}
           </div>
           {rights.state === "confirmed" ? (
             <button type="button" onClick={exportRecord} className="inline-flex h-9 shrink-0 items-center justify-center gap-1.5 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.04]"><Download className="h-3.5 w-3.5" /> Export split record</button>
@@ -2167,15 +2141,22 @@ function MusicRightsWorkspace({
         </div>
 
         {contributors.length ? (
-          <div className="mt-4 grid gap-2 rounded-[14px] bg-foreground/[0.025] p-3 sm:grid-cols-3">
-            <p className="text-[12px] font-semibold text-muted-foreground"><span className="block text-[10px] uppercase tracking-[0.08em]">Publishing allocated</span><strong className="mt-1 block text-[16px] text-foreground">{rights.publishingAllocated}%</strong></p>
-            <p className="text-[12px] font-semibold text-muted-foreground"><span className="block text-[10px] uppercase tracking-[0.08em]">Master allocated</span><strong className="mt-1 block text-[16px] text-foreground">{rights.masterAllocated}%</strong></p>
-            {confirmationActive ? <p className="text-[12px] font-semibold text-muted-foreground"><span className="block text-[10px] uppercase tracking-[0.08em]">Confirmed</span><strong className="mt-1 block text-[16px] text-foreground">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
+          <div className="mt-5 grid gap-3 border-y border-foreground/8 py-4 sm:grid-cols-3 sm:gap-0">
+            <p className="text-[11px] font-medium text-muted-foreground sm:border-r sm:border-foreground/8 sm:px-4 sm:first:pl-0"><span className="block">Publishing allocated</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.publishingAllocated}%</strong></p>
+            <p className="text-[11px] font-medium text-muted-foreground sm:border-r sm:border-foreground/8 sm:px-4"><span className="block">Master allocated</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.masterAllocated}%</strong></p>
+            {confirmationActive ? <p className="text-[11px] font-medium text-muted-foreground sm:px-4"><span className="block">Confirmed</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
           </div>
         ) : null}
 
+        {contributors.length && confirmationActive ? (
+          <p className="mt-3 text-[11px] font-medium leading-5 text-muted-foreground/72">{rights.description}</p>
+        ) : null}
+
         {!contributors.length ? (
-          <div className="mt-4 flex flex-wrap items-center gap-2">
+          <section className="py-6">
+            <h5 className="font-display text-[18px] font-semibold leading-tight text-foreground">Set up song rights</h5>
+            <p className="mt-1.5 max-w-lg text-[12px] font-medium leading-5 text-muted-foreground/72">Add contributors and splits before release.</p>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
             {rights.state === "document_on_file" && rights.externalRecordId && onOpenExternalRecord ? (
               <button type="button" onClick={() => void onOpenExternalRecord(rights.externalRecordId!)} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold text-background"><FileText className="h-4 w-4" /> Open rights document</button>
             ) : (
@@ -2184,7 +2165,8 @@ function MusicRightsWorkspace({
             <button type="button" onClick={rights.state === "document_on_file" ? () => setSetupOpen(true) : onUploadExistingSplit} className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-foreground/10 px-4 py-2.5 text-[12px] font-semibold text-foreground hover:bg-foreground/[0.04]">
               {rights.state === "document_on_file" ? "Set up structured splits" : "Upload existing split sheet"}
             </button>
-          </div>
+            </div>
+          </section>
         ) : null}
 
         {contributors.length > 0 && (totalPublishing !== 100 || totalMaster !== 100) ? (
@@ -2201,9 +2183,9 @@ function MusicRightsWorkspace({
         ) : null}
 
         {contributors.length > 0 ? (
-          <div className="mt-4 overflow-x-auto rounded-[16px] border border-foreground/8 bg-background/70">
-            <div className="min-w-[620px]">
-              <div className={cn("grid gap-2 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82", ledgerColumns)}>
+          <div className="mt-5 overflow-hidden rounded-[16px] border border-foreground/8 bg-background">
+            <div>
+              <div className={cn("hidden gap-2 border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/72 sm:grid", ledgerColumns)}>
                 <span>Contributor</span>
                 <span>Role</span>
                 <span>Email</span>
@@ -2215,13 +2197,13 @@ function MusicRightsWorkspace({
               {contributors.map((contributor) => {
                 const approval = contributor.approval.toLowerCase();
                 return (
-                  <div key={contributor.id ?? contributor.name} className={cn("grid items-center gap-2 border-b border-foreground/6 px-4 py-3.5 last:border-b-0", ledgerColumns)}>
-                    <span className="truncate text-[14px] font-bold text-foreground">{contributor.name}</span>
-                    <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.role}</span>
-                    <span className="truncate text-[12px] font-semibold text-muted-foreground/84">{contributor.email ?? "Missing"}</span>
-                    <span className="text-[12px] font-bold text-foreground">{contributor.publishingShare}</span>
-                    <span className="text-[12px] font-bold text-foreground">{contributor.masterShare}</span>
-                    <span className="flex min-w-0 items-center gap-1.5">
+                  <div key={contributor.id ?? contributor.name} className={cn("grid items-center gap-x-3 gap-y-2 border-b border-foreground/6 px-4 py-3.5 last:border-b-0", ledgerColumns)}>
+                    <span className="col-span-2 truncate text-[13px] font-semibold text-foreground sm:col-span-1 sm:text-[14px]">{contributor.name}</span>
+                    <span className="col-span-2 truncate text-[11px] font-medium text-muted-foreground/76 sm:col-span-1 sm:text-[12px]">{contributor.role}</span>
+                    <span className="col-span-2 truncate text-[11px] font-medium text-muted-foreground/76 sm:col-span-1 sm:text-[12px]">{contributor.email ?? "Missing"}</span>
+                    <span className="text-[12px] font-semibold text-foreground"><span className="mb-0.5 block text-[9px] font-medium uppercase tracking-[0.07em] text-muted-foreground/65 sm:hidden">Publishing</span>{contributor.publishingShare}</span>
+                    <span className="text-[12px] font-semibold text-foreground"><span className="mb-0.5 block text-[9px] font-medium uppercase tracking-[0.07em] text-muted-foreground/65 sm:hidden">Master</span>{contributor.masterShare}</span>
+                    <span className="col-span-2 flex min-w-0 items-center gap-1.5 sm:col-span-1">
                       {["cleared", "confirmed"].includes(approval) ? (
                         <span className="inline-flex items-center gap-1 rounded-full bg-success/10 px-2.5 py-1 text-[10px] font-bold text-success">
                           <span className="h-1.5 w-1.5 rounded-full bg-success" />
@@ -2238,7 +2220,7 @@ function MusicRightsWorkspace({
                       )}
                     </span>
                     {!locked ? (
-                      <span className="pr-2 text-right">
+                      <span className="col-span-2 pr-0 text-right sm:col-span-1 sm:pr-2">
                         {contributor.id ? (
                           <button
                             type="button"
@@ -2261,8 +2243,8 @@ function MusicRightsWorkspace({
         ) : null}
 
         {!locked && !allocationComplete && (contributors.length > 0 || setupOpen) ? (
-          <form onSubmit={handleAddContributor} className="mt-4 rounded-[16px] border border-foreground/8 bg-foreground/[0.02] p-4">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/86">Add collaborator</p>
+          <form onSubmit={handleAddContributor} className="mt-5 border-t border-foreground/8 pt-5">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.09em] text-muted-foreground/70">Add contributor</p>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-[1.4fr_1.15fr_1.45fr_0.85fr_0.85fr] items-end">
               <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
                 Name
@@ -2287,7 +2269,7 @@ function MusicRightsWorkspace({
                 <input type="number" min="0" max={Math.max(0, 100 - totalMaster)} step="0.01" value={masterShare} onChange={(event) => setMasterShare(event.target.value)} required className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground transition-colors focus:border-foreground focus:outline-none" />
               </label>
             </div>
-            <button type="submit" disabled={pending} className="mt-4 inline-flex items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:opacity-40">
+            <button type="submit" disabled={pending} className="mt-4 inline-flex items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 disabled:opacity-40">
               <UsersRound className="h-4 w-4" />
               <span>Add collaborator</span>
             </button>
@@ -2301,7 +2283,7 @@ function MusicRightsWorkspace({
               type="button"
               disabled={!canSendLinks}
               onClick={() => void onSendLinks()}
-              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[12px] bg-foreground px-5 py-3 text-[12px] font-bold uppercase tracking-[0.08em] text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:bg-foreground/10 disabled:text-muted-foreground"
+              className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-[12px] bg-foreground px-5 py-3 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:bg-foreground/10 disabled:text-muted-foreground"
             >
               <span>Send split confirmation links</span>
               <ArrowRight className="h-4 w-4" />
@@ -2313,11 +2295,11 @@ function MusicRightsWorkspace({
       </div>
 
       {song.splits?.approvalLog?.length ? (
-        <details className="surface-elevated rounded-[18px] p-5 shadow-sm">
+        <details className="mt-7 border-t border-foreground/8 pt-5">
           <summary className="cursor-pointer font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground/82">Approval log</summary>
           <div className="mt-3 space-y-2">
             {song.splits.approvalLog.map((entry, index) => (
-              <div key={`${entry}-${index}`} className="flex items-start gap-2.5 rounded-[12px] border border-foreground/6 bg-background/68 px-3.5 py-2.5 text-[12.5px] font-bold leading-relaxed text-foreground/85">
+              <div key={`${entry}-${index}`} className="flex items-start gap-2.5 border-t border-foreground/7 py-2.5 text-[12px] font-medium leading-5 text-foreground/82 first:border-t-0">
                 <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-success" />
                 <span>{entry}</span>
               </div>
