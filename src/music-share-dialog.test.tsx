@@ -42,7 +42,7 @@ describe("MusicShareDialog", () => {
     expect(screen.queryByRole("checkbox", { name: "Release date" })).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox", { name: "Send by email" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview package" }));
     expect(await screen.findByRole("heading", { name: "Jam" })).toBeInTheDocument();
     expect(screen.getByLabelText("Listen to Jam")).toHaveAttribute("src", "https://files.example/audio-1");
     expect(screen.getByRole("heading", { name: "Press release" })).toBeInTheDocument();
@@ -53,7 +53,8 @@ describe("MusicShareDialog", () => {
     render(<MusicShareDialog song={song} onCancel={vi.fn()} onCreate={onCreate} onSend={vi.fn()} onRevoke={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Listen" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview package" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create link" }));
 
     await waitFor(() => expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({ preset: "listen", assetIds: ["audio-1", "cover-1"] })));
     expect(await screen.findByRole("heading", { name: "Link ready" })).toBeInTheDocument();
@@ -77,6 +78,6 @@ describe("MusicShareDialog", () => {
     render(<MusicShareDialog song={releaseDocumentsSong} onCancel={vi.fn()} onCreate={vi.fn()} />);
 
     expect(screen.getByRole("checkbox", { name: "Personalized press pitch" })).not.toBeChecked();
-    expect(screen.queryByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeChecked();
   });
 });

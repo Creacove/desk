@@ -150,9 +150,6 @@ async function loadDocumentFields(db: any, input: ShareInput, musicItemId: strin
     const internalNarrative = document.document_type === "release_narrative"
       || cleanText(document.title, 180).toLowerCase() === "release narrative";
     if (internalNarrative) throw new Error("The internal Release Narrative cannot be shared.");
-    if (document.origin === "manager_generated" && document.status !== "accepted") {
-      throw new Error("Manager-built documents must be approved before sharing.");
-    }
   }
   const { data: versions, error: versionsError } = await owned(db.from("document_versions").select("id,document_id,metadata"), input).in("document_id", linkedIds).limit(80);
   if (versionsError) throw versionsError;

@@ -13,6 +13,7 @@ export type ShareInventory = {
     documentType: string;
     body?: string;
     ready: boolean;
+    approved?: boolean;
   }>;
   information: Array<{ key: string; label: string; value: string }>;
 };

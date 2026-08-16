@@ -170,7 +170,7 @@ export function MusicShareDialog({
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {mode === "build" ? (
-            <form id="music-share-builder" onSubmit={createLink} className="px-5 py-5 sm:px-6">
+            <form id="music-share-builder" onSubmit={(event) => { event.preventDefault(); void openPreview(); }} className="px-5 py-5 sm:px-6">
               <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-foreground/[0.045] p-1 sm:grid-cols-4" aria-label="Package type">
                 {(["listen", "epk_press", "delivery", "custom"] as SharePurpose[]).map((value) => (
                   <button key={value} type="button" aria-pressed={purpose === value} onClick={() => choosePurpose(value)} className={`rounded-[9px] px-2 py-2.5 text-[11px] font-bold transition ${purpose === value ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground"}`}>{sharePurposeShortLabel(value)}</button>
@@ -179,7 +179,7 @@ export function MusicShareDialog({
               <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{purposeDescription(purpose)}</p>
               <div className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-foreground/[0.025] px-3 py-2 text-[10px] font-semibold text-muted-foreground"><span>{purpose === "custom" ? "Custom selection" : "Recommended package"}</span><span>{selectionCount(selection)} {selectionCount(selection) === 1 ? "item" : "items"} selected</span></div>
               <SelectionGroup title="Music & visuals" items={inventory.assets.map((asset) => ({ id: asset.id, label: asset.label, meta: asset.group }))} selected={selection.assetIds} onToggle={(id) => toggle("assetIds", id)} />
-              {inventory.documents.length ? <SelectionGroup title="Documents" items={inventory.documents.map((document) => ({ id: document.id, label: publicDocumentTitle(document.title), meta: documentTypeLabel(document.documentType) }))} selected={selection.documentIds} onToggle={(id) => toggle("documentIds", id)} /> : null}
+              {inventory.documents.length ? <SelectionGroup title="Documents" items={inventory.documents.map((document) => ({ id: document.id, label: publicDocumentTitle(document.title), meta: `${documentTypeLabel(document.documentType)} · ${document.approved ? "Approved" : "Draft"}` }))} selected={selection.documentIds} onToggle={(id) => toggle("documentIds", id)} /> : null}
               {availableShareInformation(inventory).length ? <SelectionGroup title="Release information" items={availableShareInformation(inventory).map((field) => ({ id: field.key, label: field.label, meta: field.value }))} selected={selection.informationKeys} onToggle={(id) => toggle("informationKeys", id)} /> : null}
             </form>
           ) : null}
@@ -228,8 +228,7 @@ export function MusicShareDialog({
 
         {mode === "build" ? (
           <footer className="sticky bottom-0 flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 bg-background/95 px-5 py-4 backdrop-blur sm:px-6">
-            <button type="button" onClick={() => void openPreview()} disabled={!selectionCount(selection) || pending} className="h-10 rounded-[10px] border border-foreground/10 px-4 text-[12px] font-bold text-foreground disabled:opacity-40">Preview</button>
-            <button type="submit" form="music-share-builder" disabled={!selectionCount(selection) || pending} className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-foreground px-5 text-[12px] font-bold text-background disabled:opacity-40">{pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}Create link</button>
+            <button type="submit" form="music-share-builder" disabled={!selectionCount(selection) || pending} className="inline-flex h-10 items-center gap-2 rounded-[10px] bg-foreground px-5 text-[12px] font-bold text-background disabled:opacity-40">{pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ExternalLink className="h-3.5 w-3.5" />}Preview package</button>
           </footer>
         ) : mode === "preview" ? (
           <footer className="flex shrink-0 items-center justify-end gap-2 border-t border-foreground/8 bg-background px-5 py-4 sm:px-6"><button type="button" onClick={() => setMode("build")} className="h-10 rounded-[10px] border border-foreground/10 px-4 text-[12px] font-bold">Back</button><button type="button" onClick={() => void createLink()} disabled={pending} className="h-10 rounded-[10px] bg-foreground px-5 text-[12px] font-bold text-background">Create link</button></footer>
@@ -253,7 +252,7 @@ function buildInventory(song: MusicObjectViewModel): ShareInventory {
   const documents = (song.materials ?? []).filter((material): material is DocumentMaterial => isShareableSongDocument(material));
   return {
     assets: (song.fileAssets ?? []).filter((asset) => Boolean(asset.assetId) && ["uploaded", "confirmed", "cleared"].includes(asset.status.toLowerCase())).map((asset) => ({ id: asset.assetId!, group: asset.group, label: asset.label, assetType: asset.assetType })),
-    documents: documents.map((document) => ({ id: document.id, title: document.title, documentType: document.materialType, body: document.body, ready: true })),
+    documents: documents.map((document) => ({ id: document.id, title: document.title, documentType: document.materialType, body: document.body, ready: true, approved: ["accepted", "ready", "published"].includes(document.status.trim().toLowerCase()) })),
     information: [
       { key: "song_title", label: "Song title", value: song.title },
       { key: "primary_artist", label: "Primary artist", value: fieldValue(song, "Primary artist") },
@@ -266,11 +265,7 @@ function buildInventory(song: MusicObjectViewModel): ShareInventory {
 
 export function isShareableSongDocument(material: DocumentMaterial) {
   if (isInternalCampaignDocument(material)) return false;
-  if (material.reviewState === "needs_review" || !material.body?.trim()) return false;
-  if (material.origin === "manager_generated") {
-    return ["accepted", "ready", "published"].includes(material.status.trim().toLowerCase());
-  }
-  return true;
+  return Boolean(material.body?.trim());
 }
 
 function isInternalCampaignDocument(material: DocumentMaterial) {
