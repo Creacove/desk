@@ -115,7 +115,7 @@ async function createShareLink(db: any, input: ShareInput, userId: string) {
     artist_workspace_id: input.artistWorkspaceId,
     artist_id: input.artistId,
     ...(subject.type === "music_item" ? { music_item_id: subject.id } : { music_project_id: subject.id }),
-    label: cleanText(input.label, 180) || `${music.title} private package`,
+    label: cleanText(input.label, 180) || `${music.title} ${presetEmailLabel(validPreset(input.preset))}`,
     access_mode: "link",
     recipient_email: normalizeEmail(input.recipientEmail) || null,
     preset: validPreset(input.preset),
@@ -246,7 +246,7 @@ async function sendShareEmail(db: any, input: ShareInput) {
     eventKey: `music-share-link:${shareLink.id}:${recipient}`,
     template: "music_share_link",
     to: recipient,
-    subject: `${packageTitle}${packageArtist ? ` by ${packageArtist}` : ""} — private package`,
+    subject: `${packageTitle}${packageArtist ? ` by ${packageArtist}` : ""} — ${presetEmailLabel(shareLink.preset)}`,
     html: `<div style="margin:0 auto;max-width:560px;padding:40px 24px;font-family:Arial,sans-serif;color:#17191f"><p style="margin:0 0 10px;font-size:12px;color:#717680">ORDERSOUNDS · PRIVATE SHARE</p><h1 style="margin:0;font-size:28px;line-height:1.15">${escapeHtml(packageTitle)}</h1>${packageArtist ? `<p style="margin:8px 0 0;color:#717680">${escapeHtml(packageArtist)}</p>` : ""}<p style="margin:28px 0 24px;color:#4f545d;line-height:1.6">A ${escapeHtml(presetEmailLabel(shareLink.preset))} has been shared with you.</p><a href="${escapeHtml(url)}" style="display:inline-block;border-radius:10px;background:#17191f;color:#fff;padding:13px 20px;text-decoration:none;font-weight:700">Open package</a><p style="margin:28px 0 0;font-size:11px;line-height:1.5;color:#8a8f98">If the button does not open, paste this link into your browser:<br>${escapeHtml(url)}</p></div>`,
     metadata: { share_link_id: shareLink.id },
   });
@@ -294,8 +294,8 @@ async function writeEvent(db: any, input: ShareInput, eventType: string, summary
 
 function presetEmailLabel(value: unknown) {
   if (value === "listen") return "private listen";
-  if (value === "epk_press") return "press kit";
-  if (value === "delivery") return "delivery package";
+  if (value === "epk_press") return "press / media kit";
+  if (value === "delivery") return "distributor delivery";
   return "private package";
 }
 

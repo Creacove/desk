@@ -1,9 +1,9 @@
 import { Check, Copy, ExternalLink, Link2, Loader2, Mail, RotateCcw, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import type { PublicMusicSharePackage } from "../../services/publicMusicShare";
+import { publicDocumentTitle, recipientSafeDocumentBody, type PublicMusicSharePackage } from "../../services/publicMusicShare";
 import type { MusicObjectViewModel, MusicRepository, MusicShareLinkHistoryViewModel, SongMaterialViewModel } from "../../types/cleanProduction";
 import { MusicSharePackageView } from "./MusicSharePackageView";
-import { availableShareInformation, buildShareSelection, sharePurposeLabel, type ShareInventory, type SharePurpose, type ShareSelection } from "./musicSharePackage";
+import { availableShareInformation, buildShareSelection, sharePurposeLabel, sharePurposeShortLabel, type ShareInventory, type SharePurpose, type ShareSelection } from "./musicSharePackage";
 
 type DocumentMaterial = Extract<SongMaterialViewModel, { kind: "document" }>;
 type Mode = "build" | "preview" | "ready" | "manage";
@@ -26,7 +26,7 @@ export function MusicShareDialog({
   onRequestAssetAccess?: (assetId: string) => Promise<string>;
 }) {
   const inventory = useMemo(() => buildInventory(song), [song]);
-  const initialPurpose = useMemo<SharePurpose>(() => inventory.documents.some((document) => document.ready && Boolean(document.body?.trim())) ? "epk_press" : "listen", [inventory]);
+  const initialPurpose = useMemo<SharePurpose>(() => inventory.documents.some((document) => document.ready && ["epk", "artist_biography", "one_sheet", "press_release"].includes(document.documentType)) ? "epk_press" : "listen", [inventory]);
   const [purpose, setPurpose] = useState<SharePurpose>(initialPurpose);
   const [selection, setSelection] = useState<ShareSelection>(() => buildShareSelection(initialPurpose, inventory));
   const [mode, setMode] = useState<Mode>("build");
@@ -171,15 +171,16 @@ export function MusicShareDialog({
         <div className="min-h-0 flex-1 overflow-y-auto">
           {mode === "build" ? (
             <form id="music-share-builder" onSubmit={createLink} className="px-5 py-5 sm:px-6">
-              <div className="grid grid-cols-4 gap-1 rounded-[12px] bg-foreground/[0.045] p-1" aria-label="Package type">
+              <div className="grid grid-cols-2 gap-1 rounded-[12px] bg-foreground/[0.045] p-1 sm:grid-cols-4" aria-label="Package type">
                 {(["listen", "epk_press", "delivery", "custom"] as SharePurpose[]).map((value) => (
-                  <button key={value} type="button" aria-pressed={purpose === value} onClick={() => choosePurpose(value)} className={`rounded-[9px] px-2 py-2.5 text-[11px] font-bold transition ${purpose === value ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground"}`}>{sharePurposeLabel(value)}</button>
+                  <button key={value} type="button" aria-pressed={purpose === value} onClick={() => choosePurpose(value)} className={`rounded-[9px] px-2 py-2.5 text-[11px] font-bold transition ${purpose === value ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground"}`}>{sharePurposeShortLabel(value)}</button>
                 ))}
               </div>
               <p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{purposeDescription(purpose)}</p>
-              <SelectionGroup title="Audio & images" items={inventory.assets.map((asset) => ({ id: asset.id, label: asset.label, meta: asset.group }))} selected={selection.assetIds} onToggle={(id) => toggle("assetIds", id)} />
-              {inventory.documents.length ? <SelectionGroup title="Documents" items={inventory.documents.map((document) => ({ id: document.id, label: document.title, meta: documentTypeLabel(document.documentType) }))} selected={selection.documentIds} onToggle={(id) => toggle("documentIds", id)} /> : null}
-              {availableShareInformation(inventory).length ? <SelectionGroup title="Song details" items={availableShareInformation(inventory).map((field) => ({ id: field.key, label: field.label, meta: field.value }))} selected={selection.informationKeys} onToggle={(id) => toggle("informationKeys", id)} /> : null}
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-foreground/[0.025] px-3 py-2 text-[10px] font-semibold text-muted-foreground"><span>{purpose === "custom" ? "Custom selection" : "Recommended package"}</span><span>{selectionCount(selection)} {selectionCount(selection) === 1 ? "item" : "items"} selected</span></div>
+              <SelectionGroup title="Music & visuals" items={inventory.assets.map((asset) => ({ id: asset.id, label: asset.label, meta: asset.group }))} selected={selection.assetIds} onToggle={(id) => toggle("assetIds", id)} />
+              {inventory.documents.length ? <SelectionGroup title="Documents" items={inventory.documents.map((document) => ({ id: document.id, label: publicDocumentTitle(document.title), meta: documentTypeLabel(document.documentType) }))} selected={selection.documentIds} onToggle={(id) => toggle("documentIds", id)} /> : null}
+              {availableShareInformation(inventory).length ? <SelectionGroup title="Release information" items={availableShareInformation(inventory).map((field) => ({ id: field.key, label: field.label, meta: field.value }))} selected={selection.informationKeys} onToggle={(id) => toggle("informationKeys", id)} /> : null}
             </form>
           ) : null}
 
@@ -189,7 +190,7 @@ export function MusicShareDialog({
             <section className="px-5 py-8 sm:px-8">
               <div className="mx-auto max-w-md text-center">
                 <span className="mx-auto inline-flex h-12 w-12 items-center justify-center rounded-full bg-success/10 text-success"><Check className="h-5 w-5" /></span>
-                <p className="mt-4 text-[13px] font-semibold text-muted-foreground">{revoked ? "This package is no longer accessible." : `${sharePurposeLabel(created.preset)} is ready to share.`}</p>
+                <p className="mt-4 text-[13px] font-semibold text-muted-foreground">{revoked ? "This package is no longer accessible." : `${sharePurposeLabel(created.preset)} package is ready to share.`}</p>
               </div>
               {!revoked ? (
                 <div className="mx-auto mt-6 max-w-lg">
@@ -287,18 +288,39 @@ async function composePreview(song: MusicObjectViewModel, inventory: ShareInvent
     const url = access ? await access(asset.id) : song.coverImageUrl && asset.group === "Artwork" ? song.coverImageUrl : "https://preview.ordersounds.local/file";
     return { id: asset.id, title: asset.label, assetType: asset.assetType ?? "asset", fileName: asset.label, fileType: asset.group === "Audio" ? "audio/mpeg" : asset.group === "Artwork" ? "image/jpeg" : "application/octet-stream", inlineUrl: url, downloadUrl: url };
   }));
-  const information = [
-    ...inventory.documents.filter((document) => selection.documentIds.includes(document.id)).map((document) => ({ key: `document:${document.id}`, title: document.title, value: document.body ?? "", documentType: document.documentType })),
-    ...inventory.information.filter((field) => selection.informationKeys.includes(field.key)).map((field) => ({ key: field.key, title: field.label, value: field.value })),
-  ];
-  return { label: `${song.title} private package`, title: song.title, artist: inventory.information.find((field) => field.key === "primary_artist")?.value, preset: purpose, assets, information };
+  const documents = inventory.documents
+    .filter((document) => selection.documentIds.includes(document.id))
+    .flatMap((document) => {
+      const body = recipientSafeDocumentBody(document.body ?? "");
+      const title = publicDocumentTitle(document.title);
+      return body && title ? [{ id: document.id, title, documentType: document.documentType, body }] : [];
+    });
+  const information = inventory.information
+    .filter((field) => selection.informationKeys.includes(field.key))
+    .map((field) => ({ key: field.key, title: field.label, value: field.value }));
+  return {
+    label: sharePackageLabel(song.title, purpose),
+    title: song.title,
+    artist: inventory.information.find((field) => field.key === "primary_artist")?.value,
+    preset: purpose,
+    assets,
+    ...(documents.length ? { documents } : {}),
+    ...(information.length ? { information } : {}),
+  };
 }
 
 function purposeDescription(purpose: SharePurpose) {
-  if (purpose === "listen") return "A clean private listen with the current master and artwork.";
-  if (purpose === "epk_press") return "Music, approved images, and ready press materials.";
-  if (purpose === "delivery") return "The current master, artwork, and completed delivery details.";
-  return "Choose exactly what this person should receive.";
+  if (purpose === "listen") return "For A&R, collaborators, and trusted listeners. Keeps the package focused on the music.";
+  if (purpose === "epk_press") return "For journalists, blogs, radio, media partners, and press. Includes approved press materials and visuals, not outreach drafts.";
+  if (purpose === "delivery") return "For distributor or label operations. Includes the master, artwork, delivery documents, and verified release information.";
+  return "Choose exactly what this recipient should receive. Only approved, recipient-safe documents are available.";
+}
+
+function sharePackageLabel(title: string, purpose: SharePurpose) {
+  if (purpose === "listen") return `${title} private listen`;
+  if (purpose === "epk_press") return `${title} press / media kit`;
+  if (purpose === "delivery") return `${title} distributor delivery`;
+  return `${title} private package`;
 }
 
 function documentTypeLabel(value: string) { return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()); }

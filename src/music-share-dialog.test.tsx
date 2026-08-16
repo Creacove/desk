@@ -36,7 +36,7 @@ describe("MusicShareDialog", () => {
   it("starts with a useful press package and never offers missing content", async () => {
     render(<MusicShareDialog song={song} onCancel={vi.fn()} onCreate={vi.fn()} onRequestAssetAccess={async (id) => `https://files.example/${id}`} />);
 
-    expect(screen.getByRole("button", { name: "Press kit" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Press / media" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("checkbox", { name: "Press release" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Lyrics" })).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox", { name: "Release date" })).not.toBeInTheDocument();
@@ -64,7 +64,7 @@ describe("MusicShareDialog", () => {
     expect(screen.getByRole("button", { name: "Create another" })).toBeInTheDocument();
   });
 
-  it("offers approved release pitches while keeping Manager drafts out of a share package", () => {
+  it("keeps outbound pitch documents available only for explicit custom sharing", () => {
     const releaseDocumentsSong = {
       ...song,
       materials: [
@@ -76,7 +76,7 @@ describe("MusicShareDialog", () => {
 
     render(<MusicShareDialog song={releaseDocumentsSong} onCancel={vi.fn()} onCreate={vi.fn()} />);
 
-    expect(screen.getByRole("checkbox", { name: "Personalized press pitch" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Personalized press pitch" })).not.toBeChecked();
     expect(screen.queryByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeInTheDocument();
   });
 });

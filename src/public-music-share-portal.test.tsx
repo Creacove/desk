@@ -19,7 +19,7 @@ describe("PublicMusicSharePortal", () => {
     expect(screen.getByLabelText("Loading shared package")).toBeInTheDocument();
     await waitFor(() => expect(loadShare).toHaveBeenCalledWith("a".repeat(64)));
     expect(await screen.findByRole("heading", { name: "Jam release package" })).toBeInTheDocument();
-    expect(screen.getByText("Press kit")).toBeInTheDocument();
+    expect(screen.getByText("Press / media kit")).toBeInTheDocument();
     expect(screen.getAllByText("Final master")).not.toHaveLength(0);
     expect(screen.getByText("Cover artwork")).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /Download/ })).toHaveLength(2);
@@ -45,8 +45,10 @@ describe("PublicMusicSharePortal", () => {
         { id: "asset-master", title: "Final master", assetType: "final_master", fileName: "jam.wav", fileType: "audio/wav", inlineUrl: "https://files.example/inline-master", downloadUrl: "https://files.example/download-master" },
         { id: "asset-cover", title: "Cover artwork", assetType: "cover_art", fileName: "jam.jpg", fileType: "image/jpeg", inlineUrl: "https://files.example/inline-cover", downloadUrl: "https://files.example/download-cover" },
       ],
+      documents: [
+        { id: "press", title: "Press release", body: "Jam is the new single.", documentType: "press_release" },
+      ],
       information: [
-        { key: "document:press", title: "Press release", value: "Jam is the new single.", documentType: "press_release" },
         { key: "genre", title: "Genre", value: "Alté" },
       ],
     }));
