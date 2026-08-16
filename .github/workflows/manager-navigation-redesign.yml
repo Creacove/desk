@@ -1,0 +1,51 @@
+name: Manager navigation redesign
+
+on:
+  push:
+    branches:
+      - design/catalog-manager-unification
+    paths:
+      - scripts/manager_navigation_redesign.py
+      - .github/workflows/manager-navigation-redesign.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: design/catalog-manager-unification
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply Manager navigation redesign
+        run: python3 scripts/manager_navigation_redesign.py
+      - run: npm ci
+      - name: Focused navigation regressions
+        run: npx vitest run src/manager-navigation-redesign.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit Manager navigation phase
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/design-system/components.tsx src/app/ProductionApp.tsx src/manager-navigation-redesign.test.ts
+          git commit -m 'design: make Manager the primary operating agent'
+          git push origin HEAD:design/catalog-manager-unification
