@@ -2141,10 +2141,10 @@ function MusicRightsWorkspace({
         </div>
 
         {contributors.length ? (
-          <div className="mt-5 grid grid-cols-3 gap-0 border-y border-foreground/8 py-4">
+          <div className={cn("mt-5 grid gap-0 border-y border-foreground/8 py-4", confirmationActive ? "grid-cols-3" : "grid-cols-2")}>
             <p className="min-w-0 border-r border-foreground/8 px-3 text-[10px] font-medium leading-4 text-muted-foreground first:pl-0 sm:px-4"><span className="block">Publishing allocated</span><strong className="mt-1 block text-[14px] font-semibold leading-none text-foreground sm:text-[15px]">{rights.publishingAllocated}%</strong></p>
-            <p className="min-w-0 border-r border-foreground/8 px-3 text-[10px] font-medium leading-4 text-muted-foreground sm:px-4"><span className="block">Master allocated</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.masterAllocated}%</strong></p>
-            {confirmationActive ? <p className="min-w-0 px-3 text-[10px] font-medium leading-4 text-muted-foreground last:pr-0 sm:px-4"><span className="block">Confirmed</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
+            <p className="min-w-0 border-r border-foreground/8 px-3 text-[10px] font-medium leading-4 text-muted-foreground sm:px-4"><span className="block">Master allocated</span><strong className="mt-1 block text-[14px] font-semibold leading-none text-foreground sm:text-[15px]">{rights.masterAllocated}%</strong></p>
+            {confirmationActive ? <p className="min-w-0 px-3 text-[10px] font-medium leading-4 text-muted-foreground last:pr-0 sm:px-4"><span className="block">Confirmed</span><strong className="mt-1 block text-[14px] font-semibold leading-none text-foreground sm:text-[15px]">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
           </div>
         ) : null}
 
@@ -3347,16 +3347,16 @@ function MusicDetailEditDialog({
       >
         <div className="flex items-start justify-between gap-4 border-b border-foreground/8 px-5 pb-4 pt-5">
           <div>
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">{groupTitle}</p>
-            <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">Edit {field.label}</h3>
+            <p className="sr-only">{groupTitle}</p>
+            <h3 className="font-display text-[24px] font-bold leading-tight text-foreground">Edit {field.label}</h3>
           </div>
           <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
         </div>
         <div className="px-5 py-4">
-        <label className="grid gap-2 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
-          Value
+        <label className="grid">
+          <span className="sr-only">Value</span>
           {field.label === "Lyrics" ? (
             <textarea aria-label="Value" value={value} onChange={(event) => setValue(event.target.value)} rows={8} className="resize-y rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none" />
           ) : (
