@@ -35,10 +35,15 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
   const lifecycleStage = conversation.musicSubject?.lifecycleStage?.trim().toLowerCase() ?? "";
   const isReleased = RELEASED_STAGES.has(lifecycleStage);
   const subject = conversation.musicSubject;
+  const latestManagerPresentation = lastManagerIndex >= 0 ? messages[lastManagerIndex]?.presentation : undefined;
+  const hasTurnContract = latestManagerPresentation?.version === 1;
+  const hasSurface = (surface: "release_success" | "release_opportunities" | "decision_package") =>
+    Boolean(latestManagerPresentation?.surfaces.includes(surface));
 
   const projectedMessages: ConversationMessageViewModel[] = messages.map((message): ConversationMessageViewModel => {
     const contextQuestions = message.contextQuestions?.filter((question) => !parseManagerWorkspaceAction(question));
     const createdWork = (message.createdWork ?? []).flatMap((item) => {
+      if (item.visibility === "internal" || item.presentationRole === "internal_support" || item.presentationRole === "compatibility") return [];
       const normalized = normalizeHistoricalDocumentWork(item, message.id, subject);
       return normalized ? [normalized] : [];
     });
@@ -57,13 +62,20 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
     // Conversation-level artifacts are legacy storage projections. Only expose them
     // when the current successful user turn actually asked for that operating surface.
     // A failed Manager turn must never inherit stale work from an earlier response.
-    releaseSuccessArtifacts: !latestManagerFailed && !isReleased && RELEASE_MANAGEMENT_INTENT.test(directive)
+    releaseSuccessArtifacts: !latestManagerFailed && (hasTurnContract
+      ? hasSurface("release_success")
+      : !isReleased && RELEASE_MANAGEMENT_INTENT.test(directive))
       ? conversation.releaseSuccessArtifacts
       : [],
-    releaseOpportunityArtifacts: !latestManagerFailed && OPPORTUNITY_DISCOVERY_INTENT.test(directive)
+    releaseOpportunityArtifacts: !latestManagerFailed && (hasTurnContract
+      ? hasSurface("release_opportunities")
+      : OPPORTUNITY_DISCOVERY_INTENT.test(directive))
       ? conversation.releaseOpportunityArtifacts
       : [],
-    decisionPackage: !latestManagerFailed && DECISION_PACKAGE_INTENT.test(directive)
+    decisionPackage: !latestManagerFailed && (hasTurnContract
+      ? hasSurface("decision_package")
+        && (!latestManagerPresentation?.decisionPackageId || latestManagerPresentation.decisionPackageId === conversation.decisionPackage?.id)
+      : DECISION_PACKAGE_INTENT.test(directive))
       ? conversation.decisionPackage
       : undefined,
     messages: projectedMessages,

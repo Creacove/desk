@@ -22,6 +22,7 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import { buildManagerTurnPresentation, enforceExplicitDecisionPackagePolicy, normalizeManagerTurnPresentation, reconcileManagerCreatedWork } from "../_shared/manager-conversation/turnContract.ts";
 import {
   buildManagerConversationModelContext,
   classifyManagerConversationError,
@@ -117,6 +118,8 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       conversationId,
       runId,
     );
+    enforceExplicitDecisionPackagePolicy(output, input);
+    const turnToolNames = safeToolTraceSummary(toolTrace).map((item) => item.tool);
     const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
     const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
     if (toolCreatedWork.length) output.missionGraphDecisions = [];
@@ -139,15 +142,20 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
         reason: derivedProposal.reason,
       });
       output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
+      turnToolNames.push("propose_focused_release_date_change");
     }
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-    await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-    output.createdWork = taskDraftWork
+    output.createdWork = reconcileManagerCreatedWork(taskDraftWork
       ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
-      : [...toolCreatedWork, ...persistedWork];
+      : [...toolCreatedWork, ...persistedWork]);
     await persistActions(db, input, runId, output);
     await persistMemory(db, input, conversationId, runId, output);
     const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
+    const presentation = buildManagerTurnPresentation({
+      createdWork: output.createdWork,
+      toolNames: turnToolNames,
+      decisionPackageId: decisionPackage?.id,
+    });
     const managerMessage = await insertConversationMessage(db, input, conversationId, {
       speaker: "manager",
       label: "Manager",
@@ -164,11 +172,12 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
         contextRequestId: output.contextQuestions.length ? `manager-context-${runId}` : "",
         proposedActions: output.proposedActions,
         decisionPackageId: decisionPackage?.id ?? "",
+        presentation,
         openaiResponseId: responseId,
         toolTraceSummary: safeToolTraceSummary(toolTrace),
       },
     });
-    const preserveWorkspaceTopic = toolCreatedWork.some((work) => work.type === "music_item");
+    const preserveWorkspaceTopic = Boolean(finalMusicSubject);
     await updateConversation(db, input, conversationId, output, preserveWorkspaceTopic);
     await completeManagerRun(db, runId, output);
     await completeUsageEvent(db, usageId, usage);
@@ -1103,6 +1112,7 @@ function toConversationViewModel(conversation: any, messages: any[], taskContext
       label: message.label || (message.speaker === "artist" ? "You" : "Manager"),
       body: message.body,
       createdWork: normalizeCreatedWork(metadata.createdWork),
+      presentation: normalizeManagerTurnPresentation(metadata.presentation),
       contextQuestions: normalizeContextQuestions(metadata.contextQuestions),
       contextAnswers: normalizeContextAnswers(metadata.contextAnswers),
       attachments: normalizeConversationAttachments(metadata.attachments),
@@ -1204,9 +1214,15 @@ function normalizeCreatedWork(value: unknown) {
       type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
       title: String(item.title || "").trim(),
       body: String(item.body || "").trim(),
-      artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,
+      artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,
       content: item.content ? String(item.content) : undefined,
+      musicItemId: item.musicItemId ? String(item.musicItemId) : undefined,
+      documentType: item.documentType ? String(item.documentType) : undefined,
+      readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,
+      missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((value: unknown) => String(value || "").trim()).filter(Boolean) : undefined,
       managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,
+      presentationRole: item.presentationRole === "deliverable" || item.presentationRole === "internal_support" || item.presentationRole === "compatibility" ? item.presentationRole : undefined,
+      visibility: item.visibility === "internal" ? "internal" : item.visibility === "user" ? "user" : undefined,
       id: item.id ? String(item.id) : undefined,
       parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
       status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",

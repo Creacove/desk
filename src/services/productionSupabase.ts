@@ -3239,6 +3239,7 @@ async function applySongDocumentMaterials(
       if (link.target_id !== model.id || seen.has(link.source_id)) return [];
       const document = documentById.get(link.source_id);
       if (!document) return [];
+      if (document.document_type === "release_narrative" || document.title.trim().toLowerCase() === "release narrative") return [];
       seen.add(document.id);
       const version = versions.find((item) => item.id === document.current_version_id) ?? versionByDocumentId.get(document.id);
       const body = typeof version?.metadata?.body === "string"
@@ -3315,6 +3316,12 @@ function conversationFromRows(
 ): ConversationViewModel {
   const mappedMessages = messages.map(conversationMessageFromRow);
   const prompt = mappedMessages.find((message) => message.speaker === "artist")?.body ?? row.summary ?? "";
+  const latestManagerPresentation = [...mappedMessages].reverse().find((message) => message.speaker === "manager")?.presentation;
+  const visibleDecisionPackage = output && (
+    !latestManagerPresentation
+    || (latestManagerPresentation.surfaces.includes("decision_package")
+      && (!latestManagerPresentation.decisionPackageId || latestManagerPresentation.decisionPackageId === output.id))
+  ) ? output : undefined;
 
   return {
     id: row.id,
@@ -3326,7 +3333,7 @@ function conversationFromRows(
     prompt,
     lastUpdate: row.last_update_at ?? row.created_at ?? undefined,
     messages: mappedMessages,
-    ...(output ? { decisionPackage: decisionPackageFromRow(output) } : {}),
+    ...(visibleDecisionPackage ? { decisionPackage: decisionPackageFromRow(visibleDecisionPackage) } : {}),
     createdWork: mappedMessages.flatMap((message) => message.createdWork ?? []),
     releaseSuccessArtifacts: hydrateReleaseSuccessArtifacts(releaseSuccessOutputs, releaseRequests),
     ...(releaseOpportunityArtifacts.length ? { releaseOpportunityArtifacts } : {}),
@@ -3568,6 +3575,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
   const contextAnswers = normalizeContextAnswers(metadata.contextAnswers);
   const attachments = normalizeConversationAttachments(metadata.attachments);
   const contextRequestId = readOptionalConversationString(metadata.contextRequestId);
+  const presentation = normalizeManagerTurnPresentation(metadata.presentation);
   return {
     id: row.id,
     speaker,
@@ -3578,6 +3586,7 @@ function conversationMessageFromRow(row: ConversationMessageRow): ConversationVi
     ...(contextAnswers.length ? { contextAnswers } : {}),
     ...(attachments.length ? { attachments } : {}),
     ...(contextRequestId ? { contextRequestId } : {}),
+    ...(presentation ? { presentation } : {}),
   };
 }
 
@@ -3592,6 +3601,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
         const contextAnswers = normalizeContextAnswers(message.contextAnswers);
         const attachments = normalizeConversationAttachments(message.attachments);
         const contextRequestId = readOptionalConversationString(message.contextRequestId);
+        const presentation = normalizeManagerTurnPresentation(message.presentation);
         return {
           id: readConversationString(message.id, `message-${index}`),
           speaker,
@@ -3602,6 +3612,7 @@ function conversationViewModel(input: unknown): ConversationViewModel {
           ...(contextAnswers.length ? { contextAnswers } : {}),
           ...(attachments.length ? { attachments } : {}),
           ...(contextRequestId ? { contextRequestId } : {}),
+          ...(presentation ? { presentation } : {}),
         };
       })
     : [];
@@ -3641,6 +3652,17 @@ function musicConversationSubjectViewModel(input: unknown): MusicConversationSub
   };
 }
 
+function normalizeManagerTurnPresentation(value: unknown): ConversationMessageViewModel["presentation"] {
+  if (!isPlainRecord(value) || value.version !== 1 || !Array.isArray(value.surfaces)) return undefined;
+  const allowed = new Set(["release_success", "release_opportunities", "decision_package", "release_share_package"]);
+  const surfaces = [...new Set(value.surfaces.filter((item): item is string => typeof item === "string" && allowed.has(item)))] as NonNullable<ConversationMessageViewModel["presentation"]>["surfaces"];
+  const visibleArtifactIds = Array.isArray(value.visibleArtifactIds)
+    ? [...new Set(value.visibleArtifactIds.map((item) => readConversationString(item, "")).filter(Boolean))]
+    : [];
+  const decisionPackageId = readOptionalConversationString(value.decisionPackageId);
+  return { version: 1, surfaces, visibleArtifactIds, ...(decisionPackageId ? { decisionPackageId } : {}) };
+}
+
 function normalizeCreatedWork(value: unknown): ConversationViewModel["createdWork"] {
   if (!Array.isArray(value)) return [];
   return value
@@ -3649,9 +3671,15 @@ function normalizeCreatedWork(value: unknown): ConversationViewModel["createdWor
       type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
       title: readConversationString(item.title, ""),
       body: readConversationString(item.body, ""),
-      artifactKind: item.artifactKind === "task_draft" ? "task_draft" as const : undefined,
+      artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,
       content: typeof item.content === "string" && item.content.trim() ? item.content.trim() : undefined,
+      musicItemId: typeof item.musicItemId === "string" && item.musicItemId.trim() ? item.musicItemId.trim() : undefined,
+      documentType: typeof item.documentType === "string" && item.documentType.trim() ? item.documentType.trim() : undefined,
+      readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,
+      missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((value) => readConversationString(value, "")).filter(Boolean) : undefined,
       managerOutputId: typeof item.managerOutputId === "string" && item.managerOutputId.trim() ? item.managerOutputId.trim() : undefined,
+      presentationRole: item.presentationRole === "deliverable" || item.presentationRole === "internal_support" || item.presentationRole === "compatibility" ? item.presentationRole : undefined,
+      visibility: item.visibility === "internal" ? "internal" : item.visibility === "user" ? "user" : undefined,
       id: typeof item.id === "string" && item.id.trim() ? item.id.trim() : undefined,
       parentMissionId: typeof item.parentMissionId === "string" && item.parentMissionId.trim() ? item.parentMissionId.trim() : undefined,
       status: item.status === "created" || item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : undefined,

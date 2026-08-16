@@ -363,7 +363,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. For recipient-facing campaign work, first ensure a current internal Release Narrative exists; create or materially refresh it only when needed, using documentType press_angle and title exactly Release narrative. The Release Narrative is internal Manager support and is never a user-facing deliverable. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
