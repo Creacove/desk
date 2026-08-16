@@ -363,7 +363,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
@@ -513,6 +513,7 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
   let requestBody: Record<string, unknown> = buildManagerAgentRequest(input);
   let responseId = "";
   let toolCallsUsed = 0;
+  const attemptedMutationSignatures = new Set<string>();
 
   for (let iteration = 0; iteration <= (input.maxToolCalls ?? 8); iteration += 1) {
     await input.beforeModelRequest?.();
@@ -537,6 +538,28 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
     toolCallsUsed += calls.length;
 
     const executeCall = async (call: FunctionCall) => {
+      const mutationSignature = managerMutationSignature(call);
+      if (mutationSignature && attemptedMutationSignatures.has(mutationSignature)) {
+        const completed = {
+          tool: call.name,
+          callId: call.callId,
+          status: "completed" as const,
+          summary: "Duplicate write suppressed; the first result for this mutation remains authoritative.",
+        };
+        toolTrace.push(completed);
+        await input.onToolEvent?.(publicToolEvent(completed));
+        return {
+          type: "function_call_output",
+          call_id: call.callId,
+          output: JSON.stringify({
+            status: "duplicate_suppressed",
+            retryable: false,
+            reason: "The same mutation was already attempted in this Manager turn.",
+          }),
+        };
+      }
+      if (mutationSignature) attemptedMutationSignatures.add(mutationSignature);
+
       const started = {
         tool: call.name,
         callId: call.callId,
@@ -592,17 +615,60 @@ function serializeToolOutput(value: unknown) {
   return JSON.stringify({ truncated: true, excerpt: serialized.slice(0, MAX_TOOL_OUTPUT_CHARS) });
 }
 
+const MANAGER_MUTATION_TOOLS = new Set([
+  "propose_focused_release_date_change",
+  "save_focused_release_opportunities",
+  "record_focused_release_opportunity_outcome",
+  "create_focused_song_document",
+  "prepare_focused_release_share_package",
+  "update_focused_music_metadata",
+  "update_focused_music_lifecycle",
+  "ensure_song_release_workspace",
+]);
+
+function managerMutationSignature(call: FunctionCall) {
+  if (!MANAGER_MUTATION_TOOLS.has(call.name)) return "";
+  const sortedArgs = Object.fromEntries(Object.entries(call.args).sort(([left], [right]) => left.localeCompare(right)));
+  return `${call.name}:${JSON.stringify(sortedArgs)}`;
+}
+
+const MAX_PROVIDER_RETRIES = 2;
+
 async function postResponses(fetchImpl: typeof fetch, endpoint: string, apiKey: string, body: Record<string, unknown>) {
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= MAX_PROVIDER_RETRIES; attempt += 1) {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) return await response.json() as Record<string, unknown>;
+
     const errorBody = await response.text();
+    const retryable = response.status === 429 || response.status === 502 || response.status === 503 || response.status === 504;
+    if (retryable && attempt < MAX_PROVIDER_RETRIES) {
+      await sleep(providerRetryDelayMs(response, errorBody, attempt));
+      continue;
+    }
     throw new Error(`Manager agent request failed with status ${response.status}: ${errorBody.slice(0, 500)}`);
   }
-  return await response.json() as Record<string, unknown>;
+  throw new Error("Manager agent request exhausted provider retries.");
+}
+
+function providerRetryDelayMs(response: Response, errorBody: string, attempt: number) {
+  const retryAfterSeconds = Number(response.headers.get("retry-after"));
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return Math.min(15_000, Math.ceil(retryAfterSeconds * 1_000) + 150);
+  }
+  const bodyDelay = errorBody.match(/try again in\s+([\d.]+)s/i);
+  if (bodyDelay) {
+    const seconds = Number(bodyDelay[1]);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(15_000, Math.ceil(seconds * 1_000) + 150);
+  }
+  return Math.min(15_000, 750 * (2 ** attempt));
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function extractFunctionCalls(payload: Record<string, unknown>): FunctionCall[] {
