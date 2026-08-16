@@ -65,7 +65,7 @@ components = components_path.read_text()
 components = replace_once(components, '<div className="mx-auto flex max-w-[48rem] items-center gap-3">', '<div className="flex w-full items-center gap-3">', 'conversation sticky header width')
 components_path.write_text(components)
 
-# Update design contracts without depending on a brittle whole-test block match.
+# Update focused design contracts.
 overview_test_path = Path("src/song-room-red-antler-overview.test.ts")
 overview_test = overview_test_path.read_text()
 overview_test = replace_once(
@@ -80,12 +80,6 @@ overview_test = replace_once(
     "    expect(music).toContain('What matters now');\n    expect(music).toContain('Review this record');",
     'overview wording expectation',
 )
-overview_test = replace_once(
-    overview_test,
-    "    expect(songOverview).not.toContain('manager-read-metrics');",
-    "    expect(songOverview).not.toContain('Manager&apos;s read');\n    expect(songOverview).not.toContain('Get Manager’s read');\n    expect(songOverview).not.toContain('manager-read-metrics');",
-    'overview negative expectations',
-)
 overview_test_path.write_text(overview_test)
 
 tab_test_path = Path("src/song-room-tab-design.test.ts")
@@ -98,6 +92,21 @@ tab_test = replace_once(
     'tab width expectations',
 )
 tab_test_path.write_text(tab_test)
+
+# Production interaction tests should assert the user-facing outcome language, not the internal Manager Read name.
+production_test_path = Path("src/production-app-shell.test.tsx")
+production_test = production_test_path.read_text()
+production_replacements = [
+    ('"Manager is reading this record"', '"Reviewing this record"'),
+    ('"Get Manager’s take on this record"', '"See what needs attention"'),
+    ('name: "Get Manager’s read"', 'name: "Review this record"'),
+    ('"Manager couldn’t complete the read"', '"Couldn’t complete the review"'),
+    ('"Manager couldn’t complete the read."', '"Couldn’t complete the review."'),
+    ('"Checking Manager’s read"', '"Checking this review"'),
+]
+for old, new in production_replacements:
+    production_test = production_test.replace(old, new)
+production_test_path.write_text(production_test)
 
 width_test = Path("src/desktop-workspace-width.test.ts")
 width_test.write_text('''import { describe, expect, it } from "vitest";
