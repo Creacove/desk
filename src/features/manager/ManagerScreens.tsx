@@ -27,6 +27,7 @@ const DOCUMENT_TITLE_HINT = /\b(epk|electronic press kit|playlist (?:pitch|submi
 export function prepareManagerConversationForPresentation(conversation: ConversationView): ConversationView {
   const messages = conversation.messages ?? [];
   const lastManagerIndex = messages.reduce((last, message, index) => message.speaker === "manager" ? index : last, -1);
+  const latestManagerFailed = lastManagerIndex >= 0 && messages[lastManagerIndex]?.status === "failed";
   const triggeringArtistMessage = lastManagerIndex >= 0
     ? [...messages.slice(0, lastManagerIndex)].reverse().find((message) => message.speaker === "artist")
     : [...messages].reverse().find((message) => message.speaker === "artist");
@@ -38,14 +39,15 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
   return {
     ...conversation,
     // Conversation-level artifacts are legacy storage projections. Only expose them
-    // when the current user turn actually asked for that operating surface.
-    releaseSuccessArtifacts: !isReleased && RELEASE_MANAGEMENT_INTENT.test(directive)
+    // when the current successful user turn actually asked for that operating surface.
+    // A failed Manager turn must never inherit stale work from an earlier response.
+    releaseSuccessArtifacts: !latestManagerFailed && !isReleased && RELEASE_MANAGEMENT_INTENT.test(directive)
       ? conversation.releaseSuccessArtifacts
       : [],
-    releaseOpportunityArtifacts: OPPORTUNITY_DISCOVERY_INTENT.test(directive)
+    releaseOpportunityArtifacts: !latestManagerFailed && OPPORTUNITY_DISCOVERY_INTENT.test(directive)
       ? conversation.releaseOpportunityArtifacts
       : [],
-    decisionPackage: DECISION_PACKAGE_INTENT.test(directive)
+    decisionPackage: !latestManagerFailed && DECISION_PACKAGE_INTENT.test(directive)
       ? conversation.decisionPackage
       : undefined,
     messages: messages.map((message) => {
