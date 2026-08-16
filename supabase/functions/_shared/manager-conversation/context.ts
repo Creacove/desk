@@ -14,7 +14,7 @@ type ManagerFailure = {
   internalMessage: string;
 };
 
-const MAX_OPENING_BRIEF_BYTES = 80_000;
+const MAX_OPENING_BRIEF_BYTES = 48_000;
 const encoder = new TextEncoder();
 
 export function buildManagerConversationModelContext(
@@ -55,7 +55,7 @@ export function classifyManagerConversationError(error: unknown, fallback = "Man
     };
   }
   if (/status 429|rate.limit/.test(normalized)) {
-    if (/request too large|tokens per min|token limit|context length|context window|too many tokens/.test(normalized)) {
+    if (/request too large|context length|context window|maximum context|too many tokens/.test(normalized)) {
       return {
         publicMessage: "This Manager session is larger than it can safely process right now. Start a focused follow-up or try again after the workspace refreshes.",
         internalMessage,

@@ -434,7 +434,7 @@ describe("release success Manager tools", () => {
 
   it("requires public provenance for independent targets and records manual outcomes without an email tool", async () => {
     const { db, writes } = releaseDb({ ...releaseRows, release_opportunities: [{ id: "opportunity-1", music_item_id: "song-1", opportunity_type: "press" }] }) as any;
-    await expect(executeManagerConversationTool(
+    const rejected = await executeManagerConversationTool(
       db,
       { ...scope, musicSubject: subject },
       "save_focused_release_opportunities",
@@ -448,7 +448,13 @@ describe("release success Manager tools", () => {
           publicContact: { kind: "email", value: "editor@example.com", sourceUrl: "", verifiedAt: "2026-08-12T10:00:00.000Z" },
         }],
       },
-    )).rejects.toThrow(/source|provenance|contact/i);
+    ) as any;
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      stage: "contact_verification",
+      retryable: false,
+      reason: expect.stringMatching(/source|provenance|contact/i),
+    });
 
     const result = await executeManagerConversationTool(
       db,

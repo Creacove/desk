@@ -30,7 +30,7 @@ describe("Manager conversational song workspace", () => {
 
   it("parses and displays the committed Song Workspace inside the conversation", () => {
     const repository = source("src/services/productionSupabase.ts");
-    const screen = source("src/features/manager/ManagerScreens.tsx");
+    const screen = [source("src/features/manager/ManagerScreens.tsx"), source("src/features/manager/ManagerScreensLegacy.tsx")].join("\n");
 
     expect(repository).toContain("const musicSubject = musicConversationSubjectViewModel(input.musicSubject)");
     expect(repository).toContain("...(musicSubject ? { musicSubject } : {})");

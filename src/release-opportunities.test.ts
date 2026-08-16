@@ -288,10 +288,8 @@ describe("release opportunity normalization", () => {
       managerScope,
       "save_focused_release_opportunities",
       { opportunityType: "playlist", candidates: [{ ...candidate(), fit: null }] },
-    )).resolves.toMatchObject({ status: "failed", retryable: true });
-    expect(captureAppError).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      refs: expect.objectContaining({ stage: "contact_verification" }),
-    }));
+    )).resolves.toMatchObject({ status: "rejected", stage: "contact_verification", retryable: false });
+    expect(captureAppError).not.toHaveBeenCalled();
 
     captureAppError.mockReset();
     captureAppError.mockResolvedValue("error-event-3");

@@ -62,12 +62,23 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
 
   const encoder = new TextEncoder();
   let eventIndex = 0;
+  let streamClosed = false;
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const emit = (event: unknown) => {
-        eventIndex += 1;
-        controller.enqueue(encoder.encode(`id: ${eventIndex}\ndata: ${JSON.stringify(event)}\n\n`));
+        if (streamClosed) return;
+        try {
+          eventIndex += 1;
+          controller.enqueue(encoder.encode(`id: ${eventIndex}\ndata: ${JSON.stringify(event)}\n\n`));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error ?? "");
+          if (error instanceof TypeError && /close|enqueue|state|controller/i.test(message)) {
+            streamClosed = true;
+            return;
+          }
+          throw error;
+        }
       };
 
       let input: ManagerConversationInput | null = null;
@@ -139,7 +150,10 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         usageId = await createUsageEvent(db, input, runId);
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "running" });
 
-        const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
+        // Each turn is intentionally grounded from the bounded source-of-truth opening
+    // brief. Do not chain opaque provider history on top of that packet: it duplicates
+    // context, grows token usage across turns and caused production TPM failures.
+    const previousResponseId = "";
         const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(
           db,
           input,
@@ -302,8 +316,19 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         if (usageId) await markUsageFailedSafe(usageId, failure.internalMessage, errorEventId);
         emit({ type: "error", message: failure.publicMessage, runId, errorEventId });
       } finally {
-        controller.close();
+        if (!streamClosed) {
+          streamClosed = true;
+          try {
+            controller.close();
+          } catch {
+            // The browser may have cancelled the SSE connection after the run already
+            // committed. Closing twice is transport noise, not a failed Manager run.
+          }
+        }
       }
+    },
+    cancel() {
+      streamClosed = true;
     },
   });
 
@@ -317,9 +342,15 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
   });
 }));
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function validateInput(input: ManagerConversationInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId) throw new Error("Manager conversation workspace input is incomplete.");
   if (!input.body || !input.body.trim()) throw new Error("Manager conversation requires a directive or question.");
+  if (input.conversationId && !UUID_PATTERN.test(input.conversationId)) {
+    if (/^pending-conversation-\d+$/i.test(input.conversationId)) input.conversationId = undefined;
+    else throw new Error("Manager conversation ID is invalid.");
+  }
   input.musicSubject = parseMusicConversationSubject(input.musicSubject) ?? undefined;
 }
 

@@ -24,7 +24,7 @@ const supabaseDiscoveryPoll = vi.hoisted(() => ({
 
 const productionAppSource = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
 const productionServiceSource = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
-const managerScreensSource = readFileSync(join(process.cwd(), "src", "features", "manager", "ManagerScreens.tsx"), "utf8");
+const managerScreensSource = ["ManagerScreens.tsx", "ManagerScreensLegacy.tsx"].map((file) => readFileSync(join(process.cwd(), "src", "features", "manager", file), "utf8")).join("\n");
 const opportunityArtifactSource = readFileSync(join(process.cwd(), "src", "features", "manager", "OpportunityArtifact.tsx"), "utf8");
 
 const analyticsMock = vi.hoisted(() => ({
@@ -2423,7 +2423,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(repositories.manager.sendMessageStream).toHaveBeenLastCalledWith(
       {
@@ -2497,11 +2497,11 @@ describe("Clean production prototype-match shell", () => {
     expect(onSendContextAnswers).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Cover art" }));
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(await screen.findByText("What should the launch communicate?")).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "What should the launch communicate?" }), { target: { value: "A focused summer release." } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(onSendContextAnswers).toHaveBeenCalledWith(
       "Context answers for Manager mission decision.",
@@ -2596,7 +2596,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByText("What budget should the Manager protect before asking for approval?")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("What budget should the Manager protect before asking for approval?"), { target: { value: "$5,000" } });
-    fireEvent.click(screen.getByRole("button", { name: "Send answers" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledTimes(1));
 
     persistedConversation = completedConversation;
@@ -2609,7 +2609,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Mission context" }));
 
     expect(await screen.findByText("I created the release mission with the protected budget.")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Send answers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
     expect(repositories.manager.loadConversation).toHaveBeenCalledTimes(2);
   }, 20000);
 

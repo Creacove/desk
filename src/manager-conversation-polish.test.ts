@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const source = (path: string) => readFileSync(`${process.cwd()}/src/${path}`, "utf8");
-const manager = source("features/manager/ManagerScreens.tsx");
+const manager = [source("features/manager/ManagerScreens.tsx"), source("features/manager/ManagerScreensLegacy.tsx")].join("\n");
 const composer = source("features/manager/ManagerComposer.tsx");
 const theme = source("index.css");
 const app = source("app/ProductionApp.tsx");
@@ -48,7 +48,8 @@ describe("Manager conversation premium UI contract", () => {
   it("presents recommendations as choices, not a competing card", () => {
     expect(composer).not.toContain("Manager recommendation");
     expect(composer).toContain("Recommended");
-    expect(composer).toContain("Send answers");
+    expect(composer).toContain("Continue");
+    expect(composer).toContain("Next");
   });
 
   it("uses the thinking-orbs inline preset while the Manager is working", () => {

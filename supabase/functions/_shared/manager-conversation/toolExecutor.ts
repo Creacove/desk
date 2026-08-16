@@ -553,15 +553,15 @@ async function saveFocusedReleaseOpportunities(db: SupabaseLike, input: ManagerT
   if (!rawCandidates.length) return { status: "no_matches", saved: [], watch: [], excluded: [], rejected: [] };
   if (rawCandidates.length > 12) throw new Error("A shortlist can contain at most 12 candidates.");
 
-  // These are expected model-validation failures, not application failures. Do not
-  // persist a source-less target or a contact that cannot be traced to a public page.
-  rawCandidates.forEach((raw) => assertPublicOpportunityProvenance(record(raw)));
-
   let saved: ReleaseOpportunityBrief[] = [];
   const watch: ReleaseOpportunityBrief[] = [];
   const excluded: ReleaseOpportunityBrief[] = [];
   const rejected: Array<{ targetName: string; reason: string }> = [];
   try {
+    // These are expected model-validation failures, not application failures. Do not
+    // persist a source-less target or a contact that cannot be traced to a public page.
+    rawCandidates.forEach((raw) => assertPublicOpportunityProvenance(record(raw)));
+
     const context = await loadOpportunityContext(db, input, opportunityType);
     if (!context) return { status: "not_found", subject };
     const planRows = await selectFocusedRows(
@@ -710,7 +710,7 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
     }
     return { ...persisted, status: "drafted", musicItemId: subject.id, documentType, title, ...(opportunityId ? { opportunityId } : {}) };
   } catch (error) {
-    return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
+    return failedDocumentResult(error, input);
   }
 }
 
@@ -936,15 +936,15 @@ function opportunityRow(brief: ReleaseOpportunityBrief, input: ManagerToolInput,
 }
 
 function assertPublicOpportunityProvenance(source: Record<string, unknown>) {
-  if (!normalizePublicUrl(stringArg(source.sourceUrl))) throw new Error("A public HTTPS source URL is required for opportunity provenance.");
+  if (!normalizePublicUrl(stringArg(source.sourceUrl))) throw new OpportunityCandidateError("A public HTTPS source URL is required for opportunity provenance.");
   if (source.publicContact == null) return;
   const contact = record(source.publicContact);
   const sourceUrl = normalizePublicUrl(stringArg(contact.sourceUrl));
-  if (!sourceUrl) throw new Error("A public contact must include its source URL.");
+  if (!sourceUrl) throw new OpportunityCandidateError("A public contact must include its source URL.");
   const kind = stringArg(contact.kind);
   const value = stringArg(contact.value);
   const validValue = kind === "email" ? normalizePublicEmail(value) : normalizePublicUrl(value);
-  if (!validValue || !stringArg(contact.verifiedAt)) throw new Error("A public contact must be verifiable from its cited source.");
+  if (!validValue || !stringArg(contact.verifiedAt)) throw new OpportunityCandidateError("A public contact must be verifiable from its cited source.");
 }
 
 function isSpotifyEditorial(candidate: Pick<ReleaseOpportunityCandidate, "platform" | "targetName">) {
@@ -975,7 +975,50 @@ function requiredSongDocumentType(value: unknown) {
 
 class OpportunityCandidateError extends Error {}
 
+async function failedDocumentResult(error: unknown, input: ManagerToolInput) {
+  const message = error instanceof Error && error.message.trim()
+    ? error.message.trim()
+    : typeof error === "string" && error.trim()
+      ? error.trim()
+      : "Song document creation failed.";
+
+  if (/document quality gate failed/i.test(message)) {
+    return {
+      status: "invalid_draft",
+      stage: "document_validation",
+      retryable: false,
+      reason: message,
+    };
+  }
+
+  const errorEventId = await captureAppError(error, {
+    functionName: "manager-conversation-tool-executor",
+    operation: "song_document_workflow",
+    source: "edge",
+    publicMessage: "The song document could not be saved.",
+    accountId: input.accountId,
+    artistWorkspaceId: input.artistWorkspaceId,
+    artistId: input.artistId,
+    refs: {
+      conversation_id: input.conversationId,
+      manager_run_id: input.runId,
+      music_item_id: input.musicSubject?.type === "music_item" ? input.musicSubject.id : null,
+      stage: "document_persistence",
+    },
+  });
+  return { status: "failed", stage: "document_persistence", retryable: true, reference: errorEventId ?? undefined };
+}
+
 async function failedOpportunityResult(error: unknown, input: ManagerToolInput, stage: "opportunity_search" | "contact_verification" | "opportunity_persistence", publicMessage: string) {
+  const message = error instanceof Error && error.message.trim()
+    ? error.message.trim()
+    : typeof error === "string" && error.trim()
+      ? error.trim()
+      : publicMessage;
+  if (stage === "contact_verification") {
+    return { status: "rejected", stage, retryable: false, reason: message };
+  }
+
   const errorEventId = await captureAppError(error, {
     functionName: "manager-conversation-tool-executor",
     operation: "release_opportunity_workflow",

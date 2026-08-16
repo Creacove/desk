@@ -30,7 +30,7 @@ describe("Manager interruption protocol", () => {
     expect(instructions).toContain("contextQuestions are only for human input that can be supplied entirely as a conversational answer");
     expect(instructions).toContain("workspace_action:<target>:<short_slug>");
     expect(instructions).toContain("Never ask the user to type 'done'");
-    expect(instructions).toContain("use files for audio, artwork");
+    expect(instructions.toLowerCase()).toContain("use files for audio, artwork");
   });
 
   it("normalizes file blockers into compact workspace actions", () => {

@@ -86,9 +86,11 @@ export async function persistFocusedSongDocumentDraft(
     throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");
   }
   const quality = assessStructuredSongDocument(artifactType, structure);
-  if (quality.blockers.length) {
-    throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);
-  }
+  // Draft persistence is not publication approval. A structurally valid artifact must
+  // survive even when verified inputs are missing; quality.readiness keeps it in
+  // needs_review and the sharing/approval UI already withholds approval in that state.
+  // Reject only malformed transport above. Never force the model to pad or invent facts
+  // merely to cross a word-count gate before the artist can review the draft.
   const renderedBody = renderStructuredSongDocument(artifactType, title, structure);
 
   if (typeof db.rpc === "function") {
