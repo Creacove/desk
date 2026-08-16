@@ -23,7 +23,8 @@ export type ManagerTurnViewModel = {
 
 function workKey(item: ManagerWorkItem) {
   const label = typeof item.title === "string" ? item.title.trim().toLowerCase() : "untitled";
-  return `${item.type}:${item.id ?? item.managerOutputId ?? label}`;
+  const kind = item.artifactKind ?? item.type;
+  return `${kind}:${item.id ?? item.managerOutputId ?? label}`;
 }
 
 export function dedupeManagerWork(items: ManagerWorkItem[]) {
@@ -38,10 +39,10 @@ export function dedupeManagerWork(items: ManagerWorkItem[]) {
 
 export function groupManagerWork(items: ManagerWorkItem[]): ManagerWorkGroup[] {
   const unique = dedupeManagerWork(items);
-  const drafts = unique.filter((item) => item.artifactKind === "task_draft");
-  const missions = unique.filter((item) => item.type === "mission" && item.artifactKind !== "task_draft");
-  const tasks = unique.filter((item) => item.type === "task" && item.artifactKind !== "task_draft");
-  const music = unique.filter((item) => item.type === "music_item");
+  const drafts = unique.filter((item) => item.artifactKind === "task_draft" || item.artifactKind === "song_document");
+  const missions = unique.filter((item) => item.type === "mission" && item.artifactKind !== "task_draft" && item.artifactKind !== "song_document");
+  const tasks = unique.filter((item) => item.type === "task" && item.artifactKind !== "task_draft" && item.artifactKind !== "song_document");
+  const music = unique.filter((item) => item.type === "music_item" && item.artifactKind !== "song_document");
   const groups: ManagerWorkGroup[] = drafts.map((item) => ({ kind: "draft", item }));
 
   const workspaceMissionIds = new Set(missions.map((item) => item.id).filter(Boolean));

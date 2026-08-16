@@ -16,12 +16,14 @@ import {
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
+  managerConversationExplicitlyRequestsDecisionPackage,
   managerConversationRequiresCanonicalDocumentTool,
   runManagerAgentLoop,
   selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import { songDocumentWorkItems, upsertManagerCreatedWork, type ManagerToolResult } from "../_shared/manager-conversation/documentWork.ts";
 import {
   buildManagerConversationModelContext,
   classifyManagerConversationError,
@@ -105,7 +107,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     usageId = await createUsageEvent(db, input, runId);
 
     const previousResponseId = await loadPreviousOpenAIResponseId(db, input, conversationId);
-    const { output, usage, responseId, toolTrace, toolCreatedWork } = await callOpenAIManagerConversation(
+    const { output, usage, responseId, toolTrace, toolCreatedWork, documentToolResults } = await callOpenAIManagerConversation(
       db,
       input,
       buildManagerConversationModelContext(input, packet, conversationId, previousResponseId),
@@ -138,10 +140,13 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
       output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
     }
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-    await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-    output.createdWork = taskDraftWork
+    const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";
+    const documentWork = songDocumentWorkItems(musicItemId, documentToolResults);
+    let createdWork = taskDraftWork
       ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
       : [...toolCreatedWork, ...persistedWork];
+    for (const work of documentWork) createdWork = upsertManagerCreatedWork(createdWork, work);
+    output.createdWork = createdWork;
     await persistActions(db, input, runId, output);
     await persistMemory(db, input, conversationId, runId, output);
     const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
@@ -670,6 +675,7 @@ async function callOpenAIManagerConversation(
 ) {
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
+  const documentToolResults: ManagerToolResult[] = [];
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
   const tools = selectManagerConversationToolsForTurn({
     body: input.body,
@@ -694,7 +700,11 @@ async function callOpenAIManagerConversation(
     contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
     promptCacheMode: "explicit",
-    executeTool: (name, args) => executeManagerConversationTool(db, toolInput, name, args),
+    executeTool: async (name, args) => {
+      const toolResult = await executeManagerConversationTool(db, toolInput, name, args);
+      if (name === "create_focused_song_document") documentToolResults.push({ tool: name, result: toolResult });
+      return toolResult;
+    },
   });
   return {
     output: parseManagerConversationOutput(result.outputText),
@@ -702,6 +712,7 @@ async function callOpenAIManagerConversation(
     responseId: result.responseId,
     toolTrace: result.toolTrace,
     toolCreatedWork,
+    documentToolResults,
   };
 }
 
@@ -910,7 +921,7 @@ async function persistTaskDraftOutput(
 }
 
 async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {
-  if (output.actionPolicy !== "create_decision_package") return null;
+  if (output.actionPolicy !== "create_decision_package" || !managerConversationExplicitlyRequestsDecisionPackage(input)) return null;
 
   const { error: staleError } = await db
     .from("manager_outputs")
@@ -1195,9 +1206,13 @@ function normalizeCreatedWork(value: unknown) {
       type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
       title: String(item.title || "").trim(),
       body: String(item.body || "").trim(),
-      artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,
+      artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,
       content: item.content ? String(item.content) : undefined,
       managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,
+      musicItemId: item.musicItemId ? String(item.musicItemId) : undefined,
+      documentType: item.documentType ? String(item.documentType) : undefined,
+      readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,
+      missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((entry: unknown) => String(entry || "").trim()).filter(Boolean).slice(0, 20) : [],
       id: item.id ? String(item.id) : undefined,
       parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
       status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",

@@ -45,7 +45,48 @@ export type PersistedFocusedSongDocument = {
   created: boolean;
   quality?: SongDocumentQuality;
   schemaVersion?: "song_document_v2";
+  missingInputs?: string[];
 };
+
+export type PreparedFocusedSongDocument = {
+  documentType: PremiumSongDocumentType;
+  artifactType: PremiumSongDocumentType;
+  title: string;
+  structure: StructuredSongDocument;
+  quality: SongDocumentQuality;
+  renderedBody: string;
+};
+
+export function prepareFocusedSongDocumentDraft(
+  inputDocumentType: string | undefined,
+  inputTitle: string | undefined,
+  responseBody: string,
+  requestBody = "",
+): PreparedFocusedSongDocument | null {
+  const request = requestBody.toLowerCase();
+  const documentType = normalizeDocumentType(inputDocumentType) ?? requestedDocumentType(request);
+  if (!documentType || !isPremiumSongDocumentType(documentType)) return null;
+  const title = cleanLongText(inputTitle, 240) || documentTitle(documentType);
+  const artifactType: PremiumSongDocumentType = isReleaseNarrativeTransport(documentType, title)
+    ? "release_narrative"
+    : documentType;
+  const structure = parseStructuredToolBody(responseBody);
+  if (!structure) {
+    throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");
+  }
+  const quality = assessStructuredSongDocument(artifactType, structure);
+  if (quality.blockers.length) {
+    throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);
+  }
+  return {
+    documentType,
+    artifactType,
+    title,
+    structure,
+    quality,
+    renderedBody: renderStructuredSongDocument(artifactType, title, structure),
+  };
+}
 
 const allCanonicalDocumentTypes = new Set<string>([
   "release_narrative",
@@ -72,24 +113,10 @@ export async function persistFocusedSongDocumentDraft(
   // conversational response is not a document and must never overwrite a quality-gated artifact.
   if (!input.documentType) return;
 
-  const request = input.body.toLowerCase();
-  const documentType = normalizeDocumentType(input.documentType) ?? requestedDocumentType(request);
-  if (!documentType || !isPremiumSongDocumentType(documentType)) return;
-
+  const prepared = prepareFocusedSongDocumentDraft(input.documentType, input.title, responseBody, input.body);
+  if (!prepared) return;
+  const { documentType, artifactType, title, structure, quality, renderedBody } = prepared;
   const musicItemId = input.musicSubject.id;
-  const title = cleanLongText(input.title, 240) || documentTitle(documentType);
-  const artifactType: PremiumSongDocumentType = isReleaseNarrativeTransport(documentType, title)
-    ? "release_narrative"
-    : documentType;
-  const structure = parseStructuredToolBody(responseBody);
-  if (!structure) {
-    throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");
-  }
-  const quality = assessStructuredSongDocument(artifactType, structure);
-  if (quality.blockers.length) {
-    throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);
-  }
-  const renderedBody = renderStructuredSongDocument(artifactType, title, structure);
 
   if (typeof db.rpc === "function") {
     const { data, error } = await db.rpc("persist_focused_song_document_v2", {
@@ -115,6 +142,7 @@ export async function persistFocusedSongDocumentDraft(
       title,
       quality,
       schemaVersion: "song_document_v2",
+      missingInputs: structure.missingInputs,
     };
   }
 
@@ -298,6 +326,7 @@ export async function persistFocusedSongDocumentDraft(
       created: createdDocument,
       quality,
       schemaVersion: "song_document_v2",
+      missingInputs: structure.missingInputs,
     };
   } catch (error) {
     await compensateDocumentPersistence(db, scope, {

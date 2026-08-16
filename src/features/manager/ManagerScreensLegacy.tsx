@@ -1111,18 +1111,91 @@ function DocumentResultCard({
   item: WorkItem;
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const isSongDocument = item.artifactKind === "song_document";
+  if (!isSongDocument) {
+    return (
+      <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
+          <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+        </div>
+        {item.id ? <ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
+      </article>
+    );
+  }
+
+  const documentLabel = managerDocumentLabel(item.documentType, item.title);
+  const saveFailed = item.readiness === "save_failed" || item.status === "failed";
+  const readinessLabel = saveFailed ? "Draft created · Couldn't save to Files" : item.readiness === "ready" ? "Ready" : "Draft ready";
+  const missingInputs = item.missingInputs ?? [];
+  const required = missingInputs.filter((entry) => /^required before external use:/i.test(entry));
+  const optional = missingInputs.filter((entry) => !/^required before external use:/i.test(entry));
+  const musicItemId = item.musicItemId;
+
   return (
-    <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
-      <span className="hidden">
-        <FileText className="h-3.5 w-3.5" aria-hidden="true" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
-        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+    <article data-testid="manager-document-result" className="border-l-2 border-foreground/12 py-2 pl-4">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-muted-foreground">{documentLabel}</p>
+          <p className="mt-0.5 text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>
+          <p className={`mt-1 text-[11px] font-medium ${saveFailed ? "text-amber-700" : "text-muted-foreground"}`}>{readinessLabel}</p>
+        </div>
+        {!saveFailed && musicItemId ? (
+          <ResultAction pendingLabel="Opening Files…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files")}>
+            {managerDocumentOpenLabel(item.documentType)}
+          </ResultAction>
+        ) : null}
       </div>
-      {item.id ? <ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
+      {missingInputs.length ? (
+        <div className="mt-2.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+          {required.length ? <p><span className="font-semibold text-foreground/80">Before external use:</span> {required.map(stripMissingInputPrefix).join(" · ")}</p> : null}
+          {optional.length ? <p><span className="font-semibold text-foreground/80">Improve this:</span> {optional.map(stripMissingInputPrefix).join(" · ")}</p> : null}
+        </div>
+      ) : null}
+      {saveFailed && item.content ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          <ResultAction onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide draft" : "View draft"}</ResultAction>
+          {musicItemId ? <ResultAction onClick={() => onOpenCreatedWork("music_item", musicItemId, "files")}>Open Files</ResultAction> : null}
+        </div>
+      ) : null}
+      {expanded && item.content ? (
+        <div className="mt-3 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-3">
+          <RichMessageBody body={item.content} />
+        </div>
+      ) : null}
     </article>
   );
+}
+
+function managerDocumentLabel(documentType: string | undefined, title: string) {
+  const type = (documentType ?? "").toLowerCase();
+  if (type === "epk") return "EPK";
+  if (type === "playlist_pitch" || type === "spotify_editorial_pitch") return "Playlist pitch";
+  if (type === "press_pitch") return "Press pitch";
+  if (type === "press_release") return "Press release";
+  if (type === "press_target_brief") return "Press brief";
+  if (type === "artist_biography") return "Artist biography";
+  if (type === "one_sheet") return "One-sheet";
+  if (type === "content_plan") return "Content plan";
+  if (type === "release_calendar") return "Release calendar";
+  if (type === "credits") return "Credits";
+  if (type === "lyrics") return "Lyrics";
+  if (type === "distributor_notes") return "Distributor notes";
+  if (/playlist/i.test(title)) return "Playlist pitch";
+  if (/epk|press kit/i.test(title)) return "EPK";
+  return "Document";
+}
+
+function managerDocumentOpenLabel(documentType: string | undefined) {
+  const type = (documentType ?? "").toLowerCase();
+  if (type === "epk") return "Open EPK";
+  if (type.includes("pitch")) return "Open pitch";
+  return "Open document";
+}
+
+function stripMissingInputPrefix(value: string) {
+  return value.replace(/^(?:required before external use|optional improvement):\s*/i, "").trim();
 }
 
 function CompactMissionResult({

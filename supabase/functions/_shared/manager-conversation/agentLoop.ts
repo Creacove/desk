@@ -274,8 +274,10 @@ const ensureSongReleaseWorkspaceProperties = {
   },
 };
 
+const allowLiveExternalSearch = false;
+
 export const managerConversationTools: ManagerAgentToolDefinition[] = [
-  { type: "web_search" },
+  ...(allowLiveExternalSearch ? [{ type: "web_search" as const }] : []),
   {
     type: "function",
     name: "query_evidence_items",
@@ -363,7 +365,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. Before recipient-facing campaign artifacts, you may establish the internal Release Narrative with documentType press_angle and title exactly Release narrative, but it is internal scaffolding and must not be presented as a requested deliverable unless the user explicitly asked for it. The body MUST be the JSON-encoded structured artifact described by the schema. Unknown nonessential facts belong in missingInputs and must not prevent a useful draft; never invent placeholders. If quality gates reject unsupported or unusable copy, repair those blockers and retry. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
@@ -426,12 +428,22 @@ export function managerConversationRequiresCanonicalDocumentTool(input: {
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
 }) {
   const body = input.body.trim().toLowerCase();
-  const directDocumentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\b/.test(body)
+  const directDocumentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete|retry|save)\b/.test(body)
     && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes|documents?)\b/.test(body);
   const contextDocumentIntent = (input.contextAnswers ?? []).some((answer) =>
     /(?:epk|press|bio|biography|one[-_ ]sheet|release[_ -]?(?:narrative|angle)|campaign|document|kit|copy|content|core[_ -]?angle)/i.test(answer.questionKey)
   );
   return directDocumentIntent || contextDocumentIntent;
+}
+
+export function managerConversationExplicitlyRequestsDecisionPackage(input: {
+  body: string;
+  contextAnswers?: Array<{ questionKey: string; answer: string }>;
+}) {
+  const text = `${input.body} ${(input.contextAnswers ?? []).map((answer) => `${answer.questionKey} ${answer.answer}`).join(" ")}`
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  return /\bdecision package\b/.test(text);
 }
 
 export function selectManagerConversationToolsForTurn(input: {
@@ -453,7 +465,7 @@ export function selectManagerConversationToolsForTurn(input: {
     contextAnswers: input.contextAnswers,
   });
   const packageIntent = /\b(prepare|build|create|make|assemble)\b/.test(body)
-  && /\b(package|share link|private link|delivery link|press kit|epk package)\b/.test(body);
+    && /\b(share package|private package|delivery package|share link|private link|delivery link|export package)\b/.test(body);
   const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
 
   if (servicingIntent) {
@@ -579,6 +591,8 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
 }
 
 const MAX_TOOL_OUTPUT_CHARS = 12_000;
+const MAX_RATE_LIMIT_RETRIES = 2;
+const MAX_RATE_LIMIT_WAIT_MS = 10_000;
 
 function serializeToolOutput(value: unknown) {
   let serialized = "";
@@ -593,16 +607,60 @@ function serializeToolOutput(value: unknown) {
 }
 
 async function postResponses(fetchImpl: typeof fetch, endpoint: string, apiKey: string, body: Record<string, unknown>) {
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) return await response.json() as Record<string, unknown>;
+
     const errorBody = await response.text();
+    if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const waitMs = rateLimitRetryDelayMs(response, errorBody, attempt);
+      if (waitMs <= MAX_RATE_LIMIT_WAIT_MS) {
+        await delayMs(waitMs);
+        continue;
+      }
+    }
+
     throw new Error(`Manager agent request failed with status ${response.status}: ${errorBody.slice(0, 500)}`);
   }
-  return await response.json() as Record<string, unknown>;
+
+  throw new Error("Manager agent request exhausted its rate-limit retries.");
+}
+
+function rateLimitRetryDelayMs(response: Response, errorBody: string, attempt: number) {
+  const retryAfterSeconds = readSeconds(response.headers.get("retry-after"));
+  if (retryAfterSeconds !== null) return Math.max(0, Math.ceil(retryAfterSeconds * 1_000));
+
+  const tokenReset = readResetDurationMs(response.headers.get("x-ratelimit-reset-tokens"));
+  if (tokenReset !== null) return tokenReset;
+
+  const bodyDelay = /try again in\s+([0-9]+(?:\.[0-9]+)?)s/i.exec(errorBody);
+  if (bodyDelay) return Math.max(0, Math.ceil(Number(bodyDelay[1]) * 1_000));
+
+  return Math.min(MAX_RATE_LIMIT_WAIT_MS, 1_250 * (2 ** attempt));
+}
+
+function readSeconds(value: string | null) {
+  if (!value) return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function readResetDurationMs(value: string | null) {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  const milliseconds = /^([0-9]+(?:\.[0-9]+)?)ms$/.exec(normalized);
+  if (milliseconds) return Math.max(0, Math.ceil(Number(milliseconds[1])));
+  const seconds = /^([0-9]+(?:\.[0-9]+)?)s$/.exec(normalized);
+  if (seconds) return Math.max(0, Math.ceil(Number(seconds[1]) * 1_000));
+  return null;
+}
+
+function delayMs(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function extractFunctionCalls(payload: Record<string, unknown>): FunctionCall[] {

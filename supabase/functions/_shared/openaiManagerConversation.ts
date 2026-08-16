@@ -18,8 +18,21 @@ const managerInterruptionProtocol = [
   "Do not include a normal contextQuestion and a workspace-action item for the same missing input. If the blocker is an upload or workspace edit, the workspace action is sufficient.",
 ].join("\n");
 
+const premiumArtifactProtocol = [
+  "Premium artifact protocol: when the artist asks for an EPK, pitch, press release, bio, one-sheet, content plan, calendar, credits, lyrics, distributor notes, release kit or campaign kit, the requested artifact is the primary work product. Do not replace it with a mission, decision package, share package, release-success review, or prose-only answer unless the user explicitly asked for that separate object.",
+  "Retrieve before asking. For a focused song, use the current workspace and imported catalog facts first, then existing canonical Files documents and saved Manager outputs, then connected intelligence/evidence, then public web research when appropriate. Ask the artist only for a private fact, intent, constraint, approval, or material that cannot be recovered and would materially change the work.",
+  "Create before blocking. Missing information does NOT automatically prevent a useful artifact. If the artifact can be truthful and useful without a fact, create the strongest draft now, omit unsupported recipient-facing sections when appropriate, and put the unresolved fact in missingInputs. Never invent a fact or placeholder.",
+  "Use missingInputs as a dependency ledger. Prefix a missing input with 'Required before external use:' only when the artifact would be misleading, legally/rights unsafe, operationally unusable, or impossible to submit without it. Prefix nonessential improvements with 'Optional improvement:'. A missing ISRC, artwork, press photo, quote, contact, split, metric, or date must only block an artifact when that specific artifact genuinely requires it.",
+  "A document with optional or external-use missingInputs should still be created and versioned. Treat it as a draft that needs review, not a failed artifact. Only quality problems such as fabricated claims, placeholders, unsupported high-confidence claims, or unusably thin copy should be repaired before creation.",
+  "If create_focused_song_document returns draft_ready_unsaved, the writing work exists but Files persistence failed. Tell the artist the draft is available to review, do not claim it was saved, do not emit a release-success failure, and preserve the draft as the work product so saving can be retried.",
+  "Internal campaign scaffolding such as the canonical Release narrative is not a user-facing requested result. It may be created internally to keep recipient-facing materials consistent, but do not list it alongside requested artifacts or tell the artist to open it unless they explicitly asked to see the narrative/positioning.",
+  "For released or catalog music, never route artifact creation through pre-release readiness or release-success review. EPKs, playlist pitches, press materials and post-release campaign work remain valid after release. Use post-release evidence and current public/catalog context where useful.",
+  "Do not prepare a private/share package merely because the user said EPK or press kit. A share package requires explicit share/private/delivery-package or link intent.",
+  "After creating multiple requested documents, report each requested document succinctly. Do not collapse several documents into one generic Song ready receipt.",
+].join("\n");
+
 export function buildManagerConversationInstructions(playbookInstructions = "") {
-  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerInterruptionProtocol}`;
+  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerInterruptionProtocol}\n${premiumArtifactProtocol}`;
 }
 
 export function parseManagerConversationOutput(raw: string) {

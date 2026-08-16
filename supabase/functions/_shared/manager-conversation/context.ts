@@ -55,13 +55,13 @@ export function classifyManagerConversationError(error: unknown, fallback = "Man
     };
   }
   if (/status 429|rate.limit/.test(normalized)) {
-    if (/request too large|tokens per min|token limit|context length|context window|too many tokens/.test(normalized)) {
-      return {
-        publicMessage: "This Manager session is larger than it can safely process right now. Start a focused follow-up or try again after the workspace refreshes.",
-        internalMessage,
-      };
-    }
     return { publicMessage: "Manager is briefly busy. Please try again in a moment.", internalMessage };
+  }
+  if (/request too large|token limit|context length|context window|too many tokens/.test(normalized)) {
+    return {
+      publicMessage: "Manager could not finish that turn. Please retry; this conversation is still intact.",
+      internalMessage,
+    };
   }
   return { publicMessage: fallback, internalMessage };
 }

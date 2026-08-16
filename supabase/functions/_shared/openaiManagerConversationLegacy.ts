@@ -12,6 +12,13 @@ export type ManagerConversationCreatedWork = {
   body: string;
   id: string;
   parentMissionId?: string;
+  artifactKind?: "task_draft" | "song_document";
+  content?: string;
+  managerOutputId?: string;
+  musicItemId?: string;
+  documentType?: string;
+  readiness?: "ready" | "needs_review" | "save_failed";
+  missingInputs?: string[];
   status?: "created" | "updated" | "approval_required" | "failed" | "pending";
 };
 
