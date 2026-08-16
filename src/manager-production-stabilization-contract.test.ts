@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+// Keep these contracts on the final stabilization head so PR Safety exercises the
+// exact code that will be merged, not the temporary patching commits.
 describe("Manager production stabilization contracts", () => {
   it("defends both Manager endpoints from client-only pending conversation ids and provider-history growth", () => {
     for (const path of [
