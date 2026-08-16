@@ -1735,7 +1735,7 @@ function SongOverviewRead({
       {read ? (
         <div className="mt-4 max-w-3xl">
           {failed ? <p className="mb-3 text-[11px] font-medium text-muted-foreground">Couldn’t refresh just now. Showing the last read.</p> : null}
-          <p className="whitespace-pre-line font-display text-[18px] font-medium leading-[1.55] tracking-[-0.01em] text-foreground sm:text-[21px] sm:leading-[1.5]">{read.body}</p>
+          <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px] sm:leading-6">{read.body}</p>
         </div>
       ) : readBusy ? (
         <div className="mt-4 flex max-w-xl items-center gap-3 py-2">
@@ -2141,10 +2141,10 @@ function MusicRightsWorkspace({
         </div>
 
         {contributors.length ? (
-          <div className="mt-5 grid gap-3 border-y border-foreground/8 py-4 sm:grid-cols-3 sm:gap-0">
-            <p className="text-[11px] font-medium text-muted-foreground sm:border-r sm:border-foreground/8 sm:px-4 sm:first:pl-0"><span className="block">Publishing allocated</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.publishingAllocated}%</strong></p>
-            <p className="text-[11px] font-medium text-muted-foreground sm:border-r sm:border-foreground/8 sm:px-4"><span className="block">Master allocated</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.masterAllocated}%</strong></p>
-            {confirmationActive ? <p className="text-[11px] font-medium text-muted-foreground sm:px-4"><span className="block">Confirmed</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
+          <div className="mt-5 grid grid-cols-3 gap-0 border-y border-foreground/8 py-4">
+            <p className="min-w-0 border-r border-foreground/8 px-3 text-[10px] font-medium leading-4 text-muted-foreground first:pl-0 sm:px-4"><span className="block">Publishing allocated</span><strong className="mt-1 block text-[14px] font-semibold leading-none text-foreground sm:text-[15px]">{rights.publishingAllocated}%</strong></p>
+            <p className="min-w-0 border-r border-foreground/8 px-3 text-[10px] font-medium leading-4 text-muted-foreground sm:px-4"><span className="block">Master allocated</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.masterAllocated}%</strong></p>
+            {confirmationActive ? <p className="min-w-0 px-3 text-[10px] font-medium leading-4 text-muted-foreground last:pr-0 sm:px-4"><span className="block">Confirmed</span><strong className="mt-1 block text-[15px] font-semibold text-foreground">{rights.confirmedCount} of {rights.contributorCount}</strong></p> : null}
           </div>
         ) : null}
 
@@ -2401,8 +2401,7 @@ function MusicCreateDialog({
           <div>
             <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">{kind === "songs" ? "New unreleased song" : "Manual music record"}</p>
             <h3 className="mt-1 font-display text-[24px] font-bold leading-tight text-foreground">{kind === "songs" ? "Start a song workspace" : label}</h3>
-            {kind === "songs" ? <p className="mt-2 max-w-md text-[12px] font-medium leading-relaxed text-muted-foreground">Create the song first. You can add the audio, credits, rights, and details once you arrive.</p> : null}
-          </div>
+                      </div>
           <button type="button" onClick={onCancel} aria-label="Close" className="rounded-lg p-2 text-muted-foreground hover:bg-foreground/5 hover:text-foreground">
             <X className="h-4 w-4" />
           </button>
@@ -2422,14 +2421,13 @@ function MusicCreateDialog({
           </label>
           <label className="grid gap-1.5 text-[10px] font-bold uppercase tracking-[0.06em] text-muted-foreground/84">
             Lifecycle stage
-            <select value={lifecycleStage} aria-describedby={kind === "songs" ? "song-lifecycle-stage-help" : undefined} onChange={(event) => setLifecycleStage(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none">
+            <select value={lifecycleStage} onChange={(event) => setLifecycleStage(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none">
               {["idea", "recording", "production", "mixing", "mastering", "ready", "scheduled", "released", "catalog"].map((stage) => (
                 <option key={stage} value={stage}>{titleCaseStatus(stage)}</option>
               ))}
             </select>
           </label>
-          {kind === "songs" ? <p id="song-lifecycle-stage-help" className="-mt-1 normal-case text-[11px] font-medium tracking-normal text-muted-foreground">Choose the truest current stage. You can change it later.</p> : null}
-        </div>
+                  </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
           <button type="submit" disabled={!title.trim() || pending} className="rounded-lg bg-foreground px-4 py-2 text-[12px] font-bold text-background disabled:opacity-40">{pending ? "Saving" : submitLabel}</button>
@@ -3365,8 +3363,7 @@ function MusicDetailEditDialog({
             <input value={value} onChange={(event) => setValue(event.target.value)} className="rounded-[10px] border border-foreground/10 bg-background px-3 py-2.5 text-[13px] font-semibold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none" />
           )}
         </label>
-        <p className="mt-3 text-[12px] font-semibold leading-relaxed text-muted-foreground/80">Provider-confirmed metadata stays read-only. This saves a user-supplied draft for incomplete fields.</p>
-        {error ? <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
+                {error ? <p role="alert" className="mt-3 rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
         </div>
         <div className="flex justify-end gap-2 border-t border-foreground/8 bg-foreground/[0.025] px-5 py-4">
           <button type="button" onClick={onCancel} className="rounded-lg border border-foreground/10 px-4 py-2 text-[12px] font-bold text-muted-foreground hover:text-foreground">Cancel</button>
