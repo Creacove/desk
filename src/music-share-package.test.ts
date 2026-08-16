@@ -15,14 +15,21 @@ const inventory: ShareInventory = {
   ],
   documents: [
     { id: "lyrics", title: "Lyrics", documentType: "lyrics", body: "Real lyrics", ready: true },
+    { id: "epk", title: "After Midnight EPK", documentType: "epk", body: "Real EPK", ready: true },
     { id: "press", title: "Press release", documentType: "press_release", body: "Real press copy", ready: true },
-    { id: "draft-bio", title: "Biography", documentType: "artist_biography", body: "Draft biography", ready: false },
+    { id: "bio", title: "Biography", documentType: "artist_biography", body: "Real artist biography", ready: true },
+    { id: "credits", title: "Credit sheet", documentType: "credits", body: "Real credits", ready: true },
+    { id: "press-pitch", title: "Press pitch", documentType: "press_pitch", body: "Outbound pitch", ready: true },
+    { id: "spotify-pitch", title: "Spotify pitch", documentType: "spotify_editorial_pitch", body: "Outbound editorial pitch", ready: true },
+    { id: "draft-one-sheet", title: "One-sheet", documentType: "one_sheet", body: "Draft one-sheet", ready: false },
+    { id: "delivery", title: "Distribution delivery sheet", documentType: "distributor_notes", body: "Delivery notes", ready: true },
   ],
   information: [
     { key: "song_title", label: "Song title", value: "After Midnight" },
     { key: "primary_artist", label: "Primary artist", value: "Nova Vale" },
     { key: "release_date", label: "Release date", value: "" },
     { key: "genre", label: "Genre", value: "Alté" },
+    { key: "copyright", label: "Copyright", value: "2026 Nova Vale" },
   ],
 };
 
@@ -32,10 +39,11 @@ describe("song share package selection", () => {
       { key: "song_title", label: "Song title", value: "After Midnight" },
       { key: "primary_artist", label: "Primary artist", value: "Nova Vale" },
       { key: "genre", label: "Genre", value: "Alté" },
+      { key: "copyright", label: "Copyright", value: "2026 Nova Vale" },
     ]);
   });
 
-  it("builds a listen package around current audio and identity", () => {
+  it("builds a private listen around the current audio and identity", () => {
     expect(buildShareSelection("listen", inventory)).toEqual({
       assetIds: ["master", "cover"],
       documentIds: [],
@@ -43,19 +51,19 @@ describe("song share package selection", () => {
     });
   });
 
-  it("builds a press kit without unready or empty content", () => {
+  it("builds a real press/media kit and excludes outbound pitch drafts", () => {
     expect(buildShareSelection("epk_press", inventory)).toEqual({
       assetIds: ["master", "cover", "press-photo"],
-      documentIds: ["lyrics", "press"],
+      documentIds: ["epk", "press", "bio", "credits"],
       informationKeys: ["song_title", "primary_artist", "genre"],
     });
   });
 
-  it("builds delivery from final audio, cover, and populated release facts", () => {
+  it("builds distributor delivery from delivery-safe files, documents, and facts", () => {
     expect(buildShareSelection("delivery", inventory)).toEqual({
       assetIds: ["master", "cover"],
-      documentIds: ["lyrics"],
-      informationKeys: ["song_title", "primary_artist", "genre"],
+      documentIds: ["lyrics", "credits", "delivery"],
+      informationKeys: ["song_title", "primary_artist", "genre", "copyright"],
     });
   });
 
