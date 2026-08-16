@@ -589,6 +589,8 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
 }
 
 const MAX_TOOL_OUTPUT_CHARS = 12_000;
+const MAX_RATE_LIMIT_RETRIES = 2;
+const MAX_RATE_LIMIT_WAIT_MS = 10_000;
 
 function serializeToolOutput(value: unknown) {
   let serialized = "";
@@ -603,16 +605,60 @@ function serializeToolOutput(value: unknown) {
 }
 
 async function postResponses(fetchImpl: typeof fetch, endpoint: string, apiKey: string, body: Record<string, unknown>) {
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= MAX_RATE_LIMIT_RETRIES; attempt += 1) {
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (response.ok) return await response.json() as Record<string, unknown>;
+
     const errorBody = await response.text();
+    if (response.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const waitMs = rateLimitRetryDelayMs(response, errorBody, attempt);
+      if (waitMs <= MAX_RATE_LIMIT_WAIT_MS) {
+        await delayMs(waitMs);
+        continue;
+      }
+    }
+
     throw new Error(`Manager agent request failed with status ${response.status}: ${errorBody.slice(0, 500)}`);
   }
-  return await response.json() as Record<string, unknown>;
+
+  throw new Error("Manager agent request exhausted its rate-limit retries.");
+}
+
+function rateLimitRetryDelayMs(response: Response, errorBody: string, attempt: number) {
+  const retryAfterSeconds = readSeconds(response.headers.get("retry-after"));
+  if (retryAfterSeconds !== null) return Math.max(0, Math.ceil(retryAfterSeconds * 1_000));
+
+  const tokenReset = readResetDurationMs(response.headers.get("x-ratelimit-reset-tokens"));
+  if (tokenReset !== null) return tokenReset;
+
+  const bodyDelay = /try again in\s+([0-9]+(?:\.[0-9]+)?)s/i.exec(errorBody);
+  if (bodyDelay) return Math.max(0, Math.ceil(Number(bodyDelay[1]) * 1_000));
+
+  return Math.min(MAX_RATE_LIMIT_WAIT_MS, 1_250 * (2 ** attempt));
+}
+
+function readSeconds(value: string | null) {
+  if (!value) return null;
+  const parsed = Number(value.trim());
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function readResetDurationMs(value: string | null) {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  const milliseconds = /^([0-9]+(?:\.[0-9]+)?)ms$/.exec(normalized);
+  if (milliseconds) return Math.max(0, Math.ceil(Number(milliseconds[1])));
+  const seconds = /^([0-9]+(?:\.[0-9]+)?)s$/.exec(normalized);
+  if (seconds) return Math.max(0, Math.ceil(Number(seconds[1]) * 1_000));
+  return null;
+}
+
+function delayMs(ms: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
 function extractFunctionCalls(payload: Record<string, unknown>): FunctionCall[] {
