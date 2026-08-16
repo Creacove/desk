@@ -3614,7 +3614,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Write manually" }));
     fireEvent.change(screen.getByLabelText("Document title"), { target: { value: "North Star press release" } });
     fireEvent.change(screen.getByLabelText("Document content"), { target: { value: "North Star opens a new chapter." } });
-    fireEvent.click(screen.getByRole("button", { name: "Save revision" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(createSongDocument).toHaveBeenCalledWith("song-jam", expect.objectContaining({
       documentType: "press_release",
