@@ -40,3 +40,4 @@ jobs:
           git add src/features/music/MusicScreens.tsx src/song-room-tab-design.test.ts
           git commit -m 'feat: unify song room tab visual system'
           git push origin main
+# validation trigger
