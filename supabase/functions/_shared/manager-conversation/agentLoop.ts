@@ -363,7 +363,7 @@ export const managerConversationTools: ManagerAgentToolDefinition[] = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. Before recipient-facing campaign artifacts, you may establish the internal Release Narrative with documentType press_angle and title exactly Release narrative, but it is internal scaffolding and must not be presented as a requested deliverable unless the user explicitly asked for it. The body MUST be the JSON-encoded structured artifact described by the schema. Unknown nonessential facts belong in missingInputs and must not prevent a useful draft; never invent placeholders. If quality gates reject unsupported or unusable copy, repair those blockers and retry. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties,
   },
@@ -426,12 +426,22 @@ export function managerConversationRequiresCanonicalDocumentTool(input: {
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
 }) {
   const body = input.body.trim().toLowerCase();
-  const directDocumentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\b/.test(body)
+  const directDocumentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete|retry|save)\b/.test(body)
     && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes|documents?)\b/.test(body);
   const contextDocumentIntent = (input.contextAnswers ?? []).some((answer) =>
     /(?:epk|press|bio|biography|one[-_ ]sheet|release[_ -]?(?:narrative|angle)|campaign|document|kit|copy|content|core[_ -]?angle)/i.test(answer.questionKey)
   );
   return directDocumentIntent || contextDocumentIntent;
+}
+
+export function managerConversationExplicitlyRequestsDecisionPackage(input: {
+  body: string;
+  contextAnswers?: Array<{ questionKey: string; answer: string }>;
+}) {
+  const text = `${input.body} ${(input.contextAnswers ?? []).map((answer) => `${answer.questionKey} ${answer.answer}`).join(" ")}`
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+  return /\bdecision package\b/.test(text);
 }
 
 export function selectManagerConversationToolsForTurn(input: {
@@ -453,7 +463,7 @@ export function selectManagerConversationToolsForTurn(input: {
     contextAnswers: input.contextAnswers,
   });
   const packageIntent = /\b(prepare|build|create|make|assemble)\b/.test(body)
-  && /\b(package|share link|private link|delivery link|press kit|epk package)\b/.test(body);
+    && /\b(share package|private package|delivery package|share link|private link|delivery link|export package)\b/.test(body);
   const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
 
   if (servicingIntent) {

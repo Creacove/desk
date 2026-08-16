@@ -16,12 +16,14 @@ import {
 import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbooks/playbookDefinitions.ts";
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
+  managerConversationExplicitlyRequestsDecisionPackage,
   managerConversationRequiresCanonicalDocumentTool,
   runManagerAgentLoop,
   selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import { isReleaseSuccessArtifactTool, songDocumentWorkItems, upsertManagerCreatedWork } from "../_shared/manager-conversation/documentWork.ts";
 import {
   buildManagerConversationModelContext,
   classifyManagerConversationError,
@@ -214,19 +216,13 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         }
         await streamReleaseSuccessArtifacts(db, input, conversationId, runId, releaseSuccessToolResults, emit);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-        const documentToolResult = releaseSuccessToolResults.find((item) => item.tool === "create_focused_song_document");
-        const persistedDocument = documentToolResult?.result && isRecord(documentToolResult.result) && documentToolResult.result.status === "drafted"
-          ? documentToolResult.result
-          : documentToolResult
-            ? undefined
-            : await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-        const documentWork = persistedDocument ? songDocumentCreatedWork(input, persistedDocument) : undefined;
-        const baseCreatedWork = taskDraftWork
+        const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";
+        const documentWork = songDocumentWorkItems(musicItemId, releaseSuccessToolResults);
+        let baseCreatedWork = taskDraftWork
           ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
           : [...toolCreatedWork, ...persistedWork];
-        output.createdWork = documentWork
-          ? upsertServerCreatedWork(baseCreatedWork, documentWork)
-          : baseCreatedWork;
+        for (const work of documentWork) baseCreatedWork = upsertManagerCreatedWork(baseCreatedWork, work);
+        output.createdWork = baseCreatedWork;
 
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
@@ -836,7 +832,7 @@ async function callOpenAIManagerConversation(
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
     promptCacheMode: "explicit",
     executeTool: async (name, args) => {
-      if (!isReleaseSuccessTool(name) && !isOpportunityTool(name)) return executeManagerConversationTool(db, toolInput, name, args);
+      if (!isReleaseSuccessTool(name) && !isOpportunityTool(name) && !isDocumentTool(name)) return executeManagerConversationTool(db, toolInput, name, args);
       try {
         const result = await executeManagerConversationTool(db, toolInput, name, args);
         releaseSuccessToolResults.push({ tool: name, result });
@@ -844,9 +840,9 @@ async function callOpenAIManagerConversation(
       } catch (error) {
         const errorEventId = await captureAppError(error, {
           functionName: "manager-conversation-stream",
-          operation: isOpportunityTool(name) ? "release_opportunity_tool" : "release_success_tool",
+          operation: isDocumentTool(name) ? "song_document_tool" : isOpportunityTool(name) ? "release_opportunity_tool" : "release_success_tool",
           source: "edge",
-          publicMessage: isOpportunityTool(name) ? "Release research could not be completed safely." : "Release materials could not be checked.",
+          publicMessage: isDocumentTool(name) ? "The song document needs a retry." : isOpportunityTool(name) ? "Release research could not be completed safely." : "Release materials could not be checked.",
           accountId: input.accountId,
           artistWorkspaceId: input.artistWorkspaceId,
           artistId: input.artistId,
@@ -855,7 +851,7 @@ async function callOpenAIManagerConversation(
             conversation_id: conversationId,
             manager_run_id: runId,
             music_item_id: input.musicSubject?.type === "music_item" ? input.musicSubject.id : null,
-            stage: isOpportunityTool(name) ? opportunityToolStage(name) : name,
+            stage: isDocumentTool(name) ? "document_generation" : isOpportunityTool(name) ? opportunityToolStage(name) : name,
           },
         });
         releaseSuccessToolResults.push({
@@ -896,16 +892,17 @@ type ReleaseSuccessToolResult = {
 };
 
 function isReleaseSuccessTool(tool: string) {
-  return tool === "read_focused_release_success"
-    || tool === "propose_focused_release_date_change"
-    || tool === "create_focused_song_document";
+  return isReleaseSuccessArtifactTool(tool);
 }
 
 function isOpportunityTool(tool: string) {
   return tool === "query_focused_release_opportunities"
     || tool === "save_focused_release_opportunities"
-    || tool === "record_focused_release_opportunity_outcome"
-    || tool === "create_focused_song_document";
+    || tool === "record_focused_release_opportunity_outcome";
+}
+
+function isDocumentTool(tool: string) {
+  return tool === "create_focused_song_document";
 }
 
 function opportunityToolStage(tool: string) {
@@ -1350,7 +1347,7 @@ async function persistTaskDraftOutput(
 }
 
 async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {
-  if (output.actionPolicy !== "create_decision_package") return null;
+  if (output.actionPolicy !== "create_decision_package" || !managerConversationExplicitlyRequestsDecisionPackage(input)) return null;
 
   const { error: staleError } = await db
     .from("manager_outputs")
@@ -1661,9 +1658,13 @@ function normalizeCreatedWorkItem(item: any) {
     type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
     title: String(item.title || "").trim(),
     body: String(item.body || "").trim(),
-    artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,
+    artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,
     content: item.content ? String(item.content) : undefined,
     managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,
+    musicItemId: item.musicItemId ? String(item.musicItemId) : undefined,
+    documentType: item.documentType ? String(item.documentType) : undefined,
+    readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,
+    missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((entry: unknown) => String(entry || "").trim()).filter(Boolean).slice(0, 20) : [],
     id: item.id ? String(item.id) : undefined,
     parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
     status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",

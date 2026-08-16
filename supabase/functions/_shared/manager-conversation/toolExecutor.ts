@@ -20,7 +20,7 @@ import type {
   ReleaseSuccessPacket,
   ReleaseTaskScheduleBindingInput,
 } from "../release-success/types.ts";
-import { persistFocusedSongDocumentDraft } from "../songDocumentDraft.ts";
+import { persistFocusedSongDocumentDraft, prepareFocusedSongDocumentDraft } from "../songDocumentDraft.ts";
 
 type ManagerToolInput = {
   accountId: string;
@@ -688,16 +688,56 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
   const documentType = requiredSongDocumentType(args.documentType);
   const title = requiredText(args.title, "Document title", 240);
   const body = requiredText(args.body, "Document body", 60_000);
+  const prepared = prepareFocusedSongDocumentDraft(documentType, title, body);
+  if (!prepared) throw new Error("Song document type is not supported by the premium document pathway.");
+
+  let persisted: Awaited<ReturnType<typeof persistFocusedSongDocumentDraft>>;
   try {
-    const persisted = await persistFocusedSongDocumentDraft(
+    persisted = await persistFocusedSongDocumentDraft(
       db,
       { ...input, body: `Create a draft ${documentType} titled ${title}.`, documentType, title },
       input.runId ?? `manager-document-${subject.id}`,
       body,
       false,
     );
-    const opportunityId = stringArg(args.opportunityId);
-    if (opportunityId && persisted?.documentId && ["playlist_pitch", "press_pitch", "press_target_brief", "spotify_editorial_pitch"].includes(documentType)) {
+  } catch (error) {
+    const errorEventId = await captureAppError(error, {
+      functionName: "manager-conversation-tool-executor",
+      operation: "song_document_persistence",
+      source: "database",
+      publicMessage: "The draft was created, but it could not be saved to Files.",
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      refs: {
+        conversation_id: input.conversationId,
+        manager_run_id: input.runId,
+        music_item_id: subject.id,
+        stage: "document_persistence",
+      },
+    });
+    return {
+      status: "draft_ready_unsaved",
+      musicItemId: subject.id,
+      documentType: prepared.artifactType,
+      title: prepared.title,
+      draftBody: prepared.renderedBody,
+      missingInputs: prepared.structure.missingInputs,
+      quality: prepared.quality,
+      failure: {
+        stage: "document_persistence",
+        message: "Draft created, but it couldn't be saved to Files.",
+        retryable: true,
+        ...(errorEventId ? { reference: errorEventId } : {}),
+      },
+    };
+  }
+
+  if (!persisted?.documentId) throw new Error("Song document persistence returned no document receipt.");
+  const opportunityId = stringArg(args.opportunityId);
+  let linkWarning: Record<string, unknown> | undefined;
+  if (opportunityId && ["playlist_pitch", "press_pitch", "press_target_brief", "spotify_editorial_pitch"].includes(documentType)) {
+    try {
       const { data: opportunity, error: opportunityError } = await scopedUpdate(db, "release_opportunities", {
         pitch_document_id: persisted.documentId,
       }, input)
@@ -707,11 +747,41 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
         .maybeSingle();
       if (opportunityError) throw opportunityError;
       if (!opportunity?.id) throw new Error("The release opportunity could not be linked to its pitch document.");
+    } catch (error) {
+      const reference = await captureAppError(error, {
+        functionName: "manager-conversation-tool-executor",
+        operation: "song_document_opportunity_link",
+        source: "database",
+        publicMessage: "The draft was saved, but its target link needs a retry.",
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        refs: {
+          conversation_id: input.conversationId,
+          manager_run_id: input.runId,
+          music_item_id: subject.id,
+          stage: "document_target_link",
+        },
+      });
+      linkWarning = {
+        message: "Draft saved to Files, but its playlist/press target link could not be updated.",
+        retryable: true,
+        ...(reference ? { reference } : {}),
+      };
     }
-    return { ...persisted, status: "drafted", musicItemId: subject.id, documentType, title, ...(opportunityId ? { opportunityId } : {}) };
-  } catch (error) {
-    return failedOpportunityResult(error, input, "opportunity_persistence", "The song document could not be saved.");
   }
+
+  return {
+    ...persisted,
+    status: "drafted",
+    musicItemId: subject.id,
+    documentType: prepared.artifactType,
+    title: prepared.title,
+    missingInputs: prepared.structure.missingInputs,
+    quality: prepared.quality,
+    ...(opportunityId ? { opportunityId } : {}),
+    ...(linkWarning ? { linkWarning } : {}),
+  };
 }
 
 async function prepareFocusedReleaseSharePackage(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
