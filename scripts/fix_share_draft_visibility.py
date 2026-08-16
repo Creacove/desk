@@ -27,3 +27,5 @@ test = test.replace('screen.getByRole("button", { name: "Preview" })', 'screen.g
 test = test.replace('''    fireEvent.click(screen.getByRole("button", { name: "Listen" }));\n    fireEvent.click(screen.getByRole("button", { name: "Create link" }));''', '''    fireEvent.click(screen.getByRole("button", { name: "Listen" }));\n    fireEvent.click(screen.getByRole("button", { name: "Preview package" }));\n    fireEvent.click(await screen.findByRole("button", { name: "Create link" }));''', 1)
 test = test.replace('expect(screen.queryByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeInTheDocument();', 'expect(screen.getByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeChecked();', 1)
 test_path.write_text(test)
+
+# Triggered after workflow creation.
