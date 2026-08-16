@@ -1,0 +1,654 @@
+name: Implement premium Manager artifacts
+
+on:
+  push:
+    branches:
+      - agent/premium-manager-artifact-experience
+    paths:
+      - .github/workflows/implement-premium-manager-artifacts.yml
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: agent/premium-manager-artifact-experience
+
+      - name: Apply product and backend fixes
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import textwrap
+
+          def read(path):
+              return Path(path).read_text()
+
+          def write(path, text):
+              Path(path).write_text(text)
+
+          def replace(path, old, new, count=1):
+              text = read(path)
+              found = text.count(old)
+              if found < count:
+                  raise SystemExit(f"{path}: expected at least {count} occurrence(s), found {found}: {old[:100]!r}")
+              write(path, text.replace(old, new, count))
+
+          def replace_all(path, old, new, minimum=1):
+              text = read(path)
+              found = text.count(old)
+              if found < minimum:
+                  raise SystemExit(f"{path}: expected at least {minimum} occurrence(s), found {found}: {old[:100]!r}")
+              write(path, text.replace(old, new))
+
+          def sub(path, pattern, replacement, count=1, flags=re.S):
+              text = read(path)
+              next_text, n = re.subn(pattern, replacement, text, count=count, flags=flags)
+              if n != count:
+                  raise SystemExit(f"{path}: regex replacement expected {count}, got {n}: {pattern[:100]!r}")
+              write(path, next_text)
+
+          # Browser types: song documents are first-class Manager work products.
+          replace_all(
+              "src/types/cleanProduction.ts",
+              'artifactKind?: "task_draft";\n    content?: string;',
+              'artifactKind?: "task_draft" | "song_document";\n    content?: string;\n    musicItemId?: string;\n    documentType?: string;\n    readiness?: "ready" | "needs_review" | "save_failed";\n    missingInputs?: string[];',
+              minimum=2,
+          )
+
+          # Backend created-work type carries the same document receipt metadata.
+          replace(
+              "supabase/functions/_shared/openaiManagerConversationLegacy.ts",
+              '  parentMissionId?: string;\n  status?: "created" | "updated" | "approval_required" | "failed" | "pending";\n',
+              '  parentMissionId?: string;\n  artifactKind?: "task_draft" | "song_document";\n  content?: string;\n  managerOutputId?: string;\n  musicItemId?: string;\n  documentType?: string;\n  readiness?: "ready" | "needs_review" | "save_failed";\n  missingInputs?: string[];\n  status?: "created" | "updated" | "approval_required" | "failed" | "pending";\n',
+          )
+
+          # Artifact tool selection: EPK/press kit is a document, never an implicit share package.
+          replace(
+              "supabase/functions/_shared/manager-conversation/agentLoop.ts",
+              '    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema; the server renders recipient-ready copy and applies type-specific quality gates. If the tool rejects quality, repair the named blockers and retry. Never send or publish the document.",',
+              '    description: "Create or version one premium canonical song artifact in Files. Before recipient-facing campaign artifacts, you may establish the internal Release Narrative with documentType press_angle and title exactly Release narrative, but it is internal scaffolding and must not be presented as a requested deliverable unless the user explicitly asked for it. The body MUST be the JSON-encoded structured artifact described by the schema. Unknown nonessential facts belong in missingInputs and must not prevent a useful draft; never invent placeholders. If quality gates reject unsupported or unusable copy, repair those blockers and retry. Never send or publish the document.",',
+          )
+          replace(
+              "supabase/functions/_shared/manager-conversation/agentLoop.ts",
+              '  const directDocumentIntent = /\\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\\b/.test(body)',
+              '  const directDocumentIntent = /\\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete|retry|save)\\b/.test(body)',
+          )
+          replace(
+              "supabase/functions/_shared/manager-conversation/agentLoop.ts",
+              '  const packageIntent = /\\b(prepare|build|create|make|assemble)\\b/.test(body)\n  && /\\b(package|share link|private link|delivery link|press kit|epk package)\\b/.test(body);',
+              '  const packageIntent = /\\b(prepare|build|create|make|assemble)\\b/.test(body)\n    && /\\b(share package|private package|delivery package|share link|private link|delivery link|export package)\\b/.test(body);',
+          )
+          marker = 'export function selectManagerConversationToolsForTurn(input: {'
+          text = read("supabase/functions/_shared/manager-conversation/agentLoop.ts")
+          if 'export function managerConversationExplicitlyRequestsDecisionPackage' not in text:
+              insertion = '''export function managerConversationExplicitlyRequestsDecisionPackage(input: {\n  body: string;\n  contextAnswers?: Array<{ questionKey: string; answer: string }>;\n}) {\n  const text = `${input.body} ${(input.contextAnswers ?? []).map((answer) => `${answer.questionKey} ${answer.answer}`).join(" ")}`\n    .replace(/[_-]+/g, " ")\n    .toLowerCase();\n  return /\\bdecision package\\b/.test(text);\n}\n\n'''
+              if marker not in text:
+                  raise SystemExit("agentLoop: insertion marker missing")
+              write("supabase/functions/_shared/manager-conversation/agentLoop.ts", text.replace(marker, insertion + marker, 1))
+
+          # Structured document preparation is exported so persistence failures can preserve the generated draft.
+          draft_path = "supabase/functions/_shared/songDocumentDraft.ts"
+          replace(
+              draft_path,
+              '  schemaVersion?: "song_document_v2";\n};\n',
+              '  schemaVersion?: "song_document_v2";\n  missingInputs?: string[];\n};\n\nexport type PreparedFocusedSongDocument = {\n  documentType: PremiumSongDocumentType;\n  artifactType: PremiumSongDocumentType;\n  title: string;\n  structure: StructuredSongDocument;\n  quality: SongDocumentQuality;\n  renderedBody: string;\n};\n\nexport function prepareFocusedSongDocumentDraft(\n  inputDocumentType: string | undefined,\n  inputTitle: string | undefined,\n  responseBody: string,\n  requestBody = "",\n): PreparedFocusedSongDocument | null {\n  const request = requestBody.toLowerCase();\n  const documentType = normalizeDocumentType(inputDocumentType) ?? requestedDocumentType(request);\n  if (!documentType || !isPremiumSongDocumentType(documentType)) return null;\n  const title = cleanLongText(inputTitle, 240) || documentTitle(documentType);\n  const artifactType: PremiumSongDocumentType = isReleaseNarrativeTransport(documentType, title)\n    ? "release_narrative"\n    : documentType;\n  const structure = parseStructuredToolBody(responseBody);\n  if (!structure) {\n    throw new Error("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose.");\n  }\n  const quality = assessStructuredSongDocument(artifactType, structure);\n  if (quality.blockers.length) {\n    throw new Error(`Document quality gate failed (${quality.score}/100): ${quality.blockers.join(" ")}`);\n  }\n  return {\n    documentType,\n    artifactType,\n    title,\n    structure,\n    quality,\n    renderedBody: renderStructuredSongDocument(artifactType, title, structure),\n  };\n}\n',
+          )
+          sub(
+              draft_path,
+              r'  const request = input\.body\.toLowerCase\(\);\n  const documentType = normalizeDocumentType\(input\.documentType\) \?\? requestedDocumentType\(request\);\n  if \(!documentType \|\| !isPremiumSongDocumentType\(documentType\)\) return;\n\n  const musicItemId = input\.musicSubject\.id;\n  const title = cleanLongText\(input\.title, 240\) \|\| documentTitle\(documentType\);\n  const artifactType: PremiumSongDocumentType = isReleaseNarrativeTransport\(documentType, title\)\n    \? "release_narrative"\n    : documentType;\n  const structure = parseStructuredToolBody\(responseBody\);\n  if \(!structure\) \{\n    throw new Error\("Document quality gate failed: body must be the structured JSON artifact, not markdown or conversational prose\."\);\n  \}\n  const quality = assessStructuredSongDocument\(artifactType, structure\);\n  if \(quality\.blockers\.length\) \{\n    throw new Error\(`Document quality gate failed \(\$\{quality\.score\}/100\): \$\{quality\.blockers\.join\(" "\)\}`\);\n  \}\n  const renderedBody = renderStructuredSongDocument\(artifactType, title, structure\);',
+              '  const prepared = prepareFocusedSongDocumentDraft(input.documentType, input.title, responseBody, input.body);\n  if (!prepared) return;\n  const { documentType, artifactType, title, structure, quality, renderedBody } = prepared;\n  const musicItemId = input.musicSubject.id;',
+          )
+          replace_all(
+              draft_path,
+              '      schemaVersion: "song_document_v2",\n    };',
+              '      schemaVersion: "song_document_v2",\n      missingInputs: structure.missingInputs,\n    };',
+              minimum=2,
+          )
+
+          # Document persistence failures preserve the generated artifact instead of becoming release-review failures.
+          tool_path = "supabase/functions/_shared/manager-conversation/toolExecutor.ts"
+          replace(
+              tool_path,
+              'import { persistFocusedSongDocumentDraft } from "../songDocumentDraft.ts";',
+              'import { persistFocusedSongDocumentDraft, prepareFocusedSongDocumentDraft } from "../songDocumentDraft.ts";',
+          )
+          new_create_document = r'''async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>) {
+  const subject = requireFocusedMusicSubject(input);
+  if (subject.type !== "music_item") {
+    return { status: "not_allowed", reason: "Song documents are currently scoped to an attached song." };
+  }
+  const documentType = requiredSongDocumentType(args.documentType);
+  const title = requiredText(args.title, "Document title", 240);
+  const body = requiredText(args.body, "Document body", 60_000);
+  const prepared = prepareFocusedSongDocumentDraft(documentType, title, body);
+  if (!prepared) throw new Error("Song document type is not supported by the premium document pathway.");
+
+  let persisted: Awaited<ReturnType<typeof persistFocusedSongDocumentDraft>>;
+  try {
+    persisted = await persistFocusedSongDocumentDraft(
+      db,
+      { ...input, body: `Create a draft ${documentType} titled ${title}.`, documentType, title },
+      input.runId ?? `manager-document-${subject.id}`,
+      body,
+      false,
+    );
+  } catch (error) {
+    const errorEventId = await captureAppError(error, {
+      functionName: "manager-conversation-tool-executor",
+      operation: "song_document_persistence",
+      source: "database",
+      publicMessage: "The draft was created, but it could not be saved to Files.",
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      refs: {
+        conversation_id: input.conversationId,
+        manager_run_id: input.runId,
+        music_item_id: subject.id,
+        stage: "document_persistence",
+      },
+    });
+    return {
+      status: "draft_ready_unsaved",
+      musicItemId: subject.id,
+      documentType: prepared.artifactType,
+      title: prepared.title,
+      draftBody: prepared.renderedBody,
+      missingInputs: prepared.structure.missingInputs,
+      quality: prepared.quality,
+      failure: {
+        stage: "document_persistence",
+        message: "Draft created, but it couldn't be saved to Files.",
+        retryable: true,
+        ...(errorEventId ? { reference: errorEventId } : {}),
+      },
+    };
+  }
+
+  if (!persisted?.documentId) throw new Error("Song document persistence returned no document receipt.");
+  const opportunityId = stringArg(args.opportunityId);
+  let linkWarning: Record<string, unknown> | undefined;
+  if (opportunityId && ["playlist_pitch", "press_pitch", "press_target_brief", "spotify_editorial_pitch"].includes(documentType)) {
+    try {
+      const { data: opportunity, error: opportunityError } = await scopedUpdate(db, "release_opportunities", {
+        pitch_document_id: persisted.documentId,
+      }, input)
+        .eq("id", opportunityId)
+        .eq("music_item_id", subject.id)
+        .select("id")
+        .maybeSingle();
+      if (opportunityError) throw opportunityError;
+      if (!opportunity?.id) throw new Error("The release opportunity could not be linked to its pitch document.");
+    } catch (error) {
+      const reference = await captureAppError(error, {
+        functionName: "manager-conversation-tool-executor",
+        operation: "song_document_opportunity_link",
+        source: "database",
+        publicMessage: "The draft was saved, but its target link needs a retry.",
+        accountId: input.accountId,
+        artistWorkspaceId: input.artistWorkspaceId,
+        artistId: input.artistId,
+        refs: {
+          conversation_id: input.conversationId,
+          manager_run_id: input.runId,
+          music_item_id: subject.id,
+          stage: "document_target_link",
+        },
+      });
+      linkWarning = {
+        message: "Draft saved to Files, but its playlist/press target link could not be updated.",
+        retryable: true,
+        ...(reference ? { reference } : {}),
+      };
+    }
+  }
+
+  return {
+    ...persisted,
+    status: "drafted",
+    musicItemId: subject.id,
+    documentType: prepared.artifactType,
+    title: prepared.title,
+    missingInputs: prepared.structure.missingInputs,
+    quality: prepared.quality,
+    ...(opportunityId ? { opportunityId } : {}),
+    ...(linkWarning ? { linkWarning } : {}),
+  };
+}
+
+async function prepareFocusedReleaseSharePackage'''
+          sub(
+              tool_path,
+              r'async function createFocusedSongDocument\(db: SupabaseLike, input: ManagerToolInput, args: Record<string, unknown>\) \{.*?\n\}\n\nasync function prepareFocusedReleaseSharePackage',
+              new_create_document,
+          )
+
+          # Shared mapping: a document is a document, not a fake music-item receipt.
+          work_path = Path("supabase/functions/_shared/manager-conversation/documentWork.ts")
+          work_path.write_text(r'''import type { ManagerConversationCreatedWork } from "../openaiManagerConversation.ts";
+
+export type ManagerToolResult = { tool: string; result: unknown };
+
+export function isReleaseSuccessArtifactTool(tool: string) {
+  return tool === "read_focused_release_success" || tool === "propose_focused_release_date_change";
+}
+
+export function songDocumentWorkFromToolResult(
+  musicItemId: string,
+  resultValue: unknown,
+): ManagerConversationCreatedWork | undefined {
+  if (!musicItemId || !isRecord(resultValue)) return undefined;
+  const status = text(resultValue.status);
+  if (status !== "drafted" && status !== "draft_ready_unsaved") return undefined;
+  const documentType = text(resultValue.documentType);
+  const title = text(resultValue.title) || "Song document";
+  if (documentType === "release_narrative" || title.toLowerCase() === "release narrative") return undefined;
+
+  const quality = isRecord(resultValue.quality) ? resultValue.quality : {};
+  const qualityReadiness = text(quality.readiness);
+  const missingInputs = Array.isArray(resultValue.missingInputs)
+    ? resultValue.missingInputs.map(text).filter(Boolean).slice(0, 20)
+    : [];
+  const unsaved = status === "draft_ready_unsaved";
+  const documentId = text(resultValue.documentId);
+  const stableId = documentId || `unsaved-document:${slug(documentType || title)}:${slug(title)}`;
+
+  return {
+    type: "music_item",
+    id: stableId,
+    musicItemId,
+    artifactKind: "song_document",
+    documentType: documentType || undefined,
+    title,
+    body: unsaved ? "Draft created, but it couldn't be saved to Files." : "Saved to Files.",
+    content: unsaved ? text(resultValue.draftBody) || undefined : undefined,
+    readiness: unsaved ? "save_failed" : qualityReadiness === "ready" && !missingInputs.length ? "ready" : "needs_review",
+    missingInputs,
+    status: unsaved ? "failed" : resultValue.created === false ? "updated" : "created",
+  };
+}
+
+export function songDocumentWorkItems(
+  musicItemId: string,
+  results: ManagerToolResult[],
+) {
+  return results
+    .filter((item) => item.tool === "create_focused_song_document")
+    .map((item) => songDocumentWorkFromToolResult(musicItemId, item.result))
+    .filter((item): item is ManagerConversationCreatedWork => Boolean(item));
+}
+
+export function upsertManagerCreatedWork(
+  current: ManagerConversationCreatedWork[],
+  next: ManagerConversationCreatedWork,
+) {
+  const key = workKey(next);
+  return [...current.filter((item) => workKey(item) !== key), next];
+}
+
+function workKey(item: ManagerConversationCreatedWork) {
+  return `${item.artifactKind ?? item.type}:${item.id || item.title}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function text(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function slug(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 72) || "document";
+}
+''')
+
+          # Non-stream Manager: collect every document tool result, produce user-facing document work,
+          # and only persist a decision package when it was explicitly requested.
+          normal_path = "supabase/functions/manager-conversation/index.ts"
+          replace(
+              normal_path,
+              '  managerConversationRequiresCanonicalDocumentTool,\n  runManagerAgentLoop,',
+              '  managerConversationExplicitlyRequestsDecisionPackage,\n  managerConversationRequiresCanonicalDocumentTool,\n  runManagerAgentLoop,',
+          )
+          replace(
+              normal_path,
+              'import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";',
+              'import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";\nimport { songDocumentWorkItems, upsertManagerCreatedWork, type ManagerToolResult } from "../_shared/manager-conversation/documentWork.ts";',
+          )
+          replace(
+              normal_path,
+              '    const { output, usage, responseId, toolTrace, toolCreatedWork } = await callOpenAIManagerConversation(',
+              '    const { output, usage, responseId, toolTrace, toolCreatedWork, documentToolResults } = await callOpenAIManagerConversation(',
+          )
+          replace(
+              normal_path,
+              '    const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);\n    await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));\n    output.createdWork = taskDraftWork\n      ? [...toolCreatedWork, ...persistedWork, taskDraftWork]\n      : [...toolCreatedWork, ...persistedWork];',
+              '    const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);\n    const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";\n    const documentWork = songDocumentWorkItems(musicItemId, documentToolResults);\n    let createdWork = taskDraftWork\n      ? [...toolCreatedWork, ...persistedWork, taskDraftWork]\n      : [...toolCreatedWork, ...persistedWork];\n    for (const work of documentWork) createdWork = upsertManagerCreatedWork(createdWork, work);\n    output.createdWork = createdWork;',
+          )
+          replace(
+              normal_path,
+              '  const playbookInstructions = getPlaybooksInstructions(playbookKeys);\n  const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];',
+              '  const playbookInstructions = getPlaybooksInstructions(playbookKeys);\n  const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];\n  const documentToolResults: ManagerToolResult[] = [];',
+          )
+          replace(
+              normal_path,
+              '    executeTool: (name, args) => executeManagerConversationTool(db, toolInput, name, args),',
+              '    executeTool: async (name, args) => {\n      const toolResult = await executeManagerConversationTool(db, toolInput, name, args);\n      if (name === "create_focused_song_document") documentToolResults.push({ tool: name, result: toolResult });\n      return toolResult;\n    },',
+          )
+          replace(
+              normal_path,
+              '    toolTrace: result.toolTrace,\n    toolCreatedWork,\n  };',
+              '    toolTrace: result.toolTrace,\n    toolCreatedWork,\n    documentToolResults,\n  };',
+          )
+          replace(
+              normal_path,
+              'async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {\n  if (output.actionPolicy !== "create_decision_package") return null;',
+              'async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {\n  if (output.actionPolicy !== "create_decision_package" || !managerConversationExplicitlyRequestsDecisionPackage(input)) return null;',
+          )
+          replace(
+              normal_path,
+              '      artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,\n      content: item.content ? String(item.content) : undefined,\n      managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,',
+              '      artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,\n      content: item.content ? String(item.content) : undefined,\n      managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,\n      musicItemId: item.musicItemId ? String(item.musicItemId) : undefined,\n      documentType: item.documentType ? String(item.documentType) : undefined,\n      readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,\n      missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((entry: unknown) => String(entry || "").trim()).filter(Boolean).slice(0, 20) : [],',
+          )
+
+          # Stream Manager: document tool is not a release-success tool, preserve all documents,
+          # and keep document failures out of the red release-review artifact.
+          stream_path = "supabase/functions/manager-conversation-stream/index.ts"
+          replace(
+              stream_path,
+              '  managerConversationRequiresCanonicalDocumentTool,\n  runManagerAgentLoop,',
+              '  managerConversationExplicitlyRequestsDecisionPackage,\n  managerConversationRequiresCanonicalDocumentTool,\n  runManagerAgentLoop,',
+          )
+          replace(
+              stream_path,
+              'import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";',
+              'import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";\nimport { isReleaseSuccessArtifactTool, songDocumentWorkItems, upsertManagerCreatedWork } from "../_shared/manager-conversation/documentWork.ts";',
+          )
+          replace(
+              stream_path,
+              '        const documentToolResult = releaseSuccessToolResults.find((item) => item.tool === "create_focused_song_document");\n        const persistedDocument = documentToolResult?.result && isRecord(documentToolResult.result) && documentToolResult.result.status === "drafted"\n          ? documentToolResult.result\n          : documentToolResult\n            ? undefined\n            : await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));\n        const documentWork = persistedDocument ? songDocumentCreatedWork(input, persistedDocument) : undefined;\n        const baseCreatedWork = taskDraftWork\n          ? [...toolCreatedWork, ...persistedWork, taskDraftWork]\n          : [...toolCreatedWork, ...persistedWork];\n        output.createdWork = documentWork\n          ? upsertServerCreatedWork(baseCreatedWork, documentWork)\n          : baseCreatedWork;',
+              '        const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";\n        const documentWork = songDocumentWorkItems(musicItemId, releaseSuccessToolResults);\n        let baseCreatedWork = taskDraftWork\n          ? [...toolCreatedWork, ...persistedWork, taskDraftWork]\n          : [...toolCreatedWork, ...persistedWork];\n        for (const work of documentWork) baseCreatedWork = upsertManagerCreatedWork(baseCreatedWork, work);\n        output.createdWork = baseCreatedWork;',
+          )
+          replace(
+              stream_path,
+              '      if (!isReleaseSuccessTool(name) && !isOpportunityTool(name)) return executeManagerConversationTool(db, toolInput, name, args);',
+              '      if (!isReleaseSuccessTool(name) && !isOpportunityTool(name) && !isDocumentTool(name)) return executeManagerConversationTool(db, toolInput, name, args);',
+          )
+          replace(
+              stream_path,
+              '          operation: isOpportunityTool(name) ? "release_opportunity_tool" : "release_success_tool",\n          source: "edge",\n          publicMessage: isOpportunityTool(name) ? "Release research could not be completed safely." : "Release materials could not be checked.",',
+              '          operation: isDocumentTool(name) ? "song_document_tool" : isOpportunityTool(name) ? "release_opportunity_tool" : "release_success_tool",\n          source: "edge",\n          publicMessage: isDocumentTool(name) ? "The song document needs a retry." : isOpportunityTool(name) ? "Release research could not be completed safely." : "Release materials could not be checked.",',
+          )
+          replace(
+              stream_path,
+              '            stage: isOpportunityTool(name) ? opportunityToolStage(name) : name,',
+              '            stage: isDocumentTool(name) ? "document_generation" : isOpportunityTool(name) ? opportunityToolStage(name) : name,',
+          )
+          sub(
+              stream_path,
+              r'function isReleaseSuccessTool\(tool: string\) \{\n  return tool === "read_focused_release_success"\n    \|\| tool === "propose_focused_release_date_change"\n    \|\| tool === "create_focused_song_document";\n\}\n\nfunction isOpportunityTool\(tool: string\) \{\n  return tool === "query_focused_release_opportunities"\n    \|\| tool === "save_focused_release_opportunities"\n    \|\| tool === "record_focused_release_opportunity_outcome"\n    \|\| tool === "create_focused_song_document";\n\}',
+              'function isReleaseSuccessTool(tool: string) {\n  return isReleaseSuccessArtifactTool(tool);\n}\n\nfunction isOpportunityTool(tool: string) {\n  return tool === "query_focused_release_opportunities"\n    || tool === "save_focused_release_opportunities"\n    || tool === "record_focused_release_opportunity_outcome";\n}\n\nfunction isDocumentTool(tool: string) {\n  return tool === "create_focused_song_document";\n}',
+          )
+          replace(
+              stream_path,
+              'async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {\n  if (output.actionPolicy !== "create_decision_package") return null;',
+              'async function persistDecisionPackageOutput(db: any, input: ManagerConversationInput, conversationId: string, runId: string, output: ManagerConversationOutput) {\n  if (output.actionPolicy !== "create_decision_package" || !managerConversationExplicitlyRequestsDecisionPackage(input)) return null;',
+          )
+          replace(
+              stream_path,
+              '    artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,\n    content: item.content ? String(item.content) : undefined,\n    managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,',
+              '    artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,\n    content: item.content ? String(item.content) : undefined,\n    managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,\n    musicItemId: item.musicItemId ? String(item.musicItemId) : undefined,\n    documentType: item.documentType ? String(item.documentType) : undefined,\n    readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,\n    missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((entry: unknown) => String(entry || "").trim()).filter(Boolean).slice(0, 20) : [],',
+          )
+
+          # Document result UI: show the requested work product, readiness and missing inputs.
+          legacy_path = "src/features/manager/ManagerScreensLegacy.tsx"
+          old_card_pattern = r'''function DocumentResultCard\(\{\n  item,\n  onOpenCreatedWork,\n\}: \{\n  item: WorkItem;\n  onOpenCreatedWork: \(type: "music_item" \| "mission" \| "task", id\?: string, destination\?: CreatedWorkDestination\) => void \| Promise<void>;\n\}\) \{\n  return \(\n    <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">.*?\n  \);\n\}'''
+          new_card = r'''function DocumentResultCard({
+  item,
+  onOpenCreatedWork,
+}: {
+  item: WorkItem;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const isSongDocument = item.artifactKind === "song_document";
+  if (!isSongDocument) {
+    return (
+      <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
+          <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+        </div>
+        {item.id ? <ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
+      </article>
+    );
+  }
+
+  const documentLabel = managerDocumentLabel(item.documentType, item.title);
+  const saveFailed = item.readiness === "save_failed" || item.status === "failed";
+  const readinessLabel = saveFailed ? "Draft created · Couldn't save to Files" : item.readiness === "ready" ? "Ready" : "Draft ready";
+  const missingInputs = item.missingInputs ?? [];
+  const required = missingInputs.filter((entry) => /^required before external use:/i.test(entry));
+  const optional = missingInputs.filter((entry) => !/^required before external use:/i.test(entry));
+  const musicItemId = item.musicItemId;
+
+  return (
+    <article data-testid="manager-document-result" className="border-l-2 border-foreground/12 py-2 pl-4">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold text-muted-foreground">{documentLabel}</p>
+          <p className="mt-0.5 text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>
+          <p className={`mt-1 text-[11px] font-medium ${saveFailed ? "text-amber-700" : "text-muted-foreground"}`}>{readinessLabel}</p>
+        </div>
+        {!saveFailed && musicItemId ? (
+          <ResultAction pendingLabel="Opening Files…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files")}>
+            {managerDocumentOpenLabel(item.documentType)}
+          </ResultAction>
+        ) : null}
+      </div>
+
+      {missingInputs.length ? (
+        <div className="mt-2.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+          {required.length ? <p><span className="font-semibold text-foreground/80">Before external use:</span> {required.map(stripMissingInputPrefix).join(" · ")}</p> : null}
+          {optional.length ? <p><span className="font-semibold text-foreground/80">Improve this:</span> {optional.map(stripMissingInputPrefix).join(" · ")}</p> : null}
+        </div>
+      ) : null}
+
+      {saveFailed && item.content ? (
+        <div className="mt-2 flex flex-wrap gap-1">
+          <ResultAction onClick={() => setExpanded((value) => !value)}>{expanded ? "Hide draft" : "View draft"}</ResultAction>
+          {musicItemId ? <ResultAction onClick={() => onOpenCreatedWork("music_item", musicItemId, "files")}>Open Files</ResultAction> : null}
+        </div>
+      ) : null}
+      {expanded && item.content ? (
+        <div className="mt-3 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-3">
+          <RichMessageBody body={item.content} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function managerDocumentLabel(documentType: string | undefined, title: string) {
+  const type = (documentType ?? "").toLowerCase();
+  if (type === "epk") return "EPK";
+  if (type === "playlist_pitch" || type === "spotify_editorial_pitch") return "Playlist pitch";
+  if (type === "press_pitch") return "Press pitch";
+  if (type === "press_release") return "Press release";
+  if (type === "press_target_brief") return "Press brief";
+  if (type === "artist_biography") return "Artist biography";
+  if (type === "one_sheet") return "One-sheet";
+  if (type === "content_plan") return "Content plan";
+  if (type === "release_calendar") return "Release calendar";
+  if (type === "credits") return "Credits";
+  if (type === "lyrics") return "Lyrics";
+  if (type === "distributor_notes") return "Distributor notes";
+  if (/playlist/i.test(title)) return "Playlist pitch";
+  if (/epk|press kit/i.test(title)) return "EPK";
+  return "Document";
+}
+
+function managerDocumentOpenLabel(documentType: string | undefined) {
+  const type = (documentType ?? "").toLowerCase();
+  if (type === "epk") return "Open EPK";
+  if (type.includes("pitch")) return "Open pitch";
+  return "Open document";
+}
+
+function stripMissingInputPrefix(value: string) {
+  return value.replace(/^(?:required before external use|optional improvement):\s*/i, "").trim();
+}'''
+          sub(legacy_path, old_card_pattern, new_card)
+
+          # Focused tests for resilience and internal-scaffolding suppression.
+          Path("src/manager-artifact-resilience.test.ts").write_text(r'''import { describe, expect, it } from "vitest";
+import { buildManagerConversationInstructions } from "../supabase/functions/_shared/openaiManagerConversation";
+import {
+  managerConversationExplicitlyRequestsDecisionPackage,
+  selectManagerConversationToolsForTurn,
+} from "../supabase/functions/_shared/manager-conversation/agentLoop";
+import {
+  isReleaseSuccessArtifactTool,
+  songDocumentWorkFromToolResult,
+} from "../supabase/functions/_shared/manager-conversation/documentWork";
+import { prepareFocusedSongDocumentDraft } from "../supabase/functions/_shared/songDocumentDraft";
+
+const playlistDraft = JSON.stringify({
+  purpose: "Prepare a truthful curator-ready pitch for a released song.",
+  audience: "Independent playlist curator reviewing Afrobeat submissions.",
+  coreNarrative: "Tarara is positioned as a focused post-release Afrobeat record whose strongest angle is the tension between melodic warmth and direct rhythmic momentum, using only verified workspace and public facts.",
+  sections: [
+    { key: "subject_line", title: "Subject line", content: "Tarara — a focused Afrobeat record for your current rotation", evidenceRefs: [] },
+    { key: "opening", title: "Opening", content: "Sharing Tarara for consideration because its melodic approach and rhythmic feel align with the playlist's demonstrated Afrobeat lane.", evidenceRefs: [] },
+    { key: "fit", title: "Why it fits", content: "The record belongs in a contemporary Afrobeat context without relying on invented performance claims, private contacts, or unsupported audience statistics.", evidenceRefs: [] },
+    { key: "song_story", title: "Song story", content: "The pitch leads with the song's actual musical identity and release context rather than generic language about momentum or guaranteed traction.", evidenceRefs: [] },
+    { key: "cta", title: "Call to action", content: "Please listen when useful and consider Tarara only if it genuinely fits the programming direction you are currently building.", evidenceRefs: [] },
+  ],
+  claims: [],
+  missingInputs: ["Optional improvement: proof of a current performance signal"],
+});
+
+describe("premium Manager artifact resilience", () => {
+  it("creates a useful document when a nonessential input is missing", () => {
+    const prepared = prepareFocusedSongDocumentDraft("playlist_pitch", "Tarara — Everjamz playlist pitch", playlistDraft);
+    expect(prepared).not.toBeNull();
+    expect(prepared?.quality.blockers).toEqual([]);
+    expect(prepared?.quality.readiness).toBe("needs_review");
+    expect(prepared?.structure.missingInputs).toEqual(["Optional improvement: proof of a current performance signal"]);
+  });
+
+  it("preserves a generated draft when Files persistence fails", () => {
+    const work = songDocumentWorkFromToolResult("song-1", {
+      status: "draft_ready_unsaved",
+      documentType: "epk",
+      title: "Tarara EPK",
+      draftBody: "# Tarara EPK\n\nA usable draft.",
+      missingInputs: ["Optional improvement: artist press photo"],
+      quality: { readiness: "needs_review" },
+    });
+    expect(work).toMatchObject({
+      artifactKind: "song_document",
+      musicItemId: "song-1",
+      readiness: "save_failed",
+      status: "failed",
+      content: expect.stringContaining("Tarara EPK"),
+    });
+  });
+
+  it("never promotes the internal Release narrative into user-visible created work", () => {
+    expect(songDocumentWorkFromToolResult("song-1", {
+      status: "drafted",
+      documentId: "doc-internal",
+      documentType: "release_narrative",
+      title: "Release narrative",
+      quality: { readiness: "ready" },
+    })).toBeUndefined();
+  });
+
+  it("does not classify song-document creation as a release-success artifact", () => {
+    expect(isReleaseSuccessArtifactTool("create_focused_song_document")).toBe(false);
+    expect(isReleaseSuccessArtifactTool("read_focused_release_success")).toBe(true);
+    expect(isReleaseSuccessArtifactTool("propose_focused_release_date_change")).toBe(true);
+  });
+
+  it("requires explicit decision-package intent", () => {
+    expect(managerConversationExplicitlyRequestsDecisionPackage({ body: "Create an EPK and two playlist pitches" })).toBe(false);
+    expect(managerConversationExplicitlyRequestsDecisionPackage({ body: "Create a decision package for this campaign" })).toBe(true);
+  });
+
+  it("keeps document creation available post-release without release-success tools", () => {
+    const names = selectManagerConversationToolsForTurn({ body: "Create an EPK for this released song", hasAttachedUnreleasedSong: false })
+      .filter((tool) => tool.type === "function")
+      .map((tool) => tool.name);
+    expect(names).toContain("create_focused_song_document");
+    expect(names).not.toContain("read_focused_release_success");
+    expect(names).not.toContain("propose_focused_release_date_change");
+  });
+
+  it("instructs the Manager to retrieve first, create before blocking, and preserve unsaved drafts", () => {
+    const instructions = buildManagerConversationInstructions();
+    expect(instructions).toContain("Retrieve before asking");
+    expect(instructions).toContain("Create before blocking");
+    expect(instructions).toContain("draft_ready_unsaved");
+    expect(instructions).toContain("internal Release narrative");
+  });
+});
+''')
+
+          # Remove this one-shot workflow from the feature branch before commit.
+          Path(".github/workflows/implement-premium-manager-artifacts.yml").unlink()
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix: make Manager artifacts lifecycle-aware and resilient'
+          git push origin HEAD:agent/premium-manager-artifact-experience
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused regression tests
+        run: >-
+          npx vitest run --environment jsdom --pool=vmThreads
+          src/features/manager/managerPresentation.test.ts
+          src/features/manager/managerArtifactExperience.test.ts
+          src/record-servicing-tool-selection.test.ts
+          src/manager-artifact-resilience.test.ts
+          src/song-document-persistence-v2.test.ts
+          src/song-document-quality-gate.test.ts
+          src/song-document-standards.test.ts
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check Manager Edge boundaries
+        run: >-
+          deno check
+          supabase/functions/_shared/songDocumentStandards.ts
+          supabase/functions/_shared/songDocumentDraft.ts
+          supabase/functions/_shared/manager-conversation/documentWork.ts
+          supabase/functions/_shared/manager-conversation/agentLoop.ts
+          supabase/functions/_shared/manager-conversation/toolExecutor.ts
+          supabase/functions/manager-conversation/index.ts
+          supabase/functions/manager-conversation-stream/index.ts
+
+      - name: Build production app
+        run: npm run build
