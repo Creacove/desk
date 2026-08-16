@@ -10669,7 +10669,11 @@ async function callOpenAIManagerConversation(db, input, context, previousRespons
     initialToolChoice: managerConversationRequiresCanonicalDocumentTool({
       body: input.body,
       contextAnswers: input.contextAnswers
-    }) ? "create_focused_song_document" : void 0,
+    }) && input.musicSubject ? "read_focused_music_subject" : void 0,
+    maxToolCalls: managerConversationRequiresCanonicalDocumentTool({
+      body: input.body,
+      contextAnswers: input.contextAnswers
+    }) ? 24 : 8,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: "medium",
     maxOutputTokens: 6e3,
