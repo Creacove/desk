@@ -1,4 +1,4 @@
-name: Deploy Manager hotfix
+name: Prepare Manager deploy bundles
 
 on:
   push:
@@ -9,25 +9,32 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  deploy:
+  bundle:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Supabase CLI
-        uses: supabase/setup-cli@v1
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
         with:
-          version: latest
+          deno-version: v2.x
 
-      - name: Deploy manager-conversation
-        run: supabase functions deploy manager-conversation --project-ref bbwbxmnanccwottrmkqu
+      - name: Bundle Manager functions
+        run: |
+          mkdir -p .deploy-bundles
+          deno bundle --no-check --packages=external --external='https://*' --external='http://*' --external='jsr:*' --external='npm:*' -o .deploy-bundles/manager-conversation.ts supabase/functions/manager-conversation/index.ts
+          deno bundle --no-check --packages=external --external='https://*' --external='http://*' --external='jsr:*' --external='npm:*' -o .deploy-bundles/manager-conversation-stream.ts supabase/functions/manager-conversation-stream/index.ts
+          wc -c -l .deploy-bundles/*.ts | tee .deploy-bundles/manifest.txt
 
-      - name: Deploy manager-conversation-stream
-        run: supabase functions deploy manager-conversation-stream --project-ref bbwbxmnanccwottrmkqu
+      - name: Commit deploy bundles
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .deploy-bundles
+          git commit -m 'chore: prepare manager deploy bundles'
+          git push origin main
