@@ -72,6 +72,6 @@ describe("premium Manager artifact resilience", () => {
     expect(instructions).toContain("Retrieve before asking");
     expect(instructions).toContain("Create before blocking");
     expect(instructions).toContain("draft_ready_unsaved");
-    expect(instructions).toContain("internal Release narrative");
+    expect(instructions).toContain("canonical Release narrative");
   });
 });
