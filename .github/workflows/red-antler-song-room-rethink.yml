@@ -5,6 +5,7 @@ on:
       - scripts/red_antler_song_room_rethink.py
       - scripts/red_antler_song_room_rethink_fix.py
       - scripts/red_antler_song_room_rethink_fix2.py
+      - scripts/red_antler_song_room_rethink_fix3.py
       - .github/workflows/red-antler-song-room-rethink.yml
 permissions:
   contents: write
@@ -25,11 +26,15 @@ jobs:
           python3 scripts/red_antler_song_room_rethink.py
           python3 scripts/red_antler_song_room_rethink_fix.py
           python3 scripts/red_antler_song_room_rethink_fix2.py
+          python3 scripts/red_antler_song_room_rethink_fix3.py
       - run: npm ci
       - name: Focused song room contract
         run: npx vitest run src/song-room-red-antler-overview.test.ts --environment jsdom --pool=vmThreads
       - name: Full repository test suite
         run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
       - name: Production build
         run: npm run build
         env:
