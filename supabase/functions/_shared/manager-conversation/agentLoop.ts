@@ -274,8 +274,10 @@ const ensureSongReleaseWorkspaceProperties = {
   },
 };
 
+const allowLiveExternalSearch = false;
+
 export const managerConversationTools: ManagerAgentToolDefinition[] = [
-  { type: "web_search" },
+  ...(allowLiveExternalSearch ? [{ type: "web_search" as const }] : []),
   {
     type: "function",
     name: "query_evidence_items",
