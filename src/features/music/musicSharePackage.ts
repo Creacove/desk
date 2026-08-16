@@ -24,18 +24,18 @@ export type ShareSelection = {
 };
 
 const IDENTITY_KEYS = new Set(["song_title", "primary_artist"]);
+const PRESS_INFORMATION_KEYS = new Set(["song_title", "primary_artist", "release_date", "genre", "label"]);
+const DELIVERY_INFORMATION_KEYS = new Set(["song_title", "primary_artist", "release_date", "genre", "label", "copyright"]);
+
+// Recipient-facing press materials only. Outreach strategy and pitch drafts are
+// deliberately excluded: they are tools used to contact press/playlists, not part
+// of the EPK a journalist or media partner should receive.
 const PRESS_DOCUMENT_TYPES = new Set([
-  "lyrics",
-  "press_release",
-  "press_angle",
+  "epk",
   "artist_biography",
   "one_sheet",
+  "press_release",
   "credits",
-  "epk",
-  "spotify_editorial_pitch",
-  "playlist_pitch",
-  "press_target_brief",
-  "press_pitch",
 ]);
 const DELIVERY_DOCUMENT_TYPES = new Set(["lyrics", "credits", "distributor_notes"]);
 
@@ -60,15 +60,26 @@ export function buildShareSelection(purpose: SharePurpose, inventory: ShareInven
   }
 
   const assets = purpose === "epk_press"
-    ? [currentAudio, cover, ...inventory.assets.filter((asset) => asset.group === "Artwork" && asset.id !== cover?.id && asset.assetType !== "cover_art")].filter(isDefined)
+    ? [
+        currentAudio,
+        cover,
+        ...inventory.assets.filter((asset) =>
+          asset.group === "Artwork"
+          && asset.id !== cover?.id
+          && asset.assetType !== "cover_art"
+          && (asset.assetType === "press_photo" || asset.assetType === "artist_photo" || asset.assetType === "alternate_artwork"),
+        ),
+      ].filter(isDefined)
     : [currentAudio, cover].filter(isDefined);
   const documentTypes = purpose === "epk_press" ? PRESS_DOCUMENT_TYPES : DELIVERY_DOCUMENT_TYPES;
+  const informationTypes = purpose === "epk_press" ? PRESS_INFORMATION_KEYS : DELIVERY_INFORMATION_KEYS;
+
   return {
     assetIds: assets.map((asset) => asset.id),
     documentIds: inventory.documents
       .filter((document) => document.ready && Boolean(document.body?.trim()) && documentTypes.has(document.documentType))
       .map((document) => document.id),
-    informationKeys: availableInformation.map((field) => field.key),
+    informationKeys: availableInformation.filter((field) => informationTypes.has(field.key)).map((field) => field.key),
   };
 }
 
@@ -80,8 +91,15 @@ export function selectionMatchesPreset(purpose: SharePurpose, inventory: ShareIn
 }
 
 export function sharePurposeLabel(purpose: SharePurpose) {
+  if (purpose === "listen") return "Private listen";
+  if (purpose === "epk_press") return "Press / media";
+  if (purpose === "delivery") return "Distributor delivery";
+  return "Custom";
+}
+
+export function sharePurposeShortLabel(purpose: SharePurpose) {
   if (purpose === "listen") return "Listen";
-  if (purpose === "epk_press") return "Press kit";
+  if (purpose === "epk_press") return "Press / media";
   if (purpose === "delivery") return "Delivery";
   return "Custom";
 }
