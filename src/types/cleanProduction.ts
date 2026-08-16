@@ -474,8 +474,12 @@ export type ConversationMessageViewModel = {
     body: string;
     id?: string;
     parentMissionId?: string;
-    artifactKind?: "task_draft";
+    artifactKind?: "task_draft" | "song_document";
     content?: string;
+    musicItemId?: string;
+    documentType?: string;
+    readiness?: "ready" | "needs_review" | "save_failed";
+    missingInputs?: string[];
     managerOutputId?: string;
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
@@ -644,8 +648,12 @@ export type ConversationViewModel = {
     body: string;
     id?: string;
     parentMissionId?: string;
-    artifactKind?: "task_draft";
+    artifactKind?: "task_draft" | "song_document";
     content?: string;
+    musicItemId?: string;
+    documentType?: string;
+    readiness?: "ready" | "needs_review" | "save_failed";
+    missingInputs?: string[];
     managerOutputId?: string;
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
