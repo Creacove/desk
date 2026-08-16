@@ -1,0 +1,32 @@
+name: Fix share draft visibility
+on:
+  push:
+    paths:
+      - scripts/fix_share_draft_visibility.py
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: python3 scripts/fix_share_draft_visibility.py
+      - run: npm ci
+      - run: npx vitest run src/music-share-package.test.ts src/music-share-dialog.test.tsx src/public-music-share-service.test.ts src/music-share-recipient-contract.test.ts src/public-music-share-portal.test.tsx src/music-share-backend-safety.test.ts src/music-share-links-functions.test.ts --environment jsdom --pool=vmThreads
+      - run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - run: npx deno check supabase/functions/music-share-links/index.ts
+      - run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/music/MusicShareDialog.tsx src/features/music/musicSharePackage.ts src/music-share-dialog.test.tsx supabase/functions/music-share-links/index.ts
+          git commit -m 'fix: show document drafts in share preview'
+          git push origin main
