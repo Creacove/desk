@@ -38,7 +38,14 @@ export function dedupeManagerWork(items: ManagerWorkItem[]) {
 }
 
 export function groupManagerWork(items: ManagerWorkItem[]): ManagerWorkGroup[] {
-  const unique = dedupeManagerWork(items);
+  const unique = dedupeManagerWork(items.filter((item) => {
+    const presentationItem = item as ManagerWorkItem & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };
+    return presentationItem.visibility !== "internal"
+      && presentationItem.presentationRole !== "internal_support"
+      && presentationItem.presentationRole !== "compatibility"
+      && item.documentType !== "release_narrative"
+      && item.title.trim().toLowerCase() !== "release narrative";
+  }));
   const drafts = unique.filter((item) => item.artifactKind === "task_draft" || item.artifactKind === "song_document");
   const missions = unique.filter((item) => item.type === "mission" && item.artifactKind !== "task_draft" && item.artifactKind !== "song_document");
   const tasks = unique.filter((item) => item.type === "task" && item.artifactKind !== "task_draft" && item.artifactKind !== "song_document");

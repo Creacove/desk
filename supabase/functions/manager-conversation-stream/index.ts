@@ -22,6 +22,7 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import { buildManagerTurnPresentation, enforceExplicitDecisionPackagePolicy, normalizeManagerTurnPresentation, reconcileManagerCreatedWork } from "../_shared/manager-conversation/turnContract.ts";
 import {
   buildManagerConversationModelContext,
   classifyManagerConversationError,
@@ -181,18 +182,23 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
             });
           },
         );
+        enforceExplicitDecisionPackagePolicy(output, input);
         const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
         const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
         if (toolCreatedWork.length) output.missionGraphDecisions = [];
-        const preserveWorkspaceTopic = toolCreatedWork.some((work) => work.type === "music_item");
-        if (preserveWorkspaceTopic && finalMusicSubject) {
+        const workspaceCreatedWork = reconcileManagerCreatedWork(toolCreatedWork)
+          .filter((work) => work.artifactKind !== "song_document");
+        const createdSongWorkspace = workspaceCreatedWork.some((work) => work.type === "music_item")
+          && workspaceCreatedWork.some((work) => work.type === "mission");
+        const preserveWorkspaceTopic = Boolean(finalMusicSubject);
+        if (createdSongWorkspace && finalMusicSubject) {
           emit({
             type: "conversation.workspace_ready",
             conversationId,
             topic: releasePlanningTopic(finalMusicSubject),
             musicSubject: finalMusicSubject,
-            createdWork: toolCreatedWork.map(normalizeCreatedWorkItem),
-            refresh: refreshHintForCreatedWorkItems(toolCreatedWork),
+            createdWork: workspaceCreatedWork.map(normalizeCreatedWorkItem),
+            refresh: refreshHintForCreatedWorkItems(workspaceCreatedWork),
           });
         }
         emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "completed" });
@@ -228,23 +234,21 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         }
         await streamReleaseSuccessArtifacts(db, input, conversationId, runId, releaseSuccessToolResults, emit);
         const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-        const documentToolResult = releaseSuccessToolResults.find((item) => item.tool === "create_focused_song_document");
-        const persistedDocument = documentToolResult?.result && isRecord(documentToolResult.result) && documentToolResult.result.status === "drafted"
-          ? documentToolResult.result
-          : documentToolResult
-            ? undefined
-            : await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-        const documentWork = persistedDocument ? songDocumentCreatedWork(input, persistedDocument) : undefined;
-        const baseCreatedWork = taskDraftWork
+        output.createdWork = reconcileManagerCreatedWork(taskDraftWork
           ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
-          : [...toolCreatedWork, ...persistedWork];
-        output.createdWork = documentWork
-          ? upsertServerCreatedWork(baseCreatedWork, documentWork)
-          : baseCreatedWork;
+          : [...toolCreatedWork, ...persistedWork]);
 
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
         const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
+        const presentation = buildManagerTurnPresentation({
+          createdWork: output.createdWork,
+          toolNames: [
+            ...safeToolTraceSummary(toolTrace).map((item) => item.tool),
+            ...releaseSuccessToolResults.map((item) => item.tool),
+          ],
+          decisionPackageId: decisionPackage?.id,
+        });
         const managerMessage = await insertConversationMessage(db, input, conversationId, {
           speaker: "manager",
           label: "Manager",
@@ -261,6 +265,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
             contextRequestId: output.contextQuestions.length ? `manager-context-${runId}` : "",
             proposedActions: output.proposedActions,
             decisionPackageId: decisionPackage?.id ?? "",
+            presentation,
             openaiResponseId: responseId,
             toolTraceSummary: safeToolTraceSummary(toolTrace),
           },
@@ -928,15 +933,13 @@ type ReleaseSuccessToolResult = {
 
 function isReleaseSuccessTool(tool: string) {
   return tool === "read_focused_release_success"
-    || tool === "propose_focused_release_date_change"
-    || tool === "create_focused_song_document";
+    || tool === "propose_focused_release_date_change";
 }
 
 function isOpportunityTool(tool: string) {
   return tool === "query_focused_release_opportunities"
     || tool === "save_focused_release_opportunities"
-    || tool === "record_focused_release_opportunity_outcome"
-    || tool === "create_focused_song_document";
+    || tool === "record_focused_release_opportunity_outcome";
 }
 
 function opportunityToolStage(tool: string) {
@@ -1604,6 +1607,7 @@ function toMessageViewModel(message: any) {
     label: message.label || (message.speaker === "artist" ? "You" : "Manager"),
     body: message.body ?? "",
     createdWork: normalizeCreatedWork(metadata.createdWork),
+    presentation: normalizeManagerTurnPresentation(metadata.presentation),
     contextQuestions: normalizeContextQuestions(metadata.contextQuestions),
     contextAnswers: normalizeContextAnswers(metadata.contextAnswers),
     attachments: normalizeConversationAttachments(metadata.attachments),
@@ -1692,37 +1696,21 @@ function normalizeCreatedWorkItem(item: any) {
     type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
     title: String(item.title || "").trim(),
     body: String(item.body || "").trim(),
-    artifactKind: item.artifactKind === "task_draft" ? "task_draft" : undefined,
+    artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : undefined,
     content: item.content ? String(item.content) : undefined,
+    musicItemId: item.musicItemId ? String(item.musicItemId) : undefined,
+    documentType: item.documentType ? String(item.documentType) : undefined,
+    readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : undefined,
+    missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((value: unknown) => String(value || "").trim()).filter(Boolean) : undefined,
     managerOutputId: item.managerOutputId ? String(item.managerOutputId) : undefined,
+    presentationRole: item.presentationRole === "deliverable" || item.presentationRole === "internal_support" || item.presentationRole === "compatibility" ? item.presentationRole : undefined,
+    visibility: item.visibility === "internal" ? "internal" : item.visibility === "user" ? "user" : undefined,
     id: item.id ? String(item.id) : undefined,
     parentMissionId: item.parentMissionId ? String(item.parentMissionId) : undefined,
     status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created",
-  };
+    };
 }
 
-function songDocumentCreatedWork(input: ManagerConversationInput, persistedDocument: Record<string, unknown>) {
-  const musicItemId = input.musicSubject?.type === "music_item" ? input.musicSubject.id : "";
-  const title = typeof persistedDocument.title === "string" && persistedDocument.title.trim()
-    ? persistedDocument.title.trim()
-    : "Release documents";
-  if (!musicItemId) return undefined;
-  return {
-    type: "music_item" as const,
-    id: musicItemId,
-    title,
-    body: "Song Workspace created. Release document saved to Files.",
-    status: "updated" as const,
-  };
-}
-
-function upsertServerCreatedWork(
-  current: ManagerConversationOutput["createdWork"],
-  next: ManagerConversationOutput["createdWork"][number],
-) {
-  const key = `${next.type}:${next.id ?? next.title}`;
-  return [...current.filter((item) => `${item.type}:${item.id ?? item.title}` !== key), next];
-}
 
 function normalizeContextQuestions(value: unknown) {
   if (!Array.isArray(value)) return [];

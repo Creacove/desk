@@ -708,7 +708,28 @@ async function createFocusedSongDocument(db: SupabaseLike, input: ManagerToolInp
       if (opportunityError) throw opportunityError;
       if (!opportunity?.id) throw new Error("The release opportunity could not be linked to its pitch document.");
     }
-    return { ...persisted, status: "drafted", musicItemId: subject.id, documentType, title, ...(opportunityId ? { opportunityId } : {}) };
+    const canonicalDocumentType = persisted?.documentType || documentType;
+    const canonicalTitle = persisted?.title || title;
+    if (persisted?.documentId) {
+      const internalSupport = canonicalDocumentType === "release_narrative" || canonicalTitle.trim().toLowerCase() === "release narrative";
+      const receipt: ManagerConversationCreatedWork = {
+        type: "music_item",
+        id: persisted.documentId,
+        musicItemId: subject.id,
+        artifactKind: "song_document",
+        documentType: canonicalDocumentType,
+        title: canonicalTitle,
+        body: internalSupport ? "Internal campaign support updated." : "Draft saved to Files and ready to review.",
+        readiness: persisted.quality?.readiness === "ready" ? "ready" : "needs_review",
+        presentationRole: internalSupport ? "internal_support" : "deliverable",
+        visibility: internalSupport ? "internal" : "user",
+        status: persisted.created ? "created" : "updated",
+      };
+      if (!input.createdWork?.some((work) => work.artifactKind === "song_document" && work.id === receipt.id)) {
+        input.createdWork?.push(receipt);
+      }
+    }
+    return { ...persisted, status: "drafted", musicItemId: subject.id, documentType: canonicalDocumentType, title: canonicalTitle, ...(opportunityId ? { opportunityId } : {}) };
   } catch (error) {
     return failedDocumentResult(error, input);
   }
