@@ -913,9 +913,11 @@ function buildManagerConversationInstructions(playbookInstructions = "") {
     "After a durable metadata, file, rights, or lifecycle change on an attached unreleased song, re-read release readiness. Update the already linked mission only when that confirmed change completes, unblocks, removes, or materially changes planned work; never create a second mission merely because song data changed.",
     "The Manager may prepare copy, press angles, package recommendations, and outreach drafts, but never sends messages, submits to a distributor, commits spending, changes a release date, publishes, or performs legal/rights actions without an explicit permission request and user approval. Never invent a contact name, email address, outlet, playlist, or result; use verified workspace data or a cited public source and label any recommendation or draft clearly. create_focused_song_document uses the existing canonical Files document pathway and creates a draft only.",
     "Canonical artifact rule: when the artist asks to draft, create, build, prepare, revise, refresh, update, finish, or complete an EPK, press release, bio, one-sheet, pitch, release/campaign kit, content plan, release calendar, press angle, lyrics, credits, or distributor notes for an attached song, use create_focused_song_document for every requested artifact. Never satisfy an artifact request by placing the full draft only in responseBody.",
+    "Release Narrative is Manager-internal campaign scaffolding. Ensure one exists only when recipient-facing campaign work needs it and the current narrative is missing or materially stale. It is never a user deliverable, never a second answer to the artist, and must not be described as work the artist asked to open or review.",
     "After one or more canonical song documents are created or revised successfully, responseBody must stay compact: say what was created/updated, what still needs a real fact or approval, and the next useful action. Do not reproduce the document bodies in chat; the canonical Files artifacts are the work product and should be opened/reviewed from the UI. On document-related context answers, update/version those canonical drafts instead of rewriting their contents into the conversation.",
     "When proposing or writing metadata, preserve the existing song room as the source of truth, state what was inferred versus confirmed, and remind the user they can verify or edit the value directly in Details, Files, or Rights. Do not generate cover art, images, animation, or transformed media; use only user-provided assets.",
-    "Set actionPolicy before any durable write is applied: answer_only for simple conversation; save_memory only when durableMemory is the only write; create_decision_package for a durable recommendation package; create_mission or update_mission for missionGraphDecisions; update_task or review_checkpoint for task/checkpoint state changes; request_permission for external, expensive, legal, financial, public, or reputational actions; request_evidence when missing evidence blocks a specific decision.",
+    "Set actionPolicy before any durable write is applied: answer_only for normal advice, planning, reviews, research, troubleshooting, and document creation; save_memory only when durableMemory is the only write; create_decision_package ONLY when the user explicitly asks for a decision package, decision/strategy/management memo or brief, or recommendation package; create_mission or update_mission for missionGraphDecisions; update_task or review_checkpoint for task/checkpoint state changes; request_permission for external, expensive, legal, financial, public, or reputational actions; request_evidence when missing evidence blocks a specific decision.",
+    "Decision packages are optional user-facing decision memos, not the default container for a strong recommendation. Never create one automatically from an EPK, press, playlist, release-readiness, post-release, research, or troubleshooting request. If the artist did not explicitly ask for that durable decision surface, keep the recommendation in chat and use the native artifact/workflow surface instead.",
     "When the user asks a conversational question, set actionPolicy to answer_only and do not generate missionGraphDecisions, createdWork, or proposedActions unless a concrete operational action is genuinely needed.",
     "Use missionGraphDecisions only when the user is actually creating or changing mission work. Create or update at most one mission per user request: one durable objective, checkpoints as decision questions with rules, and tasks as concrete work that answers those questions. When a song or project conversation already has a linked mission, use that mission only; never create or select a different artist-wide mission from that conversation.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
@@ -3300,7 +3302,7 @@ var managerConversationTools = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. Before any recipient-facing campaign artifact, establish one internal Release Narrative by calling this tool with documentType press_angle and title exactly Release narrative; use the release-narrative section set described in the body schema. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
+    description: "Create or version one premium canonical song artifact in Files. For recipient-facing campaign work, first ensure a current internal Release Narrative exists; create or materially refresh it only when needed, using documentType press_angle and title exactly Release narrative. The Release Narrative is internal Manager support and is never a user-facing deliverable. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties
   },
@@ -8252,12 +8254,33 @@ async function createFocusedSongDocument(db, input, args) {
       if (opportunityError) throw opportunityError;
       if (!opportunity?.id) throw new Error("The release opportunity could not be linked to its pitch document.");
     }
+    const canonicalDocumentType = persisted?.documentType || documentType;
+    const canonicalTitle = persisted?.title || title;
+    if (persisted?.documentId) {
+      const internalSupport = canonicalDocumentType === "release_narrative" || canonicalTitle.trim().toLowerCase() === "release narrative";
+      const receipt = {
+        type: "music_item",
+        id: persisted.documentId,
+        musicItemId: subject.id,
+        artifactKind: "song_document",
+        documentType: canonicalDocumentType,
+        title: canonicalTitle,
+        body: internalSupport ? "Internal campaign support updated." : "Draft saved to Files and ready to review.",
+        readiness: persisted.quality?.readiness === "ready" ? "ready" : "needs_review",
+        presentationRole: internalSupport ? "internal_support" : "deliverable",
+        visibility: internalSupport ? "internal" : "user",
+        status: persisted.created ? "created" : "updated"
+      };
+      if (!input.createdWork?.some((work) => work.artifactKind === "song_document" && work.id === receipt.id)) {
+        input.createdWork?.push(receipt);
+      }
+    }
     return {
       ...persisted,
       status: "drafted",
       musicItemId: subject.id,
-      documentType,
-      title,
+      documentType: canonicalDocumentType,
+      title: canonicalTitle,
       ...opportunityId ? {
         opportunityId
       } : {}
@@ -9190,6 +9213,104 @@ function selectOutputSection(content, query) {
   return content.slice(sectionStart, nextBreak < 0 ? content.length : nextBreak).trim();
 }
 
+// supabase/functions/_shared/manager-conversation/turnContract.ts
+var explicitDecisionPackagePattern = /\b(?:decision package|decision memo|decision brief|strategy memo|strategy brief|management memo|management brief|recommendation package|recommendation memo|recommendation brief)\b/i;
+function explicitlyRequestsDecisionPackage(input) {
+  const text = [
+    input.body ?? "",
+    ...(input.contextAnswers ?? []).map((item) => item.answer ?? "")
+  ].join(" ");
+  return explicitDecisionPackagePattern.test(text);
+}
+function enforceExplicitDecisionPackagePolicy(output, input) {
+  if (output.actionPolicy === "create_decision_package" && !explicitlyRequestsDecisionPackage(input)) {
+    output.actionPolicy = "answer_only";
+  }
+  return output;
+}
+function isUserVisibleManagerWork(work) {
+  const title = String(work.title ?? "").trim().toLowerCase();
+  const documentType = String(work.documentType ?? "").trim().toLowerCase();
+  if (work.visibility === "internal") return false;
+  if (work.presentationRole === "internal_support" || work.presentationRole === "compatibility") return false;
+  if (documentType === "release_narrative" || title === "release narrative") return false;
+  return true;
+}
+function normalizedWorkTitle(work) {
+  return String(work.title ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+function workKey(work) {
+  if (work.artifactKind === "song_document") {
+    return `song_document:${work.musicItemId ?? ""}:${String(work.documentType ?? normalizedWorkTitle(work)).toLowerCase()}`;
+  }
+  if (work.id) return `${work.type ?? "work"}:${work.id}`;
+  return `${work.type ?? "work"}:${normalizedWorkTitle(work)}`;
+}
+function reconcileManagerCreatedWork(items) {
+  const visible = items.filter(isUserVisibleManagerWork);
+  const canonicalDocumentTitles = new Set(visible.filter((item) => item.artifactKind === "song_document").map(normalizedWorkTitle).filter(Boolean));
+  const seen = /* @__PURE__ */ new Set();
+  const result = [];
+  for (const item of visible) {
+    if (item.artifactKind !== "song_document" && item.type === "music_item" && canonicalDocumentTitles.has(normalizedWorkTitle(item))) {
+      continue;
+    }
+    const key = workKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+function buildManagerTurnPresentation(input) {
+  const toolNames = new Set((input.toolNames ?? []).filter(Boolean));
+  const surfaces = [];
+  if (toolNames.has("read_focused_release_success") || toolNames.has("propose_focused_release_date_change")) {
+    surfaces.push("release_success");
+  }
+  if (toolNames.has("query_focused_release_opportunities") || toolNames.has("save_focused_release_opportunities") || toolNames.has("record_focused_release_opportunity_outcome")) {
+    surfaces.push("release_opportunities");
+  }
+  if (toolNames.has("prepare_focused_release_share_package")) {
+    surfaces.push("release_share_package");
+  }
+  if (input.decisionPackageId) surfaces.push("decision_package");
+  return {
+    version: 1,
+    surfaces,
+    visibleArtifactIds: reconcileManagerCreatedWork(input.createdWork ?? []).map((item) => String(item.id ?? "").trim()).filter(Boolean),
+    ...input.decisionPackageId ? {
+      decisionPackageId: input.decisionPackageId
+    } : {}
+  };
+}
+function normalizeManagerTurnPresentation(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return void 0;
+  const source = value;
+  if (source.version !== 1 || !Array.isArray(source.surfaces)) return void 0;
+  const allowed = /* @__PURE__ */ new Set([
+    "release_success",
+    "release_opportunities",
+    "decision_package",
+    "release_share_package"
+  ]);
+  const surfaces = [
+    ...new Set(source.surfaces.filter((item) => typeof item === "string" && allowed.has(item)))
+  ];
+  const visibleArtifactIds = Array.isArray(source.visibleArtifactIds) ? [
+    ...new Set(source.visibleArtifactIds.filter((item) => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()))
+  ] : [];
+  const decisionPackageId = typeof source.decisionPackageId === "string" && source.decisionPackageId.trim() ? source.decisionPackageId.trim() : void 0;
+  return {
+    version: 1,
+    surfaces,
+    visibleArtifactIds,
+    ...decisionPackageId ? {
+      decisionPackageId
+    } : {}
+  };
+}
+
 // supabase/functions/_shared/manager-conversation/context.ts
 var MAX_OPENING_BRIEF_BYTES = 48e3;
 var encoder = new TextEncoder();
@@ -9785,6 +9906,8 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     usageId = await createUsageEvent(db, input, runId);
     const previousResponseId = "";
     const { output, usage, responseId, toolTrace, toolCreatedWork } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId);
+    enforceExplicitDecisionPackagePolicy(output, input);
+    const turnToolNames = safeToolTraceSummary(toolTrace).map((item) => item.tool);
     const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
     const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
     if (toolCreatedWork.length) output.missionGraphDecisions = [];
@@ -9807,20 +9930,25 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
         reason: derivedProposal.reason
       });
       output.contextQuestions = output.contextQuestions.filter((question) => question.key !== derivedProposal.questionKey);
+      turnToolNames.push("propose_focused_release_date_change");
     }
     const taskDraftWork = await persistTaskDraftOutput(db, input, conversationId, runId, output);
-    await persistFocusedSongDocumentDraft(db, input, runId, output.responseBody, Boolean(output.contextQuestions.length));
-    output.createdWork = taskDraftWork ? [
+    output.createdWork = reconcileManagerCreatedWork(taskDraftWork ? [
       ...toolCreatedWork,
       ...persistedWork,
       taskDraftWork
     ] : [
       ...toolCreatedWork,
       ...persistedWork
-    ];
+    ]);
     await persistActions(db, input, runId, output);
     await persistMemory(db, input, conversationId, runId, output);
     const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
+    const presentation = buildManagerTurnPresentation({
+      createdWork: output.createdWork,
+      toolNames: turnToolNames,
+      decisionPackageId: decisionPackage?.id
+    });
     const managerMessage = await insertConversationMessage(db, input, conversationId, {
       speaker: "manager",
       label: "Manager",
@@ -9837,11 +9965,12 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
         contextRequestId: output.contextQuestions.length ? `manager-context-${runId}` : "",
         proposedActions: output.proposedActions,
         decisionPackageId: decisionPackage?.id ?? "",
+        presentation,
         openaiResponseId: responseId,
         toolTraceSummary: safeToolTraceSummary(toolTrace)
       }
     });
-    const preserveWorkspaceTopic = toolCreatedWork.some((work) => work.type === "music_item");
+    const preserveWorkspaceTopic = Boolean(finalMusicSubject);
     await updateConversation(db, input, conversationId, output, preserveWorkspaceTopic);
     await completeManagerRun(db, runId, output);
     await completeUsageEvent(db, usageId, usage);
@@ -10624,6 +10753,7 @@ function toConversationViewModel(conversation, messages, taskContextId) {
       label: message.label || (message.speaker === "artist" ? "You" : "Manager"),
       body: message.body,
       createdWork: normalizeCreatedWork2(metadata.createdWork),
+      presentation: normalizeManagerTurnPresentation(metadata.presentation),
       contextQuestions: normalizeContextQuestions(metadata.contextQuestions),
       contextAnswers: normalizeContextAnswers2(metadata.contextAnswers),
       attachments: normalizeConversationAttachments(metadata.attachments),
@@ -10702,9 +10832,15 @@ function normalizeCreatedWork2(value) {
     type: item.type === "music_item" || item.type === "mission" || item.type === "task" ? item.type : "task",
     title: String(item.title || "").trim(),
     body: String(item.body || "").trim(),
-    artifactKind: item.artifactKind === "task_draft" ? "task_draft" : void 0,
+    artifactKind: item.artifactKind === "task_draft" || item.artifactKind === "song_document" ? item.artifactKind : void 0,
     content: item.content ? String(item.content) : void 0,
+    musicItemId: item.musicItemId ? String(item.musicItemId) : void 0,
+    documentType: item.documentType ? String(item.documentType) : void 0,
+    readiness: item.readiness === "ready" || item.readiness === "needs_review" || item.readiness === "save_failed" ? item.readiness : void 0,
+    missingInputs: Array.isArray(item.missingInputs) ? item.missingInputs.map((value2) => String(value2 || "").trim()).filter(Boolean) : void 0,
     managerOutputId: item.managerOutputId ? String(item.managerOutputId) : void 0,
+    presentationRole: item.presentationRole === "deliverable" || item.presentationRole === "internal_support" || item.presentationRole === "compatibility" ? item.presentationRole : void 0,
+    visibility: item.visibility === "internal" ? "internal" : item.visibility === "user" ? "user" : void 0,
     id: item.id ? String(item.id) : void 0,
     parentMissionId: item.parentMissionId ? String(item.parentMissionId) : void 0,
     status: item.status === "updated" || item.status === "approval_required" || item.status === "failed" || item.status === "pending" ? item.status : "created"
