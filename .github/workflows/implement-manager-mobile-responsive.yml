@@ -1,0 +1,155 @@
+name: Implement Manager mobile responsiveness
+
+on:
+  push:
+    paths:
+      - '.github/workflows/implement-manager-mobile-responsive.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch responsive Manager surfaces
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          legacy_path = Path('src/features/manager/ManagerScreensLegacy.tsx')
+          text = legacy_path.read_text()
+
+          replacements = [
+            (
+              'className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(9rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pt-5 lg:px-0"',
+              'className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(17rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pb-[calc(9rem+env(safe-area-inset-bottom))] sm:pt-5 lg:px-0"',
+            ),
+            (
+              'className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold text-foreground/72 transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-60"',
+              'className="inline-flex min-h-9 max-w-full items-center justify-start gap-1.5 whitespace-normal rounded-lg px-2 py-1 text-left text-[12px] font-semibold leading-snug text-foreground/72 transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-60 sm:whitespace-nowrap"',
+            ),
+            (
+              '<article data-testid="manager-document-result" data-artifact-kind="document" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">',
+              '<article data-testid="manager-document-result" data-artifact-kind="document" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">',
+            ),
+            (
+              '{item.id ? <ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}',
+              '{item.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction></div> : null}',
+            ),
+            (
+              '<article data-testid="manager-document-result" data-artifact-kind="document" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n      <div className="flex items-start gap-3">',
+              '<article data-testid="manager-document-result" data-artifact-kind="document" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:px-3.5">\n      <div className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[2rem_minmax(0,1fr)_auto]">',
+            ),
+            (
+              '<p className="mt-0.5 text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>',
+              '<p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>',
+            ),
+            (
+              '''        {!saveFailed && musicItemId ? (\n          <ResultAction pendingLabel="Opening document…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files", item.id)}>\n            {managerDocumentOpenLabel(item.documentType)}\n          </ResultAction>\n        ) : null}''',
+              '''        {!saveFailed && musicItemId ? (\n          <div className="col-start-2 sm:col-start-3 sm:row-start-1">\n            <ResultAction pendingLabel="Opening document…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files", item.id)}>\n              {managerDocumentOpenLabel(item.documentType)}\n            </ResultAction>\n          </div>\n        ) : null}''',
+            ),
+            (
+              '<article data-artifact-kind="mission" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">',
+              '<article data-artifact-kind="mission" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">',
+            ),
+            (
+              '<p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.mission.title}</p>',
+              '<p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground sm:truncate">{group.mission.title}</p>',
+            ),
+            (
+              '{group.mission.id ? <ResultAction onClick={() => onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction> : null}',
+              '{group.mission.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction></div> : null}',
+            ),
+            (
+              '<article data-artifact-kind="task" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">',
+              '<article data-artifact-kind="task" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">',
+            ),
+            (
+              '<p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{firstTask?.title}</p>',
+              '<p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground sm:truncate">{firstTask?.title}</p>',
+            ),
+            (
+              '{firstTask?.id ? <ResultAction onClick={() => onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction> : null}',
+              '{firstTask?.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction></div> : null}',
+            ),
+            (
+              '<article data-artifact-kind="song" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">',
+              '<article data-artifact-kind="song" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">',
+            ),
+            (
+              '<p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>',
+              '<p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground sm:truncate">{item.title}</p>',
+            ),
+            (
+              '{item.id ? <ResultAction onClick={() => onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction> : null}',
+              '{item.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction></div> : null}',
+            ),
+          ]
+
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'Missing Manager responsive marker: {old[:100]}')
+              text = text.replace(old, new, 1)
+
+          legacy_path.write_text(text)
+
+          composer_path = Path('src/features/manager/ManagerComposer.tsx')
+          composer = composer_path.read_text()
+          composer_replacements = [
+            (
+              'className="flex items-center gap-3 px-4 py-3"',
+              'className="grid grid-cols-1 gap-2.5 px-3.5 py-3 sm:flex sm:items-center sm:gap-3 sm:px-4"',
+            ),
+            (
+              'className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground"',
+              'className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-muted-foreground sm:line-clamp-2"',
+            ),
+            (
+              'className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-35"',
+              'className="inline-flex min-h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-35 sm:w-auto"',
+            ),
+          ]
+          for old, new in composer_replacements:
+              if old not in composer:
+                  raise SystemExit(f'Missing Composer responsive marker: {old}')
+              composer = composer.replace(old, new, 1)
+          composer_path.write_text(composer)
+
+          test_path = Path('src/manager-mobile-responsive-contract.test.ts')
+          test_path.write_text('''import { readFileSync } from "node:fs";\nimport { describe, expect, it } from "vitest";\n\ndescribe("Manager mobile responsive contract", () => {\n  it("reflows artifacts and clears fixed composer surfaces on narrow screens", () => {\n    const manager = readFileSync("src/features/manager/ManagerScreensLegacy.tsx", "utf8");\n    const composer = readFileSync("src/features/manager/ManagerComposer.tsx", "utf8");\n\n    expect(manager).toContain("pb-[calc(17rem+env(safe-area-inset-bottom))]");\n    expect(manager).toContain("sm:pb-[calc(9rem+env(safe-area-inset-bottom))]");\n    expect(manager).toContain("grid-cols-[2rem_minmax(0,1fr)]");\n    expect(manager).toContain("sm:grid-cols-[2rem_minmax(0,1fr)_auto]");\n    expect(manager).toContain("col-start-2 sm:col-start-3 sm:row-start-1");\n    expect(manager).toContain("break-words text-[13px]");\n    expect(manager).toContain("whitespace-normal");\n    expect(composer).toContain("grid grid-cols-1 gap-2.5");\n    expect(composer).toContain("w-full shrink-0 items-center justify-center");\n    expect(composer).toContain("line-clamp-1");\n  });\n});\n''')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test responsive contracts
+        run: npx vitest run src/manager-mobile-responsive-contract.test.ts src/manager-artifact-visual-contract.test.ts src/manager-document-navigation-contract.test.ts src/song-document-approval.test.tsx --environment jsdom --pool=vmThreads
+
+      - name: Build app
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+        run: npm run build
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/manager/ManagerScreensLegacy.tsx src/features/manager/ManagerComposer.tsx src/manager-mobile-responsive-contract.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "fix: make Manager artifacts responsive on mobile"
+          git push origin HEAD:main
