@@ -5243,17 +5243,17 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Catalog workspace" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open song Jam" }));
-    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Refresh Manager Read" })).toHaveClass("h-9", "w-9");
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Refresh record review" })).toHaveClass("h-9", "w-9");
   });
 
   it.each([
-    ["song", "not_generated", "Not generated", "Ask Manager for a read", false],
-    ["song", "stale", "Refresh required", "Refresh Manager Read", false],
-    ["song", "running", "Manager is reading", "Manager is reading", true],
-    ["song", "refreshing", "Refreshing", "Refreshing Manager Read", true],
-    ["song", "fresh", "Current read", "Refresh Manager Read", false],
-    ["song", "failed", "Read failed", "Retry Manager Read", false],
-    ["song", "refresh_failed", "Refresh failed", "Retry Manager Read", false],
+    ["song", "not_generated", "Not generated", "Review this record", false],
+    ["song", "stale", "Refresh required", "Refresh record review", false],
+    ["song", "running", "Reviewing this record", "Reviewing this record", true],
+    ["song", "refreshing", "Refreshing", "Refresh record review", true],
+    ["song", "fresh", "Current read", "Refresh record review", false],
+    ["song", "failed", "Review failed", "Retry record review", false],
+    ["song", "refresh_failed", "Refresh failed", "Retry record review", false],
     ["project", "not_generated", "Not generated", "Ask Manager for a project read", false],
     ["project", "stale", "Refresh required", "Refresh Manager Read", false],
     ["project", "running", "Manager is reading", "Manager is reading", true],
@@ -5288,13 +5288,13 @@ describe("Clean production prototype-match shell", () => {
     if (kind === "song") {
       const readSurface = within(room).getByTestId("song-room-overview-read");
       if (status === "running") {
-        expect(readSurface).toHaveTextContent("Manager is reading this record");
+        expect(readSurface).toHaveTextContent("Reviewing this record");
         expect(within(readSurface).queryByRole("button", { name: /Manager Read/i })).not.toBeInTheDocument();
       } else if (status === "not_generated") {
-        expect(readSurface).toHaveTextContent("Get Manager’s take on this record");
-        expect(within(readSurface).getByRole("button", { name: "Get Manager’s read" })).toBeEnabled();
+        expect(readSurface).toHaveTextContent("See what needs attention");
+        expect(within(readSurface).getByRole("button", { name: "Review this record" })).toBeEnabled();
       } else if (status === "failed") {
-        expect(readSurface).toHaveTextContent("Manager couldn’t complete the read");
+        expect(readSurface).toHaveTextContent("Couldn’t complete the review");
         expect(within(readSurface).getByRole("button", { name: "Try again" })).toBeEnabled();
       } else {
         expect(readSurface).toHaveTextContent(subject.managerRead!.body.split("\n")[0]);
@@ -5339,7 +5339,7 @@ describe("Clean production prototype-match shell", () => {
     expect(room).toHaveTextContent(subject.managerRead!.body.split("\n")[0]);
     if (kind === "song") {
       if (status === "refresh_failed") expect(room).toHaveTextContent("Couldn’t refresh just now. Showing the last read.");
-      else expect(within(room).getByRole("button", { name: "Refreshing Manager Read" })).toBeDisabled();
+      else expect(within(room).getByRole("button", { name: "Refresh record review" })).toBeDisabled();
     } else {
       expect(room).toHaveTextContent(statusLabel);
       expect(room).toHaveTextContent(safeMessage);
@@ -5775,7 +5775,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Get Manager’s read" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review this record" }));
 
     await waitFor(() => expect(startManagerRead).toHaveBeenCalledWith("song-jam", "music_item"));
     expect(onMusicChanged).not.toHaveBeenCalled();
@@ -5821,7 +5821,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The last good read remains visible");
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Get Manager’s take on this record.");
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("See what needs attention.");
   });
 
   it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
@@ -5844,10 +5844,10 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Get Manager’s read" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review this record" }));
 
     const room = screen.getByTestId("music-song-detail");
-    expect(await within(room).findByText("Manager couldn’t complete the read.")).toBeInTheDocument();
+    expect(await within(room).findByText("Couldn’t complete the review.")).toBeInTheDocument();
     expect(room).not.toHaveTextContent("OpenAI");
     expect(room).not.toHaveTextContent("compute resources");
     expect(room).not.toHaveTextContent("database worker");
@@ -6082,7 +6082,7 @@ describe("Clean production prototype-match shell", () => {
     await act(async () => { await Promise.resolve(); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Checking Manager’s read");
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Checking this review");
     expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Check again" })).toBeInTheDocument();
   });
 
@@ -6112,9 +6112,9 @@ describe("Clean production prototype-match shell", () => {
     const room = screen.getByTestId("music-song-detail");
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(room).toHaveTextContent("Checking Manager’s read");
+    expect(room).toHaveTextContent("Checking this review");
     expect(within(room).getByRole("button", { name: "Check again" })).toBeInTheDocument();
-    expect(within(room).queryByRole("button", { name: "Get Manager’s read" })).not.toBeInTheDocument();
+    expect(within(room).queryByRole("button", { name: "Review this record" })).not.toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);

@@ -11,10 +11,12 @@ describe("song room minimal hierarchy", () => {
     expect(music).not.toContain('ReleaseWorkAttachment');
   });
 
-  it("makes Manager the primary song action and Manager Read the overview", () => {
+  it("keeps Manager conversational in the header while Overview leads with record value", () => {
     expect(music).toContain('Chat with Manager');
     expect(music).toContain('data-testid="song-room-overview-read"');
-    expect(music).toContain('Manager&apos;s read');
+    expect(music).toContain('What matters now');
+    expect(music).toContain('Review this record');
+    expect(music).toContain('See what needs attention.');
     const songOverview = music.slice(music.indexOf('data-testid="song-room-overview-read"'), music.indexOf('function MusicManagerReadContent'));
     expect(songOverview).not.toContain('manager-read-metrics');
   });

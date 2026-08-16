@@ -1229,7 +1229,7 @@ function MusicSongDetail({
       />
 
       {effectiveTab === "overview" ? (
-        <div data-testid="song-room-mobile-overview" className="mx-auto w-full max-w-4xl">
+        <div data-testid="song-room-mobile-overview" className="w-full">
           <SongOverviewRead
             song={song}
             onGenerateBrief={onGenerateBrief}
@@ -1253,7 +1253,7 @@ function MusicSongDetail({
       ) : null}
 
       {effectiveTab === "files" ? (
-        <div data-testid="song-room-files" className="mx-auto w-full max-w-4xl">
+        <div data-testid="song-room-files" className="w-full">
           <div className="flex flex-col gap-4 border-b border-foreground/8 pb-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-xl">
               <h4 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">Song assets</h4>
@@ -1363,7 +1363,7 @@ function MusicSongDetail({
       ) : null}
 
       {effectiveTab === "details" ? (
-        <div data-testid="song-room-details" className="mx-auto w-full max-w-4xl">
+        <div data-testid="song-room-details" className="w-full">
           <div className="border-b border-foreground/8 pb-5">
             <h4 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">Song identity</h4>
             <p className="mt-1.5 text-[12px] font-medium leading-5 text-muted-foreground/78">Core release information and metadata.</p>
@@ -1712,17 +1712,17 @@ function SongOverviewRead({
   const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
   const failed = song.managerReadStatus === "failed" || song.managerReadStatus === "refresh_failed" || Boolean(briefError);
   const checking = song.managerReadStatus === "unknown";
-  const actionLabel = managerReadButtonLabel("song", song.managerReadStatus);
+  const actionLabel = failed ? "Retry record review" : checking ? "Check record review" : read ? "Refresh record review" : "Review this record";
 
   return (
     <section data-testid="song-room-overview-read" className="pt-1 sm:pt-2">
       <div className="flex items-center justify-between gap-4">
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.11em] text-muted-foreground/65">Manager&apos;s read</p>
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.11em] text-muted-foreground/65">What matters now</p>
         {read ? (
           <button
             type="button"
-            aria-label={briefPending ? "Manager is reading" : actionLabel}
-            title={briefPending ? "Manager is reading" : actionLabel}
+            aria-label={briefPending ? (read ? "Refreshing record review" : "Reviewing this record") : actionLabel}
+            title={briefPending ? (read ? "Refreshing record review" : "Reviewing this record") : actionLabel}
             onClick={onGenerateBrief}
             disabled={readBusy}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:opacity-40"
@@ -1740,11 +1740,11 @@ function SongOverviewRead({
       ) : readBusy ? (
         <div className="mt-4 flex max-w-xl items-center gap-3 py-2">
           <AppThinkingOrb surface="normal" state="composing" size={20} />
-          <p className="text-[13px] font-semibold text-muted-foreground">Manager is reading this record…</p>
+          <p className="text-[13px] font-semibold text-muted-foreground">Reviewing this record…</p>
         </div>
       ) : checking ? (
         <div className="mt-4 max-w-xl">
-          <p className="text-[13px] font-semibold text-muted-foreground">Checking Manager’s read…</p>
+          <p className="text-[13px] font-semibold text-muted-foreground">Checking this review…</p>
           <button type="button" onClick={onGenerateBrief} className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
             <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Check again
           </button>
@@ -1752,10 +1752,10 @@ function SongOverviewRead({
       ) : (
         <div className="mt-4 max-w-xl">
           <h3 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">
-            {failed ? "Manager couldn’t complete the read." : "Get Manager’s take on this record."}
+            {failed ? "Couldn’t complete the review." : "See what needs attention."}
           </h3>
           <p className="mt-2 text-[12px] font-medium leading-5 text-muted-foreground">
-            {failed ? "Try again when you’re ready." : "A concise read of what matters now, grounded in the song and its current workspace."}
+            {failed ? "Try again when you’re ready." : "A quick assessment of the song, files, rights and release setup."}
           </p>
           <button
             type="button"
@@ -1763,7 +1763,7 @@ function SongOverviewRead({
             className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
           >
             {failed ? <RotateCcw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {failed ? "Try again" : "Get Manager’s read"}
+            {failed ? "Try again" : "Review this record"}
           </button>
         </div>
       )}
@@ -2127,7 +2127,7 @@ function MusicRightsWorkspace({
   }
 
   return (
-    <div data-testid="song-room-rights" className="mx-auto w-full max-w-4xl">
+    <div data-testid="song-room-rights" className="w-full">
       <span className="sr-only">split sheet document confirm split sheet publishing splits master share</span>
       <div>
         <div className="flex flex-col gap-3 border-b border-foreground/8 pb-5 sm:flex-row sm:items-center sm:justify-between">
