@@ -1,0 +1,69 @@
+name: Hotfix Manager document stream
+
+on:
+  push:
+    paths:
+      - '.github/workflows/hotfix-manager-document-stream.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Patch streaming document flow
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p = Path('supabase/functions/manager-conversation-stream/index.ts')
+          text = p.read_text()
+          old = '''  runManagerAgentLoop,\n  selectManagerConversationToolsForTurn,\n  type ManagerAgentToolTrace,'''
+          new = '''  managerConversationRequiresCanonicalDocumentTool,\n  runManagerAgentLoop,\n  selectManagerConversationToolsForTurn,\n  type ManagerAgentToolTrace,'''
+          if old not in text:
+              raise SystemExit('stream import marker not found')
+          text = text.replace(old, new)
+
+          old = '''    previousResponseId,\n    tools,\n    jsonSchema: managerConversationJsonSchema,'''
+          new = '''    previousResponseId,\n    tools,\n    initialToolChoice: managerConversationRequiresCanonicalDocumentTool({\n      body: input.body,\n      contextAnswers: input.contextAnswers,\n    }) ? "create_focused_song_document" : undefined,\n    jsonSchema: managerConversationJsonSchema,'''
+          if old not in text:
+              raise SystemExit('stream request marker not found')
+          text = text.replace(old, new)
+
+          old = '''function isReleaseSuccessTool(tool: string) {\n  return tool === "read_focused_release_success" || tool === "propose_focused_release_date_change";\n}'''
+          new = '''function isReleaseSuccessTool(tool: string) {\n  return tool === "read_focused_release_success"\n    || tool === "propose_focused_release_date_change"\n    || tool === "create_focused_song_document";\n}'''
+          if old not in text:
+              raise SystemExit('release-success classifier marker not found')
+          text = text.replace(old, new)
+          p.write_text(text)
+          PY
+      - name: Focused release tests
+        run: >-
+          npx vitest run --environment jsdom --pool=vmThreads
+          src/record-servicing-tool-selection.test.ts
+          src/release-success-conversation.test.tsx
+          src/song-document-persistence-v2.test.ts
+          src/song-document-quality-gate.test.ts
+          src/song-document-standards.test.ts
+          src/song-document-approval.test.tsx
+      - name: Deno check both Manager endpoints
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          export PATH="$HOME/.deno/bin:$PATH"
+          deno check supabase/functions/_shared/manager-conversation/agentLoop.ts supabase/functions/manager-conversation/index.ts supabase/functions/manager-conversation-stream/index.ts
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/manager-conversation-stream/index.ts
+          git commit -m "fix: persist Manager documents in streaming flow" || exit 0
+          git push origin HEAD:main
