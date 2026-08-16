@@ -157,16 +157,16 @@ export function ManagerWorkspaceActions({
       </div>
       <div className="divide-y divide-foreground/8">
         {actions.map((action) => (
-          <div key={action.key} className="flex items-center gap-3 px-4 py-3">
+          <div key={action.key} className="grid grid-cols-1 gap-2.5 px-3.5 py-3 sm:flex sm:items-center sm:gap-3 sm:px-4">
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold leading-snug text-foreground">{action.title}</p>
-              {action.description ? <p className="mt-0.5 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">{action.description}</p> : null}
+              {action.description ? <p className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-muted-foreground sm:line-clamp-2">{action.description}</p> : null}
             </div>
             <button
               type="button"
               onClick={() => onOpen(action)}
               disabled={disabled}
-              className="inline-flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-35"
+              className="inline-flex min-h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-35 sm:w-auto"
             >
               {action.actionLabel}
               <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />

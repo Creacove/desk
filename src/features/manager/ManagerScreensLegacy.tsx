@@ -708,7 +708,7 @@ export function ConversationWorkspace({
         — User message is a right-aligned soft pill within the same column.
         — Side whitespace is the product of the column constraint, not padding hacks.
       */}
-      <div data-testid="manager-conversation-column" className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(9rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pt-5 lg:px-0">
+      <div data-testid="manager-conversation-column" className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(17rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pb-[calc(9rem+env(safe-area-inset-bottom))] sm:pt-5 lg:px-0">
         {conversation.musicSubject?.type === "music_item" ? (
           <div data-testid="conversation-song-context" className="mb-5">
             <SongContextAttachment
@@ -1099,7 +1099,7 @@ function ResultAction({ children, onClick, pendingLabel = "Opening…" }: { chil
       }}
       disabled={pending}
       aria-busy={pending}
-      className="inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 py-1 text-[12px] font-semibold text-foreground/72 transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-60"
+      className="inline-flex min-h-9 max-w-full items-center justify-start gap-1.5 whitespace-normal rounded-lg px-2 py-1 text-left text-[12px] font-semibold leading-snug text-foreground/72 transition-colors hover:bg-foreground/[0.05] hover:text-foreground disabled:opacity-60 sm:whitespace-nowrap"
     >
       {pending ? <><Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />{pendingLabel}</> : children}
     </button>
@@ -1149,13 +1149,13 @@ function DocumentResultCard({
   const isSongDocument = item.artifactKind === "song_document";
   if (!isSongDocument) {
     return (
-      <article data-testid="manager-document-result" data-artifact-kind="document" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+      <article data-testid="manager-document-result" data-artifact-kind="document" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">
         <ArtifactGlyph kind="document" />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p>
-          <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
+          <p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground sm:truncate">{item.title}</p>
         </div>
-        {item.id ? <ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction> : null}
+        {item.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("task", item.id)}>Open draft</ResultAction></div> : null}
       </article>
     );
   }
@@ -1169,18 +1169,20 @@ function DocumentResultCard({
   const musicItemId = item.musicItemId;
 
   return (
-    <article data-testid="manager-document-result" data-artifact-kind="document" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
-      <div className="flex items-start gap-3">
+    <article data-testid="manager-document-result" data-artifact-kind="document" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:px-3.5">
+      <div className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 sm:grid-cols-[2rem_minmax(0,1fr)_auto]">
         <ArtifactGlyph kind="document" />
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold text-muted-foreground">{documentLabel}</p>
-          <p className="mt-0.5 text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>
+          <p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground">{item.title}</p>
           <p className={`mt-1 text-[11px] font-medium ${saveFailed ? "text-amber-700" : "text-muted-foreground"}`}>{readinessLabel}</p>
         </div>
         {!saveFailed && musicItemId ? (
-          <ResultAction pendingLabel="Opening document…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files", item.id)}>
-            {managerDocumentOpenLabel(item.documentType)}
-          </ResultAction>
+          <div className="col-start-2 sm:col-start-3 sm:row-start-1">
+            <ResultAction pendingLabel="Opening document…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files", item.id)}>
+              {managerDocumentOpenLabel(item.documentType)}
+            </ResultAction>
+          </div>
         ) : null}
       </div>
       {missingInputs.length ? (
@@ -1242,14 +1244,14 @@ function CompactMissionResult({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
-    <article data-artifact-kind="mission" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+    <article data-artifact-kind="mission" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">
       <ArtifactGlyph kind="mission" updated={group.mission.status === "updated"} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">Mission {group.mission.status === "updated" ? "updated" : "ready"}</p>
-        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.mission.title}</p>
+        <p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground sm:truncate">{group.mission.title}</p>
         {group.tasks.length ? <p className="mt-0.5 text-[11px] text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</p> : null}
       </div>
-      {group.mission.id ? <ResultAction onClick={() => onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction> : null}
+      {group.mission.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("mission", group.mission.id)}>View mission</ResultAction></div> : null}
     </article>
   );
 }
@@ -1263,13 +1265,13 @@ function CompactTasksResult({
 }) {
   const firstTask = group.tasks[0];
   return (
-    <article data-artifact-kind="task" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+    <article data-artifact-kind="task" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">
       <ArtifactGlyph kind="task" updated={group.tasks.some((task) => task.status === "updated")} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>
-        <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{firstTask?.title}</p>
+        <p className="mt-0.5 break-words text-[13px] font-semibold leading-snug text-foreground sm:truncate">{firstTask?.title}</p>
       </div>
-      {firstTask?.id ? <ResultAction onClick={() => onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction> : null}
+      {firstTask?.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("task", firstTask.id)}>View task</ResultAction></div> : null}
     </article>
   );
 }
@@ -1282,13 +1284,13 @@ function CompactMusicResult({
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
-    <article data-artifact-kind="song" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">
+    <article data-artifact-kind="song" className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[2rem_minmax(0,1fr)_auto] sm:px-3.5">
       <ArtifactGlyph kind="song" updated={item.status === "updated"} />
       <div className="min-w-0 flex-1">
         <p className="text-[11px] font-semibold text-muted-foreground">Song ready</p>
         <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>
       </div>
-      {item.id ? <ResultAction onClick={() => onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction> : null}
+      {item.id ? <div className="col-start-2 sm:col-start-3 sm:row-start-1"><ResultAction onClick={() => onOpenCreatedWork("music_item", item.id)}>Open song</ResultAction></div> : null}
     </article>
   );
 }
