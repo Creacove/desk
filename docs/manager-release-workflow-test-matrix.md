@@ -1,6 +1,6 @@
 # Manager release workflow regression matrix
 
-This matrix is the product acceptance surface for open-chat release work. Wording is intentionally varied because routing must not depend on one exact phrase.
+This matrix is the product acceptance surface for open-chat release work. Wording is intentionally varied because routing must not depend on one exact phrase. Acceptance must cover direct commands, questions, follow-ups, shorthand, and natural conversational wording for the same underlying intent.
 
 | Phase | Artist intent | Expected durable work | Expected turn surface | Must never appear |
 |---|---|---|---|---|
