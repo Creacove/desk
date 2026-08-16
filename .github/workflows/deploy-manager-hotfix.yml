@@ -6,6 +6,9 @@ on:
       - main
     paths:
       - .github/workflows/deploy-manager-hotfix.yml
+      - supabase/functions/manager-conversation/**
+      - supabase/functions/manager-conversation-stream/**
+      - supabase/functions/_shared/**
   workflow_dispatch:
 
 permissions:
