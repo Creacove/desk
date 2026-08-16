@@ -62,7 +62,7 @@ describe("Manager turn contract", () => {
     conversation.messages = [
       { id: "u1", speaker: "artist", label: "You", body: "What can we do now to get more ears on this?" },
       { id: "m1", speaker: "manager", label: "Manager", body: "I found a shortlist.", presentation: { version: 1, surfaces: ["release_opportunities"], visibleArtifactIds: [] } },
-    ];
+    ] as any;
     expect(prepareManagerConversationForPresentation(conversation).releaseOpportunityArtifacts).toHaveLength(1);
   });
 
@@ -86,7 +86,7 @@ describe("Manager turn contract", () => {
         { type: "music_item", id: "press-1", musicItemId: "song-1", artifactKind: "song_document", documentType: "press_release", title: "Song press release", body: "Draft saved", presentationRole: "deliverable", visibility: "user" },
         { type: "music_item", id: "internal-1", musicItemId: "song-1", artifactKind: "song_document", documentType: "release_narrative", title: "Release narrative", body: "internal", presentationRole: "internal_support", visibility: "internal" },
       ] },
-    ];
+    ] as any;
     const projected = prepareManagerConversationForPresentation(conversation);
     expect(projected.decisionPackage).toBeUndefined();
     expect(projected.messages[1]?.createdWork).toHaveLength(1);
@@ -110,7 +110,7 @@ describe("Manager turn contract", () => {
     conversation.messages = [
       { id: "u1", speaker: "artist", label: "You", body: "Put your recommendation into something I can take to the team" },
       { id: "m1", speaker: "manager", label: "Manager", body: "Done.", presentation: { version: 1, surfaces: ["decision_package"], visibleArtifactIds: [], decisionPackageId: "package-1" } },
-    ];
+    ] as any;
     expect(prepareManagerConversationForPresentation(conversation).decisionPackage?.id).toBe("package-1");
   });
 });

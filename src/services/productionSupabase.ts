@@ -3652,10 +3652,12 @@ function musicConversationSubjectViewModel(input: unknown): MusicConversationSub
   };
 }
 
-function normalizeManagerTurnPresentation(value: unknown): ConversationMessageViewModel["presentation"] {
+type ManagerTurnPresentationWire = { version: 1; surfaces: Array<"release_success" | "release_opportunities" | "decision_package" | "release_share_package">; visibleArtifactIds: string[]; decisionPackageId?: string };
+
+function normalizeManagerTurnPresentation(value: unknown): ManagerTurnPresentationWire | undefined {
   if (!isPlainRecord(value) || value.version !== 1 || !Array.isArray(value.surfaces)) return undefined;
   const allowed = new Set(["release_success", "release_opportunities", "decision_package", "release_share_package"]);
-  const surfaces = [...new Set(value.surfaces.filter((item): item is string => typeof item === "string" && allowed.has(item)))] as NonNullable<ConversationMessageViewModel["presentation"]>["surfaces"];
+  const surfaces = [...new Set(value.surfaces.filter((item): item is string => typeof item === "string" && allowed.has(item)))] as ManagerTurnPresentationWire["surfaces"];
   const visibleArtifactIds = Array.isArray(value.visibleArtifactIds)
     ? [...new Set(value.visibleArtifactIds.map((item) => readConversationString(item, "")).filter(Boolean))]
     : [];

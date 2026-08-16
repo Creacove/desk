@@ -460,15 +460,6 @@ export type SplitConfirmationViewModel = {
   }>;
 };
 
-export type ManagerTurnSurfaceViewModel = "release_success" | "release_opportunities" | "decision_package" | "release_share_package";
-
-export type ManagerTurnPresentationViewModel = {
-  version: 1;
-  surfaces: ManagerTurnSurfaceViewModel[];
-  visibleArtifactIds: string[];
-  decisionPackageId?: string;
-};
-
 export type ConversationMessageViewModel = {
   id: string;
   speaker: "artist" | "manager";
@@ -490,15 +481,12 @@ export type ConversationMessageViewModel = {
     readiness?: "ready" | "needs_review" | "save_failed";
     missingInputs?: string[];
     managerOutputId?: string;
-    presentationRole?: "deliverable" | "internal_support" | "compatibility";
-    visibility?: "user" | "internal";
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
   contextRequestId?: string;
   contextQuestions?: ManagerMissionContextQuestion[];
   contextAnswers?: ManagerConversationContextAnswer[];
   attachments?: ManagerConversationAttachmentViewModel[];
-  presentation?: ManagerTurnPresentationViewModel;
 };
 
 export type ManagerRunStepViewModel = {
@@ -667,8 +655,6 @@ export type ConversationViewModel = {
     readiness?: "ready" | "needs_review" | "save_failed";
     missingInputs?: string[];
     managerOutputId?: string;
-    presentationRole?: "deliverable" | "internal_support" | "compatibility";
-    visibility?: "user" | "internal";
     status?: "created" | "updated" | "approval_required" | "failed" | "pending";
   }>;
   releaseSuccessArtifacts?: ReleaseSuccessArtifactViewModel[];

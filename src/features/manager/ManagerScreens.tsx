@@ -17,6 +17,8 @@ export { DecisionPackageScreen, InvestigationScreen, ManagerOfficeScreen };
 
 type ConversationWorkspaceProps = ComponentProps<typeof LegacyConversationWorkspace>;
 type CreatedWork = NonNullable<ConversationMessageViewModel["createdWork"]>[number];
+type TurnPresentation = { version: 1; surfaces: Array<"release_success" | "release_opportunities" | "decision_package" | "release_share_package">; visibleArtifactIds: string[]; decisionPackageId?: string };
+type PresentationCreatedWork = CreatedWork & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };
 
 const RELEASED_STAGES = new Set(["released", "catalog", "catalogued", "archived"]);
 const RELEASE_MANAGEMENT_INTENT = /\b(release date|release readiness|release[- ]ready|ready (?:to|for) release|release plan|launch date|get (?:this |the )?song ready|check (?:the )?release|release(?:-| )success review|retry release(?:-| )success|move (?:the )?release|delay (?:the )?release|postpone|reschedule|keep (?:the )?date|recovery plan)\b/i;
@@ -35,7 +37,9 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
   const lifecycleStage = conversation.musicSubject?.lifecycleStage?.trim().toLowerCase() ?? "";
   const isReleased = RELEASED_STAGES.has(lifecycleStage);
   const subject = conversation.musicSubject;
-  const latestManagerPresentation = lastManagerIndex >= 0 ? messages[lastManagerIndex]?.presentation : undefined;
+  const latestManagerPresentation = lastManagerIndex >= 0
+    ? (messages[lastManagerIndex] as (ConversationMessageViewModel & { presentation?: TurnPresentation }) | undefined)?.presentation
+    : undefined;
   const hasTurnContract = latestManagerPresentation?.version === 1;
   const hasSurface = (surface: "release_success" | "release_opportunities" | "decision_package") =>
     Boolean(latestManagerPresentation?.surfaces.includes(surface));
@@ -43,7 +47,8 @@ export function prepareManagerConversationForPresentation(conversation: Conversa
   const projectedMessages: ConversationMessageViewModel[] = messages.map((message): ConversationMessageViewModel => {
     const contextQuestions = message.contextQuestions?.filter((question) => !parseManagerWorkspaceAction(question));
     const createdWork = (message.createdWork ?? []).flatMap((item) => {
-      if (item.visibility === "internal" || item.presentationRole === "internal_support" || item.presentationRole === "compatibility") return [];
+      const presentationItem = item as PresentationCreatedWork;
+      if (presentationItem.visibility === "internal" || presentationItem.presentationRole === "internal_support" || presentationItem.presentationRole === "compatibility") return [];
       const normalized = normalizeHistoricalDocumentWork(item, message.id, subject);
       return normalized ? [normalized] : [];
     });
