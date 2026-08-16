@@ -1,4 +1,4 @@
-name: Hotfix Manager document tool budget
+name: Implement Manager inline document preview
 
 on:
   push:
@@ -9,8 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  hotfix:
+  implement:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -18,41 +19,115 @@ jobs:
           ref: main
           fetch-depth: 0
 
-      - name: Patch Manager document turns
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch inline document preview
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          paths = [
-              Path('supabase/functions/manager-conversation/index.ts'),
-              Path('supabase/functions/manager-conversation-stream/index.ts'),
-          ]
+          manager_path = Path('src/features/manager/ManagerScreens.tsx')
+          manager = manager_path.read_text()
+          manager = manager.replace('import { useMemo } from "react";', 'import { useMemo, useState } from "react";', 1)
+          manager = manager.replace(
+              'import type { ConversationMessageViewModel, ConversationViewModel } from "../../types/cleanProduction";',
+              'import type { ConversationMessageViewModel, ConversationViewModel, MusicObjectViewModel, SongMaterialViewModel } from "../../types/cleanProduction";',
+              1,
+          )
+          marker = '''import {\n  ManagerWorkspaceActions,\n  parseManagerWorkspaceAction,\n  type ManagerWorkspaceAction,\n} from "./ManagerComposer";'''
+          replacement = marker + '\nimport { SongDocumentEditor } from "../music/SongDocumentEditor";'
+          if marker not in manager:
+              raise SystemExit('Manager import marker missing')
+          manager = manager.replace(marker, replacement, 1)
 
-          old = '''    initialToolChoice: managerConversationRequiresCanonicalDocumentTool({\n      body: input.body,\n      contextAnswers: input.contextAnswers,\n    }) ? "create_focused_song_document" : undefined,\n    jsonSchema: managerConversationJsonSchema,'''
-          new = '''    initialToolChoice: managerConversationRequiresCanonicalDocumentTool({\n      body: input.body,\n      contextAnswers: input.contextAnswers,\n    }) && input.musicSubject ? "read_focused_music_subject" : undefined,\n    maxToolCalls: managerConversationRequiresCanonicalDocumentTool({\n      body: input.body,\n      contextAnswers: input.contextAnswers,\n    }) ? 24 : 8,\n    jsonSchema: managerConversationJsonSchema,'''
+          type_marker = 'type PresentationCreatedWork = CreatedWork & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };'
+          type_replacement = type_marker + '''\ntype DocumentPreviewTarget = {\n  song: MusicObjectViewModel;\n  document: Extract<SongMaterialViewModel, { kind: "document" }>;\n};'''
+          if type_marker not in manager:
+              raise SystemExit('Manager type marker missing')
+          manager = manager.replace(type_marker, type_replacement, 1)
 
-          for path in paths:
-              text = path.read_text()
-              if old not in text:
-                  raise SystemExit(f'Expected Manager loop block not found in {path}')
-              path.write_text(text.replace(old, new, 1))
+          old_start = '''export function ConversationWorkspace(props: ConversationWorkspaceProps) {\n  const { conversation, onOpenCreatedWork, onOpenMusicSubject, sendPending } = props;'''
+          new_start = '''export function ConversationWorkspace(props: ConversationWorkspaceProps) {\n  const { conversation, onOpenCreatedWork, onOpenMusicSubject, sendPending, musicRepository } = props;\n  const [documentPreviewTarget, setDocumentPreviewTarget] = useState<DocumentPreviewTarget | null>(null);\n\n  async function openCreatedWorkInContext(\n    type: "music_item" | "mission" | "task",\n    id?: string,\n    destination?: "files",\n    artifactId?: string,\n  ) {\n    if (type === "music_item" && destination === "files" && id && artifactId && musicRepository) {\n      try {\n        const song = await musicRepository.loadMusicObject(id, "music_item");\n        const document = (song?.materials ?? []).find(\n          (material): material is Extract<SongMaterialViewModel, { kind: "document" }> =>\n            material.kind === "document" && material.id === artifactId,\n        );\n        if (song && document) {\n          setDocumentPreviewTarget({ song, document });\n          return;\n        }\n      } catch {\n        // If the canonical preview cannot hydrate, preserve the existing Files fallback.\n      }\n    }\n    return onOpenCreatedWork(type, id, destination, artifactId);\n  }'''
+          if old_start not in manager:
+              raise SystemExit('Manager ConversationWorkspace marker missing')
+          manager = manager.replace(old_start, new_start, 1)
+
+          legacy_call = '<LegacyConversationWorkspace {...props} conversation={conversationalConversation} />'
+          if legacy_call not in manager:
+              raise SystemExit('Legacy conversation render marker missing')
+          manager = manager.replace(
+              legacy_call,
+              '<LegacyConversationWorkspace {...props} conversation={conversationalConversation} onOpenCreatedWork={openCreatedWorkInContext} />',
+              1,
+          )
+
+          tail = '''      ) : null}\n    </>\n  );\n}'''
+          tail_replacement = '''      ) : null}\n      {documentPreviewTarget ? (\n        <SongDocumentEditor\n          document={documentPreviewTarget.document}\n          pending={false}\n          onCancel={() => setDocumentPreviewTarget(null)}\n          onSave={() => undefined}\n          previewOnly\n          contextNote={`Saved to ${documentPreviewTarget.song.title} → Files. You can find this document there anytime.`}\n          onOpenFiles={() => {\n            const target = documentPreviewTarget;\n            setDocumentPreviewTarget(null);\n            void onOpenCreatedWork("music_item", target.song.id, "files", target.document.id);\n          }}\n        />\n      ) : null}\n    </>\n  );\n}'''
+          if tail not in manager:
+              raise SystemExit('Manager render tail marker missing')
+          manager = manager.replace(tail, tail_replacement, 1)
+          manager_path.write_text(manager)
+
+          editor_path = Path('src/features/music/SongDocumentEditor.tsx')
+          editor = editor_path.read_text()
+          old_props = '''  onCancel,\n  onSave,\n  onApprove,\n}: {\n  document?: Extract<SongMaterialViewModel, { kind: "document" }>;\n  pending: boolean;\n  error?: string | null;\n  onCancel: () => void;\n  onSave: (input: { documentType: SongDocumentType; title: string; body: string }) => Promise<void> | void;\n  onApprove?: () => Promise<void> | void;\n}) {'''
+          new_props = '''  onCancel,\n  onSave,\n  onApprove,\n  previewOnly = false,\n  contextNote,\n  onOpenFiles,\n}: {\n  document?: Extract<SongMaterialViewModel, { kind: "document" }>;\n  pending: boolean;\n  error?: string | null;\n  onCancel: () => void;\n  onSave: (input: { documentType: SongDocumentType; title: string; body: string }) => Promise<void> | void;\n  onApprove?: () => Promise<void> | void;\n  previewOnly?: boolean;\n  contextNote?: string;\n  onOpenFiles?: () => void;\n}) {'''
+          if old_props not in editor:
+              raise SystemExit('Editor props marker missing')
+          editor = editor.replace(old_props, new_props, 1)
+          editor = editor.replace('const [editing, setEditing] = useState(!managerArtifact);', 'const [editing, setEditing] = useState(!managerArtifact && !previewOnly);', 1)
+          editor = editor.replace(
+              'const canApprove = Boolean(managerArtifact && !internalNarrative && !approved && document?.reviewState === "ready" && onApprove);',
+              'const canApprove = Boolean(!previewOnly && managerArtifact && !internalNarrative && !approved && document?.reviewState === "ready" && onApprove);',
+              1,
+          )
+          editor = editor.replace('{managerArtifact && !editing ? (', '{managerArtifact && !editing && !previewOnly ? (', 1)
+          old_footer = '''        <footer className="flex items-center justify-end gap-2 border-t border-foreground/8 px-5 py-3.5 sm:px-7 sm:py-4">\n          {editing && managerArtifact ? <button type="button" onClick={resetPreview} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Cancel edit</button> : null}\n          <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Close</button>\n          {canApprove && !editing ? <button type="button" disabled={pending} onClick={() => void onApprove?.()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-[12px] font-semibold text-background disabled:opacity-40"><Check className="h-3.5 w-3.5" /> {pending ? "Approving…" : "Approve"}</button> : null}\n          {editing ? <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save"}</button> : null}\n        </footer>'''
+          new_footer = '''        <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-foreground/8 px-5 py-3.5 sm:px-7 sm:py-4">\n          {contextNote ? <p className="mr-auto min-w-0 flex-1 basis-full text-[11px] font-medium leading-relaxed text-muted-foreground sm:basis-auto">{contextNote}</p> : null}\n          {editing && managerArtifact ? <button type="button" onClick={resetPreview} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Cancel edit</button> : null}\n          {onOpenFiles && !editing ? <button type="button" onClick={onOpenFiles} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground hover:bg-foreground/[0.04]">Open in Files</button> : null}\n          <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Close</button>\n          {canApprove && !editing ? <button type="button" disabled={pending} onClick={() => void onApprove?.()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-[12px] font-semibold text-background disabled:opacity-40"><Check className="h-3.5 w-3.5" /> {pending ? "Approving…" : "Approve"}</button> : null}\n          {editing ? <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save"}</button> : null}\n        </footer>'''
+          if old_footer not in editor:
+              raise SystemExit('Editor footer marker missing')
+          editor = editor.replace(old_footer, new_footer, 1)
+          editor_path.write_text(editor)
+
+          legacy_path = Path('src/features/manager/ManagerScreensLegacy.tsx')
+          legacy = legacy_path.read_text()
+          old_label = '''function managerDocumentOpenLabel(documentType: string | undefined) {\n  const type = (documentType ?? "").toLowerCase();\n  if (type === "epk") return "Open EPK";\n  if (type.includes("pitch")) return "Open pitch";\n  return "Open document";\n}'''
+          new_label = '''function managerDocumentOpenLabel(documentType: string | undefined) {\n  const type = (documentType ?? "").toLowerCase();\n  if (type === "epk") return "View EPK";\n  if (type.includes("pitch")) return "View pitch";\n  return "View document";\n}'''
+          if old_label not in legacy:
+              raise SystemExit('Document open label marker missing')
+          legacy_path.write_text(legacy.replace(old_label, new_label, 1))
+
+          contract = Path('src/manager-document-navigation-contract.test.ts')
+          contract.write_text('''import { readFileSync } from "node:fs";\nimport { describe, expect, it } from "vitest";\n\ndescribe("Manager canonical document preview contract", () => {\n  it("opens saved song documents in the conversation and keeps Files as a secondary destination", () => {\n    const manager = readFileSync("src/features/manager/ManagerScreens.tsx", "utf8");\n    const editor = readFileSync("src/features/music/SongDocumentEditor.tsx", "utf8");\n    const legacy = readFileSync("src/features/manager/ManagerScreensLegacy.tsx", "utf8");\n\n    expect(manager).toContain('musicRepository.loadMusicObject(id, "music_item")');\n    expect(manager).toContain('material.kind === "document" && material.id === artifactId');\n    expect(manager).toContain("setDocumentPreviewTarget({ song, document })");\n    expect(manager).toContain("onOpenCreatedWork={openCreatedWorkInContext}");\n    expect(manager).toContain("previewOnly");\n    expect(manager).toContain("You can find this document there anytime.");\n    expect(manager).toContain('onOpenCreatedWork("music_item", target.song.id, "files", target.document.id)');\n    expect(editor).toContain("previewOnly = false");\n    expect(editor).toContain("Open in Files");\n    expect(legacy).toContain('return "View document"');\n  });\n});\n''')
+
+          approval_test = Path('src/song-document-approval.test.tsx')
+          approval = approval_test.read_text()
+          preview_test = '''\n\ndescribe("SongDocumentEditor conversation preview", () => {\n  it("keeps a Manager document read-only in conversation while exposing its canonical Files location", () => {\n    const onOpenFiles = vi.fn();\n    render(\n      <SongDocumentEditor\n        document={managerDocument()}\n        pending={false}\n        onCancel={() => undefined}\n        onSave={() => undefined}\n        onApprove={() => undefined}\n        previewOnly\n        contextNote="Saved to Dance → Files. You can find this document there anytime."\n        onOpenFiles={onOpenFiles}\n      />,\n    );\n\n    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();\n    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();\n    expect(screen.queryByRole("button", { name: "Save" })).toBeNull();\n    expect(screen.getByText("Saved to Dance → Files. You can find this document there anytime.")).toBeTruthy();\n    fireEvent.click(screen.getByRole("button", { name: "Open in Files" }));\n    expect(onOpenFiles).toHaveBeenCalledTimes(1);\n  });\n});\n'''
+          if 'describe("SongDocumentEditor conversation preview"' not in approval:
+              approval_test.write_text(approval + preview_test)
           PY
 
-      - name: Check Edge entrypoints
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
+      - name: Install dependencies
+        run: npm ci
 
-      - name: Deno check
-        run: |
-          deno check supabase/functions/manager-conversation/index.ts
-          deno check supabase/functions/manager-conversation-stream/index.ts
+      - name: Test document preview contract
+        run: npx vitest run src/manager-document-navigation-contract.test.ts src/song-document-approval.test.tsx --environment jsdom --pool=vmThreads
 
-      - name: Commit hotfix
+      - name: Build app
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+        run: npm run build
+
+      - name: Commit implementation
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add supabase/functions/manager-conversation/index.ts supabase/functions/manager-conversation-stream/index.ts
+          git add src/features/manager/ManagerScreens.tsx src/features/manager/ManagerScreensLegacy.tsx src/features/music/SongDocumentEditor.tsx src/manager-document-navigation-contract.test.ts src/song-document-approval.test.tsx
           git diff --cached --quiet && exit 0
-          git commit -m "fix: allow multi-document Manager turns to complete"
+          git commit -m "feat: preview Manager documents in conversation"
           git push origin HEAD:main
