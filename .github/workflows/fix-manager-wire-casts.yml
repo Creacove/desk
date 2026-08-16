@@ -43,35 +43,30 @@ jobs:
               'type ManagerTurnPresentationWire = { version: 1; surfaces: Array<"release_success" | "release_opportunities" | "decision_package" | "release_share_package">; visibleArtifactIds: string[]; decisionPackageId?: string };\ntype ManagerConversationMessageWire = ConversationViewModel["messages"][number] & { presentation?: ManagerTurnPresentationWire };\ntype ManagerCreatedWorkWire = NonNullable<ConversationViewModel["createdWork"]>[number] & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };',
               'wire helper types',
           )
-
           text = replace_once(
               text,
               '  const latestManagerPresentation = [...mappedMessages].reverse().find((message) => message.speaker === "manager")?.presentation;',
               '  const latestManagerPresentation = ([...mappedMessages].reverse().find((message) => message.speaker === "manager") as ManagerConversationMessageWire | undefined)?.presentation;',
               'turn presentation access',
           )
-
           text = replace_once(
               text,
               '''  return {\n    id: row.id,\n    speaker,\n    label: row.label ?? (speaker === "artist" ? "You" : "Manager"),\n    body: row.body,\n    ...(createdWork.length ? { createdWork } : {}),\n    ...(contextQuestions.length ? { contextQuestions } : {}),\n    ...(contextAnswers.length ? { contextAnswers } : {}),\n    ...(attachments.length ? { attachments } : {}),\n    ...(contextRequestId ? { contextRequestId } : {}),\n    ...(presentation ? { presentation } : {}),\n  };''',
               '''  return ({\n    id: row.id,\n    speaker,\n    label: row.label ?? (speaker === "artist" ? "You" : "Manager"),\n    body: row.body,\n    ...(createdWork.length ? { createdWork } : {}),\n    ...(contextQuestions.length ? { contextQuestions } : {}),\n    ...(contextAnswers.length ? { contextAnswers } : {}),\n    ...(attachments.length ? { attachments } : {}),\n    ...(contextRequestId ? { contextRequestId } : {}),\n    ...(presentation ? { presentation } : {}),\n  } as ManagerConversationMessageWire);''',
               'row mapper cast',
           )
-
           text = replace_once(
               text,
               '''        return {\n          id: readConversationString(message.id, `message-${index}`),\n          speaker,\n          label: readConversationString(message.label, speaker === "artist" ? "You" : "Manager"),\n          body: readConversationString(message.body, ""),\n          ...(createdWork.length ? { createdWork } : {}),\n          ...(contextQuestions.length ? { contextQuestions } : {}),\n          ...(contextAnswers.length ? { contextAnswers } : {}),\n          ...(attachments.length ? { attachments } : {}),\n          ...(contextRequestId ? { contextRequestId } : {}),\n          ...(presentation ? { presentation } : {}),\n        };''',
               '''        return ({\n          id: readConversationString(message.id, `message-${index}`),\n          speaker,\n          label: readConversationString(message.label, speaker === "artist" ? "You" : "Manager"),\n          body: readConversationString(message.body, ""),\n          ...(createdWork.length ? { createdWork } : {}),\n          ...(contextQuestions.length ? { contextQuestions } : {}),\n          ...(contextAnswers.length ? { contextAnswers } : {}),\n          ...(attachments.length ? { attachments } : {}),\n          ...(contextRequestId ? { contextRequestId } : {}),\n          ...(presentation ? { presentation } : {}),\n        } as ManagerConversationMessageWire);''',
               'API mapper cast',
           )
-
           text = replace_once(
               text,
               '.map((item): ConversationViewModel["createdWork"][number] => ({',
               '.map((item): ManagerCreatedWorkWire => ({',
               'created work wire subtype',
           )
-
           path.write_text(text)
           PY
       - name: Install dependencies
@@ -81,9 +76,11 @@ jobs:
           set -euo pipefail
           HEAD_SHA="$(git rev-parse HEAD)"
           BASE_SHA="$(git rev-parse origin/main)"
+          git stash push -m manager-wire-validation -- src/services/productionSupabase.ts
           git checkout --detach "$BASE_SHA"
           npx tsc --noEmit --pretty false > /tmp/tsc-base.txt 2>&1 || true
           git checkout --detach "$HEAD_SHA"
+          git stash pop
           npx tsc --noEmit --pretty false > /tmp/tsc-head.txt 2>&1 || true
           python - <<'PY'
           from collections import Counter
@@ -107,7 +104,9 @@ jobs:
               sys.exit(1)
           print('No new browser TypeScript diagnostics introduced.')
           PY
-          git checkout fix/manager-turn-contract
+          git checkout -B fix/manager-turn-contract "$HEAD_SHA"
+          git checkout -- src/services/productionSupabase.ts
+          git stash pop || true
       - name: Test Manager contracts
         run: npx vitest run --environment jsdom --pool=vmThreads src/manager-turn-contract.test.ts src/features/manager/managerArtifactExperience.test.ts src/manager-document-navigation-contract.test.ts
       - name: Check Manager Edge functions
