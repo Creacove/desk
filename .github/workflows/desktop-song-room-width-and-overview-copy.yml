@@ -1,0 +1,45 @@
+name: Desktop Song Room width and overview copy
+on:
+  push:
+    paths:
+      - scripts/desktop_song_room_width_and_overview_copy.py
+      - .github/workflows/desktop-song-room-width-and-overview-copy.yml
+permissions:
+  contents: write
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply desktop UX patch
+        run: python3 scripts/desktop_song_room_width_and_overview_copy.py
+      - run: npm ci
+      - name: Focused UX regressions
+        run: npx vitest run src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit implementation
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/music/MusicScreens.tsx src/features/manager/ManagerScreensLegacy.tsx src/features/manager/ManagerScreens.tsx src/features/manager/ManagerComposer.tsx src/design-system/components.tsx src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts
+          git commit -m 'fix: widen desktop workspaces and clarify song overview'
+          git push origin main
