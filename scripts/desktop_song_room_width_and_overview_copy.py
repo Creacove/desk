@@ -6,7 +6,9 @@ def replace_once(text: str, old: str, new: str, label: str) -> str:
         raise SystemExit(f"missing anchor: {label}")
     return text.replace(old, new, 1)
 
-# Song Room: use the desktop workspace instead of centering every tab in a reading column.
+
+# Phase 0: open the Song Room tabs to the desktop workspace and frame the overview
+# around the user's record, not around the internal Manager feature name.
 music_path = Path("src/features/music/MusicScreens.tsx")
 music = music_path.read_text()
 for old, new, label in [
@@ -16,8 +18,8 @@ for old, new, label in [
     ('data-testid="song-room-rights" className="mx-auto w-full max-w-4xl"', 'data-testid="song-room-rights" className="w-full"', 'rights width'),
     ('  const actionLabel = managerReadButtonLabel("song", song.managerReadStatus);', '  const actionLabel = failed ? "Retry record review" : checking ? "Check record review" : read ? "Refresh record review" : "Review this record";', 'overview action label'),
     ('>Manager&apos;s read</p>', '>What matters now</p>', 'overview eyebrow'),
-    ('aria-label={briefPending ? "Manager is reading" : actionLabel}', 'aria-label={briefPending ? "Reviewing this record" : actionLabel}', 'overview refresh aria'),
-    ('title={briefPending ? "Manager is reading" : actionLabel}', 'title={briefPending ? "Reviewing this record" : actionLabel}', 'overview refresh title'),
+    ('aria-label={briefPending ? "Manager is reading" : actionLabel}', 'aria-label={briefPending ? (read ? "Refreshing record review" : "Reviewing this record") : actionLabel}', 'overview refresh aria'),
+    ('title={briefPending ? "Manager is reading" : actionLabel}', 'title={briefPending ? (read ? "Refreshing record review" : "Reviewing this record") : actionLabel}', 'overview refresh title'),
     ('>Manager is reading this record…</p>', '>Reviewing this record…</p>', 'overview loading copy'),
     ('>Checking Manager’s read…</p>', '>Checking this review…</p>', 'overview checking copy'),
     ('{failed ? "Manager couldn’t complete the read." : "Get Manager’s take on this record."}', '{failed ? "Couldn’t complete the review." : "See what needs attention."}', 'overview empty heading'),
@@ -27,64 +29,32 @@ for old, new, label in [
     music = replace_once(music, old, new, label)
 music_path.write_text(music)
 
-# Manager conversation: align the conversation, composer, action tray and sticky header to the workspace.
-legacy_path = Path("src/features/manager/ManagerScreensLegacy.tsx")
-legacy = legacy_path.read_text()
-legacy = replace_once(
-    legacy,
-    'className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(17rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pb-[calc(9rem+env(safe-area-inset-bottom))] sm:pt-5 lg:px-0"',
-    'className="w-full px-1 pb-[calc(17rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pb-[calc(9rem+env(safe-area-inset-bottom))] sm:pt-5 lg:px-0"',
-    'conversation width constraint',
-)
-legacy = legacy.replace(
-    '''      {/*
-        ChatGPT layout pattern:
-        — A centered, width-constrained reading column gives the breathing room.
-        — Manager text fills the column naturally (no bubble border).
-        — User message is a right-aligned soft pill within the same column.
-        — Side whitespace is the product of the column constraint, not padding hacks.
-      */}
-''',
-    '',
-    1,
-)
-legacy_path.write_text(legacy)
 
-composer_path = Path("src/features/manager/ManagerComposer.tsx")
-composer = composer_path.read_text()
-composer = replace_once(composer, '<div className="pointer-events-auto mx-auto w-full max-w-[48rem]">', '<div className="pointer-events-auto w-full">', 'conversation composer width')
-composer_path.write_text(composer)
-
-wrapper_path = Path("src/features/manager/ManagerScreens.tsx")
-wrapper = wrapper_path.read_text()
-wrapper = replace_once(wrapper, '<div className="pointer-events-auto mx-auto w-full max-w-[48rem]">', '<div className="pointer-events-auto w-full">', 'workspace action tray width')
-wrapper_path.write_text(wrapper)
-
-components_path = Path("src/design-system/components.tsx")
-components = components_path.read_text()
-components = replace_once(components, '<div className="mx-auto flex max-w-[48rem] items-center gap-3">', '<div className="flex w-full items-center gap-3">', 'conversation sticky header width')
-components_path.write_text(components)
-
-# Update focused design contracts.
 overview_test_path = Path("src/song-room-red-antler-overview.test.ts")
 overview_test = overview_test_path.read_text()
 overview_test = replace_once(
     overview_test,
     'it("makes Manager the primary song action and Manager Read the overview", () => {',
-    'it("keeps Manager conversational in the header while Overview leads with user value", () => {',
+    'it("keeps Manager conversational in the header while Overview leads with record value", () => {',
     'overview test name',
 )
 overview_test = replace_once(
     overview_test,
     "    expect(music).toContain('Manager&apos;s read');",
-    "    expect(music).toContain('What matters now');\n    expect(music).toContain('Review this record');",
+    "    expect(music).toContain('What matters now');\n    expect(music).toContain('Review this record');\n    expect(music).toContain('See what needs attention.');",
     'overview wording expectation',
 )
 overview_test_path.write_text(overview_test)
 
+
 tab_test_path = Path("src/song-room-tab-design.test.ts")
 tab_test = tab_test_path.read_text()
-tab_test = replace_once(tab_test, 'it("uses one bounded editorial shell for Files, Details, and Rights", () => {', 'it("lets every Song Room tab use the full desktop workspace width", () => {', 'tab width test name')
+tab_test = replace_once(
+    tab_test,
+    'it("uses one bounded editorial shell for Files, Details, and Rights", () => {',
+    'it("lets every Song Room tab use the full desktop workspace width", () => {',
+    'tab width test name',
+)
 tab_test = replace_once(
     tab_test,
     "    expect(music).toContain('data-testid=\"song-room-files\" className=\"mx-auto w-full max-w-4xl\"');\n    expect(music).toContain('data-testid=\"song-room-details\" className=\"mx-auto w-full max-w-4xl\"');\n    expect(music).toContain('data-testid=\"song-room-rights\" className=\"mx-auto w-full max-w-4xl\"');",
@@ -93,45 +63,42 @@ tab_test = replace_once(
 )
 tab_test_path.write_text(tab_test)
 
-# Production interaction tests should assert the user-facing outcome language, not the internal Manager Read name.
+
+# Keep the integration suite aligned with the new song-specific product language.
+# Project Manager Read language is intentionally untouched in this phase.
 production_test_path = Path("src/production-app-shell.test.tsx")
 production_test = production_test_path.read_text()
-production_replacements = [
-    ('"Manager is reading this record"', '"Reviewing this record"'),
-    ('"Get Manager’s take on this record"', '"See what needs attention"'),
-    ('name: "Get Manager’s read"', 'name: "Review this record"'),
-    ('"Manager couldn’t complete the read"', '"Couldn’t complete the review"'),
-    ('"Manager couldn’t complete the read."', '"Couldn’t complete the review."'),
-    ('"Checking Manager’s read"', '"Checking this review"'),
-]
-for old, new in production_replacements:
-    production_test = production_test.replace(old, new)
+for old, new, label in [
+    ('getByRole("button", { name: "Refresh Manager Read" })).toHaveClass("h-9", "w-9");', 'getByRole("button", { name: "Refresh record review" })).toHaveClass("h-9", "w-9");', 'reopened song refresh label'),
+    ('["song", "not_generated", "Not generated", "Ask Manager for a read", false],\n    ["song", "stale", "Refresh required", "Refresh Manager Read", false],\n    ["song", "running", "Manager is reading", "Manager is reading", true],\n    ["song", "refreshing", "Refreshing", "Refreshing Manager Read", true],\n    ["song", "fresh", "Current read", "Refresh Manager Read", false],\n    ["song", "failed", "Read failed", "Retry Manager Read", false],\n    ["song", "refresh_failed", "Refresh failed", "Retry Manager Read", false],', '["song", "not_generated", "Not generated", "Review this record", false],\n    ["song", "stale", "Refresh required", "Refresh record review", false],\n    ["song", "running", "Reviewing this record", "Reviewing this record", true],\n    ["song", "refreshing", "Refreshing", "Refreshing record review", true],\n    ["song", "fresh", "Current read", "Refresh record review", false],\n    ["song", "failed", "Review failed", "Retry record review", false],\n    ["song", "refresh_failed", "Refresh failed", "Retry record review", false],', 'song status matrix'),
+    ('expect(readSurface).toHaveTextContent("Manager is reading this record");', 'expect(readSurface).toHaveTextContent("Reviewing this record");', 'running song copy'),
+    ('expect(readSurface).toHaveTextContent("Get Manager’s take on this record");\n        expect(within(readSurface).getByRole("button", { name: "Get Manager’s read" })).toBeEnabled();', 'expect(readSurface).toHaveTextContent("See what needs attention");\n        expect(within(readSurface).getByRole("button", { name: "Review this record" })).toBeEnabled();', 'empty song copy'),
+    ('expect(readSurface).toHaveTextContent("Manager couldn’t complete the read");', 'expect(readSurface).toHaveTextContent("Couldn’t complete the review");', 'failed song copy'),
+    ('else expect(within(room).getByRole("button", { name: "Refreshing Manager Read" })).toBeDisabled();', 'else expect(within(room).getByRole("button", { name: "Refreshing record review" })).toBeDisabled();', 'refreshing song button'),
+    ('expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Get Manager’s take on this record.");', 'expect(screen.getByTestId("music-song-detail")).toHaveTextContent("See what needs attention.");', 'focused start reset copy'),
+]:
+    production_test = replace_once(production_test, old, new, label)
 production_test_path.write_text(production_test)
+
 
 width_test = Path("src/desktop-workspace-width.test.ts")
 width_test.write_text('''import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const music = readFileSync("src/features/music/MusicScreens.tsx", "utf8");
-const legacy = readFileSync("src/features/manager/ManagerScreensLegacy.tsx", "utf8");
-const manager = readFileSync("src/features/manager/ManagerScreens.tsx", "utf8");
-const composer = readFileSync("src/features/manager/ManagerComposer.tsx", "utf8");
-const components = readFileSync("src/design-system/components.tsx", "utf8");
 
-describe("desktop workspace width", () => {
+describe("Song Room desktop workspace width", () => {
   it("does not center Song Room tabs inside a narrow reading column", () => {
     for (const testId of ["song-room-mobile-overview", "song-room-files", "song-room-details", "song-room-rights"]) {
       expect(music).toContain(`data-testid="${testId}" className="w-full"`);
     }
   });
 
-  it("lets the Manager conversation, composer, actions, and header use the desktop workspace", () => {
-    const conversationStart = legacy.indexOf('data-testid="manager-conversation-column"');
-    expect(conversationStart).toBeGreaterThan(-1);
-    expect(legacy.slice(conversationStart, conversationStart + 260)).not.toContain('max-w-[48rem]');
-    expect(composer).toContain('className="pointer-events-auto w-full"');
-    expect(manager).toContain('className="pointer-events-auto w-full"');
-    expect(components).toContain('className="flex w-full items-center gap-3"');
+  it("keeps the record-review copy focused on the record rather than the Manager feature", () => {
+    expect(music).toContain("What matters now");
+    expect(music).toContain("See what needs attention.");
+    expect(music).toContain("Review this record");
+    expect(music).not.toContain("Get Manager’s take on this record.");
   });
 });
 ''')
