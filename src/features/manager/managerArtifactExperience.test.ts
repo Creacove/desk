@@ -69,6 +69,26 @@ describe("premium Manager artifact experience", () => {
     expect(projected.releaseSuccessArtifacts).toEqual([]);
   });
 
+  it("never attaches historical conversation artifacts underneath a failed Manager turn", () => {
+    const source = conversation({
+      messages: [
+        { id: "artist-1", speaker: "artist", label: "You", body: "Find playlist opportunities for Tarara" },
+        {
+          id: "manager-1",
+          speaker: "manager",
+          label: "Manager",
+          body: "Manager is briefly busy. Please try again in a moment.",
+          status: "failed",
+        },
+      ],
+    });
+
+    const projected = prepareManagerConversationForPresentation(source);
+    expect(projected.releaseOpportunityArtifacts).toEqual([]);
+    expect(projected.releaseSuccessArtifacts).toEqual([]);
+    expect(projected.decisionPackage).toBeUndefined();
+  });
+
   it("only exposes a decision package when the user explicitly asked for a decision package", () => {
     const source = conversation({
       messages: [
