@@ -46,3 +46,4 @@ jobs:
           git add src/features/music/MusicScreens.tsx src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx
           git commit -m 'design: open up Song Room and clarify record review'
           git push origin HEAD:design/catalog-manager-unification
+# rerun: integration expectations aligned with record-review language
