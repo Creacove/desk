@@ -1,0 +1,112 @@
+name: Implement Manager artifact visual hierarchy
+
+on:
+  push:
+    paths:
+      - '.github/workflows/implement-manager-artifact-visuals.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch Manager artifact visuals
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/features/manager/ManagerScreensLegacy.tsx')
+          text = path.read_text()
+
+          marker = '''function ResultAction({ children, onClick, pendingLabel = "Opening…" }: { children: ReactNode; onClick?: () => void | Promise<void>; pendingLabel?: string }) {'''
+          glyph = '''function ArtifactGlyph({\n  kind,\n  updated = false,\n}: {\n  kind: "workspace" | "document" | "mission" | "task" | "song";\n  updated?: boolean;\n}) {\n  const icon = kind === "document"\n    ? <FileText className="h-3.5 w-3.5" aria-hidden="true" />\n    : kind === "mission"\n      ? <Route className="h-3.5 w-3.5" aria-hidden="true" />\n      : kind === "task"\n        ? <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />\n        : kind === "song"\n          ? <Music2 className="h-3.5 w-3.5" aria-hidden="true" />\n          : <Check className="h-3.5 w-3.5" aria-hidden="true" />;\n\n  return (\n    <span\n      data-testid={`manager-artifact-icon-${kind}`}\n      className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] border border-foreground/10 bg-foreground/[0.035] text-foreground/62"\n      aria-hidden="true"\n    >\n      {icon}\n      {updated ? <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full border-2 border-background bg-brand-accent" /> : null}\n    </span>\n  );\n}\n\n''' + marker
+          if marker not in text:
+              raise SystemExit('ResultAction marker missing')
+          text = text.replace(marker, glyph, 1)
+
+          old = '''    <article data-testid="manager-workspace-result" className="border-l-2 border-foreground/12 py-1 pl-4">\n      <div className="flex items-start gap-3">\n        <div className="min-w-0 flex-1">'''
+          new = '''    <article data-testid="manager-workspace-result" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n      <div className="flex items-start gap-3">\n        <ArtifactGlyph kind="workspace" />\n        <div className="min-w-0 flex-1">'''
+          if old not in text:
+              raise SystemExit('Workspace result marker missing')
+          text = text.replace(old, new, 1)
+
+          old = '''      <article data-testid="manager-document-result" className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">\n        <div className="min-w-0 flex-1">'''
+          new = '''      <article data-testid="manager-document-result" data-artifact-kind="document" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n        <ArtifactGlyph kind="document" />\n        <div className="min-w-0 flex-1">'''
+          if old not in text:
+              raise SystemExit('Draft result marker missing')
+          text = text.replace(old, new, 1)
+
+          old = '''    <article data-testid="manager-document-result" className="border-l-2 border-foreground/12 py-2 pl-4">\n      <div className="flex items-start gap-3">\n        <div className="min-w-0 flex-1">'''
+          new = '''    <article data-testid="manager-document-result" data-artifact-kind="document" className="rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n      <div className="flex items-start gap-3">\n        <ArtifactGlyph kind="document" />\n        <div className="min-w-0 flex-1">'''
+          if old not in text:
+              raise SystemExit('Song document result marker missing')
+          text = text.replace(old, new, 1)
+          text = text.replace('''        <div className="mt-2.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">''', '''        <div className="ml-11 mt-2.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">''', 1)
+          text = text.replace('''        <div className="mt-2 flex flex-wrap gap-1">\n          <ResultAction onClick={() => setExpanded((value) => !value)}>''', '''        <div className="ml-11 mt-2 flex flex-wrap gap-1">\n          <ResultAction onClick={() => setExpanded((value) => !value)}>''', 1)
+          text = text.replace('''        <div className="mt-3 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-3">\n          <RichMessageBody body={item.content} />''', '''        <div className="ml-11 mt-3 rounded-xl border border-foreground/10 bg-foreground/[0.02] p-3">\n          <RichMessageBody body={item.content} />''', 1)
+
+          old = '''    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">\n      <span className="hidden">\n        <Route className="h-3.5 w-3.5" aria-hidden="true" />\n      </span>\n      <div className="min-w-0 flex-1">'''
+          new = '''    <article data-artifact-kind="mission" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n      <ArtifactGlyph kind="mission" updated={group.mission.status === "updated"} />\n      <div className="min-w-0 flex-1">'''
+          if old not in text:
+              raise SystemExit('Mission result marker missing')
+          text = text.replace(old, new, 1)
+
+          old = '''    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">\n      <span className="hidden">\n        <ClipboardCheck className="h-3.5 w-3.5" aria-hidden="true" />\n      </span>\n      <div className="min-w-0 flex-1">'''
+          new = '''    <article data-artifact-kind="task" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n      <ArtifactGlyph kind="task" updated={group.tasks.some((task) => task.status === "updated")} />\n      <div className="min-w-0 flex-1">'''
+          if old not in text:
+              raise SystemExit('Task result marker missing')
+          text = text.replace(old, new, 1)
+
+          old = '''    <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">\n      <span className="hidden">\n        <Music2 className="h-3.5 w-3.5" aria-hidden="true" />\n      </span>\n      <div className="min-w-0 flex-1">'''
+          new = '''    <article data-artifact-kind="song" className="flex items-center gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n      <ArtifactGlyph kind="song" updated={item.status === "updated"} />\n      <div className="min-w-0 flex-1">'''
+          if old not in text:
+              raise SystemExit('Music result marker missing')
+          text = text.replace(old, new, 1)
+
+          old = '''           {!isStreaming && decisionPackage ? (\n             <section className="mt-5 border-l-2 border-foreground/12 pl-4">\n               <p className="text-[14px] font-semibold text-foreground">{decisionPackage.title}</p>\n               <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{decisionPackage.summary}</p>\n               {onOpenDecisionPackage ? <div className="mt-2"><ResultAction onClick={onOpenDecisionPackage}>Open package</ResultAction></div> : null}\n             </section>\n           ) : null}'''
+          new = '''           {!isStreaming && decisionPackage ? (\n             <section data-artifact-kind="document" className="mt-5 flex items-start gap-3 rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012] px-3.5 py-3">\n               <ArtifactGlyph kind="document" />\n               <div className="min-w-0 flex-1">\n                 <p className="text-[11px] font-semibold text-muted-foreground">Decision package</p>\n                 <p className="mt-0.5 text-[13px] font-semibold text-foreground">{decisionPackage.title}</p>\n                 <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{decisionPackage.summary}</p>\n                 {onOpenDecisionPackage ? <div className="mt-2"><ResultAction onClick={onOpenDecisionPackage}>View package</ResultAction></div> : null}\n               </div>\n             </section>\n           ) : null}'''
+          if old not in text:
+              raise SystemExit('Decision package marker missing')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+
+          test = Path('src/manager-artifact-visual-contract.test.ts')
+          test.write_text('''import { readFileSync } from "node:fs";\nimport { describe, expect, it } from "vitest";\n\ndescribe("Manager artifact visual hierarchy", () => {\n  it("renders created work as scannable typed objects rather than anonymous text rows", () => {\n    const manager = readFileSync("src/features/manager/ManagerScreensLegacy.tsx", "utf8");\n\n    for (const kind of ["document", "mission", "task", "song"] as const) {\n      expect(manager).toContain(`data-artifact-kind="${kind}"`);\n      expect(manager).toContain(`kind="${kind}"`);\n    }\n    expect(manager).toContain('data-testid={`manager-artifact-icon-${kind}`}');\n    expect(manager).toContain('updated={group.mission.status === "updated"}');\n    expect(manager).toContain('updated={group.tasks.some((task) => task.status === "updated")}');\n    expect(manager).toContain('rounded-[14px] border border-foreground/[0.08] bg-foreground/[0.012]');\n    expect(manager).toContain('View package');\n  });\n});\n''')
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Test artifact hierarchy
+        run: npx vitest run src/manager-artifact-visual-contract.test.ts src/manager-document-navigation-contract.test.ts src/features/manager/managerArtifactExperience.test.ts --environment jsdom --pool=vmThreads
+
+      - name: Build app
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+        run: npm run build
+
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/manager/ManagerScreensLegacy.tsx src/manager-artifact-visual-contract.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: give Manager artifacts clear visual identity"
+          git push origin HEAD:main
