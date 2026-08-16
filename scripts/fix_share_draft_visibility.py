@@ -33,3 +33,5 @@ check = safety.read_text()
 check = check.replace('it("rejects internal narrative and unapproved Manager documents in the Edge function"', 'it("rejects internal narrative while allowing owner-selected Manager drafts after preview"')
 check = check.replace('    expect(source).toContain(\'document.origin === "manager_generated" && document.status !== "accepted"\');\n', '    expect(source).not.toContain(\'document.origin === "manager_generated" && document.status !== "accepted"\');\n')
 safety.write_text(check)
+
+# rerun marker
