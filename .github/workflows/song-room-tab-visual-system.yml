@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - scripts/song_room_tab_visual_system.py
+      - scripts/song_room_tab_visual_system_fix.py
       - .github/workflows/song-room-tab-visual-system.yml
 permissions:
   contents: write
@@ -19,7 +20,9 @@ jobs:
           node-version: 22
           cache: npm
       - name: Apply song room visual system
-        run: python3 scripts/song_room_tab_visual_system.py
+        run: |
+          python3 scripts/song_room_tab_visual_system.py
+          python3 scripts/song_room_tab_visual_system_fix.py
       - run: npm ci
       - name: Focused design contract
         run: npx vitest run src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts --environment jsdom --pool=vmThreads
@@ -40,4 +43,3 @@ jobs:
           git add src/features/music/MusicScreens.tsx src/song-room-tab-design.test.ts
           git commit -m 'feat: unify song room tab visual system'
           git push origin main
-# validation trigger
