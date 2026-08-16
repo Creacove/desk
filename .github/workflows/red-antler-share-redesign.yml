@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - scripts/red_antler_share_redesign.py
+      - scripts/red_antler_share_redesign_fix.py
       - .github/workflows/red-antler-share-redesign.yml
 permissions:
   contents: write
@@ -19,7 +20,9 @@ jobs:
           node-version: 22
           cache: npm
       - name: Apply recipient-first share redesign
-        run: python3 scripts/red_antler_share_redesign.py
+        run: |
+          python3 scripts/red_antler_share_redesign.py
+          python3 scripts/red_antler_share_redesign_fix.py
       - run: npm ci
       - name: Share-focused tests
         run: npx vitest run src/music-share-package.test.ts src/music-share-dialog.test.tsx src/public-music-share-service.test.ts src/music-share-recipient-contract.test.ts src/public-music-share-portal.test.tsx src/music-share-backend-safety.test.ts src/music-share-links-functions.test.ts --environment jsdom --pool=vmThreads
@@ -32,6 +35,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/music/MusicShareDialog.tsx src/features/music/musicSharePackage.ts src/music-share-dialog.test.tsx src/music-share-package.test.ts
+          git add src/features/music/MusicShareDialog.tsx src/features/music/musicSharePackage.ts src/music-share-dialog.test.tsx src/music-share-package.test.ts src/music-share-recipient-contract.test.ts
           git commit -m 'feat: redesign share flow around recipient intent'
           git push origin main
