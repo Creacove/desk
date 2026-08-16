@@ -278,6 +278,7 @@ export function MusicShareDialog({
                       <button type="submit" disabled={pending || emailSent} className="h-11 rounded-[11px] bg-foreground px-5 text-[11px] font-bold text-background disabled:opacity-50">{emailSent ? "Sent" : "Send"}</button>
                     </form>
                   ) : null}
+                  {error ? <p role="alert" className="mt-3 rounded-[11px] border border-danger/20 bg-danger/8 px-3.5 py-3 text-[11px] font-semibold text-danger">{error}</p> : null}
                   <div className="mt-7 flex items-center justify-between border-t border-foreground/8 pt-4">
                     <button type="button" onClick={createAnother} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"><RotateCcw className="h-3.5 w-3.5" />Create another</button>
                     {onRevoke ? <button type="button" onClick={() => void revoke(created.id)} disabled={pending} className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-danger disabled:opacity-50"><Trash2 className="h-3.5 w-3.5" />Revoke</button> : null}

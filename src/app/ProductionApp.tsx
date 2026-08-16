@@ -872,7 +872,7 @@ function CleanProductionWorkspace({
     view === "artistProfileWorkspace" ||
     (view === "musicWorkspace" && !musicDetailOpen) ||
     (view === "missionsWorkspace" && !missionRoomOpen);
-  const showMobileTabbar = view !== "conversationWorkspace" && view !== "investigation" && view !== "decisionPackage";
+  const showMobileTabbar = view !== "conversationWorkspace" && view !== "investigation" && view !== "decisionPackage" && !(view === "musicWorkspace" && musicDetailOpen);
 
   useEffect(() => {
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });

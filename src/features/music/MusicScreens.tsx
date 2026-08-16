@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, Download, FileAudio, FileText, Image as ImageIcon, ListMusic, Loader2, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, ChevronRight, Copy, Disc3, Download, FileAudio, FileText, Image as ImageIcon, ListMusic, Loader2, MessageCircle, Pencil, Play, Plus, RefreshCw, RotateCcw, Search, Share2, Sparkles, Trash2, Upload, UsersRound, X } from "lucide-react";
 import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
@@ -7,9 +7,6 @@ import { createClientRequestId } from "../../lib/requestId";
 import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { managerReadControls } from "./managerReadPolicy";
-import { ReleaseWorkAttachment } from "./SongRoomAttachments";
-import { SongCampaignWorkspace } from "./SongCampaignWorkspace";
-import { deriveSongCampaignState } from "./songCampaign";
 import { SongDocumentEditor } from "./SongDocumentEditor";
 import { SongDocumentActions } from "./SongDocumentActions";
 import { MusicShareDialog as PolishedMusicShareDialog } from "./MusicShareDialog";
@@ -797,7 +794,6 @@ export function MusicWorkspace({
           onWriteDocument={musicRepository.createSongDocument ? () => { setActionError(null); setDocumentEditorTarget({ song: selected }); } : undefined}
           onEditDocument={musicRepository.updateSongDocument ? (document) => { setActionError(null); setDocumentEditorTarget({ song: selected, document }); } : undefined}
           onAskManagerForDocument={() => onOpenManager?.(selected, `Draft a press release for ${selected.title}. Use the song's current files, lyrics, metadata, and release context. Save the draft to this song for my review.`)}
-          onStartCampaignWork={onOpenManager ? (starterPrompt) => onOpenManager(selected, starterPrompt) : undefined}
           onRequestAssetAccess={musicRepository.getAssetAccessUrl ? (assetId) => musicRepository.getAssetAccessUrl!(selected.id, assetId) : undefined}
           uploadJobs={Object.values(uploadJobs).filter((job) => job.songId === selected.id)}
           onRetryUpload={(job) => void performMusicAssetUpload(job)}
@@ -1120,7 +1116,6 @@ function MusicSongDetail({
   onWriteDocument,
   onEditDocument,
   onAskManagerForDocument,
-  onStartCampaignWork,
   onRequestAssetAccess,
   uploadJobs,
   onRetryUpload,
@@ -1148,7 +1143,6 @@ function MusicSongDetail({
   onWriteDocument?: () => void;
   onEditDocument?: (document: Extract<SongMaterialViewModel, { kind: "document" }>) => void;
   onAskManagerForDocument?: () => void;
-  onStartCampaignWork?: (starterPrompt: string) => void;
   onRequestAssetAccess?: (assetId: string) => Promise<string>;
   uploadJobs: MusicUploadJob[];
   onRetryUpload: (job: MusicUploadJob) => void;
@@ -1203,14 +1197,8 @@ function MusicSongDetail({
     hasConversation: Boolean(song.managerConversationId),
   });
   const hasSecondaryReadAction = readControls.readActionPriority === "secondary";
-  const campaign = useMemo(() => deriveSongCampaignState(song, linkedMissions), [song, linkedMissions]);
-  const effectiveTab: SongRoomTab = activeTab === "campaign" && !campaign.visible ? "overview" : activeTab;
-  const songTabs: SongRoomTab[] = campaign.visible
-    ? ["overview", "campaign", "files", "details", "rights"]
-    : ["overview", "files", "details", "rights"];
-  const releaseKitPrompt = campaign.phase === "post_release"
-    ? `Build the campaign kit for ${song.title}. This record is already released, so do not reopen pre-release gates or Spotify editorial pitching. Start from the current files, lyrics, metadata, rights, public context, and existing campaign work. Create only the EPK, bio, one-sheet, press angles, pitches, or other canonical materials this servicing campaign actually needs, save each document to the song, and ask me only for information you cannot verify.`
-    : `Build the release kit for ${song.title}. Start from the song's current files, lyrics, metadata, rights, release context, and existing campaign work. Create the EPK, bio, one-sheet, press angles, channel-ready pitches, and other canonical materials this release actually needs, save each document to the song, and ask me only for information you cannot verify.`;
+  const effectiveTab: SongRoomTab = activeTab === "campaign" ? "overview" : activeTab;
+  const songTabs: SongRoomTab[] = ["overview", "files", "details", "rights"];
 
   async function playAsset(asset: NonNullable<MusicObjectViewModel["fileAssets"]>[number]) {
     if (!asset.assetId || !onRequestAssetAccess) return;
@@ -1228,76 +1216,40 @@ function MusicSongDetail({
 
   return (
     <section data-testid="music-song-detail" className="grid min-w-0 gap-5">
-      <MusicDetailTop object={song} label="Song room" onBack={onBack} onStageChange={onStageChange} />
+      <MusicDetailTop object={song} label="Song room" onBack={onBack} onStageChange={onStageChange} onOpenManager={onContinueWithManager} />
       {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
       {notice && !error ? <p role="status" className="rounded-lg border border-success/20 bg-success/8 px-3 py-2 text-[12px] font-semibold text-success">{notice}</p> : null}
       <WorkspaceTabRail
         ariaLabel="Song sections"
         testId="song-room-mobile-tabs"
-        className={campaign.visible ? "grid-cols-5" : "grid-cols-4"}
+        className="grid-cols-4"
         active={effectiveTab}
         onChange={onTabChange}
         items={songTabs.map((id) => ({ id, label: titleCaseStatus(id) }))}
       />
 
       {effectiveTab === "overview" ? (
-        <div className="grid items-start gap-4 lg:gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
-          <div data-testid="song-room-mobile-overview" className="surface-elevated space-y-5 overflow-hidden rounded-[16px] p-4 shadow-sm sm:p-5 lg:space-y-6 lg:rounded-[22px] lg:p-6">
-            <div>
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 pt-1.5">
-                  <span className="font-ui text-[10px] font-semibold uppercase tracking-[0.05em] text-muted-foreground/78">
-                    {managerReadStatusLabel(song.managerReadStatus)}
-                  </span>
-                  {song.blocker && song.blocker !== "No active blocker" && song.blocker !== "None" ? (
-                    <span className="rounded-full bg-warning/10 px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-warning">
-                      Blocker: {song.blocker}
-                    </span>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  aria-label={briefPending ? pendingReadLabel : generateReadLabel}
-                  onClick={onGenerateBrief}
-                  disabled={readBusy}
-                  className={cn(
-                    "ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-full border border-foreground/12 font-ui text-[10px] font-semibold shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40 sm:text-[11px]",
-                    hasSecondaryReadAction
-                      ? "h-9 w-9 justify-center bg-background text-foreground"
-                      : "bg-foreground px-3 py-2 text-background sm:px-4",
-                  )}
-                >
-                  {readBusy ? <AppThinkingOrb surface={hasSecondaryReadAction ? "normal" : "inverse"} state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
-                  <span className={hasSecondaryReadAction ? "sr-only" : undefined}>{briefPending ? pendingReadLabel : generateReadLabel}</span>
-                </button>
-              </div>
-              {briefError ? (
-                <p className="mb-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
-                  {briefError}
-                </p>
-              ) : null}
-            </div>
-            <MusicManagerReadContent subject={song} testId="manager-read-copy" />
-          </div>
-          <ReleaseWorkAttachment
-            missions={linkedMissions}
-            campaign={campaign}
-            onTalkToManager={onContinueWithManager}
-            onOpenCampaign={campaign.visible ? () => onTabChange("campaign") : undefined}
-            onOpenPlan={onOpenMission}
+        <div data-testid="song-room-mobile-overview" className="mx-auto w-full max-w-4xl">
+          <SongOverviewRead
+            song={song}
+            onGenerateBrief={onGenerateBrief}
+            briefPending={briefPending}
+            briefError={briefError}
           />
+          {linkedMissions[0] ? (
+            <section className="mt-7 border-t border-foreground/8 pt-5 sm:mt-8 sm:pt-6" aria-label="Active work">
+              <p className="font-ui text-[9px] font-bold uppercase tracking-[0.11em] text-muted-foreground/65">Active mission</p>
+              <button
+                type="button"
+                onClick={() => onOpenMission(linkedMissions[0].id)}
+                className="mt-2 flex w-full items-center justify-between gap-5 rounded-[12px] py-2 text-left focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+              >
+                <span className="min-w-0 truncate text-[14px] font-semibold text-foreground sm:text-[15px]">{linkedMissions[0].title}</span>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+              </button>
+            </section>
+          ) : null}
         </div>
-      ) : null}
-
-      {effectiveTab === "campaign" && campaign.visible ? (
-        <SongCampaignWorkspace
-          song={song}
-          campaign={campaign}
-          onContinueManager={onContinueWithManager}
-          onBuildReleaseKit={onStartCampaignWork ? () => onStartCampaignWork(releaseKitPrompt) : onContinueWithManager}
-          onOpenFiles={() => onTabChange("files")}
-          onOpenMission={onOpenMission}
-        />
       ) : null}
 
       {effectiveTab === "files" ? (
@@ -1768,6 +1720,83 @@ function MusicProjectBrief({
   );
 }
 
+function SongOverviewRead({
+  song,
+  onGenerateBrief,
+  onContinueWithManager,
+  briefPending,
+  briefError,
+}: {
+  song: MusicObjectViewModel;
+  onGenerateBrief: () => void;
+  onContinueWithManager?: () => void;
+  briefPending: boolean;
+  briefError: string | null;
+}) {
+  const read = song.managerRead;
+  const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
+  const failed = song.managerReadStatus === "failed" || song.managerReadStatus === "refresh_failed" || Boolean(briefError);
+  const checking = song.managerReadStatus === "unknown";
+  const actionLabel = managerReadButtonLabel("song", song.managerReadStatus);
+
+  return (
+    <section data-testid="song-room-overview-read" className="pt-1 sm:pt-2">
+      <div className="flex items-center justify-between gap-4">
+        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.11em] text-muted-foreground/65">Manager&apos;s read</p>
+        {read ? (
+          <button
+            type="button"
+            aria-label={briefPending ? "Manager is reading" : actionLabel}
+            title={briefPending ? "Manager is reading" : actionLabel}
+            onClick={onGenerateBrief}
+            disabled={readBusy}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:opacity-40"
+          >
+            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(song.managerReadStatus)}
+          </button>
+        ) : null}
+      </div>
+
+      {read ? (
+        <div className="mt-4 max-w-3xl">
+          {failed ? <p className="mb-3 text-[11px] font-medium text-muted-foreground">Couldn’t refresh just now. Showing the last read.</p> : null}
+          <p className="whitespace-pre-line font-display text-[18px] font-medium leading-[1.55] tracking-[-0.01em] text-foreground sm:text-[21px] sm:leading-[1.5]">{read.body}</p>
+        </div>
+      ) : readBusy ? (
+        <div className="mt-4 flex max-w-xl items-center gap-3 py-2">
+          <AppThinkingOrb surface="normal" state="composing" size={20} />
+          <p className="text-[13px] font-semibold text-muted-foreground">Manager is reading this record…</p>
+        </div>
+      ) : checking ? (
+        <div className="mt-4 max-w-xl">
+          <p className="text-[13px] font-semibold text-muted-foreground">Checking Manager’s read…</p>
+          <button type="button" onClick={onGenerateBrief} className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Check again
+          </button>
+        </div>
+      ) : (
+        <div className="mt-4 max-w-xl">
+          <h3 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">
+            {failed ? "Manager couldn’t complete the read." : "Get Manager’s take on this record."}
+          </h3>
+          <p className="mt-2 text-[12px] font-medium leading-5 text-muted-foreground">
+            {failed ? "Try again when you’re ready." : "A concise read of what matters now, grounded in the song and its current workspace."}
+          </p>
+          <button
+            type="button"
+            onClick={onGenerateBrief}
+            className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
+          >
+            {failed ? <RotateCcw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+            {failed ? "Try again" : "Get Manager’s read"}
+          </button>
+        </div>
+      )}
+
+    </section>
+  );
+}
+
 function MusicManagerReadContent({
   subject,
   testId,
@@ -1875,7 +1904,7 @@ function isLockedReleasedStage(stage?: string) {
   return normalized === "released" || normalized === "catalog";
 }
 
-function MusicDetailTop({ object, label, onBack, onStageChange }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void }) {
+function MusicDetailTop({ object, label, onBack, onStageChange, onOpenManager }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void; onOpenManager?: () => void }) {
   const stageValue = object.lifecycleStage ?? object.lifecycle;
   const lockedReleasedStage = object.kind === "song" && isLockedReleasedStage(stageValue);
 
@@ -1902,6 +1931,11 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
           <div className="min-w-0 flex-1">
             <p data-testid="music-detail-mobile-title" className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
+            {onOpenManager ? (
+              <button type="button" onClick={onOpenManager} className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Chat with Manager
+              </button>
+            ) : null}
           </div>
         </div>
         {object.kind === "song" && !lockedReleasedStage ? (
@@ -1931,6 +1965,11 @@ function MusicDetailTop({ object, label, onBack, onStageChange }: { object: Musi
           <div className="min-w-0">
             <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
             <h2 className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
+            {onOpenManager ? (
+              <button type="button" onClick={onOpenManager} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Chat with Manager
+              </button>
+            ) : null}
           </div>
           {object.kind === "song" && !lockedReleasedStage ? (
             <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">

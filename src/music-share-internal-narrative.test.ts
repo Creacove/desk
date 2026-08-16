@@ -37,7 +37,7 @@ describe("music share package document safety", () => {
     expect(isShareableSongDocument(document())).toBe(true);
   });
 
-  it("keeps Manager drafts with unresolved review state out of packages", () => {
-    expect(isShareableSongDocument(document({ reviewState: "needs_review" }))).toBe(false);
+  it("keeps Manager drafts available for explicit owner preview", () => {
+    expect(isShareableSongDocument(document({ reviewState: "needs_review" }))).toBe(true);
   });
 });

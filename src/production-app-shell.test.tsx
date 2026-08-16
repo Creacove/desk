@@ -3317,7 +3317,7 @@ describe("Clean production prototype-match shell", () => {
     expect(onSendMessage).not.toHaveBeenCalled();
     expect(screen.getByText("Saved to Files")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Open Files" }));
-    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-attach", "files");
+    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-attach", "files", undefined);
 
     fireEvent.click(screen.getByRole("button", { name: "Send Manager message" }));
     expect(onSendMessage).toHaveBeenCalledWith(
@@ -3484,7 +3484,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "After Hours — release planning", exact: true })).toBeInTheDocument();
     expect(within(receipt).getByRole("button", { name: "Open song" })).toBeInTheDocument();
     fireEvent.click(within(receipt).getByRole("button", { name: "Open song" }));
-    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours");
+    expect(onOpenCreatedWork).toHaveBeenCalledWith("music_item", "song-after-hours", undefined, undefined);
   });
 
   it("opens a chat-created song directly on its requested Files destination", async () => {
@@ -3841,7 +3841,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song Night Bus" }));
     let songRoom = screen.getByTestId("music-song-detail");
     expect(songRoom).toHaveTextContent("Song room");
-    expect(songRoom).toHaveTextContent("Confirm split sheet");
+    expect(songRoom).toHaveTextContent("Night Bus has the strongest aligned response");
+    expect(songRoom).toHaveTextContent("Release Night Bus on June 12");
     expect(within(songRoom).getByRole("button", { name: "Details" })).toBeInTheDocument();
     expect(
       within(songRoom)
@@ -3920,13 +3921,13 @@ describe("Clean production prototype-match shell", () => {
     expect(within(songRoom).getByRole("combobox", { name: "Mobile song stage" })).toBeInTheDocument();
     expect(mobileSongTitle).toHaveClass("min-w-0", "break-words", "[overflow-wrap:anywhere]");
     expect(desktopSongTop).toHaveClass("hidden", "lg:block");
-    expect(mobileSongTitle.nextElementSibling).toBeNull();
+    expect(within(mobileSongTop).getByRole("button", { name: "Chat with Manager" })).toBeInTheDocument();
     expect(within(desktopSongTop).queryByTestId("music-situation-line")).not.toBeInTheDocument();
-    expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-5");
-    expect(within(songRoom).getByTestId("song-room-mobile-overview")).toHaveClass("rounded-[16px]");
+    expect(within(songRoom).getByTestId("song-room-mobile-tabs")).toHaveClass("grid-cols-4");
+    expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[16px]");
     expect(within(songRoom).getByTestId("song-room-mobile-overview")).not.toHaveClass("rounded-[22px]");
     expect(within(songRoom).queryByTestId("track-intelligence-card")).not.toBeInTheDocument();
-    expect(within(songRoom).getByRole("region", { name: "Work on this song" })).toBeInTheDocument();
+    expect(within(songRoom).getByRole("region", { name: "Active work" })).toBeInTheDocument();
     expect(within(songRoom).queryByTestId("music-linked-work")).not.toBeInTheDocument();
 
     fireEvent.click(within(songRoom).getByRole("button", { name: "Details" }));
@@ -3978,10 +3979,10 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open mobile song Night Bus" }));
     expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
-    expect(screen.getByTestId("mobile-tabbar")).toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-tabbar")).not.toBeInTheDocument();
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0, behavior: "auto" });
 
-    fireEvent.click(screen.getByTestId("mobile-tab-Catalog"));
+    fireEvent.click(screen.getByRole("button", { name: "Back to Catalog from mobile room" }));
     expect(screen.getByTestId("music-mobile-library")).toBeInTheDocument();
     expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
 
@@ -4905,11 +4906,11 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Signal Song" }));
-    const songLinkedWork = within(screen.getByTestId("music-song-detail")).getByRole("region", { name: "Work on this song" });
+    const songLinkedWork = within(screen.getByTestId("music-song-detail")).getByRole("region", { name: "Active work" });
     expect(songLinkedWork).toHaveTextContent("Push Signal Song");
     expect(songLinkedWork).not.toHaveTextContent("Confirm launch lane.");
 
-    fireEvent.click(within(songLinkedWork).getByRole("button", { name: "Open mission Push Signal Song" }));
+    fireEvent.click(within(songLinkedWork).getByRole("button", { name: "Push Signal Song" }));
     expect(await screen.findByRole("heading", { name: "Push Signal Song" })).toBeInTheDocument();
     expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
 
@@ -4930,7 +4931,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
   }, 20000);
 
-  it("renders the Manager Read body and metrics without repeating the song or project framing", async () => {
+  it("keeps the song read concise while preserving project-level metrics", async () => {
     const music = [
       musicReadSubject("song", "fresh"),
       musicReadSubject("project", "fresh"),
@@ -4950,12 +4951,12 @@ describe("Clean production prototype-match shell", () => {
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const songRoom = screen.getByTestId("music-song-detail");
-    const songRead = within(songRoom).getByTestId("manager-read-copy");
+    const songRead = within(songRoom).getByTestId("song-room-overview-read");
     expect(songRead).not.toHaveTextContent(completeSongManagerRead.position);
     expect(songRead).not.toHaveTextContent("Lead attention asset — phase A.");
-    expect(songRoom).toHaveTextContent("Spotify streams (7d)");
-    expect(songRoom).toHaveTextContent("5.2M");
-    expect(songRoom).toHaveTextContent("Jam is carrying the strongest aligned public response");
+    expect(songRead).not.toHaveTextContent("Spotify streams (7d)");
+    expect(songRead).not.toHaveTextContent("5.2M");
+    expect(songRead).toHaveTextContent("Jam is carrying the strongest aligned public response");
     expect(songRoom).not.toHaveTextContent("ev-song-streams");
     expect(songRoom).not.toHaveTextContent("Decision");
     expect(songRoom).not.toHaveTextContent("Avoid");
@@ -4979,8 +4980,8 @@ describe("Clean production prototype-match shell", () => {
     expect(projectRoom).not.toHaveTextContent("Confidence");
   }, 20000);
 
-  it.each(["song", "project"] as const)("keeps %s Manager Read metrics in a two-column mobile grid", async (kind) => {
-    const subject = musicReadSubject(kind, "fresh");
+  it("keeps project Manager Read metrics in a two-column mobile grid", async () => {
+    const subject = musicReadSubject("project", "fresh");
     const repositories = repositoriesFor("Nova Vale");
 
     render(
@@ -4995,9 +4996,9 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
-    fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
-    const read = screen.getByTestId(kind === "song" ? "manager-read-copy" : "project-manager-read-copy");
+    fireEvent.click(screen.getByRole("button", { name: "Projects" }));
+    fireEvent.click(screen.getByRole("button", { name: `Open project ${subject.title}` }));
+    const read = screen.getByTestId("project-manager-read-copy");
     expect(within(read).getByTestId("manager-read-metrics")).toHaveClass("grid-cols-2");
   });
 
@@ -5046,18 +5047,18 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
     const room = screen.getByTestId("music-song-detail");
-    const releaseWork = within(room).getByRole("region", { name: "Work on this song" });
-    expect(releaseWork).toHaveTextContent("Prepare Jam for release");
-    expect(releaseWork).not.toHaveTextContent("Add the current working audio");
+    const activeWork = within(room).getByRole("region", { name: "Active work" });
+    expect(activeWork).toHaveTextContent("Prepare Jam for release");
+    expect(activeWork).not.toHaveTextContent("Add the current working audio");
     expect(within(room).queryByText("Linked work")).not.toBeInTheDocument();
     expect(within(room).queryByTestId("music-linked-conversation")).not.toBeInTheDocument();
-    fireEvent.click(within(releaseWork).getByRole("button", { name: "Talk to Manager" }));
+    fireEvent.click(within(screen.getByTestId("music-detail-mobile-top")).getByRole("button", { name: "Chat with Manager" }));
     expect(onOpenManager).toHaveBeenCalledWith(subject);
-    fireEvent.click(within(releaseWork).getByRole("button", { name: "Open mission Prepare Jam for release" }));
+    fireEvent.click(within(activeWork).getByRole("button", { name: "Prepare Jam for release" }));
     expect(onOpenMission).toHaveBeenCalledWith("mission-jam-release");
 
     expect(onOpenManager).toHaveBeenCalledTimes(1);
-    expect(within(room).getByTestId("manager-read-copy")).toHaveTextContent(completeSongManagerRead.body.split("\n")[0]);
+    expect(within(room).getByTestId("song-room-overview-read")).toHaveTextContent(completeSongManagerRead.body.split("\n")[0]);
   });
 
   it("keeps a linked project’s Manager Read refresh secondary to its conversation", async () => {
@@ -5140,9 +5141,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(room).getByRole("button", { name: "Files" }));
     fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
 
-    expect(screen.getByRole("dialog", { name: "Share Jam files" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Final master")).toBeChecked();
-    fireEvent.click(await screen.findByRole("button", { name: "Manage links" }));
+    expect(screen.getByRole("dialog", { name: "Share Jam" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "Links" }));
     expect(await screen.findByText("Previous press package")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Revoke Previous press package" }));
     await waitFor(() => expect(revokeShareLink).toHaveBeenCalledWith("share-prior"));
@@ -5185,8 +5185,10 @@ describe("Clean production prototype-match shell", () => {
     const room = screen.getByTestId("music-song-detail");
     fireEvent.click(within(room).getByRole("button", { name: "Files" }));
     fireEvent.click(within(room).getByRole("button", { name: "Share files" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create link" }));
-    expect(await screen.findByRole("heading", { name: "Link ready" })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: /A&R \/ private listen/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview private listen" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Create private link" }));
+    expect(await screen.findByRole("heading", { name: "Share link ready" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Send by email" }));
     fireEvent.change(screen.getByLabelText("Send by email"), { target: { value: "press@example.com" } });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -5198,9 +5200,9 @@ describe("Clean production prototype-match shell", () => {
       assetIds: ["asset-final-master"],
     }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Revoke link" }));
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
     await waitFor(() => expect(revokeShareLink).toHaveBeenCalledWith("share-link-2"));
-    expect(screen.getByText("This package is no longer accessible.")).toBeInTheDocument();
+    expect(screen.getByText("This package can no longer be opened.")).toBeInTheDocument();
   });
 
   it("keeps the new Manager conversation linked to the song after its first streamed response starts", async () => {
@@ -5229,7 +5231,7 @@ describe("Clean production prototype-match shell", () => {
 
     await screen.findByRole("heading", { name: "Catalog" });
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Talk to Manager" }));
+    fireEvent.click(within(screen.getByTestId("music-detail-mobile-top")).getByRole("button", { name: "Chat with Manager" }));
 
     await waitFor(() => expect(repositories.manager.sendMessageStream).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -5283,12 +5285,30 @@ describe("Clean production prototype-match shell", () => {
     if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
     fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
     const room = screen.getByTestId(kind === "song" ? "music-song-detail" : "music-project-detail");
-    expect(room).toHaveTextContent(statusLabel);
-    const button = within(room).getByRole("button", { name: buttonLabel });
-    expect(button).toHaveProperty("disabled", disabled);
-    if (disabled) {
-      fireEvent.click(button);
-      expect(startManagerRead).not.toHaveBeenCalled();
+    if (kind === "song") {
+      const readSurface = within(room).getByTestId("song-room-overview-read");
+      if (status === "running") {
+        expect(readSurface).toHaveTextContent("Manager is reading this record");
+        expect(within(readSurface).queryByRole("button", { name: /Manager Read/i })).not.toBeInTheDocument();
+      } else if (status === "not_generated") {
+        expect(readSurface).toHaveTextContent("Get Manager’s take on this record");
+        expect(within(readSurface).getByRole("button", { name: "Get Manager’s read" })).toBeEnabled();
+      } else if (status === "failed") {
+        expect(readSurface).toHaveTextContent("Manager couldn’t complete the read");
+        expect(within(readSurface).getByRole("button", { name: "Try again" })).toBeEnabled();
+      } else {
+        expect(readSurface).toHaveTextContent(subject.managerRead!.body.split("\n")[0]);
+        const button = within(readSurface).getByRole("button", { name: buttonLabel });
+        expect(button).toHaveProperty("disabled", disabled);
+      }
+    } else {
+      expect(room).toHaveTextContent(statusLabel);
+      const button = within(room).getByRole("button", { name: buttonLabel });
+      expect(button).toHaveProperty("disabled", disabled);
+      if (disabled) {
+        fireEvent.click(button);
+        expect(startManagerRead).not.toHaveBeenCalled();
+      }
     }
   });
 
@@ -5316,9 +5336,14 @@ describe("Clean production prototype-match shell", () => {
     if (kind === "project") fireEvent.click(screen.getByRole("button", { name: "Projects" }));
     fireEvent.click(screen.getByRole("button", { name: `Open ${kind} ${subject.title}` }));
     const room = screen.getByTestId(kind === "song" ? "music-song-detail" : "music-project-detail");
-    expect(room).toHaveTextContent(statusLabel);
     expect(room).toHaveTextContent(subject.managerRead!.body.split("\n")[0]);
-    expect(room).toHaveTextContent(safeMessage);
+    if (kind === "song") {
+      if (status === "refresh_failed") expect(room).toHaveTextContent("Couldn’t refresh just now. Showing the last read.");
+      else expect(within(room).getByRole("button", { name: "Refreshing Manager Read" })).toBeDisabled();
+    } else {
+      expect(room).toHaveTextContent(statusLabel);
+      expect(room).toHaveTextContent(safeMessage);
+    }
     expect(room).not.toHaveTextContent("OpenAI");
     expect(room).not.toHaveTextContent("provider API");
     expect(room).not.toHaveTextContent("database internals");
@@ -5750,7 +5775,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Get Manager’s read" }));
 
     await waitFor(() => expect(startManagerRead).toHaveBeenCalledWith("song-jam", "music_item"));
     expect(onMusicChanged).not.toHaveBeenCalled();
@@ -5796,7 +5821,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The last good read remains visible");
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Not generated");
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Get Manager’s take on this record.");
   });
 
   it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
@@ -5819,10 +5844,10 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Ask Manager for a read" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Get Manager’s read" }));
 
     const room = screen.getByTestId("music-song-detail");
-    expect(await within(room).findByText("Manager Read could not start. Try again.")).toBeInTheDocument();
+    expect(await within(room).findByText("Manager couldn’t complete the read.")).toBeInTheDocument();
     expect(room).not.toHaveTextContent("OpenAI");
     expect(room).not.toHaveTextContent("compute resources");
     expect(room).not.toHaveTextContent("database worker");
@@ -6057,8 +6082,8 @@ describe("Clean production prototype-match shell", () => {
     await act(async () => { await Promise.resolve(); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("No Manager Read yet");
-    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Check status" })).toBeInTheDocument();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Checking Manager’s read");
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Check again" })).toBeInTheDocument();
   });
 
   it("preserves an inconclusive exact Manager Read status without exposing generation", async () => {
@@ -6087,9 +6112,9 @@ describe("Clean production prototype-match shell", () => {
     const room = screen.getByTestId("music-song-detail");
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(room).toHaveTextContent("Status available when opened");
-    expect(within(room).getByRole("button", { name: "Check status" })).toBeInTheDocument();
-    expect(within(room).queryByRole("button", { name: "Ask Manager for a read" })).not.toBeInTheDocument();
+    expect(room).toHaveTextContent("Checking Manager’s read");
+    expect(within(room).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    expect(within(room).queryByRole("button", { name: "Get Manager’s read" })).not.toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
