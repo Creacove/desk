@@ -25,6 +25,7 @@ Deno.serve(withAppErrorCapture("public-music-share", async (request) => {
       await db.from("music_share_links").update({ state: "expired" }).eq("id", shareLink.id);
       return json({ error: "This share link has expired." }, 410);
     }
+
     const manifest = Array.isArray(shareLink.asset_manifest) ? shareLink.asset_manifest.slice(0, 40) : [];
     const assets = await Promise.all(manifest.map(async (asset: any) => {
       const bucket = cleanText(asset?.bucket, 120);
@@ -46,13 +47,24 @@ Deno.serve(withAppErrorCapture("public-music-share", async (request) => {
       };
     }));
     const availableAssets = assets.filter(Boolean);
-    const information = normalizeInformationManifest(shareLink.information_manifest);
+    const { information, documents } = normalizeInformationManifest(shareLink.information_manifest);
     const identity = normalizeIdentity(shareLink.information_manifest);
-    if (!availableAssets.length && !information.length) return json({ error: "This share link is unavailable." }, 404);
+    if (!availableAssets.length && !information.length && !documents.length) return json({ error: "This share link is unavailable." }, 404);
+
     const { error: accessError } = await db.rpc("record_music_share_link_access", { target_share_link_id: shareLink.id });
     if (accessError) throw accessError;
-    return json({ label: cleanText(shareLink.label, 180), preset: cleanText(shareLink.preset, 40), title: identity.title, artist: identity.artist, createdAt: shareLink.created_at, expiresAt: shareLink.expires_at, assets: availableAssets, information });
-  } catch (error) {
+    return json({
+      label: cleanText(shareLink.label, 180),
+      preset: cleanText(shareLink.preset, 40),
+      title: identity.title,
+      artist: identity.artist,
+      createdAt: shareLink.created_at,
+      expiresAt: shareLink.expires_at,
+      assets: availableAssets,
+      information,
+      documents,
+    });
+  } catch {
     return json({ error: "This share link is unavailable." }, 404);
   }
 }));
@@ -66,15 +78,59 @@ function cleanText(value: unknown, maxLength: number) {
   return String(value ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, maxLength);
 }
 
+function cleanLongText(value: unknown, maxLength: number) {
+  return String(value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ").trim().slice(0, maxLength);
+}
+
 function normalizeInformationManifest(value: unknown) {
   const manifest = value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
   const fields = Array.isArray(manifest.fields) ? manifest.fields.slice(0, 60) : [];
-  return fields.flatMap((field: any) => {
+  const information: Array<{ key: string; title: string; value: string }> = [];
+  const documents: Array<{ id: string; title: string; documentType: string; body: string }> = [];
+
+  for (const field of fields as any[]) {
     const key = cleanText(field?.key, 180);
     const title = cleanText(field?.title, 180);
-    const content = String(field?.value ?? "").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, " ").trim().slice(0, 60_000);
-    return key && title && content ? [{ key, title, value: content, documentType: cleanText(field?.documentType, 80) }] : [];
-  });
+    const content = cleanLongText(field?.value, 60_000);
+    const documentType = cleanText(field?.documentType, 80);
+    if (!key || !title || !content) continue;
+    if (documentType || key.startsWith("document:")) {
+      const body = recipientSafeDocumentBody(content);
+      const safeTitle = publicDocumentTitle(title);
+      if (!body || !safeTitle) continue;
+      documents.push({ id: key.replace(/^document:/, ""), title: safeTitle, documentType: documentType || "document", body });
+      continue;
+    }
+    information.push({ key, title, value: content });
+  }
+  return { information, documents };
+}
+
+function recipientSafeDocumentBody(rawBody: string) {
+  const lines = rawBody.replace(/\r\n/g, "\n").split("\n");
+  const kept: string[] = [];
+  let suppressInternalSection = false;
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (/^##\s+(needs verification|internal gaps)\s*$/i.test(line)) {
+      suppressInternalSection = true;
+      continue;
+    }
+    if (suppressInternalSection && /^##\s+/.test(line)) suppressInternalSection = false;
+    if (suppressInternalSection) continue;
+    if (/^\*\*(purpose|audience|core narrative):\*\*/i.test(line)) continue;
+    if (/^>\s*internal campaign strategy/i.test(line)) continue;
+    kept.push(rawLine);
+  }
+  return kept.join("\n").replace(/\n{3,}/g, "\n\n").trim().slice(0, 60_000);
+}
+
+function publicDocumentTitle(value: string) {
+  return value
+    .replace(/\s*[—-]\s*(?:updated\s+)?draft\s*$/i, "")
+    .replace(/\s*\((?:updated\s+)?draft\)\s*$/i, "")
+    .replace(/\s*\[(?:updated\s+)?draft\]\s*$/i, "")
+    .trim();
 }
 
 function normalizeIdentity(value: unknown) {
