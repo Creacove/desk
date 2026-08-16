@@ -17,6 +17,7 @@ type ManagerAgentRequestInput = {
   contextManagement?: Array<{ type: "compaction"; compact_threshold: number }>;
   promptCacheKey?: string;
   promptCacheMode?: "implicit" | "explicit";
+  initialToolChoice?: string;
 };
 
 type ManagerAgentLoopInput = ManagerAgentRequestInput & {
@@ -420,6 +421,19 @@ const releaseTurnToolNames = new Set([
   "prepare_focused_release_share_package",
 ]);
 
+export function managerConversationRequiresCanonicalDocumentTool(input: {
+  body: string;
+  contextAnswers?: Array<{ questionKey: string; answer: string }>;
+}) {
+  const body = input.body.trim().toLowerCase();
+  const directDocumentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\b/.test(body)
+    && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes|documents?)\b/.test(body);
+  const contextDocumentIntent = (input.contextAnswers ?? []).some((answer) =>
+    /(?:epk|press|bio|biography|one[-_ ]sheet|release[_ -]?(?:narrative|angle)|campaign|document|kit|copy|content|core[_ -]?angle)/i.test(answer.questionKey)
+  );
+  return directDocumentIntent || contextDocumentIntent;
+}
+
 export function selectManagerConversationToolsForTurn(input: {
   body: string;
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
@@ -434,8 +448,10 @@ export function selectManagerConversationToolsForTurn(input: {
     .toLowerCase();
   const intentText = `${body} ${contextAnswerText}`;
   const servicingIntent = /\b(playlist(?:ing)?|playlist opportunities?|curator|press|publicity|editorial|media|outreach|record servicing|service this (?:song|release)|pitch(?:ing)?(?:\s+(?:this|the))?\s+(?:song|release|record))\b/.test(intentText);
-  const documentIntent = /\b(draft|write|prepare|create|make|build|revise|refresh)\b/.test(body)
-    && /\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\b/.test(body);
+  const documentIntent = managerConversationRequiresCanonicalDocumentTool({
+    body: input.body,
+    contextAnswers: input.contextAnswers,
+  });
   const packageIntent = /\b(prepare|build|create|make|assemble)\b/.test(body)
   && /\b(package|share link|private link|delivery link|press kit|epk package)\b/.test(body);
   const outcomeIntent = /\b(submitted|replied|accepted|declined|outcome|response from|heard back)\b/.test(body);
@@ -463,13 +479,14 @@ export function selectManagerConversationToolsForTurn(input: {
 }
 
 export function buildManagerAgentRequest(input: ManagerAgentRequestInput) {
-  return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId);
+  return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId, true);
 }
 
 function buildManagerAgentRequestBody(
   input: ManagerAgentRequestInput,
   requestInput: unknown,
   previousResponseId?: string,
+  initialRequest = false,
 ) {
   return {
     model: input.model,
@@ -478,7 +495,7 @@ function buildManagerAgentRequestBody(
     ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
     store: true,
     tools: input.tools,
-    tool_choice: "auto",
+    tool_choice: initialRequest && input.initialToolChoice ? { type: "function", name: input.initialToolChoice } : "auto",
     parallel_tool_calls: input.parallelToolCalls ?? false,
     ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
     ...(input.maxOutputTokens ? { max_output_tokens: input.maxOutputTokens } : {}),
