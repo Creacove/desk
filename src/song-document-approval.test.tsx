@@ -16,7 +16,7 @@ function managerDocument(overrides: Partial<Extract<SongMaterialViewModel, { kin
     status: "draft",
     origin: "manager_generated" as const,
     reviewState: "ready" as const,
-    body: "# Down Below EPK\n\n**Purpose:** Give press a useful release packet.\n**Audience:** Music press.\n**Core narrative:** A focused release story.\n\n## Release story\nThis is the canonical release story for the record.",
+    body: "# Down Below EPK\n\n**Purpose:** Give press a useful release packet.\n**Audience:** Music press.\n**Core narrative:** A focused release story.\n\n## Artist\nDown Below is the current focus release.\n\n## Needs verification\n- Approved press contact",
     currentVersionId: "version-1",
     ...overrides,
   };
@@ -35,7 +35,7 @@ describe("Manager document approval", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve for sharing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve" }));
     expect(onApprove).toHaveBeenCalledTimes(1);
   });
 
@@ -50,11 +50,11 @@ describe("Manager document approval", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Approve for sharing" })).toBeNull();
-    expect(screen.getByText("Internal campaign spine")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.getByText("Internal strategy")).toBeTruthy();
   });
 
-  it("withholds approval while the artifact still needs review", () => {
+  it("withholds approval while the artifact still needs review without putting review-state copy on the document", () => {
     render(
       <SongDocumentEditor
         document={managerDocument({ reviewState: "needs_review" })}
@@ -65,11 +65,30 @@ describe("Manager document approval", () => {
       />,
     );
 
-    expect(screen.queryByRole("button", { name: "Approve for sharing" })).toBeNull();
-    expect(screen.getByText("Review draft")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.queryByText("Review draft")).toBeNull();
   });
 
-  it("shows the approved state without asking for approval twice", () => {
+  it("does not expose Desk planning or missing-input scaffolding in an old Manager artifact", () => {
+    render(
+      <SongDocumentEditor
+        document={managerDocument()}
+        pending={false}
+        onCancel={() => undefined}
+        onSave={() => undefined}
+        onApprove={() => undefined}
+      />,
+    );
+
+    expect(screen.queryByText(/Give press a useful release packet/)).toBeNull();
+    expect(screen.queryByText(/Music press/)).toBeNull();
+    expect(screen.queryByText(/A focused release story/)).toBeNull();
+    expect(screen.queryByText(/Needs verification/i)).toBeNull();
+    expect(screen.queryByText(/Approved press contact/i)).toBeNull();
+    expect(screen.getByText(/Down Below is the current focus release/)).toBeTruthy();
+  });
+
+  it("does not ask for approval twice after the exact version is approved", () => {
     render(
       <SongDocumentEditor
         document={managerDocument({ status: "accepted" })}
@@ -80,7 +99,6 @@ describe("Manager document approval", () => {
       />,
     );
 
-    expect(screen.getByText("Approved")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Approve for sharing" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
   });
 });
