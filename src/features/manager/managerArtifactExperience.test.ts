@@ -122,4 +122,35 @@ describe("premium Manager artifact experience", () => {
     });
     expect(work[0].title).toContain("Everjamz");
   });
+
+  it("recognizes a canonical EPK receipt whose id is the document id rather than the song id", () => {
+    const source = conversation({
+      messages: [
+        { id: "artist-epk", speaker: "artist", label: "You", body: "Create epk for this record" },
+        {
+          id: "manager-epk",
+          speaker: "manager",
+          label: "Manager",
+          body: "The EPK has been created and saved in Files.",
+          createdWork: [
+            { type: "music_item", id: "document-epk-123", title: "Tarara EPK", body: "Canonical EPK draft saved in Files; internal review required.", status: "created" },
+            { type: "music_item", id: "document-narrative-123", title: "Release narrative", body: "Internal release narrative saved.", status: "created" },
+          ],
+        },
+      ],
+    });
+
+    const projected = prepareManagerConversationForPresentation(source);
+    const work = projected.messages[1].createdWork ?? [];
+    expect(work).toHaveLength(1);
+    expect(work[0]).toMatchObject({
+      id: "document-epk-123",
+      artifactKind: "song_document",
+      documentType: "epk",
+      musicItemId: "song-1",
+      title: "Tarara EPK",
+    });
+    expect(projected.releaseSuccessArtifacts).toEqual([]);
+    expect(projected.decisionPackage).toBeUndefined();
+  });
 });
