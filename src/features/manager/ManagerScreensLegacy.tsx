@@ -494,7 +494,7 @@ export function ConversationWorkspace({
 }: {
   conversation: ConversationViewModel;
   onBack: () => void;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   musicRepository?: MusicRepository;
   onRefreshMusicObject?: (musicItemId: string) => Promise<void> | void;
@@ -938,7 +938,7 @@ function MessageRow({
   activeRun: ConversationViewModel["activeRun"];
   onRetryLastMessage?: () => void;
   sendPending: boolean;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
   suppressMissionArtifacts?: boolean;
   contextResolved?: boolean;
   onChangeContext?: () => void;
@@ -1031,7 +1031,7 @@ function ManagerResultGroup({
   onOpenCreatedWork,
 }: {
   groups: ManagerWorkGroup[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
     <div data-testid="manager-result-group" className="mt-5 grid gap-2.5">
@@ -1078,7 +1078,7 @@ function WorkspaceResultCard({
   onOpenCreatedWork,
 }: {
   group: Extract<ManagerWorkGroup, { kind: "workspace" }>;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const title = group.musicItem?.title ?? group.mission?.title ?? "Release workspace";
   return (
@@ -1109,7 +1109,7 @@ function DocumentResultCard({
   onOpenCreatedWork,
 }: {
   item: WorkItem;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const isSongDocument = item.artifactKind === "song_document";
@@ -1142,7 +1142,7 @@ function DocumentResultCard({
           <p className={`mt-1 text-[11px] font-medium ${saveFailed ? "text-amber-700" : "text-muted-foreground"}`}>{readinessLabel}</p>
         </div>
         {!saveFailed && musicItemId ? (
-          <ResultAction pendingLabel="Opening Files…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files")}>
+          <ResultAction pendingLabel="Opening document…" onClick={() => onOpenCreatedWork("music_item", musicItemId, "files", item.id)}>
             {managerDocumentOpenLabel(item.documentType)}
           </ResultAction>
         ) : null}
@@ -1203,7 +1203,7 @@ function CompactMissionResult({
   onOpenCreatedWork,
 }: {
   group: Extract<ManagerWorkGroup, { kind: "mission" }>;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
     <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
@@ -1225,7 +1225,7 @@ function CompactTasksResult({
   onOpenCreatedWork,
 }: {
   group: Extract<ManagerWorkGroup, { kind: "tasks" }>;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const firstTask = group.tasks[0];
   return (
@@ -1247,7 +1247,7 @@ function CompactMusicResult({
   onOpenCreatedWork,
 }: {
   item: WorkItem;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   return (
     <article className="flex items-center gap-3 border-l-2 border-foreground/12 py-1 pl-4">
@@ -1695,7 +1695,7 @@ function WorkArtifactGroup({
   onOpenCreatedWork,
 }: {
   items: WorkItem[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const draftArtifacts = items.filter((w) => w.artifactKind === "task_draft");
   const missions = items.filter((w) => w.type === "mission");
@@ -1737,7 +1737,7 @@ function TaskDraftArtifactCard({
   onOpenCreatedWork,
 }: {
   item: WorkItem;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const [expanded, setExpanded] = useState(false);
   const content = item.content?.trim() || item.body;
@@ -1815,7 +1815,7 @@ function MissionArtifactCard({
 }: {
   mission: WorkItem;
   tasks: WorkItem[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const statusLabel = mission.status ? mission.status.replace(/_/g, " ") : "created";
   const isUpdate = mission.status === "updated";
@@ -1903,7 +1903,7 @@ function TaskGroupCard({
   onOpenCreatedWork,
 }: {
   tasks: WorkItem[];
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   // Determine if any are updates vs new
   const hasUpdates = tasks.some((t) => t.status === "updated");
@@ -1967,7 +1967,7 @@ function MusicItemArtifactCard({
   onOpenCreatedWork,
 }: {
   item: WorkItem;
-  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination) => void | Promise<void>;
+  onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
 }) {
   const statusLabel = item.status ? item.status.replace(/_/g, " ") : "created";
   const isSongWorkspace = item.body.includes("Song Workspace created.");

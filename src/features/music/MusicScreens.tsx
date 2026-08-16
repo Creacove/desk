@@ -74,6 +74,7 @@ export function MusicWorkspace({
   missions,
   targetMusicObjectId,
   targetSongRoomTab = "overview",
+  targetDocumentId,
   targetRequestKey = 0,
   musicRepository,
   onRefreshObject,
@@ -89,6 +90,7 @@ export function MusicWorkspace({
   missions: MissionViewModel[];
   targetMusicObjectId?: string | null;
   targetSongRoomTab?: SongRoomTab;
+  targetDocumentId?: string | null;
   targetRequestKey?: number;
   musicRepository: MusicRepository;
   onRefreshObject: (
@@ -176,14 +178,38 @@ export function MusicWorkspace({
 
   useEffect(() => {
     if (!targetMusicObjectId) return;
-    const requestKey = `${targetMusicObjectId}:${targetSongRoomTab}:${targetRequestKey}`;
+    const requestKey = `${targetMusicObjectId}:${targetSongRoomTab}:${targetDocumentId ?? ""}:${targetRequestKey}`;
     if (handledTargetRequest.current === requestKey) return;
     const target = getMusicObject(targetMusicObjectId);
     if (!target) return;
     handledTargetRequest.current = requestKey;
     openObject(target, target.kind === "project" ? "projects" : "songs", targetSongRoomTab);
+
+    if (target.kind !== "song" || targetSongRoomTab !== "files" || !targetDocumentId) return;
+    const localDocument = (target.materials ?? []).find(
+      (material): material is Extract<SongMaterialViewModel, { kind: "document" }> =>
+        material.kind === "document" && material.id === targetDocumentId,
+    );
+    if (localDocument) {
+      setDocumentEditorTarget({ song: target, document: localDocument });
+      return;
+    }
+
+    let cancelled = false;
+    void onRefreshObject(target.id, "music_item")
+      .then((refreshed) => {
+        if (cancelled || !refreshed) return;
+        const document = (refreshed.materials ?? []).find(
+          (material): material is Extract<SongMaterialViewModel, { kind: "document" }> =>
+            material.kind === "document" && material.id === targetDocumentId,
+        );
+        if (document) setDocumentEditorTarget({ song: refreshed, document });
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+    // The request key is the navigation contract. Object refresh is an intentional fallback.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targetMusicObjectId, targetSongRoomTab, targetRequestKey, music]);
+  }, [targetMusicObjectId, targetSongRoomTab, targetDocumentId, targetRequestKey, music]);
 
   useEffect(() => {
     onDetailModeChange?.(mode !== "library");

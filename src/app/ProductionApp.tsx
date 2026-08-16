@@ -625,6 +625,7 @@ function CleanProductionWorkspace({
   const [musicListOpenRequestKey, setMusicListOpenRequestKey] = useState(0);
   const [targetMusicObjectId, setTargetMusicObjectId] = useState<string | null>(null);
   const [targetSongRoomTab, setTargetSongRoomTab] = useState<"overview" | "files">("overview");
+  const [targetSongDocumentId, setTargetSongDocumentId] = useState<string | null>(null);
   const [musicRoomOpenRequestKey, setMusicRoomOpenRequestKey] = useState(0);
   const [musicDetailOpen, setMusicDetailOpen] = useState(false);
   const [missionRoomOpen, setMissionRoomOpen] = useState(false);
@@ -952,6 +953,7 @@ function CleanProductionWorkspace({
     }
     if (event.targetType === "music_item" || event.targetType === "music_project") {
       setTargetSongRoomTab("overview");
+      setTargetSongDocumentId(null);
       setTargetMusicObjectId(event.targetId);
       setMusicRoomOpenRequestKey((current) => current + 1);
       navigate("musicWorkspace");
@@ -977,6 +979,7 @@ function CleanProductionWorkspace({
   function navigateFromMenu(nextView: CleanProductionView) {
     if (nextView === "musicWorkspace") {
       setTargetSongRoomTab("overview");
+      setTargetSongDocumentId(null);
       setTargetMusicObjectId(null);
       setMusicDetailOpen(false);
       setMusicListOpenRequestKey((current) => current + 1);
@@ -1019,6 +1022,7 @@ function CleanProductionWorkspace({
 
   function openMusicFocus(musicObjectId?: string) {
     setTargetSongRoomTab("overview");
+    setTargetSongDocumentId(null);
     setTargetMusicObjectId(musicObjectId ?? null);
     setMusicRoomOpenRequestKey((current) => current + 1);
     navigate("musicWorkspace");
@@ -1644,9 +1648,10 @@ function CleanProductionWorkspace({
     }
   }
 
-  async function openCreatedWork(type: "music_item" | "mission" | "task", id?: string, destination?: "files") {
+  async function openCreatedWork(type: "music_item" | "mission" | "task", id?: string, destination?: "files", artifactId?: string) {
     if (type === "music_item") {
       setTargetSongRoomTab(destination === "files" ? "files" : "overview");
+      setTargetSongDocumentId(destination === "files" ? artifactId ?? null : null);
       setTargetMusicObjectId(id ?? null);
       setMusicRoomOpenRequestKey((current) => current + 1);
       navigate("musicWorkspace");
@@ -2157,6 +2162,7 @@ function CleanProductionWorkspace({
               missions={missions}
               targetMusicObjectId={targetMusicObjectId}
               targetSongRoomTab={targetSongRoomTab}
+              targetDocumentId={targetSongDocumentId}
               targetRequestKey={musicRoomOpenRequestKey}
               musicRepository={repositories.music}
               onRefreshObject={refreshMusicObject}
