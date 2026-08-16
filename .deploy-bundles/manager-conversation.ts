@@ -913,6 +913,15 @@ function buildManagerConversationInstructions(playbookInstructions = "") {
     "After a durable metadata, file, rights, or lifecycle change on an attached unreleased song, re-read release readiness. Update the already linked mission only when that confirmed change completes, unblocks, removes, or materially changes planned work; never create a second mission merely because song data changed.",
     "The Manager may prepare copy, press angles, package recommendations, and outreach drafts, but never sends messages, submits to a distributor, commits spending, changes a release date, publishes, or performs legal/rights actions without an explicit permission request and user approval. Never invent a contact name, email address, outlet, playlist, or result; use verified workspace data or a cited public source and label any recommendation or draft clearly. create_focused_song_document uses the existing canonical Files document pathway and creates a draft only.",
     "Canonical artifact rule: when the artist asks to draft, create, build, prepare, revise, refresh, update, finish, or complete an EPK, press release, bio, one-sheet, pitch, release/campaign kit, content plan, release calendar, press angle, lyrics, credits, or distributor notes for an attached song, use create_focused_song_document for every requested artifact. Never satisfy an artifact request by placing the full draft only in responseBody.",
+    "Label-grade document rule: a recipient-facing Files artifact must look like the real document a major label, publicist, distributor, manager or editorial team would use. Never expose Desk-internal Purpose, Audience, Core narrative, Needs verification, quality scores, workflow/persistence language, release gates or canonical-version instructions in the artifact. Keep those facts in structured metadata only. Less is more: omit empty/unverified public sections rather than explaining that they are missing.",
+    "Research-before-writing rule: before creating or materially revising an EPK, artist biography, one-sheet, press release, press angle, Spotify editorial pitch, playlist pitch, press target brief, press pitch, or artist-specific content plan, use web_search for current public artist context in addition to read_focused_music_subject. Prefer the artist/label/DSP's official pages and reputable editorial coverage. Use researched facts only when supported; attach source URLs through claims/evidenceRefs rather than dumping citations into recipient copy. If public research finds nothing reliable, continue from verified workspace/artist input and record the limitation internally.",
+    "Artist biography rule: write in third person and make the artist the subject. Cover identity/origin, musical world, journey, verified achievements/collaborations/live moments and current direction. The current song may be context, but ISRC, splits, metadata, clearance, distributor readiness, workspace state and release-package gates never belong in an artist biography.",
+    "One-sheet and EPK rule: build press-facing artist materials, not release-readiness reports. A one-sheet must stay single-page/scannable: short artist snapshot, strongest verified highlights, music/DSP proof, useful press/live/team items when they exist, links and contact. An EPK may be richer: artist bio, focus release/music, selected verified highlights/press, photos/artwork/video links, DSP/social/site links and professional contact. Omit categories that have no verified content instead of printing internal missing-field warnings.",
+    "Press-release rule: write newsroom-ready copy in real press-release form: headline, optional dek, dateline/lead, concise body, release details, short artist boilerplate and media contact. Include an artist quote only when the workspace/artist input or a reliable public source contains an approved attributable quote; never manufacture one.",
+    "Spotify editorial-pitch rule: make the artifact a compact copy/paste aid for Spotify for Artists, not an essay. Include release identity, concise editor note, supported genre/mood/culture/instrument context, song story/creation context, audience or territory relevance, actual marketing plan and verified credits. Never claim editorial placement or submission.",
+    "Credit-sheet rule: use role-based label copy rather than prose. Include release identity; songwriters/composers/lyricists and publishing/PRO data when known; producers; recording/mix/master engineers; performers with role/instrument; other creative roles; sample status; recording location/date/source/mix-format information when known; label/content owner; and identifiers such as ISRC/ISNI/ISWC. Unknown fields remain internal rather than visible TBD rows.",
+    "Distribution-delivery rule: distributor_notes means a distribution delivery sheet/label-copy handoff, not a prose memo. Structure release metadata, per-track metadata, contributors/rights, assets and delivery instructions. Include UPC/EAN/catalog number, release/original date, label, P/C lines, territories, genre/language/explicit state, versions, ISRC and contributor roles only when verified. Unknown delivery metadata remains internal.",
+    "Content-plan and release-calendar rule: these are operating documents, not narrative essays. Content-plan schedule rows should state date/phase, channel, format, concept/hook, source asset, CTA, objective and owner/status when known. Release-calendar rows should state date or T-minus, milestone/action, owner, dependency/approval and status. Cover applicable pre-release, release-day and post-release work without inventing work just to fill a template.",
     "Release Narrative is Manager-internal campaign scaffolding. Ensure one exists only when recipient-facing campaign work needs it and the current narrative is missing or materially stale. It is never a user deliverable, never a second answer to the artist, and must not be described as work the artist asked to open or review.",
     "After one or more canonical song documents are created or revised successfully, responseBody must stay compact: say what was created/updated, what still needs a real fact or approval, and the next useful action. Do not reproduce the document bodies in chat; the canonical Files artifacts are the work product and should be opened/reviewed from the UI. On document-related context answers, update/version those canonical drafts instead of rewriting their contents into the conversation.",
     "When proposing or writing metadata, preserve the existing song room as the source of truth, state what was inferred versus confirmed, and remind the user they can verify or edit the value directly in Details, Files, or Rights. Do not generate cover art, images, animation, or transformed media; use only user-provided assets.",
@@ -3103,7 +3112,7 @@ var focusedSongDocumentProperties = {
     },
     body: {
       type: "string",
-      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. Do not send markdown or generic prose here. Unknown facts belong in missingInputs, never placeholders. To create the internal Release Narrative, use documentType press_angle, title exactly Release narrative, and sections positioning, story, audience, campaign_thesis, proof, creative_world, and language_guardrails."
+      description: "JSON string only. Encode an object with purpose, audience, coreNarrative, sections[{key,title,content,evidenceRefs[]}], claims[{text,basis,sourceRef,confidence}], and missingInputs[]. purpose/audience/coreNarrative/claims/missingInputs are INTERNAL grounding metadata and must never be repeated inside public section copy. Unknown facts go in missingInputs and are omitted from recipient copy, never exposed as TBD/TK/Needs verification. Use real artifact-native sections: EPK artist_bio/focus_release/music_links/visuals/contact (+ verified highlights_press/live/team when useful); artist_biography short_bio/full_bio; one_sheet artist_snapshot/career_highlights/music_and_dsp/links_contact (+ verified press_and_quotes/live/team); press_release headline/dek/dateline_lede/body/artist_quote/release_details/about_artist/press_contact, but omit artist_quote unless an approved/sourced quote exists; spotify_editorial_pitch release_info/editor_note/genre_mood_culture/song_story/marketing_plan/audience_territory/credits; content_plan campaign_goal/content_pillars/schedule/assets/measurement with schedule as a Markdown table; release_calendar timeline/key_deadlines/approvals/post_release with timeline as a Markdown table; credits release_identity/songwriting_publishing/production_engineering/performers/recording_details/identifiers, using role/value tables; distributor_notes release_metadata/track_metadata/rights_credits/assets/delivery, using delivery-sheet tables. For the internal Release Narrative, use title exactly Release narrative and sections positioning/story/audience/campaign_thesis/proof/creative_world/language_guardrails."
     },
     opportunityId: {
       type: [
@@ -3302,7 +3311,7 @@ var managerConversationTools = [
   {
     type: "function",
     name: "create_focused_song_document",
-    description: "Create or version one premium canonical song artifact in Files. For recipient-facing campaign work, first ensure a current internal Release Narrative exists; create or materially refresh it only when needed, using documentType press_angle and title exactly Release narrative. The Release Narrative is internal Manager support and is never a user-facing deliverable. The body MUST be the JSON-encoded structured artifact described by the schema. The server persists structurally valid drafts even when verified inputs are missing and marks them needs_review; missing facts belong in missingInputs and must never be invented or padded. Retry only when the transport itself is invalid, never merely to improve a quality score. Never send or publish the document.",
+    description: "Create or version one label-grade canonical song artifact in Files. Recipient-facing documents are real work products, not AI reports: use the exact industry form for the requested artifact and keep Desk planning/quality metadata internal. Before EPK, biography, one-sheet, press release/angle, editorial/playlist/press pitch, press brief, or artist-specific content-plan creation, use current public web research plus the focused workspace unless authoritative artist-supplied context makes public research irrelevant. Prefer official artist/label/DSP sources and reputable editorial coverage. Never invent quotes, achievements, credits, contacts, links, identifiers, dates or performance claims. For recipient-facing campaign work, first ensure a current internal Release Narrative exists only when needed. The body MUST be the JSON-encoded structured artifact described by the schema. Structurally valid drafts may persist while facts are missing, but missing facts stay internal and are omitted from public copy. Never pad sections to hit a word count. Never send or publish the document.",
     strict: true,
     parameters: focusedSongDocumentProperties
   },
@@ -6370,109 +6379,108 @@ var songDocumentStandards = {
         title: "Language guardrails"
       }
     ],
-    minTotalWords: 240,
     maxTotalWords: 1600,
-    minSectionWords: 24,
-    requiresEvidence: true
+    requiresEvidence: true,
+    presentation: "internal"
   },
   epk: {
     label: "EPK",
     requiredSections: [
       {
-        key: "artist_snapshot",
-        title: "Artist snapshot"
+        key: "artist_bio",
+        title: "Artist"
       },
       {
-        key: "release_story",
-        title: "Release story"
+        key: "focus_release",
+        title: "Focus release"
       },
       {
-        key: "why_now",
-        title: "Why now"
+        key: "music_links",
+        title: "Music"
       },
       {
-        key: "sound_and_context",
-        title: "Sound and context"
-      },
-      {
-        key: "proof",
-        title: "Proof"
-      },
-      {
-        key: "press_angles",
-        title: "Press angles"
-      },
-      {
-        key: "assets_and_links",
-        title: "Assets and links"
+        key: "visuals",
+        title: "Photos and video"
       },
       {
         key: "contact",
         title: "Contact"
       }
     ],
-    minTotalWords: 320,
-    maxTotalWords: 1800,
-    minSectionWords: 20,
-    requiresEvidence: true
+    optionalSections: [
+      {
+        key: "highlights_press",
+        title: "Highlights and press"
+      },
+      {
+        key: "live",
+        title: "Live"
+      },
+      {
+        key: "team",
+        title: "Team"
+      }
+    ],
+    maxTotalWords: 1200,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "epk"
   },
   artist_biography: {
     label: "Artist biography",
     requiredSections: [
       {
         key: "short_bio",
-        title: "Short bio"
-      },
-      {
-        key: "medium_bio",
-        title: "Medium bio"
+        title: "Short biography"
       },
       {
         key: "full_bio",
-        title: "Full bio"
+        title: "Full biography"
       }
     ],
-    minTotalWords: 260,
-    maxTotalWords: 1600,
-    minSectionWords: 45,
-    requiresEvidence: true
+    maxTotalWords: 650,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "prose"
   },
   one_sheet: {
     label: "One-sheet",
     requiredSections: [
       {
-        key: "hook",
-        title: "Hook"
+        key: "artist_snapshot",
+        title: "Artist"
       },
       {
-        key: "positioning",
-        title: "Positioning"
+        key: "career_highlights",
+        title: "Highlights"
       },
       {
-        key: "release_story",
-        title: "Release story"
-      },
-      {
-        key: "proof",
-        title: "Proof"
-      },
-      {
-        key: "audience",
-        title: "Audience"
-      },
-      {
-        key: "campaign",
-        title: "Campaign"
+        key: "music_and_dsp",
+        title: "Music"
       },
       {
         key: "links_contact",
         title: "Links and contact"
       }
     ],
-    minTotalWords: 190,
-    maxTotalWords: 900,
-    minSectionWords: 14,
-    requiresEvidence: true
+    optionalSections: [
+      {
+        key: "press_and_quotes",
+        title: "Press"
+      },
+      {
+        key: "live",
+        title: "Live"
+      },
+      {
+        key: "team",
+        title: "Team"
+      }
+    ],
+    maxTotalWords: 650,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "one_sheet"
   },
   press_release: {
     label: "Press release",
@@ -6482,20 +6490,12 @@ var songDocumentStandards = {
         title: "Headline"
       },
       {
-        key: "dek",
-        title: "Dek"
-      },
-      {
         key: "dateline_lede",
-        title: "Dateline and lede"
+        title: "Dateline and lead"
       },
       {
         key: "body",
-        title: "Release story"
-      },
-      {
-        key: "artist_quote",
-        title: "Artist quote"
+        title: "Body"
       },
       {
         key: "release_details",
@@ -6507,13 +6507,23 @@ var songDocumentStandards = {
       },
       {
         key: "press_contact",
-        title: "Press contact"
+        title: "Media contact"
       }
     ],
-    minTotalWords: 300,
-    maxTotalWords: 1250,
-    minSectionWords: 14,
-    requiresEvidence: true
+    optionalSections: [
+      {
+        key: "dek",
+        title: "Subheadline"
+      },
+      {
+        key: "artist_quote",
+        title: "Artist quote"
+      }
+    ],
+    maxTotalWords: 700,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "press_release"
   },
   press_angle: {
     label: "Press angle",
@@ -6537,52 +6547,62 @@ var songDocumentStandards = {
       {
         key: "target_media",
         title: "Target media"
-      },
+      }
+    ],
+    optionalSections: [
       {
         key: "avoid",
         title: "Avoid"
       }
     ],
-    minTotalWords: 160,
-    maxTotalWords: 750,
-    minSectionWords: 14,
-    requiresEvidence: true
+    maxTotalWords: 600,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "pitch"
   },
   spotify_editorial_pitch: {
     label: "Spotify editorial pitch",
     requiredSections: [
       {
-        key: "pitch",
-        title: "Pitch"
+        key: "release_info",
+        title: "Release information"
       },
       {
-        key: "context",
-        title: "Song context"
+        key: "editor_note",
+        title: "Editor note"
       },
       {
-        key: "marketing",
+        key: "genre_mood_culture",
+        title: "Genre, mood and culture"
+      },
+      {
+        key: "song_story",
+        title: "Song story"
+      },
+      {
+        key: "marketing_plan",
         title: "Marketing plan"
       },
       {
-        key: "territory",
-        title: "Territory and audience"
+        key: "audience_territory",
+        title: "Audience and territory"
       },
       {
         key: "credits",
         title: "Credits"
       }
     ],
-    minTotalWords: 90,
     maxTotalWords: 450,
-    minSectionWords: 12,
-    requiresEvidence: true
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "pitch"
   },
   playlist_pitch: {
     label: "Playlist pitch",
     requiredSections: [
       {
         key: "subject_line",
-        title: "Subject line"
+        title: "Subject"
       },
       {
         key: "opening",
@@ -6597,18 +6617,20 @@ var songDocumentStandards = {
         title: "Song story"
       },
       {
-        key: "proof",
-        title: "Proof"
-      },
-      {
         key: "cta",
         title: "Call to action"
       }
     ],
-    minTotalWords: 90,
-    maxTotalWords: 500,
-    minSectionWords: 10,
-    requiresEvidence: true
+    optionalSections: [
+      {
+        key: "proof",
+        title: "Proof"
+      }
+    ],
+    maxTotalWords: 350,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "pitch"
   },
   press_target_brief: {
     label: "Press target brief",
@@ -6632,23 +6654,25 @@ var songDocumentStandards = {
       {
         key: "pitch_notes",
         title: "Pitch notes"
-      },
-      {
-        key: "risk",
-        title: "Risk and limitations"
       }
     ],
-    minTotalWords: 160,
-    maxTotalWords: 800,
-    minSectionWords: 14,
-    requiresEvidence: true
+    optionalSections: [
+      {
+        key: "risk",
+        title: "Limitations"
+      }
+    ],
+    maxTotalWords: 650,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "pitch"
   },
   press_pitch: {
     label: "Press pitch",
     requiredSections: [
       {
         key: "subject_line",
-        title: "Subject line"
+        title: "Subject"
       },
       {
         key: "opening",
@@ -6663,84 +6687,73 @@ var songDocumentStandards = {
         title: "Story"
       },
       {
-        key: "proof",
-        title: "Proof"
-      },
-      {
         key: "cta",
         title: "Call to action"
       }
     ],
-    minTotalWords: 110,
-    maxTotalWords: 600,
-    minSectionWords: 10,
-    requiresEvidence: true
+    optionalSections: [
+      {
+        key: "proof",
+        title: "Proof"
+      }
+    ],
+    maxTotalWords: 450,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "pitch"
   },
   content_plan: {
     label: "Content plan",
     requiredSections: [
       {
-        key: "campaign_idea",
-        title: "Campaign idea"
+        key: "campaign_goal",
+        title: "Campaign goal"
       },
       {
         key: "content_pillars",
         title: "Content pillars"
       },
       {
-        key: "formats",
-        title: "Formats"
+        key: "schedule",
+        title: "Content schedule"
       },
       {
-        key: "timeline",
-        title: "Timeline"
-      },
-      {
-        key: "calls_to_action",
-        title: "Calls to action"
+        key: "assets",
+        title: "Assets"
       },
       {
         key: "measurement",
         title: "Measurement"
-      },
-      {
-        key: "guardrails",
-        title: "Guardrails"
       }
     ],
-    minTotalWords: 340,
-    maxTotalWords: 2200,
-    minSectionWords: 24,
-    requiresEvidence: true
+    maxTotalWords: 1500,
+    requiresEvidence: true,
+    requiresPublicResearch: true,
+    presentation: "table"
   },
   release_calendar: {
     label: "Release calendar",
     requiredSections: [
       {
-        key: "milestones",
-        title: "Milestones"
+        key: "timeline",
+        title: "Release timeline"
       },
       {
-        key: "owned_actions",
-        title: "Owned actions"
+        key: "key_deadlines",
+        title: "Key deadlines"
       },
       {
-        key: "external_deadlines",
-        title: "External deadlines"
+        key: "approvals",
+        title: "Approvals"
       },
       {
-        key: "dependencies",
-        title: "Dependencies"
-      },
-      {
-        key: "approval_points",
-        title: "Approval points"
+        key: "post_release",
+        title: "Post-release"
       }
     ],
-    minTotalWords: 180,
-    maxTotalWords: 1800,
-    minSectionWords: 18,
-    requiresEvidence: false
+    maxTotalWords: 1300,
+    requiresEvidence: false,
+    presentation: "timeline"
   },
   lyrics: {
     label: "Lyrics",
@@ -6750,52 +6763,69 @@ var songDocumentStandards = {
         title: "Lyrics"
       }
     ],
-    minTotalWords: 10,
     maxTotalWords: 1e4,
-    minSectionWords: 10,
-    requiresEvidence: false
+    requiresEvidence: false,
+    presentation: "lyrics"
   },
   credits: {
-    label: "Credits",
-    requiredSections: [
-      {
-        key: "recording_credits",
-        title: "Recording credits"
-      },
-      {
-        key: "writing_credits",
-        title: "Writing credits"
-      },
-      {
-        key: "production_credits",
-        title: "Production credits"
-      }
-    ],
-    minTotalWords: 20,
-    maxTotalWords: 1200,
-    minSectionWords: 5,
-    requiresEvidence: false
-  },
-  distributor_notes: {
-    label: "Distributor notes",
+    label: "Credit sheet",
     requiredSections: [
       {
         key: "release_identity",
         title: "Release identity"
       },
       {
-        key: "delivery_notes",
-        title: "Delivery notes"
+        key: "songwriting_publishing",
+        title: "Songwriting and publishing"
       },
       {
-        key: "metadata_checks",
-        title: "Metadata checks"
+        key: "production_engineering",
+        title: "Production and engineering"
+      },
+      {
+        key: "performers",
+        title: "Performers"
+      },
+      {
+        key: "recording_details",
+        title: "Recording details"
+      },
+      {
+        key: "identifiers",
+        title: "Identifiers"
       }
     ],
-    minTotalWords: 45,
-    maxTotalWords: 900,
-    minSectionWords: 10,
-    requiresEvidence: false
+    maxTotalWords: 1e3,
+    requiresEvidence: false,
+    presentation: "table"
+  },
+  distributor_notes: {
+    label: "Distribution delivery sheet",
+    requiredSections: [
+      {
+        key: "release_metadata",
+        title: "Release metadata"
+      },
+      {
+        key: "track_metadata",
+        title: "Track metadata"
+      },
+      {
+        key: "rights_credits",
+        title: "Rights and credits"
+      },
+      {
+        key: "assets",
+        title: "Delivery assets"
+      },
+      {
+        key: "delivery",
+        title: "Delivery instructions"
+      }
+    ],
+    maxTotalWords: 1e3,
+    requiresEvidence: false,
+    presentation: "table"
   }
 };
 var genericLanguagePatterns = [
@@ -6818,6 +6848,27 @@ var placeholderPatterns = [
   /\binsert (?:link|name|date|quote|contact|number|stat)\b/i,
   /\[insert[^\]]*\]/i,
   /\{\{[^}]+\}\}/
+];
+var internalLeakPatterns = [
+  /\bmanager[- ]built artifact\b/i,
+  /\bquality checked\b/i,
+  /\breview draft\b/i,
+  /\bcanonical version\b/i,
+  /\bneeds verification\b/i,
+  /\bretryable (?:workspace )?persistence\b/i,
+  /\binternal release narrative\b/i,
+  /\bcurrent workspace confirms\b/i,
+  /\bdelivery[- ]ready\b/i,
+  /\brelease[- ]package blocker\b/i
+];
+var artistBioOperationalPatterns = [
+  /\bISRC\b/i,
+  /\bsplit confirmation\b/i,
+  /\bdistributor evidence\b/i,
+  /\bdelivery confirmation\b/i,
+  /\brelease metadata\b/i,
+  /\bclearance confirmation\b/i,
+  /\bworkspace\b/i
 ];
 function isPremiumSongDocumentType(value) {
   return typeof value === "string" && premiumSongDocumentTypes.includes(value);
@@ -6864,7 +6915,7 @@ function normalizeStructuredSongDocument(value) {
     coreNarrative,
     sections,
     claims,
-    missingInputs: cleanStringList(value.missingInputs, 20, 1200)
+    missingInputs: cleanStringList(value.missingInputs, 40, 1200)
   };
 }
 function assessStructuredSongDocument(documentType, structure) {
@@ -6873,18 +6924,20 @@ function assessStructuredSongDocument(documentType, structure) {
   const warnings = [];
   const passed = [];
   let score = 100;
-  if (wordCount(structure.purpose) < 5) {
-    blockers.push("State the document's concrete purpose.");
-    score -= 12;
-  } else passed.push("Purpose is explicit.");
-  if (wordCount(structure.audience) < 3) {
-    blockers.push("Name the intended audience or recipient.");
-    score -= 10;
-  } else passed.push("Audience is explicit.");
-  if (documentType !== "lyrics" && documentType !== "credits" && wordCount(structure.coreNarrative) < 18) {
-    blockers.push("Anchor the document in a specific campaign narrative instead of generic release copy.");
-    score -= 15;
-  } else if (structure.coreNarrative) passed.push("Core narrative is present.");
+  if (standard.internal) {
+    if (wordCount(structure.purpose) < 5) {
+      blockers.push("State the internal document purpose.");
+      score -= 10;
+    }
+    if (wordCount(structure.audience) < 3) {
+      blockers.push("Name the internal audience.");
+      score -= 8;
+    }
+    if (wordCount(structure.coreNarrative) < 18) {
+      blockers.push("Anchor the internal release narrative in a specific campaign story.");
+      score -= 12;
+    }
+  }
   const sectionMap = new Map(structure.sections.map((section) => [
     section.key,
     section
@@ -6897,53 +6950,52 @@ function assessStructuredSongDocument(documentType, structure) {
         warnings.push(`${required.title} is waiting on a verified input.`);
         score -= 4;
       } else {
-        blockers.push(`Add the required ${required.title} section or declare the missing input explicitly.`);
-        score -= 12;
+        blockers.push(`Add the required ${required.title} content or declare the missing input internally.`);
+        score -= 10;
       }
       continue;
     }
-    const words = wordCount(section.content);
-    if (words < Math.max(4, Math.floor(standard.minSectionWords * 0.55))) {
-      if (declaredMissing) {
-        warnings.push(`${required.title} is intentionally incomplete until a verified input is available.`);
-        score -= 4;
-      } else {
-        blockers.push(`${required.title} is too thin to be useful.`);
-        score -= 9;
-      }
-    } else if (words < standard.minSectionWords) {
-      warnings.push(`${required.title} should be more specific.`);
-      score -= 4;
+    if (wordCount(section.content) < 3) {
+      blockers.push(`${required.title} is too thin to be useful.`);
+      score -= 8;
     }
   }
   const totalWords = structure.sections.reduce((total, section) => total + wordCount(section.content), 0);
-  const hardMinimum = Math.max(10, Math.floor(standard.minTotalWords * 0.65));
-  if (totalWords < hardMinimum) {
-    blockers.push(`${standard.label} is underdeveloped at ${totalWords} words; a useful draft needs at least ${hardMinimum} words even when inputs are missing.`);
-    score -= 14;
-  } else if (totalWords < standard.minTotalWords) {
-    warnings.push(`${standard.label} is usable but incomplete at ${totalWords} words; target ${standard.minTotalWords} when the missing inputs are available.`);
+  if (totalWords > standard.maxTotalWords) {
+    warnings.push(`${standard.label} is longer than its ${standard.maxTotalWords}-word working limit; tighten it.`);
     score -= 6;
-  } else if (totalWords > standard.maxTotalWords) {
-    warnings.push(`${standard.label} is longer than the ${standard.maxTotalWords}-word working limit; tighten it.`);
-    score -= 5;
-  } else passed.push("Length is appropriate for the artifact.");
+  } else if (totalWords > 0) {
+    passed.push("Document length stays inside the artifact's working limit.");
+  }
+  const publicCopy = structure.sections.map((section) => section.content).join("\n");
   const allCopy = [
-    structure.purpose,
-    structure.audience,
     structure.coreNarrative,
-    ...structure.sections.map((section) => section.content)
+    publicCopy
   ].join("\n");
   const genericHits = genericLanguagePatterns.filter((pattern) => pattern.test(allCopy));
   if (genericHits.length) {
     warnings.push("Replace generic music-marketing language with artist-specific facts, images or stakes.");
     score -= Math.min(16, genericHits.length * 4);
   } else passed.push("Copy avoids common generic music-marketing clich\xE9s.");
-  const placeholderHits = placeholderPatterns.filter((pattern) => pattern.test(allCopy));
+  const placeholderHits = placeholderPatterns.filter((pattern) => pattern.test(publicCopy));
   if (placeholderHits.length) {
-    blockers.push("Remove placeholders. Unknown facts belong in missingInputs, not in recipient-facing copy.");
+    blockers.push("Remove placeholders. Unknown facts belong in internal missingInputs, not recipient-facing copy.");
     score -= 18;
   } else passed.push("No placeholder copy detected.");
+  if (!standard.internal) {
+    const leakHits = internalLeakPatterns.filter((pattern) => pattern.test(publicCopy));
+    if (leakHits.length) {
+      blockers.push("Remove Desk-internal workflow, verification, persistence or approval language from recipient-facing copy.");
+      score -= Math.min(28, leakHits.length * 7);
+    } else passed.push("Recipient copy contains no Desk-internal workflow language.");
+  }
+  if (documentType === "artist_biography") {
+    const operationalHits = artistBioOperationalPatterns.filter((pattern) => pattern.test(publicCopy));
+    if (operationalHits.length) {
+      blockers.push("Artist biography must describe the artist, not release operations, identifiers, delivery gates or workspace state.");
+      score -= Math.min(30, operationalHits.length * 6);
+    } else passed.push("Artist biography stays artist-first rather than operations-first.");
+  }
   const unsupportedClaims = structure.claims.filter((claim) => {
     if (claim.basis === "inference") return claim.confidence === "high" || !claim.sourceRef;
     if (claim.basis === "public_source") return !isHttpsUrl(claim.sourceRef);
@@ -6957,13 +7009,20 @@ function assessStructuredSongDocument(documentType, structure) {
     const evidenceRefs = new Set(structure.sections.flatMap((section) => section.evidenceRefs).filter(Boolean));
     const groundedClaims = structure.claims.filter((claim) => claim.basis !== "inference" && claim.sourceRef);
     if (!evidenceRefs.size && !groundedClaims.length) {
-      warnings.push("Add evidence references for factual or performance claims before treating this as final-ready.");
+      warnings.push("Ground factual and performance claims in workspace, artist or public-source evidence before approval.");
       score -= 8;
-    } else passed.push("Evidence references are attached to the artifact.");
+    } else passed.push("Evidence references are attached to the artifact internally.");
+  }
+  if (standard.requiresPublicResearch) {
+    const publicSources = structure.claims.filter((claim) => claim.basis === "public_source" && isHttpsUrl(claim.sourceRef));
+    if (!publicSources.length) {
+      warnings.push("Complete current public research before treating this recipient-facing artifact as final-ready.");
+      score -= 10;
+    } else passed.push("Current public research is attached internally.");
   }
   if (structure.missingInputs.length) {
-    warnings.push(`${structure.missingInputs.length} input${structure.missingInputs.length === 1 ? " is" : "s are"} still missing; keep the artifact in review.`);
-    score -= Math.min(12, structure.missingInputs.length * 3);
+    warnings.push(`${structure.missingInputs.length} verified input${structure.missingInputs.length === 1 ? " is" : "s are"} still missing; keep the artifact in review without exposing those gaps to recipients.`);
+    score -= Math.min(12, structure.missingInputs.length * 2);
   } else passed.push("No unresolved input is declared.");
   score = Math.max(0, Math.min(100, score));
   return {
@@ -6978,21 +7037,86 @@ function assessStructuredSongDocument(documentType, structure) {
 }
 function renderStructuredSongDocument(documentType, title, structure) {
   const standard = songDocumentStandards[documentType];
+  if (standard.internal) return renderInternalDocument(title, structure);
+  if (documentType === "press_release") return renderPressRelease(title, structure);
+  if (documentType === "lyrics") return renderLyrics(title, structure);
   const lines = [
     `# ${title}`
   ];
-  if (standard.internal) {
-    lines.push("", "> Internal campaign strategy. Not recipient-facing copy.");
-  }
-  lines.push("", `**Purpose:** ${structure.purpose}`, `**Audience:** ${structure.audience}`);
-  if (structure.coreNarrative) lines.push("", `**Core narrative:** ${structure.coreNarrative}`);
-  for (const section of structure.sections) {
-    lines.push("", `## ${section.title}`, "", section.content);
-  }
-  if (structure.missingInputs.length) {
-    lines.push("", "## Needs verification", "", ...structure.missingInputs.map((item) => `- ${item}`));
+  for (const section of orderedRenderableSections(documentType, structure)) {
+    lines.push("", `## ${section.title}`, "", section.content.trim());
   }
   return lines.join("\n").trim();
+}
+function renderInternalDocument(title, structure) {
+  const lines = [
+    `# ${title}`,
+    "",
+    "> Internal campaign strategy. Not recipient-facing copy."
+  ];
+  if (structure.purpose) lines.push("", `**Purpose:** ${structure.purpose}`);
+  if (structure.audience) lines.push(`**Audience:** ${structure.audience}`);
+  if (structure.coreNarrative) lines.push("", `**Core narrative:** ${structure.coreNarrative}`);
+  for (const section of structure.sections) {
+    lines.push("", `## ${section.title}`, "", section.content.trim());
+  }
+  if (structure.missingInputs.length) {
+    lines.push("", "## Internal gaps", "", ...structure.missingInputs.map((item) => `- ${item}`));
+  }
+  return lines.join("\n").trim();
+}
+function renderPressRelease(title, structure) {
+  const sections = new Map(structure.sections.map((section) => [
+    section.key,
+    section
+  ]));
+  const headline = sections.get("headline")?.content.trim() || title;
+  const dek = sections.get("dek")?.content.trim();
+  const lede = sections.get("dateline_lede")?.content.trim();
+  const body = sections.get("body")?.content.trim();
+  const quote = sections.get("artist_quote")?.content.trim();
+  const releaseDetails = sections.get("release_details")?.content.trim();
+  const about = sections.get("about_artist")?.content.trim();
+  const contact = sections.get("press_contact")?.content.trim();
+  const lines = [
+    `# ${headline}`
+  ];
+  if (dek) lines.push("", `_${dek}_`);
+  if (lede) lines.push("", lede);
+  if (body) lines.push("", body);
+  if (quote) lines.push("", quote.split("\n").map((line) => `> ${line}`).join("\n"));
+  if (releaseDetails) lines.push("", "## Release details", "", releaseDetails);
+  if (about) lines.push("", "## About the artist", "", about);
+  if (contact) lines.push("", "## Media contact", "", contact);
+  return lines.join("\n").trim();
+}
+function renderLyrics(title, structure) {
+  const lyrics = structure.sections.find((section) => section.key === "lyrics")?.content.trim() ?? structure.sections[0]?.content.trim() ?? "";
+  return [
+    `# ${title}`,
+    "",
+    lyrics
+  ].join("\n").trim();
+}
+function orderedRenderableSections(documentType, structure) {
+  const standard = songDocumentStandards[documentType];
+  const sectionMap = new Map(structure.sections.map((section) => [
+    section.key,
+    section
+  ]));
+  const orderedKeys = [
+    ...standard.requiredSections,
+    ...standard.optionalSections ?? []
+  ].map((section) => section.key);
+  const known = orderedKeys.flatMap((key) => sectionMap.get(key) ? [
+    sectionMap.get(key)
+  ] : []);
+  const seen = new Set(known.map((section) => section.key));
+  const extras = structure.sections.filter((section) => !seen.has(section.key));
+  return [
+    ...known,
+    ...extras
+  ];
 }
 function inputDeclaresSectionMissing(missingInputs, required) {
   const needles = [
@@ -7007,20 +7131,20 @@ function inputDeclaresSectionMissing(missingInputs, required) {
 function normalizeSearchText(value) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
-function wordCount(value) {
-  return value.trim() ? value.trim().split(/\s+/).length : 0;
-}
-function cleanKey(value) {
-  return typeof value === "string" ? value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 120) : "";
-}
 function cleanText3(value, maxLength) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
+}
+function cleanKey(value) {
+  return cleanText3(value, 100).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 }
 function cleanStringList(value, maxItems, maxLength) {
   if (!Array.isArray(value)) return [];
   return unique2(value.flatMap((item) => typeof item === "string" && item.trim() ? [
     item.trim().slice(0, maxLength)
   ] : [])).slice(0, maxItems);
+}
+function wordCount(value) {
+  return value.trim() ? value.trim().split(/\s+/).length : 0;
 }
 function isHttpsUrl(value) {
   try {
