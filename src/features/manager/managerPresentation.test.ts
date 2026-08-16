@@ -28,6 +28,37 @@ describe("manager presentation projection", () => {
     expect(groups[0]).toMatchObject({ kind: "workspace", tasks: [{ id: "task-1" }] });
   });
 
+  it("presents a canonical song document as a document rather than a Song ready receipt", () => {
+    const groups = groupManagerWork([
+      work({
+        type: "music_item",
+        id: "document-1",
+        musicItemId: "song-1",
+        title: "Summer — Everjamz playlist pitch",
+        body: "Saved to Files.",
+        artifactKind: "song_document",
+        documentType: "playlist_pitch",
+        readiness: "ready",
+      }),
+    ]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]).toMatchObject({
+      kind: "draft",
+      item: { artifactKind: "song_document", documentType: "playlist_pitch", musicItemId: "song-1" },
+    });
+  });
+
+  it("keeps multiple song documents from the same song as separate work products", () => {
+    const groups = groupManagerWork([
+      work({ type: "music_item", id: "document-1", musicItemId: "song-1", title: "EPK", body: "Saved.", artifactKind: "song_document" }),
+      work({ type: "music_item", id: "document-2", musicItemId: "song-1", title: "Everjamz pitch", body: "Saved.", artifactKind: "song_document" }),
+    ]);
+
+    expect(groups).toHaveLength(2);
+    expect(groups.every((group) => group.kind === "draft")).toBe(true);
+  });
+
   it("assigns conversation-level fallback work to the last Manager turn", () => {
     const conversation: ConversationViewModel = {
       id: "conversation-1",
