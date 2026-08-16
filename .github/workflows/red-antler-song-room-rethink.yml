@@ -6,6 +6,7 @@ on:
       - scripts/red_antler_song_room_rethink_fix.py
       - scripts/red_antler_song_room_rethink_fix2.py
       - scripts/red_antler_song_room_rethink_fix3.py
+      - scripts/red_antler_song_room_rethink_fix4.py
       - .github/workflows/red-antler-song-room-rethink.yml
 permissions:
   contents: write
@@ -27,6 +28,7 @@ jobs:
           python3 scripts/red_antler_song_room_rethink_fix.py
           python3 scripts/red_antler_song_room_rethink_fix2.py
           python3 scripts/red_antler_song_room_rethink_fix3.py
+          python3 scripts/red_antler_song_room_rethink_fix4.py
       - run: npm ci
       - name: Focused song room contract
         run: npx vitest run src/song-room-red-antler-overview.test.ts --environment jsdom --pool=vmThreads
@@ -44,6 +46,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/music/MusicScreens.tsx src/app/ProductionApp.tsx src/song-room-red-antler-overview.test.ts src/production-app-shell.test.tsx src/music-share-internal-narrative.test.ts
+          git add src/features/music/MusicScreens.tsx src/features/music/MusicShareDialog.tsx src/app/ProductionApp.tsx src/song-room-red-antler-overview.test.ts src/production-app-shell.test.tsx src/music-share-internal-narrative.test.ts
           git commit -m 'feat: simplify song room around Manager read'
           git push origin main
