@@ -1,0 +1,117 @@
+name: Implement recipient-aware Files sharing
+
+on:
+  push:
+    paths:
+      - '.github/workflows/implement-share-release-package.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Patch share dialog and tests
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/features/music/MusicShareDialog.tsx')
+          text = path.read_text()
+
+          replacements = [
+            (
+              'import type { PublicMusicSharePackage } from "../../services/publicMusicShare";',
+              'import { publicDocumentTitle, recipientSafeDocumentBody, type PublicMusicSharePackage } from "../../services/publicMusicShare";',
+            ),
+            (
+              'import { availableShareInformation, buildShareSelection, sharePurposeLabel, type ShareInventory, type SharePurpose, type ShareSelection } from "./musicSharePackage";',
+              'import { availableShareInformation, buildShareSelection, sharePurposeLabel, sharePurposeShortLabel, type ShareInventory, type SharePurpose, type ShareSelection } from "./musicSharePackage";',
+            ),
+            (
+              'const initialPurpose = useMemo<SharePurpose>(() => inventory.documents.some((document) => document.ready && Boolean(document.body?.trim())) ? "epk_press" : "listen", [inventory]);',
+              'const initialPurpose = useMemo<SharePurpose>(() => inventory.documents.some((document) => document.ready && ["epk", "artist_biography", "one_sheet", "press_release"].includes(document.documentType)) ? "epk_press" : "listen", [inventory]);',
+            ),
+            (
+              '<div className="grid grid-cols-4 gap-1 rounded-[12px] bg-foreground/[0.045] p-1" aria-label="Package type">',
+              '<div className="grid grid-cols-2 gap-1 rounded-[12px] bg-foreground/[0.045] p-1 sm:grid-cols-4" aria-label="Package type">',
+            ),
+            (
+              'className={`rounded-[9px] px-2 py-2.5 text-[11px] font-bold transition ${purpose === value ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground"}`}>{sharePurposeLabel(value)}</button>',
+              'className={`rounded-[9px] px-2 py-2.5 text-[11px] font-bold transition ${purpose === value ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8" : "text-muted-foreground hover:text-foreground"}`}>{sharePurposeShortLabel(value)}</button>',
+            ),
+            (
+              '<p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{purposeDescription(purpose)}</p>\n              <SelectionGroup title="Audio & images"',
+              '<p className="mt-3 text-[12px] leading-relaxed text-muted-foreground">{purposeDescription(purpose)}</p>\n              <div className="mt-3 flex items-center justify-between gap-3 rounded-[10px] bg-foreground/[0.025] px-3 py-2 text-[10px] font-semibold text-muted-foreground"><span>{purpose === "custom" ? "Custom selection" : "Recommended package"}</span><span>{selectionCount(selection)} {selectionCount(selection) === 1 ? "item" : "items"} selected</span></div>\n              <SelectionGroup title="Music & visuals"',
+            ),
+            (
+              'items={inventory.documents.map((document) => ({ id: document.id, label: document.title, meta: documentTypeLabel(document.documentType) }))}',
+              'items={inventory.documents.map((document) => ({ id: document.id, label: publicDocumentTitle(document.title), meta: documentTypeLabel(document.documentType) }))}',
+            ),
+            (
+              '<SelectionGroup title="Song details"',
+              '<SelectionGroup title="Release information"',
+            ),
+            (
+              '`${sharePurposeLabel(created.preset)} is ready to share.`',
+              '`${sharePurposeLabel(created.preset)} package is ready to share.`',
+            ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f'Missing share-dialog marker: {old[:120]}')
+              text = text.replace(old, new, 1)
+
+          old_preview = '''  const information = [\n    ...inventory.documents.filter((document) => selection.documentIds.includes(document.id)).map((document) => ({ key: `document:${document.id}`, title: document.title, value: document.body ?? "", documentType: document.documentType })),\n    ...inventory.information.filter((field) => selection.informationKeys.includes(field.key)).map((field) => ({ key: field.key, title: field.label, value: field.value })),\n  ];\n  return { label: `${song.title} private package`, title: song.title, artist: inventory.information.find((field) => field.key === "primary_artist")?.value, preset: purpose, assets, information };'''
+          new_preview = '''  const documents = inventory.documents\n    .filter((document) => selection.documentIds.includes(document.id))\n    .flatMap((document) => {\n      const body = recipientSafeDocumentBody(document.body ?? "");\n      const title = publicDocumentTitle(document.title);\n      return body && title ? [{ id: document.id, title, documentType: document.documentType, body }] : [];\n    });\n  const information = inventory.information\n    .filter((field) => selection.informationKeys.includes(field.key))\n    .map((field) => ({ key: field.key, title: field.label, value: field.value }));\n  return {\n    label: sharePackageLabel(song.title, purpose),\n    title: song.title,\n    artist: inventory.information.find((field) => field.key === "primary_artist")?.value,\n    preset: purpose,\n    assets,\n    ...(documents.length ? { documents } : {}),\n    ...(information.length ? { information } : {}),\n  };'''
+          if old_preview not in text:
+              raise SystemExit('Missing composePreview marker')
+          text = text.replace(old_preview, new_preview, 1)
+
+          old_desc = '''function purposeDescription(purpose: SharePurpose) {\n  if (purpose === "listen") return "A clean private listen with the current master and artwork.";\n  if (purpose === "epk_press") return "Music, approved images, and ready press materials.";\n  if (purpose === "delivery") return "The current master, artwork, and completed delivery details.";\n  return "Choose exactly what this person should receive.";\n}\n\nfunction documentTypeLabel'''
+          new_desc = '''function purposeDescription(purpose: SharePurpose) {\n  if (purpose === "listen") return "For A&R, collaborators, and trusted listeners. Keeps the package focused on the music.";\n  if (purpose === "epk_press") return "For journalists, blogs, radio, media partners, and press. Includes approved press materials and visuals, not outreach drafts.";\n  if (purpose === "delivery") return "For distributor or label operations. Includes the master, artwork, delivery documents, and verified release information.";\n  return "Choose exactly what this recipient should receive. Only approved, recipient-safe documents are available.";\n}\n\nfunction sharePackageLabel(title: string, purpose: SharePurpose) {\n  if (purpose === "listen") return `${title} private listen`;\n  if (purpose === "epk_press") return `${title} press / media kit`;\n  if (purpose === "delivery") return `${title} distributor delivery`;\n  return `${title} private package`;\n}\n\nfunction documentTypeLabel'''
+          if old_desc not in text:
+              raise SystemExit('Missing purposeDescription marker')
+          text = text.replace(old_desc, new_desc, 1)
+          path.write_text(text)
+
+          test_path = Path('src/music-share-dialog.test.tsx')
+          test = test_path.read_text()
+          test = test.replace('button", { name: "Press kit"', 'button", { name: "Press / media"')
+          test = test.replace('''  it("offers approved release pitches while keeping Manager drafts out of a share package", () => {''', '''  it("keeps outbound pitch documents available only for explicit custom sharing", () => {''')
+          test = test.replace('''    expect(screen.getByRole("checkbox", { name: "Personalized press pitch" })).toBeChecked();''', '''    expect(screen.getByRole("checkbox", { name: "Personalized press pitch" })).not.toBeChecked();''')
+          test_path.write_text(test)
+
+          contract = Path('src/music-share-recipient-contract.test.ts')
+          contract.write_text('''import { readFileSync } from "node:fs";\nimport { describe, expect, it } from "vitest";\n\ndescribe("recipient-aware release sharing", () => {\n  it("keeps press kits recipient-safe and treats documents as first-class public content", () => {\n    const dialog = readFileSync("src/features/music/MusicShareDialog.tsx", "utf8");\n    const packagePolicy = readFileSync("src/features/music/musicSharePackage.ts", "utf8");\n    const publicService = readFileSync("src/services/publicMusicShare.ts", "utf8");\n    const publicEdge = readFileSync("supabase/functions/public-music-share/index.ts", "utf8");\n\n    expect(packagePolicy).not.toMatch(/PRESS_DOCUMENT_TYPES[\\s\\S]*spotify_editorial_pitch/);\n    expect(packagePolicy).not.toMatch(/PRESS_DOCUMENT_TYPES[\\s\\S]*press_pitch/);\n    expect(dialog).toContain("Recommended package");\n    expect(dialog).toContain("Press / media");\n    expect(dialog).toContain("recipientSafeDocumentBody");\n    expect(publicService).toContain("documents?: PublicMusicShareDocument[]");\n    expect(publicEdge).toContain("recipientSafeDocumentBody");\n    expect(publicEdge).toContain("publicDocumentTitle");\n  });\n});\n''')
+          PY
+
+      - run: npm ci
+      - name: Test share product contracts
+        run: npx vitest run src/music-share-package.test.ts src/music-share-dialog.test.tsx src/public-music-share-service.test.ts src/music-share-recipient-contract.test.ts src/public-music-share-portal.test.tsx src/music-share-backend-safety.test.ts src/music-share-links-functions.test.ts --environment jsdom --pool=vmThreads
+      - name: Build app
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+        run: npm run build
+      - name: Check public share Edge function
+        run: npx deno check supabase/functions/public-music-share/index.ts
+      - name: Commit implementation
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/features/music/MusicShareDialog.tsx src/music-share-dialog.test.tsx src/music-share-recipient-contract.test.ts
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: make Files sharing recipient-aware"
+          git push origin HEAD:main
