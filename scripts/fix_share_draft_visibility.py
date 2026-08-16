@@ -28,4 +28,8 @@ test = test.replace('''    fireEvent.click(screen.getByRole("button", { name: "L
 test = test.replace('expect(screen.queryByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeInTheDocument();', 'expect(screen.getByRole("checkbox", { name: "Spotify editorial pitch" })).not.toBeChecked();', 1)
 test_path.write_text(test)
 
-# Triggered after workflow creation.
+safety = Path('src/music-share-backend-safety.test.ts')
+check = safety.read_text()
+check = check.replace('it("rejects internal narrative and unapproved Manager documents in the Edge function"', 'it("rejects internal narrative while allowing owner-selected Manager drafts after preview"')
+check = check.replace('    expect(source).toContain(\'document.origin === "manager_generated" && document.status !== "accepted"\');\n', '    expect(source).not.toContain(\'document.origin === "manager_generated" && document.status !== "accepted"\');\n')
+safety.write_text(check)
