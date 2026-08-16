@@ -45,8 +45,8 @@ export function availableShareInformation(inventory: ShareInventory) {
 }
 
 export function buildShareSelection(purpose: SharePurpose, inventory: ShareInventory): ShareSelection {
-  if (purpose === "custom") return { assetIds: [], documentIds: [], informationKeys: [] };
   const availableInformation = availableShareInformation(inventory);
+  if (purpose === "custom") return { assetIds: [], documentIds: [], informationKeys: availableInformation.filter((field) => IDENTITY_KEYS.has(field.key)).map((field) => field.key) };
   const currentAudio = inventory.assets.find((asset) => asset.group === "Audio" && asset.assetType === "final_master")
     ?? inventory.assets.find((asset) => asset.group === "Audio");
   const cover = inventory.assets.find((asset) => asset.group === "Artwork" && asset.assetType === "cover_art")

@@ -11,8 +11,10 @@ describe("recipient-aware release sharing", () => {
     expect(packagePolicy).not.toMatch(/PRESS_DOCUMENT_TYPES[\s\S]*spotify_editorial_pitch/);
     expect(packagePolicy).not.toMatch(/PRESS_DOCUMENT_TYPES[\s\S]*press_pitch/);
     expect(packagePolicy).toContain('return "Press / media"');
-    expect(dialog).toContain("Recommended package");
-    expect(dialog).toContain("sharePurposeShortLabel");
+    expect(dialog).toContain("Who is this for?");
+    expect(dialog).toContain("Preview press kit");
+    expect(dialog).toContain("createPortal");
+    expect(dialog).toContain("share-primary-cta");
     expect(dialog).toContain("recipientSafeDocumentBody");
     expect(publicService).toContain("documents?: PublicMusicShareDocument[]");
     expect(publicEdge).toContain("recipientSafeDocumentBody");

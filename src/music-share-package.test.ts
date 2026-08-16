@@ -21,7 +21,7 @@ const inventory: ShareInventory = {
     { id: "credits", title: "Credit sheet", documentType: "credits", body: "Real credits", ready: true },
     { id: "press-pitch", title: "Press pitch", documentType: "press_pitch", body: "Outbound pitch", ready: true },
     { id: "spotify-pitch", title: "Spotify pitch", documentType: "spotify_editorial_pitch", body: "Outbound editorial pitch", ready: true },
-    { id: "draft-one-sheet", title: "One-sheet", documentType: "one_sheet", body: "Draft one-sheet", ready: false },
+    { id: "draft-one-sheet", title: "One-sheet", documentType: "one_sheet", body: "Draft one-sheet", ready: true, approved: false },
     { id: "delivery", title: "Distribution delivery sheet", documentType: "distributor_notes", body: "Delivery notes", ready: true },
   ],
   information: [
@@ -54,7 +54,7 @@ describe("song share package selection", () => {
   it("builds a real press/media kit and excludes outbound pitch drafts", () => {
     expect(buildShareSelection("epk_press", inventory)).toEqual({
       assetIds: ["master", "cover", "press-photo"],
-      documentIds: ["epk", "press", "bio", "credits"],
+      documentIds: ["epk", "press", "bio", "credits", "draft-one-sheet"],
       informationKeys: ["song_title", "primary_artist", "genre"],
     });
   });
@@ -67,8 +67,8 @@ describe("song share package selection", () => {
     });
   });
 
-  it("starts Custom empty and detects when a preset has been changed", () => {
-    expect(buildShareSelection("custom", inventory)).toEqual({ assetIds: [], documentIds: [], informationKeys: [] });
+  it("keeps identity structural in Custom and detects when a preset has been changed", () => {
+    expect(buildShareSelection("custom", inventory)).toEqual({ assetIds: [], documentIds: [], informationKeys: ["song_title", "primary_artist"] });
     expect(selectionMatchesPreset("listen", inventory, buildShareSelection("listen", inventory))).toBe(true);
     expect(selectionMatchesPreset("listen", inventory, {
       ...buildShareSelection("listen", inventory),
