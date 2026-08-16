@@ -1,0 +1,99 @@
+name: Hotfix Manager document persistence
+
+on:
+  push:
+    paths:
+      - '.github/workflows/hotfix-manager-document-persistence.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply document persistence hotfix
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          agent = Path('supabase/functions/_shared/manager-conversation/agentLoop.ts')
+          text = agent.read_text()
+          text = text.replace(
+          '  promptCacheMode?: "implicit" | "explicit";\n};',
+          '  promptCacheMode?: "implicit" | "explicit";\n  initialToolChoice?: string;\n};'
+          )
+          marker = '''export function selectManagerConversationToolsForTurn(input: {\n  body: string;\n  contextAnswers?: Array<{ questionKey: string; answer: string }>;\n  hasAttachedUnreleasedSong: boolean;\n}): ManagerAgentToolDefinition[] {'''
+          helper = '''export function managerConversationRequiresCanonicalDocumentTool(input: {\n  body: string;\n  contextAnswers?: Array<{ questionKey: string; answer: string }>;\n}) {\n  const body = input.body.trim().toLowerCase();\n  const directDocumentIntent = /\\b(draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\\b/.test(body)\n    && /\\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes|documents?)\\b/.test(body);\n  const contextDocumentIntent = (input.contextAnswers ?? []).some((answer) =>\n    /(?:epk|press|bio|biography|one[-_ ]sheet|release[_ -]?(?:narrative|angle)|campaign|document|kit|copy|content|core[_ -]?angle)/i.test(answer.questionKey)\n  );\n  return directDocumentIntent || contextDocumentIntent;\n}\n\n''' + marker
+          if marker not in text:
+              raise SystemExit('selector marker not found')
+          text = text.replace(marker, helper)
+          old = '''  const documentIntent = /\\b(draft|write|prepare|create|make|build|revise|refresh)\\b/.test(body)\n    && /\\b(release kit|campaign kit|release narrative|campaign narrative|campaign spine|epk|press kit|pitch|content plan|release calendar|press release|press angle|biography|bio|one[- ]sheet|lyrics|credits|distributor notes)\\b/.test(body);'''
+          new = '''  const documentIntent = managerConversationRequiresCanonicalDocumentTool({\n    body: input.body,\n    contextAnswers: input.contextAnswers,\n  });'''
+          if old not in text:
+              raise SystemExit('document intent block not found')
+          text = text.replace(old, new)
+          old = '  return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId);'
+          new = '  return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId, true);'
+          if old not in text:
+              raise SystemExit('request builder call not found')
+          text = text.replace(old, new)
+          old = '''function buildManagerAgentRequestBody(\n  input: ManagerAgentRequestInput,\n  requestInput: unknown,\n  previousResponseId?: string,\n) {'''
+          new = '''function buildManagerAgentRequestBody(\n  input: ManagerAgentRequestInput,\n  requestInput: unknown,\n  previousResponseId?: string,\n  initialRequest = false,\n) {'''
+          if old not in text:
+              raise SystemExit('request builder signature not found')
+          text = text.replace(old, new)
+          old = '    tool_choice: "auto",'
+          new = '    tool_choice: initialRequest && input.initialToolChoice ? { type: "function", name: input.initialToolChoice } : "auto",'
+          if old not in text:
+              raise SystemExit('tool choice line not found')
+          text = text.replace(old, new, 1)
+          agent.write_text(text)
+
+          manager = Path('supabase/functions/manager-conversation/index.ts')
+          text = manager.read_text()
+          old = '''  runManagerAgentLoop,\n  selectManagerConversationToolsForTurn,\n  type ManagerAgentToolTrace,'''
+          new = '''  managerConversationRequiresCanonicalDocumentTool,\n  runManagerAgentLoop,\n  selectManagerConversationToolsForTurn,\n  type ManagerAgentToolTrace,'''
+          if old not in text:
+              raise SystemExit('manager import block not found')
+          text = text.replace(old, new)
+          old = '''    previousResponseId,\n    tools,\n    jsonSchema: managerConversationJsonSchema,'''
+          new = '''    previousResponseId,\n    tools,\n    initialToolChoice: managerConversationRequiresCanonicalDocumentTool({\n      body: input.body,\n      contextAnswers: input.contextAnswers,\n    }) ? "create_focused_song_document" : undefined,\n    jsonSchema: managerConversationJsonSchema,'''
+          if old not in text:
+              raise SystemExit('manager request block not found')
+          text = text.replace(old, new)
+          manager.write_text(text)
+
+          prompt = Path('supabase/functions/_shared/openaiManagerConversation.ts')
+          text = prompt.read_text()
+          anchor = '    "The Manager may prepare copy, press angles, package recommendations, and outreach drafts, but never sends messages, submits to a distributor, commits spending, changes a release date, publishes, or performs legal/rights actions without an explicit permission request and user approval. Never invent a contact name, email address, outlet, playlist, or result; use verified workspace data or a cited public source and label any recommendation or draft clearly. create_focused_song_document uses the existing canonical Files document pathway and creates a draft only.",'
+          addition = anchor + '''\n    "Canonical artifact rule: when the artist asks to draft, create, build, prepare, revise, refresh, update, finish, or complete an EPK, press release, bio, one-sheet, pitch, release/campaign kit, content plan, release calendar, press angle, lyrics, credits, or distributor notes for an attached song, use create_focused_song_document for every requested artifact. Never satisfy an artifact request by placing the full draft only in responseBody.",\n    "After one or more canonical song documents are created or revised successfully, responseBody must stay compact: say what was created/updated, what still needs a real fact or approval, and the next useful action. Do not reproduce the document bodies in chat; the canonical Files artifacts are the work product and should be opened/reviewed from the UI. On document-related context answers, update/version those canonical drafts instead of rewriting their contents into the conversation.",'''
+          if anchor not in text:
+              raise SystemExit('prompt anchor not found')
+          text = text.replace(anchor, addition)
+          prompt.write_text(text)
+          PY
+      - name: Run focused tests
+        run: |
+          npx vitest run src/__tests__/manager-agent-loop.test.ts src/__tests__/manager-conversation-action-policy.test.ts src/__tests__/song-document-standards.test.ts src/__tests__/focused-song-document-persistence.test.ts
+      - name: Typecheck Manager Edge boundaries
+        run: |
+          curl -fsSL https://deno.land/install.sh | sh
+          export PATH="$HOME/.deno/bin:$PATH"
+          deno check supabase/functions/manager-conversation/index.ts supabase/functions/manager-conversation-stream/index.ts
+      - name: Commit hotfix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add supabase/functions/_shared/manager-conversation/agentLoop.ts supabase/functions/manager-conversation/index.ts supabase/functions/_shared/openaiManagerConversation.ts
+          git commit -m "fix: persist Manager campaign documents" || exit 0
+          git push origin HEAD:main
