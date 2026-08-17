@@ -1689,13 +1689,11 @@ function MusicProjectBrief({
 function SongOverviewRead({
   song,
   onGenerateBrief,
-  onContinueWithManager,
   briefPending,
   briefError,
 }: {
   song: MusicObjectViewModel;
   onGenerateBrief: () => void;
-  onContinueWithManager?: () => void;
   briefPending: boolean;
   briefError: string | null;
 }) {
@@ -1703,62 +1701,64 @@ function SongOverviewRead({
   const readBusy = briefPending || isActiveManagerRead(song.managerReadStatus);
   const failed = song.managerReadStatus === "failed" || song.managerReadStatus === "refresh_failed" || Boolean(briefError);
   const checking = song.managerReadStatus === "unknown";
-  const actionLabel = failed ? "Retry record review" : checking ? "Check record review" : read ? "Refresh record review" : "Review this record";
+  const actionLabel = failed ? "Retry record review" : checking ? "Check record review" : read ? "Refresh record review" : "Review record";
+
+  if (!read) {
+    return (
+      <section data-testid="song-room-overview-read" className="pt-1 sm:pt-2">
+        <span className="sr-only">{managerReadStatusLabel(song.managerReadStatus)}</span>
+        {readBusy ? (
+          <div className="flex min-h-12 items-center gap-3 border-y border-foreground/8 py-3">
+            <AppThinkingOrb surface="normal" state="composing" size={18} />
+            <p className="text-[12px] font-semibold text-muted-foreground">Manager is reviewing this record…</p>
+          </div>
+        ) : checking ? (
+          <div className="flex min-h-12 items-center justify-between gap-4 border-y border-foreground/8 py-3">
+            <span className="text-[12px] font-medium text-muted-foreground">Manager review</span>
+            <button type="button" onClick={onGenerateBrief} className="inline-flex h-8 items-center gap-1.5 rounded-[9px] px-2.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Check review
+            </button>
+          </div>
+        ) : (
+          <div className="flex min-h-12 items-center justify-between gap-4 border-y border-foreground/8 py-3">
+            <span className="min-w-0">
+              <span className="block text-[12px] font-medium text-muted-foreground">Manager review</span>
+              {failed ? <span className="mt-0.5 block text-[10px] font-medium text-warning">Last review did not complete.</span> : null}
+            </span>
+            <button
+              type="button"
+              aria-label={actionLabel}
+              onClick={onGenerateBrief}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[9px] border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground transition-colors hover:border-foreground/18 hover:bg-foreground/[0.035] focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+            >
+              {failed ? <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" /> : <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
+              {failed ? "Try again" : "Review record"}
+            </button>
+          </div>
+        )}
+      </section>
+    );
+  }
 
   return (
     <section data-testid="song-room-overview-read" className="pt-1 sm:pt-2">
       <div className="flex items-center justify-between gap-4">
         <p className="font-ui text-[10px] font-bold uppercase tracking-[0.11em] text-muted-foreground/65">What matters now</p>
-        {read ? (
-          <button
-            type="button"
-            aria-label={briefPending ? (read ? "Refreshing record review" : "Reviewing this record") : actionLabel}
-            title={briefPending ? (read ? "Refreshing record review" : "Reviewing this record") : actionLabel}
-            onClick={onGenerateBrief}
-            disabled={readBusy}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:opacity-40"
-          >
-            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(song.managerReadStatus)}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          aria-label={briefPending ? "Refreshing record review" : actionLabel}
+          title={briefPending ? "Refreshing record review" : actionLabel}
+          onClick={onGenerateBrief}
+          disabled={readBusy}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:opacity-40"
+        >
+          {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(song.managerReadStatus)}
+        </button>
       </div>
-
-      {read ? (
-        <div className="mt-4 max-w-3xl">
-          {failed ? <p className="mb-3 text-[11px] font-medium text-muted-foreground">Couldn’t refresh just now. Showing the last read.</p> : null}
-          <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px] sm:leading-6">{read.body}</p>
-        </div>
-      ) : readBusy ? (
-        <div className="mt-4 flex max-w-xl items-center gap-3 py-2">
-          <AppThinkingOrb surface="normal" state="composing" size={20} />
-          <p className="text-[13px] font-semibold text-muted-foreground">Reviewing this record…</p>
-        </div>
-      ) : checking ? (
-        <div className="mt-4 max-w-xl">
-          <p className="text-[13px] font-semibold text-muted-foreground">Checking this review…</p>
-          <button type="button" onClick={onGenerateBrief} className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> Check again
-          </button>
-        </div>
-      ) : (
-        <div className="mt-4 max-w-xl">
-          <h3 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">
-            {failed ? "Couldn’t complete the review." : "See what needs attention."}
-          </h3>
-          <p className="mt-2 text-[12px] font-medium leading-5 text-muted-foreground">
-            {failed ? "Try again when you’re ready." : "A quick assessment of the song, files, rights and release setup."}
-          </p>
-          <button
-            type="button"
-            onClick={onGenerateBrief}
-            className="mt-4 inline-flex min-h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
-          >
-            {failed ? <RotateCcw className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-            {failed ? "Try again" : "Review this record"}
-          </button>
-        </div>
-      )}
-
+      <div className="mt-4 max-w-3xl">
+        {failed ? <p className="mb-3 text-[11px] font-medium text-muted-foreground">Couldn’t refresh just now. Showing the last read.</p> : null}
+        <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px] sm:leading-6">{read.body}</p>
+      </div>
     </section>
   );
 }
@@ -1873,74 +1873,83 @@ function isLockedReleasedStage(stage?: string) {
 function MusicDetailTop({ object, label, onBack, onStageChange, onOpenManager }: { object: MusicObjectViewModel; label: string; onBack: () => void; onStageChange?: (stage: string) => void; onOpenManager?: () => void }) {
   const stageValue = object.lifecycleStage ?? object.lifecycle;
   const lockedReleasedStage = object.kind === "song" && isLockedReleasedStage(stageValue);
+  const stageOptions = ["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"];
 
   return (
-    <div aria-label={`${label} header`} className="border-b border-foreground/8 pb-5">
+    <div aria-label={`${label} header`} className="border-b border-foreground/8 pb-5 sm:pb-6">
       <div data-testid="music-detail-mobile-top" className="lg:hidden">
-        <div className="flex items-center justify-between gap-3">
-          <button
-            type="button"
-            aria-label="Back to Catalog from mobile room"
-            onClick={onBack}
-            className="inline-flex h-9 items-center gap-2 rounded-[10px] pr-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            Catalog
-          </button>
-          <span data-testid={lockedReleasedStage ? "mobile-locked-song-stage" : undefined} className="text-[10px] font-semibold text-muted-foreground/58">{stageValue}</span>
-        </div>
-        <div className="mt-4 flex min-w-0 items-center gap-3.5">
+        <button
+          type="button"
+          aria-label="Back to Catalog from mobile room"
+          onClick={onBack}
+          className="inline-flex h-9 items-center gap-2 rounded-[10px] pr-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Catalog
+        </button>
+        <div className="mt-4 grid min-w-0 grid-cols-[48px_minmax(0,1fr)] items-center gap-3.5">
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
-          <p data-testid="music-detail-mobile-title" className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] font-display text-[23px] font-semibold leading-[1.05] tracking-[-0.025em] text-foreground">{object.title}</p>
+          <div className="min-w-0">
+            <p className="font-ui text-[9px] font-bold uppercase tracking-[0.11em] text-muted-foreground/58">{object.kind === "song" ? "Song" : label}</p>
+            <p data-testid="music-detail-mobile-title" className="mt-1 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[23px] font-semibold leading-[1.05] tracking-[-0.025em] text-foreground">{object.title}</p>
+          </div>
+        </div>
+        <div className="mt-4 flex items-center justify-between gap-3">
+          {object.kind === "song" && !lockedReleasedStage ? (
+            <select
+              aria-label="Mobile song stage"
+              defaultValue={stageValue}
+              onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
+              className="h-9 min-w-0 rounded-[9px] border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground focus:border-foreground focus:outline-none"
+            >
+              {stageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+            </select>
+          ) : <span data-testid={lockedReleasedStage ? "mobile-locked-song-stage" : undefined} className="text-[11px] font-semibold text-muted-foreground/62">{stageValue}</span>}
           {onOpenManager ? (
-            <button type="button" onClick={onOpenManager} aria-label="Chat with Manager" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
-              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+            <button type="button" onClick={onOpenManager} aria-label="Chat with Manager" className="inline-flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-brand-accent px-3 text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-accent/35">
+              <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Manager
             </button>
           ) : null}
         </div>
-        {object.kind === "song" && !lockedReleasedStage ? (
-          <select
-            aria-label="Mobile song stage"
-            defaultValue={stageValue}
-            onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
-            className="mt-3 h-8 rounded-[9px] border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground focus:border-foreground focus:outline-none"
-          >
-            {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
-              <option key={stage} value={stage}>{stage}</option>
-            ))}
-          </select>
-        ) : null}
       </div>
 
       <div data-testid="music-detail-desktop-top" className="hidden lg:block">
-        <div className="flex items-center justify-between gap-4">
-          <button type="button" aria-label="Back to Catalog" onClick={onBack} className="inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" />
-            Catalog
-          </button>
-          <div className="flex items-center gap-2">
-            {object.kind === "song" && !lockedReleasedStage ? (
-              <select
-                aria-label="Song stage"
-                defaultValue={stageValue}
-                onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
-                className="h-9 rounded-[10px] border border-foreground/10 bg-background px-3 text-[11px] font-semibold text-foreground focus:border-foreground focus:outline-none"
-              >
-                {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
-                  <option key={stage} value={stage}>{stage}</option>
-                ))}
-              </select>
-            ) : <span className="text-[11px] font-medium text-muted-foreground/58">{stageValue}</span>}
-            {onOpenManager ? (
-              <button type="button" onClick={onOpenManager} className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
-                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Manager
-              </button>
-            ) : null}
-          </div>
-        </div>
-        <div className="mt-5 flex min-w-0 items-end gap-4">
+        <button type="button" aria-label="Back to Catalog" onClick={onBack} className="inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+          Catalog
+        </button>
+
+        <div className="mt-5 grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-6 xl:gap-8">
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />
-          <h2 className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[34px] font-semibold leading-[0.98] tracking-[-0.035em] text-foreground xl:text-[40px]">{object.title}</h2>
+
+          <div className="min-w-0 self-center">
+            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/58">{object.kind === "song" ? "Song" : label}</p>
+            <h2 className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[40px] font-semibold leading-[0.95] tracking-[-0.04em] text-foreground xl:text-[48px]">{object.title}</h2>
+            <div className="mt-4 flex min-h-9 items-center gap-3">
+              {object.kind === "song" && !lockedReleasedStage ? (
+                <select
+                  aria-label="Song stage"
+                  defaultValue={stageValue}
+                  onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
+                  className="h-9 rounded-[10px] border border-foreground/10 bg-background px-3 text-[11px] font-semibold text-foreground focus:border-foreground focus:outline-none"
+                >
+                  {stageOptions.map((stage) => <option key={stage} value={stage}>{stage}</option>)}
+                </select>
+              ) : <span className="text-[11px] font-semibold text-muted-foreground/60">{stageValue}</span>}
+            </div>
+          </div>
+
+          {onOpenManager ? (
+            <button
+              type="button"
+              onClick={onOpenManager}
+              aria-label="Chat with Manager"
+              className="inline-flex h-11 shrink-0 items-center gap-2.5 self-center rounded-[12px] bg-brand-accent px-4.5 text-[12px] font-bold text-white shadow-[0_8px_24px_rgba(154,59,220,0.22)] transition-[opacity,transform] hover:-translate-y-px hover:opacity-92 focus:outline-none focus:ring-2 focus:ring-brand-accent/35"
+            >
+              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+              Chat with Manager
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

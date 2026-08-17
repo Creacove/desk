@@ -15,8 +15,8 @@ describe("song room minimal hierarchy", () => {
     expect(music).toContain('Chat with Manager');
     expect(music).toContain('data-testid="song-room-overview-read"');
     expect(music).toContain('What matters now');
-    expect(music).toContain('Review this record');
-    expect(music).toContain('See what needs attention.');
+    expect(music).toContain('Review record');
+    expect(music).toContain('Manager review');
     const songOverview = music.slice(music.indexOf('data-testid="song-room-overview-read"'), music.indexOf('function MusicManagerReadContent'));
     expect(songOverview).not.toContain('manager-read-metrics');
   });
