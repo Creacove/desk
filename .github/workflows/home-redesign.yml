@@ -27,6 +27,19 @@ jobs:
           cache: npm
       - name: Apply Home redesign
         run: python3 scripts/home_redesign.py
+      - name: Align shell tests with Home navigation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("src/production-app-shell.test.tsx")
+          text = path.read_text()
+          old = 'name: "Desk HQ"'
+          occurrences = text.count(old)
+          if occurrences < 1:
+              raise SystemExit("Expected Desk HQ navigation assertions in production shell tests")
+          path.write_text(text.replace(old, 'name: "Home"'))
+          print(f"Updated {occurrences} production shell navigation assertions to Home")
+          PY
       - run: npm ci
       - name: Home editorial contract
         run: npm test -- src/desk-hq-editorial.test.tsx
@@ -57,7 +70,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/features/desk/DeskHQ.tsx src/design-system/components.tsx
+          git add src/features/desk/DeskHQ.tsx src/design-system/components.tsx src/production-app-shell.test.tsx
           if git diff --cached --quiet; then
             echo "No generated source changes to commit"
             exit 0
