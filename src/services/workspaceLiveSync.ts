@@ -82,9 +82,12 @@ export function mergeWorkspaceInvalidations(
 
 export function createWorkspaceLiveSync(options: WorkspaceLiveSyncOptions) {
   const storage = options.storage ?? window.localStorage;
-  const cursorKey = `ordersounds.activityCursor.v1:${options.userId}:${options.workspaceId}`;
+  // Synchronization progress is infrastructure state. Keep it separate from the
+  // Activity Center's user-facing seen/unread cursor so catch-up never marks
+  // unseen notifications as read.
+  const syncCursorKey = `ordersounds.workspaceSyncCursor.v1:${options.userId}:${options.workspaceId}`;
   const coalesceMs = options.coalesceMs ?? 250;
-  let cursor = readCursor(storage, cursorKey);
+  let cursor = readCursor(storage, syncCursorKey);
   let channel: any;
   let active = false;
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -111,6 +114,7 @@ export function createWorkspaceLiveSync(options: WorkspaceLiveSyncOptions) {
     if (!pendingInvalidations.length) return;
     const next = pendingInvalidations;
     pendingInvalidations = [];
+    if (cursor) storage.setItem(syncCursorKey, JSON.stringify(cursor));
     options.onInvalidations(next);
   }
 
@@ -137,7 +141,6 @@ export function createWorkspaceLiveSync(options: WorkspaceLiveSyncOptions) {
     }
     flush();
     if (shouldReconcile) {
-      if (cursor) storage.setItem(cursorKey, JSON.stringify(cursor));
       await options.onReconcile?.();
     }
   }

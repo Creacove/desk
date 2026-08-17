@@ -171,10 +171,11 @@ describe("workspace live sync", () => {
     expect(limit).toHaveBeenCalledWith(50);
     expect(onReconcile).toHaveBeenCalledTimes(1);
     expect(onInvalidations).toHaveBeenCalled();
-    expect(JSON.parse(storage.getItem("ordersounds.activityCursor.v1:user-a:workspace-a")!)).toEqual({
+    expect(JSON.parse(storage.getItem("ordersounds.workspaceSyncCursor.v1:user-a:workspace-a")!)).toEqual({
       createdAt: pages[2][49].createdAt,
       id: pages[2][49].id,
     });
+    expect(storage.getItem("ordersounds.activityCursor.v1:user-a:workspace-a")).toBeNull();
   });
 });
 
