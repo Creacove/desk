@@ -54,7 +54,7 @@ r(p, '''    expect(within(futureStage).getAllByText("Starts after Positioning th
     fireEvent.click(futureTask);
     const dialog = screen.getByRole("dialog", { name: "Run listener interviews" });
     expect(within(dialog).getByText("Available after Positioning thesis")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Add result" })).toBeDisabled();''')
+    expect(within(dialog).getByRole("button", { name: "Complete" })).toBeDisabled();''')
 r(p, '''    const currentStage = screen.getByTestId("task-group-checkpoint-1");
     expect(within(currentStage).getByText("Manager reviewing")).toBeInTheDocument();
     const futureStage = screen.getByTestId("task-group-checkpoint-2");
@@ -66,7 +66,7 @@ r(p, '''    const currentStage = screen.getByTestId("task-group-checkpoint-1");
     expect(futureTask).toBeEnabled();
     expect(within(futureStage).getByText("Available after Positioning thesis")).toBeInTheDocument();
     fireEvent.click(futureTask);
-    expect(within(screen.getByRole("dialog", { name: "Run listener interviews" })).getByRole("button", { name: "Add result" })).toBeDisabled();''')
+    expect(within(screen.getByRole("dialog", { name: "Run listener interviews" })).getByRole("button", { name: "Complete" })).toBeDisabled();''')
 r(p, '    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();\n', '    expect(screen.getByRole("button", { name: "Updates" })).toHaveAttribute("aria-pressed", "true");\n')
 r(p, '    expect(screen.getByText("Nothing needs you right now.")).toBeInTheDocument();', '    expect(screen.getByText("No work yet")).toBeInTheDocument();')
 
@@ -79,5 +79,16 @@ r(p, '    expect(screen.getByText("Nothing is in motion yet.")).toBeInTheDocumen
 r(p, '    expect(await screen.findByText("The path from here")).toBeInTheDocument();\n', '    expect(await screen.findByRole("button", { name: /^Work/ })).toBeInTheDocument();\n')
 r(p, '    expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();', '    expect(screen.getByRole("button", { name: "To do" })).toHaveAttribute("aria-pressed", "true");')
 r(p, '    expect(missionCard).toHaveTextContent(/Release lane clarity\\s*·\\s*0 of 2 done/);', '    expect(missionCard).toHaveTextContent(/0 of 2 done/);')
+r(p, '    expect(screen.getByText("Private exports and Shazam heatmap snapshots are missing.")).toBeInTheDocument();\n', '')
+r(p, '''    expect(tabRail).not.toHaveClass("overflow-x-auto");
+    expect(screen.getByText("The path from here")).toBeInTheDocument();''', '''    expect(tabRail).toHaveClass("workspace-tab-rail");
+    expect(screen.queryByText("The path from here")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-tabbar")).not.toBeInTheDocument();''')
+r(p, '''    expect(within(secondStage).getByRole("button", { name: /Follow-up review.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "false");''', '''    expect(within(secondStage).getByRole("button", { name: /Follow-up review.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Missions" }));
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-tabbar")).toBeInTheDocument();''')
 
 print("Missions zero-learning contracts migrated")
