@@ -849,7 +849,7 @@ function CleanProductionWorkspace({
 
   const activeSection = sectionForView(view);
   const mobileTitle =
-    activeSection === "labelHQ" ? "Desk HQ" :
+    activeSection === "labelHQ" ? "Home" :
     activeSection === "music" ? "Catalog" :
     activeSection === "manager" ? "Manager" :
     activeSection === "missions" ? "Missions" :

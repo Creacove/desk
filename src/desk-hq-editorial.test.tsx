@@ -34,9 +34,9 @@ describe("Home editorial presentation", () => {
   it("uses Home as the visible first-page language", () => {
     renderHome();
 
-    expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(2);
+    expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);
     expect(screen.queryByText("Desk HQ")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Artist workspace")).toHaveLength(2);
+    expect(screen.getAllByText("Artist workspace")).toHaveLength(1);
   });
 
   it("presents desktop signals as one flat evidence rail rather than metric cards", () => {
@@ -72,14 +72,14 @@ describe("Home editorial presentation", () => {
     });
   });
 
-  it("keeps evidence accessible on desktop and mobile", () => {
+  it("keeps the Home brief focused without evidence CTAs", () => {
     renderHome();
 
     const desktopBrief = screen.getByTestId("desk-editorial-brief");
-    expect(within(desktopBrief).getByRole("button", { name: "View evidence" })).toBeInTheDocument();
+    expect(within(desktopBrief).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
 
     const mobileBrief = screen.getByTestId("desk-mobile-command-surface");
-    expect(within(mobileBrief).getByRole("button", { name: "View evidence" })).toBeInTheDocument();
+    expect(within(mobileBrief).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
   });
 
   it("gives attention and missions dedicated places without card soup", () => {

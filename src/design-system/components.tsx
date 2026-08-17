@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle, Settings } from "lucide-react";
+import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle, Settings, UserRound } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import type { CleanProductionView } from "../types/cleanProduction";
@@ -446,16 +446,15 @@ export function MobileChrome({
       {showTopbar ? (
         <header
           data-testid="mobile-app-topbar"
-          className="sticky top-0 z-40 -mx-3 mb-3 flex items-center justify-between border-b border-foreground/8 bg-background/94 px-3 py-3 backdrop-blur-xl lg:hidden"
+          className="sticky top-0 z-40 -mx-3 mb-3 flex min-h-[64px] items-center justify-between border-b border-foreground/8 bg-background/94 px-3 py-2.5 backdrop-blur-xl lg:hidden"
         >
-          <div className="flex min-w-0 items-center gap-2.5">
-            <BrandMark size="sm" className="h-8 w-8 rounded-[9px]" />
-            <div className="min-w-0">
-              <p className="truncate text-[14px] font-semibold tracking-[-0.015em] text-foreground">{title}</p>
-              <p className="mt-0.5 truncate text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/62">Ordersounds</p>
-            </div>
+          <div className="min-w-0">
+            <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/62">
+              {active === "settings" ? "Account" : "Artist workspace"}
+            </p>
+            <p className="font-display mt-1 truncate text-[19px] font-semibold leading-none tracking-[-0.025em] text-foreground">{title}</p>
           </div>
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1.5">
             {onOpenNotifications ? (
               <button
                 type="button"
@@ -474,14 +473,15 @@ export function MobileChrome({
             ) : null}
             <button
               type="button"
-              aria-label="Open settings"
+              data-testid="mobile-account-trigger"
+              aria-label="Open artist settings"
               onClick={() => onNavigate("artistProfileWorkspace")}
               className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground",
-                active === "settings" && "bg-foreground/[0.06] text-foreground",
+                "flex h-9 w-9 items-center justify-center rounded-full border border-foreground/8 bg-foreground/[0.02] text-muted-foreground transition-colors hover:border-foreground/14 hover:bg-foreground/[0.05] hover:text-foreground",
+                active === "settings" && "border-brand-accent/25 bg-brand-accent/[0.06] text-brand-accent",
               )}
             >
-              <Settings className={cn("h-4 w-4", active === "settings" && "text-brand-accent")} aria-hidden="true" />
+              <UserRound className="h-[16px] w-[16px]" aria-hidden="true" />
             </button>
           </div>
         </header>
@@ -495,7 +495,7 @@ export function MobileChrome({
         >
           {navItems.map((item) => {
             const Icon = item.icon;
-            const label = item.active === "labelHQ" ? "HQ" : item.label;
+            const label = item.label;
             const selected = active === item.active;
             return (
               <button
