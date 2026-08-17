@@ -14,7 +14,7 @@ components = "src/design-system/components.tsx"
 replace_exact(
     components,
     'import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle, Settings } from "lucide-react";',
-    'import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle, UserRound } from "lucide-react";',
+    'import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle, Settings, UserRound } from "lucide-react";',
 )
 replace_exact(
     components,
