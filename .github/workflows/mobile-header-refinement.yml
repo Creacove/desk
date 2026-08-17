@@ -1,6 +1,11 @@
 name: Mobile header refinement
 
 on:
+  push:
+    branches:
+      - design/mobile-header-refinement
+    paths:
+      - .github/workflows/mobile-header-refinement.yml
   pull_request:
     branches:
       - main
@@ -36,7 +41,6 @@ jobs:
                   raise SystemExit(f"{path}: expected {expected} occurrence(s), found {count}: {old[:120]!r}")
               file.write_text(text.replace(old, new))
 
-          # Global mobile chrome: one clear page header, notification action, account/settings entry.
           components = "src/design-system/components.tsx"
           replace_exact(
               components,
@@ -93,18 +97,16 @@ jobs:
           )
           replace_exact(components, 'const label = item.active === "labelHQ" ? "HQ" : item.label;', 'const label = item.label;')
 
-          # Global mobile title: Home, not the old Desk HQ name.
           replace_exact(
               "src/app/ProductionApp.tsx",
               'activeSection === "labelHQ" ? "Desk HQ" :',
               'activeSection === "labelHQ" ? "Home" :',
           )
 
-          # Home: remove the second mobile header/bell and remove evidence CTAs.
           home = "src/features/desk/DeskHQ.tsx"
           replace_exact(
               home,
-              '''        <MobileDeskHome
+              '''      <MobileDeskHome
         profile={profile}
         brief={brief}
         error={todayBriefError}
@@ -231,7 +233,6 @@ jobs:
 ''',
           )
 
-          # Editorial tests now enforce one mobile header and no Home evidence CTA.
           editorial = "src/desk-hq-editorial.test.tsx"
           replace_exact(editorial, 'expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(2);', 'expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);')
           replace_exact(editorial, 'expect(screen.getAllByText("Artist workspace")).toHaveLength(2);', 'expect(screen.getAllByText("Artist workspace")).toHaveLength(1);')
