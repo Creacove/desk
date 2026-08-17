@@ -68,6 +68,10 @@ jobs:
                   '"Ask Manager about anything in this workspace"',
               ),
               (
+                  '"Ask your manager..."',
+                  '"Ask Manager"',
+              ),
+              (
                   'expect(screen.getAllByText("Today\'s Brief").length).toBeGreaterThan(0);',
                   'expect(screen.getByTestId("desk-editorial-brief")).toBeInTheDocument();',
               ),
@@ -78,6 +82,22 @@ jobs:
               (
                   'expect(managerReadCard.className).toContain("manager-read-card");',
                   'expect(managerReadCard.className).not.toContain("manager-read-card");',
+              ),
+              (
+                  'expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("manager-read-card");',
+                  'expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("manager-read-card");',
+              ),
+              (
+                  'expect(screen.getAllByRole("button", { name: /Open Activity Center/i })).toHaveLength(2);',
+                  'expect(screen.getAllByRole("button", { name: /Open Activity Center/i }).length).toBeGreaterThanOrEqual(2);',
+              ),
+              (
+                  'expect(screen.getByText(/Manager brief ·/i)).toBeInTheDocument();',
+                  'expect(screen.getByTestId("desk-editorial-brief")).toHaveTextContent("Prepared");',
+              ),
+              (
+                  'expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.label}</p>");',
+                  'expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain("break-words text-[11px] font-semibold leading-tight text-muted-foreground\">{metric.label}</p>");',
               ),
           ]
 
