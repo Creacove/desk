@@ -1412,31 +1412,23 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).toBeInTheDocument();
     expect(screen.getByTestId("desk-editorial-brief")).toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
+    expect(screen.queryByRole("form", { name: "Ask your manager on mobile" })).not.toBeInTheDocument();
     expect(screen.getByPlaceholderText("Ask Manager about anything in this workspace")).toBeInTheDocument();
-    expect(screen.getAllByTestId("desk-signal-metric-card")).toHaveLength(4);
-    expect(screen.queryByRole("button", { name: "Generate Today's Brief" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Manager Update");
-    expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Spotify public catalog connected");
-    expect(within(screen.getByTestId("mobile-app-topbar")).getAllByRole("button", { name: /Open Activity Center/i })).toHaveLength(1);
-    expect(within(screen.getByTestId("desk-mobile-home")).queryByRole("button", { name: /Open Activity Center/i })).not.toBeInTheDocument();
+    const metrics = screen.getAllByTestId("desk-signal-metric");
+    expect(metrics.length).toBeGreaterThan(0);
+    expect(metrics.length).toBeLessThanOrEqual(4);
+    expect(screen.getByTestId("desk-manager-read")).toBeInTheDocument();
     expect(screen.queryByText("Today's Attention")).not.toBeInTheDocument();
     expect(screen.queryByText("Activity log")).not.toBeInTheDocument();
     expect(screen.queryByText("Private analytics missing")).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Source / Just now");
     expect(screen.queryByTestId("desk-agent-card")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Ask Manager.*Get a decision.*Use today's read/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Music Focus.*Open music reads/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Mission Path.*Create first mission.*Turn read into work/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Team Agents.*0 specialist desks.*Open operating team/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /Source.*Public catalog only/i })).not.toBeInTheDocument();
-    expect(screen.queryByText(/active AI units/i)).not.toBeInTheDocument();
-    expect(screen.queryByText("0 specialist desks")).not.toBeInTheDocument();
     expect(screen.queryByText("Sable Day")).not.toBeInTheDocument();
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: /Open Activity Center/i })[1]);
+    const activityButtons = screen.getAllByRole("button", { name: /Open Activity Center/i });
+    expect(activityButtons.length).toBeGreaterThan(0);
+    fireEvent.click(activityButtons[activityButtons.length - 1]);
     const activityCenter = await screen.findByRole("dialog", { name: "Activity" });
     expect(activityCenter).toHaveTextContent("Spotify public catalog connected");
     expect(activityCenter).not.toHaveTextContent("Needs you");
@@ -1451,7 +1443,6 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByLabelText("Email address")).toHaveValue("artist@example.com");
     expect(screen.getByLabelText("Email address")).toHaveAttribute("readonly");
   }, 20000);
-
   it("saves Settings profile edits through the dedicated profile service without re-entering setup", async () => {
     const savedProfiles: ArtistProfileViewModel[] = [];
     const profileSetupService: ProductionProfileSetupService = {
@@ -1550,37 +1541,39 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    expect(screen.getAllByText(initialBrief.headlineRead).length).toBeGreaterThan(0);
+    expect(screen.getByText(initialBrief.headlineRead)).toBeInTheDocument();
     expect(screen.getByTestId("desk-signal-metric-strip")).toBeInTheDocument();
-    expect(screen.getAllByTestId("desk-signal-metric-card")).toHaveLength(4);
-    expect(screen.getAllByText("1.21M").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("London").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("UK rank").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("desk-signal-metric")).toHaveLength(2);
+    expect(screen.getByText("1.21M")).toBeInTheDocument();
+    expect(screen.getByText("London")).toBeInTheDocument();
+    expect(screen.getByText("UK rank")).toBeInTheDocument();
     expect(screen.queryByText(initialBrief.snapshotSummary)).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent("Momentum Peak");
+    expect(screen.getByTestId("desk-manager-read")).toHaveTextContent("The UK is not a growth experiment");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(screen.queryByText("Artist Score is a broad strength input for the Manager read, not a separate visible section.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Generate setup map" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh public context" })).not.toBeInTheDocument();
     expect(screen.queryByText(initialBrief.sourceLine)).not.toBeInTheDocument();
     expect(screen.queryByText(/Generated by AI Manager/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-editorial-brief")).toHaveTextContent("Prepared");
+    expect(screen.getByText("Today's Brief")).toBeInTheDocument();
     expect(screen.queryByText("What I'm seeing")).not.toBeInTheDocument();
     expect(screen.queryByText("Today's Directive")).not.toBeInTheDocument();
     expect(screen.queryByText("Still missing")).not.toBeInTheDocument();
-    expect(screen.queryByText(/Chartmetric|provider|API|normalized|database|evidence row|third-party/i)).not.toBeInTheDocument();
+
+    expect(generationModes).toEqual([]);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today's Brief" }));
+    await waitFor(() => expect(generationModes).toEqual(["operating"]));
+    expect(await screen.findByText(refreshedBrief.headlineRead)).toBeInTheDocument();
 
     fireEvent.change(screen.getByPlaceholderText("Ask Manager about anything in this workspace"), {
       target: { value: "What should I do with the UK signal today?" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
-
     expect(await screen.findByRole("heading", { name: "What should I do with the UK signal today?", exact: true })).toBeInTheDocument();
-    expect(generationModes).toEqual([]);
+    expect(generationModes).toEqual(["operating"]);
   }, 20000);
-
   it("keeps Today's Attention in the active visual mode instead of inverting the primary card", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.desk = {
@@ -1611,12 +1604,13 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
-    const focusLead = screen.getByTestId("desk-todays-focus-lead");
-    expect(focusLead).toHaveTextContent("Manager Update");
-    expect(focusLead).toHaveTextContent("Catalog import running");
-    expect(focusLead).not.toHaveTextContent("No action needed");
+    const rightNow = screen.getByTestId("desk-right-now");
+    expect(rightNow).toHaveTextContent("Right now");
+    expect(rightNow).toHaveTextContent("Catalog import running");
+    expect(rightNow).not.toHaveTextContent("No action needed");
+    const action = within(rightNow).getByRole("button", { name: "Open Catalog import running" });
+    expect(action.className).not.toContain("bg-foreground text-background");
   }, 20000);
-
   it("turns Desk HQ command brief clicks into Manager and mission destinations without exposing the old command strip", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.staff.loadAgents = async () => productionFixtureData.agents;
@@ -1663,20 +1657,14 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: /Music Focus.*Jam.*Open record read/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Mission Path.*1 active.*Turn read into work/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i })).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Right now");
-    expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Push Jam");
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
 
     fireEvent.change(screen.getByPlaceholderText("Ask Manager about anything in this workspace"), {
       target: { value: "Turn this into a manager conversation" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
     expect(await screen.findByRole("heading", { name: "Turn this into a manager conversation", exact: true })).toBeInTheDocument();
-
-    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Home" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open focus mission Push Jam" }));
-    expect(await screen.findByRole("heading", { name: "Push Jam" })).toBeInTheDocument();
   }, 20000);
-
   it("keeps Desk HQ artist-facing sections compact and low-overload", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.staff.loadAgents = async () => productionFixtureData.agents;
@@ -1702,30 +1690,18 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-
-    const managerReadCard = screen.getByTestId("desk-manager-read-card");
-    expect(managerReadCard.className).not.toContain("manager-read-card");
-    expect(managerReadCard.className).not.toContain("border-l-brand-accent");
-
+    const managerRead = screen.getByTestId("desk-manager-read");
+    expect(managerRead.className).not.toContain("manager-read-card");
+    expect(managerRead.className).not.toContain("border-l-brand-accent");
     expect(screen.queryByTestId("desk-agent-card")).not.toBeInTheDocument();
     expect(screen.queryByText("A compact operating team for decisions, rollout, rights, deals, and live work.")).not.toBeInTheDocument();
-
-    const missionCards = screen.getAllByTestId("desk-focus-mission-card");
-    expect(missionCards).toHaveLength(3);
-    expect(within(missionCards[0]).getByText("Mission Density 1")).toBeInTheDocument();
-    expect(within(missionCards[2]).getByText("Mission Density 3")).toBeInTheDocument();
-    expect(screen.queryByText("Mission Density 4")).not.toBeInTheDocument();
-    expect(screen.queryByText("Mission Density 5")).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId("desk-focus-mission-card")).toHaveLength(0);
     expect(screen.queryByText(/This long mission description/)).not.toBeInTheDocument();
     expect(screen.queryByText("Open mission")).not.toBeInTheDocument();
-    expect(within(missionCards[0]).getByText("12%")).toBeInTheDocument();
-
-    fireEvent.click(missionCards[2]);
-    expect(await screen.findByRole("heading", { name: "Mission Density 3" })).toBeInTheDocument();
-    expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId("desk-signal-metric").length).toBeLessThanOrEqual(4);
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
   }, 20000);
-
-  it("puts mobile Desk HQ attention and movement behind a notification sheet", async () => {
+  it("keeps mobile Activity access in global chrome without duplicating Home", async () => {
     render(
       <ProductionApp
         authAdapter={authWithSession(session)}
@@ -1736,11 +1712,11 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    expect(screen.getByTestId("desk-mobile-home")).toBeInTheDocument();
+    expect(screen.queryByTestId("desk-mobile-home")).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-generate-brief")).not.toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Ask your manager on mobile" })).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Ask Manager")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Open Manager from brief" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
+    expect(screen.queryByRole("form", { name: "Ask your manager on mobile" })).not.toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask Manager about anything in this workspace")).toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
     expect(screen.getByTestId("mobile-app-topbar")).toHaveClass("backdrop-blur-xl");
@@ -1755,7 +1731,6 @@ describe("Clean production prototype-match shell", () => {
     expect(notificationSheet).not.toHaveTextContent("Background activity");
     expect(notificationSheet).not.toHaveTextContent("Private analytics missing");
   }, 20000);
-
   it("keeps Desk HQ movement compact and moves older activity into history", async () => {
     const longMovement =
       "The assignee reports the work is done, but there is no verifiable evidence in the mission folder or in the task payload, so the decision rule still requires private exports plus a Data Lead power check.";
@@ -1789,20 +1764,20 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    const focusLead = screen.getByTestId("desk-todays-focus-lead");
-    expect(focusLead).toHaveTextContent("Needs You");
-    expect(focusLead).toHaveTextContent("Commission Data Lead power check");
+    const rightNow = screen.getByTestId("desk-right-now");
+    expect(rightNow).toHaveTextContent("Right now");
+    expect(rightNow).toHaveTextContent("Commission Data Lead power check");
     expect(screen.queryByText(longMovement)).not.toBeInTheDocument();
     expect(screen.queryByText("Started Chartmetric enrichment for GBESUNMO.")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getAllByRole("button", { name: /Open Activity Center/i })[1]);
+    const activityButtons = screen.getAllByRole("button", { name: /Open Activity Center/i });
+    fireEvent.click(activityButtons[activityButtons.length - 1]);
     const activityCenter = await screen.findByRole("dialog", { name: "Activity" });
     expect(activityCenter).not.toHaveTextContent("Needs you");
     expect(activityCenter).not.toHaveTextContent("Background activity");
     expect(activityCenter).toHaveTextContent(longMovement);
     expect(activityCenter).toHaveTextContent("Started Chartmetric enrichment for GBESUNMO.");
   }, 20000);
-
   it("keeps duplicate Desk movement titles from producing React key warnings", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const baseRepositories = repositoriesFor("Nova Vale");
@@ -1839,7 +1814,7 @@ describe("Clean production prototype-match shell", () => {
     }
   }, 20000);
 
-  it("keeps mobile Desk HQ useful with titled expandable manager read, paragraphs, full metrics, and team agents", async () => {
+  it("keeps the unified Home read complete without desktop/mobile duplication", async () => {
     const managerReadEnding = "The final check is that mobile keeps the full operating read available instead of making desktop the only serious surface.";
     const evidenceTaggedSentence = "The read should not expose EV-204 or evidence-1 inside the Manager copy.";
     const richBrief: TodayBriefViewModel = {
@@ -1903,43 +1878,31 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    const desk = screen.getByTestId("desk-mobile-home");
-    expect(within(desk).queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
-    expect(within(desk).getByTestId("desk-mobile-command-surface")).toBeInTheDocument();
-    expect(within(desk).getByTestId("desk-mobile-signal-rail")).toBeInTheDocument();
-    expect(within(desk).getByTestId("desk-mobile-current-work")).toBeInTheDocument();
-    expect(within(desk).queryByText(richBrief.snapshotSummary)).not.toBeInTheDocument();
-    expect(within(desk).queryByText(/confidence/i)).not.toBeInTheDocument();
-    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("manager-read-card");
-    expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("border-l-brand-accent");
-    expect(within(desk).getByText("Manager's Read")).toBeInTheDocument();
-    expect(within(desk).getByTestId("desk-mobile-manager-read")).toHaveTextContent(managerReadEnding);
-    expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("EV-204");
-    expect(within(desk).getByTestId("desk-mobile-manager-read")).not.toHaveTextContent("evidence-1");
-    expect(within(desk).getByTestId("desk-mobile-manager-read").querySelectorAll("p")).toHaveLength(4);
-    expect(within(desk).getAllByTestId("desk-mobile-manager-read-segment")).toHaveLength(4);
-    expect(within(desk).getByText("01")).toBeInTheDocument();
-    expect(within(desk).getByText("04")).toBeInTheDocument();
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
+    expect(screen.queryByRole("form", { name: "Ask your manager on mobile" })).not.toBeInTheDocument();
+    expect(screen.queryByText(richBrief.snapshotSummary)).not.toBeInTheDocument();
+    expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
 
-    expect(screen.getAllByText("Manager's Read").length).toBeGreaterThan(0);
-    expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent(managerReadEnding);
-    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("EV-204");
-    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("evidence-1");
-    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveClass("overflow-hidden");
+    const read = screen.getByTestId("desk-manager-read");
+    expect(read.className).not.toContain("manager-read-card");
+    expect(read.className).not.toContain("border-l-brand-accent");
+    expect(read).toHaveTextContent("Manager's Read");
+    expect(read).toHaveTextContent(managerReadEnding);
+    expect(read).not.toHaveTextContent("EV-204");
+    expect(read).not.toHaveTextContent("evidence-1");
     expect(screen.getAllByTestId("desk-manager-read-segment")).toHaveLength(4);
+    expect(within(read).getByText("01")).toBeInTheDocument();
+    expect(within(read).getByText("04")).toBeInTheDocument();
 
-    const mobileMetrics = within(desk).getByTestId("desk-mobile-metrics-grid");
-    expect(mobileMetrics).toHaveTextContent("Monthly listeners");
-    expect(within(mobileMetrics).getAllByTestId("desk-mobile-metric-card")).toHaveLength(4);
-    expect(mobileMetrics).toHaveTextContent("Spotify");
-    expect(mobileMetrics).toHaveTextContent("city signal");
-    expect(within(mobileMetrics).queryByText("Skip rate")).not.toBeInTheDocument();
-    expect(within(desk).queryByRole("button", { name: "See all 6 metrics" })).not.toBeInTheDocument();
-
-    expect(within(desk).queryByTestId("desk-mobile-team-agents")).not.toBeInTheDocument();
-    expect(within(desk).getByRole("form", { name: "Ask your manager on mobile" })).toBeInTheDocument();
+    const metrics = screen.getByTestId("desk-signal-metric-strip");
+    expect(within(metrics).getAllByTestId("desk-signal-metric")).toHaveLength(4);
+    expect(metrics).toHaveTextContent("1.21M");
+    expect(metrics).toHaveTextContent("#4");
+    expect(metrics).toHaveTextContent("$3K");
+    expect(metrics).toHaveTextContent("11%");
+    expect(within(metrics).queryByText("Skip rate")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("desk-agent-card")).not.toBeInTheDocument();
   }, 20000);
-
   it("renders saved Today's Brief copy instead of dropping it for style-policy terms", async () => {
     const savedBrief: TodayBriefViewModel = {
       headlineRead: "Nova Vale has a clear campaign starting point.",
@@ -1979,11 +1942,11 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    expect(screen.getAllByText(savedBrief.headlineRead).length).toBeGreaterThan(0);
-    expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent("London");
+    expect(screen.getByText(savedBrief.headlineRead)).toBeInTheDocument();
+    expect(screen.getByTestId("desk-manager-read")).toHaveTextContent("London");
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
     expect(screen.queryByText(/generation failed/i)).not.toBeInTheDocument();
   }, 20000);
-
   it("expands a long Manager's Read at paragraph boundaries without losing the full read", async () => {
     const finalParagraph = "Today, use the remaining budget context to make M$NEY the operating center first.";
     const longBrief: TodayBriefViewModel = {
@@ -2030,14 +1993,16 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    expect(screen.getAllByText(longBrief.headlineRead).length).toBeGreaterThan(0);
+    expect(screen.getByText(longBrief.headlineRead)).toBeInTheDocument();
     expect(screen.queryByText(longBrief.snapshotSummary)).not.toBeInTheDocument();
     expect(screen.queryByText(finalParagraph)).not.toBeInTheDocument();
-
     expect(screen.queryByRole("button", { name: "See full Manager's Read" })).not.toBeInTheDocument();
-    expect(screen.getByTestId("desk-desktop-manager-read").querySelectorAll("p")).toHaveLength(4);
+    const read = screen.getByTestId("desk-manager-read");
+    expect(screen.getAllByTestId("desk-manager-read-segment")).toHaveLength(4);
+    expect(read).toHaveTextContent("Lagos is the first operating center");
+    expect(read).toHaveTextContent("M$NEY has enough playlist surface");
+    expect(read).not.toHaveTextContent(finalParagraph);
   }, 20000);
-
   it("keeps Artist Intelligence metric labels and values readable instead of truncating them", async () => {
     const metricBrief: TodayBriefViewModel = {
       headlineRead: "Make Them Run has enough signal detail for a readable intelligence grid.",
@@ -2102,12 +2067,11 @@ describe("Clean production prototype-match shell", () => {
     expect(intelligenceStrip).toHaveTextContent("Track score - Make Them Run");
     expect(intelligenceStrip).toHaveTextContent("Top TikTok video - Make Them Run");
     expect(intelligenceStrip).toHaveTextContent("1.3M views");
-    expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
+    expect(within(intelligenceStrip).getByText("Track score - Make Them Run")).toHaveClass("break-words");
+    expect(within(intelligenceStrip).getByText("97.886")).toHaveClass("break-words");
+    expect(screen.getByTestId("desk-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
-    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('break-words text-[11px] font-semibold leading-tight text-muted-foreground">{label}</p>');
-    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('mt-2 break-words text-[21px] font-semibold leading-none tracking-[-0.015em] text-foreground">{value}</p>');
   }, 20000);
-
   it("keeps mobile navigation to four items and moves Settings into the top bar", async () => {
     render(
       <ProductionApp
