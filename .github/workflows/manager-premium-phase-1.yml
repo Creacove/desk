@@ -1,15 +1,10 @@
-name: Manager premium phase 1
+name: Manager premium final clean-tree QA
 
 on:
   push:
     branches:
       - design/manager-premium-phase-1
     paths:
-      - scripts/manager_premium_phase_1.py
-      - scripts/manager_premium_phase_1_fix1.py
-      - scripts/manager_premium_phase_1_fix2.py
-      - scripts/manager_premium_phase_1_fix3.py
-      - scripts/manager_premium_phase_1_fix4.py
       - .github/workflows/manager-premium-phase-1.yml
 
 permissions:
@@ -20,7 +15,7 @@ env:
   VITE_SUPABASE_ANON_KEY: test-anon-key
 
 jobs:
-  apply-and-qa:
+  clean-tree-qa:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -34,18 +29,25 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Apply Manager premium phase
+      - name: Remove temporary Manager QA machinery from candidate tree
+        shell: bash
         run: |
-          python3 scripts/manager_premium_phase_1.py
-          python3 scripts/manager_premium_phase_1_fix1.py
-          python3 scripts/manager_premium_phase_1_fix2.py
-          python3 scripts/manager_premium_phase_1_fix3.py
-          python3 scripts/manager_premium_phase_1_fix4.py
+          set -euo pipefail
+          rm -f \
+            .github/workflows/manager-premium-phase-1.yml \
+            scripts/manager_premium_phase_1.py \
+            scripts/manager_premium_phase_1_fix1.py \
+            scripts/manager_premium_phase_1_fix2.py \
+            scripts/manager_premium_phase_1_fix3.py \
+            scripts/manager_premium_phase_1_fix4.py
+          test ! -e .github/workflows/manager-premium-phase-1.yml
+          test ! -e scripts/manager_premium_phase_1.py
+          git status --short
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Focused Manager UX regressions
+      - name: Focused Manager UX regressions on clean tree
         run: >-
           npx vitest run --environment jsdom --pool=vmThreads
           src/manager-premium-phase-1.test.tsx
@@ -56,18 +58,18 @@ jobs:
           src/features/manager/managerPresentation.test.ts
           src/production-app-shell.test.tsx
 
-      - name: Full repository suite
+      - name: Full repository suite on clean tree
         run: npm test
 
-      - name: Production build
+      - name: Production build on clean tree
         run: npm run build
 
-      - name: Browser TypeScript regression against main
+      - name: TypeScript regression against main on clean tree
         shell: bash
         run: |
           set -euo pipefail
           npx tsc --noEmit --pretty false > /tmp/tsc-head.txt 2>&1 || true
-          git stash push -u -m manager-phase-qa
+          git stash push -u -m manager-final-clean-tree
           git checkout --detach origin/main
           npx tsc --noEmit --pretty false > /tmp/tsc-base.txt 2>&1 || true
           python3 - <<'PY'
@@ -95,6 +97,8 @@ jobs:
           PY
           git checkout design/manager-premium-phase-1
           git stash pop
+          test ! -e .github/workflows/manager-premium-phase-1.yml
+          test ! -e scripts/manager_premium_phase_1.py
 
       - name: Build production fixture for Chromium
         env:
@@ -118,7 +122,7 @@ jobs:
           "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/desk-chrome about:blank > /tmp/desk-chrome.log 2>&1 &
           echo $! > /tmp/desk-chrome.pid
 
-      - name: Real Chromium production-shell smoke
+      - name: Real Chromium production-shell smoke on clean tree
         run: node scripts/chrome-production-smoke.mjs
 
       - name: Stop browser and preview
@@ -127,19 +131,40 @@ jobs:
           kill "$(cat /tmp/desk-chrome.pid 2>/dev/null)" 2>/dev/null || true
           kill "$(cat /tmp/desk-preview.pid 2>/dev/null)" 2>/dev/null || true
 
-      - name: Commit implementation after QA
+      - name: Commit only tested QA cleanup
+        shell: bash
         run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            src/features/manager/ManagerScreens.tsx \
-            src/features/manager/ManagerComposer.tsx \
-            src/features/manager/OpportunityArtifact.tsx \
-            src/app/ProductionApp.tsx \
-            src/record-servicing-opportunity-ui.test.tsx \
-            src/manager-premium-phase-1.test.tsx \
-            src/production-app-shell.test.tsx \
-            src/release-success-conversation.test.tsx \
-            src/manager-interruption-ui.test.tsx
-          git commit -m 'design: make Manager premium and obvious'
-          git push origin HEAD:design/manager-premium-phase-1
+          git add -A -- \
+            .github/workflows/manager-premium-phase-1.yml \
+            scripts/manager_premium_phase_1.py \
+            scripts/manager_premium_phase_1_fix1.py \
+            scripts/manager_premium_phase_1_fix2.py \
+            scripts/manager_premium_phase_1_fix3.py \
+            scripts/manager_premium_phase_1_fix4.py
+          python3 - <<'PY'
+          import subprocess, sys
+          allowed = {
+            '.github/workflows/manager-premium-phase-1.yml',
+            'scripts/manager_premium_phase_1.py',
+            'scripts/manager_premium_phase_1_fix1.py',
+            'scripts/manager_premium_phase_1_fix2.py',
+            'scripts/manager_premium_phase_1_fix3.py',
+            'scripts/manager_premium_phase_1_fix4.py',
+          }
+          staged = set(filter(None, subprocess.check_output(['git','diff','--cached','--name-only'], text=True).splitlines()))
+          unexpected = staged - allowed
+          if unexpected:
+              print('Unexpected staged paths:', sorted(unexpected))
+              sys.exit(1)
+          if not staged:
+              print('No QA scaffolding remained to remove.')
+              sys.exit(0)
+          print('Clean-tree QA passed; removing:', sorted(staged))
+          PY
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: remove Manager QA scaffolding'
+            git push origin HEAD:design/manager-premium-phase-1
+          fi
