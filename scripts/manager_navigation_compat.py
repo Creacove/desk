@@ -43,6 +43,22 @@ replace_once(
 )
 path.write_text(text)
 
+# The production shell suite still enters Manager through the removed Team Agents
+# navigation item. Keep the production UI clean and translate only that legacy test
+# helper to the new direct Manager destination while CI runs.
+shell_test_path = Path("src/production-app-shell.test.tsx")
+shell_test = shell_test_path.read_text()
+legacy_manager_helper = '''function openManagerFromDesk() {
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Team Agents" }));
+  fireEvent.click(screen.getByRole("button", { name: "AI Manager" }));
+}'''
+direct_manager_helper = '''function openManagerFromDesk() {
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Manager" }));
+}'''
+if legacy_manager_helper not in shell_test:
+    raise SystemExit("missing anchor: legacy production-shell Manager helper")
+shell_test_path.write_text(shell_test.replace(legacy_manager_helper, direct_manager_helper, 1))
+
 Path("src/manager-navigation-redesign.test.ts").write_text('''import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
