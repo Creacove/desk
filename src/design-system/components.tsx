@@ -237,7 +237,7 @@ export function WorkspaceShell({
     <div className="app-workspace app-workspace-reveal">
       {showBack && variant === "conversation" ? (
         <div className="sticky top-0 z-30 -mx-3 mb-2 border-b border-foreground/8 bg-background/92 px-3 py-2.5 backdrop-blur-xl lg:-mx-4 lg:px-4">
-          <div className="mx-auto flex max-w-[48rem] items-center gap-3">
+          <div className="flex w-full items-center gap-2">
             <button
               type="button"
               onClick={onBack}

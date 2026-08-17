@@ -2270,7 +2270,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
+    const askBox = await screen.findByPlaceholderText("Ask Manager anything about this artist...");
     fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -2358,7 +2358,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "what two songs should we focus on promoting as much as possible" } });
+    fireEvent.change(await screen.findByPlaceholderText("Ask Manager anything about this artist..."), { target: { value: "what two songs should we focus on promoting as much as possible" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
     expect(await screen.findByText("Focus on Night Bus and M$NEY.")).toBeInTheDocument();
@@ -2384,7 +2384,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Create the next mission." } });
+    fireEvent.change(await screen.findByPlaceholderText("Ask Manager anything about this artist..."), { target: { value: "Create the next mission." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
     await act(async () => {
@@ -2834,7 +2834,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Plan the next mission." } });
+    fireEvent.change(await screen.findByPlaceholderText("Ask Manager anything about this artist..."), { target: { value: "Plan the next mission." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
     await act(async () => {
@@ -2996,7 +2996,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    fireEvent.change(await screen.findByPlaceholderText("Ask the Manager for a directive or review..."), { target: { value: "Should we move the release?" } });
+    fireEvent.change(await screen.findByPlaceholderText("Ask Manager anything about this artist..."), { target: { value: "Should we move the release?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
     await act(async () => {
@@ -3056,7 +3056,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
+    const askBox = await screen.findByPlaceholderText("Ask Manager anything about this artist...");
     fireEvent.change(askBox, { target: { value: "We have $5,000. What should we do this month?" } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -3806,7 +3806,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     openManagerFromDesk();
-    const askBox = await screen.findByPlaceholderText("Ask the Manager for a directive or review...");
+    const askBox = await screen.findByPlaceholderText("Ask Manager anything about this artist...");
     fireEvent.change(askBox, { target: { value: "Create the mission from this chat." } });
     fireEvent.click(screen.getByRole("button", { name: "Ask Manager" }));
 
@@ -3826,7 +3826,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(screen.getByRole("heading", { name: "Catalog" })).toBeInTheDocument();
     expect(screen.queryByText("CATALOG")).not.toBeInTheDocument();
-    expect(screen.getByText("Songs and projects connected to active work.")).toBeInTheDocument();
+    expect(screen.queryByText("Songs and projects connected to active work.")).not.toBeInTheDocument();
     expect(screen.queryByText("Artist objects")).not.toBeInTheDocument();
     expect(screen.queryByText("Recorded work under management")).not.toBeInTheDocument();
     expect(screen.queryByText("Songs stay atomic; projects collect songs without duplicating their state.")).not.toBeInTheDocument();
@@ -3840,7 +3840,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open song Night Bus" }));
     let songRoom = screen.getByTestId("music-song-detail");
-    expect(songRoom).toHaveTextContent("Song room");
+    expect(songRoom).not.toHaveTextContent("Song room");
     expect(songRoom).toHaveTextContent("Night Bus has the strongest aligned response");
     expect(songRoom).toHaveTextContent("Release Night Bus on June 12");
     expect(within(songRoom).getByRole("button", { name: "Details" })).toBeInTheDocument();
@@ -3864,7 +3864,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open project Glass Room EP" }));
     const projectRoom = screen.getByTestId("music-project-detail");
     expect(projectRoom).toHaveTextContent("Tracklist");
-    expect(projectRoom).toHaveTextContent("Songs stay atomic");
+    expect(projectRoom).not.toHaveTextContent("Songs stay atomic");
     expect(projectRoom).not.toHaveTextContent("Inherited blocker");
     expect(projectRoom).not.toHaveTextContent("1 needs split proof");
     expect(within(projectRoom).queryByText("Needs split proof")).not.toBeInTheDocument();
@@ -4144,7 +4144,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
     expect(repositories.manager.sendMessage).not.toHaveBeenCalled();
-    expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask Manager anything about this artist...")).toBeInTheDocument();
   }, 20000);
 
   it.skip("runs the first Manager plan from the empty Missions page and keeps Manager chat available for context questions", async () => {
@@ -4267,7 +4267,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
     expect(screen.getByText("Mission candidate needs context")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("Ask the Manager for a directive or review...")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Ask Manager anything about this artist...")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Mission Genesis needs context/i }));
@@ -4777,7 +4777,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open project Unlinked Project" }));
     const projectRoom = screen.getByTestId("music-project-detail");
 
-    expect(projectRoom).toHaveTextContent("No mission linked");
+    expect(projectRoom).not.toHaveTextContent("No mission linked");
     expect(projectRoom).not.toHaveTextContent("missions remain objective-first");
     expect(projectRoom).not.toHaveTextContent("Inherited blocker");
   }, 20000);
@@ -4917,9 +4917,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open project Signal Project" }));
     const projectLinkedWork = within(screen.getByTestId("music-project-detail")).getByTestId("music-linked-work");
     expect(projectLinkedWork).toHaveTextContent("Push Signal Song");
-    expect(projectLinkedWork).toHaveTextContent("1 task attached");
+    expect(projectLinkedWork).toHaveTextContent("1 task");
     expect(projectLinkedWork).toHaveTextContent("Package Signal Project");
-    expect(projectLinkedWork).toHaveTextContent("2 tasks attached");
+    expect(projectLinkedWork).toHaveTextContent("2 tasks");
     expect(projectLinkedWork).not.toHaveTextContent("3 tasks");
 
     fireEvent.click(within(projectLinkedWork).getByRole("button", { name: /Package Signal Project/i }));

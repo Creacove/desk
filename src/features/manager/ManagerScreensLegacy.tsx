@@ -263,7 +263,7 @@ export function ManagerOfficeScreen({
   return (
     <WorkspaceShell eyebrow="Manager" title="Manager's Office" onBack={onBack} variant="conversation" backLabel="Back to Desk HQ">
       <div data-testid="manager-office-content" className="w-full px-4 pb-16 pt-6 sm:px-6 sm:pt-8 lg:px-6 xl:px-8">
-        <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] 2xl:grid-cols-[minmax(0,1fr)_24rem] 2xl:gap-10">
+        <div className={conversations.length > 0 ? "grid gap-8 xl:grid-cols-[minmax(0,1fr)_22rem] 2xl:grid-cols-[minmax(0,1fr)_24rem] 2xl:gap-10" : "grid gap-8"}>
           <main className="min-w-0">
             <MissionGenesisManagerPanel
               result={missionGenesisResult}
@@ -276,18 +276,11 @@ export function ManagerOfficeScreen({
             />
             <section className="max-w-[64rem]">
               <div>
-                <div className="flex items-end justify-between gap-4">
-                  <div>
-                    <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/62">Workspace</p>
-                    <h2 className="mt-1 font-display text-[20px] font-semibold tracking-[-0.025em] text-foreground">What do you want to work on?</h2>
-                  </div>
-                  <p className="hidden max-w-[24rem] text-right text-[12px] leading-relaxed text-muted-foreground/68 md:block">Ask for a decision, review, plan, document, or next move. Manager keeps the work tied to this artist workspace.</p>
-                </div>
-                <div className="relative mt-4 overflow-hidden rounded-[1.35rem] border border-foreground/12 bg-background shadow-[0_12px_36px_rgba(0,0,0,0.055)] transition-shadow focus-within:border-foreground/18 focus-within:shadow-[0_16px_44px_rgba(0,0,0,0.075)]">
+                <div className="relative overflow-hidden rounded-[1.5rem] border border-foreground/10 bg-foreground/[0.018] shadow-[0_18px_55px_rgba(0,0,0,0.05)] transition-all focus-within:border-brand-accent/24 focus-within:bg-background focus-within:shadow-[0_22px_65px_rgba(0,0,0,0.075)]">
                   <textarea
                     value={askText}
                     onChange={(event) => setAskText(event.target.value)}
-                    placeholder="Ask the Manager for a directive or review..."
+                    placeholder="Ask Manager anything about this artist..."
                     aria-label="Ask the Manager"
                     className="min-h-[164px] w-full resize-none bg-transparent p-5 pr-16 font-ui text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50 sm:min-h-[178px] sm:p-6 sm:pr-20"
                   />
@@ -314,12 +307,9 @@ export function ManagerOfficeScreen({
 
           {conversations.length > 0 ? (
             <aside className="min-w-0 border-t border-foreground/8 pt-6 xl:sticky xl:top-6 xl:self-start xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-              <div className="flex items-end justify-between gap-3 px-1">
-                <div>
-                  <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/58">History</p>
-                  <h2 className="mt-1 text-[14px] font-semibold text-foreground">Conversations</h2>
-                </div>
-                <span className="text-[11px] tabular-nums text-muted-foreground/55">{conversations.length}</span>
+              <div className="flex items-center justify-between gap-3 px-1">
+                <h2 className="font-display text-[16px] font-semibold tracking-[-0.02em] text-foreground">Conversations</h2>
+                <span className="text-[11px] tabular-nums text-muted-foreground/45">{conversations.length}</span>
               </div>
               <div className="mt-3 flex flex-col">
                 {conversations.map((conversation) => (
@@ -395,9 +385,9 @@ function MissionGenesisManagerPanel({
         </>
       ) : null}
       {error ? (
-        <div role="alert" className="mt-4 rounded-[12px] border border-red-500/20 bg-red-500/[0.055] p-4">
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.08em] text-red-700">Mission Genesis failed</p>
-          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-red-950/80">{error}</p>
+        <div role="alert" className="mt-4 flex flex-col gap-3 border-l-2 border-danger pl-4 sm:flex-row sm:items-center sm:justify-between">
+          <p className="max-w-2xl text-[12px] font-semibold leading-relaxed text-danger">{error}</p>
+          <button type="button" onClick={() => onSubmit(selectedCandidateMissionId)} disabled={pending} className="inline-flex h-9 shrink-0 items-center justify-center rounded-[10px] border border-foreground/10 px-3 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.04] disabled:opacity-40">Try again</button>
         </div>
       ) : null}
       {candidateMissionIds.length > 1 ? (
@@ -745,13 +735,8 @@ export function ConversationWorkspace({
                 <Music2 className="h-4 w-4" aria-hidden="true" />
               </span>
               <div className="min-w-0">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/75">
-                  About this project
-                </p>
-                <p className="mt-1 truncate text-[13px] font-semibold text-foreground">{conversation.musicSubject.title}</p>
-                {conversation.musicSubject.lifecycleStage ? (
-                  <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">{conversation.musicSubject.lifecycleStage}</p>
-                ) : null}
+                <p className="truncate text-[13px] font-semibold text-foreground">{conversation.musicSubject.title}</p>
+                {conversation.musicSubject.lifecycleStage ? <p className="mt-0.5 text-[10px] font-medium text-muted-foreground/58">{conversation.musicSubject.lifecycleStage}</p> : null}
               </div>
             </div>
             {onOpenMusicSubject ? (

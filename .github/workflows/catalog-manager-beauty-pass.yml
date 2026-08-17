@@ -1,0 +1,59 @@
+name: Catalog and Manager beauty pass
+
+on:
+  push:
+    branches:
+      - design/catalog-manager-beauty-pass
+    paths:
+      - scripts/catalog_manager_beauty_pass.py
+      - scripts/catalog_manager_beauty_pass_compat.py
+      - .github/workflows/catalog-manager-beauty-pass.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: design/catalog-manager-beauty-pass
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply beauty pass
+        run: |
+          python3 scripts/catalog_manager_beauty_pass.py
+          python3 scripts/catalog_manager_beauty_pass_compat.py
+      - run: npm ci
+      - name: Beauty-system contract
+        run: npx vitest run src/catalog-manager-beauty-pass.test.ts --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production shell regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit beauty pass
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/design-system/components.tsx src/features/music/MusicScreens.tsx src/features/manager/ManagerScreensLegacy.tsx src/production-app-shell.test.tsx src/catalog-manager-beauty-pass.test.ts
+          git commit -m 'design: refine Catalog and Manager visual system'
+          git push origin HEAD:design/catalog-manager-beauty-pass
