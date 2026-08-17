@@ -27,6 +27,25 @@ describe("mission task execution", () => {
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
   });
 
+  it("never fabricates evidence when upload persistence is unavailable", async () => {
+    const onCompleteTask = vi.fn(async () => undefined);
+    renderMission(missionWithThesis(), { onCompleteTask, openTaskId: "task-thesis" });
+
+    const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upload" }));
+    fireEvent.change(within(dialog).getByLabelText("Upload optional context for Provide 90-day thesis"), {
+      target: { files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })] },
+    });
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("Evidence upload is unavailable. The file was not saved.");
+    expect(within(dialog).getByText("thesis.pdf")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Upload" })).toBeEnabled();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+    await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
+  });
+
   it("passes an optional uploaded document into completion when supplied", async () => {
     const onCompleteTask = vi.fn(async () => undefined);
     const onUploadTaskDeliverable = vi.fn(async () => ({
@@ -40,7 +59,9 @@ describe("mission task execution", () => {
 
     renderMission(missionWithThesis(), { onCompleteTask, onUploadTaskDeliverable, openTaskId: "task-thesis" });
 
-    fireEvent.change(screen.getByLabelText("Upload optional context for Provide 90-day thesis"), {
+    const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upload" }));
+    fireEvent.change(within(dialog).getByLabelText("Upload optional context for Provide 90-day thesis"), {
       target: { files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })] },
     });
 
@@ -50,7 +71,6 @@ describe("mission task execution", () => {
     })));
     expect(await screen.findByText("thesis.pdf")).toBeInTheDocument();
 
-    const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
 
@@ -81,7 +101,8 @@ describe("mission task execution", () => {
 
     renderMission(mission, { onWorkWithManager, openTaskId: "task-thesis" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Work with Manager" }));
+    const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Work with Manager" }));
     expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
     expect(screen.queryByText("Required file")).not.toBeInTheDocument();
   });
@@ -109,7 +130,7 @@ describe("mission task execution", () => {
     expect(within(dialog).getByRole("button", { name: "Submit for review" })).toBeEnabled();
   });
 
-  it("closes Manager review submission immediately and shows pending state on the task", async () => {
+  it("keeps Manager review pending until persisted checkpoint state clears it", async () => {
     let resolveReview: (() => void) | undefined;
     const onCompleteTask = vi.fn(() => new Promise<void>((resolve) => { resolveReview = resolve; }));
     const mission = missionWithManagerDraft();
@@ -125,7 +146,8 @@ describe("mission task execution", () => {
     expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
 
     resolveReview?.();
-    await waitFor(() => expect(screen.queryByText("Manager reviewing")).not.toBeInTheDocument());
+    await waitFor(() => expect(onCompleteTask).toHaveResolved());
+    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
   });
 
   it("keeps a failed review attached to the exact task and retryable", async () => {

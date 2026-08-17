@@ -118,15 +118,10 @@ export function WorkSurface({
     }));
 
     try {
-      const uploaded = onUploadTaskDeliverable
-        ? await onUploadTaskDeliverable(task.id, { title: deliverable.title, file })
-        : {
-            ...deliverable,
-            status: "uploaded" as const,
-            documentId: `local-${task.id}-${Date.now()}`,
-            fileName: file.name,
-            validationSummary: "Ready for Manager review.",
-          };
+      if (!onUploadTaskDeliverable) {
+        throw new Error("Evidence upload is unavailable. The file was not saved.");
+      }
+      const uploaded = await onUploadTaskDeliverable(task.id, { title: deliverable.title, file });
       setDeliverablesByTask((current) => ({
         ...current,
         [task.id]: replaceDeliverable(resolveTaskDeliverables(task, current[task.id]), { ...uploaded, id: deliverable.id }),
