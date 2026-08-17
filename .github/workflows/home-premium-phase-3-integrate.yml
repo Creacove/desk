@@ -38,49 +38,29 @@ jobs:
           path = Path("src/app/ProductionApp.tsx")
           text = path.read_text()
 
-          state_old = '''  const [todayBriefPending, setTodayBriefPending] = useState(false);
-          const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
-          const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
-          const [publicContextPending, setPublicContextPending] = useState(false);'''
-          state_new = '''  const [todayBriefPending, setTodayBriefPending] = useState(false);
-          const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
-          const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
-          const todayBriefRefreshInFlight = useRef(false);
-          const [publicContextPending, setPublicContextPending] = useState(false);'''
-
-          function_old = '''  async function refreshPublicContext() {
-          '''
-          function_new = '''  async function refreshTodaysBrief() {
-            if (todayBriefRefreshInFlight.current || todayBriefPending || activeTodayBriefRun) return;
-            todayBriefRefreshInFlight.current = true;
-            try {
-              await generateTodaysBrief("operating");
-            } catch {
-              // generateTodaysBrief owns the local error state; keep the existing brief visible.
-            } finally {
-              todayBriefRefreshInFlight.current = false;
-            }
-          }
-
-          async function refreshPublicContext() {
-          '''
-
-          props_old = '''              activityCount={notificationCount}
-                        onOpenActivityCenter={openActivityCenter}
-                      />'''
-          props_new = '''              activityCount={notificationCount}
-                        onOpenActivityCenter={openActivityCenter}
-                        briefPending={todayBriefPending}
-                        onRefreshBrief={() => void refreshTodaysBrief()}
-                      />'''
-
-          replacements = [
-              (state_old, state_new, "brief refresh request guard"),
-              (function_old, function_new, "brief refresh wrapper"),
-              (props_old, props_new, "Home refresh props"),
+          insertions = [
+              (
+                  '  const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);\n',
+                  '  const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);\n  const todayBriefRefreshInFlight = useRef(false);\n',
+                  'const todayBriefRefreshInFlight = useRef(false);',
+                  'brief refresh request guard',
+              ),
+              (
+                  '  async function refreshPublicContext() {\n',
+                  '  async function refreshTodaysBrief() {\n    if (todayBriefRefreshInFlight.current || todayBriefPending || activeTodayBriefRun) return;\n    todayBriefRefreshInFlight.current = true;\n    try {\n      await generateTodaysBrief("operating");\n    } catch {\n      // generateTodaysBrief owns the local error state; keep the existing brief visible.\n    } finally {\n      todayBriefRefreshInFlight.current = false;\n    }\n  }\n\n  async function refreshPublicContext() {\n',
+                  'async function refreshTodaysBrief()',
+                  'brief refresh wrapper',
+              ),
+              (
+                  '              onOpenActivityCenter={openActivityCenter}\n',
+                  '              onOpenActivityCenter={openActivityCenter}\n              briefPending={todayBriefPending}\n              onRefreshBrief={() => void refreshTodaysBrief()}\n',
+                  'onRefreshBrief={() => void refreshTodaysBrief()}',
+                  'Home refresh props',
+              ),
           ]
-          for old, new, label in replacements:
-              if new in text:
+
+          for old, new, marker, label in insertions:
+              if marker in text:
                   continue
               count = text.count(old)
               if count != 1:
