@@ -43,21 +43,73 @@ replace_once(
 )
 path.write_text(text)
 
-# The production shell suite still enters Manager through the removed Team Agents
-# navigation item. Keep the production UI clean and translate only that legacy test
-# helper to the new direct Manager destination while CI runs.
+# Migrate shell tests to the new user-facing contract. Legacy staff routes remain in
+# ProductionApp for compatibility, but Team Agents is intentionally no longer a
+# navigation destination.
 shell_test_path = Path("src/production-app-shell.test.tsx")
 shell_test = shell_test_path.read_text()
-legacy_manager_helper = '''function openManagerFromDesk() {
+
+
+def replace_shell_once(old: str, new: str, label: str) -> None:
+    global shell_test
+    if old not in shell_test:
+        raise SystemExit(f"missing shell-test anchor: {label}")
+    shell_test = shell_test.replace(old, new, 1)
+
+
+replace_shell_once(
+    '''function openManagerFromDesk() {
   fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Team Agents" }));
   fireEvent.click(screen.getByRole("button", { name: "AI Manager" }));
-}'''
-direct_manager_helper = '''function openManagerFromDesk() {
+}''',
+    '''function openManagerFromDesk() {
   fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Manager" }));
-}'''
-if legacy_manager_helper not in shell_test:
-    raise SystemExit("missing anchor: legacy production-shell Manager helper")
-shell_test_path.write_text(shell_test.replace(legacy_manager_helper, direct_manager_helper, 1))
+}''',
+    "direct Manager helper",
+)
+replace_shell_once(
+    '''    openManagerFromDesk();
+    expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();''',
+    '''    openManagerFromDesk();
+    expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();''',
+    "Manager Office mobile chrome",
+)
+replace_shell_once(
+    'it("gives Missions, Team, Manager, and Profile dedicated compact mobile surfaces", async () => {',
+    'it("gives Missions, Manager, and Profile dedicated compact mobile surfaces", async () => {',
+    "mobile surface test title",
+)
+replace_shell_once(
+    '''    fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
+    expect(screen.getByTestId("staff-mobile-list")).toHaveClass("md:hidden");
+    expect(screen.getByTestId("staff-desktop-list")).toHaveClass("hidden", "md:grid");
+
+    fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
+    openManagerFromDesk();''',
+    '''    fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
+    openManagerFromDesk();''',
+    "remove Team Agents mobile navigation assertion",
+)
+replace_shell_once(
+    'it("renders Staff, Missions, Settings, and contextual evidence without top-level evidence navigation", async () => {',
+    'it("renders Missions, Settings, and contextual evidence without top-level evidence navigation", async () => {',
+    "shell navigation test title",
+)
+replace_shell_once(
+    '''    fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
+    expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Marketing Lead" }));
+    expect(screen.getByRole("heading", { name: "Not available on this plan" })).toBeInTheDocument();
+    expect(screen.getByText("You don't have access to this agent on your current plan.")).toBeInTheDocument();
+    expect(screen.queryByText("Source rail")).not.toBeInTheDocument();
+
+''',
+    '',
+    "remove Team Agents desktop navigation assertion",
+)
+shell_test_path.write_text(shell_test)
 
 Path("src/manager-navigation-redesign.test.ts").write_text('''import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
