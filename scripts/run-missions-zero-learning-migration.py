@@ -24,4 +24,15 @@ if code.count(duplicate_old) != 1:
     raise SystemExit("pending review migration block was not exact")
 code = code.replace(duplicate_old, duplicate_new)
 
+old_count = "r(p, 'expect(await screen.findByText(\"The path from here\")).toBeInTheDocument();', 'expect(await screen.findByRole(\"button\", { name: /^Work/ })).toBeInTheDocument();', 2)"
+new_count = "r(p, 'expect(await screen.findByText(\"The path from here\")).toBeInTheDocument();', 'expect(await screen.findByRole(\"button\", { name: /^Work/ })).toBeInTheDocument();', 3)"
+if code.count(old_count) != 1:
+    raise SystemExit("retired path count migration was not exact")
+code = code.replace(old_count, new_count)
+
+redundant = "r(p, '    expect(await screen.findByText(\"The path from here\")).toBeInTheDocument();\\n', '    expect(await screen.findByRole(\"button\", { name: /^Work/ })).toBeInTheDocument();\\n')\n"
+if code.count(redundant) != 1:
+    raise SystemExit("redundant retired path migration was not exact")
+code = code.replace(redundant, "")
+
 exec(compile(code, str(path), "exec"))
