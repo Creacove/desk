@@ -109,6 +109,11 @@ replace_shell_once(
     '',
     "remove Team Agents desktop navigation assertion",
 )
+replace_shell_once(
+    '    expect(screen.getByTestId("mobile-tabbar")).toHaveClass("rounded-[18px]");',
+    '    expect(screen.getByTestId("mobile-tabbar")).toHaveClass("inset-x-0", "border-t");',
+    "flat mobile dock assertion",
+)
 shell_test_path.write_text(shell_test)
 
 Path("src/manager-navigation-redesign.test.ts").write_text('''import { describe, expect, it } from "vitest";
