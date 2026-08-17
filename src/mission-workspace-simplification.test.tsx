@@ -87,6 +87,24 @@ describe("mobile-first mission workspace", () => {
     expect(within(futureStage).getByText("Not available yet")).toBeInTheDocument();
   });
 
+  it("keeps downstream work locked until Manager review is actually met", () => {
+    const reviewReady = mission();
+    reviewReady.checkpoints![0] = { ...reviewReady.checkpoints![0], status: "Ready for AI review" };
+    reviewReady.tasks![0] = {
+      ...reviewReady.tasks![0],
+      result: { status: "completed", summary: "Submitted", userNote: "", interpretation: "", missionEffect: "", followUp: "" },
+    };
+
+    renderMission("tasks", reviewReady);
+
+    const currentStage = screen.getByTestId("task-group-checkpoint-1");
+    expect(within(currentStage).getByText("Manager reviewing")).toBeInTheDocument();
+    const futureStage = screen.getByTestId("task-group-checkpoint-2");
+    fireEvent.click(within(futureStage).getByRole("button", { name: /Market validation/i }));
+    expect(within(futureStage).getAllByText("Starts after Positioning thesis").length).toBeGreaterThan(0);
+    expect(within(futureStage).getByRole("button", { name: /Run listener interviews/i })).toBeDisabled();
+  });
+
   it("opens the exact task as a focused sheet instead of expanding a dashboard card", () => {
     renderMission("tasks", mission(), "task-1");
 
