@@ -1,0 +1,51 @@
+name: Manager Office layout
+
+on:
+  push:
+    branches:
+      - design/catalog-manager-unification
+    paths:
+      - scripts/manager_office_layout.py
+      - .github/workflows/manager-office-layout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: design/catalog-manager-unification
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply Manager Office layout
+        run: python3 scripts/manager_office_layout.py
+      - run: npm ci
+      - name: Production shell regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit Manager Office layout
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/manager/ManagerScreensLegacy.tsx
+          git commit -m 'design: widen Manager Office workspace'
+          git push origin HEAD:design/catalog-manager-unification
