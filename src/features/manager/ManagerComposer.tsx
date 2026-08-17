@@ -68,7 +68,7 @@ export function ManagerComposer({
   workspaceActions,
   attachments,
   leadingAction,
-  verificationNote = true,
+  verificationNote = false,
 }: ManagerComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const guided = Boolean(guidedQuestion);
@@ -150,11 +150,8 @@ export function ManagerWorkspaceActions({
     <section
       data-testid="manager-workspace-actions"
       aria-label="Manager required actions"
-      className="overflow-hidden rounded-[18px] border border-foreground/12 bg-background/98 shadow-[0_10px_32px_rgba(0,0,0,0.1)] backdrop-blur-xl"
+      className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background/98 shadow-[0_8px_28px_rgba(0,0,0,0.08)] backdrop-blur-xl"
     >
-      <div className="border-b border-foreground/8 px-4 py-2.5">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Action required</p>
-      </div>
       <div className="divide-y divide-foreground/8">
         {actions.map((action) => (
           <div key={action.key} className="grid grid-cols-1 gap-2.5 px-3.5 py-3 sm:flex sm:items-center sm:gap-3 sm:px-4">

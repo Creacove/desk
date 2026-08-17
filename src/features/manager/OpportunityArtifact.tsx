@@ -1,15 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Check, ChevronDown, Clipboard, ExternalLink, FileText, Link2, RotateCcw, Sparkles, Target, X } from "lucide-react";
 import type { ReleaseOpportunityArtifactViewModel, ReleaseOpportunityTargetViewModel } from "../../types/cleanProduction";
 
-export function OpportunityArtifact({
-  artifact,
-  onPreparePitch,
-  onRecordOutcome,
-  onOpenFiles,
-  onOpenMission,
-  onRetry,
-}: {
+export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome, onOpenFiles, onOpenMission, onRetry }: {
   artifact: ReleaseOpportunityArtifactViewModel;
   onPreparePitch: (target: ReleaseOpportunityTargetViewModel) => void | Promise<void>;
   onRecordOutcome: (target: ReleaseOpportunityTargetViewModel, input: { status: ReleaseOpportunityTargetViewModel["status"]; manualOutcome: string }) => void | Promise<void>;
@@ -17,185 +10,212 @@ export function OpportunityArtifact({
   onOpenMission?: (missionId: string) => void | Promise<void>;
   onRetry: (artifact: ReleaseOpportunityArtifactViewModel) => void | Promise<void>;
 }) {
-  const [selectedId, setSelectedId] = useState(artifact.shortlist[0]?.id ?? artifact.watch[0]?.id ?? artifact.excluded[0]?.id ?? "");
+  const [expandedTargetId, setExpandedTargetId] = useState<string | null>(null);
+  const [showSkipped, setShowSkipped] = useState(false);
   const [outcomeTargetId, setOutcomeTargetId] = useState<string | null>(null);
   const [outcomeStatus, setOutcomeStatus] = useState<ReleaseOpportunityTargetViewModel["status"]>("submitted_manually");
   const [outcomeNote, setOutcomeNote] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [copiedTargetId, setCopiedTargetId] = useState<string | null>(null);
+  const [preparingTargetId, setPreparingTargetId] = useState<string | null>(null);
+  const [savingOutcome, setSavingOutcome] = useState(false);
 
   const allTargets = useMemo(() => [...artifact.shortlist, ...artifact.watch, ...artifact.excluded], [artifact]);
-  const selectedTarget = allTargets.find((target) => target.id === selectedId) ?? allTargets[0];
   const outcomeTarget = allTargets.find((target) => target.id === outcomeTargetId);
-  const isSpotifyEditorial = selectedTarget ? /spotify\s+(?:editorial|for artists)|editorial\s+playlist/i.test(`${selectedTarget.platform ?? ""} ${selectedTarget.targetName}`) : false;
-  const preparedCount = artifact.shortlist.filter((target) => Boolean(target.package?.pitchBody || target.pitchDocumentId)).length;
-  const decisionLabel = artifact.shortlist.length ? "PITCH NOW" : artifact.watch.length ? "WATCH" : "SKIP";
   const targetLabel = artifact.opportunityType === "playlist" ? "playlist" : "press";
-  const decisionTitle = artifact.shortlist.length
-    ? `${artifact.shortlist.length} ${targetLabel} ${artifact.shortlist.length === 1 ? "opportunity" : "opportunities"} worth pitching now`
+  const primaryCount = artifact.shortlist.length || artifact.watch.length;
+  const title = artifact.opportunityType === "playlist" ? "Playlist opportunities" : "Press opportunities";
+  const headline = artifact.shortlist.length
+    ? `${artifact.shortlist.length} ${artifact.shortlist.length === 1 ? "target is" : "targets are"} ready to pitch`
     : artifact.watch.length
-      ? `No ${targetLabel} target is ready to pitch yet`
-      : `No worthwhile ${targetLabel} target found`;
-  const thesis = artifact.shortlist[0]?.fit.explanation
-    ?? artifact.watch[0]?.fit.explanation
-    ?? artifact.failure?.message
-    ?? "No evidence-backed target is ready yet.";
+      ? `${artifact.watch.length} ${artifact.watch.length === 1 ? "target is" : "targets are"} worth watching`
+      : `No strong ${targetLabel} match yet`;
+  const summary = artifact.shortlist.length
+    ? "These have enough evidence and a usable route to prepare a pitch."
+    : artifact.watch.length
+      ? "None are ready to pitch yet. You can still inspect what Manager found and what is missing."
+      : artifact.failure?.message ?? "Manager did not find a target strong enough to recommend.";
 
   useEffect(() => {
-    if (!allTargets.some((target) => target.id === selectedId)) setSelectedId(allTargets[0]?.id ?? "");
-  }, [allTargets, selectedId]);
+    if (expandedTargetId && !allTargets.some((target) => target.id === expandedTargetId)) setExpandedTargetId(null);
+  }, [allTargets, expandedTargetId]);
 
-  async function copyPitch() {
-    const body = selectedTarget?.package?.pitchBody?.trim();
+  async function preparePitch(target: ReleaseOpportunityTargetViewModel) {
+    if (preparingTargetId) return;
+    try {
+      setPreparingTargetId(target.id);
+      await onPreparePitch(target);
+    } finally {
+      setPreparingTargetId(null);
+    }
+  }
+
+  async function copyPitch(target: ReleaseOpportunityTargetViewModel) {
+    const body = target.package?.pitchBody?.trim();
     if (!body) return;
     try {
       await navigator.clipboard.writeText(body);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1_500);
+      setCopiedTargetId(target.id);
+      window.setTimeout(() => setCopiedTargetId((current) => current === target.id ? null : current), 1500);
     } catch {
-      setCopied(false);
+      setCopiedTargetId(null);
     }
   }
 
   async function saveOutcome() {
-    if (!outcomeTarget || !outcomeNote.trim()) return;
-    await onRecordOutcome(outcomeTarget, { status: outcomeStatus, manualOutcome: outcomeNote.trim() });
-    setOutcomeTargetId(null);
-    setOutcomeNote("");
+    if (!outcomeTarget || !outcomeNote.trim() || savingOutcome) return;
+    try {
+      setSavingOutcome(true);
+      await onRecordOutcome(outcomeTarget, { status: outcomeStatus, manualOutcome: outcomeNote.trim() });
+      setOutcomeTargetId(null);
+      setOutcomeNote("");
+    } finally {
+      setSavingOutcome(false);
+    }
   }
 
+  const details = (target: ReleaseOpportunityTargetViewModel) => (
+    <TargetDetails
+      artifact={artifact}
+      target={target}
+      preparing={preparingTargetId === target.id}
+      copied={copiedTargetId === target.id}
+      outcomeTarget={outcomeTarget}
+      outcomeStatus={outcomeStatus}
+      outcomeNote={outcomeNote}
+      savingOutcome={savingOutcome}
+      onPrepare={() => void preparePitch(target)}
+      onCopy={() => void copyPitch(target)}
+      onOpenFiles={() => void onOpenFiles(artifact.musicItemId)}
+      onStartOutcome={() => { setOutcomeTargetId(target.id); setOutcomeNote(target.manualOutcome ?? ""); }}
+      onCloseOutcome={() => setOutcomeTargetId(null)}
+      onOutcomeStatus={setOutcomeStatus}
+      onOutcomeNote={setOutcomeNote}
+      onSaveOutcome={() => void saveOutcome()}
+    />
+  );
+
   return (
-    <article data-testid="release-opportunity-artifact" className="mt-5 border-l-2 border-foreground/12 py-1 pl-4">
-      <section aria-label={`${artifact.subject.title} ${artifact.opportunityType} servicing decision`}>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">{artifact.subject.title} · {artifact.opportunityType} servicing</p>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className={`rounded-full px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.1em] ${decisionLabel === "PITCH NOW" ? "bg-success/10 text-success" : decisionLabel === "SKIP" ? "bg-danger/10 text-danger" : "bg-foreground/[0.06] text-muted-foreground"}`}>{decisionLabel}</span>
-              <span className="text-[10px] font-semibold text-muted-foreground">Preparation only — no outreach is sent.</span>
-            </div>
-            <h3 className="mt-3 text-[18px] font-bold leading-tight text-foreground">{decisionTitle}</h3>
-            <p className="mt-2 max-w-[46rem] text-[12px] font-semibold leading-relaxed text-muted-foreground">{thesis}</p>
-          </div>
-          {artifact.missionId && onOpenMission ? <button type="button" onClick={() => void onOpenMission(artifact.missionId!)} className="shrink-0 rounded-lg border border-foreground/10 px-2.5 py-2 text-[10px] font-bold text-foreground hover:bg-foreground/[0.04]">Open mission</button> : null}
-        </div>
+    <article data-testid="release-opportunity-artifact" className="mt-5 border-t border-foreground/8 pt-5">
+      <header>
+        <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/65">{title}</p>
+        <h3 className="mt-2 text-[18px] font-semibold leading-tight tracking-[-0.02em] text-foreground">{headline}</h3>
+        <p className="mt-2 max-w-[44rem] text-[13px] font-medium leading-relaxed text-muted-foreground">{summary}</p>
+      </header>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Opportunity decision counts">
-          <Count label="Pitch now" value={artifact.shortlist.length} tone="accent" />
-          <Count label="Watch" value={artifact.watch.length} tone="muted" />
-          <Count label="Skip" value={artifact.excluded.length} tone="danger" />
-          <Count label="Prepared" value={preparedCount} tone="muted" />
-        </div>
-
-        {allTargets.length ? (
-          <button
-            type="button"
-            aria-expanded={detailsExpanded}
-            aria-label={detailsExpanded ? "Hide targets" : "Review targets"}
-            onClick={() => setDetailsExpanded((expanded) => !expanded)}
-            className="mt-3 inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-[12px] font-semibold text-foreground/75 hover:bg-foreground/[0.05]"
-          >
-            {detailsExpanded ? "Hide targets" : "Review targets"}
-            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${detailsExpanded ? "rotate-180" : ""}`} aria-hidden="true" />
-          </button>
-        ) : null}
-      </section>
-
-      {detailsExpanded ? (
-        <div className="mt-4 grid gap-4 border-t border-foreground/8 pt-4">
-          <TargetSection title="Pitch now" targets={artifact.shortlist} selectedId={selectedId} onSelect={setSelectedId} />
-          <TargetSection title="Watch" targets={artifact.watch} selectedId={selectedId} onSelect={setSelectedId} muted />
-          <TargetSection title="Skip" targets={artifact.excluded} selectedId={selectedId} onSelect={setSelectedId} excluded />
-
-          {selectedTarget ? (
-            <section className="rounded-[15px] border border-foreground/10 bg-foreground/[0.018] p-4" aria-label={`Details for ${selectedTarget.targetName}`}>
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="font-ui text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/70">Target detail</p>
-                  <h4 className="mt-1 text-[17px] font-bold text-foreground">{selectedTarget.targetName}</h4>
-                  <p className="mt-1 text-[11px] font-semibold capitalize text-muted-foreground">{selectedTarget.platform ?? artifact.opportunityType} · {selectedTarget.confidence} confidence</p>
-                </div>
-                <SafetyBadge state={selectedTarget.safetyState} />
-              </div>
-
-              {isSpotifyEditorial ? (
-                <div className="mt-4 rounded-[12px] border border-[#1ed760]/20 bg-[#1ed760]/[0.07] p-3">
-                  <p className="text-[11px] font-bold text-foreground">Spotify editorial handoff</p>
-                  <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">Use Spotify for Artists' official route. The Manager does not expose editor emails or claim a submission was made.</p>
-                  {selectedTarget.targetUrl ? <ExternalAnchor href={selectedTarget.targetUrl} label="Open Spotify for Artists" /> : null}
-                </div>
-              ) : null}
-
-              <DetailGrid target={selectedTarget} />
-
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => void onPreparePitch(selectedTarget)} className="inline-flex items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-bold text-background hover:bg-foreground/85"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />Prepare pitch for {selectedTarget.targetName}</button>
-                {selectedTarget.package?.shareUrl ? <ExternalAnchor href={selectedTarget.package.shareUrl} label="Open share link" icon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />} /> : <button type="button" onClick={() => void onOpenFiles(artifact.musicItemId)} className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]"><FileText className="h-3.5 w-3.5" aria-hidden="true" />Open Files to create share link</button>}
-                <button type="button" onClick={() => { setOutcomeTargetId(selectedTarget.id); setOutcomeNote(selectedTarget.manualOutcome ?? ""); }} className="inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-bold text-foreground hover:bg-foreground/[0.04]"><Check className="h-3.5 w-3.5" aria-hidden="true" />Record outcome for {selectedTarget.targetName}</button>
-              </div>
-
-              {outcomeTarget ? (
-                <div className="mt-3 rounded-[12px] border border-brand-accent/20 bg-brand-accent/[0.045] p-3">
-                  <div className="flex items-center justify-between gap-2"><p className="text-[11px] font-bold text-foreground">Manual outcome</p><button type="button" aria-label="Close manual outcome" onClick={() => setOutcomeTargetId(null)} className="rounded-md p-1 text-muted-foreground hover:bg-foreground/5"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
-                    <select aria-label={`Outcome status for ${outcomeTarget.targetName}`} value={outcomeStatus} onChange={(event) => setOutcomeStatus(event.target.value as ReleaseOpportunityTargetViewModel["status"])} className="h-9 rounded-lg border border-foreground/10 bg-background px-2 text-[11px] font-semibold text-foreground">
-                      {(["submitted_manually", "replied", "accepted", "declined", "watch"] as const).map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
-                    </select>
-                    <input aria-label={`Outcome note for ${outcomeTarget.targetName}`} value={outcomeNote} onChange={(event) => setOutcomeNote(event.target.value)} placeholder="What happened?" className="h-9 min-w-0 rounded-lg border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground outline-none" />
-                    <button type="button" aria-label={`Save outcome for ${outcomeTarget.targetName}`} disabled={!outcomeNote.trim()} onClick={() => void saveOutcome()} className="h-9 rounded-lg bg-foreground px-3 text-[11px] font-bold text-background disabled:opacity-40">Save outcome</button>
-                  </div>
-                </div>
-              ) : null}
-
-              {selectedTarget.package ? <TargetPackage target={selectedTarget} copied={copied} onCopy={() => void copyPitch()} onOpenFiles={() => void onOpenFiles(artifact.musicItemId)} /> : null}
-            </section>
-          ) : <p className="rounded-[12px] border border-dashed border-foreground/12 px-4 py-5 text-center text-[12px] font-semibold text-muted-foreground">No target is ready to inspect yet.</p>}
-
-          {artifact.failure ? (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-danger/20 bg-danger/[0.045] px-3.5 py-3" role="alert">
-              <div><p className="text-[11px] font-bold text-danger">Research paused at {artifact.failure.stage.replace(/_/g, " ")}</p><p className="mt-1 text-[11px] font-semibold text-muted-foreground">{artifact.failure.message}</p></div>
-              {artifact.failure.retryable ? <button type="button" onClick={() => void onRetry(artifact)} className="inline-flex items-center gap-1.5 rounded-lg border border-danger/20 px-3 py-2 text-[11px] font-bold text-danger hover:bg-danger/5"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />Retry {artifact.failure.stage.replace(/_/g, " ")}</button> : null}
-            </div>
-          ) : null}
+      {primaryCount ? (
+        <div className="mt-5 grid gap-6">
+          <OpportunitySection title="Ready to pitch" targets={artifact.shortlist} expandedTargetId={expandedTargetId} onToggle={(target) => setExpandedTargetId((current) => current === target.id ? null : target.id)} renderDetails={details} />
+          <OpportunitySection title="Worth watching" targets={artifact.watch} expandedTargetId={expandedTargetId} onToggle={(target) => setExpandedTargetId((current) => current === target.id ? null : target.id)} renderDetails={details} />
         </div>
       ) : null}
+
+      {artifact.excluded.length ? (
+        <div className="mt-5 border-t border-foreground/8 pt-4">
+          <button type="button" aria-expanded={showSkipped} onClick={() => setShowSkipped((current) => !current)} className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground">
+            {showSkipped ? "Hide skipped" : `Show skipped (${artifact.excluded.length})`}
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showSkipped ? "rotate-180" : ""}`} aria-hidden="true" />
+          </button>
+          {showSkipped ? <div className="mt-3"><OpportunitySection title="Skipped" targets={artifact.excluded} expandedTargetId={expandedTargetId} onToggle={(target) => setExpandedTargetId((current) => current === target.id ? null : target.id)} renderDetails={details} muted /></div> : null}
+        </div>
+      ) : null}
+
+      {artifact.failure ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-l-2 border-danger pl-3" role="alert">
+          <p className="text-[12px] font-medium leading-relaxed text-danger">{artifact.failure.message}</p>
+          {artifact.failure.retryable ? <button type="button" onClick={() => void onRetry(artifact)} className="inline-flex min-h-9 items-center gap-1.5 text-[12px] font-semibold text-danger"><RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />Try again</button> : null}
+        </div>
+      ) : null}
+
+      {artifact.missionId && onOpenMission ? <button type="button" onClick={() => void onOpenMission(artifact.missionId!)} className="mt-5 text-[12px] font-semibold text-muted-foreground underline decoration-foreground/15 underline-offset-4 hover:text-foreground">View related mission</button> : null}
     </article>
   );
 }
 
-function Count({ label, value, tone }: { label: string; value: number; tone: "accent" | "muted" | "danger" }) {
-  const colors = tone === "accent" ? "border-brand-accent/20 bg-brand-accent/[0.05] text-brand-accent" : tone === "danger" ? "border-danger/15 bg-danger/[0.04] text-danger" : "border-foreground/8 bg-background text-muted-foreground";
-  return <div className={`rounded-[11px] border px-2.5 py-2 ${colors}`}><p className="text-[16px] font-bold leading-none">{value}</p><p className="mt-1 text-[9px] font-bold uppercase tracking-[0.08em]">{label}</p></div>;
-}
-
-function TargetSection({ title, targets, selectedId, onSelect, muted = false, excluded = false }: { title: string; targets: ReleaseOpportunityTargetViewModel[]; selectedId: string; onSelect: (id: string) => void; muted?: boolean; excluded?: boolean }) {
+function OpportunitySection({ title, targets, expandedTargetId, onToggle, renderDetails, muted = false }: {
+  title: string;
+  targets: ReleaseOpportunityTargetViewModel[];
+  expandedTargetId: string | null;
+  onToggle: (target: ReleaseOpportunityTargetViewModel) => void;
+  renderDetails: (target: ReleaseOpportunityTargetViewModel) => ReactNode;
+  muted?: boolean;
+}) {
   if (!targets.length) return null;
-  return <section aria-label={title}><div className="mb-2 flex items-center justify-between gap-2"><h4 className={`font-ui text-[10px] font-bold uppercase tracking-[0.12em] ${excluded ? "text-danger" : muted ? "text-muted-foreground" : "text-foreground"}`}>{title}</h4><span className="text-[10px] font-bold text-muted-foreground">{targets.length}</span></div><div className="grid gap-2">{targets.map((target) => <button key={target.id} type="button" aria-label={`Open ${target.targetName}`} onClick={() => onSelect(target.id)} className={`flex w-full items-center gap-3 rounded-[12px] border px-3 py-2.5 text-left transition ${target.id === selectedId ? "border-brand-accent/35 bg-brand-accent/[0.045]" : "border-foreground/8 bg-background hover:bg-foreground/[0.025]"}`}><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[9px] ${excluded ? "bg-danger/10 text-danger" : muted ? "bg-foreground/[0.05] text-muted-foreground" : "bg-brand-accent/10 text-brand-accent"}`}><Target className="h-3.5 w-3.5" aria-hidden="true" /></span><span className="min-w-0 flex-1"><span className="block truncate text-[12px] font-bold text-foreground">{target.targetName}</span><span className="mt-0.5 block truncate text-[10px] font-semibold text-muted-foreground">{target.platform ?? "Target"} · {target.confidence} confidence</span></span><ChevronDown className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition ${target.id === selectedId ? "rotate-180" : "-rotate-90"}`} aria-hidden="true" /></button>)}</div></section>;
+  return (
+    <section aria-label={title}>
+      <div className="mb-2 flex items-center justify-between gap-3"><h4 className="text-[11px] font-semibold text-muted-foreground">{title}</h4><span className="text-[10px] tabular-nums text-muted-foreground/55">{targets.length}</span></div>
+      <div className="divide-y divide-foreground/8 border-y border-foreground/8">
+        {targets.map((target) => {
+          const expanded = expandedTargetId === target.id;
+          return (
+            <div key={target.id}>
+              <button type="button" aria-label={`Open ${target.targetName}`} aria-expanded={expanded} onClick={() => onToggle(target)} className="group flex w-full items-start gap-3 py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25">
+                <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[9px] ${muted ? "bg-foreground/[0.035] text-muted-foreground" : "bg-foreground/[0.055] text-foreground/70"}`} aria-hidden="true"><Target className="h-3.5 w-3.5" /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[13px] font-semibold leading-snug text-foreground">{target.targetName}</span>
+                  <span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">{target.platform ?? "Target"}</span>
+                  {target.fit?.explanation ? <span className="mt-1.5 line-clamp-2 block text-[12px] font-medium leading-relaxed text-muted-foreground/85">{target.fit.explanation}</span> : null}
+                </span>
+                <ChevronDown className={`mt-2 h-3.5 w-3.5 shrink-0 text-muted-foreground/45 transition-transform ${expanded ? "rotate-180" : ""}`} aria-hidden="true" />
+              </button>
+              {expanded ? <div className="pb-4 pl-11">{renderDetails(target)}</div> : null}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
 }
 
-function DetailGrid({ target }: { target: ReleaseOpportunityTargetViewModel }) {
-  return <div className="mt-4 grid gap-3 border-t border-foreground/8 pt-4 sm:grid-cols-2">
-    <Detail label="Source"><ExternalAnchor href={target.sourceUrl} label={`Open source for ${target.targetName}`} /></Detail>
-    <Detail label="Contact route">{target.publicContact ? <span className="flex flex-wrap items-center gap-1.5">{target.publicContact.kind === "email" ? <a href={`mailto:${target.publicContact.value}`} className="break-all text-brand-accent underline underline-offset-2">{target.publicContact.value}</a> : <ExternalAnchor href={target.publicContact.value} label="Open public contact route" />} {target.publicContact.verifiedAt ? <span className="text-[10px] text-muted-foreground">verified {target.publicContact.verifiedAt.slice(0, 10)}</span> : null}</span> : <span className="text-muted-foreground">No verified public route</span>}</Detail>
-    <Detail label="Fit explanation" wide><p>{target.fit.explanation}</p>{target.fit.songCriteria.length ? <p className="mt-1 text-muted-foreground">Song: {target.fit.songCriteria.join(" · ")}</p> : null}{target.fit.targetCriteria.length ? <p className="mt-1 text-muted-foreground">Target: {target.fit.targetCriteria.join(" · ")}</p> : null}</Detail>
-    <Detail label="Source evidence" wide><div className="flex flex-wrap gap-x-3 gap-y-1">{target.sourceEvidence.map((evidence, index) => evidence.ref ? <ExternalAnchor key={`${evidence.source}-${index}`} href={evidence.ref} label={evidence.source} /> : <span key={`${evidence.source}-${index}`} className="text-muted-foreground">{evidence.source}</span>)}</div></Detail>
-    {target.limitations.length ? <Detail label="Limitations" wide><ul className="space-y-1">{target.limitations.map((limitation) => <li key={limitation}>• {limitation}</li>)}</ul></Detail> : null}
-  </div>;
+function TargetDetails({ artifact, target, preparing, copied, outcomeTarget, outcomeStatus, outcomeNote, savingOutcome, onPrepare, onCopy, onOpenFiles, onStartOutcome, onCloseOutcome, onOutcomeStatus, onOutcomeNote, onSaveOutcome }: {
+  artifact: ReleaseOpportunityArtifactViewModel;
+  target: ReleaseOpportunityTargetViewModel;
+  preparing: boolean;
+  copied: boolean;
+  outcomeTarget?: ReleaseOpportunityTargetViewModel;
+  outcomeStatus: ReleaseOpportunityTargetViewModel["status"];
+  outcomeNote: string;
+  savingOutcome: boolean;
+  onPrepare: () => void;
+  onCopy: () => void;
+  onOpenFiles: () => void;
+  onStartOutcome: () => void;
+  onCloseOutcome: () => void;
+  onOutcomeStatus: (status: ReleaseOpportunityTargetViewModel["status"]) => void;
+  onOutcomeNote: (note: string) => void;
+  onSaveOutcome: () => void;
+}) {
+  const isSpotifyEditorial = /spotify\s+(?:editorial|for artists)|editorial\s+playlist/i.test(`${target.platform ?? ""} ${target.targetName}`);
+  return (
+    <div className="border-l border-foreground/10 pl-4">
+      <div className="flex flex-wrap items-center gap-2"><SafetyBadge state={target.safetyState} /><span className="text-[10px] font-medium capitalize text-muted-foreground">{target.confidence} confidence</span></div>
+      {target.requirements?.length ? <div className="mt-3"><p className="text-[11px] font-semibold text-foreground">Before you pitch</p><ul className="mt-1.5 grid gap-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{target.requirements.slice(0, 4).map((item) => <li key={item}>• {item}</li>)}</ul></div> : null}
+      {isSpotifyEditorial ? <p className="mt-3 text-[11px] font-medium leading-relaxed text-muted-foreground">Spotify editorial pitches go through Spotify for Artists. Manager will prepare the pitch, not submit it for you.</p> : null}
+      {target.publicContact ? <p className="mt-3 text-[11px] font-medium text-muted-foreground">Public contact: <ContactLink contact={target.publicContact} /> {target.publicContact.verifiedAt ? <span className="text-muted-foreground/60">· verified {target.publicContact.verifiedAt.slice(0, 10)}</span> : null}</p> : null}
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] font-semibold">{target.targetUrl ? <ExternalAnchor href={target.targetUrl} label="Open submission route" /> : null}{target.sourceUrl ? <ExternalAnchor href={target.sourceUrl} label="View source" /> : null}</div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button type="button" onClick={onPrepare} disabled={preparing} aria-busy={preparing} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-45"><Sparkles className="h-3.5 w-3.5" aria-hidden="true" />{preparing ? "Preparing..." : "Prepare pitch"}</button>
+        {target.package?.shareUrl ? <ExternalAnchor href={target.package.shareUrl} label="Open share link" icon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />} buttonLike /> : <button type="button" onClick={onOpenFiles} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.035]"><FileText className="h-3.5 w-3.5" aria-hidden="true" />Open Files to create share link</button>}
+        <button type="button" onClick={onStartOutcome} className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.035]"><Check className="h-3.5 w-3.5" aria-hidden="true" />Record outcome</button>
+      </div>
+      {target.package?.pitchBody ? <div className="mt-4 border-t border-foreground/8 pt-3"><div className="flex items-center justify-between gap-3"><p className="text-[11px] font-semibold text-foreground">Pitch draft</p><button type="button" onClick={onCopy} className="inline-flex items-center gap-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground"><Clipboard className="h-3.5 w-3.5" aria-hidden="true" />{copied ? "Copied" : "Copy"}</button></div><p className="mt-2 whitespace-pre-wrap text-[12px] font-medium leading-relaxed text-muted-foreground">{target.package.pitchBody}</p></div> : null}
+      {outcomeTarget?.id === target.id ? <div className="mt-4 border-t border-foreground/8 pt-3"><div className="flex items-center justify-between gap-3"><p className="text-[11px] font-semibold text-foreground">What happened?</p><button type="button" aria-label="Close outcome form" onClick={onCloseOutcome} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" aria-hidden="true" /></button></div><div className="mt-3 grid gap-2 sm:grid-cols-[10rem_1fr_auto]"><select value={outcomeStatus} onChange={(event) => onOutcomeStatus(event.target.value as ReleaseOpportunityTargetViewModel["status"])} className="h-10 rounded-lg border border-foreground/10 bg-background px-2.5 text-[12px] font-medium text-foreground">{(["submitted_manually", "replied", "accepted", "declined", "watch"] as const).map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}</select><input value={outcomeNote} onChange={(event) => onOutcomeNote(event.target.value)} placeholder="Add a short note" className="h-10 min-w-0 rounded-lg border border-foreground/10 bg-background px-3 text-[12px] font-medium text-foreground outline-none focus:border-brand-accent/35" /><button type="button" onClick={onSaveOutcome} disabled={!outcomeNote.trim() || savingOutcome} className="h-10 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background disabled:opacity-40">{savingOutcome ? "Saving..." : "Save"}</button></div></div> : null}
+      {target.limitations?.length ? <p className="mt-3 text-[10px] font-medium leading-relaxed text-muted-foreground/65">{target.limitations.slice(0, 2).join(" · ")}</p> : null}
+      <span className="sr-only">{artifact.subject.title}</span>
+    </div>
+  );
 }
 
-function Detail({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return <div className={wide ? "sm:col-span-2" : ""}><p className="font-ui text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/70">{label}</p><div className="mt-1 text-[11px] font-semibold leading-relaxed text-foreground">{children}</div></div>;
+function ContactLink({ contact }: { contact: NonNullable<ReleaseOpportunityTargetViewModel["publicContact"]> }) {
+  const isEmail = contact.kind === "email";
+  const href = isEmail ? `mailto:${contact.value}` : contact.value;
+  return <a href={href} target={isEmail ? undefined : "_blank"} rel={isEmail ? undefined : "noreferrer"} className="font-semibold text-foreground underline decoration-foreground/20 underline-offset-2">{contact.value}</a>;
+}
+
+function ExternalAnchor({ href, label, icon, buttonLike = false }: { href: string; label: string; icon?: ReactNode; buttonLike?: boolean }) {
+  return <a href={href} target="_blank" rel="noreferrer" className={buttonLike ? "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-foreground/10 px-3 py-2 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.035]" : "inline-flex items-center gap-1 text-[11px] font-semibold text-foreground underline decoration-foreground/15 underline-offset-3"}>{icon ?? <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />}{label}</a>;
 }
 
 function SafetyBadge({ state }: { state: ReleaseOpportunityTargetViewModel["safetyState"] }) {
-  const label = state === "clear" ? "Verified route" : state === "excluded" ? "Excluded" : "Watch";
-  return <span className={`rounded-full px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] ${state === "clear" ? "bg-success/10 text-success" : state === "excluded" ? "bg-danger/10 text-danger" : "bg-foreground/[0.06] text-muted-foreground"}`}>{label}</span>;
-}
-
-function TargetPackage({ target, copied, onCopy, onOpenFiles }: { target: ReleaseOpportunityTargetViewModel; copied: boolean; onCopy: () => void; onOpenFiles: () => void }) {
-  return <section className="mt-4 rounded-[13px] border border-foreground/10 bg-background p-3.5" aria-label="Target package"><div className="flex items-center justify-between gap-2"><div><p className="font-ui text-[9px] font-bold uppercase tracking-[0.12em] text-brand-accent">Target package</p><p className="mt-1 text-[12px] font-bold text-foreground">Ready to review and share</p></div><span className="rounded-full bg-success/10 px-2 py-1 text-[9px] font-bold uppercase tracking-[0.08em] text-success">No sending</span></div><div className="mt-3 flex flex-wrap gap-1.5">{target.package?.selectedFiles.map((file) => <span key={file} className="inline-flex items-center gap-1 rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-bold text-foreground"><FileText className="h-3 w-3" aria-hidden="true" />{file}</span>)}</div>{target.package?.pitchBody ? <div className="mt-3 rounded-[10px] border border-foreground/8 bg-foreground/[0.018] p-3"><p className="whitespace-pre-wrap text-[11px] leading-relaxed text-foreground">{target.package.pitchBody}</p><button type="button" onClick={onCopy} className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-foreground/10 px-2.5 py-1.5 text-[10px] font-bold text-foreground hover:bg-foreground/[0.04]"><Clipboard className="h-3 w-3" aria-hidden="true" />{copied ? "Copied" : "Copy pitch"}</button></div> : null}{!target.package?.shareUrl ? <button type="button" onClick={onOpenFiles} className="mt-3 inline-flex items-center gap-1.5 text-[10px] font-bold text-brand-accent hover:underline"><FileText className="h-3 w-3" aria-hidden="true" />Open Files to create share link</button> : null}</section>;
-}
-
-function ExternalAnchor({ href, label, icon }: { href: string; label: string; icon?: React.ReactNode }) {
-  return <a href={href} target="_blank" rel="noreferrer" aria-label={label} className="mt-1 inline-flex max-w-full items-center gap-1 text-[11px] font-bold text-brand-accent underline decoration-brand-accent/30 underline-offset-2 hover:decoration-brand-accent">{icon ?? <ExternalLink className="h-3 w-3 shrink-0" aria-hidden="true" />}<span className="truncate">{label}</span></a>;
+  const label = state === "clear" ? "Route verified" : state === "caution" ? "Needs checking" : "Not recommended";
+  return <span className="rounded-full bg-foreground/[0.055] px-2 py-1 text-[9px] font-semibold text-muted-foreground">{label}</span>;
 }

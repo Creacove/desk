@@ -1,22 +1,286 @@
 import type { ComponentProps } from "react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ConversationMessageViewModel, ConversationViewModel, MusicObjectViewModel, SongMaterialViewModel } from "../../types/cleanProduction";
 import {
   ConversationWorkspace as LegacyConversationWorkspace,
   DecisionPackageScreen,
   InvestigationScreen,
-  ManagerOfficeScreen,
+  ManagerOfficeScreen as LegacyManagerOfficeScreen,
 } from "./ManagerScreensLegacy";
 import {
   ManagerWorkspaceActions,
   parseManagerWorkspaceAction,
   type ManagerWorkspaceAction,
 } from "./ManagerComposer";
+import { ProductButton, WorkspaceHeader, WorkspaceShell } from "../../design-system/components";
 import { SongDocumentEditor } from "../music/SongDocumentEditor";
 
-export { DecisionPackageScreen, InvestigationScreen, ManagerOfficeScreen };
+export { DecisionPackageScreen, InvestigationScreen };
 
-type ConversationWorkspaceProps = ComponentProps<typeof LegacyConversationWorkspace>;
+type ManagerOfficeScreenProps = ComponentProps<typeof LegacyManagerOfficeScreen> & {
+  conversationsPending?: boolean;
+  conversationsError?: string | null;
+  onRetryConversations?: () => void;
+};
+
+export function ManagerOfficeScreen({
+  conversations,
+  missionGenesisResult,
+  missionGenesisAnswers,
+  missionGenesisPending,
+  missionGenesisError,
+  onMissionGenesisAnswerChange,
+  onSubmitMissionGenesisAnswers,
+  onOpenCreatedMission,
+  onConversation,
+  onAskManager,
+  askManagerPending,
+  askManagerError,
+  conversationsPending = false,
+  conversationsError,
+  onRetryConversations,
+}: ManagerOfficeScreenProps) {
+  const [askText, setAskText] = useState("");
+  const candidateMissionIds = useMemo(() => (
+    missionGenesisResult?.candidateMissionIds?.length
+      ? missionGenesisResult.candidateMissionIds
+      : missionGenesisResult?.candidateMissionId
+        ? [missionGenesisResult.candidateMissionId]
+        : []
+  ), [missionGenesisResult?.candidateMissionId, missionGenesisResult?.candidateMissionIds?.join("|")]);
+  const candidateMissionKey = candidateMissionIds.join("|");
+  const [selectedCandidateMissionId, setSelectedCandidateMissionId] = useState<string | undefined>(candidateMissionIds[0]);
+
+  useEffect(() => {
+    setSelectedCandidateMissionId((current) => current && candidateMissionIds.includes(current) ? current : candidateMissionIds[0]);
+  }, [candidateMissionKey]);
+
+  function submitQuestion() {
+    const body = askText.trim();
+    if (!body || askManagerPending) return;
+    onAskManager(body);
+    setAskText("");
+  }
+
+  return (
+    <section className="app-workspace app-workspace-reveal">
+      <WorkspaceHeader title="Manager's Office" />
+      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <main className="min-w-0">
+          <ManagerMissionContext
+            result={missionGenesisResult}
+            answers={missionGenesisAnswers}
+            pending={missionGenesisPending}
+            error={missionGenesisError}
+            candidateMissionIds={candidateMissionIds}
+            selectedCandidateMissionId={selectedCandidateMissionId}
+            onSelectCandidate={setSelectedCandidateMissionId}
+            onAnswerChange={onMissionGenesisAnswerChange}
+            onSubmit={() => onSubmitMissionGenesisAnswers(selectedCandidateMissionId)}
+            onOpenCreatedMission={onOpenCreatedMission}
+          />
+
+          <section aria-label="Ask Manager" className="border-b border-foreground/8 pb-7">
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                submitQuestion();
+              }}
+              className="flex min-w-0 items-end gap-2 border-b border-foreground/12 py-2 transition-colors focus-within:border-brand-accent/45"
+            >
+              <textarea
+                value={askText}
+                rows={1}
+                onChange={(event) => setAskText(event.target.value)}
+                onInput={(event) => {
+                  const field = event.currentTarget;
+                  field.style.height = "auto";
+                  field.style.height = `${Math.min(field.scrollHeight, 144)}px`;
+                }}
+                placeholder="Ask Manager anything about this artist..."
+                aria-label="Ask Manager anything about this artist"
+                className="min-h-11 min-w-0 flex-1 resize-none bg-transparent px-1 py-3 text-[15px] font-medium leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/50"
+                style={{ maxHeight: "144px", overflowY: "auto" }}
+              />
+              <button
+                type="submit"
+                disabled={!askText.trim() || askManagerPending}
+                aria-label={askManagerPending ? "Manager is working" : "Ask Manager"}
+                aria-busy={askManagerPending}
+                className="mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-[18px] font-medium text-background transition-opacity hover:opacity-85 disabled:opacity-25"
+              >
+                {askManagerPending ? <span className="animate-pulse">...</span> : <span aria-hidden="true">→</span>}
+              </button>
+            </form>
+            {askManagerError ? <p role="alert" className="mt-3 text-[12px] font-medium text-red-600">{askManagerError}</p> : null}
+          </section>
+        </main>
+
+        <aside className="min-w-0 border-t border-foreground/8 pt-6 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-[14px] font-semibold text-foreground">Conversations</h2>
+            {conversations.length ? <span className="text-[11px] tabular-nums text-muted-foreground/55">{conversations.length}</span> : null}
+          </div>
+
+          {conversationsPending ? (
+            <div data-testid="manager-office-conversations-loading" className="mt-4 grid gap-2" aria-label="Loading conversations">
+              {[0, 1, 2].map((index) => (
+                <div key={index} className="animate-pulse rounded-[10px] py-3">
+                  <div className="h-3 w-3/4 rounded bg-foreground/[0.08]" />
+                  <div className="mt-2 h-2.5 w-20 rounded bg-foreground/[0.05]" />
+                </div>
+              ))}
+            </div>
+          ) : conversationsError ? (
+            <div className="mt-4 border-l-2 border-danger pl-3">
+              <p className="text-[12px] font-medium leading-relaxed text-danger">Conversations could not load.</p>
+              {onRetryConversations ? <button type="button" onClick={onRetryConversations} className="mt-2 text-[12px] font-semibold text-foreground underline decoration-foreground/20 underline-offset-4">Try again</button> : null}
+            </div>
+          ) : conversations.length ? (
+            <div className="mt-3 divide-y divide-foreground/7">
+              {conversations.map((conversation) => (
+                <button
+                  key={conversation.id}
+                  type="button"
+                  aria-label={conversation.topic}
+                  onClick={() => onConversation(conversation)}
+                  className="group block w-full py-3.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25"
+                >
+                  <p className="truncate text-[13px] font-semibold text-foreground/92 transition-colors group-hover:text-foreground">{conversation.topic}</p>
+                  {conversation.lastUpdate ? <p className="mt-1 text-[11px] font-medium text-muted-foreground/55">{formatManagerTimestamp(conversation.lastUpdate)}</p> : null}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-[12px] font-medium leading-relaxed text-muted-foreground">No conversations yet. Ask Manager something to start.</p>
+          )}
+        </aside>
+      </div>
+    </section>
+  );
+}
+
+function ManagerMissionContext({
+  result,
+  answers,
+  pending,
+  error,
+  candidateMissionIds,
+  selectedCandidateMissionId,
+  onSelectCandidate,
+  onAnswerChange,
+  onSubmit,
+  onOpenCreatedMission,
+}: {
+  result: ComponentProps<typeof LegacyManagerOfficeScreen>["missionGenesisResult"];
+  answers: Record<string, string>;
+  pending: boolean;
+  error: string | null;
+  candidateMissionIds: string[];
+  selectedCandidateMissionId?: string;
+  onSelectCandidate: (id: string) => void;
+  onAnswerChange: (key: string, value: string) => void;
+  onSubmit: () => void;
+  onOpenCreatedMission: () => void;
+}) {
+  if (!result && !error) return null;
+
+  return (
+    <section className="mb-7 border-b border-foreground/8 pb-7" aria-label="Manager mission context">
+      {result ? (
+        <>
+          <p className="text-[11px] font-semibold text-muted-foreground">Manager needs a little more context</p>
+          <h2 className="mt-1.5 text-[18px] font-semibold tracking-[-0.02em] text-foreground">{result.title}</h2>
+          {result.body ? <p className="mt-2 max-w-[46rem] text-[13px] font-medium leading-relaxed text-muted-foreground">{result.body}</p> : null}
+        </>
+      ) : null}
+
+      {candidateMissionIds.length > 1 ? (
+        <div className="mt-4 flex flex-wrap gap-2" aria-label="Mission options">
+          {candidateMissionIds.map((candidateMissionId, index) => (
+            <button
+              key={candidateMissionId}
+              type="button"
+              aria-pressed={selectedCandidateMissionId === candidateMissionId}
+              onClick={() => onSelectCandidate(candidateMissionId)}
+              className={`rounded-full px-3 py-1.5 text-[11px] font-semibold transition-colors ${selectedCandidateMissionId === candidateMissionId ? "bg-foreground text-background" : "bg-foreground/[0.05] text-muted-foreground hover:text-foreground"}`}
+            >
+              Option {index + 1}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {result?.questions.length ? (
+        <div className="mt-5 grid gap-4">
+          {result.questions.map((question) => (
+            <label key={question.key} className="grid gap-2">
+              <span className="text-[13px] font-semibold leading-snug text-foreground">{question.question}</span>
+              {question.answerKind === "single_select" ? (
+                <select
+                  aria-label={question.question}
+                  value={answers[question.key] ?? ""}
+                  onChange={(event) => onAnswerChange(question.key, event.target.value)}
+                  disabled={pending}
+                  className="h-11 rounded-[10px] border border-foreground/10 bg-background px-3 text-[13px] font-medium text-foreground outline-none focus:border-brand-accent/35"
+                >
+                  <option value="">Select answer</option>
+                  {(question.options ?? []).map((option) => <option key={option} value={option}>{option}</option>)}
+                </select>
+              ) : (
+                <input
+                  aria-label={question.question}
+                  value={answers[question.key] ?? ""}
+                  onChange={(event) => onAnswerChange(question.key, event.target.value)}
+                  disabled={pending}
+                  className="h-11 rounded-[10px] border border-foreground/10 bg-background px-3 text-[13px] font-medium text-foreground outline-none focus:border-brand-accent/35"
+                />
+              )}
+            </label>
+          ))}
+          <div><ProductButton onClick={onSubmit} disabled={pending}>{pending ? "Continuing..." : "Continue"}</ProductButton></div>
+        </div>
+      ) : null}
+
+      {error ? (
+        <div role="alert" className="mt-4 border-l-2 border-danger pl-3">
+          <p className="text-[12px] font-medium leading-relaxed text-danger">{error}</p>
+          <button type="button" onClick={onSubmit} disabled={pending} className="mt-2 text-[12px] font-semibold text-foreground underline decoration-foreground/20 underline-offset-4 disabled:opacity-40">Try again</button>
+        </div>
+      ) : null}
+
+      {result?.activatedMissionId || result?.activatedMissionIds?.length ? (
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-foreground/8 pt-4">
+          <div>
+            <p className="text-[13px] font-semibold text-foreground">Mission ready</p>
+            <p className="mt-0.5 text-[11px] font-medium text-muted-foreground">The work is now available in Missions.</p>
+          </div>
+          <ProductButton variant="secondary" onClick={onOpenCreatedMission}>View mission</ProductButton>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function formatManagerTimestamp(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.max(0, Math.round(diffMs / 60_000));
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+type ConversationWorkspaceProps = ComponentProps<typeof LegacyConversationWorkspace> & {
+  detailPending?: boolean;
+  detailError?: string | null;
+  onRetryDetail?: () => void;
+};
 type CreatedWork = NonNullable<ConversationMessageViewModel["createdWork"]>[number];
 type TurnPresentation = { version: 1; surfaces: Array<"release_success" | "release_opportunities" | "decision_package" | "release_share_package">; visibleArtifactIds: string[]; decisionPackageId?: string };
 type PresentationCreatedWork = CreatedWork & { presentationRole?: "deliverable" | "internal_support" | "compatibility"; visibility?: "user" | "internal" };
@@ -145,8 +409,18 @@ function slug(value: string) {
 }
 
 export function ConversationWorkspace(props: ConversationWorkspaceProps) {
-  const { conversation, onOpenCreatedWork, onOpenMusicSubject, sendPending, musicRepository } = props;
+  const { conversation, onOpenCreatedWork, onOpenMusicSubject, sendPending, musicRepository, detailPending = false, detailError, onRetryDetail } = props;
   const [documentPreviewTarget, setDocumentPreviewTarget] = useState<DocumentPreviewTarget | null>(null);
+  const [showDetailLoading, setShowDetailLoading] = useState(false);
+
+  useEffect(() => {
+    if (!detailPending) {
+      setShowDetailLoading(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowDetailLoading(true), 140);
+    return () => window.clearTimeout(timer);
+  }, [detailPending]);
 
   async function openCreatedWorkInContext(
     type: "music_item" | "mission" | "task",
@@ -200,6 +474,36 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
       return;
     }
     onOpenMusicSubject?.(subject);
+  }
+
+  if (detailError) {
+    return (
+      <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={props.onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office">
+        <div data-testid="manager-conversation-load-error" className="mx-auto w-full max-w-[48rem] px-1 py-8 sm:px-2">
+          <p className="text-[13px] font-semibold text-foreground">Couldn't load this conversation</p>
+          <p className="mt-2 max-w-md text-[12px] font-medium leading-relaxed text-muted-foreground">{detailError}</p>
+          {onRetryDetail ? <div className="mt-4"><ProductButton onClick={onRetryDetail}>Try again</ProductButton></div> : null}
+        </div>
+      </WorkspaceShell>
+    );
+  }
+
+  if (detailPending && (showDetailLoading || !conversation.messages?.length)) {
+    return (
+      <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={props.onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office">
+        <div data-testid="manager-conversation-loading" aria-label="Loading conversation" className="mx-auto w-full max-w-[48rem] px-1 pb-28 pt-7 sm:px-2">
+          <div className="animate-pulse">
+            <div className="h-3 w-28 rounded bg-foreground/[0.07]" />
+            <div className="mt-4 h-4 w-5/6 rounded bg-foreground/[0.08]" />
+            <div className="mt-2 h-4 w-2/3 rounded bg-foreground/[0.06]" />
+            <div className="mt-8 ml-auto h-10 w-2/3 rounded-[18px] bg-foreground/[0.055]" />
+            <div className="mt-8 h-4 w-3/4 rounded bg-foreground/[0.08]" />
+            <div className="mt-2 h-4 w-1/2 rounded bg-foreground/[0.06]" />
+          </div>
+          <p className="mt-6 text-[12px] font-medium text-muted-foreground">Loading conversation...</p>
+        </div>
+      </WorkspaceShell>
+    );
   }
 
   return (

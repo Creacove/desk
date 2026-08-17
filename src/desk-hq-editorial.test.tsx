@@ -1,101 +1,160 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeskHQScreen } from "./features/desk/DeskHQ";
 import { productionFixtureData } from "./services/fixtureRepositories";
+import type { TodayBriefViewModel } from "./types/cleanProduction";
 
 afterEach(cleanup);
 
-function renderHome() {
-  render(
-    <DeskHQScreen
-      profile={productionFixtureData.profile}
-      todayBrief={productionFixtureData.todayBrief}
-      todayBriefError={null}
-      attention={productionFixtureData.attention}
-      movement={productionFixtureData.movement}
-      agents={productionFixtureData.agents}
-      missions={productionFixtureData.missions}
-      music={productionFixtureData.music}
-      onNavigate={vi.fn()}
-      onManager={vi.fn()}
-      onOpenMission={vi.fn()}
-      onLockedAgent={vi.fn()}
-      onDrawer={vi.fn()}
-      onOpenMusicFocus={vi.fn()}
-      onAskManager={vi.fn()}
-      activityCount={3}
-      onOpenActivityCenter={vi.fn()}
-    />,
-  );
+type HomeOverrides = Partial<ComponentProps<typeof DeskHQScreen>>;
+
+function renderHome(overrides: HomeOverrides = {}) {
+  const props: ComponentProps<typeof DeskHQScreen> = {
+    profile: productionFixtureData.profile,
+    todayBrief: productionFixtureData.todayBrief,
+    todayBriefError: null,
+    attention: productionFixtureData.attention,
+    movement: productionFixtureData.movement,
+    agents: productionFixtureData.agents,
+    missions: productionFixtureData.missions,
+    music: productionFixtureData.music,
+    onNavigate: vi.fn(),
+    onManager: vi.fn(),
+    onOpenMission: vi.fn(),
+    onLockedAgent: vi.fn(),
+    onDrawer: vi.fn(),
+    onOpenMusicFocus: vi.fn(),
+    onAskManager: vi.fn(),
+    activityCount: 3,
+    onOpenActivityCenter: vi.fn(),
+    briefPending: false,
+    onRefreshBrief: vi.fn(),
+    ...overrides,
+  };
+  return { ...render(<DeskHQScreen {...props} />), props };
 }
 
-describe("Home editorial presentation", () => {
-  it("uses Home as the visible first-page language", () => {
+function diverseBrief(): TodayBriefViewModel {
+  return {
+    ...productionFixtureData.todayBrief,
+    intelligenceSnapshot: [
+      {
+        title: "Spotify audience",
+        insight: "Spotify remains the largest audience source.",
+        metrics: [
+          { label: "Monthly listeners", value: "428K", context: "last 28 days", evidenceIds: ["sp-1"] },
+          { label: "Followers", value: "96K", context: "current", evidenceIds: ["sp-2"] },
+          { label: "Playlist reach", value: "1.8M", context: "last 28 days", evidenceIds: ["sp-3"] },
+        ],
+      },
+      {
+        title: "TikTok audience",
+        insight: "Short-form response is growing.",
+        metrics: [{ label: "Followers", value: "312K", context: "current", evidenceIds: ["tt-1"] }],
+      },
+      {
+        title: "Shazam demand",
+        insight: "Recognition is rising.",
+        metrics: [{ label: "Shazam count", value: "18.4K", context: "90 days", evidenceIds: ["sh-1"] }],
+      },
+      {
+        title: "YouTube audience",
+        insight: "Video reach is material.",
+        metrics: [{ label: "Views", value: "2.1M", context: "90 days", evidenceIds: ["yt-1"] }],
+      },
+    ],
+  };
+}
+
+describe("Home premium briefing", () => {
+  it("uses the shared Home workspace language without duplicating responsive content", () => {
     renderHome();
 
     expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
     expect(screen.queryByText("Desk HQ")).not.toBeInTheDocument();
-    expect(screen.getAllByText("Artist workspace")).toHaveLength(1);
+    expect(screen.queryByRole("form", { name: "Ask your manager on mobile" })).not.toBeInTheDocument();
   });
 
-  it("presents desktop signals as one flat evidence rail rather than metric cards", () => {
-    renderHome();
+  it("renders only meaningful Right Now work and preserves the existing destinations", () => {
+    const onNavigate = vi.fn();
+    const onDrawer = vi.fn();
+    renderHome({ onNavigate, onDrawer });
+
+    const rightNow = screen.getByTestId("desk-right-now");
+    expect(within(rightNow).getAllByRole("button")).toHaveLength(2);
+
+    fireEvent.click(within(rightNow).getByRole("button", { name: "Open Split approval" }));
+    expect(onNavigate).toHaveBeenCalledWith("missionsWorkspace");
+
+    fireEvent.click(within(rightNow).getByRole("button", { name: "Open Distributor package" }));
+    expect(onDrawer).toHaveBeenCalledWith("evidence");
+  });
+
+  it("removes Right Now entirely when there is nothing actionable", () => {
+    renderHome({ attention: [] });
+    expect(screen.queryByTestId("desk-right-now")).not.toBeInTheDocument();
+  });
+
+  it("prioritizes strong metrics while using platform diversity as the tie-breaker", () => {
+    renderHome({ todayBrief: diverseBrief() });
 
     const rail = screen.getByTestId("desk-signal-metric-strip");
-    expect(rail).toHaveClass("border-y", "divide-x", "divide-foreground/8");
-    within(rail).getAllByTestId("desk-signal-metric-card").forEach((metric) => {
-      expect(metric).not.toHaveClass("rounded-[14px]", "border", "shadow");
+    expect(within(rail).getByText("Spotify monthly listeners")).toBeInTheDocument();
+    expect(within(rail).getByText("TikTok followers")).toBeInTheDocument();
+    expect(within(rail).getByText("Shazams")).toBeInTheDocument();
+    expect(within(rail).getByText("YouTube views")).toBeInTheDocument();
+    expect(within(rail).queryByText("Spotify followers")).not.toBeInTheDocument();
+    expect(within(rail).getAllByTestId("desk-signal-metric")).toHaveLength(4);
+  });
+
+  it("never pads Manager's Read with fabricated strategy copy", () => {
+    renderHome({
+      todayBrief: {
+        ...productionFixtureData.todayBrief,
+        managerRead: "One real operating read from Manager.",
+        managerEvidenceReads: undefined,
+      },
     });
+
+    const read = screen.getByTestId("desk-manager-read");
+    expect(within(read).getAllByTestId("desk-manager-read-segment")).toHaveLength(1);
+    expect(within(read).getByText("One real operating read from Manager.")).toBeInTheDocument();
+    expect(screen.queryByText(/compiling for this section/i)).not.toBeInTheDocument();
   });
 
-  it("keeps mobile metrics in the same flat information system", () => {
-    renderHome();
+  it("refreshes only on explicit action and keeps the current brief visible during pending or failure", () => {
+    const onRefreshBrief = vi.fn();
+    const first = renderHome({ onRefreshBrief });
 
-    const grid = screen.getByTestId("desk-mobile-metrics-grid");
-    expect(grid).toHaveClass("border-y", "border-foreground/8");
-    expect(grid).not.toHaveClass("rounded-[14px]");
-    screen.getAllByTestId("desk-mobile-metric-card").forEach((metric) => {
-      expect(metric.className).not.toMatch(/bg-(violet|teal|rose|blue)-500/);
-    });
-  });
+    expect(onRefreshBrief).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today's Brief" }));
+    expect(onRefreshBrief).toHaveBeenCalledTimes(1);
 
-  it("keeps Manager's Read as one continuous four-part editorial sequence", () => {
-    renderHome();
+    first.rerender(
+      <DeskHQScreen
+        {...first.props}
+        briefPending
+        todayBriefError={null}
+        onRefreshBrief={onRefreshBrief}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Refreshing Today's Brief" })).toBeDisabled();
+    expect(screen.getByText(productionFixtureData.todayBrief.headlineRead)).toBeInTheDocument();
 
-    const read = screen.getByTestId("desk-desktop-manager-read");
-    expect(read).toHaveClass("divide-y", "border-y");
-    const segments = screen.getAllByTestId("desk-manager-read-segment");
-    expect(segments).toHaveLength(4);
-    segments.forEach((segment) => {
-      expect(segment).not.toHaveClass("rounded-[14px]", "border");
-    });
-  });
-
-  it("keeps the Home brief focused without evidence CTAs", () => {
-    renderHome();
-
-    const desktopBrief = screen.getByTestId("desk-editorial-brief");
-    expect(within(desktopBrief).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
-
-    const mobileBrief = screen.getByTestId("desk-mobile-command-surface");
-    expect(within(mobileBrief).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
-  });
-
-  it("gives attention and missions dedicated places without card soup", () => {
-    renderHome();
-
-    expect(screen.getAllByText("Right now")).toHaveLength(2);
-    expect(screen.getAllByText("Missions").length).toBeGreaterThanOrEqual(2);
-    screen.getAllByTestId("desk-focus-mission-card").forEach((mission) => {
-      expect(mission.className).not.toMatch(/rounded|shadow/);
-    });
-  });
-
-  it("keeps the Manager entry point present on both responsive surfaces", () => {
-    renderHome();
-
-    expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
-    expect(screen.getByRole("form", { name: "Ask your manager on mobile" })).toBeInTheDocument();
+    first.rerender(
+      <DeskHQScreen
+        {...first.props}
+        briefPending={false}
+        todayBriefError="Upstream generation failed"
+        onRefreshBrief={onRefreshBrief}
+      />,
+    );
+    expect(screen.getByTestId("desk-brief-refresh-error")).toHaveTextContent("Couldn't refresh");
+    expect(screen.getByText(productionFixtureData.todayBrief.headlineRead)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRefreshBrief).toHaveBeenCalledTimes(2);
   });
 });
