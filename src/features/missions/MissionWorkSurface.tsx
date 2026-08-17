@@ -175,7 +175,7 @@ export function WorkSurface({
             const stageDone = stageTasks.filter((task) => isTaskOptimisticallyDone(task, optimisticCompleted)).length;
             const open = openStageId === checkpoint.id;
             const lockedBy = getBlockingDependency(checkpoint, checkpoints);
-            const stageComplete = checkpoint.status === "Met" || checkpoint.status === "Ready for AI review";
+            const stageComplete = checkpoint.status === "Met";
             const needsAttention = stageTasks.some((task) => isOpenArtistTask(task) && !isTaskOptimisticallyDone(task, optimisticCompleted));
             const stageStatus = lockedBy
               ? `Starts after ${lockedBy.title}`
@@ -200,7 +200,9 @@ export function WorkSurface({
                   <StageIcon complete={stageComplete} attention={needsAttention || checkpoint.status === "Needs revision"} phase={checkpoint.phase} />
                   <span className="min-w-0">
                     <span className="block truncate text-[15px] font-bold text-foreground">{checkpoint.title}</span>
-                    <span className="mt-1 block truncate text-[11px] font-semibold text-muted-foreground">{stageStatus}</span>
+                    <span className="mt-1 block truncate text-[11px] font-semibold text-muted-foreground">
+                      {stageStatus}
+                    </span>
                   </span>
                   <ChevronDown className={cn("h-4 w-4 text-muted-foreground/55 transition-transform", open && "rotate-180")} />
                 </button>
