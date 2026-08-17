@@ -851,7 +851,7 @@ function CleanProductionWorkspace({
   const mobileTitle =
     activeSection === "labelHQ" ? "Desk HQ" :
     activeSection === "music" ? "Catalog" :
-    activeSection === "staff" ? "Team Agents" :
+    activeSection === "manager" ? "Manager" :
     activeSection === "missions" ? "Missions" :
     "Settings";
   const mobileAttentionCount = splitAttentionItems(attention).actionable.length;
@@ -869,6 +869,7 @@ function CleanProductionWorkspace({
   const showMobileTopbar =
     view === "labelHQ" ||
     view === "staffWorkspace" ||
+    view === "managerOffice" ||
     view === "artistProfileWorkspace" ||
     (view === "musicWorkspace" && !musicDetailOpen) ||
     (view === "missionsWorkspace" && !missionRoomOpen);
@@ -2120,7 +2121,17 @@ function CleanProductionWorkspace({
   return (
     <div className="app-theme min-h-screen bg-background text-foreground selection:bg-brand-accent/15">
       <div className="relative z-20 mx-auto grid min-h-screen w-full max-w-[1760px] gap-0 px-3 pb-28 pt-0 sm:px-5 lg:grid-cols-[216px_minmax(0,1fr)] lg:px-0 lg:py-0 lg:pb-0">
-        <DeskRail active={activeSection} activeMissionCount={missions.filter((mission) => mission.status !== "complete").length} onNavigate={navigateFromMenu} onSignOut={onSignOut} />
+        <DeskRail
+          active={activeSection}
+          activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
+          recentManagerConversations={conversations.slice(0, 3).map((conversation) => ({ id: conversation.id, topic: conversation.topic }))}
+          onOpenManagerConversation={(conversationId) => {
+            const conversation = conversations.find((candidate) => candidate.id === conversationId);
+            if (conversation) void openConversation(conversation);
+          }}
+          onNavigate={navigateFromMenu}
+          onSignOut={onSignOut}
+        />
         <main className="min-w-0 py-0 lg:px-8 lg:py-7">
           <MobileChrome
             active={activeSection}

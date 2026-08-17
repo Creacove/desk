@@ -1746,7 +1746,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
     expect(screen.getByTestId("mobile-app-topbar")).toHaveClass("backdrop-blur-xl");
-    expect(screen.getByTestId("mobile-tabbar")).toHaveClass("rounded-[18px]");
+    expect(screen.getByTestId("mobile-tabbar")).toHaveClass("inset-x-0", "border-t");
     expect(screen.getByTestId("mobile-tab-label-HQ")).toHaveTextContent("HQ");
     expect(screen.queryByTestId("mobile-tab-label-Settings")).not.toBeInTheDocument();
 
@@ -4002,7 +4002,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
     openManagerFromDesk();
     expect(await screen.findByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
-    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
   }, 20000);
 
   it("keeps the nested mobile back row at the top and omits empty conversation history", () => {
@@ -4028,7 +4028,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Conversation History")).not.toBeInTheDocument();
   });
 
-  it("gives Missions, Team, Manager, and Profile dedicated compact mobile surfaces", async () => {
+  it("gives Missions, Manager, and Profile dedicated compact mobile surfaces", async () => {
     await enterDeskHq();
 
     const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
@@ -4036,10 +4036,6 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
     expect(screen.getByTestId("missions-mobile-picker")).toHaveClass("lg:hidden");
     expect(screen.getByTestId("missions-desktop-list")).toHaveClass("hidden", "lg:block");
-
-    fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
-    expect(screen.getByTestId("staff-mobile-list")).toHaveClass("md:hidden");
-    expect(screen.getByTestId("staff-desktop-list")).toHaveClass("hidden", "md:grid");
 
     fireEvent.click(within(rail).getByRole("button", { name: "Desk HQ" }));
     openManagerFromDesk();
@@ -6278,18 +6274,11 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Remove")).not.toBeInTheDocument();
   });
 
-  it("renders Staff, Missions, Settings, and contextual evidence without top-level evidence navigation", async () => {
+  it("renders Missions, Settings, and contextual evidence without top-level evidence navigation", async () => {
     await enterDeskHq();
 
     const rail = screen.getByRole("navigation", { name: "Ordersounds Desk navigation" });
     expect(within(rail).queryByRole("button", { name: "Evidence" })).not.toBeInTheDocument();
-
-    fireEvent.click(within(rail).getByRole("button", { name: "Team Agents" }));
-    expect(screen.getByRole("heading", { name: "Artist Team Agents" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Marketing Lead" }));
-    expect(screen.getByRole("heading", { name: "Not available on this plan" })).toBeInTheDocument();
-    expect(screen.getByText("You don't have access to this agent on your current plan.")).toBeInTheDocument();
-    expect(screen.queryByText("Source rail")).not.toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
@@ -6658,8 +6647,7 @@ async function enterDeskHq() {
 }
 
 function openManagerFromDesk() {
-  fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Team Agents" }));
-  fireEvent.click(screen.getByRole("button", { name: "AI Manager" }));
+  fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Manager" }));
 }
 
 function authWithSession(result: Awaited<ReturnType<ProductionAuthAdapter["getSession"]>>): ProductionAuthAdapter {
