@@ -9,6 +9,7 @@ on:
       - scripts/manager_premium_phase_1_fix1.py
       - scripts/manager_premium_phase_1_fix2.py
       - scripts/manager_premium_phase_1_fix3.py
+      - scripts/manager_premium_phase_1_fix4.py
       - .github/workflows/manager-premium-phase-1.yml
 
 permissions:
@@ -39,6 +40,7 @@ jobs:
           python3 scripts/manager_premium_phase_1_fix1.py
           python3 scripts/manager_premium_phase_1_fix2.py
           python3 scripts/manager_premium_phase_1_fix3.py
+          python3 scripts/manager_premium_phase_1_fix4.py
 
       - name: Install dependencies
         run: npm ci
