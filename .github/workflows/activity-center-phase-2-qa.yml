@@ -34,8 +34,8 @@ jobs:
             echo "Stale Activity Center dialog contract remains in tests."
             exit 1
           fi
-          if grep -R -n -E 'toHaveTextContent\("(Needs you|Background activity|Nothing is waiting on you)' src/production-app-shell.test.tsx; then
-            echo "Stale bucket-based Activity Center assertions remain."
+          if grep -n -E 'expect\(.*\)\.toHaveTextContent\("(Needs you|Background activity|Nothing is waiting on you)' src/production-app-shell.test.tsx; then
+            echo "Stale positive bucket-based Activity Center assertions remain."
             exit 1
           fi
           if grep -n -F 'const cursorKey = `ordersounds.activityCursor.v1' src/services/workspaceLiveSync.ts; then
