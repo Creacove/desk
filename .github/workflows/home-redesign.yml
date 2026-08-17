@@ -1,74 +1,43 @@
-name: Home redesign materializer
+name: Home test contract fix
 
 on:
-  push:
-    branches:
-      - design/home-redesign
-    paths:
-      - .github/workflows/home-redesign.yml
-      - scripts/home_redesign.py
   pull_request:
     branches:
       - main
     paths:
       - .github/workflows/home-redesign.yml
-      - scripts/home_redesign.py
 
 permissions:
   contents: write
 
 jobs:
-  materialize:
+  fix-test-contract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           ref: design/home-redesign
           fetch-depth: 0
-      - name: Apply Home redesign
-        run: python3 scripts/home_redesign.py
-      - name: Align production-shell contracts with Home
+      - name: Fix metric readability source contract
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           path = Path("src/production-app-shell.test.tsx")
-          text = path.read_text()
-          replacements = [
-              ('screen.findByRole("heading", { name: "Desk HQ" })', 'screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)'),
-              ('screen.getByRole("heading", { name: "Desk HQ" })', 'screen.getAllByRole("heading", { name: "Home" })[0]'),
-              ('screen.queryByRole("heading", { name: "Desk HQ" })', '(screen.queryAllByRole("heading", { name: "Home" })[0] ?? null)'),
-              ('getByRole("button", { name: "Desk HQ" })', 'getByRole("button", { name: "Home" })'),
-              ('"View supporting evidence"', '"View evidence"'),
-              ('"Ask your manager anything..."', '"Ask Manager about anything in this workspace"'),
-              ('"Ask your manager..."', '"Ask Manager"'),
-              ('expect(screen.getAllByText("Today\'s Brief").length).toBeGreaterThan(0);', 'expect(screen.getByTestId("desk-editorial-brief")).toBeInTheDocument();'),
-              ('expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Today\'s Focus");', 'expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Right now");'),
-              ('expect(managerReadCard.className).toContain("manager-read-card");', 'expect(managerReadCard.className).not.toContain("manager-read-card");'),
-              ('expect(within(desk).getByTestId("desk-mobile-manager-read-card")).toHaveClass("manager-read-card");', 'expect(within(desk).getByTestId("desk-mobile-manager-read-card")).not.toHaveClass("manager-read-card");'),
-              ('expect(screen.getAllByRole("button", { name: /Open Activity Center/i })).toHaveLength(2);', 'expect(screen.getAllByRole("button", { name: /Open Activity Center/i }).length).toBeGreaterThanOrEqual(2);'),
-              ('expect(screen.getByText(/Manager brief ·/i)).toBeInTheDocument();', 'expect(screen.getByTestId("desk-editorial-brief")).toHaveTextContent("Prepared");'),
-              ('expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.label}</p>");', 'expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain("break-words text-[11px] font-semibold leading-tight text-muted-foreground\">{metric.label}</p>");'),
-          ]
+          lines = path.read_text().splitlines()
           changed = 0
-          for old, new in replacements:
-              count = text.count(old)
-              if count:
-                  text = text.replace(old, new)
-                  changed += count
-          if changed < 1:
-              raise SystemExit("Expected stale Home contracts to migrate")
-          path.write_text(text)
-          print(f"Migrated {changed} Home production-shell contract occurrence(s)")
+          for index, line in enumerate(lines):
+              if 'metric.label}</p>' in line and '.toContain(' in line:
+                  lines[index] = """    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('break-words text-[11px] font-semibold leading-tight text-muted-foreground">{metric.label}</p>');"""
+                  changed += 1
+          if changed != 1:
+              raise SystemExit(f"Expected exactly one metric label source contract, found {changed}")
+          path.write_text("\n".join(lines) + "\n")
           PY
-      - name: Commit generated Home source
+      - name: Commit test fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/features/desk/DeskHQ.tsx src/design-system/components.tsx src/production-app-shell.test.tsx
-          if git diff --cached --quiet; then
-            echo "Home source already materialized"
-            exit 0
-          fi
-          git commit -m "design: make Home the artist operating overview"
+          git add src/production-app-shell.test.tsx
+          git commit -m "test: align metric readability contract with Home"
           git push origin HEAD:design/home-redesign
