@@ -2,8 +2,10 @@ name: Mission release gate patch
 
 on:
   push:
-    branches: [design/mission-workspace-simplification]
-    paths: [.github/workflows/mission-release-gate-patch.yml]
+    branches:
+      - design/mission-workspace-simplification
+    paths:
+      - .github/workflows/mission-release-gate-patch.yml
 
 permissions:
   contents: write
@@ -21,64 +23,12 @@ jobs:
           node-version: 22
           cache: npm
       - name: Remove fake persistence and add regression
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          work = Path('src/features/missions/MissionWorkSurface.tsx')
-          text = work.read_text()
-          old = '''      const uploaded = onUploadTaskDeliverable
-        ? await onUploadTaskDeliverable(task.id, { title: deliverable.title, file })
-        : {
-            ...deliverable,
-            status: "uploaded" as const,
-            documentId: `local-${task.id}-${Date.now()}`,
-            fileName: file.name,
-            validationSummary: "Ready for Manager review.",
-          };'''
-          new = '''      if (!onUploadTaskDeliverable) {
-        throw new Error("Evidence upload is unavailable. The file was not saved.");
-      }
-      const uploaded = await onUploadTaskDeliverable(task.id, { title: deliverable.title, file });'''
-          if old not in text:
-              raise SystemExit('Expected fake upload fallback not found; refusing an unsafe blind patch.')
-          work.write_text(text.replace(old, new, 1))
-
-          test = Path('src/mission-task-deliverables.test.tsx')
-          text = test.read_text()
-          marker = '''  it("passes an optional uploaded document into completion when supplied", async () => {'''
-          regression = '''  it("never fabricates evidence when the upload persistence adapter is unavailable", async () => {
-    const onCompleteTask = vi.fn(async () => undefined);
-    renderMission(missionWithThesis(), { onCompleteTask, openTaskId: "task-thesis" });
-
-    fireEvent.change(screen.getByLabelText("Upload optional context for Provide 90-day thesis"), {
-      target: { files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })] },
-    });
-
-    expect(await screen.findByRole("alert")).toHaveTextContent("Evidence upload is unavailable. The file was not saved.");
-    expect(screen.getByText("thesis.pdf")).toBeInTheDocument();
-
-    const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
-
-    await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
-  });
-
-'''
-          if marker not in text:
-              raise SystemExit('Regression insertion point not found.')
-          if 'never fabricates evidence when the upload persistence adapter is unavailable' not in text:
-              text = text.replace(marker, regression + marker, 1)
-          test.write_text(text)
-          PY
+        run: echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCgp3b3JrID0gUGF0aCgic3JjL2ZlYXR1cmVzL21pc3Npb25zL01pc3Npb25Xb3JrU3VyZmFjZS50c3giKQp0ZXh0ID0gd29yay5yZWFkX3RleHQoKQpvbGQgPSAiIiIgICAgICBjb25zdCB1cGxvYWRlZCA9IG9uVXBsb2FkVGFza0RlbGl2ZXJhYmxlCiAgICAgICAgPyBhd2FpdCBvblVwbG9hZFRhc2tEZWxpdmVyYWJsZSh0YXNrLmlkLCB7IHRpdGxlOiBkZWxpdmVyYWJsZS50aXRsZSwgZmlsZSB9KQogICAgICAgIDogewogICAgICAgICAgICAuLi5kZWxpdmVyYWJsZSwKICAgICAgICAgICAgc3RhdHVzOiAidXBsb2FkZWQiIGFzIGNvbnN0LAogICAgICAgICAgICBkb2N1bWVudElkOiBgbG9jYWwtJHt0YXNrLmlkfS0ke0RhdGUubm93KCl9YCwKICAgICAgICAgICAgZmlsZU5hbWU6IGZpbGUubmFtZSwKICAgICAgICAgICAgdmFsaWRhdGlvblN1bW1hcnk6ICJSZWFkeSBmb3IgTWFuYWdlciByZXZpZXcuIiwKICAgICAgICAgIH07IiIiCm5ldyA9ICIiIiAgICAgIGlmICghb25VcGxvYWRUYXNrRGVsaXZlcmFibGUpIHsKICAgICAgICB0aHJvdyBuZXcgRXJyb3IoIkV2aWRlbmNlIHVwbG9hZCBpcyB1bmF2YWlsYWJsZS4gVGhlIGZpbGUgd2FzIG5vdCBzYXZlZC4iKTsKICAgICAgfQogICAgICBjb25zdCB1cGxvYWRlZCA9IGF3YWl0IG9uVXBsb2FkVGFza0RlbGl2ZXJhYmxlKHRhc2suaWQsIHsgdGl0bGU6IGRlbGl2ZXJhYmxlLnRpdGxlLCBmaWxlIH0pOyIiIgppZiBvbGQgbm90IGluIHRleHQ6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJFeHBlY3RlZCBmYWtlIHVwbG9hZCBmYWxsYmFjayBub3QgZm91bmQ7IHJlZnVzaW5nIGFuIHVuc2FmZSBibGluZCBwYXRjaC4iKQp3b3JrLndyaXRlX3RleHQodGV4dC5yZXBsYWNlKG9sZCwgbmV3LCAxKSkKCnRlc3QgPSBQYXRoKCJzcmMvbWlzc2lvbi10YXNrLWRlbGl2ZXJhYmxlcy50ZXN0LnRzeCIpCnRleHQgPSB0ZXN0LnJlYWRfdGV4dCgpCm1hcmtlciA9ICcgIGl0KCJwYXNzZXMgYW4gb3B0aW9uYWwgdXBsb2FkZWQgZG9jdW1lbnQgaW50byBjb21wbGV0aW9uIHdoZW4gc3VwcGxpZWQiLCBhc3luYyAoKSA9PiB7JwpyZWdyZXNzaW9uID0gIiIiICBpdCgibmV2ZXIgZmFicmljYXRlcyBldmlkZW5jZSB3aGVuIHRoZSB1cGxvYWQgcGVyc2lzdGVuY2UgYWRhcHRlciBpcyB1bmF2YWlsYWJsZSIsIGFzeW5jICgpID0+IHsKICAgIGNvbnN0IG9uQ29tcGxldGVUYXNrID0gdmkuZm4oYXN5bmMgKCkgPT4gdW5kZWZpbmVkKTsKICAgIHJlbmRlck1pc3Npb24obWlzc2lvbldpdGhUaGVzaXMoKSwgeyBvbkNvbXBsZXRlVGFzaywgb3BlblRhc2tJZDogInRhc2stdGhlc2lzIiB9KTsKCiAgICBmaXJlRXZlbnQuY2hhbmdlKHNjcmVlbi5nZXRCeUxhYmVsVGV4dCgiVXBsb2FkIG9wdGlvbmFsIGNvbnRleHQgZm9yIFByb3ZpZGUgOTAtZGF5IHRoZXNpcyIpLCB7CiAgICAgIHRhcmdldDogeyBmaWxlczogW25ldyBGaWxlKFsicG9zaXRpb25pbmciXSwgInRoZXNpcy5wZGYiLCB7IHR5cGU6ICJhcHBsaWNhdGlvbi9wZGYiIH0pXSB9LAogICAgfSk7CgogICAgZXhwZWN0KGF3YWl0IHNjcmVlbi5maW5kQnlSb2xlKCJhbGVydCIpKS50b0hhdmVUZXh0Q29udGVudCgiRXZpZGVuY2UgdXBsb2FkIGlzIHVuYXZhaWxhYmxlLiBUaGUgZmlsZSB3YXMgbm90IHNhdmVkLiIpOwogICAgZXhwZWN0KHNjcmVlbi5nZXRCeVRleHQoInRoZXNpcy5wZGYiKSkudG9CZUluVGhlRG9jdW1lbnQoKTsKCiAgICBjb25zdCBkaWFsb2cgPSBzY3JlZW4uZ2V0QnlSb2xlKCJkaWFsb2ciLCB7IG5hbWU6ICJQcm92aWRlIDkwLWRheSB0aGVzaXMiIH0pOwogICAgZmlyZUV2ZW50LmNsaWNrKHdpdGhpbihkaWFsb2cpLmdldEJ5Um9sZSgiYnV0dG9uIiwgeyBuYW1lOiAiTWFyayBjb21wbGV0ZSIgfSkpOwogICAgZmlyZUV2ZW50LmNsaWNrKHdpdGhpbihkaWFsb2cpLmdldEJ5Um9sZSgiYnV0dG9uIiwgeyBuYW1lOiAiTWFyayBjb21wbGV0ZSIgfSkpOwoKICAgIGF3YWl0IHdhaXRGb3IoKCkgPT4gZXhwZWN0KG9uQ29tcGxldGVUYXNrKS50b0hhdmVCZWVuQ2FsbGVkV2l0aCgidGFzay10aGVzaXMiLCAiY29tcGxldGVkIiwgIiIsIFtdLCB1bmRlZmluZWQpKTsKICB9KTsKCiIiIgppZiBtYXJrZXIgbm90IGluIHRleHQ6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCJSZWdyZXNzaW9uIGluc2VydGlvbiBwb2ludCBub3QgZm91bmQuIikKaWYgIm5ldmVyIGZhYnJpY2F0ZXMgZXZpZGVuY2Ugd2hlbiB0aGUgdXBsb2FkIHBlcnNpc3RlbmNlIGFkYXB0ZXIgaXMgdW5hdmFpbGFibGUiIG5vdCBpbiB0ZXh0OgogICAgdGV4dCA9IHRleHQucmVwbGFjZShtYXJrZXIsIHJlZ3Jlc3Npb24gKyBtYXJrZXIsIDEpCnRlc3Qud3JpdGVfdGV4dCh0ZXh0KQo=' | base64 -d | python
       - name: Install dependencies
         run: npm ci
       - name: Run mission persistence regressions
         run: npx vitest run --environment jsdom --pool=vmThreads src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx
       - name: Commit patch and remove this temporary workflow
-        shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/mission-release-gate-patch.yml
