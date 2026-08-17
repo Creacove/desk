@@ -175,5 +175,22 @@ music_detail_top = r'''function MusicDetailTop({ object, label, onBack, onStageC
 
 source = replace_function(source, "function SongOverviewRead({", "function MusicManagerReadContent({", song_overview_read)
 source = replace_function(source, "function MusicDetailTop({", "function MusicLinkedWork({", music_detail_top)
-
 path.write_text(source)
+
+# The production shell tests intentionally describe the user-facing contract. Update
+# only assertions that belonged to the removed, oversized empty Manager Read hero.
+test_path = Path("src/production-app-shell.test.tsx")
+tests = test_path.read_text()
+replacements = {
+    'expect(readSurface).toHaveTextContent("Reviewing this record");': 'expect(readSurface).toHaveTextContent("Manager is reviewing this record");',
+    'expect(readSurface).toHaveTextContent("See what needs attention");': 'expect(readSurface).toHaveTextContent("Manager review");',
+    'expect(readSurface).toHaveTextContent("Couldn’t complete the review");': 'expect(readSurface).toHaveTextContent("Last review did not complete.");',
+    'name: "Review this record"': 'name: "Review record"',
+    'expect(screen.getByTestId("music-song-detail")).toHaveTextContent("See what needs attention.");': 'expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Manager review");',
+    'findByText("Couldn’t complete the review.")': 'findByText("Last review did not complete.")',
+    'toHaveTextContent("Checking this review")': 'toHaveTextContent("Manager review")',
+    'name: "Check again"': 'name: "Check review"',
+}
+for old, new in replacements.items():
+    tests = tests.replace(old, new)
+test_path.write_text(tests)
