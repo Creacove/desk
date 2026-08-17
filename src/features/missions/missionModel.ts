@@ -150,7 +150,7 @@ export function replaceDeliverable(list: MissionTaskDeliverableViewModel[], next
 export function getBlockingDependency(checkpoint: MissionCheckpointViewModel, checkpoints: MissionCheckpointViewModel[]) {
   return checkpoint.dependsOnCheckpointIds
     .map((id) => checkpoints.find((candidate) => candidate.id === id))
-    .find((candidate) => candidate && candidate.status !== "Met" && candidate.status !== "Ready for AI review");
+    .find((candidate) => candidate && candidate.status !== "Met");
 }
 
 export function getInitialCheckpointId(checkpoints: MissionCheckpointViewModel[], tasks: MissionTaskViewModel[]) {
