@@ -5284,14 +5284,14 @@ describe("Clean production prototype-match shell", () => {
     if (kind === "song") {
       const readSurface = within(room).getByTestId("song-room-overview-read");
       if (status === "running") {
-        expect(readSurface).toHaveTextContent("Reviewing this record");
+        expect(readSurface).toHaveTextContent("Manager is reviewing this record");
         expect(within(readSurface).queryByRole("button", { name: /Manager Read/i })).not.toBeInTheDocument();
       } else if (status === "not_generated") {
-        expect(readSurface).toHaveTextContent("See what needs attention");
-        expect(within(readSurface).getByRole("button", { name: "Review this record" })).toBeEnabled();
+        expect(readSurface).toHaveTextContent("Manager review");
+        expect(within(readSurface).getByRole("button", { name: "Review record" })).toBeEnabled();
       } else if (status === "failed") {
-        expect(readSurface).toHaveTextContent("Couldn’t complete the review");
-        expect(within(readSurface).getByRole("button", { name: "Try again" })).toBeEnabled();
+        expect(readSurface).toHaveTextContent("Last review did not complete.");
+        expect(within(readSurface).getByRole("button", { name: "Retry record review" })).toBeEnabled();
       } else {
         expect(readSurface).toHaveTextContent(subject.managerRead!.body.split("\n")[0]);
         const button = within(readSurface).getByRole("button", { name: buttonLabel });
@@ -5771,7 +5771,7 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review this record" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review record" }));
 
     await waitFor(() => expect(startManagerRead).toHaveBeenCalledWith("song-jam", "music_item"));
     expect(onMusicChanged).not.toHaveBeenCalled();
@@ -5817,7 +5817,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(screen.getByTestId("music-song-detail")).not.toHaveTextContent("The last good read remains visible");
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("See what needs attention.");
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Manager review");
   });
 
   it("shows safe local Manager Read failure copy without leaking backend or provider errors", async () => {
@@ -5840,10 +5840,10 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Open song Jam" }));
-    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review this record" }));
+    fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review record" }));
 
     const room = screen.getByTestId("music-song-detail");
-    expect(await within(room).findByText("Couldn’t complete the review.")).toBeInTheDocument();
+    expect(await within(room).findByText("Last review did not complete.")).toBeInTheDocument();
     expect(room).not.toHaveTextContent("OpenAI");
     expect(room).not.toHaveTextContent("compute resources");
     expect(room).not.toHaveTextContent("database worker");
@@ -6078,8 +6078,8 @@ describe("Clean production prototype-match shell", () => {
     await act(async () => { await Promise.resolve(); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Checking this review");
-    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Check again" })).toBeInTheDocument();
+    expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Manager review");
+    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Check review" })).toBeInTheDocument();
   });
 
   it("preserves an inconclusive exact Manager Read status without exposing generation", async () => {
@@ -6108,9 +6108,9 @@ describe("Clean production prototype-match shell", () => {
     const room = screen.getByTestId("music-song-detail");
     expect(onRefreshObject).toHaveBeenCalledTimes(1);
     expect(startManagerRead).not.toHaveBeenCalled();
-    expect(room).toHaveTextContent("Checking this review");
-    expect(within(room).getByRole("button", { name: "Check again" })).toBeInTheDocument();
-    expect(within(room).queryByRole("button", { name: "Review this record" })).not.toBeInTheDocument();
+    expect(room).toHaveTextContent("Manager review");
+    expect(within(room).getByRole("button", { name: "Check review" })).toBeInTheDocument();
+    expect(within(room).queryByRole("button", { name: "Review record" })).not.toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(10000); });
     expect(onRefreshObject).toHaveBeenCalledTimes(1);

@@ -12,8 +12,8 @@ describe("Song Room desktop workspace width", () => {
 
   it("keeps the record-review copy focused on the record rather than the Manager feature", () => {
     expect(music).toContain("What matters now");
-    expect(music).toContain("See what needs attention.");
-    expect(music).toContain("Review this record");
+    expect(music).toContain("Manager review");
+    expect(music).toContain("Review record");
     expect(music).not.toContain("Get Manager’s take on this record.");
   });
 });

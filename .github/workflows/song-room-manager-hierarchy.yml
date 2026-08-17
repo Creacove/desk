@@ -1,0 +1,62 @@
+name: Song Room manager hierarchy
+
+on:
+  push:
+    branches:
+      - design/song-room-manager-hierarchy
+    paths:
+      - scripts/song_room_manager_hierarchy.py
+      - scripts/song_room_manager_hierarchy_compat.py
+      - scripts/song_room_manager_hierarchy_tests.py
+      - src/song-room-manager-hierarchy.test.ts
+      - .github/workflows/song-room-manager-hierarchy.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: design/song-room-manager-hierarchy
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Apply Song Room hierarchy
+        run: |
+          python3 scripts/song_room_manager_hierarchy.py
+          python3 scripts/song_room_manager_hierarchy_compat.py
+          python3 scripts/song_room_manager_hierarchy_tests.py
+      - run: npm ci
+      - name: Song Room hierarchy contract
+        run: npx vitest run src/song-room-manager-hierarchy.test.ts --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production shell regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit Song Room hierarchy
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/music/MusicScreens.tsx src/production-app-shell.test.tsx src/song-room-red-antler-overview.test.ts src/desktop-workspace-width.test.ts
+          git commit -m 'design: prioritize Manager in Song Room'
+          git push origin HEAD:design/song-room-manager-hierarchy
