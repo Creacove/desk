@@ -34,12 +34,13 @@ jobs:
 
           shell_path = Path("src/production-app-shell.test.tsx")
           shell = shell_path.read_text()
-          old_shell = 'name: "Desk HQ"'
-          shell_occurrences = shell.count(old_shell)
+          old_assertion = 'expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();'
+          new_assertion = 'expect((await screen.findAllByRole("heading", { name: "Home" })).length).toBeGreaterThan(0);'
+          shell_occurrences = shell.count(old_assertion)
           if shell_occurrences < 1:
-              raise SystemExit("Expected Desk HQ navigation assertions in production shell tests")
-          shell_path.write_text(shell.replace(old_shell, 'name: "Home"'))
-          print(f"Updated {shell_occurrences} production shell navigation assertions to Home")
+              raise SystemExit("Expected Desk HQ heading assertions in production shell tests")
+          shell_path.write_text(shell.replace(old_assertion, new_assertion))
+          print(f"Updated {shell_occurrences} production shell heading assertions to tolerate responsive Home headings")
           PY
       - run: npm ci
       - name: Home editorial contract
