@@ -1,5 +1,8 @@
 from pathlib import Path
 
+source = Path("scripts/finalize-missions-source.py")
+exec(compile(source.read_text(), str(source), "exec"))
+
 path = Path("scripts/migrate-missions-zero-learning-tests.py")
 code = path.read_text()
 
