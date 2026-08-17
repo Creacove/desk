@@ -1,5 +1,6 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DeskHQScreen } from "./features/desk/DeskHQ";
 import { productionFixtureData } from "./services/fixtureRepositories";
@@ -7,10 +8,10 @@ import type { TodayBriefViewModel } from "./types/cleanProduction";
 
 afterEach(cleanup);
 
-type HomeOverrides = Partial<React.ComponentProps<typeof DeskHQScreen>>;
+type HomeOverrides = Partial<ComponentProps<typeof DeskHQScreen>>;
 
 function renderHome(overrides: HomeOverrides = {}) {
-  const props: React.ComponentProps<typeof DeskHQScreen> = {
+  const props: ComponentProps<typeof DeskHQScreen> = {
     profile: productionFixtureData.profile,
     todayBrief: productionFixtureData.todayBrief,
     todayBriefError: null,
