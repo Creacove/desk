@@ -1,15 +1,19 @@
 name: Missions contract migration
+
 on:
   push:
-    branches: [design/missions-zero-learning-ux]
+    branches:
+      - design/missions-zero-learning-ux
+
 permissions:
   contents: write
+
 env:
   VITE_SUPABASE_URL: http://localhost:54321
   VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+
 jobs:
   migrate:
-    if: ${{ !contains(github.event.head_commit.message, '[missions-contract-migrated]') }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -21,29 +25,7 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Fix duplicate pending-state migration and apply contracts
-        shell: bash
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('scripts/migrate-missions-zero-learning-tests.py')
-          text = p.read_text()
-          old = '''r(p, 'expect(screen.getByText("Manager reviewing")).toBeInTheDocument();', 'expect(screen.getByText("Saving…")).toBeInTheDocument();')
-r(p, 'expect(screen.getByText("Manager reviewing")).toBeInTheDocument();', 'expect(screen.queryByText("Saving…")).not.toBeInTheDocument();\\n    expect(screen.getByText("Provide 90-day thesis")).toBeInTheDocument();')'''
-          new = '''r(p, '''\'''    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
-
-    resolveReview?.();\'''\''', '''\'''    expect(screen.getByText("Saving…")).toBeInTheDocument();
-
-    resolveReview?.();\'''\''')
-r(p, '''\'''    await waitFor(() => expect(onCompleteTask).toHaveResolved());
-    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();\'''\''', '''\'''    await waitFor(() => expect(onCompleteTask).toHaveResolved());
-    expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
-    expect(screen.getByText("Provide 90-day thesis")).toBeInTheDocument();\'''\''')'''
-          if old not in text:
-              raise SystemExit('duplicate pending-state migration block not found')
-          p.write_text(text.replace(old, new))
-          PY
-          python scripts/migrate-missions-zero-learning-tests.py
+      - run: python scripts/run-missions-zero-learning-migration.py
       - name: Run mission-focused tests
         run: npx vitest run src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
       - name: Commit migration
@@ -54,5 +36,5 @@ r(p, '''\'''    await waitFor(() => expect(onCompleteTask).toHaveResolved());
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/features/missions src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
           git diff --cached --check
-          git commit -m "Migrate Missions to zero-learning contracts [missions-contract-migrated]"
+          git commit -m "Migrate Missions to zero-learning contracts"
           git push origin HEAD:design/missions-zero-learning-ux
