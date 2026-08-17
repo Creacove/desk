@@ -32,6 +32,71 @@ music = music.replace(
     '<span data-testid={lockedReleasedStage ? "mobile-locked-song-stage" : undefined} className="text-[10px] font-semibold text-muted-foreground/58">{stageValue}</span>',
     1,
 )
+
+# Project review remains visually minimal, but status is still exposed to assistive
+# tech and the refresh action keeps its established accessible name. Do not show a
+# second icon action when the primary empty/error CTA is already present.
+project_section = '''  return (
+    <section className="border-t border-foreground/8 pt-6">
+      <div className="flex items-center justify-between gap-4">'''
+if project_section not in music:
+    raise SystemExit("missing project review section")
+music = music.replace(
+    project_section,
+    '''  return (
+    <section data-testid="project-manager-read-copy" className="border-t border-foreground/8 pt-6">
+      <span className="sr-only">{managerReadStatusLabel(project.managerReadStatus)}</span>
+      {project.managerReadStatus === "refreshing" ? <span className="sr-only">Updating from latest song changes. The current read remains available.</span> : null}
+      {project.managerReadStatus === "refresh_failed" ? <span className="sr-only">Manager Read could not be refreshed. Your previous read is still available.</span> : null}
+      <div className="flex items-center justify-between gap-4">''',
+    1,
+)
+
+project_header_action = '''        <button
+          type="button"
+          onClick={onGenerateBrief}
+          disabled={readBusy}
+          aria-label={briefPending ? "Reviewing this project" : actionLabel}
+          className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:opacity-40"
+        >
+          {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(project.managerReadStatus)}
+        </button>'''
+if project_header_action not in music:
+    raise SystemExit("missing project review header action")
+music = music.replace(
+    project_header_action,
+    '''        {read || readBusy ? (
+          <button
+            type="button"
+            onClick={onGenerateBrief}
+            disabled={readBusy}
+            aria-label={managerReadButtonLabel("project", project.managerReadStatus)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:opacity-40"
+          >
+            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(project.managerReadStatus)}
+          </button>
+        ) : null}''',
+    1,
+)
+
+metrics = '<div className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 border-y border-foreground/8 py-4 sm:grid-cols-3">'
+if metrics not in music:
+    raise SystemExit("missing project metric strip")
+music = music.replace(
+    metrics,
+    '<div data-testid="manager-read-metrics" className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 border-y border-foreground/8 py-4 sm:grid-cols-3">',
+    1,
+)
+
+empty_action = '<button type="button" onClick={onGenerateBrief} className="mt-4 inline-flex h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 text-[11px] font-semibold text-background">'
+if empty_action not in music:
+    raise SystemExit("missing project empty review action")
+music = music.replace(
+    empty_action,
+    '<button type="button" aria-label={managerReadButtonLabel("project", project.managerReadStatus)} onClick={onGenerateBrief} className="mt-4 inline-flex h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 text-[11px] font-semibold text-background">',
+    1,
+)
+
 music_path.write_text(music)
 
 
