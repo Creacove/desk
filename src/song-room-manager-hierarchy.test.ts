@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-const source = readFileSync(new URL("./features/music/MusicScreens.tsx", import.meta.url), "utf8");
+const source = readFileSync(join(process.cwd(), "src/features/music/MusicScreens.tsx"), "utf8");
 
 describe("Song Room manager hierarchy", () => {
   it("makes Chat with Manager the primary desktop CTA", () => {
