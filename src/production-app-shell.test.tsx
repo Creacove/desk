@@ -2108,7 +2108,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('break-words text-[11px] font-semibold leading-tight text-muted-foreground">{label}</p>');
-    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.value}</p>");
+    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('mt-2 break-words text-[21px] font-semibold leading-none tracking-[-0.015em] text-foreground">{value}</p>');
   }, 20000);
 
   it("keeps mobile navigation to four items and moves Settings into the top bar", async () => {
