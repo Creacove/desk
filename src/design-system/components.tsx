@@ -429,6 +429,7 @@ export function MobileChrome({
   notificationCount = 0,
   onOpenNotifications,
   activeMissionCount = 0,
+  avatarUrl,
   showTopbar = true,
   showTabbar = true,
 }: {
@@ -438,6 +439,7 @@ export function MobileChrome({
   notificationCount?: number;
   onOpenNotifications?: () => void;
   activeMissionCount?: number;
+  avatarUrl?: string;
   showTopbar?: boolean;
   showTabbar?: boolean;
 }) {
@@ -477,11 +479,20 @@ export function MobileChrome({
               aria-label="Open artist settings"
               onClick={() => onNavigate("artistProfileWorkspace")}
               className={cn(
-                "flex h-9 w-9 items-center justify-center rounded-full border border-foreground/8 bg-foreground/[0.02] text-muted-foreground transition-colors hover:border-foreground/14 hover:bg-foreground/[0.05] hover:text-foreground",
+                "relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full border border-foreground/8 bg-foreground/[0.02] text-muted-foreground transition-colors hover:border-foreground/14 hover:bg-foreground/[0.05] hover:text-foreground",
                 active === "settings" && "border-brand-accent/25 bg-brand-accent/[0.06] text-brand-accent",
               )}
             >
               <UserRound className="h-[16px] w-[16px]" aria-hidden="true" />
+              {avatarUrl ? (
+                <img
+                  data-testid="mobile-account-avatar"
+                  src={avatarUrl}
+                  alt=""
+                  className="absolute inset-0 h-full w-full object-cover"
+                  onError={(event) => { event.currentTarget.style.display = "none"; }}
+                />
+              ) : null}
             </button>
           </div>
         </header>
