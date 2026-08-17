@@ -1,0 +1,66 @@
+name: Verify Song Room hierarchy redesign
+
+on:
+  push:
+    branches:
+      - hotfix/catalog-projects-blank-screen
+    paths:
+      - scripts/redesign_song_room_hierarchy.py
+      - src/song-room-hierarchy-redesign.test.ts
+      - .github/workflows/song-room-hierarchy-redesign.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: hotfix/catalog-projects-blank-screen
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Apply Song Room hierarchy redesign
+        run: python3 scripts/redesign_song_room_hierarchy.py
+      - name: Focused hierarchy regression
+        run: npx vitest run src/song-room-hierarchy-redesign.test.ts --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Existing Catalog and Song Room contracts
+        run: npx vitest run src/catalog-manager-beauty-pass.test.ts src/design-system/app-thinking-orb.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production shell regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit generated Song Room redesign
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/music/MusicScreens.tsx
+          if git diff --cached --quiet; then
+            echo 'No generated source changes to commit.'
+          else
+            git commit -m 'design: restore Song Room action hierarchy'
+            git push origin HEAD:hotfix/catalog-projects-blank-screen
+          fi
