@@ -12,35 +12,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - name: Find count property access
+      - name: Find project and orb call sites
         run: |
+          echo '--- AppThinkingOrb usages ---'
+          git grep -n 'AppThinkingOrb' -- src || true
           echo '--- .count accesses ---'
           git grep -nE '\.count\b' -- src || true
-          echo '--- count token near Catalog / project code ---'
-          git grep -niE 'count' -- src/features/music src/design-system src/app | head -n 300 || true
       - uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build and inspect count access in production bundle
+      - name: Inspect thinking-orbs package
         run: |
-          npm run build
-          python3 - <<'PY'
-          from pathlib import Path
-          for path in Path('dist/assets').glob('index-*.js'):
-              text = path.read_text(errors='ignore')
-              print('BUNDLE', path)
-              needle = '.count'
-              start = 0
-              hits = 0
-              while True:
-                  i = text.find(needle, start)
-                  if i < 0:
-                      break
-                  hits += 1
-                  print(f'--- hit {hits} at {i} ---')
-                  print(text[max(0, i-700):i+700])
-                  start = i + len(needle)
-              print('TOTAL', hits)
-          PY
+          echo '--- thinking-orbs declarations/source ---'
+          find node_modules/thinking-orbs -maxdepth 3 -type f -print
+          grep -RniE 'size|count|20|64' node_modules/thinking-orbs | head -n 300 || true
+      - name: Build
+        run: npm run build
