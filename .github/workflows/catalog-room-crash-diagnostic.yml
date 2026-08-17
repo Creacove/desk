@@ -1,0 +1,36 @@
+name: Catalog room crash diagnostic
+
+on:
+  push:
+    branches:
+      - hotfix/catalog-room-crash
+    paths:
+      - .github/workflows/catalog-room-crash-diagnostic.yml
+      - scripts/catalog_room_crash_diagnostic.mjs
+      - scripts/catalog_room_crash_hotfix.py
+      - src/catalog-room-crash.test.tsx
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: hotfix/catalog-room-crash
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build with source maps
+        run: npx vite build --sourcemap
+        env:
+          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Trace production error location
+        run: node scripts/catalog_room_crash_diagnostic.mjs
