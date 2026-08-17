@@ -1,70 +1,87 @@
-import { setTimeout as delay } from "node:timers/promises";
+import fs from "node:fs";
+import http from "node:http";
 
-const debugOrigin = process.env.CHROME_DEBUG_ORIGIN || "http://127.0.0.1:9222";
-const appOrigin = process.env.APP_SMOKE_ORIGIN || "http://127.0.0.1:4173";
-const appUrl = process.env.APP_SMOKE_URL || `${appOrigin}/?fixtures=true&view=labelHQ`;
+const appUrl = process.env.DESK_SMOKE_URL ?? "http://127.0.0.1:4173/?fixtures=true&view=labelHQ";
+const appOrigin = new URL(appUrl).origin;
+const debugHost = process.env.CHROME_DEBUG_HOST ?? "127.0.0.1";
+const debugPort = Number(process.env.CHROME_DEBUG_PORT ?? "9222");
+const timeoutMs = Number(process.env.DESK_SMOKE_TIMEOUT_MS ?? "20000");
 
-async function waitForJson(url, attempts = 40) {
-  let lastError;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function fetchJson(path) {
+  return new Promise((resolve, reject) => {
+    const request = http.get({ host: debugHost, port: debugPort, path }, (response) => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { body += chunk; });
+      response.on("end", () => {
+        if (response.statusCode && response.statusCode >= 400) {
+          reject(new Error(`Chrome debug request failed ${response.statusCode}: ${body}`));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(new Error(`Chrome debug response was not JSON: ${body}\n${error instanceof Error ? error.message : String(error)}`));
+        }
+      });
+    });
+    request.on("error", reject);
+  });
+}
+
+async function getWebSocketUrl() {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(url);
-      if (response.ok) return await response.json();
-      lastError = new Error(`${url} returned ${response.status}`);
-    } catch (error) {
-      lastError = error;
+      const pages = await fetchJson("/json");
+      const page = pages.find((candidate) => candidate.type === "page");
+      if (page?.webSocketDebuggerUrl) return page.webSocketDebuggerUrl;
+    } catch {
+      // Chrome may still be starting.
     }
     await delay(250);
   }
-  throw lastError ?? new Error(`Could not reach ${url}`);
+  throw new Error("Timed out waiting for Chrome remote debugging.");
 }
 
-const pages = await waitForJson(`${debugOrigin}/json/list`);
-const target = pages.find((page) => page.type === "page" && page.webSocketDebuggerUrl) ?? pages.find((page) => page.webSocketDebuggerUrl) ?? pages[0];
-if (!target?.webSocketDebuggerUrl) throw new Error("Chrome DevTools page target was not available.");
-
-const socket = new WebSocket(target.webSocketDebuggerUrl);
-await new Promise((resolve, reject) => {
-  const timeout = setTimeout(() => reject(new Error("Timed out opening Chrome DevTools WebSocket.")), 5_000);
-  socket.addEventListener("open", () => {
-    clearTimeout(timeout);
-    resolve();
-  }, { once: true });
-  socket.addEventListener("error", () => {
-    clearTimeout(timeout);
-    reject(new Error("Chrome DevTools WebSocket failed to open."));
-  }, { once: true });
-});
-
-let sequence = 0;
+const webSocketUrl = await getWebSocketUrl();
+const socket = new WebSocket(webSocketUrl);
+let nextId = 0;
 const pending = new Map();
-const exceptions = [];
-const consoleErrors = [];
+const runtimeFailures = [];
 
 socket.addEventListener("message", (event) => {
   const message = JSON.parse(String(event.data));
-  if (message.id) {
-    const waiter = pending.get(message.id);
-    if (!waiter) return;
+  if (message.id && pending.has(message.id)) {
+    const { resolve, reject } = pending.get(message.id);
     pending.delete(message.id);
-    if (message.error) waiter.reject(new Error(`${waiter.method}: ${message.error.message}`));
-    else waiter.resolve(message.result ?? {});
+    if (message.error) reject(new Error(message.error.message ?? JSON.stringify(message.error)));
+    else resolve(message.result);
     return;
   }
+
   if (message.method === "Runtime.exceptionThrown") {
-    const details = message.params?.exceptionDetails ?? {};
-    exceptions.push(details.exception?.description || details.text || "Unknown browser runtime exception");
+    const details = message.params?.exceptionDetails;
+    runtimeFailures.push(details?.exception?.description ?? details?.text ?? "Unknown runtime exception");
   }
   if (message.method === "Runtime.consoleAPICalled" && message.params?.type === "error") {
-    const values = (message.params.args ?? []).map((arg) => arg.value ?? arg.description ?? "").filter(Boolean);
-    consoleErrors.push(values.join(" "));
+    runtimeFailures.push(
+      message.params.args?.map((arg) => arg.value ?? arg.description ?? JSON.stringify(arg)).join(" ") ?? "Unknown console error",
+    );
   }
 });
 
+await new Promise((resolve, reject) => {
+  socket.addEventListener("open", resolve, { once: true });
+  socket.addEventListener("error", () => reject(new Error("Unable to open Chrome remote debugging websocket.")), { once: true });
+});
+
 function command(method, params = {}) {
-  const id = ++sequence;
+  const id = ++nextId;
   return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject, method });
+    pending.set(id, { resolve, reject });
     socket.send(JSON.stringify({ id, method, params }));
   });
 }
@@ -75,71 +92,54 @@ async function evaluate(expression) {
     awaitPromise: true,
     returnByValue: true,
   });
-  if (result.exceptionDetails) {
-    throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text || "Browser evaluation failed.");
-  }
+  if (result.exceptionDetails) throw new Error(result.exceptionDetails.text ?? "Runtime evaluation failed.");
   return result.result?.value;
 }
 
-async function bodyText() {
-  return String(await evaluate("document.body?.innerText || ''"));
-}
-
 function includesText(haystack, needle) {
-  return String(haystack).toLocaleLowerCase().includes(String(needle).toLocaleLowerCase());
-}
-
-async function browserState() {
-  const state = await evaluate(`({
-    url: location.href,
-    readyState: document.readyState,
-    bodyText: document.body?.innerText || '',
-    html: document.documentElement?.outerHTML || ''
-  })`);
-  return state && typeof state === "object" ? state : {};
+  return String(haystack).toLowerCase().includes(String(needle).toLowerCase());
 }
 
 async function assertNoRuntimeFailure(context) {
-  if (!exceptions.length && !consoleErrors.length) return;
-  const state = await browserState();
-  throw new Error([
-    `Browser runtime failure while ${context}.`,
-    exceptions.length ? `Exceptions:\n${exceptions.join("\n---\n")}` : "",
-    consoleErrors.length ? `Console errors:\n${consoleErrors.join("\n---\n")}` : "",
-    `URL: ${state.url ?? "unknown"}`,
-    `DOM excerpt:\n${String(state.html ?? "").slice(0, 3_000)}`,
-  ].filter(Boolean).join("\n\n"));
+  if (!runtimeFailures.length) return;
+  throw new Error(`Browser runtime failure while ${context}:\n${runtimeFailures.join("\n")}`);
 }
 
-async function waitForText(expected, attempts = 40) {
-  let latest = "";
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
+async function waitForText(expected) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
     await assertNoRuntimeFailure(`waiting for ${expected}`);
-    latest = await bodyText();
-    if (includesText(latest, expected)) return latest;
+    const text = await evaluate("document.body?.innerText ?? ''");
+    if (includesText(text, expected)) return text;
     await delay(250);
   }
-  const state = await browserState();
+
+  const readyState = await evaluate("document.readyState");
+  const bodyText = await evaluate("document.body?.innerText ?? ''");
+  const bodyHtml = await evaluate("document.documentElement?.outerHTML ?? ''");
   throw new Error([
     `Timed out waiting for production UI text: ${expected}`,
-    `URL: ${state.url ?? "unknown"}`,
-    `readyState: ${state.readyState ?? "unknown"}`,
-    `Rendered body excerpt:\n${String(state.bodyText ?? latest).slice(0, 2_000)}`,
-    `DOM excerpt:\n${String(state.html ?? "").slice(0, 3_000)}`,
+    `URL: ${await evaluate("location.href")}`,
+    `readyState: ${readyState}`,
+    "Rendered body excerpt:",
+    String(bodyText).slice(0, 5000),
+    "DOM excerpt:",
+    String(bodyHtml).slice(0, 5000),
   ].join("\n\n"));
 }
 
 async function clickExact(label) {
   const clicked = await evaluate(`(() => {
-    const target = [...document.querySelectorAll('button,a')]
-      .find((element) => (element.textContent || '').trim() === ${JSON.stringify(label)});
-    if (!target) return false;
-    target.click();
+    const target = ${JSON.stringify(label)}.trim().toLowerCase();
+    const candidates = [...document.querySelectorAll('button, a')];
+    const element = candidates.find((candidate) => (candidate.textContent ?? '').trim().toLowerCase() === target);
+    if (!element) return false;
+    element.click();
     return true;
   })()`);
-  if (!clicked) throw new Error(`Could not find the ${label} navigation control.`);
+  if (!clicked) throw new Error(`Unable to click production UI control: ${label}`);
   await delay(500);
-  await assertNoRuntimeFailure(`navigating with ${label}`);
+  await assertNoRuntimeFailure(`after clicking ${label}`);
 }
 
 async function navigate(url) {
@@ -158,9 +158,9 @@ await command("Runtime.enable");
 await command("Page.enable");
 await navigate(appUrl);
 
-let text = await waitForText("Desk HQ");
+let text = await waitForText("Home");
 for (const expected of ["Catalog", "Missions"]) {
-  if (!includesText(text, expected)) throw new Error(`Production shell did not render expected Desk navigation: ${expected}`);
+  if (!includesText(text, expected)) throw new Error(`Production shell did not render expected navigation: ${expected}`);
 }
 
 await clickExact("Catalog");
@@ -173,6 +173,19 @@ await navigate(`${appOrigin}/?fixtures=true&view=managerOffice`);
 text = await waitForText("Manager");
 if (!includesText(text, "Manager")) throw new Error("Manager workspace did not render through the supported view entry.");
 
-await assertNoRuntimeFailure("finishing the production shell smoke");
-console.log("Real Chromium production-shell smoke passed: Desk HQ booted, Catalog navigation worked, and Manager rendered without uncaught runtime exceptions.");
+await navigate(`${appOrigin}/?fixtures=true&view=missionsWorkspace`);
+text = await waitForText("Missions");
+if (!includesText(text, "Missions")) throw new Error("Missions workspace did not render through the supported view entry.");
+
+await navigate(`${appOrigin}/?fixtures=true&view=artistProfileWorkspace`);
+text = await waitForText("Settings");
+if (!includesText(text, "Settings")) throw new Error("Settings workspace did not render through the supported view entry.");
+
+await assertNoRuntimeFailure("after completing production-shell smoke navigation");
 socket.close();
+
+if (process.env.DESK_SMOKE_OUTPUT) {
+  fs.writeFileSync(process.env.DESK_SMOKE_OUTPUT, JSON.stringify({ ok: true, appUrl }, null, 2));
+}
+
+console.log("Production Chromium smoke passed.");

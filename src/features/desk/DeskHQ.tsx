@@ -89,7 +89,6 @@ export function DeskHQScreen({
               profile={profile}
               brief={brief}
               error={todayBriefError}
-              onDrawer={onDrawer}
             />
             <TodayBrief
               profile={profile}
@@ -119,8 +118,6 @@ export function DeskHQScreen({
         onOpenMission={onOpenMission}
         onDrawer={onDrawer}
         onAskManager={onAskManager}
-        activityCount={visibleActivityCount}
-        onOpenActivityCenter={onOpenActivityCenter ?? (() => undefined)}
       />
     </section>
   );
@@ -203,12 +200,10 @@ function DeskCommandBrief({
   profile,
   brief,
   error,
-  onDrawer,
 }: {
   profile: ArtistProfileViewModel;
   brief: TodayBriefViewModel;
   error: string | null;
-  onDrawer: (drawer: DrawerKind) => void;
 }) {
   const compactMetrics = buildDeskMetricTiles(brief, profile);
 
@@ -235,12 +230,7 @@ function DeskCommandBrief({
         {brief.headlineRead}
       </p>
 
-      <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2">
-        <button type="button" className="text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground" onClick={() => onDrawer("evidence")}>
-          View evidence
-        </button>
-        <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/58">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</span>
-      </div>
+      <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/58">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</p>
 
       {error ? <p className="mt-5 border-l-2 border-warning pl-3 text-[12px] font-medium leading-relaxed text-warning">{error}</p> : null}
       <SignalMetricStrip metrics={compactMetrics} />
@@ -415,8 +405,6 @@ function MobileDeskHome({
   onOpenMission,
   onDrawer,
   onAskManager,
-  activityCount,
-  onOpenActivityCenter,
 }: {
   profile: ArtistProfileViewModel;
   brief: TodayBriefViewModel;
@@ -427,8 +415,6 @@ function MobileDeskHome({
   onOpenMission: (missionId: string) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onAskManager: (body: string) => void;
-  activityCount: number;
-  onOpenActivityCenter: () => void;
 }) {
   const compactMetrics = buildDeskMetricTiles(brief, profile);
   const managerReadSegments = buildManagerReadSegments(brief);
@@ -454,22 +440,6 @@ function MobileDeskHome({
 
   return (
     <div data-testid="desk-mobile-home" className="grid w-full min-w-0 gap-0 pb-4 lg:hidden">
-      <header className="flex items-center justify-between border-b border-foreground/8 pb-3">
-        <div>
-          <p className="font-ui text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/65">Artist workspace</p>
-          <h1 className="mt-1 font-display text-[25px] font-semibold leading-none tracking-[-0.035em] text-foreground">Home</h1>
-        </div>
-        <button
-          type="button"
-          aria-label={activityCount ? `Open Activity Center, ${activityCount} unread` : "Open Activity Center"}
-          onClick={onOpenActivityCenter}
-          className="relative flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-        >
-          <Bell className="h-4 w-4" aria-hidden="true" />
-          {activityCount ? <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand-accent px-1 text-[8px] font-bold text-white ring-2 ring-background">{activityCount > 9 ? "9+" : activityCount}</span> : null}
-        </button>
-      </header>
-
       <MobileManagerComposer onAskManager={onAskManager} />
 
       <section data-testid="desk-mobile-command-surface" className="border-b border-foreground/8 py-5">
@@ -488,9 +458,7 @@ function MobileDeskHome({
         </div>
 
         <p className="mt-4 max-w-full break-words font-display text-[24px] font-semibold leading-[1.06] tracking-[-0.04em] text-foreground [overflow-wrap:anywhere]">{brief.headlineRead}</p>
-        <button type="button" className="mt-3 text-[11px] font-semibold text-muted-foreground" onClick={() => onDrawer("evidence")}>
-          View evidence
-        </button>
+        <p className="mt-3 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/55">Prepared {formatBriefGeneratedAt(brief.generatedAt)}</p>
 
         {compactMetrics.length ? (
           <div data-testid="desk-mobile-signal-rail" className="mt-5 min-w-0 max-w-full">

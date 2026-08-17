@@ -441,9 +441,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(loadEvidence).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getAllByRole("button", { name: "View evidence" })[0]);
-    await waitFor(() => expect(loadEvidence).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
   });
 
   it("checks only the exact catalog status while catalog sync is running", async () => {
@@ -1421,7 +1419,8 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: "Workspace" })).not.toBeInTheDocument();
     expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Manager Update");
     expect(screen.getByTestId("desk-todays-focus-lead")).toHaveTextContent("Spotify public catalog connected");
-    expect(screen.getAllByRole("button", { name: /Open Activity Center/i }).length).toBeGreaterThanOrEqual(2);
+    expect(within(screen.getByTestId("mobile-app-topbar")).getAllByRole("button", { name: /Open Activity Center/i })).toHaveLength(1);
+    expect(within(screen.getByTestId("desk-mobile-home")).queryByRole("button", { name: /Open Activity Center/i })).not.toBeInTheDocument();
     expect(screen.queryByText("Today's Attention")).not.toBeInTheDocument();
     expect(screen.queryByText("Activity log")).not.toBeInTheDocument();
     expect(screen.queryByText("Private analytics missing")).not.toBeInTheDocument();
@@ -1562,7 +1561,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("desk-desktop-manager-read")).toHaveTextContent("Momentum Peak");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(screen.queryByText("Artist Score is a broad strength input for the Manager read, not a separate visible section.")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "View evidence" }).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
     expect(screen.getByRole("form", { name: "Ask your manager" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Generate setup map" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh public context" })).not.toBeInTheDocument();
@@ -1747,7 +1746,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
     expect(screen.getByTestId("mobile-app-topbar")).toHaveClass("backdrop-blur-xl");
     expect(screen.getByTestId("mobile-tabbar")).toHaveClass("inset-x-0", "border-t");
-    expect(screen.getByTestId("mobile-tab-label-HQ")).toHaveTextContent("HQ");
+    expect(screen.getByTestId("mobile-tab-label-Home")).toHaveTextContent("Home");
     expect(screen.queryByTestId("mobile-tab-label-Settings")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
@@ -2123,7 +2122,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     const topbar = screen.getByTestId("mobile-app-topbar");
-    expect(within(topbar).getByRole("button", { name: "Open settings" })).toBeInTheDocument();
+    expect(within(topbar).getByRole("button", { name: "Open artist settings" })).toBeInTheDocument();
     expect(within(topbar).queryByRole("button", { name: "Sign out" })).not.toBeInTheDocument();
 
     const mobileNav = screen.getByRole("navigation", { name: "Mobile desk navigation" });
@@ -2131,7 +2130,7 @@ describe("Clean production prototype-match shell", () => {
     expect(within(mobileNav).queryByText("Profile")).not.toBeInTheDocument();
     expect(within(mobileNav).queryByText("Settings")).not.toBeInTheDocument();
 
-    fireEvent.click(within(topbar).getByRole("button", { name: "Open settings" }));
+    fireEvent.click(within(topbar).getByRole("button", { name: "Open artist settings" }));
     expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0);
   }, 20000);
@@ -2141,7 +2140,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(source).not.toContain("group-hover:bg-brand-accent");
     expect(source).not.toContain("group-hover:bg-brand-accent/10 group-hover:text-brand-accent");
-    expect(source).toContain("hover:bg-foreground/[0.04]");
+    expect(source).toContain("hover:bg-foreground/[0.045]");
     expect(source).toContain("hover:text-foreground");
   });
 
