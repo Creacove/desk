@@ -4004,7 +4004,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
   }, 20000);
 
-  it("keeps the nested mobile back row at the top and omits empty conversation history", () => {
+  it("keeps Manager Office top-level and omits obsolete nested navigation", () => {
     render(
       <ManagerOfficeScreen
         conversations={[]}
@@ -4023,7 +4023,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Back to Desk HQ" }).parentElement?.parentElement).toHaveClass("top-0");
+    expect(screen.getByRole("heading", { name: "Manager's Office" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Back to Desk HQ" })).not.toBeInTheDocument();
     expect(screen.queryByText("Conversation History")).not.toBeInTheDocument();
   });
 

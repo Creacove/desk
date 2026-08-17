@@ -59,7 +59,7 @@ describe("Manager interruption UI", () => {
 
     render(<ManagerWorkspaceActions actions={[action]} onOpen={onOpen} />);
 
-    expect(screen.getByText("Action required")).toBeInTheDocument();
+    expect(screen.queryByText("Action required")).not.toBeInTheDocument();
     expect(screen.getByText("Approved cover artwork is missing.")).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Add artwork/i }));

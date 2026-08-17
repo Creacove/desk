@@ -600,6 +600,9 @@ function CleanProductionWorkspace({
   const [missions, setMissions] = useState<MissionViewModel[]>([]);
   const [evidence, setEvidence] = useState<EvidenceItemViewModel[]>([]);
   const [conversationDetailPending, setConversationDetailPending] = useState(false);
+  const [conversationDetailError, setConversationDetailError] = useState<string | null>(null);
+  const [conversationListPending, setConversationListPending] = useState(false);
+  const [conversationListError, setConversationListError] = useState<string | null>(null);
   const [missionDetailPending, setMissionDetailPending] = useState(false);
   const [evidencePending, setEvidencePending] = useState(false);
   const resourceRequestsRef = useRef<ReturnType<typeof createResourceRequestCoordinator> | null>(null);
@@ -817,6 +820,8 @@ function CleanProductionWorkspace({
   useEffect(() => {
     if (view !== "managerOffice" || conversationListLoaded.current) return;
     let cancelled = false;
+    setConversationListPending(true);
+    setConversationListError(null);
     void loadConversationListResource()
       .then((nextConversations) => {
         if (!cancelled) {
@@ -825,12 +830,28 @@ function CleanProductionWorkspace({
         }
       })
       .catch((loadError) => {
-        if (!cancelled) setViewModelError(readErrorMessage(loadError, "Manager conversations could not load."));
+        if (!cancelled) setConversationListError(readErrorMessage(loadError, "Manager conversations could not load."));
+      })
+      .finally(() => {
+        if (!cancelled) setConversationListPending(false);
       });
     return () => {
       cancelled = true;
     };
   }, [repositories.manager, resourceWorkspaceId, view]);
+
+  function retryManagerConversationList() {
+    conversationListLoaded.current = false;
+    setConversationListPending(true);
+    setConversationListError(null);
+    void loadConversationListResource()
+      .then((nextConversations) => {
+        conversationListLoaded.current = true;
+        setConversations(nextConversations);
+      })
+      .catch((loadError) => setConversationListError(readErrorMessage(loadError, "Manager conversations could not load.")))
+      .finally(() => setConversationListPending(false));
+  }
 
   useEffect(() => {
     if (view !== "labelHQ" || !todayBrief || !workspace) return;
@@ -1206,6 +1227,7 @@ function CleanProductionWorkspace({
   async function openConversation(conversation: ConversationViewModel) {
     setManagerTaskContextId(conversation.taskContextId ?? null);
     setSelectedConversation(conversation);
+    setConversationDetailError(null);
     navigate("conversationWorkspace");
     const request = ++conversationDetailRequest.current;
     setConversationDetailPending(true);
@@ -1220,7 +1242,7 @@ function CleanProductionWorkspace({
       setManagerTaskContextId(detail.taskContextId ?? null);
     } catch (loadError) {
       if (request === conversationDetailRequest.current) {
-        setManagerSendError(readErrorMessage(loadError, "Conversation detail could not load."));
+        setConversationDetailError(readErrorMessage(loadError, "Conversation detail could not load."));
       }
     } finally {
       if (request === conversationDetailRequest.current) setConversationDetailPending(false);
@@ -2215,6 +2237,9 @@ function CleanProductionWorkspace({
               onAskManager={(body) => void sendManagerMessage(body)}
               askManagerPending={managerSendPending}
               askManagerError={managerSendError}
+              conversationsPending={conversationListPending}
+              conversationsError={conversationListError}
+              onRetryConversations={retryManagerConversationList}
             />
           ) : null}
           {view === "conversationWorkspace" && activeConversation ? (
@@ -2264,6 +2289,9 @@ function CleanProductionWorkspace({
                 }}
                 sendPending={managerSendPending}
                 sendError={managerSendError}
+                detailPending={conversationDetailPending}
+                detailError={conversationDetailError}
+                onRetryDetail={() => void openConversation(activeConversation)}
               />
             </div>
           ) : null}
