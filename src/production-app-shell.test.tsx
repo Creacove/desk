@@ -2107,7 +2107,7 @@ describe("Clean production prototype-match shell", () => {
     expect(intelligenceStrip).toHaveTextContent("1.3M views");
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
-    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain("break-words text-[11px] font-semibold leading-tight text-muted-foreground">{metric.label}</p>");
+    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('break-words text-[11px] font-semibold leading-tight text-muted-foreground">{metric.label}</p>');
     expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.value}</p>");
   }, 20000);
 
