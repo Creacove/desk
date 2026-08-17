@@ -1,4 +1,4 @@
-name: Catalog room crash diagnostic
+name: Catalog room crash hotfix
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
       - hotfix/catalog-room-crash
     paths:
       - .github/workflows/catalog-room-crash-diagnostic.yml
-      - scripts/catalog_room_crash_diagnostic.mjs
       - scripts/catalog_room_crash_hotfix.py
       - src/catalog-room-crash.test.tsx
 
@@ -14,9 +13,9 @@ permissions:
   contents: write
 
 jobs:
-  diagnose:
+  apply-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
         with:
@@ -26,11 +25,34 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Apply crash hotfix
+        run: python3 scripts/catalog_room_crash_hotfix.py
       - run: npm ci
-      - name: Build with source maps
-        run: npx vite build --sourcemap
+      - name: Thinking orb runtime regression
+        run: npx vitest run src/catalog-room-crash.test.tsx --environment jsdom --pool=vmThreads
         env:
-          VITE_SUPABASE_URL: https://example.supabase.co
+          VITE_SUPABASE_URL: http://localhost:54321
           VITE_SUPABASE_ANON_KEY: test-anon-key
-      - name: Trace production error location
-        run: node scripts/catalog_room_crash_diagnostic.mjs
+      - name: Song and project room regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Full repository suite
+        run: npx vitest run --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production build
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Commit crash hotfix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/design-system/AppThinkingOrb.tsx src/features/music/MusicScreens.tsx
+          git diff --cached --quiet && exit 0
+          git commit -m 'fix: prevent catalog room orb crash'
+          git push origin HEAD:hotfix/catalog-room-crash
