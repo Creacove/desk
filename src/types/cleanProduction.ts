@@ -1,120 +1,106 @@
 import type { LucideIcon } from "lucide-react";
-import type {
-  ReleaseDateChangeReceipt,
-  ReleaseGateResult,
-  ReleaseSchedulePreview,
-  ReleaseSuccessAssessment,
-} from "../../supabase/functions/_shared/release-success/types";
-
-export type { ReleaseGateResult } from "../../supabase/functions/_shared/release-success/types";
 
 export type CleanProductionView =
   | "connectArtist"
   | "setup"
-  | "labelHQ"
-  | "musicWorkspace"
-  | "staffWorkspace"
-  | "managerOffice"
-  | "conversationWorkspace"
-  | "investigation"
+  | "setupActivity"
+  | "paywall"
+  | "desk"
+  | "manager"
   | "decisionPackage"
-  | "missionsWorkspace"
-  | "artistProfileWorkspace"
-  | "lockedAgentWorkspace";
+  | "investigation"
+  | "conversation"
+  | "missions"
+  | "music"
+  | "staff"
+  | "settings";
 
-export type DrawerKind = "evidence" | "missionRecord" | "workDraft" | null;
-
-export type ArtistProfileViewModel = {
-  name: string;
-  spotify: string;
-  genre: string;
-  market: string;
-  release: string;
-  goal: string;
-  budget: string;
-  stage: string;
-  tiktok: string;
-  instagram: string;
-  youtube: string;
-  x: string;
-  imageUrl?: string;
-  artistIntelligence?: {
-    headline: string;
-    marketRead: string;
-    platformRead: string;
-    socialRead: string;
-    limitations: string[];
-  };
-};
-
-export type PriorityItem = {
-  label: string;
-  value: string;
-  meta: string;
-  actionLabel: string;
-  target: CleanProductionView;
-};
+export type DrawerKind = "sources" | "evidence" | "proof" | "billing" | "profile";
 
 export type AttentionItem = {
+  id: string;
+  domain: string;
   title: string;
-  body: string;
-  tone: "warning" | "accent";
-  target?: CleanProductionView;
+  reason: string;
+  action: string;
+  actionType?: "button" | "chat";
+  owner?: string;
+  tone?: "urgent" | "warning" | "neutral";
+  missionId?: string;
+  taskId?: string;
+  sourceType?: string;
+  sourceId?: string;
+  evidenceIds?: string[];
+  conversationId?: string;
+  eventType?: string;
 };
 
 export type MovementItem = {
-  label: string;
+  id: string;
+  domain: string;
   title: string;
-  time: string;
+  meta: string;
+  timestamp?: string;
+  targetType?: string;
+  targetId?: string;
+  missionId?: string;
+  taskId?: string;
+  sourceType?: string;
+  sourceId?: string;
+  evidenceIds?: string[];
+  conversationId?: string;
+  eventType?: string;
 };
 
-export type TodayBriefMetric = {
+export type PriorityItem = {
+  id: string;
+  priority: string;
+  title: string;
+  status: string;
+  meta: string;
+  action: string;
+};
+
+export type TodayBriefConfidence = "low" | "medium" | "high";
+export type TodayBriefActionMode = "artist" | "manager";
+
+export type TodayBriefMetricViewModel = {
   label: string;
   value: string;
-  context?: string;
-  evidenceIds: string[];
+  source: string;
 };
 
-export type TodayBriefSnapshotGroup = {
+export type TodayBriefActionViewModel = {
+  id: string;
   title: string;
-  insight: string;
-  metrics: TodayBriefMetric[];
-};
-
-export type TodayBriefManagerEvidenceRead = {
-  label: string;
-  value?: string;
-  category?: "kpi" | "signal" | "asset" | "market" | "management";
-  read: string;
+  owner: string;
+  why: string;
+  mode: TodayBriefActionMode;
+  prompt?: string;
+  missionId?: string;
+  taskId?: string;
+  musicSubject?: MusicConversationSubjectViewModel;
+  sourceEventId?: string;
   evidenceIds: string[];
-  confidence?: string;
 };
 
 export type TodayBriefViewModel = {
-  headlineRead: string;
-  intelligenceSnapshot: TodayBriefSnapshotGroup[];
-  snapshotSummary: string;
-  managerRead: string;
-  managerEvidenceReads?: TodayBriefManagerEvidenceRead[];
-  sourceLine: string;
-  confidence: "high" | "medium" | "low" | "limited" | "unknown";
-  generatedAt?: string;
-  managerSynthesisRunId?: string;
-  managerOutputId?: string;
-  managerIntelligencePacketId?: string;
-  state: "fresh" | "limited" | "fallback" | "failed";
+  id: string;
+  headline: string;
+  summary: string;
+  confidence: TodayBriefConfidence;
+  generatedAt: string;
+  metrics: TodayBriefMetricViewModel[];
+  changes: Array<{ id: string; title: string; detail: string; sourceEventId?: string }>;
+  actions: TodayBriefActionViewModel[];
+  limitations: string[];
 };
 
-export type TodayBriefGenerationMode = "operating" | "setup-map";
-
-export type MusicReadTarget = {
-  subjectType: "music_item" | "music_project";
-  subjectId: string;
-};
+export type TodayBriefGenerationMode = "setup" | "manual" | "event";
 
 export type TodayBriefGenerationResult = {
   brief: TodayBriefViewModel;
-  setupMusicReadTargets?: MusicReadTarget[];
+  runId?: string;
 };
 
 export type TodayBriefProcessingResult = {
@@ -260,6 +246,7 @@ export type MissionNoteViewModel = {
   recommendedAction: string;
   resultingChange: string;
   briefType: string;
+  createdAt?: string;
 };
 
 export type MissionRecapViewModel = {
@@ -277,9 +264,11 @@ export type MissionRecapViewModel = {
 };
 
 export type MissionEventViewModel = {
+  id?: string;
   type: string;
   actor: string;
   summary: string;
+  createdAt?: string;
 };
 
 export type MusicManagerReadViewModel = {
@@ -468,550 +457,342 @@ export type ConversationMessageViewModel = {
   status?: "sending" | "streaming" | "sent" | "failed";
   runId?: string;
   createdAt?: string;
-  createdWork?: Array<{
-    type: "music_item" | "mission" | "task";
-    title: string;
-    body: string;
-    id?: string;
-    parentMissionId?: string;
-    artifactKind?: "task_draft" | "song_document";
-    content?: string;
-    musicItemId?: string;
-    documentType?: string;
-    readiness?: "ready" | "needs_review" | "save_failed";
-    missingInputs?: string[];
-    managerOutputId?: string;
-    status?: "created" | "updated" | "approval_required" | "failed" | "pending";
-  }>;
-  contextRequestId?: string;
-  contextQuestions?: ManagerMissionContextQuestion[];
-  contextAnswers?: ManagerConversationContextAnswer[];
-  attachments?: ManagerConversationAttachmentViewModel[];
+  presentation?: ManagerConversationPresentation;
+  createdWork?: ManagerConversationCreatedWork[];
 };
 
-export type ManagerRunStepViewModel = {
+export type ManagerConversationMessageSource = {
+  evidenceId: string;
+  sourceLabel: string;
+  sourceKind: string;
+  confidence?: string;
+  limitation?: string;
+};
+
+export type ManagerConversationPresentation = {
+  responseKind: "text" | "mission" | "decision" | "investigation" | "document" | "mixed";
+  surfaces: Array<"chat" | "mission" | "decision_package" | "investigation" | "document">;
+  primarySurface: "chat" | "mission" | "decision_package" | "investigation" | "document";
+  missionId?: string;
+  decisionPackageId?: string;
+  investigationId?: string;
+  documentId?: string;
+};
+
+export type ManagerConversationCreatedWork = {
+  type: "mission" | "task" | "document" | "decision_package" | "investigation" | "release_opportunity";
   id: string;
-  label: string;
-  status: "queued" | "running" | "completed" | "failed";
-  detail?: string;
+  title?: string;
+  missionId?: string;
+  taskId?: string;
+  documentType?: SongDocumentType;
 };
 
-export type ManagerRunViewModel = {
-  id: string;
-  status: "queued" | "running" | "completed" | "failed";
-  steps: ManagerRunStepViewModel[];
-  streamedText?: string;
-  error?: string;
-};
-
-export type DecisionPackageViewModel = {
+export type ManagerConversationMusicSubject = {
+  type: "music_item" | "music_project";
   id: string;
   title: string;
-  summary: string;
-  recommendation: string;
-  confidence: string;
-  actionPolicy: string;
-  evidenceIds: string[];
-  limitations: string[];
-  createdWork: ConversationViewModel["createdWork"];
-  proposedActions: Array<{
-    title: string;
-    body: string;
-    actionType: string;
-    targetType: string;
-    approvalRequired: boolean;
-  }>;
-  createdAt?: string;
+  lifecycleStage?: string;
 };
 
-export type ReleaseSuccessArtifactState =
-  | "investigating"
-  | "assessed"
-  | "proposed"
-  | "awaiting_approval"
-  | "applying"
-  | "applied"
-  | "failed";
-
-export type ReleaseSuccessAssessmentViewModel = ReleaseSuccessAssessment;
-export type ReleaseSchedulePreviewViewModel = ReleaseSchedulePreview;
-export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
+export type ManagerConversationContextAnswer = {
+  text: string;
+  sources?: ManagerConversationMessageSource[];
+};
 
 export type ReleaseDateChangeRequestViewModel = {
-  requestId: string;
-  idempotencyKey: string;
-  releasePlanId: string;
-  musicItemId: string;
-  missionId?: string;
-  fromDate?: string;
+  id: string;
+  status: "pending" | "approved" | "declined" | "cancelled";
+  currentDate?: string;
   proposedDate: string;
-  reason?: string;
-  status: "pending" | "approved" | "rejected" | "superseded" | "expired" | "failed";
-  expectedPlanRevision: number;
-  previewHash: string;
-  preview: ReleaseSchedulePreviewViewModel;
-  expiresAt: string;
+  reason: string;
+  requestMessage: string;
+  requestedAt?: string;
+  resolvedAt?: string;
+  requestedBy?: string;
+  decision?: string;
+  conversationId?: string;
+  missionId?: string;
+  musicSubject?: ManagerConversationMusicSubject;
 };
 
 export type ReleaseDateChangeProposalInput = {
   musicItemId: string;
+  currentDate?: string;
   proposedDate: string;
   reason: string;
-  expectedRevision: number;
-  preview: ReleaseSchedulePreviewViewModel;
-  previewHash: string;
-  idempotencyKey: string;
-};
-
-export type ReleaseSuccessArtifactViewModel = {
-  id: string;
-  musicItemId: string;
+  requestMessage: string;
+  conversationId?: string;
   missionId?: string;
-  requestId?: string;
-  previewHash?: string;
-  idempotencyKey?: string;
-  state: ReleaseSuccessArtifactState;
-  subject: { title: string; itemType: string; approvedReleaseDate?: string };
-  assessment?: ReleaseSuccessAssessmentViewModel;
-  preview?: ReleaseSchedulePreviewViewModel;
-  receipt?: ReleaseDateChangeReceiptViewModel;
-  error?: { message: string; reference?: string; retryable: boolean };
 };
 
-export type ReleaseOpportunityType = "playlist" | "press";
-export type ReleaseOpportunitySafetyState = "clear" | "caution" | "excluded";
-export type ReleaseOpportunityStatus = "watch" | "shortlisted" | "approved" | "submitted_manually" | "replied" | "accepted" | "declined" | "skipped";
+export type ReleaseDateChangeReceiptViewModel = {
+  status: "approved";
+  requestId: string;
+  musicItemId: string;
+  requestedDate: string;
+  previousDate?: string;
+  changedAt: string;
+  missionId?: string;
+  conversationId?: string;
+};
 
 export type ReleaseOpportunityTargetViewModel = {
   id: string;
-  targetName: string;
+  missionId?: string;
+  musicItemId: string;
+  subjectTitle: string;
+  opportunityType: "playlist" | "press";
   platform?: string;
-  sourceUrl: string;
+  targetName: string;
+  organization?: string;
+  sourceUrl?: string;
   targetUrl?: string;
-  publicOrganization?: string;
-  publicContact?: {
-    kind: "email" | "submission_form" | "contact_page";
-    value: string;
-    sourceUrl: string;
-    verifiedAt?: string;
-  };
-  fit: {
-    songCriteria: string[];
-    targetCriteria: string[];
-    explanation: string;
-    recency?: string;
-    market?: string;
-  };
-  sourceEvidence: Array<{ source: string; ref?: string; observedAt?: string }>;
-  confidence: "high" | "medium" | "low" | "unknown";
+  contactKind?: string;
+  publicContactValue?: string;
+  publicContactSourceUrl?: string;
+  contactVerifiedAt?: string;
+  fitScore?: number;
+  fitReasons: string[];
+  fitSummary?: string;
+  evidenceIds: string[];
+  confidence?: string;
   limitations: string[];
+  safetyState?: string;
   requirements: string[];
-  safetyState: ReleaseOpportunitySafetyState;
-  status: ReleaseOpportunityStatus;
-  manualOutcome?: string;
   pitchDocumentId?: string;
-  document?: { id: string; title: string; body?: string; status?: string };
-  package?: {
-    selectedFiles: string[];
-    pitchBody?: string;
-    shareUrl?: string;
-  };
+  pitchDocumentTitle?: string;
+  pitchBody?: string;
+  status?: string;
+  outcome?: string;
+  updatedAt?: string;
 };
 
 export type ReleaseOpportunityArtifactViewModel = {
   id: string;
+  type: "playlist_shortlist" | "press_shortlist";
+  title: string;
+  subjectTitle: string;
+  missionId?: string;
+  targets: ReleaseOpportunityTargetViewModel[];
+  generatedAt?: string;
+};
+
+export type ReleaseSuccessArtifactViewModel = {
+  id: string;
+  type: "release_scorecard" | "release_review";
+  title: string;
   musicItemId: string;
   missionId?: string;
-  opportunityType: ReleaseOpportunityType;
-  subject: { title: string; itemType: string };
-  shortlist: ReleaseOpportunityTargetViewModel[];
-  watch: ReleaseOpportunityTargetViewModel[];
-  excluded: ReleaseOpportunityTargetViewModel[];
-  failure?: { stage: string; message: string; retryable: boolean };
+  generatedAt?: string;
+  metrics: Array<{ label: string; value: string; source?: string }>;
+  learnings: string[];
+  nextActions: string[];
+  summary?: string;
+};
+
+export type ReleaseOpportunityArtifactKind = ReleaseOpportunityArtifactViewModel["type"];
+
+export type ReleaseOpportunityTargetKind = ReleaseOpportunityTargetViewModel["opportunityType"];
+
+export type ReleaseOpportunityTargetStatus = "identified" | "prepared" | "sent" | "replied" | "committed" | "posted" | "declined";
+
+export type ReleaseOpportunityOutcome = "won" | "lost" | "pending";
+
+export type ReleaseOpportunityArtifactState = "draft" | "ready";
+
+export type ReleaseOpportunitySafetyState = "safe" | "manual_review" | "unsafe";
+
+export type ReleaseOpportunityContactKind = "email" | "form" | "dm" | "submission";
+
+export type MusicReadTarget = {
+  type: "music_item" | "music_project";
+  id: string;
+};
+
+export type ManagerRunStepViewModel = {
+  id: string;
+  runId: string;
+  sequence: number;
+  label: string;
+  status: string;
+  agent: string;
+  detail: string;
+  startedAt?: string;
+  completedAt?: string;
+};
+
+export type ManagerConversationRefreshHint = {
+  kind: "refresh";
+  resources: Array<"desk" | "missions" | "music" | "conversation" | "workspace">;
+  reason?: string;
+};
+
+export type ManagerConversationStreamEvent =
+  | { kind: "status"; runId?: string; message?: string }
+  | { kind: "delta"; runId?: string; text: string }
+  | { kind: "message"; runId?: string; message: ConversationMessageViewModel }
+  | { kind: "artifact"; runId?: string; createdWork: ManagerConversationCreatedWork[] }
+  | { kind: "presentation"; runId?: string; presentation: ManagerConversationPresentation }
+  | ManagerConversationRefreshHint
+  | { kind: "done"; runId?: string; conversation?: ConversationViewModel; message?: ConversationMessageViewModel; presentation?: ManagerConversationPresentation; createdWork?: ManagerConversationCreatedWork[] }
+  | { kind: "error"; runId?: string; message: string; retryable?: boolean };
+
+export type ManagerConversationInput = {
+  conversationId?: string;
+  taskContextId?: string;
+  musicSubject?: ManagerConversationMusicSubject;
+  text: string;
+  requestId?: string;
 };
 
 export type ConversationViewModel = {
   id: string;
-  taskContextId?: string;
-  musicSubject?: MusicConversationSubjectViewModel;
   topic: string;
   status: string;
   summary: string;
   prompt: string;
   lastUpdate?: string;
   messages: ConversationMessageViewModel[];
-  activeRun?: ManagerRunViewModel;
   decisionPackage?: DecisionPackageViewModel;
-  createdWork: Array<{
-    type: "music_item" | "mission" | "task";
-    title: string;
-    body: string;
-    id?: string;
-    parentMissionId?: string;
-    artifactKind?: "task_draft" | "song_document";
-    content?: string;
-    musicItemId?: string;
-    documentType?: string;
-    readiness?: "ready" | "needs_review" | "save_failed";
-    missingInputs?: string[];
-    managerOutputId?: string;
-    status?: "created" | "updated" | "approval_required" | "failed" | "pending";
-  }>;
+  taskContextId?: string;
+  musicSubject?: ManagerConversationMusicSubject;
+  createdWork?: ManagerConversationCreatedWork[];
   releaseSuccessArtifacts?: ReleaseSuccessArtifactViewModel[];
   releaseOpportunityArtifacts?: ReleaseOpportunityArtifactViewModel[];
 };
 
-export type ManagerConversationStreamEvent =
-  | {
-      type: "conversation.started";
-      conversation: Partial<ConversationViewModel> & { id: string };
-      run?: Partial<ManagerRunViewModel> & { id: string };
-    }
-  | {
-      type: "conversation.workspace_ready";
-      conversationId: string;
-      topic: string;
-      musicSubject: MusicConversationSubjectViewModel;
-      createdWork: ConversationViewModel["createdWork"];
-      refresh?: ManagerConversationRefreshHint;
-    }
-  | {
-      type: "run.step";
-      runId?: string;
-      stepId?: string;
-      label: string;
-      status: ManagerRunStepViewModel["status"];
-      detail?: string;
-    }
-  | {
-      type: "tool.started" | "tool.completed";
-      runId?: string;
-      tool: string;
-      label: string;
-      status?: ManagerRunStepViewModel["status"];
-      detail?: string;
-    }
-  | {
-      type: "assistant.delta";
-      conversationId?: string;
-      runId?: string;
-      delta: string;
-    }
-  | {
-      type: "artifact.changed";
-      runId?: string;
-      artifact: ConversationViewModel["createdWork"][number];
-      refresh?: ManagerConversationRefreshHint;
-    }
-  | {
-      type: "release_success.changed";
-      conversationId?: string;
-      runId?: string;
-      artifact: ReleaseSuccessArtifactViewModel;
-      refresh?: ManagerConversationRefreshHint;
-    }
-  | {
-      type: "conversation.completed";
-      conversation: ConversationViewModel;
-      refresh?: ManagerConversationRefreshHint;
-    }
-  | {
-      type: "error";
-      conversationId?: string;
-      runId?: string;
-      message: string;
-    };
-
-export type ManagerConversationRefreshHint = {
-  conversations?: boolean;
-  missions?: boolean;
-  missionIds?: string[];
-  taskIds?: string[];
-  music?: boolean;
-  desk?: boolean;
+export type ManagerConversationReviewRequest = {
+  action: "manager_review";
+  taskId: string;
+  resultSummary: string;
 };
 
-export type ManagerConversationStreamHandlers = {
-  onEvent(event: ManagerConversationStreamEvent): void;
+export type ManagerConversationReviewResponse = {
+  message: ConversationMessageViewModel;
+  task?: MissionTaskViewModel;
+  checkpoint?: MissionCheckpointViewModel;
 };
 
-export type ManagerMissionContextQuestion = {
-  key: string;
-  question: string;
-  reason: string;
-  answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
-  options?: string[];
-  recommendedAnswer?: string;
-  recommendationReason?: string;
-};
-
-export type ManagerConversationContextAnswer = {
-  questionKey: string;
-  answer: string;
-};
-
-export type ManagerConversationAttachmentViewModel = {
+export type DecisionPackageViewModel = {
   id: string;
-  musicItemId: string;
   title: string;
-  assetType?: string;
-  status?: string;
+  decision: string;
+  status: "pending" | "accepted" | "declined";
+  owner: string;
+  confidence: string;
+  rationale: string;
+  proofIds: string[];
+  alternatives: Array<{ title: string; whyNot: string }>;
 };
 
-export type ManagerConversationMusicSubject = {
-  type: "music_item" | "music_project";
+export type InvestigationViewModel = {
   id: string;
-};
-
-export type MusicShareLinkViewModel = {
-  id: string;
-  label: string;
-  preset: "listen" | "epk_press" | "delivery" | "custom";
-  url: string;
-  recipientEmail?: string;
-  createdAt?: string;
-};
-
-export type MusicShareLinkHistoryViewModel = {
-  id: string;
-  label: string;
-  preset: "listen" | "epk_press" | "delivery" | "custom";
-  state: "active" | "revoked" | "expired";
-  recipientEmail?: string;
-  createdAt?: string;
-  assetCount: number;
-  accessCount: number;
+  title: string;
+  status: string;
+  trigger: string;
+  facts: string[];
+  suspects: string[];
+  conclusion: string;
+  nextActions: string[];
 };
 
 export type EvidenceItemViewModel = {
   id: string;
   source: string;
   sourceKind: string;
-  subject: string;
-  metric: string;
-  window: string;
+  claim: string;
+  freshness: string;
   confidence: string;
   limitation: string;
 };
 
-export type ProductionFixtureData = {
-  profile: ArtistProfileViewModel;
-  priority: PriorityItem[];
-  attention: AttentionItem[];
-  movement: MovementItem[];
-  todayBrief: TodayBriefViewModel;
-  agents: AgentViewModel[];
-  missions: MissionViewModel[];
-  music: MusicObjectViewModel[];
-  conversations: ConversationViewModel[];
-  evidence: EvidenceItemViewModel[];
-};
-
-export type ArtistProfileRepository = {
-  loadProfile(): Promise<ArtistProfileViewModel>;
-};
-
-export type DeskRepository = {
-  loadBrief?(): Promise<TodayBriefViewModel>;
-  loadActivity?(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement">>;
-  loadDesk(): Promise<Pick<ProductionFixtureData, "priority" | "attention" | "movement" | "todayBrief">>;
-  generateTodaysBrief(mode?: TodayBriefGenerationMode): Promise<TodayBriefGenerationResponse>;
-  loadTodaysBriefRunStatus?(runId: string): Promise<{ status: string; error?: string }>;
-  refreshPublicContext?(): Promise<PublicContextRefreshResult>;
-};
-
-export type StaffRepository = {
-  loadAgents(): Promise<AgentViewModel[]>;
-};
-
-export type SpotifyReleaseCandidate = {
-  albumId: string;
-  name: string;
-  albumType: string;
-  releaseDate?: string;
-  totalTracks?: number;
-  coverImageUrl?: string;
-  spotifyUrl?: string;
-  alreadyImported: boolean;
-};
-
-export type SpotifyTrackCandidate = {
-  trackId: string;
-  name: string;
-  trackNumber?: number;
-  durationMs?: number;
-  isrc?: string;
-  alreadyImported: boolean;
-};
-
-export type SpotifyCatalogSearchResult =
-  | { mode: "releases"; releases: SpotifyReleaseCandidate[] }
-  | { mode: "tracks"; album: { albumId: string; name: string; coverImageUrl?: string }; tracks: SpotifyTrackCandidate[] };
-
-export type SpotifyImportResult = {
-  subjectType: "music_item" | "music_project";
-  subjectId: string;
-  alreadyExisted: boolean;
-  importedTrackCount?: number;
-};
-
-export type MusicRepository = {
-  loadMusic(): Promise<MusicObjectViewModel[]>;
-  loadMusicList(): Promise<MusicObjectViewModel[]>;
-  loadMusicObject(
-    subjectId: string,
-    subjectType: "music_item" | "music_project",
-  ): Promise<MusicObjectViewModel | null>;
-  loadManagerRun(runId: string): Promise<{
-    id: string;
-    status: MusicManagerRunStatus;
-    subjectId: string;
-    subjectType: "music_item" | "music_project";
-    error?: string;
-  } | null>;
-  startManagerRead(subjectId: string, subjectType: "music_item" | "music_project"): Promise<MusicObjectViewModel>;
-  searchSpotifyCatalog(input: { kind: "song" | "project"; albumId?: string }): Promise<SpotifyCatalogSearchResult>;
-  importSpotifySelection(input: { kind: "song" | "project"; albumId: string; trackId?: string }): Promise<SpotifyImportResult>;
-  createSong(input: { title: string; itemType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
-  createSongWorkspace(input: { title: string; itemType: string; lifecycleStage: string; requestId?: string }): Promise<ManualSongWorkspaceResult>;
-  createProject(input: { title: string; projectType: string; lifecycleStage: string }): Promise<MusicObjectViewModel>;
-  updateLifecycleStage(musicItemId: string, lifecycleStage: string): Promise<void>;
-  saveDetail(musicItemId: string, input: { group: string; label: string; value: string }): Promise<void>;
-  saveCredit(musicItemId: string, input: { role: string; name: string }): Promise<void>;
-  saveIdentifier(musicItemId: string, input: { identifierType: string; identifierValue: string }): Promise<void>;
-  createSongDocument?(musicItemId: string, input: { documentType: SongDocumentType; title: string; body: string }): Promise<SongMaterialViewModel>;
-  updateSongDocument?(documentId: string, input: { title?: string; body: string }): Promise<SongMaterialViewModel>;
-  approveSongDocument?(documentId: string): Promise<void>;
-  saveSplitContributor(musicItemId: string, input: SplitContributorInput): Promise<void>;
-  removeSplitContributor(musicItemId: string, contributorId: string): Promise<void>;
-  sendSplitConfirmationLinks(musicItemId: string): Promise<void>;
-  loadSplitConfirmation(token: string): Promise<SplitConfirmationViewModel>;
-  submitSplitConfirmation(token: string, input: { decision: "confirmed" | "correction_requested"; confirmationText?: string; correctionReason?: string }): Promise<void>;
-  createShareLink?(input: {
-    musicSubject: ManagerConversationMusicSubject;
-    assetIds: string[];
-    documentIds?: string[];
-    informationKeys?: string[];
-    preset: MusicShareLinkViewModel["preset"];
-    recipientEmail?: string;
-    label?: string;
-  }): Promise<MusicShareLinkViewModel>;
-  listShareLinks?(musicSubject: ManagerConversationMusicSubject): Promise<MusicShareLinkHistoryViewModel[]>;
-  sendShareLink?(input: { shareLinkId: string; url: string; recipientEmail: string }): Promise<{ status: "sent"; shareLinkId: string; recipientEmail: string }>;
-  revokeShareLink?(shareLinkId: string): Promise<void>;
-  getAssetAccessUrl?(musicItemId: string, assetId: string): Promise<string>;
-  uploadAsset(
-    musicItemId: string,
-    input: { assetType: string; title: string; file: File; onProgress?: (progress: MusicUploadProgress) => void },
-  ): Promise<{
-    id: string;
-    musicItemId: string;
-    group: "Audio" | "Artwork" | "Documents";
-    label: string;
-    status: string;
-    action: string;
-    assetType?: string;
-  }>;
-};
-
 export type MusicUploadProgress = {
-  phase: "preparing" | "uploading" | "finalizing" | "complete";
+  phase: "preparing" | "uploading" | "finalizing";
   percent: number;
-  bytesUploaded?: number;
-  bytesTotal?: number;
+  bytesUploaded: number;
+  bytesTotal: number;
 };
 
-export type ManagerRepository = {
-  loadConversationList?(): Promise<ConversationViewModel[]>;
-  loadConversation?(conversationId: string): Promise<ConversationViewModel | null>;
-  loadConversations(): Promise<ConversationViewModel[]>;
-  sendMessage(input: {
-    conversationId?: string;
-    body: string;
-    taskId?: string;
-    musicSubject?: ManagerConversationMusicSubject;
-    contextRequestId?: string;
-    contextAnswers?: ManagerConversationContextAnswer[];
-    attachmentIds?: string[];
-  }): Promise<ConversationViewModel>;
-  sendMessageStream?(
-    input: {
-      conversationId?: string;
-      body: string;
-      taskId?: string;
-      musicSubject?: ManagerConversationMusicSubject;
-      contextRequestId?: string;
-      contextAnswers?: ManagerConversationContextAnswer[];
-      attachmentIds?: string[];
-    },
-    handlers: ManagerConversationStreamHandlers,
-  ): Promise<void>;
-  proposeReleaseDateChange?(input: ReleaseDateChangeProposalInput): Promise<ReleaseDateChangeRequestViewModel>;
-  approveReleaseDateChange?(input: {
-    requestId: string;
-    previewHash: string;
-    idempotencyKey: string;
-  }): Promise<ReleaseDateChangeReceiptViewModel>;
-};
-
-export type MissionRepository = {
-  loadMissionList?(): Promise<MissionViewModel[]>;
-  loadMission?(missionId: string): Promise<MissionViewModel | null>;
-  loadMissions(): Promise<MissionViewModel[]>;
-  approveTask(taskId: string): Promise<void>;
-  uploadTaskDeliverable?(
-    taskId: string,
-    input: { title: string; file: File },
-  ): Promise<MissionTaskDeliverableViewModel>;
-  completeTask(taskId: string, input: {
-    status: "completed" | "blocked";
-    note: string;
-    documentIds?: string[];
-    managerOutputId?: string;
-  }): Promise<MissionViewModel>;
-};
-
-export type MissionGenesisQuestionViewModel = {
-  key: string;
-  question: string;
-  reason: string;
-  answerKind: "short_text" | "single_select" | "multi_select" | "money_range";
-  options?: string[];
+export type ArtistProfileViewModel = {
+  displayName: string;
+  spotifyIdentity?: {
+    id: string;
+    name: string;
+    url?: string;
+    imageUrl?: string;
+  };
+  genres: string[];
+  homeMarket: string;
+  stage: string;
+  artistDirection: string;
+  currentGoal: string;
+  budgetContext: string;
 };
 
 export type MissionGenesisResultViewModel = {
-  outcome: "activate_mission" | "candidate_needs_context" | "request_evidence" | "update_existing_mission" | "no_mission";
-  title: string;
-  body: string;
-  reasons: string[];
-  questions: MissionGenesisQuestionViewModel[];
-  evidenceNeeded: string[];
-  missionIds?: string[];
-  candidateMissionId?: string;
-  candidateMissionIds?: string[];
-  activatedMissionId?: string;
-  activatedMissionIds?: string[];
-};
-
-export type MissionGenesisRepository = {
-  runMissionGenesis(): Promise<MissionGenesisResultViewModel>;
-  answerMissionGenesisContext(input: {
-    candidateMissionId: string;
-    answers: Array<{ questionKey: string; answer: string }>;
-  }): Promise<MissionGenesisResultViewModel>;
-};
-
-export type EvidenceRepository = {
-  loadEvidence(): Promise<EvidenceItemViewModel[]>;
+  mission: MissionViewModel;
+  conversation: ConversationViewModel;
 };
 
 export type CleanProductionRepositories = {
-  artistProfile: ArtistProfileRepository;
-  desk: DeskRepository;
-  staff: StaffRepository;
-  music: MusicRepository;
-  manager: ManagerRepository;
-  missions: MissionRepository;
-  missionGenesis: MissionGenesisRepository;
-  evidence: EvidenceRepository;
+  loadDesk: () => Promise<{
+    brief: TodayBriefViewModel | null;
+    attention: AttentionItem[];
+    movement: MovementItem[];
+  }>;
+  generateTodayBrief: (input?: { mode?: TodayBriefGenerationMode; force?: boolean }) => Promise<TodayBriefGenerationResponse>;
+  loadTodayBriefRun?: (runId: string) => Promise<TodayBriefGenerationResponse>;
+  refreshTodayPublicContext?: () => Promise<PublicContextRefreshResult>;
+  loadArtistProfile: () => Promise<ArtistProfileViewModel>;
+  updateArtistProfile?: (input: ArtistProfileViewModel) => Promise<ArtistProfileViewModel>;
+  loadAgents: () => Promise<AgentViewModel[]>;
+  loadConversations: () => Promise<ConversationViewModel[]>;
+  loadConversation: (id: string) => Promise<ConversationViewModel>;
+  sendManagerMessage?: (input: ManagerConversationInput) => Promise<ConversationViewModel>;
+  sendManagerMessageStream?: (input: ManagerConversationInput, handlers: { onEvent: (event: ManagerConversationStreamEvent) => void; signal?: AbortSignal }) => Promise<ConversationViewModel | null>;
+  answerManagerContext?: (input: { subject?: ManagerConversationMusicSubject; taskId?: string; question: string }) => Promise<ManagerConversationContextAnswer>;
+  requestTaskManagerReview?: (input: ManagerConversationReviewRequest) => Promise<ManagerConversationReviewResponse>;
+  acceptDecisionPackage?: (id: string) => Promise<DecisionPackageViewModel>;
+  declineDecisionPackage?: (id: string, reason: string) => Promise<DecisionPackageViewModel>;
+  createMissionFromDecision?: (id: string) => Promise<{ mission: MissionViewModel; conversation?: ConversationViewModel }>;
+  createMissionFromConversation?: (conversationId: string) => Promise<{ mission: MissionViewModel; conversation?: ConversationViewModel }>;
+  createManualSongWorkspace?: (input: { title: string; lifecycleStage?: string }) => Promise<ManualSongWorkspaceResult>;
+  updateMusicItem?: (id: string, input: { title?: string; lifecycleStage?: string }) => Promise<MusicObjectViewModel>;
+  createReleaseMission?: (input: { musicItemId: string; releaseDate?: string; budgetContext?: string }) => Promise<ManualSongWorkspaceResult>;
+  loadMissions: () => Promise<MissionViewModel[]>;
+  loadMission: (id: string) => Promise<MissionViewModel>;
+  approveMissionTask: (id: string) => Promise<MissionTaskViewModel>;
+  completeMissionTask: (id: string, input: { status: "completed" | "blocked"; note: string; documentIds?: string[]; managerOutputId?: string }) => Promise<MissionTaskViewModel>;
+  uploadMissionTaskDeliverable?: (id: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
+  loadMusic: () => Promise<MusicObjectViewModel[]>;
+  loadMusicItem?: (id: string) => Promise<MusicObjectViewModel>;
+  loadMusicProject?: (id: string) => Promise<MusicObjectViewModel>;
+  createSongDocument?: (musicItemId: string, input: { title: string; documentType: SongDocumentType; body: string }) => Promise<SongMaterialViewModel>;
+  updateSongDocument?: (documentId: string, input: { title?: string; body: string }) => Promise<SongMaterialViewModel>;
+  approveSongDocument?: (documentId: string) => Promise<void>;
+  saveIdentifier?: (musicItemId: string, input: { identifierType: string; identifierValue: string }) => Promise<void>;
+  saveSplitContributor?: (musicItemId: string, input: SplitContributorInput) => Promise<void>;
+  removeSplitContributor?: (musicItemId: string, contributorId: string) => Promise<void>;
+  sendSplitConfirmationLinks?: (musicItemId: string) => Promise<void>;
+  loadSplitConfirmation?: (token: string) => Promise<SplitConfirmationViewModel>;
+  submitSplitConfirmation?: (token: string, input: { decision: "approve" | "request_change"; confirmationText?: string; correctionReason?: string }) => Promise<void>;
+  createShareLink?: (input: { musicSubject: ManagerConversationMusicSubject; assetIds: string[]; documentIds: string[]; informationKeys: string[]; preset?: string; recipientEmail?: string; label?: string }) => Promise<{ id: string; url: string; expiresAt?: string; accessMode?: string; emailSent?: boolean }>;
+  listShareLinks?: (musicSubject: ManagerConversationMusicSubject) => Promise<Array<{ id: string; url: string; status: string; expiresAt?: string; recipientEmail?: string; label?: string; createdAt?: string }>>;
+  sendShareLink?: (input: { shareLinkId: string; url: string; recipientEmail: string }) => Promise<{ status: "sent"; shareLinkId: string; recipientEmail: string }>;
+  revokeShareLink?: (shareLinkId: string) => Promise<void>;
+  getAssetAccessUrl?: (musicItemId: string, assetId: string) => Promise<string>;
+  uploadAsset?: (musicItemId: string, input: { assetType: string; title: string; file: File; onProgress?: (progress: MusicUploadProgress) => void }) => Promise<MusicObjectViewModel>;
+};
+
+export type ProductionFixtureData = {
+  brief: TodayBriefViewModel;
+  attention: AttentionItem[];
+  movement: MovementItem[];
+  artistProfile: ArtistProfileViewModel;
+  agents: AgentViewModel[];
+  conversations: ConversationViewModel[];
+  missions: MissionViewModel[];
+  music: MusicObjectViewModel[];
+  evidence: EvidenceItemViewModel[];
 };
