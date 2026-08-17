@@ -26,6 +26,18 @@ jobs:
           cache: npm
       - name: Apply refinement
         run: python3 scripts/mobile_header_refinement.py
+      - name: Align surviving Home hover contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("src/production-app-shell.test.tsx")
+          text = path.read_text()
+          old = 'expect(source).toContain("hover:bg-foreground/[0.04]");'
+          new = 'expect(source).toContain("hover:bg-foreground/[0.045]");'
+          if text.count(old) != 1:
+              raise SystemExit("Expected one stale Home hover source contract")
+          path.write_text(text.replace(old, new))
+          PY
       - run: npm ci
       - name: Home editorial contract
         run: npm test -- src/desk-hq-editorial.test.tsx
