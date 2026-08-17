@@ -8,6 +8,7 @@ on:
       - scripts/manager_premium_phase_1.py
       - scripts/manager_premium_phase_1_fix1.py
       - scripts/manager_premium_phase_1_fix2.py
+      - scripts/manager_premium_phase_1_fix3.py
       - .github/workflows/manager-premium-phase-1.yml
 
 permissions:
@@ -37,6 +38,7 @@ jobs:
           python3 scripts/manager_premium_phase_1.py
           python3 scripts/manager_premium_phase_1_fix1.py
           python3 scripts/manager_premium_phase_1_fix2.py
+          python3 scripts/manager_premium_phase_1_fix3.py
 
       - name: Install dependencies
         run: npm ci
@@ -46,6 +48,8 @@ jobs:
           npx vitest run --environment jsdom --pool=vmThreads
           src/manager-premium-phase-1.test.tsx
           src/record-servicing-opportunity-ui.test.tsx
+          src/release-success-conversation.test.tsx
+          src/manager-interruption-ui.test.tsx
           src/features/manager/managerArtifactExperience.test.ts
           src/features/manager/managerPresentation.test.ts
           src/production-app-shell.test.tsx
@@ -60,7 +64,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git diff -- src/features/manager/ManagerScreens.tsx src/features/manager/ManagerComposer.tsx src/features/manager/OpportunityArtifact.tsx src/app/ProductionApp.tsx src/record-servicing-opportunity-ui.test.tsx src/manager-premium-phase-1.test.tsx src/production-app-shell.test.tsx > /tmp/manager-phase.patch
           npx tsc --noEmit --pretty false > /tmp/tsc-head.txt 2>&1 || true
           git stash push -u -m manager-phase-qa
           git checkout --detach origin/main
@@ -133,6 +136,8 @@ jobs:
             src/app/ProductionApp.tsx \
             src/record-servicing-opportunity-ui.test.tsx \
             src/manager-premium-phase-1.test.tsx \
-            src/production-app-shell.test.tsx
+            src/production-app-shell.test.tsx \
+            src/release-success-conversation.test.tsx \
+            src/manager-interruption-ui.test.tsx
           git commit -m 'design: make Manager premium and obvious'
           git push origin HEAD:design/manager-premium-phase-1
