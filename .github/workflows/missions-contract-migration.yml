@@ -1,35 +1,13 @@
 name: Missions contract migration
+
 on:
-  push:
-    branches: [design/missions-zero-learning-ux]
+  workflow_dispatch:
+
 permissions:
-  contents: write
-env:
-  VITE_SUPABASE_URL: http://localhost:54321
-  VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+  contents: read
+
 jobs:
-  migrate:
+  frozen:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: design/missions-zero-learning-ux
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: python scripts/run-missions-zero-learning-migration.py
-      - name: Run mission-focused tests
-        run: npx vitest run --environment jsdom --pool=vmThreads src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
-      - name: Commit migration
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/features/missions src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
-          git diff --cached --check
-          git commit -m "Migrate Missions to zero-learning contracts"
-          git push origin HEAD:design/missions-zero-learning-ux
+      - run: echo "Migration complete; workflow retained only until pre-deploy cleanup."
