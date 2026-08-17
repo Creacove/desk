@@ -26,7 +26,7 @@ describe("mission navigation", () => {
     const { rerender } = render(<DeskRail active="labelHQ" activeMissionCount={0} onNavigate={vi.fn()} />);
     expect(screen.queryByTestId("desktop-mission-count")).not.toBeInTheDocument();
 
-    rerender(<MobileChrome active="labelHQ" title="Desk HQ" activeMissionCount={0} onNavigate={vi.fn()} />);
+    rerender(<MobileChrome active="labelHQ" title="Home" activeMissionCount={0} onNavigate={vi.fn()} />);
     expect(screen.queryByTestId("mobile-mission-count")).not.toBeInTheDocument();
   });
 });
