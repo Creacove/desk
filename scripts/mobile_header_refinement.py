@@ -34,7 +34,7 @@ replace_exact(
             <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/62">
               {active === "settings" ? "Account" : "Artist workspace"}
             </p>
-            <h1 className="font-display mt-1 truncate text-[19px] font-semibold leading-none tracking-[-0.025em] text-foreground">{title}</h1>
+            <p className="font-display mt-1 truncate text-[19px] font-semibold leading-none tracking-[-0.025em] text-foreground">{title}</p>
           </div>''',
 )
 replace_exact(components, '<div className="flex shrink-0 items-center gap-1">', '<div className="flex shrink-0 items-center gap-1.5">')
