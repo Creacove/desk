@@ -6,6 +6,7 @@ on:
       - design/catalog-manager-beauty-pass
     paths:
       - scripts/catalog_manager_beauty_pass.py
+      - scripts/catalog_manager_beauty_pass_compat.py
       - .github/workflows/catalog-manager-beauty-pass.yml
 
 permissions:
@@ -25,7 +26,9 @@ jobs:
           node-version: 22
           cache: npm
       - name: Apply beauty pass
-        run: python3 scripts/catalog_manager_beauty_pass.py
+        run: |
+          python3 scripts/catalog_manager_beauty_pass.py
+          python3 scripts/catalog_manager_beauty_pass_compat.py
       - run: npm ci
       - name: Beauty-system contract
         run: npx vitest run src/catalog-manager-beauty-pass.test.ts --environment jsdom --pool=vmThreads
