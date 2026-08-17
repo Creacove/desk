@@ -22,6 +22,7 @@ export function TaskSheet({
   done,
   mutation,
   deliverables,
+  availableAfter,
   onClose,
   onApprove,
   onComplete,
@@ -34,6 +35,7 @@ export function TaskSheet({
   done: boolean;
   mutation?: TaskMutationState;
   deliverables: MissionTaskDeliverableViewModel[];
+  availableAfter?: string;
   onClose: () => void;
   onApprove: () => void;
   onComplete: (intent: CompletionIntent, note: string) => void;
@@ -49,7 +51,8 @@ export function TaskSheet({
   const completionMode = resolveTaskCompletionMode(task);
   const pending = mutation?.status === "pending";
   const blocked = task.result?.status === "blocked" || task.approvalState === "blocked";
-  const canComplete = task.approvalState !== "needs approval" || approved;
+  const unavailable = Boolean(availableAfter);
+  const canComplete = !unavailable && (task.approvalState !== "needs approval" || approved);
   const noteRequired = intent === "blocked" || completionMode === "result_note";
 
   useEffect(() => {
@@ -66,12 +69,13 @@ export function TaskSheet({
   }, [onClose, pending]);
 
   function pickFile(deliverable: MissionTaskDeliverableViewModel) {
+    if (unavailable) return;
     setUploadTargetId(deliverable.id);
     fileInputRef.current?.click();
   }
 
   function submitCompletion() {
-    if (!intent) return;
+    if (!intent || unavailable) return;
     if (noteRequired && !note.trim()) return;
     onComplete(intent, note);
   }
@@ -86,9 +90,9 @@ export function TaskSheet({
         className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[26px] border border-foreground/10 bg-background shadow-2xl sm:max-w-[620px] sm:rounded-[24px]"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-foreground/8 bg-background/96 px-4 py-3 backdrop-blur-xl sm:px-5">
-          <div className="min-w-0">
-            <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">{checkpoint?.title || "Mission work"}</p>
-          </div>
+          <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">
+            {checkpoint ? `Step ${checkpoint.phase} · ${checkpoint.title}` : "Mission work"}
+          </p>
           <button
             type="button"
             onClick={onClose}
@@ -108,9 +112,15 @@ export function TaskSheet({
               <h2 id="mission-task-sheet-title" className="font-display text-[25px] font-semibold leading-tight tracking-[-0.025em] text-foreground">
                 {task.title}
               </h2>
-              <p className="mt-2 text-[12px] font-semibold text-muted-foreground">{task.deadline}</p>
+              {task.deadline ? <p className="mt-2 text-[12px] font-semibold text-muted-foreground">{task.deadline}</p> : null}
             </div>
           </div>
+
+          {availableAfter ? (
+            <p className="mt-5 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-semibold text-muted-foreground">
+              Available after {availableAfter}
+            </p>
+          ) : null}
 
           {task.purpose ? (
             <p className="mt-5 max-w-[540px] text-[14px] font-medium leading-[1.65] text-foreground/80">{task.purpose}</p>
@@ -132,8 +142,7 @@ export function TaskSheet({
 
           {deliverables.length ? (
             <section className="mt-6 border-t border-foreground/8 pt-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Optional context</p>
-              <div className="mt-3 grid gap-2">
+              <div className="grid gap-2">
                 {deliverables.map((deliverable) => (
                   <div key={deliverable.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-foreground/8 px-3.5 py-3">
                     <div className="min-w-0">
@@ -146,8 +155,8 @@ export function TaskSheet({
                       <button
                         type="button"
                         onClick={() => pickFile(deliverable)}
-                        disabled={pending}
-                        className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-bold text-foreground transition-colors hover:bg-foreground/[0.04] disabled:opacity-45"
+                        disabled={pending || unavailable}
+                        className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-bold text-foreground transition-colors hover:bg-foreground/[0.04] disabled:cursor-not-allowed disabled:opacity-35"
                       >
                         <Upload className="h-3.5 w-3.5" />
                         Upload
@@ -161,12 +170,12 @@ export function TaskSheet({
               <input
                 ref={fileInputRef}
                 type="file"
-                aria-label={`Upload optional context for ${task.title}`}
+                aria-label={`Upload file for ${task.title}`}
                 className="sr-only"
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   const target = deliverables.find((deliverable) => deliverable.id === uploadTargetId);
-                  if (file && target) onUpload(target, file);
+                  if (file && target && !unavailable) onUpload(target, file);
                   event.currentTarget.value = "";
                 }}
               />
@@ -175,7 +184,7 @@ export function TaskSheet({
 
           {task.managerDraft ? (
             <section className="mt-6 rounded-[16px] bg-foreground/[0.03] px-4 py-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Current Manager draft</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Draft</p>
               <p className="mt-2 text-[13px] font-bold text-foreground">{task.managerDraft.title}</p>
               <ManagerDraftDocument content={task.managerDraft.summary} />
             </section>
@@ -201,24 +210,32 @@ export function TaskSheet({
               <Check className="h-4 w-4" />
               Done
             </div>
+          ) : unavailable ? (
+            <div className="mt-7 border-t border-foreground/8 pt-5">
+              <button
+                type="button"
+                disabled
+                className="min-h-12 w-full rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background opacity-35"
+              >
+                {task.approvalState === "needs approval" ? "Review" : completionMode === "manager_draft" ? "Continue" : deliverables.length ? "Upload" : "Complete"}
+              </button>
+            </div>
           ) : workMode === "manager_work" ? (
             <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
-              <p className="text-[13px] font-bold text-foreground">Manager is handling this.</p>
-              <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">
-                You do not need to do anything unless the Manager asks for input.
-              </p>
+              <p className="text-[13px] font-bold text-foreground">In progress</p>
+              <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">The team is working on this.</p>
             </div>
           ) : intent ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
               <label htmlFor={`task-note-${task.id}`} className="text-[11px] font-bold text-foreground">
-                {intent === "blocked" ? "What is blocking this?" : completionMode === "result_note" ? "What changed?" : "Add a note (optional)"}
+                {intent === "blocked" ? "What’s stopping this?" : completionMode === "result_note" ? "What changed?" : "Add a note (optional)"}
               </label>
               <textarea
                 id={`task-note-${task.id}`}
                 rows={4}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                placeholder={intent === "blocked" ? "Tell the Manager what is preventing progress." : "Add the outcome so the mission stays accurate."}
+                placeholder={intent === "blocked" ? "Describe what’s stopping the work." : "Add the outcome."}
                 className="mt-2 w-full resize-none rounded-[14px] border border-foreground/10 bg-background px-3.5 py-3 text-[13px] font-medium leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/55 focus:border-brand-accent/45"
               />
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -237,7 +254,7 @@ export function TaskSheet({
                   className="inline-flex min-h-11 items-center justify-center rounded-[11px] bg-foreground px-4 text-[12px] font-bold text-background disabled:opacity-40"
                 >
                   {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {intent === "blocked" ? "Report blocker" : completionMode === "manager_draft" ? "Submit for review" : "Mark complete"}
+                  {intent === "blocked" ? "Send" : completionMode === "manager_draft" ? "Submit for review" : "Mark complete"}
                 </button>
               </div>
             </div>
@@ -251,7 +268,7 @@ export function TaskSheet({
                   className="inline-flex min-h-12 items-center justify-center rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-45"
                 >
                   {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Approve
+                  Review
                 </button>
               ) : completionMode === "manager_draft" && (!task.managerDraft || managerDraftNeedsRevision(task)) ? (
                 <button
@@ -260,7 +277,7 @@ export function TaskSheet({
                   disabled={pending}
                   className="min-h-12 rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-45"
                 >
-                  {managerDraftNeedsRevision(task) ? "Continue with Manager" : "Work with Manager"}
+                  Continue
                 </button>
               ) : (
                 <button
@@ -280,7 +297,7 @@ export function TaskSheet({
                   disabled={pending}
                   className="min-h-11 rounded-[11px] text-[12px] font-bold text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground disabled:opacity-45"
                 >
-                  Report a blocker
+                  Something’s blocking me
                 </button>
               ) : null}
             </div>
