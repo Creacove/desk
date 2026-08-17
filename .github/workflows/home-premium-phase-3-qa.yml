@@ -49,6 +49,9 @@ jobs:
         run: npm test
 
       - name: Production build
+        env:
+          VITE_SUPABASE_URL: https://fixture.supabase.co
+          VITE_SUPABASE_ANON_KEY: fixture-anon-key
         run: npm run build
 
       - name: TypeScript regression against completed Activity base
