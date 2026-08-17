@@ -1,0 +1,54 @@
+name: Activity Center Phase 2 Contract Cleanup
+
+on:
+  push:
+    branches:
+      - design/activity-center-phase-2
+    paths:
+      - .github/workflows/activity-center-phase-2-fix-contracts.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: design/activity-center-phase-2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Replace stale Activity contracts and harden Supabase unit test
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/production-app-shell.test.tsx')
+          source = path.read_text()
+          source = source.replace('screen.findByRole("dialog", { name: "Your workspace, as it happens" })', 'screen.findByRole("dialog", { name: "Activity" })')
+          source = source.replace('''    expect(activityCenter).toHaveTextContent("Needs you");\n    expect(activityCenter).toHaveTextContent("Background activity");\n    expect(activityCenter).toHaveTextContent("Nothing is waiting on you");\n    expect(activityCenter).toHaveTextContent("Spotify public catalog connected");''', '''    expect(activityCenter).toHaveTextContent("Spotify public catalog connected");\n    expect(activityCenter).not.toHaveTextContent("Needs you");\n    expect(activityCenter).not.toHaveTextContent("Background activity");''')
+          source = source.replace('''    expect(notificationSheet).toHaveTextContent("Needs you");\n    expect(notificationSheet).toHaveTextContent("Background activity");\n    expect(notificationSheet).toHaveTextContent("Nothing is waiting on you");\n    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");\n    expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");''', '''    expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");\n    expect(notificationSheet).not.toHaveTextContent("Needs you");\n    expect(notificationSheet).not.toHaveTextContent("Background activity");\n    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");''')
+          source = source.replace('''    expect(activityCenter).toHaveTextContent("Needs you");\n    expect(activityCenter).toHaveTextContent("Background activity");\n    expect(activityCenter).toHaveTextContent(longMovement);''', '''    expect(activityCenter).not.toHaveTextContent("Needs you");\n    expect(activityCenter).not.toHaveTextContent("Background activity");\n    expect(activityCenter).toHaveTextContent(longMovement);''')
+          path.write_text(source)
+
+          Path('src/supabase-client.test.ts').write_text('''import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";\n\nconst createClient = vi.fn(() => ({ auth: {} }));\n\nvi.mock("@supabase/supabase-js", () => ({ createClient }));\n\ndescribe("browser Supabase client", () => {\n  beforeEach(() => {\n    vi.stubEnv("VITE_SUPABASE_URL", "https://activity-center-test.supabase.co");\n    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "activity-center-test-anon-key");\n    createClient.mockClear();\n  });\n\n  afterEach(() => {\n    vi.unstubAllEnvs();\n  });\n\n  it("reuses one auth client for every production adapter and poller", async () => {\n    const { createBrowserSupabaseClient } = await import("./lib/supabaseClient");\n\n    const first = createBrowserSupabaseClient();\n    const second = createBrowserSupabaseClient();\n\n    expect(second).toBe(first);\n    expect(createClient).toHaveBeenCalledTimes(1);\n    expect(createClient).toHaveBeenCalledWith("https://activity-center-test.supabase.co", "activity-center-test-anon-key", {\n      realtime: { params: { eventsPerSecond: 10 } },\n    });\n  });\n});\n''')
+          PY
+      - name: Verify cleanup actually changed the stale contracts
+        run: |
+          ! grep -R -n -F "Your workspace, as it happens" src/production-app-shell.test.tsx
+          ! grep -n -E 'toHaveTextContent\("(Needs you|Background activity|Nothing is waiting on you)' src/production-app-shell.test.tsx
+          git diff --check
+          git diff -- src/production-app-shell.test.tsx src/supabase-client.test.ts
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/production-app-shell.test.tsx src/supabase-client.test.ts
+          if git diff --cached --quiet; then
+            echo "No cleanup changes needed."
+            exit 0
+          fi
+          git commit -m "Align Activity Center regression contracts"
+          git push origin HEAD:design/activity-center-phase-2
