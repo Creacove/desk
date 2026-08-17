@@ -1,278 +1,35 @@
-import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Bell, ClipboardCheck, Gauge, Library, LogOut, MessageCircle, Settings } from "lucide-react";
-import type { ReactNode } from "react";
-import { cn } from "../lib/utils";
-import type { CleanProductionView } from "../types/cleanProduction";
+from pathlib import Path
 
-export function BrandMark({
-  size = "md",
-  testId,
-  className,
-}: {
-  size?: "sm" | "md" | "lg";
-  testId?: string;
-  className?: string;
-}) {
-  return (
-    <span
-      aria-hidden="true"
-      data-testid={testId}
-      className={cn(
-        "relative inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[10px] border border-foreground/10 bg-[#111]",
-        size === "sm" ? "h-8 w-8" : "h-10 w-10",
-        size === "lg" && "h-12 w-12 rounded-[14px]",
-        className,
-      )}
-    >
-      <img src="/logo.png" alt="" className="h-full w-full object-cover" />
-    </span>
-  );
-}
 
-export function Badge({ children, active = false }: { children: ReactNode; active?: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] transition-colors duration-200",
-        active ? "border-brand-accent/20 bg-brand-ghost text-brand-accent" : "border-foreground/10 bg-background text-muted-foreground",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
+def replace_once(text: str, old: str, new: str, label: str) -> str:
+    if old not in text:
+        raise SystemExit(f"missing anchor: {label}")
+    return text.replace(old, new, 1)
 
-export function ProductButton({
-  children,
-  onClick,
-  type = "button",
-  variant = "primary",
-  disabled,
-}: {
-  children: ReactNode;
-  onClick?: () => void;
-  type?: "button" | "submit";
-  variant?: "primary" | "secondary" | "quiet";
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type={type}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-ui text-[12px] font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40",
-        variant === "primary" && "bg-foreground text-background hover:bg-foreground/90",
-        variant === "secondary" && "border border-foreground/10 bg-background text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03]",
-        variant === "quiet" && "border border-transparent bg-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-      )}
-    >
-      {children}
-    </button>
-  );
-}
 
-export function Field({
-  label,
-  value,
-  onChange,
-  type = "text",
-  autoComplete,
-  required,
-  disabled,
-  readOnly,
-  helper,
-  error,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  type?: "text" | "email" | "password";
-  autoComplete?: string;
-  required?: boolean;
-  disabled?: boolean;
-  readOnly?: boolean;
-  helper?: string;
-  error?: string;
-}) {
-  const id = `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  return (
-    <div
-      className={cn(
-        "group rounded-[12px] border bg-background p-2.5 transition-all duration-300 focus-within:border-brand-accent/50 focus-within:ring-2 focus-within:ring-brand-accent/5",
-        error ? "border-destructive/45 bg-destructive/[0.025]" : "border-foreground/8",
-        disabled && "opacity-60",
-      )}
-    >
-      <label htmlFor={id} className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85 transition-colors group-focus-within:text-brand-accent">
-        {label}
-      </label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        autoComplete={autoComplete}
-        required={required}
-        disabled={disabled}
-        readOnly={readOnly}
-        onChange={(event) => onChange(event.target.value)}
-        className={cn(
-          "mt-1 w-full bg-transparent text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60",
-          readOnly && "cursor-default",
-        )}
-      />
-      {error || helper ? <p className={cn("mt-1.5 text-[11px] font-semibold", error ? "text-destructive" : "text-muted-foreground/80")}>{error ?? helper}</p> : null}
-    </div>
-  );
-}
+def replace_between(text: str, start: str, end: str, replacement: str, label: str) -> str:
+    start_index = text.find(start)
+    if start_index < 0:
+        raise SystemExit(f"missing start anchor: {label}")
+    end_index = text.find(end, start_index)
+    if end_index < 0:
+        raise SystemExit(f"missing end anchor: {label}")
+    return text[:start_index] + replacement + text[end_index:]
 
-export function TextAreaField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  const id = `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-  return (
-    <div className="group rounded-[12px] border border-brand-accent/15 bg-brand-accent/[0.025] p-3 transition-all duration-300 focus-within:border-brand-accent/45 focus-within:ring-2 focus-within:ring-brand-accent/5 sm:col-span-2">
-      <label htmlFor={id} className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-brand-accent">
-        {label}
-      </label>
-      <textarea
-        id={id}
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="mt-2 min-h-[70px] w-full resize-none rounded-[10px] border border-foreground/8 bg-background/75 p-3 text-[13px] font-semibold leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/85"
-      />
-    </div>
-  );
-}
 
-export function WorkspaceHeader({
-  title,
-  action,
-}: {
-  eyebrow?: string;
-  title: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div
-      data-testid={`workspace-header-${title}`}
-      className="mb-4 hidden flex-col gap-3 lg:mb-5 lg:flex lg:flex-row lg:items-end lg:justify-between"
-    >
-      <div>
-        <h1 className="font-display text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">{title}</h1>
-      </div>
-      {action}
-    </div>
-  );
-}
-
-export function WorkspaceTabRail<T extends string>({
-  items,
-  active,
-  onChange,
-  ariaLabel,
-  testId,
-  className,
-  semanticTabs = false,
-  idPrefix,
-}: {
-  items: ReadonlyArray<{ id: T; label: string; badge?: string | null }>;
-  active: T;
-  onChange: (id: T) => void;
-  ariaLabel: string;
-  testId?: string;
-  className?: string;
-  semanticTabs?: boolean;
-  idPrefix?: string;
-}) {
-  return (
-    <div
-      role="tablist"
-      aria-label={ariaLabel}
-      data-testid={testId}
-      className={cn("workspace-tab-rail scrollbar-none grid auto-cols-fr grid-flow-col overflow-x-auto", className)}
-    >
-      {items.map((item) => {
-        const selected = active === item.id;
-        return (
-          <button
-            key={item.id}
-            id={idPrefix ? `${idPrefix}-tab-${item.id}` : undefined}
-            type="button"
-            role={semanticTabs ? "tab" : undefined}
-            aria-selected={semanticTabs ? selected : undefined}
-            aria-pressed={selected}
-            aria-controls={idPrefix ? `${idPrefix}-panel-${item.id}` : undefined}
-            onClick={() => onChange(item.id)}
-            className={cn("workspace-tab", selected && "workspace-tab-active")}
-          >
-            <span>{item.label}</span>
-            {item.badge ? <span className="workspace-tab-badge max-lg:hidden">{item.badge}</span> : null}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function WorkspaceShell({
-  eyebrow,
-  title,
-  onBack,
-  children,
-  showBack = true,
-  punctuateTitle = true,
-  variant = "default",
-  backLabel = "Back",
-}: {
-  eyebrow: string;
-  title: string;
-  onBack: () => void;
-  children: ReactNode;
-  showBack?: boolean;
-  punctuateTitle?: boolean;
-  variant?: "default" | "conversation";
-  backLabel?: string;
-}) {
-  return (
-    <div className="app-workspace app-workspace-reveal">
-      {showBack && variant === "conversation" ? (
-        <div className="sticky top-0 z-30 -mx-3 mb-2 border-b border-foreground/8 bg-background/92 px-3 py-2.5 backdrop-blur-xl lg:-mx-4 lg:px-4">
-          <div className="mx-auto flex max-w-[48rem] items-center gap-3">
-            <button
-              type="button"
-              onClick={onBack}
-              aria-label={backLabel}
-              className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            </button>
-            <h1 className="min-w-0 truncate text-[14px] font-semibold text-foreground sm:text-[15px]">{title}</h1>
-          </div>
-        </div>
-      ) : showBack ? (
-        <div className="sticky top-0 z-30 -mx-3 mb-5 flex items-center justify-between border-b border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-sm lg:-mx-4 lg:px-4">
-          <button
-            type="button"
-            onClick={onBack}
-            className="group flex items-center gap-2 text-[13px] font-semibold text-muted-foreground/85 transition-colors hover:text-foreground"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-md border border-foreground/10 bg-background transition-colors group-hover:border-foreground/20 group-hover:bg-foreground/[0.03]">
-              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            </div>
-            Back
-          </button>
-        </div>
-      ) : null}
-      {variant === "default" ? <div className="mb-5 lg:mb-8">
-        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
-        <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.55rem] lg:text-[1.3rem]">{title}{punctuateTitle ? "." : ""}</h1>
-      </div> : null}
-      {children}
-    </div>
-  );
-}
-
-const navItems: Array<{ label: string; active: NavSection; view: CleanProductionView; icon: LucideIcon }> = [
+components_path = Path("src/design-system/components.tsx")
+components = components_path.read_text()
+components = replace_once(
+    components,
+    'import { ArrowLeft, Bell, ClipboardCheck, Gauge, Library, LogOut, Settings, UsersRound } from "lucide-react";',
+    'import { ArrowLeft, Bell, ClipboardCheck, Gauge, Library, LogOut, MessageCircle, Settings } from "lucide-react";',
+    "Manager navigation icon",
+)
+components = replace_between(
+    components,
+    'const navItems: Array<{ label: string; active: NavSection; view: CleanProductionView; icon: LucideIcon }> = [',
+    'export function DeskRail({',
+    '''const navItems: Array<{ label: string; active: NavSection; view: CleanProductionView; icon: LucideIcon }> = [
   { label: "Desk HQ", active: "labelHQ", view: "labelHQ", icon: Gauge },
   { label: "Catalog", active: "music", view: "musicWorkspace", icon: Library },
   { label: "Manager", active: "manager", view: "managerOffice", icon: MessageCircle },
@@ -297,7 +54,11 @@ export function sectionForView(view: CleanProductionView): NavSection {
   return "labelHQ";
 }
 
-export function DeskRail({
+''',
+    "navigation model",
+)
+
+rail_and_mobile = '''export function DeskRail({
   active,
   onNavigate,
   onSignOut,
@@ -526,21 +287,161 @@ export function MobileChrome({
   );
 }
 
-function formatNavigationCount(count: number) {
-  return count > 9 ? "9+" : String(count);
+'''
+components = replace_between(
+    components,
+    'export function DeskRail({',
+    'function formatNavigationCount(count: number)',
+    rail_and_mobile,
+    "desktop and mobile navigation",
+)
+components_path.write_text(components)
+
+
+app_path = Path("src/app/ProductionApp.tsx")
+app = app_path.read_text()
+app = replace_once(
+    app,
+    'import { LockedAgentWorkspace, StaffWorkspace } from "../features/staff/StaffScreens";\n',
+    '',
+    "remove staff screen import",
+)
+app = replace_once(
+    app,
+    '  const [view, setView] = useState<CleanProductionView>(initialView);',
+    '  const [view, setView] = useState<CleanProductionView>(() => normalizeLegacyManagerView(initialView));',
+    "normalize initial view",
+)
+app = replace_once(
+    app,
+    '  const [selectedAgent, setSelectedAgent] = useState<AgentViewModel | null>(null);\n',
+    '',
+    "remove selected agent state",
+)
+app = replace_once(
+    app,
+    '    activeSection === "staff" ? "Team Agents" :',
+    '    activeSection === "manager" ? "Manager" :',
+    "mobile Manager title",
+)
+app = replace_once(
+    app,
+    '  const activeAgent = selectedAgent ?? agents[1] ?? agents[0] ?? null;\n',
+    '',
+    "remove active agent projection",
+)
+app = replace_once(
+    app,
+    '    view === "staffWorkspace" ||',
+    '    view === "managerOffice" ||',
+    "Manager mobile topbar",
+)
+app = replace_once(
+    app,
+    '''  function navigate(nextView: CleanProductionView) {
+    if (workspace && !isWorkspaceReadyForDesk(workspace) && nextView !== "setup" && nextView !== "connectArtist") {
+      setView("setup");
+      return;
+    }
+
+    if (nextView !== "musicWorkspace") setMusicDetailOpen(false);
+    if (nextView !== "missionsWorkspace") setMissionRoomOpen(false);
+    setView(nextView);
+    setDrawer(null);
+    setActivityCenterOpen(false);
+  }''',
+    '''  function navigate(nextView: CleanProductionView) {
+    const resolvedView = normalizeLegacyManagerView(nextView);
+    if (workspace && !isWorkspaceReadyForDesk(workspace) && resolvedView !== "setup" && resolvedView !== "connectArtist") {
+      setView("setup");
+      return;
+    }
+
+    if (resolvedView !== "musicWorkspace") setMusicDetailOpen(false);
+    if (resolvedView !== "missionsWorkspace") setMissionRoomOpen(false);
+    setView(resolvedView);
+    setDrawer(null);
+    setActivityCenterOpen(false);
+  }''',
+    "legacy Team Agents redirect",
+)
+app = replace_once(
+    app,
+    '        <DeskRail active={activeSection} activeMissionCount={missions.filter((mission) => mission.status !== "complete").length} onNavigate={navigateFromMenu} onSignOut={onSignOut} />',
+    '''        <DeskRail
+          active={activeSection}
+          activeMissionCount={missions.filter((mission) => mission.status !== "complete").length}
+          recentManagerConversations={conversations.slice(0, 3).map((conversation) => ({ id: conversation.id, topic: conversation.topic }))}
+          onOpenManagerConversation={(conversationId) => {
+            const conversation = conversations.find((candidate) => candidate.id === conversationId);
+            if (conversation) void openConversation(conversation);
+          }}
+          onNavigate={navigateFromMenu}
+          onSignOut={onSignOut}
+        />''',
+    "sidebar recent conversations",
+)
+app = replace_once(
+    app,
+    '''              onLockedAgent={(agent) => {
+                setSelectedAgent(agent);
+                navigate("lockedAgentWorkspace");
+              }}''',
+    '''              onLockedAgent={() => openManager()}''',
+    "HQ legacy agent handoff",
+)
+app = replace_between(
+    app,
+    '          {view === "staffWorkspace" ? (',
+    '          {view === "managerOffice" ? (',
+    '',
+    "remove Team Agents route surfaces",
+)
+
+# Keep legacy external/deep links safe without keeping Team Agents as a product surface.
+helper_anchor = 'function CleanProductionWorkspace({\n'
+helper = '''function normalizeLegacyManagerView(view: CleanProductionView): CleanProductionView {
+  return view === "staffWorkspace" || view === "lockedAgentWorkspace" ? "managerOffice" : view;
 }
 
-export function StatusPill({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "success" | "warning" }) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em]",
-        tone === "neutral" && "border-foreground/10 bg-background text-muted-foreground",
-        tone === "success" && "border-success/20 bg-success/10 text-success",
-        tone === "warning" && "border-warning/20 bg-warning/10 text-warning",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
+'''
+app = replace_once(app, helper_anchor, helper + helper_anchor, "legacy Manager route helper")
+app_path.write_text(app)
+
+
+regression_path = Path("src/manager-navigation-redesign.test.ts")
+regression_path.write_text('''import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+
+const components = readFileSync("src/design-system/components.tsx", "utf8");
+const app = readFileSync("src/app/ProductionApp.tsx", "utf8");
+
+describe("Manager-first navigation", () => {
+  it("replaces Team Agents with one direct Manager destination", () => {
+    expect(components).toContain('{ label: "Manager", active: "manager", view: "managerOffice"');
+    expect(components).not.toContain('{ label: "Team Agents"');
+    expect(app).not.toContain('<StaffWorkspace');
+    expect(app).not.toContain('<LockedAgentWorkspace');
+    expect(app).toContain('normalizeLegacyManagerView');
+  });
+
+  it("keeps Manager active across office and conversation surfaces", () => {
+    expect(components).toContain('view === "managerOffice"');
+    expect(components).toContain('view === "conversationWorkspace"');
+    expect(components).toContain('return "manager"');
+  });
+
+  it("reveals only a small recent conversation set from the desktop Manager item", () => {
+    expect(components).toContain('data-testid="desktop-manager-recents"');
+    expect(components).toContain('recentManagerConversations.slice(0, 3)');
+    expect(app).toContain('recentManagerConversations={conversations.slice(0, 3)');
+  });
+
+  it("uses a flat mobile dock and theme-safe mission counts", () => {
+    expect(components).toContain('className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 border-t');
+    expect(components).not.toContain('className="fixed inset-x-3 bottom-3 z-50 grid grid-cols-4 rounded-[18px]');
+    expect(components).toContain('data-testid="mobile-mission-count"');
+    expect(components).toContain('bg-brand-accent px-1 text-[9px] font-bold text-background');
+  });
+});
+''')

@@ -1,13 +1,16 @@
-name: Desktop Song Room width and overview copy
+name: Manager navigation redesign
+
 on:
   push:
     branches:
       - design/catalog-manager-unification
     paths:
-      - scripts/desktop_song_room_width_and_overview_copy.py
-      - .github/workflows/desktop-song-room-width-and-overview-copy.yml
+      - scripts/manager_navigation_redesign.py
+      - .github/workflows/manager-navigation-redesign.yml
+
 permissions:
   contents: write
+
 jobs:
   apply-and-verify:
     runs-on: ubuntu-latest
@@ -21,11 +24,16 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Apply Song Room design patch
-        run: python3 scripts/desktop_song_room_width_and_overview_copy.py
+      - name: Apply Manager navigation redesign
+        run: python3 scripts/manager_navigation_redesign.py
       - run: npm ci
-      - name: Focused UX regressions
-        run: npx vitest run src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+      - name: Manager navigation contract
+        run: npx vitest run src/manager-navigation-redesign.test.ts --environment jsdom --pool=vmThreads
+        env:
+          VITE_SUPABASE_URL: http://localhost:54321
+          VITE_SUPABASE_ANON_KEY: test-anon-key
+      - name: Production shell regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
         env:
           VITE_SUPABASE_URL: http://localhost:54321
           VITE_SUPABASE_ANON_KEY: test-anon-key
@@ -39,10 +47,10 @@ jobs:
         env:
           VITE_SUPABASE_URL: http://localhost:54321
           VITE_SUPABASE_ANON_KEY: test-anon-key
-      - name: Commit Song Room phase
+      - name: Commit Manager navigation phase
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/music/MusicScreens.tsx src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx
-          git commit -m 'design: open up Song Room and clarify record review'
+          git add src/design-system/components.tsx src/app/ProductionApp.tsx src/manager-navigation-redesign.test.ts
+          git commit -m 'design: make Manager the primary operating agent'
           git push origin HEAD:design/catalog-manager-unification

@@ -64,18 +64,32 @@ tab_test = replace_once(
 tab_test_path.write_text(tab_test)
 
 
-# Keep the integration suite aligned with the new song-specific product language.
-# Project Manager Read language is intentionally untouched in this phase.
+# Keep only the song-specific integration expectations aligned with the new
+# record-review product language. Project Manager Read language stays untouched.
 production_test_path = Path("src/production-app-shell.test.tsx")
 production_test = production_test_path.read_text()
 for old, new, label in [
-    ('getByRole("button", { name: "Refresh Manager Read" })).toHaveClass("h-9", "w-9");', 'getByRole("button", { name: "Refresh record review" })).toHaveClass("h-9", "w-9");', 'reopened song refresh label'),
-    ('["song", "not_generated", "Not generated", "Ask Manager for a read", false],\n    ["song", "stale", "Refresh required", "Refresh Manager Read", false],\n    ["song", "running", "Manager is reading", "Manager is reading", true],\n    ["song", "refreshing", "Refreshing", "Refreshing Manager Read", true],\n    ["song", "fresh", "Current read", "Refresh Manager Read", false],\n    ["song", "failed", "Read failed", "Retry Manager Read", false],\n    ["song", "refresh_failed", "Refresh failed", "Retry Manager Read", false],', '["song", "not_generated", "Not generated", "Review this record", false],\n    ["song", "stale", "Refresh required", "Refresh record review", false],\n    ["song", "running", "Reviewing this record", "Reviewing this record", true],\n    ["song", "refreshing", "Refreshing", "Refreshing record review", true],\n    ["song", "fresh", "Current read", "Refresh record review", false],\n    ["song", "failed", "Review failed", "Retry record review", false],\n    ["song", "refresh_failed", "Refresh failed", "Retry record review", false],', 'song status matrix'),
+    (
+        '    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Catalog workspace" }));\n    fireEvent.click(await screen.findByRole("button", { name: "Open song Jam" }));\n    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Refresh Manager Read" })).toHaveClass("h-9", "w-9");',
+        '    fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Open Catalog workspace" }));\n    fireEvent.click(await screen.findByRole("button", { name: "Open song Jam" }));\n    expect(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Refresh record review" })).toHaveClass("h-9", "w-9");',
+        'reopened song refresh label',
+    ),
+    (
+        '["song", "not_generated", "Not generated", "Ask Manager for a read", false],\n    ["song", "stale", "Refresh required", "Refresh Manager Read", false],\n    ["song", "running", "Manager is reading", "Manager is reading", true],\n    ["song", "refreshing", "Refreshing", "Refreshing Manager Read", true],\n    ["song", "fresh", "Current read", "Refresh Manager Read", false],\n    ["song", "failed", "Read failed", "Retry Manager Read", false],\n    ["song", "refresh_failed", "Refresh failed", "Retry Manager Read", false],',
+        '["song", "not_generated", "Not generated", "Review this record", false],\n    ["song", "stale", "Refresh required", "Refresh record review", false],\n    ["song", "running", "Reviewing this record", "Reviewing this record", true],\n    ["song", "refreshing", "Refreshing", "Refresh record review", true],\n    ["song", "fresh", "Current read", "Refresh record review", false],\n    ["song", "failed", "Review failed", "Retry record review", false],\n    ["song", "refresh_failed", "Refresh failed", "Retry record review", false],',
+        'song status matrix',
+    ),
     ('expect(readSurface).toHaveTextContent("Manager is reading this record");', 'expect(readSurface).toHaveTextContent("Reviewing this record");', 'running song copy'),
     ('expect(readSurface).toHaveTextContent("Get Manager’s take on this record");\n        expect(within(readSurface).getByRole("button", { name: "Get Manager’s read" })).toBeEnabled();', 'expect(readSurface).toHaveTextContent("See what needs attention");\n        expect(within(readSurface).getByRole("button", { name: "Review this record" })).toBeEnabled();', 'empty song copy'),
     ('expect(readSurface).toHaveTextContent("Manager couldn’t complete the read");', 'expect(readSurface).toHaveTextContent("Couldn’t complete the review");', 'failed song copy'),
-    ('else expect(within(room).getByRole("button", { name: "Refreshing Manager Read" })).toBeDisabled();', 'else expect(within(room).getByRole("button", { name: "Refreshing record review" })).toBeDisabled();', 'refreshing song button'),
+    ('else expect(within(room).getByRole("button", { name: "Refreshing Manager Read" })).toBeDisabled();', 'else expect(within(room).getByRole("button", { name: "Refresh record review" })).toBeDisabled();', 'refreshing song button'),
+    ('fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Get Manager’s read" }));', 'fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review this record" }));', 'focused start action'),
     ('expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Get Manager’s take on this record.");', 'expect(screen.getByTestId("music-song-detail")).toHaveTextContent("See what needs attention.");', 'focused start reset copy'),
+    ('fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Get Manager’s read" }));', 'fireEvent.click(within(screen.getByTestId("music-song-detail")).getByRole("button", { name: "Review this record" }));', 'local failure action'),
+    ('expect(await within(room).findByText("Manager couldn’t complete the read.")).toBeInTheDocument();', 'expect(await within(room).findByText("Couldn’t complete the review.")).toBeInTheDocument();', 'local failure copy'),
+    ('expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Checking Manager’s read");', 'expect(screen.getByTestId("music-song-detail")).toHaveTextContent("Checking this review");', 'unknown status after reopen'),
+    ('expect(room).toHaveTextContent("Checking Manager’s read");', 'expect(room).toHaveTextContent("Checking this review");', 'inconclusive status copy'),
+    ('expect(within(room).queryByRole("button", { name: "Get Manager’s read" })).not.toBeInTheDocument();', 'expect(within(room).queryByRole("button", { name: "Review this record" })).not.toBeInTheDocument();', 'inconclusive generation guard'),
 ]:
     production_test = replace_once(production_test, old, new, label)
 production_test_path.write_text(production_test)

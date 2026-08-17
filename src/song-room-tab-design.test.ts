@@ -4,10 +4,11 @@ import { readFileSync } from "node:fs";
 const music = readFileSync("src/features/music/MusicScreens.tsx", "utf8");
 
 describe("song room tab visual system", () => {
-  it("uses one bounded editorial shell for Files, Details, and Rights", () => {
-    expect(music).toContain('data-testid="song-room-files" className="mx-auto w-full max-w-4xl"');
-    expect(music).toContain('data-testid="song-room-details" className="mx-auto w-full max-w-4xl"');
-    expect(music).toContain('data-testid="song-room-rights" className="mx-auto w-full max-w-4xl"');
+  it("lets every Song Room tab use the full desktop workspace width", () => {
+    expect(music).toContain('data-testid="song-room-mobile-overview" className="w-full"');
+    expect(music).toContain('data-testid="song-room-files" className="w-full"');
+    expect(music).toContain('data-testid="song-room-details" className="w-full"');
+    expect(music).toContain('data-testid="song-room-rights" className="w-full"');
   });
 
   it("uses the same section-title and supporting-copy scale across the song room", () => {

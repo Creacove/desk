@@ -1,17 +1,20 @@
-name: Desktop Song Room width and overview copy
+name: Catalog library polish
+
 on:
   push:
     branches:
       - design/catalog-manager-unification
     paths:
-      - scripts/desktop_song_room_width_and_overview_copy.py
-      - .github/workflows/desktop-song-room-width-and-overview-copy.yml
+      - scripts/catalog_library_polish.py
+      - .github/workflows/catalog-library-polish.yml
+
 permissions:
   contents: write
+
 jobs:
   apply-and-verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v5
         with:
@@ -21,11 +24,23 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - name: Apply Song Room design patch
-        run: python3 scripts/desktop_song_room_width_and_overview_copy.py
+      - name: Apply Catalog library polish
+        run: |
+          python3 scripts/catalog_library_polish.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/features/music/MusicScreens.tsx')
+          text = path.read_text()
+          text = text.replace(
+              'Keep the catalog organized around the songs, projects, and active work your team is actually managing.',
+              'Songs and projects connected to active work.',
+              1,
+          )
+          path.write_text(text)
+          PY
       - run: npm ci
-      - name: Focused UX regressions
-        run: npx vitest run src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
+      - name: Production shell regressions
+        run: npx vitest run src/production-app-shell.test.tsx --environment jsdom --pool=vmThreads
         env:
           VITE_SUPABASE_URL: http://localhost:54321
           VITE_SUPABASE_ANON_KEY: test-anon-key
@@ -39,10 +54,10 @@ jobs:
         env:
           VITE_SUPABASE_URL: http://localhost:54321
           VITE_SUPABASE_ANON_KEY: test-anon-key
-      - name: Commit Song Room phase
+      - name: Commit Catalog polish
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/music/MusicScreens.tsx src/song-room-red-antler-overview.test.ts src/song-room-tab-design.test.ts src/desktop-workspace-width.test.ts src/production-app-shell.test.tsx
-          git commit -m 'design: open up Song Room and clarify record review'
+          git add src/features/music/MusicScreens.tsx
+          git commit -m 'design: polish Catalog library hierarchy'
           git push origin HEAD:design/catalog-manager-unification
