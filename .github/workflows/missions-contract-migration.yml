@@ -1,17 +1,12 @@
 name: Missions contract migration
-
 on:
   push:
-    branches:
-      - design/missions-zero-learning-ux
-
+    branches: [design/missions-zero-learning-ux]
 permissions:
   contents: write
-
 env:
   VITE_SUPABASE_URL: http://localhost:54321
   VITE_SUPABASE_ANON_KEY: ci-test-anon-key
-
 jobs:
   migrate:
     runs-on: ubuntu-latest
@@ -27,7 +22,7 @@ jobs:
       - run: npm ci
       - run: python scripts/run-missions-zero-learning-migration.py
       - name: Run mission-focused tests
-        run: npx vitest run src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
+        run: npx vitest run --environment jsdom --pool=vmThreads src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
       - name: Commit migration
         shell: bash
         run: |
