@@ -18,7 +18,7 @@ export type TaskMutationState = {
 };
 
 export function missionTasks(mission: MissionViewModel): MissionTaskViewModel[] {
-  if (mission.tasks?.length) return mission.tasks;
+  if (mission.tasks) return mission.tasks;
   return [
     {
       id: `${mission.id}-next-task`,
@@ -37,7 +37,7 @@ export function missionTasks(mission: MissionViewModel): MissionTaskViewModel[] 
 }
 
 export function missionCheckpoints(mission: MissionViewModel): MissionCheckpointViewModel[] {
-  if (mission.checkpoints?.length) return mission.checkpoints;
+  if (mission.checkpoints) return mission.checkpoints;
   return [
     {
       id: `${mission.id}-checkpoint`,
@@ -61,7 +61,7 @@ export function missionCheckpoints(mission: MissionViewModel): MissionCheckpoint
 }
 
 export function missionNotes(mission: MissionViewModel): MissionNoteViewModel[] {
-  if (mission.notes?.length) return mission.notes;
+  if (mission.notes) return mission.notes;
   return mission.summary
     ? [
         {
