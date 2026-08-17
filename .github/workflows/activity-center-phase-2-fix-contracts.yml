@@ -20,35 +20,49 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - name: Replace stale Activity contracts and harden Supabase unit test
+      - name: Separate synchronization and unread cursors
         run: |
           python - <<'PY'
           from pathlib import Path
 
-          path = Path('src/production-app-shell.test.tsx')
+          path = Path('src/services/workspaceLiveSync.ts')
           source = path.read_text()
-          source = source.replace('screen.findByRole("dialog", { name: "Your workspace, as it happens" })', 'screen.findByRole("dialog", { name: "Activity" })')
-          source = source.replace('''    expect(activityCenter).toHaveTextContent("Needs you");\n    expect(activityCenter).toHaveTextContent("Background activity");\n    expect(activityCenter).toHaveTextContent("Nothing is waiting on you");\n    expect(activityCenter).toHaveTextContent("Spotify public catalog connected");''', '''    expect(activityCenter).toHaveTextContent("Spotify public catalog connected");\n    expect(activityCenter).not.toHaveTextContent("Needs you");\n    expect(activityCenter).not.toHaveTextContent("Background activity");''')
-          source = source.replace('''    expect(notificationSheet).toHaveTextContent("Needs you");\n    expect(notificationSheet).toHaveTextContent("Background activity");\n    expect(notificationSheet).toHaveTextContent("Nothing is waiting on you");\n    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");\n    expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");''', '''    expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");\n    expect(notificationSheet).not.toHaveTextContent("Needs you");\n    expect(notificationSheet).not.toHaveTextContent("Background activity");\n    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");''')
-          source = source.replace('''    expect(activityCenter).toHaveTextContent("Needs you");\n    expect(activityCenter).toHaveTextContent("Background activity");\n    expect(activityCenter).toHaveTextContent(longMovement);''', '''    expect(activityCenter).not.toHaveTextContent("Needs you");\n    expect(activityCenter).not.toHaveTextContent("Background activity");\n    expect(activityCenter).toHaveTextContent(longMovement);''')
+          old = '''  const cursorKey = `ordersounds.activityCursor.v1:${options.userId}:${options.workspaceId}`;\n  const coalesceMs = options.coalesceMs ?? 250;\n  let cursor = readCursor(storage, cursorKey);'''
+          new = '''  // Synchronization progress is infrastructure state. Keep it separate from the\n  // Activity Center's user-facing seen/unread cursor so catch-up never marks\n  // unseen notifications as read.\n  const syncCursorKey = `ordersounds.workspaceSyncCursor.v1:${options.userId}:${options.workspaceId}`;\n  const coalesceMs = options.coalesceMs ?? 250;\n  let cursor = readCursor(storage, syncCursorKey);'''
+          if old not in source:
+            raise SystemExit('workspace sync cursor source contract not found')
+          source = source.replace(old, new)
+          old_flush = '''    const next = pendingInvalidations;\n    pendingInvalidations = [];\n    options.onInvalidations(next);'''
+          new_flush = '''    const next = pendingInvalidations;\n    pendingInvalidations = [];\n    if (cursor) storage.setItem(syncCursorKey, JSON.stringify(cursor));\n    options.onInvalidations(next);'''
+          if old_flush not in source:
+            raise SystemExit('workspace sync flush contract not found')
+          source = source.replace(old_flush, new_flush)
+          source = source.replace('''    if (shouldReconcile) {\n      if (cursor) storage.setItem(cursorKey, JSON.stringify(cursor));\n      await options.onReconcile?.();\n    }''', '''    if (shouldReconcile) {\n      await options.onReconcile?.();\n    }''')
           path.write_text(source)
 
-          Path('src/supabase-client.test.ts').write_text('''import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";\n\nconst createClient = vi.fn(() => ({ auth: {} }));\n\nvi.mock("@supabase/supabase-js", () => ({ createClient }));\n\ndescribe("browser Supabase client", () => {\n  beforeEach(() => {\n    vi.stubEnv("VITE_SUPABASE_URL", "https://activity-center-test.supabase.co");\n    vi.stubEnv("VITE_SUPABASE_ANON_KEY", "activity-center-test-anon-key");\n    createClient.mockClear();\n  });\n\n  afterEach(() => {\n    vi.unstubAllEnvs();\n  });\n\n  it("reuses one auth client for every production adapter and poller", async () => {\n    const { createBrowserSupabaseClient } = await import("./lib/supabaseClient");\n\n    const first = createBrowserSupabaseClient();\n    const second = createBrowserSupabaseClient();\n\n    expect(second).toBe(first);\n    expect(createClient).toHaveBeenCalledTimes(1);\n    expect(createClient).toHaveBeenCalledWith("https://activity-center-test.supabase.co", "activity-center-test-anon-key", {\n      realtime: { params: { eventsPerSecond: 10 } },\n    });\n  });\n});\n''')
+          test = Path('src/workspace-live-sync.test.ts')
+          tests = test.read_text()
+          old_expect = '''    expect(JSON.parse(storage.getItem("ordersounds.activityCursor.v1:user-a:workspace-a")!)).toEqual({\n      createdAt: pages[2][49].createdAt,\n      id: pages[2][49].id,\n    });'''
+          new_expect = '''    expect(JSON.parse(storage.getItem("ordersounds.workspaceSyncCursor.v1:user-a:workspace-a")!)).toEqual({\n      createdAt: pages[2][49].createdAt,\n      id: pages[2][49].id,\n    });\n    expect(storage.getItem("ordersounds.activityCursor.v1:user-a:workspace-a")).toBeNull();'''
+          if old_expect not in tests:
+            raise SystemExit('workspace sync test cursor contract not found')
+          tests = tests.replace(old_expect, new_expect)
+          test.write_text(tests)
           PY
-      - name: Verify cleanup actually changed the stale contracts
+      - name: Verify cursor separation
         run: |
-          ! grep -R -n -F "Your workspace, as it happens" src/production-app-shell.test.tsx
-          ! grep -n -E 'toHaveTextContent\("(Needs you|Background activity|Nothing is waiting on you)' src/production-app-shell.test.tsx
+          grep -n -F 'ordersounds.workspaceSyncCursor.v1' src/services/workspaceLiveSync.ts src/workspace-live-sync.test.ts
+          ! grep -n -F 'const cursorKey = `ordersounds.activityCursor.v1' src/services/workspaceLiveSync.ts
           git diff --check
-          git diff -- src/production-app-shell.test.tsx src/supabase-client.test.ts
-      - name: Commit cleanup
+          git diff -- src/services/workspaceLiveSync.ts src/workspace-live-sync.test.ts
+      - name: Commit production hardening
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/production-app-shell.test.tsx src/supabase-client.test.ts
+          git add src/services/workspaceLiveSync.ts src/workspace-live-sync.test.ts
           if git diff --cached --quiet; then
-            echo "No cleanup changes needed."
+            echo "No cursor hardening changes needed."
             exit 0
           fi
-          git commit -m "Align Activity Center regression contracts"
+          git commit -m "Separate Activity seen and sync cursors"
           git push origin HEAD:design/activity-center-phase-2
