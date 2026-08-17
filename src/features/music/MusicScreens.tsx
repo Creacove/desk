@@ -1632,6 +1632,8 @@ function MusicProjectBrief({
   briefError: string | null;
 }) {
   const read = project.managerRead;
+  const metrics = Array.isArray(read?.metrics) ? read.metrics : [];
+  const readBody = typeof read?.body === "string" ? read.body : project.managerReadSummary ?? "";
   const readBusy = briefPending || isActiveManagerRead(project.managerReadStatus);
   const failed = project.managerReadStatus === "failed" || project.managerReadStatus === "refresh_failed" || Boolean(briefError);
   const actionLabel = failed ? "Retry project review" : read ? "Refresh project review" : "Review this project";
@@ -1651,16 +1653,16 @@ function MusicProjectBrief({
             aria-label={managerReadButtonLabel("project", project.managerReadStatus)}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:opacity-40"
           >
-            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(project.managerReadStatus)}
+            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
           </button>
         ) : null}
       </div>
       {briefError ? <p className="mt-3 border-l-2 border-warning pl-3 text-[11px] font-medium text-warning">{briefError}</p> : null}
       {read ? (
         <div className="mt-4 max-w-4xl">
-          {read.metrics.length ? (
+          {metrics.length ? (
             <div data-testid="manager-read-metrics" className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 border-y border-foreground/8 py-4 sm:grid-cols-3">
-              {read.metrics.slice(0, 3).map((metric) => (
+              {metrics.slice(0, 3).map((metric) => (
                 <div key={metric.evidenceId} className="min-w-0">
                   <p className="text-[10px] font-medium text-muted-foreground/58">{metric.label}</p>
                   <p className="mt-1 truncate font-display text-[19px] font-semibold tracking-[-0.02em] text-foreground">{metric.value}</p>
@@ -1668,7 +1670,7 @@ function MusicProjectBrief({
               ))}
             </div>
           ) : null}
-          <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px]">{read.body}</p>
+          {readBody ? <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px]">{readBody}</p> : null}
           {onContinueWithManager ? (
             <button type="button" onClick={onContinueWithManager} className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-semibold text-foreground transition-colors hover:text-brand-accent">
               Continue with Manager <ArrowRight className="h-3.5 w-3.5" />
@@ -1718,7 +1720,7 @@ function SongOverviewRead({
             disabled={readBusy}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:opacity-40"
           >
-            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(song.managerReadStatus)}
+            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
           </button>
         ) : null}
       </div>
