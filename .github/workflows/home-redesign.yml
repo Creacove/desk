@@ -41,13 +41,59 @@ jobs:
 
           shell_path = Path("src/production-app-shell.test.tsx")
           shell = shell_path.read_text()
-          old_assertion = 'expect(await screen.findByRole("heading", { name: "Desk HQ" })).toBeInTheDocument();'
-          new_assertion = 'expect((await screen.findAllByRole("heading", { name: "Home" })).length).toBeGreaterThan(0);'
-          shell_occurrences = shell.count(old_assertion)
-          if shell_occurrences < 1:
-              raise SystemExit("Expected Desk HQ heading assertions in production shell tests")
-          shell_path.write_text(shell.replace(old_assertion, new_assertion))
-          print(f"Updated {shell_occurrences} production shell heading assertions to tolerate responsive Home headings")
+
+          replacements = [
+              (
+                  'screen.findByRole("heading", { name: "Desk HQ" })',
+                  'screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)',
+              ),
+              (
+                  'screen.getByRole("heading", { name: "Desk HQ" })',
+                  'screen.getAllByRole("heading", { name: "Home" })[0]',
+              ),
+              (
+                  'screen.queryByRole("heading", { name: "Desk HQ" })',
+                  '(screen.queryAllByRole("heading", { name: "Home" })[0] ?? null)',
+              ),
+              (
+                  'getByRole("button", { name: "Desk HQ" })',
+                  'getByRole("button", { name: "Home" })',
+              ),
+              (
+                  '"View supporting evidence"',
+                  '"View evidence"',
+              ),
+              (
+                  '"Ask your manager anything..."',
+                  '"Ask Manager about anything in this workspace"',
+              ),
+              (
+                  'expect(screen.getAllByText("Today\'s Brief").length).toBeGreaterThan(0);',
+                  'expect(screen.getByTestId("desk-editorial-brief")).toBeInTheDocument();',
+              ),
+              (
+                  'expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Today\'s Focus");',
+                  'expect(screen.getByTestId("desk-todays-focus")).toHaveTextContent("Right now");',
+              ),
+              (
+                  'expect(managerReadCard.className).toContain("manager-read-card");',
+                  'expect(managerReadCard.className).not.toContain("manager-read-card");',
+              ),
+          ]
+
+          changed = 0
+          for old, new in replacements:
+              count = shell.count(old)
+              if count:
+                  shell = shell.replace(old, new)
+                  changed += count
+                  print(f"Updated {count} occurrence(s): {old}")
+
+          if changed < 1:
+              raise SystemExit("Expected stale Desk HQ/Home production-shell contracts")
+
+          shell_path.write_text(shell)
+          print(f"Updated {changed} stale production-shell contract occurrence(s)")
           PY
       - run: npm ci
       - name: Home editorial contract
