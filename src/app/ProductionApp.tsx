@@ -2140,6 +2140,7 @@ function CleanProductionWorkspace({
             notificationCount={notificationCount}
             onOpenNotifications={openActivityCenter}
             onNavigate={navigateFromMenu}
+            avatarUrl={profile.imageUrl ?? workspace?.spotifyImageUrl}
             showTopbar={showMobileTopbar}
             showTabbar={showMobileTabbar}
           />

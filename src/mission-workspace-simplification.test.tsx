@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ComponentProps } from "react";
 
 import { DeskRail, MobileChrome } from "./design-system/components";
 import { MissionsWorkspace } from "./features/missions/MissionScreens";
@@ -12,8 +13,8 @@ beforeEach(() => {
 
 afterEach(cleanup);
 
-describe("simplified mission navigation", () => {
-  it("shows a capped active mission badge in desktop and mobile navigation", () => {
+describe("mission navigation", () => {
+  it("keeps active mission counts compact in desktop and mobile navigation", () => {
     const { rerender } = render(<DeskRail active="missions" activeMissionCount={12} onNavigate={vi.fn()} />);
     expect(screen.getByTestId("desktop-mission-count")).toHaveTextContent("9+");
 
@@ -25,187 +26,155 @@ describe("simplified mission navigation", () => {
     const { rerender } = render(<DeskRail active="labelHQ" activeMissionCount={0} onNavigate={vi.fn()} />);
     expect(screen.queryByTestId("desktop-mission-count")).not.toBeInTheDocument();
 
-    rerender(<MobileChrome active="labelHQ" title="Desk HQ" activeMissionCount={0} onNavigate={vi.fn()} />);
+    rerender(<MobileChrome active="labelHQ" title="Home" activeMissionCount={0} onNavigate={vi.fn()} />);
     expect(screen.queryByTestId("mobile-mission-count")).not.toBeInTheDocument();
   });
 });
 
-describe("simplified mission room", () => {
-  it("reports room transitions, resets scroll, and contains the mission title", () => {
+describe("mobile-first mission workspace", () => {
+  it("prioritizes missions that need the user and keeps completed work collapsed", () => {
+    const completed = mission();
+    completed.id = "mission-complete";
+    completed.title = "Finish release setup";
+    completed.status = "complete";
+    completed.tasks = completed.tasks?.map((task) => ({
+      ...task,
+      result: { status: "completed", summary: "Done", userNote: "", interpretation: "", missionEffect: "", followUp: "" },
+    }));
+
+    renderWorkspace({ missions: [mission(), completed] });
+
+    expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Define the artist's 90-day position/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Completed 1/i })).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Finish release setup")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Completed 1/i }));
+    expect(screen.getByText("Finish release setup")).toBeInTheDocument();
+    expect(screen.queryByText("Active Missions")).not.toBeInTheDocument();
+  });
+
+  it("opens a mission into only Work and Updates while preserving room transitions", () => {
     const onRoomModeChange = vi.fn();
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
 
-    render(
-      <MissionsWorkspace
-        missions={[mission()]}
-        selectedMissionId="mission-1"
-        onSelectMission={vi.fn()}
-        onCreateFirstMission={vi.fn()}
-        onOpenManager={vi.fn()}
-        firstMissionPending={false}
-        onApproveTask={vi.fn(async () => undefined)}
-        onCompleteTask={vi.fn(async () => undefined)}
-        onDrawer={vi.fn()}
-        onRoomModeChange={onRoomModeChange}
-      />,
-    );
-
-    expect(onRoomModeChange).toHaveBeenLastCalledWith(false);
-    fireEvent.click(screen.getAllByRole("button", { name: /Define the artist's 90-day position/i })[0]);
+    renderWorkspace({ onRoomModeChange });
+    fireEvent.click(screen.getByRole("button", { name: /Define the artist's 90-day position/i }));
 
     expect(onRoomModeChange).toHaveBeenLastCalledWith(true);
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 0, left: 0, behavior: "auto" });
-    expect(screen.getByRole("heading", { name: "Define the artist's 90-day position" })).toHaveClass(
-      "min-w-0",
-      "max-w-full",
-      "break-words",
-      "[overflow-wrap:anywhere]",
-    );
+    expect(screen.getByRole("heading", { name: "Define the artist's 90-day position" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Pulse/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();
+    expect(screen.getByText("The path from here")).toBeInTheDocument();
+    expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Missions" }));
     expect(onRoomModeChange).toHaveBeenLastCalledWith(false);
   });
 
-  it("shows the objective once with four focused tabs and no command-bar duplication", () => {
-    renderMission("pulse");
+  it("keeps future-stage work visible but non-actionable until its dependency clears", () => {
+    renderMission();
 
-    expect(screen.getAllByText("Define the artist's 90-day position")).toHaveLength(1);
-    expect(screen.queryByText("What is happening")).not.toBeInTheDocument();
-    expect(screen.queryByText("Mission recap")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Notes" })).not.toBeInTheDocument();
-    expect(within(screen.getByTestId("mission-surface-rail")).getAllByRole("button")).toHaveLength(4);
-    expect(screen.getByRole("button", { name: /^Activity/ })).toBeInTheDocument();
-    expect(screen.getByText("Executive summary")).toBeInTheDocument();
-    expect(screen.getByText("Next required action")).toBeInTheDocument();
+    const futureStage = screen.getByTestId("task-group-checkpoint-2");
+    fireEvent.click(within(futureStage).getByRole("button", { name: /Market validation/i }));
+
+    expect(within(futureStage).getAllByText("Starts after Positioning thesis").length).toBeGreaterThan(0);
+    expect(within(futureStage).getByRole("button", { name: /Run listener interviews/i })).toBeDisabled();
+    expect(within(futureStage).getByText("Not available yet")).toBeInTheDocument();
   });
 
-  it("keeps mission progress compact beneath the title", () => {
-    renderMission("pulse");
+  it("keeps downstream work locked until Manager review is actually met", () => {
+    const reviewReady = mission();
+    reviewReady.checkpoints![0] = { ...reviewReady.checkpoints![0], status: "Ready for AI review" };
+    reviewReady.tasks![0] = {
+      ...reviewReady.tasks![0],
+      result: { status: "completed", summary: "Submitted", userNote: "", interpretation: "", missionEffect: "", followUp: "" },
+    };
 
-    expect(screen.getByTestId("mission-command-bar")).toHaveClass("pb-1", "pt-1");
-    expect(screen.getByTestId("mission-title-progress")).toHaveClass("gap-3");
-    expect(screen.getByTestId("mission-progress-summary")).toHaveClass(
-      "grid",
-      "grid-cols-[auto_minmax(0,1fr)]",
-      "items-center",
-    );
+    renderMission("tasks", reviewReady);
+
+    const currentStage = screen.getByTestId("task-group-checkpoint-1");
+    expect(within(currentStage).getByText("Manager reviewing")).toBeInTheDocument();
+    const futureStage = screen.getByTestId("task-group-checkpoint-2");
+    fireEvent.click(within(futureStage).getByRole("button", { name: /Market validation/i }));
+    expect(within(futureStage).getAllByText("Starts after Positioning thesis").length).toBeGreaterThan(0);
+    expect(within(futureStage).getByRole("button", { name: /Run listener interviews/i })).toBeDisabled();
   });
 
-  it("keeps only one task expanded at a time", () => {
-    renderMission("tasks");
+  it("opens the exact task as a focused sheet instead of expanding a dashboard card", () => {
+    renderMission("tasks", mission(), "task-1");
 
-    expect(screen.getByRole("button", { name: /Collapse Draft positioning thesis/i })).toBeInTheDocument();
-    expect(screen.getByText(/Review artist portfolio/)).toBeInTheDocument();
-    expect(screen.queryByText("Interview five listeners")).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Expand Run listener interviews/i }));
-    expect(screen.getByText(/Interview five listeners/)).toBeInTheDocument();
-    expect(screen.queryByText(/Review artist portfolio/)).not.toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Draft positioning thesis" });
+    expect(within(dialog).getByText("What to do")).toBeInTheDocument();
+    expect(within(dialog).getByText("Review artist portfolio")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Add result" })).toBeInTheDocument();
+    expect(screen.queryByText("Why it matters:")).not.toBeInTheDocument();
   });
 
-  it("uses one progressive checkpoint view at every viewport", () => {
-    renderMission("checkpoints");
+  it("maps legacy activity deep-links into a concise Updates surface", () => {
+    renderMission("activity");
 
-    expect(screen.getByTestId("checkpoint-accordion")).not.toHaveClass("xl:hidden");
-    expect(screen.queryByTestId("checkpoint-workspace-grid")).not.toBeInTheDocument();
-
-    const toggle = screen.getByTestId("checkpoint-accordion-toggle-checkpoint-2");
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-
-    const expandedCheckpoint = screen.getByTestId("checkpoint-accordion-item-checkpoint-2");
-    expect(within(expandedCheckpoint).getByText("Manager’s read")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getAllByText("Listener response is promising.")).toHaveLength(2);
-    expect(within(expandedCheckpoint).getByText("This clears when")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getByText("At least three listeners must respond positively.")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getByText("What this opened")).toBeInTheDocument();
-    expect(within(expandedCheckpoint).getByRole("button", { name: "See supporting work" })).toBeInTheDocument();
-    expect(within(expandedCheckpoint).queryByText("Success condition")).not.toBeInTheDocument();
-    expect(within(expandedCheckpoint).queryByText(/2 tasks/)).not.toBeInTheDocument();
-    expect(within(expandedCheckpoint).queryByText("Run listener interviews")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();
+    expect(screen.getByText("Positioning direction confirmed.")).toBeInTheDocument();
+    expect(screen.getByText("Market validation opened.")).toBeInTheDocument();
+    expect(screen.queryByText("Mission record")).not.toBeInTheDocument();
   });
 
   it("keeps a linked song compact and routes back to its Song Room", () => {
-    const linkedMission = mission();
-    linkedMission.musicSubject = "Night Bus";
-    linkedMission.subjectType = "music_item";
-    linkedMission.subjectId = "song-night-bus";
+    const linked = mission();
+    linked.musicSubject = "Night Bus";
+    linked.subjectType = "music_item";
+    linked.subjectId = "song-night-bus";
     const onOpenMusicSubject = vi.fn();
 
-    render(
-      <MissionsWorkspace
-        missions={[linkedMission]}
-        selectedMissionId="mission-1"
-        onSelectMission={vi.fn()}
-        onCreateFirstMission={vi.fn()}
-        onOpenManager={vi.fn()}
-        onOpenMusicSubject={onOpenMusicSubject}
-        firstMissionPending={false}
-        onApproveTask={vi.fn(async () => undefined)}
-        onCompleteTask={vi.fn(async () => undefined)}
-        onDrawer={vi.fn()}
-        openRoomRequestKey={1}
-      />,
-    );
+    renderWorkspace({ missions: [linked], openRoomRequestKey: 1, onOpenMusicSubject });
 
     const attachment = screen.getByTestId("linked-song-attachment");
-    expect(attachment).toHaveTextContent("Night Bus");
     fireEvent.click(within(attachment).getByRole("button", { name: "Open song Night Bus" }));
     expect(onOpenMusicSubject).toHaveBeenCalledWith({ id: "song-night-bus", title: "Night Bus", type: "music_item" });
   });
 
-  it("uses the decision question instead of pretending a waiting checkpoint has a Manager read", () => {
-    renderMission("checkpoints");
+  it("respects explicit empty backend arrays instead of inventing fallback work", () => {
+    const empty = mission();
+    empty.tasks = [];
+    empty.checkpoints = [];
+    empty.notes = [];
+    empty.events = [];
 
-    const waitingCheckpoint = screen.getByTestId("checkpoint-accordion-item-checkpoint-1");
-    expect(within(waitingCheckpoint).getByText("What this checkpoint is deciding")).toBeInTheDocument();
-    expect(within(waitingCheckpoint).getByText("Is the position clear?")).toBeInTheDocument();
-    expect(within(waitingCheckpoint).queryByText("Manager’s read")).not.toBeInTheDocument();
-  });
+    renderMission("tasks", empty);
 
-  it("combines agent notes and mission changes into one concise activity feed", () => {
-    renderMission("activity");
-
-    const surface = screen.getByTestId("mission-activity-surface");
-    expect(surface).toHaveClass("surface-elevated", "rounded-[22px]", "overflow-hidden");
-    expect(within(surface).getByText("2 updates")).toBeInTheDocument();
-    expect(within(surface).getAllByTestId("mission-activity-item")).toHaveLength(2);
-    const feed = screen.getByTestId("mission-activity-feed");
-    expect(within(feed).getByText("A&R → Manager")).toBeInTheDocument();
-    expect(within(feed).getByText("Positioning direction confirmed.")).toBeInTheDocument();
-    expect(within(feed).getByText("Checkpoint updated")).toBeInTheDocument();
-    expect(within(feed).getByText("Market validation opened.")).toBeInTheDocument();
-    expect(screen.queryByText("Why it matters:")).not.toBeInTheDocument();
-  });
-
-  it("keeps the empty activity state inside the activity surface", () => {
-    const emptyMission = mission();
-    emptyMission.notes = [];
-    emptyMission.events = [];
-    renderMission("activity", emptyMission);
-
-    const surface = screen.getByTestId("mission-activity-surface");
-    expect(within(surface).getByText("0 updates")).toBeInTheDocument();
-    expect(within(surface).getByText("No mission activity yet.")).toBeInTheDocument();
+    expect(screen.getByText("Nothing needs you right now.")).toBeInTheDocument();
+    expect(screen.queryByText("Review the Manager recommendation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Manager update")).not.toBeInTheDocument();
   });
 });
 
-function renderMission(tab: "pulse" | "tasks" | "checkpoints" | "activity", selectedMission = mission()) {
-  return render(
-    <MissionsWorkspace
-      missions={[selectedMission]}
-      selectedMissionId="mission-1"
-      onSelectMission={vi.fn()}
-      onCreateFirstMission={vi.fn()}
-      onOpenManager={vi.fn()}
-      firstMissionPending={false}
-      onApproveTask={vi.fn(async () => undefined)}
-      onCompleteTask={vi.fn(async () => undefined)}
-      onDrawer={vi.fn()}
-      openRoomRequestKey={1}
-      openRoomTab={tab}
-    />,
-  );
+function renderWorkspace(overrides: Partial<ComponentProps<typeof MissionsWorkspace>> = {}) {
+  const props: ComponentProps<typeof MissionsWorkspace> = {
+    missions: [mission()],
+    selectedMissionId: "mission-1",
+    onSelectMission: vi.fn(),
+    onCreateFirstMission: vi.fn(),
+    onOpenManager: vi.fn(),
+    firstMissionPending: false,
+    onApproveTask: vi.fn(async () => undefined),
+    onCompleteTask: vi.fn(async () => undefined),
+    onDrawer: vi.fn(),
+    ...overrides,
+  };
+  return render(<MissionsWorkspace {...props} />);
+}
+
+function renderMission(
+  tab: "pulse" | "tasks" | "checkpoints" | "activity" = "tasks",
+  selectedMission = mission(),
+  openTaskId?: string,
+) {
+  return renderWorkspace({ missions: [selectedMission], openRoomRequestKey: 1, openRoomTab: tab, openTaskId });
 }
 
 function mission(): MissionViewModel {
@@ -227,23 +196,22 @@ function mission(): MissionViewModel {
         recommendation: "Approve the thesis.", rationale: "A defined position keeps validation focused.", managerRead: "", nextAction: "Draft the thesis",
       },
       {
-        id: "checkpoint-2", phase: 2, title: "Market validation", status: "Met",
+        id: "checkpoint-2", phase: 2, title: "Market validation", status: "Waiting on tasks",
         question: "Does the market respond?", requiredTaskIds: ["task-2"], dependsOnCheckpointIds: ["checkpoint-1"], unlocks: [],
-        blockedReason: "", dependencyImpact: "", watchedSignals: [], decisionRule: "At least three listeners must respond positively.",
-        recommendation: "Continue the test.", rationale: "Listener interviews test whether the position travels.", managerRead: "Listener response is promising.", nextAction: "Prepare the next audience test",
+        blockedReason: "", dependencyImpact: "Wait for positioning.", watchedSignals: [], decisionRule: "At least three listeners must respond positively.",
+        recommendation: "Continue the test.", rationale: "Listener interviews test whether the position travels.", managerRead: "", nextAction: "Prepare the audience test",
       },
     ],
     tasks: [
       {
-        id: "task-1", checkpointId: "checkpoint-1", title: "Draft positioning thesis", owner: "Manager", deadline: "This week",
+        id: "task-1", checkpointId: "checkpoint-1", title: "Draft positioning thesis", owner: "Artist", deadline: "Today",
         approvalState: "active", purpose: "Create the campaign's decision filter.", steps: ["Review artist portfolio", "Write the thesis"],
         evidenceIds: [], dependency: "", riskIfLate: "Validation starts without a clear position.",
       },
       {
         id: "task-2", checkpointId: "checkpoint-2", title: "Run listener interviews", owner: "A&R", deadline: "Next week",
         approvalState: "active", purpose: "Validate the position with real listeners.", steps: ["Interview five listeners", "Summarize responses"],
-        evidenceIds: [], dependency: "", riskIfLate: "The campaign scales without validation.",
-        result: { status: "pending", userNote: "Interviews started.", interpretation: "Early response supports the thesis.", missionEffect: "Validation is underway." },
+        evidenceIds: [], dependency: "Positioning thesis", riskIfLate: "The campaign scales without validation.",
       },
     ],
     notes: [{
