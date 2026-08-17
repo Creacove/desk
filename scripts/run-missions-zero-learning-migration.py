@@ -30,6 +30,12 @@ if code.count(old_count) != 1:
     raise SystemExit("retired path count migration was not exact")
 code = code.replace(old_count, new_count)
 
+remove_old = "r(p, '    expect(screen.getByText(\"The path from here\")).toBeInTheDocument();\\n', '', 1)"
+remove_new = "r(p, '    expect(screen.getByText(\"The path from here\")).toBeInTheDocument();\\n', '', 2)"
+if code.count(remove_old) != 1:
+    raise SystemExit("retired path removal count migration was not exact")
+code = code.replace(remove_old, remove_new)
+
 redundant = "r(p, '    expect(await screen.findByText(\"The path from here\")).toBeInTheDocument();\\n', '    expect(await screen.findByRole(\"button\", { name: /^Work/ })).toBeInTheDocument();\\n')\n"
 if code.count(redundant) != 1:
     raise SystemExit("redundant retired path migration was not exact")
