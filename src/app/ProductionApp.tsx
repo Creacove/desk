@@ -640,6 +640,7 @@ function CleanProductionWorkspace({
   const [todayBriefPending, setTodayBriefPending] = useState(false);
   const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
   const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
+  const todayBriefRefreshInFlight = useRef(false);
   const [publicContextPending, setPublicContextPending] = useState(false);
   const [activityCenterOpen, setActivityCenterOpen] = useState(false);
   const [workspaceEvents, setWorkspaceEvents] = useState<WorkspaceOperatingEvent[]>([]);
@@ -1761,6 +1762,18 @@ function CleanProductionWorkspace({
     }
   }
 
+  async function refreshTodaysBrief() {
+    if (todayBriefRefreshInFlight.current || todayBriefPending || activeTodayBriefRun) return;
+    todayBriefRefreshInFlight.current = true;
+    try {
+      await generateTodaysBrief("operating");
+    } catch {
+      // generateTodaysBrief owns the local error state; keep the existing brief visible.
+    } finally {
+      todayBriefRefreshInFlight.current = false;
+    }
+  }
+
   async function refreshPublicContext() {
     if (!repositories.desk.refreshPublicContext) {
       setTodayBriefError("Public context refresh is not available in this runtime.");
@@ -2188,6 +2201,8 @@ function CleanProductionWorkspace({
               onAskManager={(body) => void sendManagerMessage(body)}
               activityCount={notificationCount}
               onOpenActivityCenter={openActivityCenter}
+              briefPending={todayBriefPending}
+              onRefreshBrief={() => void refreshTodaysBrief()}
             />
           ) : null}
           {view === "musicWorkspace" ? (
