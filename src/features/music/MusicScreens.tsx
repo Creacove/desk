@@ -706,16 +706,10 @@ export function MusicWorkspace({
       >
       {mode === "library" ? (
         <>
-          <WorkspaceHeader eyebrow="Catalog" title="Catalog" />
-          <section data-testid="music-library" className="grid gap-6">
-            <div className="flex flex-col gap-4 border-b border-foreground/8 pb-5 lg:flex-row lg:items-end lg:justify-between">
-              <div className="max-w-2xl">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/58">Music workspace</p>
-                <p className="mt-1.5 text-[13px] font-medium leading-relaxed text-muted-foreground/76 sm:text-[14px]">
-                  Songs and projects connected to active work.
-                </p>
-              </div>
-              <div data-testid="music-mobile-controls" className="flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-end">
+          <WorkspaceHeader title="Catalog" />
+          <section data-testid="music-library" className="grid gap-5">
+            <div className="flex w-full items-center justify-between gap-3 border-b border-foreground/8 pb-4">
+              <div data-testid="music-mobile-controls" className="flex w-full flex-row items-center justify-between gap-2 sm:w-auto sm:justify-start">
                 <WorkspaceTabRail
                   ariaLabel="Catalog sections"
                   className="min-w-0 flex-1 max-w-[260px] grid-cols-2"
@@ -754,29 +748,25 @@ export function MusicWorkspace({
               />
             ) : null}
 
-            <div data-testid="music-mobile-library" className="grid gap-2 lg:hidden">
+            <div data-testid="music-mobile-library" className="overflow-hidden rounded-[16px] border border-foreground/8 bg-background lg:hidden">
               {tab === "songs"
                 ? songs.map((song, index) => (
                     <MusicMobileSongRow key={song.id} song={song} index={index} onOpen={() => openObject(song, "songs")} />
                   ))
-                : projects.map((project) => (
-                    <MusicMobileProjectRow key={project.id} project={project} onOpen={() => openObject(project, "projects")} getMusicObject={getMusicObject} />
+                : projects.map((project, index) => (
+                    <MusicMobileProjectRow key={project.id} project={project} index={index} onOpen={() => openObject(project, "projects")} getMusicObject={getMusicObject} />
                   ))}
             </div>
 
-            {tab === "songs" ? (
-              <div className="hidden overflow-hidden rounded-[16px] border border-foreground/8 bg-background lg:block">
-                {songs.map((song, index) => (
-                  <MusicSongRow key={song.id} song={song} index={index} activeMissionCount={linkedMissionCountById[musicObjectKey(song)] ?? 0} onOpen={() => openObject(song, "songs")} />
-                ))}
-              </div>
-            ) : (
-              <div className="hidden gap-3 lg:grid lg:grid-cols-2">
-                {projects.map((project) => (
-                  <MusicProjectCard key={project.id} project={project} onOpen={() => openObject(project, "projects")} getMusicObject={getMusicObject} />
-                ))}
-              </div>
-            )}
+            <div className="hidden overflow-hidden rounded-[16px] border border-foreground/8 bg-background lg:block">
+              {tab === "songs"
+                ? songs.map((song, index) => (
+                    <MusicSongRow key={song.id} song={song} index={index} activeMissionCount={linkedMissionCountById[musicObjectKey(song)] ?? 0} onOpen={() => openObject(song, "songs")} />
+                  ))
+                : projects.map((project, index) => (
+                    <MusicProjectCard key={project.id} project={project} index={index} onOpen={() => openObject(project, "projects")} getMusicObject={getMusicObject} />
+                  ))}
+            </div>
           </section>
         </>
       ) : null}
@@ -973,31 +963,31 @@ function MusicMobileSongRow({ song, index, onOpen }: { song: MusicObjectViewMode
       data-testid={`music-mobile-song-row-${song.title}`}
       aria-label={`Open mobile song ${song.title}`}
       onClick={onOpen}
-      className="group flex min-h-0 min-w-0 items-center gap-3 rounded-[14px] border border-foreground/10 bg-white px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+      className="group grid min-h-0 min-w-0 w-full grid-cols-[24px_48px_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-foreground/7 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-foreground/[0.025]"
     >
-      <span className="font-display w-6 shrink-0 text-[13px] font-semibold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
+      <span className="font-ui text-[10px] font-semibold tabular-nums text-muted-foreground/42">{String(index + 1).padStart(2, "0")}</span>
       <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{song.title}</span>
-        <span className="mt-1 flex flex-wrap gap-1.5">
-          <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
-            {song.lifecycleStage ?? song.lifecycle}
-          </span>
-          <span className={cn("rounded-full px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em]", hasBlocker ? "bg-warning/10 text-warning" : "bg-success/10 text-success")}>
-            {hasBlocker ? song.blocker : "Clear"}
-          </span>
+      <span className="min-w-0">
+        <span className="block truncate text-[14px] font-semibold tracking-[-0.01em] text-foreground">{song.title}</span>
+        <span className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-medium text-muted-foreground/62">
+          <span className="truncate">{song.lifecycleStage ?? song.lifecycle}</span>
+          <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-foreground/18" />
+          <span className={cn("truncate", hasBlocker ? "text-warning" : "text-muted-foreground/58")}>{hasBlocker ? song.blocker : "No blocker"}</span>
         </span>
       </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/28 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
     </button>
   );
 }
 
 function MusicMobileProjectRow({
   project,
+  index,
   onOpen,
   getMusicObject,
 }: {
   project: MusicObjectViewModel;
+  index: number;
   onOpen: () => void;
   getMusicObject: (id: string) => MusicObjectViewModel | undefined;
 }) {
@@ -1009,18 +999,19 @@ function MusicMobileProjectRow({
       data-testid={`music-mobile-project-row-${project.title}`}
       aria-label={`Open mobile project ${project.title}`}
       onClick={onOpen}
-      className="flex min-h-0 min-w-0 items-center gap-3 rounded-[14px] border border-foreground/10 bg-background px-3 py-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)]"
+      className="group grid min-h-0 min-w-0 w-full grid-cols-[24px_48px_minmax(0,1fr)_auto] items-center gap-2.5 border-b border-foreground/7 px-3 py-3 text-left transition-colors last:border-b-0 hover:bg-foreground/[0.025]"
     >
+      <span className="font-ui text-[10px] font-semibold tabular-nums text-muted-foreground/42">{String(index + 1).padStart(2, "0")}</span>
       <ArtworkFrame title={project.title} imageUrl={project.coverImageUrl} spotifyUrl={project.spotifyUrl} kind="project" size="mini" />
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[15px] font-semibold leading-tight text-foreground">{project.title}</span>
-        <span className="mt-1 flex flex-wrap items-center gap-1.5">
-          <span className="rounded-full border border-foreground/10 bg-background px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.04em] text-muted-foreground">
-            {project.lifecycleStage ?? project.lifecycle}
-          </span>
-          <span className="text-[11px] font-semibold text-muted-foreground/80">{readiness.trackCount} track{readiness.trackCount === 1 ? "" : "s"}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-[14px] font-semibold tracking-[-0.01em] text-foreground">{project.title}</span>
+        <span className="mt-1 flex min-w-0 items-center gap-2 text-[10px] font-medium text-muted-foreground/62">
+          <span className="truncate">{project.lifecycleStage ?? project.lifecycle}</span>
+          <span aria-hidden="true" className="h-1 w-1 shrink-0 rounded-full bg-foreground/18" />
+          <span>{readiness.trackCount} track{readiness.trackCount === 1 ? "" : "s"}</span>
         </span>
       </span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/28 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
     </button>
   );
 }
@@ -1070,10 +1061,12 @@ function MusicSongRow({ song, index, activeMissionCount, onOpen }: { song: Music
 
 function MusicProjectCard({
   project,
+  index,
   onOpen,
   getMusicObject,
 }: {
   project: MusicObjectViewModel;
+  index: number;
   onOpen: () => void;
   getMusicObject: (id: string) => MusicObjectViewModel | undefined;
 }) {
@@ -1083,18 +1076,17 @@ function MusicProjectCard({
       type="button"
       aria-label={`Open project ${project.title}`}
       onClick={onOpen}
-      className="group grid min-h-[132px] grid-cols-[96px_minmax(0,1fr)] overflow-hidden rounded-[16px] border border-foreground/8 bg-background text-left transition-colors hover:border-foreground/14 hover:bg-foreground/[0.018] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/30"
+      className="group grid w-full grid-cols-[32px_52px_minmax(0,1fr)_140px_110px_auto] items-center gap-3 border-b border-foreground/7 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-foreground/[0.025] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/30"
     >
-      <ArtworkFrame title={project.title} imageUrl={project.coverImageUrl} spotifyUrl={project.spotifyUrl} kind="project" size="project" />
-      <div className="flex min-w-0 flex-col justify-center px-5 py-4">
-        <p className="font-ui text-[9px] font-bold uppercase tracking-[0.11em] text-muted-foreground/55">{project.status ?? "Project"}</p>
-        <h3 className="mt-1.5 truncate text-[17px] font-semibold tracking-[-0.015em] text-foreground">{project.title}</h3>
-        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-muted-foreground/68">
-          <span>{project.lifecycleStage ?? project.lifecycle}</span>
-          <span aria-hidden="true" className="h-1 w-1 rounded-full bg-foreground/20" />
-          <span>{readiness.trackCount} track{readiness.trackCount === 1 ? "" : "s"}</span>
-        </div>
-      </div>
+      <span className="font-ui text-[10px] font-semibold tabular-nums text-muted-foreground/45">{String(index + 1).padStart(2, "0")}</span>
+      <ArtworkFrame title={project.title} imageUrl={project.coverImageUrl} spotifyUrl={project.spotifyUrl} kind="project" size="mini" />
+      <span className="min-w-0">
+        <span className="block truncate text-[15px] font-semibold tracking-[-0.01em] text-foreground">{project.title}</span>
+        <span className="mt-1 block truncate text-[10px] font-medium text-muted-foreground/55">{project.status ?? "Project"}</span>
+      </span>
+      <span className="truncate text-[11px] font-medium text-muted-foreground/66">{project.lifecycleStage ?? project.lifecycle}</span>
+      <span className="text-[11px] font-medium text-muted-foreground/66">{readiness.trackCount} track{readiness.trackCount === 1 ? "" : "s"}</span>
+      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/28 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground/55" aria-hidden="true" />
     </button>
   );
 }
@@ -1570,65 +1562,58 @@ function MusicProjectDetail({
   error?: string | null;
 }) {
   return (
-    <section data-testid="music-project-detail" className="grid min-w-0 max-w-full gap-5 overflow-x-clip">
-      <MusicDetailTop object={project} label="Project" onBack={onBack} />
-      {error ? <p className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-        <div className="grid gap-5">
-          <div className="surface-elevated overflow-hidden rounded-[22px] shadow-sm">
-            <div className="border-b border-foreground/8 p-5">
-              <div className="min-w-0">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Tracklist</p>
-                <h4 className="mt-1 font-display text-[20px] font-bold leading-tight text-foreground">Project songs</h4>
-                <p className="mt-1 text-[12px] font-semibold text-muted-foreground/78">Songs stay atomic inside projects.</p>
-              </div>
-            </div>
+    <section data-testid="music-project-detail" className="grid min-w-0 max-w-full gap-7 overflow-x-clip">
+      <MusicDetailTop object={project} label="Project" onBack={onBack} onOpenManager={onContinueWithManager} />
+      {error ? <p className="border-l-2 border-danger pl-3 text-[12px] font-semibold text-danger">{error}</p> : null}
 
-            <div data-testid="project-room-mobile-tracklist" className="divide-y divide-foreground/6 lg:hidden">
-              {tracklist.map((song, index) => (
-                <button
-                  key={song.id}
-                  type="button"
-                  data-testid={`project-mobile-track-${song.title}`}
-                  aria-label={`Open mobile project track ${song.title}`}
-                  onClick={() => onOpenSong(song)}
-                  className="grid w-full grid-cols-[28px_44px_minmax(0,1fr)_auto] items-center gap-2.5 px-4 py-3 text-left transition-colors hover:bg-brand-accent/[0.03]"
-                >
-                  <span className="font-display text-[14px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
-                  <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-[14px] font-semibold leading-tight text-foreground">{song.title}</span>
-                    <span className="mt-1 block truncate text-[10px] font-bold uppercase tracking-[0.04em] text-brand-accent">{song.lifecycleStage ?? song.lifecycle}</span>
-                  </span>
-                  <ChevronRight className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                </button>
-              ))}
-            </div>
-
-            <div data-testid="project-room-desktop-tracklist" className="hidden divide-y divide-foreground/6 lg:block">
-              {tracklist.map((song, index) => (
-                <button
-                  key={song.id}
-                  type="button"
-                  aria-label={`Open song ${song.title}`}
-                  onClick={() => onOpenSong(song)}
-                  className="grid w-full gap-3 px-5 py-4 text-left transition-colors hover:bg-brand-accent/[0.03] md:grid-cols-[42px_52px_minmax(0,1fr)_168px_auto] md:items-center"
-                >
-                  <span className="font-display text-[17px] font-bold text-muted-foreground/55">{String(index + 1).padStart(2, "0")}</span>
-                  <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
-                  <span>
-                    <span className="block text-[15px] font-bold text-foreground">{song.title}</span>
-                  </span>
-                  <span className="text-[10px] font-bold uppercase tracking-[0.08em] text-brand-accent md:text-right">{song.lifecycleStage ?? song.lifecycle}</span>
-                  <ChevronRight className="hidden h-4 w-4 text-muted-foreground md:block" />
-                </button>
-              ))}
-            </div>
-          </div>
-          <MusicProjectBrief project={project} onGenerateBrief={onGenerateBrief} onContinueWithManager={onContinueWithManager} briefPending={briefPending} briefError={briefError} />
+      <section>
+        <div className="flex items-center justify-between gap-4 border-b border-foreground/8 pb-3">
+          <h3 className="font-display text-[19px] font-semibold tracking-[-0.02em] text-foreground">Tracklist</h3>
+          <span className="text-[11px] font-medium tabular-nums text-muted-foreground/52">{tracklist.length} track{tracklist.length === 1 ? "" : "s"}</span>
         </div>
-        <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
-      </div>
+
+        <div data-testid="project-room-mobile-tracklist" className="divide-y divide-foreground/7 lg:hidden">
+          {tracklist.map((song, index) => (
+            <button
+              key={song.id}
+              type="button"
+              data-testid={`project-mobile-track-${song.title}`}
+              aria-label={`Open mobile project track ${song.title}`}
+              onClick={() => onOpenSong(song)}
+              className="group grid w-full grid-cols-[28px_44px_minmax(0,1fr)_auto] items-center gap-2.5 py-3 text-left"
+            >
+              <span className="font-ui text-[10px] font-semibold tabular-nums text-muted-foreground/42">{String(index + 1).padStart(2, "0")}</span>
+              <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
+              <span className="min-w-0">
+                <span className="block truncate text-[14px] font-semibold text-foreground">{song.title}</span>
+                <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground/58">{song.lifecycleStage ?? song.lifecycle}</span>
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/28 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
+            </button>
+          ))}
+        </div>
+
+        <div data-testid="project-room-desktop-tracklist" className="hidden divide-y divide-foreground/7 lg:block">
+          {tracklist.map((song, index) => (
+            <button
+              key={song.id}
+              type="button"
+              aria-label={`Open song ${song.title}`}
+              onClick={() => onOpenSong(song)}
+              className="group grid w-full grid-cols-[32px_52px_minmax(0,1fr)_140px_auto] items-center gap-3 py-3 text-left"
+            >
+              <span className="font-ui text-[10px] font-semibold tabular-nums text-muted-foreground/42">{String(index + 1).padStart(2, "0")}</span>
+              <ArtworkFrame title={song.title} imageUrl={song.coverImageUrl} spotifyUrl={song.spotifyUrl} kind="song" size="mini" />
+              <span className="truncate text-[14px] font-semibold text-foreground">{song.title}</span>
+              <span className="text-right text-[10px] font-medium text-muted-foreground/58">{song.lifecycleStage ?? song.lifecycle}</span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground/28 transition-transform group-hover:translate-x-0.5" />
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <MusicProjectBrief project={project} onGenerateBrief={onGenerateBrief} onContinueWithManager={onContinueWithManager} briefPending={briefPending} briefError={briefError} />
+      <MusicLinkedWork linkedMissions={linkedMissions} onOpenMission={onOpenMission} />
     </section>
   );
 }
@@ -1646,50 +1631,58 @@ function MusicProjectBrief({
   briefPending: boolean;
   briefError: string | null;
 }) {
-  const generateReadLabel = managerReadButtonLabel("project", project.managerReadStatus);
+  const read = project.managerRead;
   const readBusy = briefPending || isActiveManagerRead(project.managerReadStatus);
-  const pendingReadLabel = project.managerReadStatus === "unknown" ? "Checking status" : "Manager is reading";
-  const readControls = managerReadControls({
-    status: project.managerReadStatus ?? "not_generated",
-    hasConversation: Boolean(project.managerConversationId),
-  });
-  const hasSecondaryReadAction = readControls.readActionPriority === "secondary";
+  const failed = project.managerReadStatus === "failed" || project.managerReadStatus === "refresh_failed" || Boolean(briefError);
+  const actionLabel = failed ? "Retry project review" : read ? "Refresh project review" : "Review this project";
 
   return (
-    <div className="surface-elevated overflow-hidden rounded-[22px] p-5 shadow-sm sm:p-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="rounded-full bg-foreground/[0.045] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">
-            {managerReadStatusLabel(project.managerReadStatus)}
-          </span>
+    <section data-testid="project-manager-read-copy" className="border-t border-foreground/8 pt-6">
+      <span className="sr-only">{managerReadStatusLabel(project.managerReadStatus)}</span>
+      {project.managerReadStatus === "refreshing" ? <span className="sr-only">Updating from latest song changes. The current read remains available.</span> : null}
+      {project.managerReadStatus === "refresh_failed" ? <span className="sr-only">Manager Read could not be refreshed. Your previous read is still available.</span> : null}
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="font-display text-[19px] font-semibold tracking-[-0.02em] text-foreground">What matters now</h3>
+        {read || readBusy ? (
+          <button
+            type="button"
+            onClick={onGenerateBrief}
+            disabled={readBusy}
+            aria-label={managerReadButtonLabel("project", project.managerReadStatus)}
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:opacity-40"
+          >
+            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(project.managerReadStatus)}
+          </button>
+        ) : null}
+      </div>
+      {briefError ? <p className="mt-3 border-l-2 border-warning pl-3 text-[11px] font-medium text-warning">{briefError}</p> : null}
+      {read ? (
+        <div className="mt-4 max-w-4xl">
+          {read.metrics.length ? (
+            <div data-testid="manager-read-metrics" className="mb-5 grid grid-cols-2 gap-x-6 gap-y-4 border-y border-foreground/8 py-4 sm:grid-cols-3">
+              {read.metrics.slice(0, 3).map((metric) => (
+                <div key={metric.evidenceId} className="min-w-0">
+                  <p className="text-[10px] font-medium text-muted-foreground/58">{metric.label}</p>
+                  <p className="mt-1 truncate font-display text-[19px] font-semibold tracking-[-0.02em] text-foreground">{metric.value}</p>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px]">{read.body}</p>
+          {onContinueWithManager ? (
+            <button type="button" onClick={onContinueWithManager} className="mt-4 inline-flex items-center gap-1.5 text-[12px] font-semibold text-foreground transition-colors hover:text-brand-accent">
+              Continue with Manager <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          ) : null}
         </div>
-        <button
-          type="button"
-          onClick={onGenerateBrief}
-          disabled={readBusy}
-          aria-label={briefPending ? pendingReadLabel : generateReadLabel}
-          className={cn(
-            "inline-flex shrink-0 items-center rounded-full border border-foreground/12 font-ui text-[11px] font-semibold shadow-sm transition-opacity hover:opacity-80 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40",
-            hasSecondaryReadAction
-              ? "h-9 w-9 justify-center bg-background text-foreground"
-              : "gap-2 bg-foreground px-4 py-2 text-background",
-          )}
-        >
-          {readBusy ? <AppThinkingOrb surface={hasSecondaryReadAction ? "normal" : "inverse"} state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
-          <span className={hasSecondaryReadAction ? "sr-only" : undefined}>{briefPending ? pendingReadLabel : generateReadLabel}</span>
+      ) : readBusy ? (
+        <div className="mt-4 flex items-center gap-3 py-2"><AppThinkingOrb surface="normal" state="composing" size={20} /><p className="text-[13px] font-semibold text-muted-foreground">Reviewing this project…</p></div>
+      ) : (
+        <button type="button" aria-label={managerReadButtonLabel("project", project.managerReadStatus)} onClick={onGenerateBrief} className="mt-4 inline-flex h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 text-[11px] font-semibold text-background">
+          <Sparkles className="h-3.5 w-3.5" /> {failed ? "Try again" : "Review this project"}
         </button>
-      </div>
-
-      {briefError ? (
-        <p className="mt-3 rounded-[10px] border border-warning/20 bg-warning/5 px-3 py-2 text-[12px] font-semibold leading-relaxed text-warning">
-          {briefError}
-        </p>
-      ) : null}
-
-      <div className="mt-5">
-        <MusicManagerReadContent subject={project} testId="project-manager-read-copy" onContinueWithManager={onContinueWithManager} />
-      </div>
-    </div>
+      )}
+    </section>
   );
 }
 
@@ -1882,88 +1875,75 @@ function MusicDetailTop({ object, label, onBack, onStageChange, onOpenManager }:
   const lockedReleasedStage = object.kind === "song" && isLockedReleasedStage(stageValue);
 
   return (
-    <>
-      <div data-testid="music-detail-mobile-top" className="rounded-[18px] border border-foreground/10 bg-white p-3.5 shadow-[0_1px_8px_rgba(17,19,24,0.05)] lg:hidden">
+    <div aria-label={`${label} header`} className="border-b border-foreground/8 pb-5">
+      <div data-testid="music-detail-mobile-top" className="lg:hidden">
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
             aria-label="Back to Catalog from mobile room"
             onClick={onBack}
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-foreground/10 bg-background text-muted-foreground"
+            className="inline-flex h-9 items-center gap-2 rounded-[10px] pr-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+            Catalog
           </button>
-          <div className="flex min-w-0 items-center justify-end gap-1.5">
-            <span className="rounded-full bg-foreground/[0.055] px-2.5 py-1 text-[10px] font-semibold text-muted-foreground">{label}</span>
-            {lockedReleasedStage ? (
-              <span data-testid="mobile-locked-song-stage" className="rounded-full bg-brand-accent/10 px-2.5 py-1 text-[10px] font-bold text-brand-accent">{stageValue}</span>
-            ) : null}
-          </div>
+          <span data-testid={lockedReleasedStage ? "mobile-locked-song-stage" : undefined} className="text-[10px] font-semibold text-muted-foreground/58">{stageValue}</span>
         </div>
-        <div className="mt-3 flex min-w-0 gap-3">
+        <div className="mt-4 flex min-w-0 items-center gap-3.5">
           <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="mini" />
-          <div className="min-w-0 flex-1">
-            <p data-testid="music-detail-mobile-title" className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[20px] font-semibold leading-tight text-foreground">{object.title}</p>
-            {onOpenManager ? (
-              <button type="button" onClick={onOpenManager} className="mt-2 inline-flex min-h-8 items-center gap-1.5 rounded-lg bg-foreground px-3 py-1.5 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
-                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Chat with Manager
-              </button>
-            ) : null}
-          </div>
+          <p data-testid="music-detail-mobile-title" className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] font-display text-[23px] font-semibold leading-[1.05] tracking-[-0.025em] text-foreground">{object.title}</p>
+          {onOpenManager ? (
+            <button type="button" onClick={onOpenManager} aria-label="Chat with Manager" className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+              <MessageCircle className="h-4 w-4" aria-hidden="true" />
+            </button>
+          ) : null}
         </div>
         {object.kind === "song" && !lockedReleasedStage ? (
-          <label className="mt-3 flex items-center justify-between gap-3 px-1 text-[10px] font-bold uppercase tracking-[0.08em] text-muted-foreground/82">
-            Stage
-            <select
-              aria-label="Mobile song stage"
-              defaultValue={stageValue}
-              onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
-              className="h-8 min-w-0 max-w-[160px] rounded-[9px] border border-foreground/10 bg-background px-2.5 text-[11px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
-            >
-              {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
-                <option key={stage} value={stage}>{stage}</option>
-              ))}
-            </select>
-          </label>
+          <select
+            aria-label="Mobile song stage"
+            defaultValue={stageValue}
+            onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
+            className="mt-3 h-8 rounded-[9px] border border-foreground/10 bg-background px-2.5 text-[11px] font-semibold text-foreground focus:border-foreground focus:outline-none"
+          >
+            {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
+              <option key={stage} value={stage}>{stage}</option>
+            ))}
+          </select>
         ) : null}
       </div>
 
-      <div data-testid="music-detail-desktop-top" className="hidden rounded-[26px] border border-foreground/8 bg-background/88 p-5 shadow-sm lg:block">
-        <button type="button" onClick={onBack} className="mb-5 inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" />
-          Back to Catalog
-        </button>
-        <div className="grid gap-5 lg:grid-cols-[96px_minmax(0,1fr)_280px] lg:items-end">
-          <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />
-          <div className="min-w-0">
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">{label}</p>
-            <h2 className="mt-2 min-w-0 break-words [overflow-wrap:anywhere] font-display text-[26px] font-semibold leading-tight text-foreground lg:text-[32px]">{object.title}</h2>
-            {onOpenManager ? (
-              <button type="button" onClick={onOpenManager} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
-                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Chat with Manager
-              </button>
-            ) : null}
-          </div>
-          {object.kind === "song" && !lockedReleasedStage ? (
-            <label className="grid gap-2 rounded-[16px] border border-foreground/8 bg-background/74 p-4 text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/82">
-              Song stage
+      <div data-testid="music-detail-desktop-top" className="hidden lg:block">
+        <div className="flex items-center justify-between gap-4">
+          <button type="button" aria-label="Back to Catalog" onClick={onBack} className="inline-flex items-center gap-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" />
+            Catalog
+          </button>
+          <div className="flex items-center gap-2">
+            {object.kind === "song" && !lockedReleasedStage ? (
               <select
                 aria-label="Song stage"
                 defaultValue={stageValue}
                 onChange={(event) => onStageChange?.(event.target.value.toLowerCase())}
-                className="rounded-[12px] border border-foreground/12 bg-background px-3 py-2.5 text-[13px] font-bold normal-case tracking-normal text-foreground focus:border-foreground focus:outline-none"
+                className="h-9 rounded-[10px] border border-foreground/10 bg-background px-3 text-[11px] font-semibold text-foreground focus:border-foreground focus:outline-none"
               >
                 {["Idea", "Recording", "Production", "Mixing", "Mastering", "Ready", "Scheduled", "Released", "Catalog"].map((stage) => (
                   <option key={stage} value={stage}>{stage}</option>
                 ))}
               </select>
-            </label>
-          ) : lockedReleasedStage ? (
-            <span className="justify-self-start rounded-full bg-brand-accent/10 px-3 py-1.5 text-[11px] font-bold text-brand-accent lg:justify-self-end">{stageValue}</span>
-          ) : null}
+            ) : <span className="text-[11px] font-medium text-muted-foreground/58">{stageValue}</span>}
+            {onOpenManager ? (
+              <button type="button" onClick={onOpenManager} className="inline-flex h-9 items-center gap-2 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-semibold text-foreground transition-colors hover:bg-foreground/[0.04] focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+                <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Manager
+              </button>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-5 flex min-w-0 items-end gap-4">
+          <ArtworkFrame title={object.title} imageUrl={object.coverImageUrl} spotifyUrl={object.spotifyUrl} kind={object.kind} size="detail" />
+          <h2 className="min-w-0 break-words [overflow-wrap:anywhere] font-display text-[34px] font-semibold leading-[0.98] tracking-[-0.035em] text-foreground xl:text-[40px]">{object.title}</h2>
         </div>
       </div>
-    </>
+    </div>
   );
 }
 
@@ -1979,78 +1959,32 @@ function MusicLinkedWork({
   onOpenMission: (missionId: string) => void;
 }) {
   const hasLinkedWork = Boolean(linkedConversation || linkedMissions.length);
+  if (!hasLinkedWork) return null;
 
   return (
-    <aside data-testid="music-linked-work" className="surface-elevated self-start rounded-[22px] p-5 shadow-sm max-lg:rounded-[16px] max-lg:p-4 max-lg:shadow-none lg:sticky lg:top-8">
-      <div className="flex items-start justify-between gap-3 border-b border-foreground/8 pb-4 max-lg:border-0 max-lg:pb-0">
-        <div>
-          <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Linked work</p>
-          <h4 className="mt-1 font-display text-[16px] font-semibold leading-tight text-foreground max-lg:hidden">Workspace links</h4>
-        </div>
+    <section data-testid="music-linked-work" className="border-t border-foreground/8 pt-6">
+      <div className="flex items-center justify-between gap-4">
+        <h3 className="font-display text-[18px] font-semibold tracking-[-0.02em] text-foreground">Active work</h3>
+        <span className="text-[11px] tabular-nums text-muted-foreground/48">{linkedMissions.length + (linkedConversation ? 1 : 0)}</span>
       </div>
-
-      {hasLinkedWork ? (
-      <div data-testid="music-linked-work-list" className="mt-4 grid gap-4 max-lg:hidden">
+      <div data-testid="music-linked-work-list" className="mt-3 divide-y divide-foreground/7 border-y border-foreground/8">
         {linkedConversation ? (
-          <section data-testid="music-linked-conversation" className="rounded-[16px] border border-foreground/8 bg-background/72">
-            <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Conversation</p>
-            </div>
-            <div className="p-3">
-              <button type="button" aria-label="Open conversation" onClick={onOpenConversation} className="grid w-full gap-2 rounded-[12px] px-2 py-2 text-left transition-colors hover:bg-brand-accent/[0.04]">
-                <span className="block min-w-0 text-[13px] font-medium leading-snug text-foreground">{linkedConversation.topic}</span>
-                <span className="line-clamp-2 text-[11px] font-semibold leading-relaxed text-muted-foreground">{linkedConversation.summary}</span>
-                <span className="mt-1 inline-flex items-center gap-1.5 text-[11px] font-semibold text-brand-accent">
-                  Open conversation <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                </span>
-              </button>
-            </div>
-          </section>
+          <button type="button" aria-label="Open conversation" onClick={onOpenConversation} className="group flex w-full items-center justify-between gap-4 py-3.5 text-left transition-colors hover:text-brand-accent">
+            <span className="min-w-0 truncate text-[13px] font-semibold text-foreground group-hover:text-brand-accent">{linkedConversation.topic}</span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5" />
+          </button>
         ) : null}
-        {linkedMissions.length ? (
-        <section className="rounded-[16px] border border-foreground/8 bg-background/72">
-          <div className="border-b border-foreground/8 bg-foreground/[0.025] px-4 py-3">
-            <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground/82">Mission</p>
-          </div>
-          <div className="p-3">
-            {linkedMissions.map((mission) => {
-              const taskCount = mission.tasks?.length ?? 0;
-              return (
-                <button key={mission.id} type="button" onClick={() => onOpenMission(mission.id)} className="grid w-full gap-3 rounded-[12px] px-2 py-2 text-left transition-colors hover:bg-brand-accent/[0.04]">
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium leading-snug text-foreground">{mission.title}</span>
-                    <span className="mt-1 block text-[11px] font-semibold leading-relaxed text-muted-foreground">{mission.review}</span>
-                  </span>
-                  {taskCount ? (
-                    <span className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="rounded-md bg-foreground/[0.055] px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
-                        {taskCount} task{taskCount === 1 ? "" : "s"} attached
-                      </span>
-                    </span>
-                  ) : null}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-        ) : null}
+        {linkedMissions.map((mission) => (
+          <button key={mission.id} type="button" onClick={() => onOpenMission(mission.id)} className="group flex w-full items-center justify-between gap-4 py-3.5 text-left">
+            <span className="min-w-0">
+              <span className="block truncate text-[13px] font-semibold text-foreground">{mission.title}</span>
+              {mission.tasks?.length ? <span className="mt-0.5 block text-[10px] font-medium text-muted-foreground/58">{mission.tasks.length} task{mission.tasks.length === 1 ? "" : "s"}</span> : null}
+            </span>
+            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/30 transition-transform group-hover:translate-x-0.5" />
+          </button>
+        ))}
       </div>
-      ) : (
-        <p className="mt-4 text-[12px] font-semibold text-muted-foreground/72">No mission linked</p>
-      )}
-      {linkedConversation ? (
-        <button type="button" onClick={onOpenConversation} className="mt-3 flex w-full items-center justify-between gap-3 border-t border-foreground/8 pt-3 text-left lg:hidden">
-          <span className="min-w-0 truncate text-[12px] font-semibold text-foreground">{linkedConversation.topic}</span>
-          <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Open conversation</span>
-        </button>
-      ) : null}
-      {linkedMissions.length ? (
-        <button type="button" onClick={() => onOpenMission(linkedMissions[0].id)} className="mt-3 flex w-full items-center justify-between gap-3 border-t border-foreground/8 pt-3 text-left lg:hidden">
-          <span className="min-w-0 truncate text-[12px] font-semibold text-foreground">{linkedMissions.length} linked mission{linkedMissions.length === 1 ? "" : "s"}</span>
-          <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Open</span>
-        </button>
-      ) : null}
-    </aside>
+    </section>
   );
 }
 
