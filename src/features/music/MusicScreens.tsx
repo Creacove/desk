@@ -1651,7 +1651,7 @@ function MusicProjectBrief({
             aria-label={managerReadButtonLabel("project", project.managerReadStatus)}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:opacity-40"
           >
-            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(project.managerReadStatus)}
+            {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={20} /> : managerReadButtonIcon(project.managerReadStatus)}
           </button>
         ) : null}
       </div>
@@ -1709,7 +1709,7 @@ function SongOverviewRead({
         <span className="sr-only">{managerReadStatusLabel(song.managerReadStatus)}</span>
         {readBusy ? (
           <div className="flex min-h-12 items-center gap-3 border-y border-foreground/8 py-3">
-            <AppThinkingOrb surface="normal" state="composing" size={18} />
+            <AppThinkingOrb surface="normal" state="composing" size={20} />
             <p className="text-[12px] font-semibold text-muted-foreground">Manager is reviewing this record…</p>
           </div>
         ) : checking ? (
@@ -1752,7 +1752,7 @@ function SongOverviewRead({
           disabled={readBusy}
           className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:opacity-40"
         >
-          {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={18} /> : managerReadButtonIcon(song.managerReadStatus)}
+          {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
         </button>
       </div>
       <div className="mt-4 max-w-3xl">
