@@ -6,7 +6,9 @@ on:
       - design/activity-center-phase-2
     paths:
       - src/features/notifications/WorkspaceActivityCenter.tsx
+      - src/services/workspaceLiveSync.ts
       - src/workspace-activity-center.test.tsx
+      - src/workspace-live-sync.test.ts
       - src/production-app-shell.test.tsx
       - src/supabase-client.test.ts
       - .github/workflows/activity-center-phase-2-qa.yml
@@ -36,8 +38,12 @@ jobs:
             echo "Stale bucket-based Activity Center assertions remain."
             exit 1
           fi
+          if grep -n -F 'const cursorKey = `ordersounds.activityCursor.v1' src/services/workspaceLiveSync.ts; then
+            echo "Synchronization must not reuse the Activity seen/unread cursor."
+            exit 1
+          fi
       - name: Activity regression
-        run: npx vitest run src/workspace-activity-center.test.tsx --environment jsdom
+        run: npx vitest run src/workspace-activity-center.test.tsx src/workspace-live-sync.test.ts src/supabase-client.test.ts --environment jsdom
       - name: Full repository suite
         run: npm test -- --run
       - name: Production build
