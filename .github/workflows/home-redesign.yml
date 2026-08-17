@@ -40,19 +40,6 @@ jobs:
               raise SystemExit("Expected Desk HQ navigation assertions in production shell tests")
           shell_path.write_text(shell.replace(old_shell, 'name: "Home"'))
           print(f"Updated {shell_occurrences} production shell navigation assertions to Home")
-
-          spacing_path = Path("src/design-system-spacing.test.tsx")
-          spacing = spacing_path.read_text()
-          old_spacing = '''expect(desk).toContain('eyebrow="Desk HQ"');'''
-          if old_spacing not in spacing:
-              raise SystemExit("Expected Desk HQ naming assertion in design-system spacing test")
-          spacing_path.write_text(
-              spacing.replace(
-                  old_spacing,
-                  '''expect(desk).toContain(">Home</h1>");\n    expect(desk).not.toContain("Desk HQ");''',
-              )
-          )
-          print("Updated design-system naming assertion to Home")
           PY
       - run: npm ci
       - name: Home editorial contract
@@ -84,7 +71,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/features/desk/DeskHQ.tsx src/design-system/components.tsx src/production-app-shell.test.tsx src/design-system-spacing.test.tsx
+          git add src/features/desk/DeskHQ.tsx src/design-system/components.tsx src/production-app-shell.test.tsx
           if git diff --cached --quiet; then
             echo "No generated source changes to commit"
             exit 0
