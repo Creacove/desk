@@ -1,7 +1,6 @@
-import { ArrowLeft, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ProductButton, WorkspaceHeader } from "../../design-system/components";
-import { cn } from "../../lib/utils";
+import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import type {
   DrawerKind,
   MissionEventViewModel,
@@ -14,18 +13,16 @@ import { WorkSurface } from "./MissionWorkSurface";
 import {
   type MissionRoomTab,
   type MissionSurface,
-  getBlockingDependency,
-  getCurrentStage,
-  getMissionNextLine,
-  humanUpdateLabel,
-  isOpenArtistTask,
   missionCheckpoints,
+  getNextArtistTask,
   missionEvents,
   missionNeedsUser,
   missionNotes,
   missionTasks,
   taskIsDone,
 } from "./missionModel";
+
+type MissionListTab = "todo" | "progress" | "done";
 
 export function MissionsWorkspace({
   missions,
@@ -144,10 +141,7 @@ function EmptyMissionState({
 }) {
   return (
     <section className="mt-8 max-w-[760px] border-t border-foreground/8 pt-8">
-      <p className="font-display text-[26px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[32px]">Nothing is in motion yet.</p>
-      <p className="mt-3 max-w-xl text-[14px] font-medium leading-relaxed text-muted-foreground">
-        Start with the Manager. Once there is a real objective worth coordinating, the work will appear here automatically.
-      </p>
+      <p className="font-display text-[26px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[32px]">No missions yet</p>
       <div className="mt-6 flex flex-wrap gap-3">
         <ProductButton onClick={onCreateFirstMission} disabled={firstMissionPending}>
           {firstMissionPending ? "Opening Manager" : "Create first mission"}
@@ -157,7 +151,7 @@ function EmptyMissionState({
           onClick={onOpenManager}
           className="inline-flex min-h-11 items-center rounded-[12px] px-4 text-[13px] font-bold text-foreground transition-colors hover:bg-foreground/[0.045]"
         >
-          Talk to Manager
+          Manager
         </button>
       </div>
     </section>
@@ -173,107 +167,77 @@ function MissionList({
   completedMissions: MissionViewModel[];
   onOpen: (mission: MissionViewModel) => void;
 }) {
-  const [showCompleted, setShowCompleted] = useState(false);
-  const needsYou = activeMissions.filter(missionNeedsUser);
+  const toDo = activeMissions.filter(missionNeedsUser);
   const inProgress = activeMissions.filter((mission) => !missionNeedsUser(mission));
+  const [activeTab, setActiveTab] = useState<MissionListTab>(toDo.length ? "todo" : inProgress.length ? "progress" : "done");
+
+  const visible = activeTab === "todo" ? toDo : activeTab === "progress" ? inProgress : completedMissions;
 
   return (
-    <div data-testid="mobile-mission-switcher" className="mx-auto mt-5 w-full max-w-[940px] pb-12 sm:mt-8">
-      {needsYou.length ? (
-        <MissionListSection title="Needs you" description="Work that cannot move forward without you." missions={needsYou} onOpen={onOpen} emphasis />
-      ) : null}
+    <div data-testid="mobile-mission-switcher" className="mt-5 grid w-full gap-5 pb-12 sm:mt-8">
+      <WorkspaceTabRail
+        ariaLabel="Mission status"
+        testId="mission-status-tabs"
+        active={activeTab}
+        onChange={(value) => setActiveTab(value as MissionListTab)}
+        items={[
+          { id: "todo", label: "To do" },
+          { id: "progress", label: "In progress" },
+          { id: "done", label: "Done" },
+        ]}
+      />
 
-      {inProgress.length ? (
-        <MissionListSection
-          title={needsYou.length ? "In progress" : "Current work"}
-          description={needsYou.length ? "The Manager or your team is moving these forward." : "Everything currently in motion."}
-          missions={inProgress}
-          onOpen={onOpen}
-        />
-      ) : null}
-
-      {completedMissions.length ? (
-        <section className="mt-10 border-t border-foreground/8 pt-2">
-          <button
-            type="button"
-            onClick={() => setShowCompleted((value) => !value)}
-            className="flex min-h-12 w-full items-center justify-between py-2 text-left"
-            aria-expanded={showCompleted}
-          >
-            <span className="text-[13px] font-bold text-muted-foreground">
-              Completed <span className="ml-1 font-semibold text-muted-foreground/65">{completedMissions.length}</span>
-            </span>
-            <ChevronDown className={cn("h-4 w-4 text-muted-foreground transition-transform", showCompleted && "rotate-180")} />
-          </button>
-          {showCompleted ? (
-            <div className="divide-y divide-foreground/7 border-t border-foreground/7">
-              {completedMissions.map((mission) => <MissionRow key={mission.id} mission={mission} onOpen={() => onOpen(mission)} completed />)}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
+      {visible.length ? (
+        <div className="divide-y divide-foreground/8 border-y border-foreground/8">
+          {visible.map((mission) => (
+            <MissionRow
+              key={mission.id}
+              mission={mission}
+              mode={activeTab}
+              onOpen={() => onOpen(mission)}
+            />
+          ))}
+        </div>
+      ) : (
+        <MissionListEmpty tab={activeTab} />
+      )}
     </div>
   );
 }
 
-function MissionListSection({
-  title,
-  description,
-  missions,
-  onOpen,
-  emphasis = false,
-}: {
-  title: string;
-  description: string;
-  missions: MissionViewModel[];
-  onOpen: (mission: MissionViewModel) => void;
-  emphasis?: boolean;
-}) {
-  return (
-    <section className={cn("mt-8 first:mt-0", emphasis && "rounded-[22px] bg-brand-accent/[0.045] px-3 py-2 sm:px-5 sm:py-3")}>
-      <header className="flex items-end justify-between gap-4 px-1 pb-3">
-        <div>
-          <h2 className={cn("font-display text-[21px] font-semibold tracking-[-0.02em]", emphasis ? "text-foreground" : "text-foreground/92")}>{title}</h2>
-          <p className="mt-1 text-[12px] font-medium text-muted-foreground">{description}</p>
-        </div>
-        <span className="pb-0.5 text-[11px] font-bold text-muted-foreground/60">{missions.length}</span>
-      </header>
-      <div className="divide-y divide-foreground/8 border-y border-foreground/8">
-        {missions.map((mission) => <MissionRow key={mission.id} mission={mission} onOpen={() => onOpen(mission)} attention={emphasis} />)}
-      </div>
-    </section>
-  );
+function MissionListEmpty({ tab }: { tab: MissionListTab }) {
+  const copy = tab === "todo"
+    ? "You’re all caught up"
+    : tab === "progress"
+      ? "Nothing in progress"
+      : "Nothing completed yet";
+
+  return <p className="border-t border-foreground/8 py-8 text-[14px] font-semibold text-muted-foreground">{copy}</p>;
 }
 
 function MissionRow({
   mission,
+  mode,
   onOpen,
-  attention = false,
-  completed = false,
 }: {
   mission: MissionViewModel;
+  mode: MissionListTab;
   onOpen: () => void;
-  attention?: boolean;
-  completed?: boolean;
 }) {
   const tasks = missionTasks(mission);
   const doneCount = tasks.filter(taskIsDone).length;
-  const next = getMissionNextLine(mission, tasks);
-  const stage = getCurrentStage(mission, tasks);
+  const currentTask = mode === "todo" ? getNextArtistTask(tasks, missionCheckpoints(mission), []) : undefined;
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className="group grid min-h-[88px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-1 py-4 text-left sm:min-h-[96px] sm:px-2"
+      className="group grid min-h-[82px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4 text-left sm:min-h-[92px]"
     >
       <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-2">
-          {attention ? <span className="h-2 w-2 shrink-0 rounded-full bg-brand-accent" aria-hidden="true" /> : null}
-          <h3 className={cn("truncate font-display text-[17px] font-semibold tracking-[-0.015em] text-foreground sm:text-[18px]", completed && "text-foreground/70")}>{mission.title}</h3>
-        </div>
-        <p className={cn("mt-1.5 line-clamp-1 text-[13px] font-medium", attention ? "text-foreground/82" : "text-muted-foreground")}>{completed ? "Mission complete" : next}</p>
-        {!completed ? <p className="mt-1 text-[11px] font-semibold text-muted-foreground/62">{stage}{tasks.length ? ` · ${doneCount} of ${tasks.length} done` : ""}</p> : null}
+        <h3 className="truncate font-display text-[17px] font-semibold tracking-[-0.015em] text-foreground sm:text-[18px]">{mission.title}</h3>
+        {currentTask ? <p className="mt-1.5 line-clamp-1 text-[13px] font-medium text-foreground/76">{currentTask.title}</p> : null}
+        <p className="mt-1.5 text-[11px] font-semibold text-muted-foreground/65">{doneCount} of {tasks.length} done</p>
       </div>
       <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/45 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
     </button>
@@ -310,16 +274,10 @@ function MissionRoom({
   const checkpoints = missionCheckpoints(mission);
   const notes = missionNotes(mission);
   const events = missionEvents(mission);
-  const openCount = tasks.filter((task) => {
-    if (!isOpenArtistTask(task)) return false;
-    const checkpoint = checkpoints.find((candidate) => candidate.id === task.checkpointId);
-    return !checkpoint || !getBlockingDependency(checkpoint, checkpoints);
-  }).length;
-  const updateCount = notes.length + events.length;
-  const currentStage = getCurrentStage(mission, tasks);
+  const doneCount = tasks.filter(taskIsDone).length;
 
   return (
-    <section className="app-workspace app-workspace-reveal mx-auto grid w-full max-w-[1040px] min-w-0 gap-5 overflow-x-clip pb-14 sm:gap-7">
+    <section className="app-workspace app-workspace-reveal grid w-full min-w-0 gap-5 overflow-x-clip pb-14 sm:gap-7">
       <header>
         <button
           type="button"
@@ -331,9 +289,9 @@ function MissionRoom({
           Missions
         </button>
 
-        <div className="max-w-[820px]">
+        <div>
           <h1 className="break-words font-display text-[30px] font-semibold leading-[1.04] tracking-[-0.035em] text-foreground sm:text-[42px] lg:text-[50px]">{mission.title}</h1>
-          <p className="mt-3 text-[13px] font-semibold text-muted-foreground">{currentStage}</p>
+          <p className="mt-3 text-[13px] font-semibold text-muted-foreground">{doneCount} of {tasks.length} done</p>
         </div>
       </header>
 
@@ -343,10 +301,16 @@ function MissionRoom({
         </div>
       ) : null}
 
-      <div data-testid="mobile-mission-tabs" className="flex w-full max-w-[360px] border-b border-foreground/9">
-        <SurfaceTab active={surface === "work"} onClick={() => onSurface("work")} label="Work" count={openCount || undefined} />
-        <SurfaceTab active={surface === "updates"} onClick={() => onSurface("updates")} label="Updates" count={updateCount || undefined} />
-      </div>
+      <WorkspaceTabRail
+        ariaLabel="Mission section"
+        testId="mobile-mission-tabs"
+        active={surface}
+        onChange={(value) => onSurface(value as MissionSurface)}
+        items={[
+          { id: "work", label: "Work" },
+          { id: "updates", label: "Updates" },
+        ]}
+      />
 
       {surface === "work" ? (
         <WorkSurface
@@ -364,56 +328,70 @@ function MissionRoom({
   );
 }
 
-function SurfaceTab({
-  active,
-  onClick,
-  label,
-  count,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  count?: number;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn("relative min-h-11 flex-1 px-3 text-[13px] font-bold transition-colors", active ? "text-foreground" : "text-muted-foreground hover:text-foreground")}
-      aria-current={active ? "page" : undefined}
-    >
-      {label}
-      {count ? <span className="ml-1.5 text-[10px] font-bold text-muted-foreground/65">{count}</span> : null}
-      {active ? <span className="absolute inset-x-3 bottom-[-1px] h-[2px] rounded-full bg-brand-accent" /> : null}
-    </button>
-  );
-}
-
 function UpdatesSurface({ notes, events }: { notes: MissionNoteViewModel[]; events: MissionEventViewModel[] }) {
   const items = useMemo(
     () => [
-      ...notes.map((note, index) => ({ id: `note-${note.id}`, order: index, label: humanUpdateLabel(note.route || "Manager update"), message: note.message })),
-      ...events.map((event, index) => ({ id: `event-${event.type}-${index}`, order: notes.length + index, label: humanUpdateLabel(event.actor || event.type || "Mission update"), message: event.summary })),
-    ].sort((a, b) => b.order - a.order),
+      ...notes.map((note, index) => ({
+        id: `note-${note.id}`,
+        order: index,
+        message: note.message,
+        actor: note.route === "manager" ? "Manager" : "Mission",
+        createdAt: readCreatedAt(note),
+      })),
+      ...events.map((event, index) => ({
+        id: `event-${(event as { id?: string }).id || event.type}-${index}`,
+        order: notes.length + index,
+        message: event.summary,
+        actor: humanActor(event.actor),
+        createdAt: readCreatedAt(event),
+      })),
+    ].sort((a, b) => {
+      const left = a.createdAt ? Date.parse(a.createdAt) : a.order;
+      const right = b.createdAt ? Date.parse(b.createdAt) : b.order;
+      return right - left;
+    }),
     [notes, events],
   );
 
+  if (!items.length) {
+    return <p className="border-t border-foreground/8 py-8 text-[13px] font-medium text-muted-foreground">No updates yet</p>;
+  }
+
   return (
-    <section className="max-w-[820px]">
-      <div className="mb-4">
-        <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Updates</p>
-        <h2 className="mt-1 font-display text-[24px] font-semibold tracking-[-0.025em] text-foreground">What changed</h2>
-      </div>
-      {items.length ? (
-        <div className="border-y border-foreground/9">
-          {items.map((item) => (
-            <article key={item.id} className="grid gap-1.5 border-b border-foreground/8 py-4 last:border-b-0 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">{item.label}</p>
-              <p className="text-[13px] font-medium leading-relaxed text-foreground/82">{item.message}</p>
-            </article>
-          ))}
-        </div>
-      ) : <p className="border-t border-foreground/8 py-8 text-[13px] font-medium text-muted-foreground">No updates yet.</p>}
+    <section className="max-w-[820px] border-y border-foreground/9">
+      {items.map((item) => (
+        <article key={item.id} className="border-b border-foreground/8 py-4 last:border-b-0">
+          <p className="text-[13px] font-semibold leading-relaxed text-foreground">{item.message}</p>
+          <p className="mt-1.5 text-[11px] font-medium text-muted-foreground">
+            {item.actor}{item.createdAt ? ` · ${formatUpdateTime(item.createdAt)}` : ""}
+          </p>
+        </article>
+      ))}
     </section>
   );
+}
+
+function humanActor(actor: MissionEventViewModel["actor"]) {
+  if (actor === "artist") return "You";
+  if (actor === "manager") return "Manager";
+  return "Desk";
+}
+
+function readCreatedAt(value: MissionNoteViewModel | MissionEventViewModel) {
+  return (value as { createdAt?: string }).createdAt;
+}
+
+function formatUpdateTime(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const eventDay = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
+  const dayDiff = Math.round((today.getTime() - eventDay.getTime()) / 86_400_000);
+  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(parsed);
+
+  if (dayDiff === 0) return `Today, ${time}`;
+  if (dayDiff === 1) return `Yesterday, ${time}`;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(parsed);
 }

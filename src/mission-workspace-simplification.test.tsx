@@ -44,13 +44,12 @@ describe("mobile-first mission workspace", () => {
 
     renderWorkspace({ missions: [mission(), completed] });
 
-    expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "To do" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Define the artist's 90-day position/i })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Completed 1/i })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText("Finish release setup")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Completed 1/i }));
-    expect(screen.getByText("Finish release setup")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.getByRole("button", { name: /Finish release setup/i })).toBeInTheDocument();
     expect(screen.queryByText("Active Missions")).not.toBeInTheDocument();
   });
 
@@ -69,7 +68,7 @@ describe("mobile-first mission workspace", () => {
     expect(screen.queryByRole("button", { name: /^Pulse/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();
-    expect(screen.getByText("The path from here")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Step 1 · Positioning thesis/i })).toBeInTheDocument();
     expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Back to Missions" }));
@@ -82,9 +81,13 @@ describe("mobile-first mission workspace", () => {
     const futureStage = screen.getByTestId("task-group-checkpoint-2");
     fireEvent.click(within(futureStage).getByRole("button", { name: /Market validation/i }));
 
-    expect(within(futureStage).getAllByText("Starts after Positioning thesis").length).toBeGreaterThan(0);
-    expect(within(futureStage).getByRole("button", { name: /Run listener interviews/i })).toBeDisabled();
-    expect(within(futureStage).getByText("Not available yet")).toBeInTheDocument();
+    const futureTask = within(futureStage).getByRole("button", { name: /Run listener interviews/i });
+    expect(futureTask).toBeEnabled();
+    expect(within(futureStage).getByText("Available after Positioning thesis")).toBeInTheDocument();
+    fireEvent.click(futureTask);
+    const dialog = screen.getByRole("dialog", { name: "Run listener interviews" });
+    expect(within(dialog).getByText("Available after Positioning thesis")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "Complete" })).toBeDisabled();
   });
 
   it("keeps downstream work locked until Manager review is actually met", () => {
@@ -97,12 +100,13 @@ describe("mobile-first mission workspace", () => {
 
     renderMission("tasks", reviewReady);
 
-    const currentStage = screen.getByTestId("task-group-checkpoint-1");
-    expect(within(currentStage).getByText("Manager reviewing")).toBeInTheDocument();
     const futureStage = screen.getByTestId("task-group-checkpoint-2");
     fireEvent.click(within(futureStage).getByRole("button", { name: /Market validation/i }));
-    expect(within(futureStage).getAllByText("Starts after Positioning thesis").length).toBeGreaterThan(0);
-    expect(within(futureStage).getByRole("button", { name: /Run listener interviews/i })).toBeDisabled();
+    const futureTask = within(futureStage).getByRole("button", { name: /Run listener interviews/i });
+    expect(futureTask).toBeEnabled();
+    expect(within(futureStage).getByText("Available after Positioning thesis")).toBeInTheDocument();
+    fireEvent.click(futureTask);
+    expect(within(screen.getByRole("dialog", { name: "Run listener interviews" })).getByRole("button", { name: "Complete" })).toBeDisabled();
   });
 
   it("opens the exact task as a focused sheet instead of expanding a dashboard card", () => {
@@ -118,7 +122,7 @@ describe("mobile-first mission workspace", () => {
   it("maps legacy activity deep-links into a concise Updates surface", () => {
     renderMission("activity");
 
-    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Updates" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Positioning direction confirmed.")).toBeInTheDocument();
     expect(screen.getByText("Market validation opened.")).toBeInTheDocument();
     expect(screen.queryByText("Mission record")).not.toBeInTheDocument();
@@ -147,7 +151,7 @@ describe("mobile-first mission workspace", () => {
 
     renderMission("tasks", empty);
 
-    expect(screen.getByText("Nothing needs you right now.")).toBeInTheDocument();
+    expect(screen.getByText("No work yet")).toBeInTheDocument();
     expect(screen.queryByText("Review the Manager recommendation")).not.toBeInTheDocument();
     expect(screen.queryByText("Manager update")).not.toBeInTheDocument();
   });

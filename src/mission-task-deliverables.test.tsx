@@ -17,9 +17,7 @@ describe("mission task execution", () => {
     renderMission(missionWithThesis(), { onCompleteTask, openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    expect(within(dialog).getByText("Optional context")).toBeInTheDocument();
     expect(within(dialog).getByText("90-day thesis")).toBeInTheDocument();
-    expect(within(dialog).getByText("Optional file")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
@@ -33,7 +31,7 @@ describe("mission task execution", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Upload" }));
-    fireEvent.change(within(dialog).getByLabelText("Upload optional context for Provide 90-day thesis"), {
+    fireEvent.change(within(dialog).getByLabelText("Upload file for Provide 90-day thesis"), {
       target: { files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })] },
     });
 
@@ -61,7 +59,7 @@ describe("mission task execution", () => {
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Upload" }));
-    fireEvent.change(within(dialog).getByLabelText("Upload optional context for Provide 90-day thesis"), {
+    fireEvent.change(within(dialog).getByLabelText("Upload file for Provide 90-day thesis"), {
       target: { files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })] },
     });
 
@@ -89,9 +87,9 @@ describe("mission task execution", () => {
     renderMission(mission, { openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Review discovery and artist-attachment evidence" });
-    expect(within(dialog).getByText("Manager is handling this.")).toBeInTheDocument();
+    expect(within(dialog).getByText("In progress")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Mark complete" })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
   });
 
   it("routes a Manager-draft task into the existing Manager conversation", () => {
@@ -102,7 +100,7 @@ describe("mission task execution", () => {
     renderMission(mission, { onWorkWithManager, openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Work with Manager" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
     expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
     expect(screen.queryByText("Required file")).not.toBeInTheDocument();
   });
@@ -123,7 +121,7 @@ describe("mission task execution", () => {
     renderMission(mission, { openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    expect(within(dialog).getByText("Current Manager draft")).toBeInTheDocument();
+    expect(within(dialog).getByText("Draft")).toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "Position" })).toBeInTheDocument();
     expect(within(dialog).getByText("Lagos")).toHaveClass("font-bold");
     expect(within(dialog).queryByText(/## Position/)).not.toBeInTheDocument();
@@ -143,11 +141,12 @@ describe("mission task execution", () => {
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], "draft-thesis-1"));
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
 
     resolveReview?.();
     await waitFor(() => expect(onCompleteTask).toHaveResolved());
-    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
+    expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
+    expect(screen.getByText("Provide 90-day thesis")).toBeInTheDocument();
   });
 
   it("keeps a failed review attached to the exact task and retryable", async () => {
@@ -161,7 +160,7 @@ describe("mission task execution", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
 
-    expect(await screen.findByText("Review failed · Tap to retry")).toBeInTheDocument();
+    expect(await screen.findByText("Couldn’t save. Tap to retry.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Provide 90-day thesis/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Manager is unavailable");
     expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
@@ -178,7 +177,7 @@ describe("mission task execution", () => {
 
     renderMission(mission, { onWorkWithManager, openTaskId: "task-thesis" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue with Manager" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
     expect(screen.queryByRole("button", { name: "Submit for review" })).not.toBeInTheDocument();
   });
