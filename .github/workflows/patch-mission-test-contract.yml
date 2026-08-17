@@ -24,152 +24,27 @@ jobs:
           python <<'PY'
           from pathlib import Path
 
-          path = Path('src/production-app-shell.test.tsx')
+          path = Path("src/production-app-shell.test.tsx")
           text = path.read_text()
 
           def once(old: str, new: str, label: str):
               global text
               count = text.count(old)
               if count != 1:
-                  raise RuntimeError(f'{label}: expected exactly 1 match, found {count}')
+                  raise RuntimeError(f"{label}: expected exactly 1 match, found {count}")
               text = text.replace(old, new, 1)
 
-          once(
-              '    expect(await screen.findByText("Executive summary")).toBeInTheDocument();',
-              '    expect(await screen.findByText("The path from here")).toBeInTheDocument();',
-              'manager linked mission destination',
-          )
-
-          once(
-              '  it("opens Manager-created task artifacts in the parent mission Tasks tab", async () => {',
-              '  it("opens Manager-created task artifacts in the parent mission Work view", async () => {',
-              'manager-created task test title',
-          )
-          once(
-              '    expect(screen.getAllByRole("button", { name: /Tasks/i }).find((button) => button.getAttribute("aria-pressed") === "true")).toBeTruthy();',
-              '    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");',
-              'manager-created task destination',
-          )
-
-          once(
-              '''    expect(screen.getByTestId("missions-mobile-picker")).toHaveClass("lg:hidden");
-    expect(screen.getByTestId("missions-desktop-list")).toHaveClass("hidden", "lg:block");''',
-              '''    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    expect(screen.queryByTestId("missions-mobile-picker")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();''',
-              'unified mission list surface',
-          )
-
-          once(
-              '''    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));''',
-              '''    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    openManagerFromDesk();''',
-              'populated missions manager navigation',
-          )
-
-          once(
-              '''    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
-    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));
-    fireEvent.change(screen.getByLabelText("Task result note"), { target: { value: "Outcome captured without private content." } });
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark done" }));''',
-              '''    fireEvent.click(screen.getByRole("button", { name: /Complete evidence task/i }));
-    const taskDialog = screen.getByRole("dialog", { name: "Complete evidence task" });
-    fireEvent.click(within(taskDialog).getByRole("button", { name: "Add result" }));
-    fireEvent.change(within(taskDialog).getByLabelText("What changed?"), { target: { value: "Outcome captured without private content." } });
-    fireEvent.click(within(taskDialog).getByRole("button", { name: "Mark complete" }));''',
-              'mission task completion flow',
-          )
-
-          once(
-              '''    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
-    expect(screen.getAllByText("Tasks under this checkpoint").length).toBeGreaterThan(0);
-    expect(await screen.findByText("Confirm split sheet")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));
-    expect(screen.getByTestId("checkpoint-accordion")).toBeInTheDocument();
-    expect(screen.queryByTestId("checkpoint-inspector")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Activity/ }));
-    expect(screen.getByTestId("mission-activity-feed")).toBeInTheDocument();''',
-              '''    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("The path from here")).toBeInTheDocument();
-    expect(screen.getAllByText("Confirm split sheet").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^Updates/ }));
-    expect(screen.getByRole("button", { name: /^Updates/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();''',
-              'mission room work-updates contract',
-          )
-
-          once(
-              '''    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    expect(screen.getByText("No active missions yet")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Create first mission" })).toHaveLength(1);''',
-              '''    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    expect(screen.getByText("Nothing is in motion yet.")).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "Create first mission" })).toHaveLength(1);''',
-              'empty mission state',
-          )
-
-          once(
-              '''    const pulse = await screen.findByTestId("mission-pulse");
-    expect(pulse).toHaveTextContent("Executive summary");
-    expect(pulse).toHaveTextContent("Next required action");
-    expect(pulse).toHaveTextContent("Commission Data Lead power check & smartlink mapping");
-    expect(pulse).toHaveTextContent("Private exports and Shazam heatmap snapshots are missing.");
-    expect(pulse).not.toHaveTextContent("What changed");
-    expect(pulse).not.toHaveTextContent("Mission state");
-    expect(within(pulse).queryByRole("button", { name: "Mission recap" })).not.toBeInTheDocument();
-    expect(within(pulse).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();''',
-              '''    expect(await screen.findByText("The path from here")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
-    expect(screen.getAllByText("Commission Data Lead power check & smartlink mapping").length).toBeGreaterThan(0);
-    expect(screen.getByText("Private exports and Shazam heatmap snapshots are missing.")).toBeInTheDocument();
-    expect(screen.queryByTestId("mission-pulse")).not.toBeInTheDocument();
-    expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();''',
-              'mission work focus contract',
-          )
-
-          once(
-              '''    expect(within(missionCard).getByText("1 open task")).toBeInTheDocument();
-    expect(within(missionCard).getByText("35%")).toBeInTheDocument();
-    expect(within(missionCard).queryByText("Checkpoints")).not.toBeInTheDocument();
-    expect(within(missionCard).queryByText("Handoffs")).not.toBeInTheDocument();''',
-              '''    expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();
-    expect(within(missionCard).getByText("Confirm the release owner")).toBeInTheDocument();
-    expect(within(missionCard).getByText(/Release lane clarity.*0 of 2 done/)).toBeInTheDocument();
-    expect(within(missionCard).queryByText("1 open task")).not.toBeInTheDocument();
-    expect(within(missionCard).queryByText("35%")).not.toBeInTheDocument();''',
-              'mission list row contract',
-          )
-
-          once(
-              '''    const commandBar = screen.getByTestId("mission-command-bar");
-    expect(commandBar).toHaveTextContent("40%");
-    expect(commandBar).not.toHaveTextContent("open tasks");
-    expect(commandBar).toHaveTextContent("Build the compact mobile mission room");
-
-    const tabRail = screen.getByTestId("mobile-mission-tabs");
-    expect(tabRail).toHaveClass("overflow-x-auto");
-    expect(tabRail).not.toHaveClass("flex-wrap");
-
-    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));
-    expect(screen.getByTestId("task-group-checkpoint-mobile-one")).not.toHaveClass("max-lg:hidden");
-    expect(screen.getByTestId("task-group-checkpoint-mobile-two")).toHaveClass("max-lg:hidden");''',
-              '''    expect(screen.queryByTestId("mission-command-bar")).not.toBeInTheDocument();
-    const tabRail = screen.getByTestId("mobile-mission-tabs");
-    expect(within(tabRail).getByRole("button", { name: /^Work/ })).toBeInTheDocument();
-    expect(within(tabRail).getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
-    expect(tabRail).not.toHaveClass("overflow-x-auto");
-    expect(screen.getByText("The path from here")).toBeInTheDocument();
-
-    const firstStage = screen.getByTestId("task-group-checkpoint-mobile-one");
-    const secondStage = screen.getByTestId("task-group-checkpoint-mobile-two");
-    expect(within(firstStage).getByRole("button", { name: /Mobile hierarchy/i })).toHaveAttribute("aria-expanded", "true");
-    expect(within(secondStage).getByRole("button", { name: /Follow-up review/i })).toHaveAttribute("aria-expanded", "false");''',
-              'compact mission room contract',
-          )
+          once('    expect(await screen.findByText("Executive summary")).toBeInTheDocument();', '    expect(await screen.findByText("The path from here")).toBeInTheDocument();', 'manager linked mission destination')
+          once('  it("opens Manager-created task artifacts in the parent mission Tasks tab", async () => {', '  it("opens Manager-created task artifacts in the parent mission Work view", async () => {', 'manager-created task test title')
+          once('    expect(screen.getAllByRole("button", { name: /Tasks/i }).find((button) => button.getAttribute("aria-pressed") === "true")).toBeTruthy();', '    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");', 'manager-created task destination')
+          once('    expect(screen.getByTestId("missions-mobile-picker")).toHaveClass("lg:hidden");\n    expect(screen.getByTestId("missions-desktop-list")).toHaveClass("hidden", "lg:block");', '    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();\n    expect(screen.queryByTestId("missions-mobile-picker")).not.toBeInTheDocument();\n    expect(screen.queryByTestId("missions-desktop-list")).not.toBeInTheDocument();', 'unified mission list surface')
+          once('    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();\n    fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));', '    expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();\n    openManagerFromDesk();', 'populated missions manager navigation')
+          once('    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));\n    fireEvent.click(screen.getByRole("button", { name: "Mark done" }));\n    fireEvent.change(screen.getByLabelText("Task result note"), { target: { value: "Outcome captured without private content." } });\n    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Mark done" }));', '    fireEvent.click(screen.getByRole("button", { name: /Complete evidence task/i }));\n    const taskDialog = screen.getByRole("dialog", { name: "Complete evidence task" });\n    fireEvent.click(within(taskDialog).getByRole("button", { name: "Add result" }));\n    fireEvent.change(within(taskDialog).getByLabelText("What changed?"), { target: { value: "Outcome captured without private content." } });\n    fireEvent.click(within(taskDialog).getByRole("button", { name: "Mark complete" }));', 'mission task completion flow')
+          once('    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));\n    expect(screen.getAllByText("Tasks under this checkpoint").length).toBeGreaterThan(0);\n    expect(await screen.findByText("Confirm split sheet")).toBeInTheDocument();\n    fireEvent.click(screen.getByRole("button", { name: /Checkpoints/i }));\n    expect(screen.getByTestId("checkpoint-accordion")).toBeInTheDocument();\n    expect(screen.queryByTestId("checkpoint-inspector")).not.toBeInTheDocument();\n    fireEvent.click(screen.getByRole("button", { name: /^Activity/ }));\n    expect(screen.getByTestId("mission-activity-feed")).toBeInTheDocument();', '    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");\n    expect(screen.getByText("The path from here")).toBeInTheDocument();\n    expect(screen.getAllByText("Confirm split sheet").length).toBeGreaterThan(0);\n    expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();\n    expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();\n    fireEvent.click(screen.getByRole("button", { name: /^Updates/ }));\n    expect(screen.getByRole("button", { name: /^Updates/ })).toHaveAttribute("aria-pressed", "true");\n    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();', 'mission room work-updates contract')
+          once('    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();\n    expect(screen.getByText("No active missions yet")).toBeInTheDocument();\n    expect(screen.getAllByRole("button", { name: "Create first mission" })).toHaveLength(1);', '    expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();\n    expect(screen.getByText("Nothing is in motion yet.")).toBeInTheDocument();\n    expect(screen.getAllByRole("button", { name: "Create first mission" })).toHaveLength(1);', 'empty mission state')
+          once('    const pulse = await screen.findByTestId("mission-pulse");\n    expect(pulse).toHaveTextContent("Executive summary");\n    expect(pulse).toHaveTextContent("Next required action");\n    expect(pulse).toHaveTextContent("Commission Data Lead power check & smartlink mapping");\n    expect(pulse).toHaveTextContent("Private exports and Shazam heatmap snapshots are missing.");\n    expect(pulse).not.toHaveTextContent("What changed");\n    expect(pulse).not.toHaveTextContent("Mission state");\n    expect(within(pulse).queryByRole("button", { name: "Mission recap" })).not.toBeInTheDocument();\n    expect(within(pulse).queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();', '    expect(await screen.findByText("The path from here")).toBeInTheDocument();\n    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");\n    expect(screen.getByRole("button", { name: /^Updates/ })).toBeInTheDocument();\n    expect(screen.getAllByText("Commission Data Lead power check & smartlink mapping").length).toBeGreaterThan(0);\n    expect(screen.getByText("Private exports and Shazam heatmap snapshots are missing.")).toBeInTheDocument();\n    expect(screen.queryByTestId("mission-pulse")).not.toBeInTheDocument();\n    expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();', 'mission work focus contract')
+          once('    expect(within(missionCard).getByText("1 open task")).toBeInTheDocument();\n    expect(within(missionCard).getByText("35%")).toBeInTheDocument();\n    expect(within(missionCard).queryByText("Checkpoints")).not.toBeInTheDocument();\n    expect(within(missionCard).queryByText("Handoffs")).not.toBeInTheDocument();', '    expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();\n    expect(within(missionCard).getByText("Confirm the release owner")).toBeInTheDocument();\n    expect(within(missionCard).getByText(/Release lane clarity.*0 of 2 done/)).toBeInTheDocument();\n    expect(within(missionCard).queryByText("1 open task")).not.toBeInTheDocument();\n    expect(within(missionCard).queryByText("35%")).not.toBeInTheDocument();', 'mission list row contract')
+          once('    const commandBar = screen.getByTestId("mission-command-bar");\n    expect(commandBar).toHaveTextContent("40%");\n    expect(commandBar).not.toHaveTextContent("open tasks");\n    expect(commandBar).toHaveTextContent("Build the compact mobile mission room");\n\n    const tabRail = screen.getByTestId("mobile-mission-tabs");\n    expect(tabRail).toHaveClass("overflow-x-auto");\n    expect(tabRail).not.toHaveClass("flex-wrap");\n\n    fireEvent.click(screen.getByRole("button", { name: /Tasks/i }));\n    expect(screen.getByTestId("task-group-checkpoint-mobile-one")).not.toHaveClass("max-lg:hidden");\n    expect(screen.getByTestId("task-group-checkpoint-mobile-two")).toHaveClass("max-lg:hidden");', '    expect(screen.queryByTestId("mission-command-bar")).not.toBeInTheDocument();\n    const tabRail = screen.getByTestId("mobile-mission-tabs");\n    expect(within(tabRail).getByRole("button", { name: /^Work/ })).toBeInTheDocument();\n    expect(within(tabRail).getByRole("button", { name: /^Updates/ })).toBeInTheDocument();\n    expect(tabRail).not.toHaveClass("overflow-x-auto");\n    expect(screen.getByText("The path from here")).toBeInTheDocument();\n\n    const firstStage = screen.getByTestId("task-group-checkpoint-mobile-one");\n    const secondStage = screen.getByTestId("task-group-checkpoint-mobile-two");\n    expect(within(firstStage).getByRole("button", { name: /Mobile hierarchy/i })).toHaveAttribute("aria-expanded", "true");\n    expect(within(secondStage).getByRole("button", { name: /Follow-up review/i })).toHaveAttribute("aria-expanded", "false");', 'compact mission room contract')
 
           path.write_text(text)
           PY
