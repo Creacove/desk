@@ -1,5 +1,5 @@
 import type { LucideIcon } from "lucide-react";
-import { ArrowLeft, Bell, ClipboardCheck, Gauge, Library, LogOut, MessageCircle, Settings } from "lucide-react";
+import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import type { CleanProductionView } from "../types/cleanProduction";
@@ -273,7 +273,7 @@ export function WorkspaceShell({
 }
 
 const navItems: Array<{ label: string; active: NavSection; view: CleanProductionView; icon: LucideIcon }> = [
-  { label: "Desk HQ", active: "labelHQ", view: "labelHQ", icon: Gauge },
+  { label: "Home", active: "labelHQ", view: "labelHQ", icon: House },
   { label: "Catalog", active: "music", view: "musicWorkspace", icon: Library },
   { label: "Manager", active: "manager", view: "managerOffice", icon: MessageCircle },
   { label: "Missions", active: "missions", view: "missionsWorkspace", icon: ClipboardCheck },
