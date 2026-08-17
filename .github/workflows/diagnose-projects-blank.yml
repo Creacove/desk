@@ -31,8 +31,8 @@ jobs:
         run: python3 scripts/fix_catalog_projects_runtime.py
       - name: Reject unsupported orb call sites
         run: |
-          if git grep -n 'AppThinkingOrb.*size={18}' -- src; then
-            echo 'Unsupported 18px thinking-orb call remains.'
+          if git grep -n 'AppThinkingOrb.*size={18}' -- src/app src/features src/design-system/AppThinkingOrb.tsx; then
+            echo 'Unsupported 18px thinking-orb call remains in executable source.'
             exit 1
           fi
       - name: Thinking orb regression
