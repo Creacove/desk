@@ -51,6 +51,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/design-system/components.tsx src/app/ProductionApp.tsx src/manager-navigation-redesign.test.ts
+          git add src/design-system/components.tsx src/app/ProductionApp.tsx src/production-app-shell.test.tsx src/manager-navigation-redesign.test.ts
           git commit -m 'design: make Manager the primary operating agent'
           git push origin HEAD:design/catalog-manager-unification
