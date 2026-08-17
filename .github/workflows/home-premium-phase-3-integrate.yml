@@ -1,0 +1,12 @@
+name: Home premium phase 3 integration cleanup sentinel
+
+on:
+  push:
+    branches:
+      - design/home-premium-phase-3
+
+jobs:
+  sentinel:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Home integration is complete; release gate owns final cleanup."
