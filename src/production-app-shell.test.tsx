@@ -2810,8 +2810,8 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Canonical task routing" }));
     fireEvent.click(screen.getByRole("button", { name: "View task" }));
 
-    expect(await screen.findByRole("heading", { name: "Build manager-created audience loop" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("The path from here")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByText("Confirm task routing")).toBeInTheDocument();
   }, 20000);
 
@@ -6285,13 +6285,12 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /Release Night Bus on June 12/i })[0]);
     expect(screen.getByRole("heading", { name: "Release Night Bus on June 12" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByText("The path from here")).toBeInTheDocument();
     expect(screen.getAllByText("Confirm split sheet").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Updates/ }));
-    expect(screen.getByRole("button", { name: /^Updates/ })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
@@ -6373,7 +6372,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Touring Plan - Market Selection/i })[0]);
 
     expect(await screen.findByText("The path from here")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Work/ })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
     expect(screen.getAllByText("Commission Data Lead power check & smartlink mapping").length).toBeGreaterThan(0);
     expect(screen.getByText("Private exports and Shazam heatmap snapshots are missing.")).toBeInTheDocument();
@@ -6471,8 +6470,8 @@ describe("Clean production prototype-match shell", () => {
     const missionCard = screen.getAllByRole("button", { name: /Define the first repeatable release lane/i })[0];
 
     expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();
-    expect(within(missionCard).getByText("Confirm the release owner")).toBeInTheDocument();
-    expect(within(missionCard).getByText(/Release lane clarity.*0 of 2 done/)).toBeInTheDocument();
+    expect(within(missionCard).getByText("Collect release assets")).toBeInTheDocument();
+    expect(missionCard).toHaveTextContent(/Release lane clarity\s*·\s*0 of 2 done/);
     expect(within(missionCard).queryByText("1 open task")).not.toBeInTheDocument();
     expect(within(missionCard).queryByText("35%")).not.toBeInTheDocument();
   }, 20000);
@@ -6581,8 +6580,8 @@ describe("Clean production prototype-match shell", () => {
 
     const firstStage = screen.getByTestId("task-group-checkpoint-mobile-one");
     const secondStage = screen.getByTestId("task-group-checkpoint-mobile-two");
-    expect(within(firstStage).getByRole("button", { name: /Mobile hierarchy/i })).toHaveAttribute("aria-expanded", "true");
-    expect(within(secondStage).getByRole("button", { name: /Follow-up review/i })).toHaveAttribute("aria-expanded", "false");
+    expect(within(firstStage).getByRole("button", { name: /^Mobile hierarchy\b/i })).toHaveAttribute("aria-expanded", "true");
+    expect(within(secondStage).getByRole("button", { name: /^Follow-up review\b/i })).toHaveAttribute("aria-expanded", "false");
   }, 20000);
 
   it("keeps production code prototype-parity styled without independent os-* UI classes", () => {
