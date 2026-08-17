@@ -5,11 +5,13 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("thinking-orbs", () => ({
-  ThinkingOrb: ({ theme }: { theme: "light" | "dark" }) => <canvas data-testid="thinking-orb" data-theme={theme} />,
+  ThinkingOrb: ({ theme, size }: { theme: "light" | "dark"; size?: 20 | 64 }) => (
+    <canvas data-testid="thinking-orb" data-theme={theme} data-size={size} />
+  ),
 }));
 
 import { ThemeProvider } from "../app/theme";
-import { AppThinkingOrb } from "./AppThinkingOrb";
+import { AppThinkingOrb, normalizeThinkingOrbSize } from "./AppThinkingOrb";
 
 describe("AppThinkingOrb", () => {
   afterEach(() => {
@@ -53,6 +55,22 @@ describe("AppThinkingOrb", () => {
     );
 
     expect(screen.getByTestId("thinking-orb")).toHaveAttribute("data-theme", "light");
+  });
+
+  it("normalizes unsupported runtime sizes before they reach thinking-orbs", () => {
+    expect(normalizeThinkingOrbSize(18)).toBe(20);
+    expect(normalizeThinkingOrbSize(20)).toBe(20);
+    expect(normalizeThinkingOrbSize(64)).toBe(64);
+    expect(normalizeThinkingOrbSize(undefined)).toBe(64);
+
+    localStorage.setItem("ordersounds-theme-mode", "light");
+    render(
+      <ThemeProvider>
+        <AppThinkingOrb {...({ state: "composing", size: 18 } as any)} />
+      </ThemeProvider>,
+    );
+
+    expect(screen.getByTestId("thinking-orb")).toHaveAttribute("data-size", "20");
   });
 
   it("routes every app orb through the theme-aware adapter", () => {
