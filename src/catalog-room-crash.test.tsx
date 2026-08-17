@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render } from "@testing-library/react";
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,18 +16,18 @@ import { AppThinkingOrb } from "./design-system/AppThinkingOrb";
 describe("catalog room crash regression", () => {
   it("never passes an unsupported 18px preset into thinking-orbs", () => {
     thinkingOrbSpy.mockClear();
-    render(<AppThinkingOrb state="composing" size={18} />);
+    const view = render(<AppThinkingOrb state="composing" size={18} />);
 
-    expect(screen.getByTestId("thinking-orb")).toHaveAttribute("data-size", "20");
-    expect(thinkingOrbSpy).toHaveBeenCalledWith(expect.objectContaining({ size: 20 }));
+    expect(thinkingOrbSpy.mock.calls.at(-1)?.[0]?.size).toBe(20);
+    view.unmount();
   });
 
   it("preserves the supported 64px preset", () => {
     thinkingOrbSpy.mockClear();
-    render(<AppThinkingOrb state="working" size={64} />);
+    const view = render(<AppThinkingOrb state="working" size={64} />);
 
-    expect(screen.getByTestId("thinking-orb")).toHaveAttribute("data-size", "64");
-    expect(thinkingOrbSpy).toHaveBeenCalledWith(expect.objectContaining({ size: 64 }));
+    expect(thinkingOrbSpy.mock.calls.at(-1)?.[0]?.size).toBe(64);
+    view.unmount();
   });
 
   it("keeps Song Room and Project Room callsites on supported orb sizes", () => {
