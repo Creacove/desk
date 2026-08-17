@@ -52,6 +52,6 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src/features/music/MusicScreens.tsx
+          git add src/features/music/MusicScreens.tsx src/production-app-shell.test.tsx
           git commit -m 'design: prioritize Manager in Song Room'
           git push origin HEAD:design/song-room-manager-hierarchy
