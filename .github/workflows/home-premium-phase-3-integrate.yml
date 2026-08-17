@@ -1,0 +1,109 @@
+name: Home premium phase 3 integration
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - design/home-premium-phase-3
+
+permissions:
+  contents: write
+
+concurrency:
+  group: home-premium-phase-3-integration
+  cancel-in-progress: false
+
+jobs:
+  integrate:
+    if: ${{ github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[home-shell-integrated]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: design/home-premium-phase-3
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Wire Home brief refresh into the app shell
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("src/app/ProductionApp.tsx")
+          text = path.read_text()
+
+          state_old = '''  const [todayBriefPending, setTodayBriefPending] = useState(false);
+          const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
+          const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
+          const [publicContextPending, setPublicContextPending] = useState(false);'''
+          state_new = '''  const [todayBriefPending, setTodayBriefPending] = useState(false);
+          const [todayBriefError, setTodayBriefError] = useState<string | null>(null);
+          const [activeTodayBriefRun, setActiveTodayBriefRun] = useState<{ id: string; mode: TodayBriefGenerationMode } | null>(null);
+          const todayBriefRefreshInFlight = useRef(false);
+          const [publicContextPending, setPublicContextPending] = useState(false);'''
+
+          function_old = '''  async function refreshPublicContext() {
+          '''
+          function_new = '''  async function refreshTodaysBrief() {
+            if (todayBriefRefreshInFlight.current || todayBriefPending || activeTodayBriefRun) return;
+            todayBriefRefreshInFlight.current = true;
+            try {
+              await generateTodaysBrief("operating");
+            } catch {
+              // generateTodaysBrief owns the local error state; keep the existing brief visible.
+            } finally {
+              todayBriefRefreshInFlight.current = false;
+            }
+          }
+
+          async function refreshPublicContext() {
+          '''
+
+          props_old = '''              activityCount={notificationCount}
+                        onOpenActivityCenter={openActivityCenter}
+                      />'''
+          props_new = '''              activityCount={notificationCount}
+                        onOpenActivityCenter={openActivityCenter}
+                        briefPending={todayBriefPending}
+                        onRefreshBrief={() => void refreshTodaysBrief()}
+                      />'''
+
+          replacements = [
+              (state_old, state_new, "brief refresh request guard"),
+              (function_old, function_new, "brief refresh wrapper"),
+              (props_old, props_new, "Home refresh props"),
+          ]
+          for old, new, label in replacements:
+              if new in text:
+                  continue
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one {label} insertion point, found {count}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - run: npm ci --no-audit --no-fund
+      - run: npm run test -- src/desk-hq-editorial.test.tsx
+      - run: npm run build
+      - run: git diff --check
+
+      - name: Commit integration
+        shell: bash
+        run: |
+          if git diff --quiet -- src/app/ProductionApp.tsx; then
+            echo "App shell already integrated"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/app/ProductionApp.tsx
+          git commit -m "Wire premium Home refresh contract [home-shell-integrated]"
+          git push origin HEAD:design/home-premium-phase-3
