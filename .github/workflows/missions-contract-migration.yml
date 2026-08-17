@@ -21,7 +21,29 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: python scripts/migrate-missions-zero-learning-tests.py
+      - name: Fix duplicate pending-state migration and apply contracts
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('scripts/migrate-missions-zero-learning-tests.py')
+          text = p.read_text()
+          old = '''r(p, 'expect(screen.getByText("Manager reviewing")).toBeInTheDocument();', 'expect(screen.getByText("Saving…")).toBeInTheDocument();')
+r(p, 'expect(screen.getByText("Manager reviewing")).toBeInTheDocument();', 'expect(screen.queryByText("Saving…")).not.toBeInTheDocument();\\n    expect(screen.getByText("Provide 90-day thesis")).toBeInTheDocument();')'''
+          new = '''r(p, '''\'''    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();
+
+    resolveReview?.();\'''\''', '''\'''    expect(screen.getByText("Saving…")).toBeInTheDocument();
+
+    resolveReview?.();\'''\''')
+r(p, '''\'''    await waitFor(() => expect(onCompleteTask).toHaveResolved());
+    expect(screen.getByText("Manager reviewing")).toBeInTheDocument();\'''\''', '''\'''    await waitFor(() => expect(onCompleteTask).toHaveResolved());
+    expect(screen.queryByText("Saving…")).not.toBeInTheDocument();
+    expect(screen.getByText("Provide 90-day thesis")).toBeInTheDocument();\'''\''')'''
+          if old not in text:
+              raise SystemExit('duplicate pending-state migration block not found')
+          p.write_text(text.replace(old, new))
+          PY
+          python scripts/migrate-missions-zero-learning-tests.py
       - name: Run mission-focused tests
         run: npx vitest run src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx src/production-app-shell.test.tsx
       - name: Commit migration
