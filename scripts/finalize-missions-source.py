@@ -22,4 +22,7 @@ swap(p,'        id: `event-${event.id || event.type}-${index}`','        id: `ev
 
 # Match Song Room: hide the mobile bottom menu while inside Mission Room.
 swap("src/app/ProductionApp.tsx",'  const showMobileTabbar = view !== "conversationWorkspace" && view !== "investigation" && view !== "decisionPackage" && !(view === "musicWorkspace" && musicDetailOpen);','  const showMobileTabbar = view !== "conversationWorkspace" && view !== "investigation" && view !== "decisionPackage" && !(view === "musicWorkspace" && musicDetailOpen) && !(view === "missionsWorkspace" && missionRoomOpen);',True)
+
+# The existing branch workflow adds Missions/test files later; pre-stage the two files it did not know about.
+subprocess.run(["git","add","src/app/ProductionApp.tsx","src/types/cleanProduction.ts"],check=True)
 print("Mission source finalized")
