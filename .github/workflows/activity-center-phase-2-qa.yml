@@ -7,7 +7,10 @@ on:
     paths:
       - src/features/notifications/WorkspaceActivityCenter.tsx
       - src/workspace-activity-center.test.tsx
+      - src/production-app-shell.test.tsx
+      - src/supabase-client.test.ts
       - .github/workflows/activity-center-phase-2-qa.yml
+      - .github/workflows/activity-center-phase-2-fix-contracts.yml
 
 permissions:
   contents: read
@@ -23,8 +26,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Show stale Activity contracts
-        run: grep -R -n -F "Recently completed" src --include='*.test.ts' --include='*.test.tsx' || true
+      - name: Reject stale Activity contracts
+        run: |
+          if grep -R -n -F "Your workspace, as it happens" src --include='*.test.ts' --include='*.test.tsx'; then
+            echo "Stale Activity Center dialog contract remains in tests."
+            exit 1
+          fi
+          if grep -R -n -E 'toHaveTextContent\("(Needs you|Background activity|Nothing is waiting on you)' src/production-app-shell.test.tsx; then
+            echo "Stale bucket-based Activity Center assertions remain."
+            exit 1
+          fi
       - name: Activity regression
         run: npx vitest run src/workspace-activity-center.test.tsx --environment jsdom
       - name: Full repository suite
