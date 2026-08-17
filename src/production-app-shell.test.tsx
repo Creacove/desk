@@ -1934,8 +1934,8 @@ describe("Clean production prototype-match shell", () => {
     const mobileMetrics = within(desk).getByTestId("desk-mobile-metrics-grid");
     expect(mobileMetrics).toHaveTextContent("Monthly listeners");
     expect(within(mobileMetrics).getAllByTestId("desk-mobile-metric-card")).toHaveLength(4);
-    expect(mobileMetrics).not.toHaveTextContent("Spotify");
-    expect(mobileMetrics).not.toHaveTextContent("city signal");
+    expect(mobileMetrics).toHaveTextContent("Spotify");
+    expect(mobileMetrics).toHaveTextContent("city signal");
     expect(within(mobileMetrics).queryByText("Skip rate")).not.toBeInTheDocument();
     expect(within(desk).queryByRole("button", { name: "See all 6 metrics" })).not.toBeInTheDocument();
 
@@ -2107,7 +2107,7 @@ describe("Clean production prototype-match shell", () => {
     expect(intelligenceStrip).toHaveTextContent("1.3M views");
     expect(screen.getByTestId("desk-desktop-manager-read")).not.toHaveTextContent("Treat this as track-level exposure context");
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
-    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('break-words text-[11px] font-semibold leading-tight text-muted-foreground">{metric.label}</p>');
+    expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).toContain('break-words text-[11px] font-semibold leading-tight text-muted-foreground">{label}</p>');
     expect(readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8")).not.toContain("metric.value}</p>");
   }, 20000);
 
