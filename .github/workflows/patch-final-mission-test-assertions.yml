@@ -1,0 +1,55 @@
+name: Patch final mission test assertions
+
+on:
+  push:
+    branches:
+      - design/mission-workspace-simplification
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: design/mission-workspace-simplification
+          fetch-depth: 0
+
+      - name: Patch exact final assertions
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          path = Path('src/production-app-shell.test.tsx')
+          text = path.read_text()
+
+          def once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise RuntimeError(f'{label}: expected exactly 1 match, found {count}')
+              text = text.replace(old, new, 1)
+
+          once('    expect(screen.getByText("Confirm task routing")).toBeInTheDocument();', '    expect(screen.getByRole("heading", { name: "Confirm task routing" })).toBeInTheDocument();', 'task sheet heading')
+          once('    expect(screen.getAllByText("Confirm split sheet").length).toBeGreaterThan(0);\n', '', 'removed split-sheet copy')
+          once('    expect(screen.getAllByText("Commission Data Lead power check & smartlink mapping").length).toBeGreaterThan(0);\n', '', 'removed pulse next-action copy')
+          once('    expect(within(firstStage).getByRole("button", { name: /^Mobile hierarchy\\b/i })).toHaveAttribute("aria-expanded", "true");\n    expect(within(secondStage).getByRole("button", { name: /^Follow-up review\\b/i })).toHaveAttribute("aria-expanded", "false");', '    expect(within(firstStage).getByRole("button", { name: /Mobile hierarchy.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "true");\n    expect(within(secondStage).getByRole("button", { name: /Follow-up review.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "false");', 'mobile checkpoint accessible names')
+
+          path.write_text(text)
+          PY
+
+      - name: Commit final assertions
+        shell: bash
+        run: |
+          if git diff --quiet -- src/production-app-shell.test.tsx; then
+            echo 'No patch produced' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/production-app-shell.test.tsx
+          git commit -m 'test: align final mission integration assertions'
+          git push origin HEAD:design/mission-workspace-simplification
