@@ -14,6 +14,7 @@ import {
   type MissionRoomTab,
   type MissionSurface,
   missionCheckpoints,
+  getNextArtistTask,
   missionEvents,
   missionNeedsUser,
   missionNotes,
@@ -180,9 +181,9 @@ function MissionList({
         active={activeTab}
         onChange={(value) => setActiveTab(value as MissionListTab)}
         items={[
-          { value: "todo", label: "To do" },
-          { value: "progress", label: "In progress" },
-          { value: "done", label: "Done" },
+          { id: "todo", label: "To do" },
+          { id: "progress", label: "In progress" },
+          { id: "done", label: "Done" },
         ]}
       />
 
@@ -225,7 +226,7 @@ function MissionRow({
 }) {
   const tasks = missionTasks(mission);
   const doneCount = tasks.filter(taskIsDone).length;
-  const currentTask = mode === "todo" ? tasks.find((task) => !taskIsDone(task) && task.owner === "artist") : undefined;
+  const currentTask = mode === "todo" ? getNextArtistTask(tasks, missionCheckpoints(mission), []) : undefined;
 
   return (
     <button
@@ -306,8 +307,8 @@ function MissionRoom({
         active={surface}
         onChange={(value) => onSurface(value as MissionSurface)}
         items={[
-          { value: "work", label: "Work" },
-          { value: "updates", label: "Updates" },
+          { id: "work", label: "Work" },
+          { id: "updates", label: "Updates" },
         ]}
       />
 
@@ -338,7 +339,7 @@ function UpdatesSurface({ notes, events }: { notes: MissionNoteViewModel[]; even
         createdAt: readCreatedAt(note),
       })),
       ...events.map((event, index) => ({
-        id: `event-${event.id || event.type}-${index}`,
+        id: `event-${(event as { id?: string }).id || event.type}-${index}`,
         order: notes.length + index,
         message: event.summary,
         actor: humanActor(event.actor),

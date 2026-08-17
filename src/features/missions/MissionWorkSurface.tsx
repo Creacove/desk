@@ -154,6 +154,10 @@ export function WorkSurface({
     );
   }
 
+  if (!checkpoints.length) {
+    return <p className="border-t border-foreground/8 py-8 text-[13px] font-medium text-muted-foreground">No work yet</p>;
+  }
+
   return (
     <div className="grid min-w-0 gap-2">
       <div className="border-y border-foreground/9">

@@ -2181,7 +2181,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "View mission" }));
     expect((await screen.findAllByText("Release Night Bus on June 12")).length).toBeGreaterThan(0);
-    expect(await screen.findByText("The path from here")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Work/ })).toBeInTheDocument();
   }, 20000);
 
   it("continues Manager chat messages in place with a pending manager reply", async () => {
@@ -2810,7 +2810,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Canonical task routing" }));
     fireEvent.click(screen.getByRole("button", { name: "View task" }));
 
-    expect(await screen.findByText("The path from here")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Confirm task routing" })).toBeInTheDocument();
   }, 20000);
@@ -6286,11 +6286,10 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getAllByRole("button", { name: /Release Night Bus on June 12/i })[0]);
     expect(screen.getByRole("heading", { name: "Release Night Bus on June 12" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
-    expect(screen.getByText("The path from here")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Updates/ }));
-    expect(screen.getByRole("heading", { name: "What changed" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Updates/ })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
     expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
@@ -6314,7 +6313,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(within(rail).getByRole("button", { name: "Missions" }));
 
     expect(screen.getByRole("heading", { name: "Missions" })).toBeInTheDocument();
-    expect(screen.getByText("Nothing is in motion yet.")).toBeInTheDocument();
+    expect(screen.getByText("No missions yet")).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Create first mission" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: /Run Mission Genesis/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Test mission page" })).not.toBeInTheDocument();
@@ -6370,10 +6369,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: /Touring Plan - Market Selection/i })[0]);
 
-    expect(await screen.findByText("The path from here")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
-    expect(screen.getByText("Private exports and Shazam heatmap snapshots are missing.")).toBeInTheDocument();
     expect(screen.queryByTestId("mission-pulse")).not.toBeInTheDocument();
     expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();
   }, 20000);
@@ -6467,9 +6465,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "Missions" })).toBeInTheDocument();
     const missionCard = screen.getAllByRole("button", { name: /Define the first repeatable release lane/i })[0];
 
-    expect(screen.getByRole("heading", { name: "Needs you" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "To do" })).toHaveAttribute("aria-pressed", "true");
     expect(within(missionCard).getByText("Collect release assets")).toBeInTheDocument();
-    expect(missionCard).toHaveTextContent(/Release lane clarity\s*·\s*0 of 2 done/);
+    expect(missionCard).toHaveTextContent(/0 of 2 done/);
     expect(within(missionCard).queryByText("1 open task")).not.toBeInTheDocument();
     expect(within(missionCard).queryByText("35%")).not.toBeInTheDocument();
   }, 20000);
@@ -6573,13 +6571,19 @@ describe("Clean production prototype-match shell", () => {
     const tabRail = screen.getByTestId("mobile-mission-tabs");
     expect(within(tabRail).getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(within(tabRail).getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
-    expect(tabRail).not.toHaveClass("overflow-x-auto");
-    expect(screen.getByText("The path from here")).toBeInTheDocument();
+    expect(tabRail).toHaveClass("workspace-tab-rail");
+    expect(screen.queryByText("The path from here")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-app-topbar")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("mobile-tabbar")).not.toBeInTheDocument();
 
     const firstStage = screen.getByTestId("task-group-checkpoint-mobile-one");
     const secondStage = screen.getByTestId("task-group-checkpoint-mobile-two");
     expect(within(firstStage).getByRole("button", { name: /Mobile hierarchy.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "true");
     expect(within(secondStage).getByRole("button", { name: /Follow-up review.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to Missions" }));
+    expect(screen.getByTestId("mobile-app-topbar")).toBeInTheDocument();
+    expect(screen.getByTestId("mobile-tabbar")).toBeInTheDocument();
   }, 20000);
 
   it("keeps production code prototype-parity styled without independent os-* UI classes", () => {

@@ -223,7 +223,6 @@ export function TaskSheet({
           ) : workMode === "manager_work" ? (
             <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
               <p className="text-[13px] font-bold text-foreground">In progress</p>
-              <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">The team is working on this.</p>
             </div>
           ) : intent ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
