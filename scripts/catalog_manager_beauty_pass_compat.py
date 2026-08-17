@@ -112,4 +112,16 @@ test = test.replace(
     'expect(songRoom).toHaveTextContent("Song room");',
     'expect(songRoom).not.toHaveTextContent("Song room");',
 )
+test = test.replace(
+    'expect(projectRoom).toHaveTextContent("No mission linked");',
+    'expect(projectRoom).not.toHaveTextContent("No mission linked");',
+)
+test = test.replace(
+    'expect(projectLinkedWork).toHaveTextContent("1 task attached");',
+    'expect(projectLinkedWork).toHaveTextContent("1 task");',
+)
+test = test.replace(
+    'expect(projectLinkedWork).toHaveTextContent("2 tasks attached");',
+    'expect(projectLinkedWork).toHaveTextContent("2 tasks");',
+)
 test_path.write_text(test)
