@@ -1437,11 +1437,10 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Night Bus")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Open Activity Center/i })[1]);
-    const activityCenter = await screen.findByRole("dialog", { name: "Your workspace, as it happens" });
-    expect(activityCenter).toHaveTextContent("Needs you");
-    expect(activityCenter).toHaveTextContent("Background activity");
-    expect(activityCenter).toHaveTextContent("Nothing is waiting on you");
+    const activityCenter = await screen.findByRole("dialog", { name: "Activity" });
     expect(activityCenter).toHaveTextContent("Spotify public catalog connected");
+    expect(activityCenter).not.toHaveTextContent("Needs you");
+    expect(activityCenter).not.toHaveTextContent("Background activity");
 
     fireEvent.click(within(activityCenter).getByRole("button", { name: "Close Activity Center" }));
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
@@ -1750,12 +1749,11 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByTestId("mobile-tab-label-Settings")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByTestId("mobile-notification-trigger"));
-    const notificationSheet = await screen.findByRole("dialog", { name: "Your workspace, as it happens" });
-    expect(notificationSheet).toHaveTextContent("Needs you");
-    expect(notificationSheet).toHaveTextContent("Background activity");
-    expect(notificationSheet).toHaveTextContent("Nothing is waiting on you");
-    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");
+    const notificationSheet = await screen.findByRole("dialog", { name: "Activity" });
     expect(notificationSheet).toHaveTextContent("Spotify public catalog connected");
+    expect(notificationSheet).not.toHaveTextContent("Needs you");
+    expect(notificationSheet).not.toHaveTextContent("Background activity");
+    expect(notificationSheet).not.toHaveTextContent("Private analytics missing");
   }, 20000);
 
   it("keeps Desk HQ movement compact and moves older activity into history", async () => {
@@ -1798,9 +1796,9 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Started Chartmetric enrichment for GBESUNMO.")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByRole("button", { name: /Open Activity Center/i })[1]);
-    const activityCenter = await screen.findByRole("dialog", { name: "Your workspace, as it happens" });
-    expect(activityCenter).toHaveTextContent("Needs you");
-    expect(activityCenter).toHaveTextContent("Background activity");
+    const activityCenter = await screen.findByRole("dialog", { name: "Activity" });
+    expect(activityCenter).not.toHaveTextContent("Needs you");
+    expect(activityCenter).not.toHaveTextContent("Background activity");
     expect(activityCenter).toHaveTextContent(longMovement);
     expect(activityCenter).toHaveTextContent("Started Chartmetric enrichment for GBESUNMO.");
   }, 20000);
