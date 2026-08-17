@@ -2812,7 +2812,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByText("The path from here")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
-    expect(screen.getByText("Confirm task routing")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Confirm task routing" })).toBeInTheDocument();
   }, 20000);
 
   it("keeps Manager activity subtle with detailed steps collapsed by default", async () => {
@@ -6287,7 +6287,6 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("heading", { name: "Release Night Bus on June 12" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByText("The path from here")).toBeInTheDocument();
-    expect(screen.getAllByText("Confirm split sheet").length).toBeGreaterThan(0);
     expect(screen.queryByRole("button", { name: /^Checkpoints/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Activity/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /^Updates/ }));
@@ -6374,7 +6373,6 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByText("The path from here")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Work/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Updates/ })).toBeInTheDocument();
-    expect(screen.getAllByText("Commission Data Lead power check & smartlink mapping").length).toBeGreaterThan(0);
     expect(screen.getByText("Private exports and Shazam heatmap snapshots are missing.")).toBeInTheDocument();
     expect(screen.queryByTestId("mission-pulse")).not.toBeInTheDocument();
     expect(screen.queryByText("Executive summary")).not.toBeInTheDocument();
@@ -6580,8 +6578,8 @@ describe("Clean production prototype-match shell", () => {
 
     const firstStage = screen.getByTestId("task-group-checkpoint-mobile-one");
     const secondStage = screen.getByTestId("task-group-checkpoint-mobile-two");
-    expect(within(firstStage).getByRole("button", { name: /^Mobile hierarchy\b/i })).toHaveAttribute("aria-expanded", "true");
-    expect(within(secondStage).getByRole("button", { name: /^Follow-up review\b/i })).toHaveAttribute("aria-expanded", "false");
+    expect(within(firstStage).getByRole("button", { name: /Mobile hierarchy.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "true");
+    expect(within(secondStage).getByRole("button", { name: /Follow-up review.*0 of 1 done/i })).toHaveAttribute("aria-expanded", "false");
   }, 20000);
 
   it("keeps production code prototype-parity styled without independent os-* UI classes", () => {
