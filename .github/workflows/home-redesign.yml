@@ -8,6 +8,13 @@ on:
       - .github/workflows/home-redesign.yml
       - scripts/home_redesign.py
       - src/desk-hq-editorial.test.tsx
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/home-redesign.yml
+      - scripts/home_redesign.py
+      - src/desk-hq-editorial.test.tsx
 
 permissions:
   contents: write
