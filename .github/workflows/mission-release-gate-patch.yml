@@ -1,0 +1,89 @@
+name: Mission release gate patch
+
+on:
+  push:
+    branches: [design/mission-workspace-simplification]
+    paths: [.github/workflows/mission-release-gate-patch.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: design/mission-workspace-simplification
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Remove fake persistence and add regression
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          work = Path('src/features/missions/MissionWorkSurface.tsx')
+          text = work.read_text()
+          old = '''      const uploaded = onUploadTaskDeliverable
+        ? await onUploadTaskDeliverable(task.id, { title: deliverable.title, file })
+        : {
+            ...deliverable,
+            status: "uploaded" as const,
+            documentId: `local-${task.id}-${Date.now()}`,
+            fileName: file.name,
+            validationSummary: "Ready for Manager review.",
+          };'''
+          new = '''      if (!onUploadTaskDeliverable) {
+        throw new Error("Evidence upload is unavailable. The file was not saved.");
+      }
+      const uploaded = await onUploadTaskDeliverable(task.id, { title: deliverable.title, file });'''
+          if old not in text:
+              raise SystemExit('Expected fake upload fallback not found; refusing an unsafe blind patch.')
+          work.write_text(text.replace(old, new, 1))
+
+          test = Path('src/mission-task-deliverables.test.tsx')
+          text = test.read_text()
+          marker = '''  it("passes an optional uploaded document into completion when supplied", async () => {'''
+          regression = '''  it("never fabricates evidence when the upload persistence adapter is unavailable", async () => {
+    const onCompleteTask = vi.fn(async () => undefined);
+    renderMission(missionWithThesis(), { onCompleteTask, openTaskId: "task-thesis" });
+
+    fireEvent.change(screen.getByLabelText("Upload optional context for Provide 90-day thesis"), {
+      target: { files: [new File(["positioning"], "thesis.pdf", { type: "application/pdf" })] },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Evidence upload is unavailable. The file was not saved.");
+    expect(screen.getByText("thesis.pdf")).toBeInTheDocument();
+
+    const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+
+    await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
+  });
+
+'''
+          if marker not in text:
+              raise SystemExit('Regression insertion point not found.')
+          if 'never fabricates evidence when the upload persistence adapter is unavailable' not in text:
+              text = text.replace(marker, regression + marker, 1)
+          test.write_text(text)
+          PY
+      - name: Install dependencies
+        run: npm ci
+      - name: Run mission persistence regressions
+        run: npx vitest run --environment jsdom --pool=vmThreads src/mission-task-deliverables.test.tsx src/mission-workspace-simplification.test.tsx
+      - name: Commit patch and remove this temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/mission-release-gate-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/features/missions/MissionWorkSurface.tsx src/mission-task-deliverables.test.tsx .github/workflows/mission-release-gate-patch.yml
+          git commit -m 'Harden mission evidence persistence'
+          git push origin HEAD:design/mission-workspace-simplification
