@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../lib/utils";
 import type {
   MissionCheckpointViewModel,
@@ -8,7 +8,7 @@ import type {
   MissionViewModel,
 } from "../../types/cleanProduction";
 import { TaskSheet } from "./MissionTaskSheet";
-import { MissionBrief, MissionNow, StageIcon, TaskRow } from "./MissionWorkParts";
+import { TaskRow } from "./MissionWorkParts";
 import {
   type CompletionIntent,
   type TaskMutationState,
@@ -16,8 +16,6 @@ import {
   getBlockingDependency,
   getInitialCheckpointId,
   getNextArtistTask,
-  humanCheckpointStatus,
-  isOpenArtistTask,
   isTaskOptimisticallyDone,
   omitKey,
   replaceDeliverable,
@@ -43,8 +41,9 @@ export function WorkSurface({
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
   onWorkWithManager?: (taskId: string) => void;
 }) {
+  const initialCheckpointId = useMemo(() => getInitialCheckpointId(checkpoints, tasks), [checkpoints, tasks]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(targetTaskId ?? null);
-  const [openStageId, setOpenStageId] = useState<string>(() => getInitialCheckpointId(checkpoints, tasks));
+  const [openStageIds, setOpenStageIds] = useState<string[]>(() => initialCheckpointId ? [initialCheckpointId] : []);
   const [optimisticApproved, setOptimisticApproved] = useState<string[]>([]);
   const [optimisticCompleted, setOptimisticCompleted] = useState<string[]>([]);
   const [mutations, setMutations] = useState<Record<string, TaskMutationState>>({});
@@ -55,13 +54,19 @@ export function WorkSurface({
   }, [targetTaskId]);
 
   useEffect(() => {
-    const next = getInitialCheckpointId(checkpoints, tasks);
-    if (!openStageId || !checkpoints.some((checkpoint) => checkpoint.id === openStageId)) setOpenStageId(next);
-  }, [checkpoints, tasks, openStageId]);
+    setOpenStageIds((current) => {
+      const valid = current.filter((id) => checkpoints.some((checkpoint) => checkpoint.id === id));
+      if (valid.length || !initialCheckpointId) return valid;
+      return [initialCheckpointId];
+    });
+  }, [checkpoints, initialCheckpointId]);
 
   const selectedTask = selectedTaskId ? tasks.find((task) => task.id === selectedTaskId) ?? null : null;
   const attentionTask = getNextArtistTask(tasks, checkpoints, optimisticCompleted);
-  const attentionCheckpoint = attentionTask ? checkpoints.find((checkpoint) => checkpoint.id === attentionTask.checkpointId) : undefined;
+  const selectedCheckpoint = selectedTask
+    ? checkpoints.find((checkpoint) => checkpoint.id === selectedTask.checkpointId)
+    : undefined;
+  const selectedBlocker = selectedCheckpoint ? getBlockingDependency(selectedCheckpoint, checkpoints) : undefined;
 
   async function approveTask(task: MissionTaskViewModel) {
     setMutations((current) => ({ ...current, [task.id]: { kind: "approve", status: "pending" } }));
@@ -118,9 +123,7 @@ export function WorkSurface({
     }));
 
     try {
-      if (!onUploadTaskDeliverable) {
-        throw new Error("Evidence upload is unavailable. The file was not saved.");
-      }
+      if (!onUploadTaskDeliverable) throw new Error("Evidence upload is unavailable. The file was not saved.");
       const uploaded = await onUploadTaskDeliverable(task.id, { title: deliverable.title, file });
       setDeliverablesByTask((current) => ({
         ...current,
@@ -143,117 +146,83 @@ export function WorkSurface({
     }
   }
 
+  function toggleStep(checkpointId: string) {
+    setOpenStageIds((current) =>
+      current.includes(checkpointId)
+        ? current.filter((id) => id !== checkpointId)
+        : [...current, checkpointId],
+    );
+  }
+
   return (
-    <div className="grid min-w-0 gap-8">
-      <MissionNow
-        mission={mission}
-        task={attentionTask}
-        checkpoint={attentionCheckpoint}
-        optimisticApproved={optimisticApproved}
-        optimisticCompleted={optimisticCompleted}
-        mutations={mutations}
-        onOpenTask={(task) => setSelectedTaskId(task.id)}
-      />
+    <div className="grid min-w-0 gap-2">
+      <div className="border-y border-foreground/9">
+        {checkpoints.map((checkpoint) => {
+          const stageTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
+          const stageDone = stageTasks.filter((task) => isTaskOptimisticallyDone(task, optimisticCompleted)).length;
+          const open = openStageIds.includes(checkpoint.id);
+          const lockedBy = getBlockingDependency(checkpoint, checkpoints);
+          const currentTaskInStep = attentionTask?.checkpointId === checkpoint.id ? attentionTask : null;
 
-      <section>
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Work</p>
-            <h2 className="mt-1 font-display text-[23px] font-semibold tracking-[-0.025em] text-foreground">The path from here</h2>
-          </div>
-          <span className="text-[11px] font-semibold text-muted-foreground">{tasks.filter((task) => isTaskOptimisticallyDone(task, optimisticCompleted)).length}/{tasks.length || 0} done</span>
-        </div>
-
-        <div className="border-y border-foreground/9">
-          {checkpoints.map((checkpoint) => {
-            const stageTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
-            const stageDone = stageTasks.filter((task) => isTaskOptimisticallyDone(task, optimisticCompleted)).length;
-            const open = openStageId === checkpoint.id;
-            const lockedBy = getBlockingDependency(checkpoint, checkpoints);
-            const stageComplete = checkpoint.status === "Met";
-            const needsAttention = stageTasks.some((task) => isOpenArtistTask(task) && !isTaskOptimisticallyDone(task, optimisticCompleted));
-            const stageStatus = lockedBy
-              ? `Starts after ${lockedBy.title}`
-              : checkpoint.status === "Needs revision"
-                ? "Needs attention"
-                : stageTasks.length && stageDone === stageTasks.length && !stageComplete
-                  ? "Manager reviewing"
-                  : stageTasks.length
-                    ? `${stageDone} of ${stageTasks.length} done`
-                    : checkpoint.status === "Watching signal"
-                      ? "Manager is watching this"
-                      : humanCheckpointStatus(checkpoint.status);
-
-            return (
-              <article key={checkpoint.id} data-testid={`task-group-${checkpoint.id}`} className="border-b border-foreground/8 last:border-b-0">
-                <button
-                  type="button"
-                  onClick={() => setOpenStageId((current) => current === checkpoint.id ? "" : checkpoint.id)}
-                  className="grid min-h-[72px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 py-3.5 text-left sm:min-h-[78px]"
-                  aria-expanded={open}
-                >
-                  <StageIcon complete={stageComplete} attention={needsAttention || checkpoint.status === "Needs revision"} phase={checkpoint.phase} />
-                  <span className="min-w-0">
-                    <span className="block truncate text-[15px] font-bold text-foreground">{checkpoint.title}</span>
-                    <span className="mt-1 block truncate text-[11px] font-semibold text-muted-foreground">
-                      {stageStatus}
-                    </span>
+          return (
+            <section key={checkpoint.id} data-testid={`task-group-${checkpoint.id}`} className="border-b border-foreground/8 last:border-b-0">
+              <button
+                type="button"
+                onClick={() => toggleStep(checkpoint.id)}
+                className="flex min-h-[68px] w-full items-center justify-between gap-4 py-3.5 text-left"
+                aria-expanded={open}
+              >
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-bold leading-snug text-foreground">
+                    Step {checkpoint.phase} · {checkpoint.title}
                   </span>
-                  <ChevronDown className={cn("h-4 w-4 text-muted-foreground/55 transition-transform", open && "rotate-180")} />
-                </button>
+                  <span className="mt-1 block text-[11px] font-semibold text-muted-foreground">
+                    {stageDone} of {stageTasks.length} done
+                  </span>
+                </span>
+                <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground/55 transition-transform", open && "rotate-180")} />
+              </button>
 
-                {open ? (
-                  <div className="pb-3 pl-10 sm:pl-11">
-                    {lockedBy ? (
-                      <p className="pb-4 pr-3 text-[12px] font-medium leading-relaxed text-muted-foreground">
-                        This stage will open after <span className="font-bold text-foreground">{lockedBy.title}</span>.
-                      </p>
-                    ) : null}
+              {open ? (
+                <div className="relative mb-4 ml-2 border-l border-foreground/10 pl-4 sm:ml-3 sm:pl-5">
+                  {checkpoint.status === "Needs revision" && checkpoint.blockedReason ? (
+                    <p className="mb-2 rounded-xl bg-[#fff8f3] px-3 py-2.5 text-[12px] font-semibold leading-relaxed text-[#9a3412]">
+                      Changes requested: {checkpoint.blockedReason}
+                    </p>
+                  ) : null}
 
-                    {checkpoint.status === "Needs revision" && checkpoint.blockedReason ? (
-                      <div className="mb-3 mr-3 rounded-[14px] bg-[#fff8f3] px-3.5 py-3 text-[12px] font-semibold leading-relaxed text-[#9a3412]">
-                        {checkpoint.blockedReason}
-                      </div>
-                    ) : null}
-
-                    {stageTasks.length ? (
-                      <div className="divide-y divide-foreground/7 border-t border-foreground/7">
-                        {stageTasks.map((task) => (
-                          <TaskRow
-                            key={task.id}
-                            task={task}
-                            approved={optimisticApproved.includes(task.id) || task.approvalState === "approved"}
-                            done={isTaskOptimisticallyDone(task, optimisticCompleted)}
-                            mutation={mutations[task.id]}
-                            locked={Boolean(lockedBy)}
-                            onOpen={() => setSelectedTaskId(task.id)}
-                          />
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="pb-4 pr-3 text-[12px] font-medium leading-relaxed text-muted-foreground">
-                        Nothing is needed from you here. The Manager will surface an action if that changes.
-                      </p>
-                    )}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
-        </div>
-      </section>
-
-      <MissionBrief mission={mission} />
+                  {stageTasks.length ? (
+                    <div className="grid gap-1">
+                      {stageTasks.map((task) => (
+                        <TaskRow
+                          key={task.id}
+                          task={task}
+                          done={isTaskOptimisticallyDone(task, optimisticCompleted)}
+                          mutation={mutations[task.id]}
+                          availableAfter={lockedBy?.title}
+                          emphasized={currentTaskInStep?.id === task.id}
+                          onOpen={() => setSelectedTaskId(task.id)}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
+      </div>
 
       {selectedTask ? (
         <TaskSheet
           key={selectedTask.id}
           task={selectedTask}
-          checkpoint={checkpoints.find((checkpoint) => checkpoint.id === selectedTask.checkpointId)}
+          checkpoint={selectedCheckpoint}
           approved={optimisticApproved.includes(selectedTask.id) || selectedTask.approvalState === "approved"}
           done={isTaskOptimisticallyDone(selectedTask, optimisticCompleted)}
           mutation={mutations[selectedTask.id]}
           deliverables={resolveTaskDeliverables(selectedTask, deliverablesByTask[selectedTask.id])}
+          availableAfter={selectedBlocker?.title}
           onClose={() => setSelectedTaskId(null)}
           onApprove={() => approveTask(selectedTask)}
           onComplete={(intent, note) => {
