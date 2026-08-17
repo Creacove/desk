@@ -1,0 +1,126 @@
+name: Missions zero-learning QA
+
+on:
+  push:
+    branches: [design/missions-zero-learning-ux]
+
+permissions:
+  contents: read
+
+env:
+  VITE_SUPABASE_URL: http://localhost:54321
+  VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+
+jobs:
+  typecheck:
+    name: TypeScript regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Reject new browser TypeScript errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          HEAD_SHA="$(git rev-parse HEAD)"
+          git checkout --detach origin/main
+          npx tsc --noEmit --pretty false > /tmp/tsc-base.txt 2>&1 || true
+          git checkout --detach "$HEAD_SHA"
+          npx tsc --noEmit --pretty false > /tmp/tsc-head.txt 2>&1 || true
+          python - <<'PY'
+          from collections import Counter
+          from pathlib import Path
+          import re, sys
+          location = re.compile(r'\(\d+,\d+\)')
+          def diagnostics(path):
+              lines=[]
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  line=location.sub('(LINE,COL)', raw.strip())
+                  if line.startswith('supabase/functions/') and 'error TS5097:' in line:
+                      continue
+                  lines.append(line)
+              return Counter(lines)
+          added=diagnostics('/tmp/tsc-head.txt')-diagnostics('/tmp/tsc-base.txt')
+          if added:
+              print('New TypeScript diagnostics:')
+              for line,count in sorted(added.items()):
+                  for _ in range(count): print('  + '+line)
+              sys.exit(1)
+          print('No new browser TypeScript diagnostics.')
+          PY
+
+  tests:
+    name: Full repository suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+
+  browser-smoke:
+    name: Chromium production-shell smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build fixture shell
+        env:
+          VITE_APP_MODE: production
+          VITE_PRODUCTION_FIXTURES: "true"
+        run: npm run build
+      - name: Start preview and Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/desk-preview.log 2>&1 &
+          echo $! > /tmp/desk-preview.pid
+          for attempt in {1..40}; do
+            if curl --fail --silent http://127.0.0.1:4173 >/dev/null; then break; fi
+            sleep 0.25
+          done
+          curl --fail --silent http://127.0.0.1:4173 >/dev/null
+          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || true)"
+          test -n "$CHROME_BIN"
+          "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu --remote-debugging-port=9222 --user-data-dir=/tmp/desk-chrome about:blank > /tmp/desk-chrome.log 2>&1 &
+          echo $! > /tmp/desk-chrome.pid
+      - run: node scripts/chrome-production-smoke.mjs
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          cat /tmp/desk-preview.log || true
+          cat /tmp/desk-chrome.log || true
+      - name: Stop browser and preview
+        if: always()
+        run: |
+          kill "$(cat /tmp/desk-chrome.pid 2>/dev/null)" 2>/dev/null || true
+          kill "$(cat /tmp/desk-preview.pid 2>/dev/null)" 2>/dev/null || true
