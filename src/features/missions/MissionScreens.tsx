@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import {
   Button,
@@ -73,24 +73,34 @@ export function MissionsWorkspace({
 }) {
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
   const [surface, setSurface] = useState<MissionSurface>("work");
-  const [pendingDetail, setPendingDetail] = useState<PendingMissionDetail | null>(null);
+  const [pendingDetailId, setPendingDetailId] = useState<string | null>(null);
+  const pendingDetailSource = useRef<PendingMissionDetail | null>(null);
+  const pendingDetailTimer = useRef<number | null>(null);
 
   const activeMissions = missions.filter((mission) => mission.status !== "complete");
   const completedMissions = missions.filter((mission) => mission.status === "complete");
   const selected = missions.find((mission) => mission.id === selectedMissionId) ?? activeMissions[0] ?? missions[0] ?? null;
-  const roomPending = detailPending || Boolean(pendingDetail && pendingDetail.id === selected?.id);
+  const roomPending = detailPending || Boolean(pendingDetailId && pendingDetailId === selected?.id);
 
   useEffect(() => {
-    if (!pendingDetail) return;
-    const current = missions.find((mission) => mission.id === pendingDetail.id);
-    if (current && current !== pendingDetail.source) setPendingDetail(null);
-  }, [missions, pendingDetail]);
+    const pending = pendingDetailSource.current;
+    if (!pending) return;
+    const current = missions.find((mission) => mission.id === pending.id);
+    if (!current || current === pending.source) return;
+    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
+    pendingDetailTimer.current = null;
+    pendingDetailSource.current = null;
+    setPendingDetailId(null);
+  }, [missions]);
 
   useEffect(() => {
-    if (!pendingDetail) return;
-    const timeout = window.setTimeout(() => setPendingDetail((current) => current?.id === pendingDetail.id ? null : current), 10_000);
+    if (!pendingDetailId) return;
+    const timeout = window.setTimeout(() => {
+      if (pendingDetailSource.current?.id === pendingDetailId) pendingDetailSource.current = null;
+      setPendingDetailId((current) => current === pendingDetailId ? null : current);
+    }, 10_000);
     return () => window.clearTimeout(timeout);
-  }, [pendingDetail]);
+  }, [pendingDetailId]);
 
   useEffect(() => {
     if (openRoomRequestKey <= 0) return;
@@ -100,9 +110,12 @@ export function MissionsWorkspace({
 
   useEffect(() => {
     if (listRequestKey <= 0) return;
+    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
+    pendingDetailTimer.current = null;
+    pendingDetailSource.current = null;
+    setPendingDetailId(null);
     setRoomMode("list");
     setSurface("work");
-    setPendingDetail(null);
   }, [listRequestKey]);
 
   useEffect(() => {
@@ -110,8 +123,24 @@ export function MissionsWorkspace({
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [roomMode, onRoomModeChange]);
 
+  useEffect(() => () => {
+    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
+  }, []);
+
+  function clearPendingDetail() {
+    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
+    pendingDetailTimer.current = null;
+    pendingDetailSource.current = null;
+    setPendingDetailId(null);
+  }
+
   function openMission(mission: MissionViewModel) {
-    setPendingDetail({ id: mission.id, source: mission });
+    clearPendingDetail();
+    pendingDetailSource.current = { id: mission.id, source: mission };
+    pendingDetailTimer.current = window.setTimeout(() => {
+      if (pendingDetailSource.current?.id === mission.id) setPendingDetailId(mission.id);
+      pendingDetailTimer.current = null;
+    }, 120);
     onSelectMission(mission.id);
     setSurface("work");
     setRoomMode("room");
@@ -155,7 +184,7 @@ export function MissionsWorkspace({
       surface={surface}
       onSurface={setSurface}
       onBack={() => {
-        setPendingDetail(null);
+        clearPendingDetail();
         setRoomMode("list");
       }}
       onApproveTask={onApproveTask}
