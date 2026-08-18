@@ -48,6 +48,16 @@ jobs:
           git reset --hard c17768ab46d3be038708ce846e251a1304a97a77
           git clean -fdx
           git switch -C design/desktop-system-final-pass c17768ab46d3be038708ce846e251a1304a97a77
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py')
+          s = p.read_text()
+          old = '      workspace?.contextComplete &&\n      workspace.entitlementActive &&\n      workspace.setupStatus'
+          new = '      workspace?.billingCheckoutSessionId &&\n      workspace.setupStatus'
+          if s.count(old) != 2:
+              raise SystemExit(f'Unexpected release-script reconciliation count: {s.count(old)}')
+          p.write_text(s.replace(old, new))
+          PY
           python /tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py .
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
