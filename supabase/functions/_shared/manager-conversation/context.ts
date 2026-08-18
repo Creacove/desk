@@ -105,11 +105,7 @@ function compactFocusedMusicSubject(value: unknown) {
     releasedAt: compactText(subject.releasedAt ?? subject.released_at, 120),
     sourceKind: compactText(subject.sourceKind ?? subject.source_kind, 120),
     sourceLimit: compactText(subject.sourceLimit ?? subject.source_limit, 600),
-
-    // Metadata is intentionally part of the always-loaded focused-song truth.
-    // Keep a bounded structured copy rather than dropping it during compaction.
     metadata: compactStructured(metadata, 8_000),
-
     identifiers: array(subject.identifiers).slice(0, 24).map((item) => {
       const row = record(item);
       return {
@@ -119,7 +115,6 @@ function compactFocusedMusicSubject(value: unknown) {
         confidence: compactText(row.confidence, 80),
       };
     }),
-
     credits: array(subject.credits).slice(0, 32).map((item) => {
       const row = record(item);
       return {
@@ -130,7 +125,6 @@ function compactFocusedMusicSubject(value: unknown) {
         status: compactText(row.status, 100),
       };
     }),
-
     assets: array(subject.assets).slice(0, 24).map((item) => {
       const asset = record(item);
       return {
@@ -142,9 +136,6 @@ function compactFocusedMusicSubject(value: unknown) {
         updatedAt: compactText(asset.updatedAt ?? asset.updated_at ?? asset.createdAt ?? asset.created_at, 120),
       };
     }),
-
-    // Canonical song documents/files must be visible every turn. A user should
-    // never have to remind Manager that an EPK, split sheet or master exists.
     documents: array(subject.documents).slice(0, 24).map((item) => {
       const document = record(item);
       return {
@@ -156,7 +147,6 @@ function compactFocusedMusicSubject(value: unknown) {
         updatedAt: compactText(document.updatedAt ?? document.updated_at ?? document.createdAt ?? document.created_at, 120),
       };
     }),
-
     rights: compactFocusedRights(subject.rights),
     contributors: array(subject.contributors).slice(0, 32).map(compactContributor),
     splitConfirmations: array(subject.splitConfirmations ?? subject.split_confirmations).slice(0, 32).map((item) => {
@@ -168,7 +158,6 @@ function compactFocusedMusicSubject(value: unknown) {
         confirmedAt: compactText(row.confirmedAt ?? row.confirmed_at, 120),
       };
     }),
-
     recentActivity: array(subject.recentActivity).slice(0, 10).map((item) => {
       const event = record(item);
       return {
@@ -177,8 +166,6 @@ function compactFocusedMusicSubject(value: unknown) {
         createdAt: compactText(event.createdAt ?? event.created_at, 120),
       };
     }),
-
-    // Manager Read is useful analysis, but deliberately appears after current state.
     managerRead: compactFocusedManagerRead(subject.managerRead),
   };
 }
@@ -343,9 +330,6 @@ function normalizeContextAnswers(value: unknown) {
 
 function enforceByteBudget<T extends Record<string, any>>(value: T, maxBytes: number): T {
   if (encoder.encode(JSON.stringify(value)).byteLength <= maxBytes) return value;
-
-  // Critical invariant: even under pressure, the focused subject survives. We
-  // discard secondary intelligence before discarding the thing this room manages.
   const compacted = {
     version: "manager_opening_brief_v2_compact",
     notice: "Secondary context was compacted; current focused-subject truth is preserved.",
@@ -357,7 +341,7 @@ function enforceByteBudget<T extends Record<string, any>>(value: T, maxBytes: nu
     durableMemory: array(value.durableMemory).slice(0, 3),
     activePlaybookKeys: value.activePlaybookKeys,
     rules: value.rules,
-  } as T;
+  } as unknown as T;
   return compacted;
 }
 
