@@ -66,6 +66,12 @@ describe("WorkspaceActivityCenter", () => {
     await waitFor(() => expect(trigger).toHaveFocus());
   });
 
+  it("never shows the empty state while initial activity is unresolved", () => {
+    render(<WorkspaceActivityCenter open events={[]} hasMore loadingOlder onOpenChange={vi.fn()} onSelect={vi.fn()} onLoadOlder={vi.fn()} onSeen={vi.fn()} />);
+    expect(screen.queryByText("Nothing here yet")).not.toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Activity" })).toHaveAttribute("aria-busy", "true");
+  });
+
   it("uses one useful empty state instead of three empty buckets", () => {
     render(<WorkspaceActivityCenter open events={[]} hasMore={false} onOpenChange={vi.fn()} onSelect={vi.fn()} onLoadOlder={vi.fn()} onSeen={vi.fn()} />);
     expect(screen.getByText("Nothing here yet")).toBeInTheDocument();
