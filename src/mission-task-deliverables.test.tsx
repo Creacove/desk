@@ -89,7 +89,7 @@ describe("mission task execution", () => {
     const dialog = screen.getByRole("dialog", { name: "Review discovery and artist-attachment evidence" });
     expect(within(dialog).getByText("In progress")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Mark complete" })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole("button", { name: "Continue" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
   });
 
   it("routes a Manager-draft task into the existing Manager conversation", () => {
@@ -100,7 +100,7 @@ describe("mission task execution", () => {
     renderMission(mission, { onWorkWithManager, openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Continue" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Work with Manager" }));
     expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
     expect(screen.queryByText("Required file")).not.toBeInTheDocument();
   });
@@ -123,7 +123,7 @@ describe("mission task execution", () => {
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
     expect(within(dialog).getByText("Draft")).toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "Position" })).toBeInTheDocument();
-    expect(within(dialog).getByText("Lagos")).toHaveClass("font-bold");
+    expect(within(dialog).getByText("Lagos")).toHaveClass("font-semibold");
     expect(within(dialog).queryByText(/## Position/)).not.toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Submit for review" })).toBeEnabled();
   });
@@ -177,7 +177,7 @@ describe("mission task execution", () => {
 
     renderMission(mission, { onWorkWithManager, openTaskId: "task-thesis" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Continue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Work with Manager" }));
     expect(onWorkWithManager).toHaveBeenCalledWith("task-thesis");
     expect(screen.queryByRole("button", { name: "Submit for review" })).not.toBeInTheDocument();
   });
