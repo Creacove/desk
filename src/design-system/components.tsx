@@ -3,6 +3,7 @@ import { ArrowLeft, Bell, ClipboardCheck, House, Library, LogOut, MessageCircle,
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 import type { CleanProductionView } from "../types/cleanProduction";
+import { Button } from "./desktopPrimitives";
 
 export function BrandMark({
   size = "md",
@@ -33,7 +34,7 @@ export function Badge({ children, active = false }: { children: ReactNode; activ
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] transition-colors duration-200",
+        "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[11px] font-semibold uppercase tracking-[0.04em] transition-colors duration-150",
         active ? "border-brand-accent/20 bg-brand-ghost text-brand-accent" : "border-foreground/10 bg-background text-muted-foreground",
       )}
     >
@@ -56,19 +57,15 @@ export function ProductButton({
   disabled?: boolean;
 }) {
   return (
-    <button
+    <Button
       type={type}
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2.5 font-ui text-[12px] font-semibold transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-brand-accent/30 disabled:pointer-events-none disabled:opacity-40",
-        variant === "primary" && "bg-foreground text-background hover:bg-foreground/90",
-        variant === "secondary" && "border border-foreground/10 bg-background text-foreground hover:border-foreground/20 hover:bg-foreground/[0.03]",
-        variant === "quiet" && "border border-transparent bg-transparent text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-      )}
+      variant={variant === "quiet" ? "ghost" : variant}
+      size="md"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 
@@ -99,12 +96,12 @@ export function Field({
   return (
     <div
       className={cn(
-        "group rounded-[12px] border bg-background p-2.5 transition-all duration-300 focus-within:border-brand-accent/50 focus-within:ring-2 focus-within:ring-brand-accent/5",
+        "group rounded-[12px] border bg-background p-3 transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-brand-accent/45 focus-within:ring-2 focus-within:ring-brand-accent/5",
         error ? "border-destructive/45 bg-destructive/[0.025]" : "border-foreground/8",
         disabled && "opacity-60",
       )}
     >
-      <label htmlFor={id} className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-muted-foreground/85 transition-colors group-focus-within:text-brand-accent">
+      <label htmlFor={id} className="font-ui block text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/85 transition-colors group-focus-within:text-brand-accent">
         {label}
       </label>
       <input
@@ -117,11 +114,11 @@ export function Field({
         readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
         className={cn(
-          "mt-1 w-full bg-transparent text-[13px] font-bold text-foreground outline-none placeholder:text-muted-foreground/60",
+          "mt-1.5 w-full bg-transparent text-[14px] font-medium text-foreground outline-none placeholder:text-muted-foreground/60",
           readOnly && "cursor-default",
         )}
       />
-      {error || helper ? <p className={cn("mt-1.5 text-[11px] font-semibold", error ? "text-destructive" : "text-muted-foreground/80")}>{error ?? helper}</p> : null}
+      {error || helper ? <p className={cn("mt-1.5 text-[12px] font-medium", error ? "text-destructive" : "text-muted-foreground/80")}>{error ?? helper}</p> : null}
     </div>
   );
 }
@@ -129,8 +126,8 @@ export function Field({
 export function TextAreaField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   const id = `field-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <div className="group rounded-[12px] border border-brand-accent/15 bg-brand-accent/[0.025] p-3 transition-all duration-300 focus-within:border-brand-accent/45 focus-within:ring-2 focus-within:ring-brand-accent/5 sm:col-span-2">
-      <label htmlFor={id} className="font-ui block text-[9px] font-bold uppercase tracking-[0.12em] text-brand-accent">
+    <div className="group rounded-[12px] border border-brand-accent/15 bg-brand-accent/[0.025] p-3 transition-[border-color,box-shadow] duration-150 focus-within:border-brand-accent/45 focus-within:ring-2 focus-within:ring-brand-accent/5 sm:col-span-2">
+      <label htmlFor={id} className="font-ui block text-[11px] font-semibold uppercase tracking-[0.1em] text-brand-accent">
         {label}
       </label>
       <textarea
@@ -138,7 +135,7 @@ export function TextAreaField({ label, value, onChange }: { label: string; value
         aria-label={label}
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-2 min-h-[70px] w-full resize-none rounded-[10px] border border-foreground/8 bg-background/75 p-3 text-[13px] font-semibold leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/85"
+        className="mt-2 min-h-[76px] w-full resize-none rounded-[10px] border border-foreground/8 bg-background/75 p-3 text-[14px] font-medium leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/70 focus:border-brand-accent/35"
       />
     </div>
   );
@@ -155,10 +152,10 @@ export function WorkspaceHeader({
   return (
     <div
       data-testid={`workspace-header-${title}`}
-      className="mb-4 hidden flex-col gap-3 lg:mb-5 lg:flex lg:flex-row lg:items-end lg:justify-between"
+      className="mb-4 hidden flex-col gap-3 lg:mb-6 lg:flex lg:flex-row lg:items-end lg:justify-between"
     >
       <div>
-        <h1 className="font-display text-[2rem] font-semibold leading-none text-foreground sm:text-[2.25rem] lg:text-[2.5rem]">{title}</h1>
+        <h1 className="font-display text-[2rem] font-semibold leading-[1.05] tracking-[-0.03em] text-foreground sm:text-[2.25rem] lg:text-[2.25rem]">{title}</h1>
       </div>
       {action}
     </div>
@@ -242,7 +239,7 @@ export function WorkspaceShell({
               type="button"
               onClick={onBack}
               aria-label={backLabel}
-              className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.045] hover:text-foreground"
+              className="group inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.045] hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-accent/20"
             >
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             </button>
@@ -254,7 +251,7 @@ export function WorkspaceShell({
           <button
             type="button"
             onClick={onBack}
-            className="group flex items-center gap-2 text-[13px] font-semibold text-muted-foreground/85 transition-colors hover:text-foreground"
+            className="group flex items-center gap-2 rounded-[10px] px-1 py-1 text-[13px] font-semibold text-muted-foreground/85 outline-none transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-accent/20"
           >
             <div className="flex h-7 w-7 items-center justify-center rounded-md border border-foreground/10 bg-background transition-colors group-hover:border-foreground/20 group-hover:bg-foreground/[0.03]">
               <ArrowLeft className="h-4 w-4" aria-hidden="true" />
@@ -264,8 +261,8 @@ export function WorkspaceShell({
         </div>
       ) : null}
       {variant === "default" ? <div className="mb-5 lg:mb-8">
-        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">{eyebrow}</p>
-        <h1 className="font-display mt-1.5 text-[1.45rem] font-semibold leading-tight text-foreground sm:text-[1.55rem] lg:text-[1.3rem]">{title}{punctuateTitle ? "." : ""}</h1>
+        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{eyebrow}</p>
+        <h1 className="font-display mt-1.5 max-w-[28ch] text-[1.55rem] font-semibold leading-[1.12] tracking-[-0.025em] text-foreground sm:text-[1.75rem] lg:text-[2rem]">{title}{punctuateTitle ? "." : ""}</h1>
       </div> : null}
       {children}
     </div>
@@ -322,7 +319,7 @@ export function DeskRail({
           <BrandMark size="sm" />
           <div className="min-w-0">
             <p className="font-display truncate text-[14px] font-semibold tracking-[-0.015em] text-foreground">Ordersounds</p>
-            <p className="font-ui mt-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/68">Artist desk</p>
+            <p className="font-ui mt-0.5 text-[11px] font-medium uppercase tracking-[0.07em] text-muted-foreground/68">Artist desk</p>
           </div>
         </div>
         <div className="h-px shrink-0 bg-foreground/7" />
@@ -341,14 +338,14 @@ export function DeskRail({
                   )}
                 >
                   <div className="ml-7 border-l border-foreground/8 py-1 pl-2">
-                    <p className="px-2 pb-1 pt-0.5 text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground/55">Recent</p>
+                    <p className="px-2 pb-1 pt-0.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/55">Recent</p>
                     {recentManagerConversations.slice(0, 3).map((conversation) => (
                       <button
                         key={conversation.id}
                         type="button"
                         aria-label={`Open Manager conversation ${conversation.topic}`}
                         onClick={() => onOpenManagerConversation?.(conversation.id)}
-                        className="block w-full truncate rounded-[8px] px-2 py-1.5 text-left text-[11px] font-medium text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25"
+                        className="block w-full truncate rounded-[8px] px-2 py-1.5 text-left text-[12px] font-medium text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-accent/25"
                       >
                         {conversation.topic}
                       </button>
@@ -368,7 +365,7 @@ export function DeskRail({
           type="button"
           onClick={() => onNavigate("artistProfileWorkspace")}
           className={cn(
-            "flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 font-ui text-[12px] font-semibold transition-colors duration-200",
+            "flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 font-ui text-[12px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/20",
             active === "settings" ? "bg-foreground/[0.06] text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
           )}
         >
@@ -379,7 +376,7 @@ export function DeskRail({
           <button
             type="button"
             onClick={onSignOut}
-            className="mt-0.5 flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 font-ui text-[12px] font-semibold text-muted-foreground transition-colors duration-200 hover:bg-foreground/[0.04] hover:text-foreground"
+            className="mt-0.5 flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 font-ui text-[12px] font-semibold text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-accent/20"
           >
             <LogOut className="h-[15px] w-[15px] shrink-0 opacity-62" aria-hidden="true" />
             Sign out
@@ -408,7 +405,7 @@ function NavButton({
       aria-label={item.label === "Catalog" ? "Open Catalog workspace" : item.label === "Manager" ? "Open Manager" : item.label}
       onClick={() => onNavigate(item.view)}
       className={cn(
-        "relative flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 font-ui text-[12px] font-semibold transition-colors duration-200",
+        "relative flex h-10 w-full items-center gap-2.5 rounded-[10px] px-2.5 font-ui text-[12px] font-semibold outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/20",
         active ? "bg-foreground/[0.06] text-foreground" : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
       )}
     >
@@ -416,7 +413,7 @@ function NavButton({
       <span className="min-w-0 flex-1 truncate text-left">{item.label}</span>
       {active ? <span aria-hidden="true" className="h-1.5 w-1.5 shrink-0 rounded-full bg-brand-accent" /> : null}
       {item.active === "missions" && activeMissionCount > 0 ? (
-        <span data-testid="desktop-mission-count" className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-foreground/10 bg-foreground/[0.06] px-1.5 text-[10px] font-bold text-foreground">{formatNavigationCount(activeMissionCount)}</span>
+        <span data-testid="desktop-mission-count" className="ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full border border-foreground/10 bg-foreground/[0.06] px-1.5 text-[11px] font-semibold text-foreground">{formatNavigationCount(activeMissionCount)}</span>
       ) : null}
     </button>
   );
@@ -545,7 +542,7 @@ export function StatusPill({ children, tone = "neutral" }: { children: ReactNode
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em]",
+        "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 font-ui text-[11px] font-semibold uppercase tracking-[0.04em]",
         tone === "neutral" && "border-foreground/10 bg-background text-muted-foreground",
         tone === "success" && "border-success/20 bg-success/10 text-success",
         tone === "warning" && "border-warning/20 bg-warning/10 text-warning",
