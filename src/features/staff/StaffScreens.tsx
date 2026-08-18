@@ -14,9 +14,10 @@ export function StaffWorkspace({
   const orderedAgents = orderTeamAgents(agents);
 
   return (
-    <section className="app-workspace app-workspace-reveal">
+    <section className="app-workspace app-workspace-reveal pb-12">
       <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
-      <p className="mb-5 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
+      <p className="mb-6 max-w-[680px] text-[14px] font-medium leading-[1.6] text-muted-foreground">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
+
       <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">
         {orderedAgents.map((agent) => {
           const Icon = agent.icon;
@@ -26,28 +27,23 @@ export function StaffWorkspace({
               key={agent.id}
               type="button"
               aria-label={`Open mobile agent ${agent.name}`}
-              className={`flex min-w-0 items-center gap-3 rounded-[14px] border p-3 text-left shadow-[0_1px_6px_rgba(17,19,24,0.045)] ${
-                locked ? "border-dashed border-foreground/12 bg-foreground/[0.025]" : "border-foreground/10 bg-white"
-              }`}
+              className={`flex min-w-0 items-center gap-3 rounded-[14px] border p-3 text-left ${locked ? "border-dashed border-foreground/12 bg-foreground/[0.025]" : "border-foreground/10 bg-background"}`}
               onClick={() => (locked ? onLockedAgent(agent) : onManager())}
             >
-              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${locked ? "bg-foreground/[0.07] text-muted-foreground" : "bg-foreground text-background"}`}>
+              <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] ${locked ? "bg-foreground/[0.06] text-muted-foreground" : "bg-brand-accent/10 text-brand-accent"}`}>
                 {locked ? <Lock className="h-4 w-4" aria-hidden="true" /> : <Icon className="h-4 w-4" aria-hidden="true" />}
               </span>
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[14px] font-semibold text-foreground">{agent.name}</span>
-                <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground/82">
-                  {locked ? "Not available on this plan" : agent.purpose}
-                </span>
+                <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
               </span>
-              {!locked ? (
-                <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[10px] font-semibold text-muted-foreground">Available now</span>
-              ) : null}
+              {!locked ? <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Available now</span> : null}
             </button>
           );
         })}
       </div>
-      <div data-testid="staff-desktop-list" className="hidden gap-3 md:grid">
+
+      <div data-testid="staff-desktop-list" className="hidden border-y border-foreground/8 md:block">
         {orderedAgents.map((agent) => {
           const Icon = agent.icon;
           const locked = agent.status !== "available";
@@ -56,25 +52,19 @@ export function StaffWorkspace({
               key={agent.id}
               type="button"
               aria-label={agent.name}
-              className={`grid min-w-0 grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 rounded-xl border p-4 text-left shadow-sm transition-colors ${
-                locked
-                  ? "border-dashed border-foreground/12 bg-foreground/[0.018] hover:bg-foreground/[0.025]"
-                  : "border-foreground/10 bg-background hover:border-brand-accent/20 hover:bg-white"
-              }`}
+              className="group grid min-h-[76px] w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-4 border-b border-foreground/8 px-3 py-4 text-left outline-none transition-colors duration-150 last:border-b-0 hover:bg-foreground/[0.02] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
               onClick={() => (locked ? onLockedAgent(agent) : onManager())}
             >
-              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg ${locked ? "bg-foreground/[0.07] text-muted-foreground" : "bg-foreground text-background"}`}>
-                {locked ? <Lock className="h-5 w-5" aria-hidden="true" /> : <Icon className="h-5 w-5" aria-hidden="true" />}
+              <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] ${locked ? "bg-foreground/[0.055] text-muted-foreground" : "bg-brand-accent/10 text-brand-accent"}`}>
+                {locked ? <Lock className="h-[18px] w-[18px]" aria-hidden="true" /> : <Icon className="h-[18px] w-[18px]" aria-hidden="true" />}
               </span>
               <span className="min-w-0">
-                <span className="block text-base font-semibold">{agent.name}</span>
-                <span className="mt-1 block text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
-                  {locked ? "Not available on this plan" : agent.purpose}
-                </span>
+                <span className="block text-[15px] font-semibold text-foreground">{agent.name}</span>
+                <span className="mt-1 block max-w-[680px] text-[13px] font-medium leading-[1.55] text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
               </span>
-              {!locked ? (
-                <span className="justify-self-end rounded-full bg-foreground/[0.055] px-2.5 py-1 font-ui text-[10px] font-semibold uppercase tracking-[0.04em] text-muted-foreground">Available now</span>
-              ) : null}
+              <span className={`justify-self-end whitespace-nowrap text-[12px] font-medium ${locked ? "text-muted-foreground/65" : "text-brand-accent"}`}>
+                {locked ? "Locked" : "Available now"}
+              </span>
             </button>
           );
         })}
@@ -86,16 +76,14 @@ export function StaffWorkspace({
 export function LockedAgentWorkspace({ agent, onBack }: { agent: AgentViewModel; onBack: () => void }) {
   return (
     <WorkspaceShell eyebrow={agent.name} title={agent.workspaceTitle} onBack={onBack}>
-      <div className="grid min-h-[360px] place-items-center rounded-xl border border-dashed border-foreground/12 bg-foreground/[0.018] p-6 text-center">
+      <div className="grid min-h-[320px] max-w-[760px] place-items-center border-y border-foreground/8 px-6 py-10 text-center">
         <div className="max-w-sm">
-          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-foreground/[0.07] text-muted-foreground">
-            <Lock className="h-5 w-5" aria-hidden="true" />
+          <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
+            <Lock className="h-[18px] w-[18px]" aria-hidden="true" />
           </span>
-          <p className="mt-5 font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Plan access</p>
-          <h2 className="mt-2 font-display text-[22px] font-semibold leading-tight text-foreground">Not available on this plan</h2>
-          <p className="mt-3 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">
-            You don&apos;t have access to this agent on your current plan.
-          </p>
+          <p className="mt-5 font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Plan access</p>
+          <h2 className="mt-2 font-display text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">Not available on this plan</h2>
+          <p className="mt-3 text-[13px] font-medium leading-[1.6] text-muted-foreground">You don&apos;t have access to this agent on your current plan.</p>
         </div>
       </div>
     </WorkspaceShell>
