@@ -55,6 +55,12 @@ describe("desktop design primitives", () => {
     expect(desktopCss).toContain("padding-inline: 48px !important");
   });
 
+  it("normalizes legacy share-builder forward actions into the purple hierarchy", () => {
+    expect(desktopCss).toContain('[role="dialog"][aria-label^="Share "] button[class~="bg-foreground"]');
+    expect(desktopCss).toContain('[role="dialog"][aria-label^="Share "] [data-testid="share-primary-cta"]');
+    expect(desktopCss).toContain("background-color: #9A3BDC !important");
+  });
+
   it("keeps reduced-motion users out of decorative workspace movement", () => {
     expect(desktopCss).toContain("@media (prefers-reduced-motion: reduce)");
     expect(desktopCss).toContain("transform: none !important");
