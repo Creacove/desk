@@ -1,6 +1,7 @@
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Field, ProductButton, TextAreaField, WorkspaceShell, WorkspaceTabRail } from "../../design-system/components";
+import { Field, TextAreaField, WorkspaceShell, WorkspaceTabRail } from "../../design-system/components";
+import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
@@ -43,11 +44,24 @@ export function SettingsScreen({
 
   return (
     <WorkspaceShell eyebrow="Workspace" title="Settings" onBack={onBack}>
-      <div className="sticky top-[109px] z-20 -mx-3 mb-4 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:p-0">
-        <WorkspaceTabRail ariaLabel="Settings sections" semanticTabs idPrefix="settings" items={tabs} active={activeTab} onChange={setActiveTab} className="grid-cols-4 lg:max-w-xl" />
+      <div className="sticky top-[109px] z-20 -mx-3 mb-5 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:mb-7 lg:border-0 lg:bg-transparent lg:p-0">
+        <WorkspaceTabRail
+          ariaLabel="Settings sections"
+          semanticTabs
+          idPrefix="settings"
+          items={tabs}
+          active={activeTab}
+          onChange={setActiveTab}
+          className="grid-cols-4 lg:max-w-[560px]"
+        />
       </div>
 
-      <div id={`settings-panel-${activeTab}`} role="tabpanel" aria-labelledby={`settings-tab-${activeTab}`} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+      <div
+        id={`settings-panel-${activeTab}`}
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeTab}`}
+        className="app-workspace-reveal max-w-[960px]"
+      >
         {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
         {activeTab === "workspace" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
         {activeTab === "preferences" ? (
@@ -106,11 +120,11 @@ function ProfileSettings({
   }
 
   return (
-    <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm sm:p-5">
+    <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-4 sm:p-5 lg:rounded-none lg:border-x-0 lg:px-0 lg:py-0">
       <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
         <ArtistSummary profile={draft} compact />
       </div>
-      <div data-testid="settings-desktop-profile-summary" className="mb-6 hidden border-b border-foreground/8 pb-5 sm:flex">
+      <div data-testid="settings-desktop-profile-summary" className="mb-1 hidden border-b border-foreground/8 pb-6 sm:flex">
         <ArtistSummary profile={draft} />
       </div>
 
@@ -134,12 +148,12 @@ function ProfileSettings({
         <Field label="X" value={draft.x} onChange={(value) => update("x", value)} disabled={savePending} />
       </SettingsGroup>
       {onSaveProfile ? (
-        <div className="flex flex-wrap items-center gap-3 pt-5">
-          <ProductButton onClick={() => void save()} disabled={!dirty || savePending}>
-            {savePending ? "Saving changes" : "Save changes"}
-          </ProductButton>
-          {saveMessage ? <p role="status" className="text-[12px] font-semibold text-emerald-700">{saveMessage}</p> : null}
-          {saveError ? <p role="alert" className="text-[12px] font-semibold text-red-600">{saveError}</p> : null}
+        <div className="flex flex-wrap items-center gap-3 border-t border-foreground/8 pt-5">
+          <Button onClick={() => void save()} disabled={!dirty} pending={savePending}>
+            Save changes
+          </Button>
+          {saveMessage ? <p role="status" className="text-[12px] font-medium text-success">{saveMessage}</p> : null}
+          {saveError ? <p role="alert" className="text-[12px] font-medium text-destructive">{saveError}</p> : null}
         </div>
       ) : null}
     </section>
@@ -160,13 +174,13 @@ function ArtistSummary({ profile, compact = false }: { profile: ArtistProfileVie
       {profile.imageUrl ? (
         <img className={cn("shrink-0 rounded-[14px] object-cover", compact ? "h-12 w-12" : "h-14 w-14")} src={profile.imageUrl} alt={compact ? "" : `${profile.name} artist image`} />
       ) : (
-        <div className={cn("flex shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] font-bold text-muted-foreground", compact ? "h-12 w-12 text-[16px]" : "h-14 w-14 text-[18px]")}>
+        <div className={cn("flex shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] font-semibold text-muted-foreground", compact ? "h-12 w-12 text-[16px]" : "h-14 w-14 text-[18px]")}>
           {profile.name.slice(0, 2).toUpperCase()}
         </div>
       )}
       <div className="min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-brand-accent">Active artist</p>
-        <p className={cn("mt-1 truncate font-display font-bold tracking-tight text-foreground", compact ? "text-[18px]" : "text-[20px]")}>{profile.name}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-brand-accent">Active artist</p>
+        <p className={cn("mt-1 truncate font-display font-semibold tracking-[-0.015em] text-foreground", compact ? "text-[18px]" : "text-[20px]")}>{profile.name}</p>
         <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground">{[profile.market, profile.genre].filter(Boolean).join(" / ")}</p>
       </div>
     </div>
@@ -175,8 +189,8 @@ function ArtistSummary({ profile, compact = false }: { profile: ArtistProfileVie
 
 function SettingsGroup({ title, children, last = false }: { title: string; children: ReactNode; last?: boolean }) {
   return (
-    <div className={cn("py-5 first:pt-0", !last && "border-b border-foreground/8")}>
-      <h2 className="mb-3 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">{title}</h2>
+    <div className={cn("py-6", !last && "border-b border-foreground/8")}>
+      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{title}</h2>
       <div className="grid gap-3 sm:grid-cols-2">{children}</div>
     </div>
   );
@@ -194,9 +208,9 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
         ? "Active workspace access"
         : "No active access";
   return (
-    <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Workspace access</p>
-      <h2 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">{accessLabel}</h2>
+    <section className="border-y border-foreground/8 py-6">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workspace access</p>
+      <h2 className="mt-2 font-display text-[24px] font-semibold tracking-[-0.02em] text-foreground">{accessLabel}</h2>
       <dl className="mt-6 divide-y divide-foreground/8 border-y border-foreground/8 text-[13px]">
         <AccessRow label="Status" value={workspace.accessStatus ?? (workspace.entitlementActive ? "Active" : "Inactive")} />
         {workspace.accessStartsAt ? <AccessRow label="Started" value={formatDate(workspace.accessStartsAt)} /> : null}
@@ -205,9 +219,9 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
       </dl>
       {paid && workspace.billingProvider === "paddle" && onManageBilling ? (
         <div className="mt-5">
-          <ProductButton
+          <Button
             variant="secondary"
-            disabled={portalPending}
+            pending={portalPending}
             onClick={async () => {
               try {
                 setPortalPending(true);
@@ -220,9 +234,9 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
               }
             }}
           >
-            {portalPending ? "Opening billing" : "Manage billing"}
-          </ProductButton>
-          {portalError ? <p role="alert" className="mt-3 text-[12px] font-semibold text-red-600">{portalError}</p> : null}
+            Manage billing
+          </Button>
+          {portalError ? <p role="alert" className="mt-3 text-[12px] font-medium text-destructive">{portalError}</p> : null}
         </div>
       ) : null}
     </section>
@@ -230,15 +244,20 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
 }
 
 function AccessRow({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-center justify-between gap-4 py-4"><dt className="font-semibold text-muted-foreground">{label}</dt><dd className="text-right font-bold capitalize text-foreground">{value}</dd></div>;
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 py-4">
+      <dt className="font-medium text-muted-foreground">{label}</dt>
+      <dd className="text-right font-semibold capitalize text-foreground">{value}</dd>
+    </div>
+  );
 }
 
 function AccessEmptyState() {
   return (
-    <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
-      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-brand-accent">Workspace access</p>
-      <h2 className="mt-2 font-display text-[24px] font-bold tracking-tight text-foreground">Access details unavailable</h2>
-      <p className="mt-3 max-w-lg text-[13px] font-semibold leading-relaxed text-muted-foreground">Your plan details will appear here when this workspace finishes loading.</p>
+    <section className="border-y border-foreground/8 py-8">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workspace access</p>
+      <h2 className="mt-2 font-display text-[24px] font-semibold tracking-[-0.02em] text-foreground">Access details unavailable</h2>
+      <p className="mt-3 max-w-[640px] text-[13px] font-medium leading-[1.6] text-muted-foreground">Your plan details will appear here when this workspace finishes loading.</p>
     </section>
   );
 }
@@ -265,20 +284,19 @@ function AccountSettings({
   onSignOut?: () => void;
 }) {
   return (
-    <div className="space-y-4">
+    <div className="divide-y divide-foreground/8 border-y border-foreground/8">
       <AccountIdentity accountEmail={accountEmail} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
-        <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <section className="py-6">
+          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-8">
             <div>
-              <p className="text-[11px] font-bold text-foreground">Sign out</p>
-              <p className="mt-1 text-[12px] font-semibold text-muted-foreground">Return to the sign-in screen on this device.</p>
+              <p className="text-[14px] font-semibold text-foreground">Sign out</p>
+              <p className="mt-1 text-[13px] font-medium text-muted-foreground">Return to the sign-in screen on this device.</p>
             </div>
-            <ProductButton variant="secondary" onClick={onSignOut}>
-              <LogOut className="h-4 w-4" aria-hidden="true" />
+            <Button variant="secondary" onClick={onSignOut} leadingIcon={<LogOut className="h-4 w-4" aria-hidden="true" />}>
               Sign out
-            </ProductButton>
+            </Button>
           </div>
         </section>
       ) : null}
@@ -290,10 +308,10 @@ function AccountIdentity({ accountEmail }: { accountEmail?: string }) {
   const displayEmail = accountEmail?.trim() || "Email unavailable";
 
   return (
-    <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm">
-      <p className="text-[11px] font-bold text-foreground">Account email</p>
-      <p className="mt-1 text-[12px] font-semibold text-muted-foreground">Used to sign in and recover this account.</p>
-      <div className="mt-4">
+    <section className="py-6">
+      <p className="text-[14px] font-semibold text-foreground">Account email</p>
+      <p className="mt-1 text-[13px] font-medium text-muted-foreground">Used to sign in and recover this account.</p>
+      <div className="mt-4 max-w-[620px]">
         <Field label="Email address" value={displayEmail} onChange={() => undefined} type="email" readOnly />
       </div>
     </section>
@@ -305,6 +323,7 @@ function PasswordSettings({ onUpdatePassword }: { onUpdatePassword: (input: { pa
   const [confirmation, setConfirmation] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (password.length < 8) return setMessage("Use at least eight characters.");
@@ -321,7 +340,20 @@ function PasswordSettings({ onUpdatePassword }: { onUpdatePassword: (input: { pa
       setPending(false);
     }
   }
-  return <section className="rounded-[16px] border border-foreground/10 bg-background p-5 shadow-sm"><p className="text-[11px] font-bold text-foreground">Password</p><form className="mt-4 grid gap-3 sm:grid-cols-2" onSubmit={submit}><Field label="New password" value={password} onChange={setPassword} type="password" /><Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" />{message ? <p className="text-[12px] font-semibold text-muted-foreground sm:col-span-2">{message}</p> : null}<div className="sm:col-span-2"><ProductButton type="submit" disabled={pending}>{pending ? "Updating password" : "Change password"}</ProductButton></div></form></section>;
+
+  return (
+    <section className="py-6">
+      <p className="text-[14px] font-semibold text-foreground">Password</p>
+      <form className="mt-4 grid max-w-[620px] gap-3 sm:grid-cols-2" onSubmit={submit}>
+        <Field label="New password" value={password} onChange={setPassword} type="password" disabled={pending} />
+        <Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" disabled={pending} />
+        {message ? <p role="status" className="text-[12px] font-medium text-muted-foreground sm:col-span-2">{message}</p> : null}
+        <div className="sm:col-span-2">
+          <Button type="submit" pending={pending}>Change password</Button>
+        </div>
+      </form>
+    </section>
+  );
 }
 
 function formatDate(value: string) {
@@ -346,13 +378,13 @@ function AppearanceControl({
   ];
 
   return (
-    <section className="rounded-[16px] border border-foreground/10 bg-background p-4 shadow-sm">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <section className="border-y border-foreground/8 py-6">
+      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-8">
         <div>
-          <p className="font-ui text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">Appearance</p>
-          <p className="mt-2 text-[13px] font-semibold leading-relaxed text-muted-foreground/82">{status}</p>
+          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Appearance</p>
+          <p className="mt-2 text-[13px] font-medium leading-[1.6] text-muted-foreground">{status}</p>
         </div>
-        <div className="grid min-w-0 grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.035] p-1">
+        <div className="grid min-w-0 grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.025] p-1">
           {options.map((option) => {
             const active = option.mode === mode;
             return (
@@ -363,10 +395,10 @@ function AppearanceControl({
                 aria-pressed={active}
                 onClick={() => onChange?.(option.mode)}
                 className={cn(
-                  "inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-[9px] px-2 font-ui text-[11px] font-bold transition-all sm:gap-2 sm:px-3 sm:text-[12px]",
+                  "inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-[9px] px-2 font-ui text-[12px] font-semibold outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/20 sm:gap-2 sm:px-3",
                   active
-                    ? "bg-background text-foreground shadow-sm ring-1 ring-foreground/8"
-                    : "text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground",
+                    ? "bg-background text-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.06)] ring-1 ring-foreground/8"
+                    : "text-muted-foreground hover:bg-foreground/[0.035] hover:text-foreground",
                 )}
               >
                 {option.icon}
@@ -379,4 +411,3 @@ function AppearanceControl({
     </section>
   );
 }
-
