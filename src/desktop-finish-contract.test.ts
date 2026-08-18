@@ -42,6 +42,14 @@ describe("OrderSounds desktop finish contract", () => {
     expect(missions).not.toContain('lg:text-[50px]');
   });
 
+  it("preserves real Mission update timestamps from the repository", () => {
+    const types = read("types/cleanProduction.ts");
+    const repository = read("services/productionSupabase.ts");
+    expect(types).toContain("createdAt?: string");
+    expect(repository).toContain("createdAt: e.created_at ?? undefined");
+    expect(repository).toContain("createdAt: m.created_at ?? undefined");
+  });
+
   it("never presents unresolved Activity or Evidence as empty", () => {
     expect(activity).toContain("initialLoading");
     expect(activity).toContain("ActivitySkeleton");
