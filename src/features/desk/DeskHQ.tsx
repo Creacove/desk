@@ -1,6 +1,7 @@
-import { Bell, ChevronRight, MessageSquareText, RefreshCw, SendHorizontal } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { Bell, ChevronRight, RefreshCw } from "lucide-react";
+import { useState } from "react";
 import { WorkspaceHeader } from "../../design-system/components";
+import { Button, ManagerComposer as ManagerWorkComposer } from "../../design-system/desktopPrimitives";
 import type {
   AgentViewModel,
   ArtistProfileViewModel,
@@ -85,7 +86,7 @@ export function DeskHQScreen({
         )}
       />
 
-      <ManagerComposer onAskManager={onAskManager} />
+      <HomeManagerComposer onAskManager={onAskManager} />
 
       <section data-testid="desk-editorial-brief" className="mt-8 sm:mt-10">
         <BriefSectionHeader
@@ -105,8 +106,8 @@ export function DeskHQScreen({
           <div className="min-w-0">
             <p
               data-testid="desk-brief-headline"
-              className="max-w-[64rem] break-words font-display font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]"
-              style={{ fontSize: "clamp(28px, 2.45vw, 36px)" }}
+              className="max-w-[62rem] break-words font-display font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]"
+              style={{ fontSize: "clamp(28px, 2.35vw, 36px)" }}
             >
               {brief.headlineRead}
             </p>
@@ -134,63 +135,44 @@ export function DeskHQScreen({
 
 function ActivityButton({ count, onOpen }: { count: number; onOpen: () => void }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="md"
       aria-label={count ? `Open Activity Center, ${count} unread` : "Open Activity Center"}
       onClick={onOpen}
-      className="relative inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-[12px] font-semibold text-muted-foreground transition-colors duration-200 hover:bg-foreground/[0.045] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25"
+      leadingIcon={<Bell className="h-4 w-4" aria-hidden="true" />}
+      className="relative"
     >
-      <Bell className="h-4 w-4" aria-hidden="true" />
       <span>Activity</span>
       {count ? (
-        <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-brand-accent px-1 text-[9px] font-bold leading-none text-white">
+        <span className="inline-flex h-[19px] min-w-[19px] items-center justify-center rounded-full bg-brand-accent px-1.5 text-[11px] font-semibold leading-none text-white">
           {count > 9 ? "9+" : count}
         </span>
       ) : null}
-    </button>
+    </Button>
   );
 }
 
-function ManagerComposer({ onAskManager }: { onAskManager: (body: string) => void }) {
+function HomeManagerComposer({ onAskManager }: { onAskManager: (body: string) => void }) {
   const [draft, setDraft] = useState("");
-  const canSend = draft.trim().length > 0;
 
-  function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSend) return;
-    onAskManager(draft.trim());
+  function submit() {
+    const body = draft.trim();
+    if (!body) return;
+    onAskManager(body);
     setDraft("");
   }
 
   return (
-    <form
-      aria-label="Ask your manager"
-      className="flex w-full max-w-[48rem] items-start gap-2 border-b border-foreground/12 py-2 transition-colors focus-within:border-brand-accent/45"
+    <ManagerWorkComposer
+      value={draft}
+      onChange={setDraft}
       onSubmit={submit}
-    >
-      <MessageSquareText className="mt-[9px] h-4 w-4 shrink-0 text-muted-foreground/65" aria-hidden="true" />
-      <textarea
-        value={draft}
-        rows={1}
-        onChange={(event) => setDraft(event.target.value)}
-        onInput={(event) => {
-          const element = event.currentTarget;
-          element.style.height = "auto";
-          element.style.height = `${Math.min(element.scrollHeight, 84)}px`;
-        }}
-        placeholder="Ask Manager about anything in this workspace"
-        className="min-w-0 flex-1 resize-none bg-transparent py-[7px] text-[13px] font-medium leading-[1.45] text-foreground outline-none placeholder:text-muted-foreground/58"
-        style={{ maxHeight: "84px", overflowY: "auto" }}
-      />
-      <button
-        type="submit"
-        aria-label="Send manager question"
-        disabled={!canSend}
-        className="mt-[3px] flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/86 focus:outline-none focus:ring-2 focus:ring-brand-accent/25 disabled:bg-foreground/[0.06] disabled:text-muted-foreground/35"
-      >
-        <SendHorizontal className="h-3.5 w-3.5" aria-hidden="true" />
-      </button>
-    </form>
+      ariaLabel="Work with Manager"
+      placeholder="What do you want to work on?"
+      className="max-w-[900px]"
+    />
   );
 }
 
@@ -209,25 +191,26 @@ function BriefSectionHeader({
 }) {
   return (
     <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-foreground/8 pt-4">
-      <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/72">Today&apos;s Brief</p>
+      <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Today&apos;s Brief</p>
       <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
-        {updatedAt ? <span className="text-[11px] font-medium text-muted-foreground/62">Updated {updatedAt}</span> : null}
+        {updatedAt ? <span className="text-[12px] font-medium text-muted-foreground/62">Updated {updatedAt}</span> : null}
         {canRefresh ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="sm"
             aria-label={pending ? "Refreshing Today's Brief" : "Refresh Today's Brief"}
-            disabled={pending}
+            pending={pending}
             onClick={onRefresh}
-            className="inline-flex min-h-8 items-center gap-1.5 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/20 disabled:pointer-events-none disabled:opacity-55"
+            leadingIcon={!pending ? <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" /> : undefined}
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${pending ? "animate-spin" : ""}`} aria-hidden="true" />
-            {pending ? "Refreshing" : "Refresh"}
-          </button>
+            Refresh
+          </Button>
         ) : null}
         {error ? (
-          <span data-testid="desk-brief-refresh-error" className="basis-full text-right text-[11px] font-semibold text-warning">
+          <span data-testid="desk-brief-refresh-error" className="basis-full text-right text-[12px] font-medium text-warning">
             Couldn&apos;t refresh{canRefresh && !pending ? (
-              <button type="button" onClick={onRefresh} className="ml-1 underline decoration-warning/45 underline-offset-2 hover:decoration-warning">
+              <button type="button" onClick={onRefresh} className="ml-1 font-semibold underline decoration-warning/45 underline-offset-2 hover:decoration-warning">
                 Try again
               </button>
             ) : null}
@@ -252,7 +235,7 @@ function RightNow({
       data-testid="desk-right-now"
       className="min-w-0 border-t border-foreground/8 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0"
     >
-      <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/72">Right now</p>
+      <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Right now</p>
       <div className="mt-2 divide-y divide-foreground/8 border-b border-foreground/8">
         {items.map((item, index) => (
           <button
@@ -260,13 +243,13 @@ function RightNow({
             type="button"
             aria-label={`Open ${item.title}`}
             onClick={() => openAttentionItem(item, onNavigate, onDrawer)}
-            className="group flex w-full items-start justify-between gap-3 py-4 text-left transition-colors hover:bg-foreground/[0.018] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-brand-accent/20"
+            className="group flex w-full items-start justify-between gap-3 py-4 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.018] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
           >
             <span className="min-w-0">
               <span className="block text-[14px] font-semibold leading-snug text-foreground">{item.title}</span>
               <span className="mt-1.5 block text-[12px] font-medium leading-[1.55] text-muted-foreground">{item.body}</span>
             </span>
-            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden="true" />
+            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden="true" />
           </button>
         ))}
       </div>
@@ -298,11 +281,11 @@ function SignalMetricStrip({ metrics }: { metrics: DeskSignalMetric[] }) {
           <article
             key={`${metric.label}-${metric.value}-${index}`}
             data-testid="desk-signal-metric"
-            className={`min-w-0 bg-transparent px-3 py-4 first:pl-0 sm:px-4 lg:min-h-[94px] lg:py-5 ${metricCellBorderClass(index, metrics.length)}`}
+            className={`min-w-0 bg-transparent px-4 py-5 first:pl-0 lg:min-h-[98px] lg:px-6 lg:py-6 ${metricCellBorderClass(index, metrics.length)}`}
           >
-            <p className="break-words text-[11px] font-semibold leading-[1.3] text-muted-foreground [overflow-wrap:anywhere]">{metric.label}</p>
-            <p className="mt-2 break-words text-[20px] font-semibold leading-none tracking-[-0.018em] text-foreground sm:text-[22px] [overflow-wrap:anywhere]">{metric.value}</p>
-            {metric.context ? <p className="mt-1.5 break-words text-[11px] font-medium leading-snug text-muted-foreground/62 [overflow-wrap:anywhere]">{metric.context}</p> : null}
+            <p className="break-words text-[12px] font-medium leading-[1.35] text-muted-foreground [overflow-wrap:anywhere]">{metric.label}</p>
+            <p className="mt-2 break-words text-[22px] font-semibold leading-none tracking-[-0.018em] text-foreground sm:text-[24px] [overflow-wrap:anywhere]">{metric.value}</p>
+            {metric.context ? <p className="mt-1.5 break-words text-[12px] font-medium leading-snug text-muted-foreground/62 [overflow-wrap:anywhere]">{metric.context}</p> : null}
           </article>
         ))}
       </div>
@@ -343,14 +326,8 @@ function ManagerRead({
   return (
     <section data-testid="desk-manager-read" className="mt-9 sm:mt-11">
       <div className="flex items-end justify-between gap-4">
-        <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/72">Manager&apos;s Read</p>
-        <button
-          type="button"
-          onClick={onEvidence}
-          className="min-h-8 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/20"
-        >
-          Evidence
-        </button>
+        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</p>
+        <Button type="button" variant="ghost" size="sm" onClick={onEvidence}>Evidence</Button>
       </div>
 
       <div data-testid="desk-manager-read-grid" className="mt-3 grid border-y border-foreground/8 lg:grid-cols-2">
@@ -358,12 +335,12 @@ function ManagerRead({
           <article
             key={`${segment.label}-${index}`}
             data-testid="desk-manager-read-segment"
-            className={`min-w-0 py-5 sm:py-6 lg:px-6 lg:py-7 lg:first:pl-0 ${managerReadCellClass(index, segments.length)}`}
+            className={`min-w-0 py-5 sm:py-6 lg:px-7 lg:py-7 lg:first:pl-0 ${managerReadCellClass(index, segments.length)}`}
           >
             <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4">
-              <span className="font-mono text-[10px] font-bold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
+              <span className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
               <div className="min-w-0">
-                <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground/68">{segment.label}</p>
+                <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/68">{segment.label}</p>
                 <p className="mt-2 max-w-[42rem] break-words text-[15px] font-medium leading-[1.65] text-foreground/84 [overflow-wrap:anywhere] sm:text-[16px]">{segment.body}</p>
               </div>
             </div>
