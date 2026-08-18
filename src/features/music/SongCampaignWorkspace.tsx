@@ -1,6 +1,6 @@
 import { ArrowRight, BookOpenText, BriefcaseBusiness, FileText, MessageCircle } from "lucide-react";
 import type { ReactNode } from "react";
-
+import { Button } from "../../design-system/desktopPrimitives";
 import type { MusicObjectViewModel } from "../../types/cleanProduction";
 import type { SongCampaignState } from "./songCampaign";
 
@@ -25,31 +25,32 @@ export function SongCampaignWorkspace({
   const primaryAction = campaign.nextMove === "build_release_kit" ? onBuildReleaseKit ?? onContinueManager : onContinueManager;
   const primaryLabel = campaign.nextMove === "build_release_kit"
     ? hasNarrative ? "Complete release kit with Manager" : "Build campaign with Manager"
-    : "Continue with Manager";
+    : "Work with Manager";
 
   return (
-    <section data-testid="song-campaign-workspace" aria-label={`Campaign for ${song.title}`} className="mx-auto max-w-4xl">
+    <section data-testid="song-campaign-workspace" aria-label={`Campaign for ${song.title}`} className="w-full max-w-[1120px]">
       <header className="border-b border-foreground/8 pb-6 sm:pb-7">
-        <p className="font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">
+        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
           {postRelease ? "Record campaign" : "Release campaign"}
         </p>
-        <h2 className="mt-2 max-w-2xl font-display text-[28px] font-semibold leading-[1.06] tracking-tight text-foreground sm:text-[34px]">
+        <h2 className="mt-2 max-w-[760px] font-display text-[28px] font-semibold leading-[1.08] tracking-[-0.025em] text-foreground sm:text-[32px] lg:text-[34px]">
           {postRelease ? "Keep this record moving." : "One story. One release system."}
         </h2>
-        <p className="mt-3 max-w-2xl text-[13px] font-medium leading-6 text-muted-foreground">
+        <p className="mt-3 max-w-[720px] text-[14px] font-medium leading-[1.65] text-muted-foreground">
           {postRelease
             ? "The campaign keeps one narrative, the current materials, servicing work and next decision attached to this record."
             : "The narrative comes first. Manager then turns that strategy into the specific materials and work this release actually needs."}
         </p>
         {primaryAction ? (
-          <button
+          <Button
             type="button"
             onClick={primaryAction}
-            className="mt-5 inline-flex min-h-10 items-center justify-center gap-2 rounded-[10px] bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30"
+            size="md"
+            className="mt-5"
+            leadingIcon={<MessageCircle className="h-4 w-4" aria-hidden="true" />}
           >
-            <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
             {primaryLabel}
-          </button>
+          </Button>
         ) : null}
       </header>
 
@@ -120,24 +121,26 @@ function CampaignRow({
   onAction?: () => void;
 }) {
   return (
-    <div className="grid gap-3 py-5 sm:grid-cols-[2.25rem_minmax(0,1fr)_auto] sm:items-start sm:gap-4 sm:py-6">
-      <span className="inline-flex h-9 w-9 items-center justify-center rounded-[11px] bg-foreground/[0.05] text-muted-foreground">
+    <div className="grid gap-3 py-5 sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] sm:items-start sm:gap-4 sm:py-6">
+      <span className="inline-flex h-10 w-10 items-center justify-center rounded-[11px] bg-foreground/[0.045] text-muted-foreground">
         {icon}
       </span>
       <div className="min-w-0">
-        <p className="font-ui text-[9px] font-bold uppercase tracking-[0.09em] text-muted-foreground">{eyebrow}</p>
-        <h3 className="mt-1 text-[14px] font-semibold leading-snug text-foreground">{title}</h3>
-        <p className="mt-1.5 max-w-2xl text-[12px] font-medium leading-5 text-muted-foreground">{body}</p>
+        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{eyebrow}</p>
+        <h3 className="mt-1 text-[15px] font-semibold leading-snug text-foreground">{title}</h3>
+        <p className="mt-1.5 max-w-[720px] text-[13px] font-medium leading-[1.6] text-muted-foreground">{body}</p>
       </div>
       {actionLabel && onAction ? (
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="sm"
           onClick={onAction}
-          className="inline-flex min-h-9 items-center gap-1.5 self-start rounded-lg px-2.5 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.045] focus:outline-none focus:ring-2 focus:ring-brand-accent/25 sm:justify-self-end"
+          className="self-start sm:justify-self-end"
+          trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}
         >
           {actionLabel}
-          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
+        </Button>
       ) : null}
     </div>
   );
