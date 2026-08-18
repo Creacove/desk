@@ -1,6 +1,13 @@
 import { ArrowLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { ProductButton, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
+import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
+import {
+  Button,
+  DetailHeader,
+  SkeletonBlock,
+  SkeletonRows,
+  Timestamp,
+} from "../../design-system/desktopPrimitives";
 import type {
   DrawerKind,
   MissionEventViewModel,
@@ -33,6 +40,7 @@ export function MissionsWorkspace({
   onOpenMusicSubject,
   onWorkWithManager,
   firstMissionPending,
+  detailPending = false,
   onApproveTask,
   onCompleteTask,
   onUploadTaskDeliverable,
@@ -51,6 +59,7 @@ export function MissionsWorkspace({
   onOpenMusicSubject?: (subject: { id: string; title: string; type: "music_item" | "music_project" }) => void;
   onWorkWithManager?: (taskId: string) => void;
   firstMissionPending: boolean;
+  detailPending?: boolean;
   onApproveTask: (taskId: string) => Promise<void>;
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
@@ -91,10 +100,19 @@ export function MissionsWorkspace({
     setRoomMode("room");
   }
 
+  if (!missions.length && detailPending) {
+    return (
+      <section className="app-workspace app-workspace-reveal pb-12" aria-busy="true">
+        <WorkspaceHeader title="Missions" />
+        <MissionListSkeleton />
+      </section>
+    );
+  }
+
   if (!missions.length) {
     return (
-      <section className="app-workspace app-workspace-reveal">
-        <WorkspaceHeader eyebrow="Artist work" title="Missions" />
+      <section className="app-workspace app-workspace-reveal pb-12">
+        <WorkspaceHeader title="Missions" />
         <EmptyMissionState
           onCreateFirstMission={onCreateFirstMission}
           onOpenManager={onOpenManager}
@@ -106,8 +124,8 @@ export function MissionsWorkspace({
 
   if (!selected || roomMode === "list") {
     return (
-      <section className="app-workspace app-workspace-reveal">
-        <WorkspaceHeader eyebrow="Artist work" title="Missions" />
+      <section className="app-workspace app-workspace-reveal pb-12">
+        <WorkspaceHeader title="Missions" />
         <MissionList activeMissions={activeMissions} completedMissions={completedMissions} onOpen={openMission} />
       </section>
     );
@@ -116,6 +134,7 @@ export function MissionsWorkspace({
   return (
     <MissionRoom
       mission={selected}
+      detailPending={detailPending}
       surface={surface}
       onSurface={setSurface}
       onBack={() => setRoomMode("list")}
@@ -130,6 +149,19 @@ export function MissionsWorkspace({
   );
 }
 
+function MissionListSkeleton() {
+  return (
+    <div className="mt-5 grid gap-5 sm:mt-8">
+      <div className="grid max-w-[420px] grid-cols-3 gap-1 rounded-[11px] bg-foreground/[0.025] p-1">
+        <SkeletonBlock className="h-9" />
+        <SkeletonBlock className="h-9" />
+        <SkeletonBlock className="h-9" />
+      </div>
+      <SkeletonRows count={5} />
+    </div>
+  );
+}
+
 function EmptyMissionState({
   onCreateFirstMission,
   onOpenManager,
@@ -141,18 +173,14 @@ function EmptyMissionState({
 }) {
   return (
     <section className="mt-8 max-w-[760px] border-t border-foreground/8 pt-8">
-      <p className="font-display text-[26px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[32px]">No missions yet</p>
-      <div className="mt-6 flex flex-wrap gap-3">
-        <ProductButton onClick={onCreateFirstMission} disabled={firstMissionPending}>
-          {firstMissionPending ? "Opening Manager" : "Create first mission"}
-        </ProductButton>
-        <button
-          type="button"
-          onClick={onOpenManager}
-          className="inline-flex min-h-11 items-center rounded-[12px] px-4 text-[13px] font-bold text-foreground transition-colors hover:bg-foreground/[0.045]"
-        >
-          Manager
-        </button>
+      <p className="font-display text-[26px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[30px]">No missions yet</p>
+      <div className="mt-6 flex flex-wrap gap-2.5">
+        <Button onClick={onCreateFirstMission} pending={firstMissionPending} size="lg">
+          Create first mission
+        </Button>
+        <Button variant="ghost" onClick={onOpenManager} size="lg">
+          Work with Manager
+        </Button>
       </div>
     </section>
   );
@@ -178,6 +206,7 @@ function MissionList({
       <WorkspaceTabRail
         ariaLabel="Mission status"
         testId="mission-status-tabs"
+        className="lg:max-w-[420px]"
         active={activeTab}
         onChange={(value) => setActiveTab(value as MissionListTab)}
         items={[
@@ -212,7 +241,7 @@ function MissionListEmpty({ tab }: { tab: MissionListTab }) {
       ? "Nothing in progress"
       : "Nothing completed yet";
 
-  return <p className="border-t border-foreground/8 py-8 text-[14px] font-semibold text-muted-foreground">{copy}</p>;
+  return <p className="border-t border-foreground/8 py-8 text-[14px] font-medium text-muted-foreground">{copy}</p>;
 }
 
 function MissionRow({
@@ -232,20 +261,23 @@ function MissionRow({
     <button
       type="button"
       onClick={onOpen}
-      className="group grid min-h-[82px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-4 py-4 text-left sm:min-h-[92px]"
+      className="group grid min-h-[78px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-5 py-4 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.018] focus-visible:bg-foreground/[0.022] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20 sm:min-h-[84px] lg:px-3 lg:-mx-3 lg:w-[calc(100%+1.5rem)]"
     >
       <div className="min-w-0">
-        <h3 className="truncate font-display text-[17px] font-semibold tracking-[-0.015em] text-foreground sm:text-[18px]">{mission.title}</h3>
-        {currentTask ? <p className="mt-1.5 line-clamp-1 text-[13px] font-medium text-foreground/76">{currentTask.title}</p> : null}
-        <p className="mt-1.5 text-[11px] font-semibold text-muted-foreground/65">{doneCount} of {tasks.length} done</p>
+        <h3 className="truncate font-display text-[16px] font-semibold tracking-[-0.012em] text-foreground sm:text-[17px]">{mission.title}</h3>
+        {currentTask ? <p className="mt-1.5 truncate text-[13px] font-medium text-foreground/72">{currentTask.title}</p> : null}
       </div>
-      <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/45 transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />
+      <div className="flex shrink-0 items-center gap-4">
+        <span className="hidden text-[12px] font-medium text-muted-foreground sm:inline">{doneCount} of {tasks.length} done</span>
+        <ChevronRight className="h-4 w-4 text-muted-foreground/45 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
+      </div>
     </button>
   );
 }
 
 function MissionRoom({
   mission,
+  detailPending,
   surface,
   onSurface,
   onBack,
@@ -258,6 +290,7 @@ function MissionRoom({
   targetTaskId,
 }: {
   mission: MissionViewModel;
+  detailPending: boolean;
   surface: MissionSurface;
   onSurface: (surface: MissionSurface) => void;
   onBack: () => void;
@@ -276,55 +309,81 @@ function MissionRoom({
   const events = missionEvents(mission);
   const doneCount = tasks.filter(taskIsDone).length;
 
+  const back = (
+    <button
+      type="button"
+      onClick={onBack}
+      aria-label="Back to Missions"
+      className="inline-flex min-h-10 items-center gap-2 rounded-[10px] px-2 -ml-2 text-[12px] font-semibold text-muted-foreground outline-none transition-colors duration-150 hover:bg-foreground/[0.04] hover:text-foreground focus-visible:ring-2 focus-visible:ring-brand-accent/20"
+    >
+      <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+      Missions
+    </button>
+  );
+
   return (
-    <section className="app-workspace app-workspace-reveal grid w-full min-w-0 gap-5 overflow-x-clip pb-14 sm:gap-7">
-      <header>
-        <button
-          type="button"
-          onClick={onBack}
-          aria-label="Back to Missions"
-          className="mb-5 inline-flex min-h-10 items-center gap-2 rounded-[10px] pr-2 text-[12px] font-semibold text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-          Missions
-        </button>
+    <section className="app-workspace app-workspace-reveal grid w-full min-w-0 gap-5 overflow-x-clip pb-14 sm:gap-7" aria-busy={detailPending || undefined}>
+      {detailPending ? (
+        <MissionRoomSkeleton back={back} />
+      ) : (
+        <>
+          <DetailHeader back={back} title={mission.title} meta={`${doneCount} of ${tasks.length} done`} />
 
-        <div>
-          <h1 className="break-words font-display text-[30px] font-semibold leading-[1.04] tracking-[-0.035em] text-foreground sm:text-[42px] lg:text-[50px]">{mission.title}</h1>
-          <p className="mt-3 text-[13px] font-semibold text-muted-foreground">{doneCount} of {tasks.length} done</p>
-        </div>
-      </header>
+          {mission.subjectType === "music_item" && mission.subjectId && onOpenMusicSubject ? (
+            <div className="max-w-[760px]">
+              <SongContextAttachment title={mission.musicSubject} onOpenSong={() => onOpenMusicSubject({ id: mission.subjectId!, title: mission.musicSubject, type: "music_item" })} />
+            </div>
+          ) : null}
 
-      {mission.subjectType === "music_item" && mission.subjectId && onOpenMusicSubject ? (
-        <div className="max-w-[680px]">
-          <SongContextAttachment title={mission.musicSubject} onOpenSong={() => onOpenMusicSubject({ id: mission.subjectId!, title: mission.musicSubject, type: "music_item" })} />
-        </div>
-      ) : null}
+          <WorkspaceTabRail
+            ariaLabel="Mission section"
+            testId="mobile-mission-tabs"
+            className="lg:max-w-[280px]"
+            active={surface}
+            onChange={(value) => onSurface(value as MissionSurface)}
+            items={[
+              { id: "work", label: "Work" },
+              { id: "updates", label: "Updates" },
+            ]}
+          />
 
-      <WorkspaceTabRail
-        ariaLabel="Mission section"
-        testId="mobile-mission-tabs"
-        active={surface}
-        onChange={(value) => onSurface(value as MissionSurface)}
-        items={[
-          { id: "work", label: "Work" },
-          { id: "updates", label: "Updates" },
-        ]}
-      />
-
-      {surface === "work" ? (
-        <WorkSurface
-          mission={mission}
-          checkpoints={checkpoints}
-          tasks={tasks}
-          targetTaskId={targetTaskId}
-          onApproveTask={onApproveTask}
-          onCompleteTask={onCompleteTask}
-          onUploadTaskDeliverable={onUploadTaskDeliverable}
-          onWorkWithManager={onWorkWithManager}
-        />
-      ) : <UpdatesSurface notes={notes} events={events} />}
+          {surface === "work" ? (
+            <WorkSurface
+              mission={mission}
+              checkpoints={checkpoints}
+              tasks={tasks}
+              targetTaskId={targetTaskId}
+              onApproveTask={onApproveTask}
+              onCompleteTask={onCompleteTask}
+              onUploadTaskDeliverable={onUploadTaskDeliverable}
+              onWorkWithManager={onWorkWithManager}
+            />
+          ) : <UpdatesSurface notes={notes} events={events} />}
+        </>
+      )}
     </section>
+  );
+}
+
+function MissionRoomSkeleton({ back }: { back: React.ReactNode }) {
+  return (
+    <div className="grid gap-7">
+      <div>
+        <div className="mb-5">{back}</div>
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+          <div>
+            <SkeletonBlock className="h-9 w-[min(70%,38rem)]" />
+            <SkeletonBlock className="mt-2 h-9 w-[min(46%,24rem)]" />
+          </div>
+          <SkeletonBlock className="h-4 w-20" />
+        </div>
+      </div>
+      <div className="grid max-w-[280px] grid-cols-2 gap-1 rounded-[11px] bg-foreground/[0.025] p-1">
+        <SkeletonBlock className="h-9" />
+        <SkeletonBlock className="h-9" />
+      </div>
+      <SkeletonRows count={4} />
+    </div>
   );
 }
 
@@ -358,12 +417,16 @@ function UpdatesSurface({ notes, events }: { notes: MissionNoteViewModel[]; even
   }
 
   return (
-    <section className="max-w-[820px] border-y border-foreground/9">
+    <section className="w-full max-w-[1120px] border-y border-foreground/9">
       {items.map((item) => (
-        <article key={item.id} className="border-b border-foreground/8 py-4 last:border-b-0">
-          <p className="text-[13px] font-semibold leading-relaxed text-foreground">{item.message}</p>
-          <p className="mt-1.5 text-[11px] font-medium text-muted-foreground">
-            {item.actor}{item.createdAt ? ` · ${formatUpdateTime(item.createdAt)}` : ""}
+        <article
+          key={item.id}
+          className="grid min-w-0 gap-1 border-b border-foreground/8 py-4 last:border-b-0 sm:py-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-8"
+        >
+          <p className="max-w-[760px] text-[14px] font-medium leading-[1.6] text-foreground/88">{item.message}</p>
+          <p className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-muted-foreground lg:justify-end lg:text-right">
+            <span>{item.actor}</span>
+            {item.createdAt ? <><span aria-hidden="true">·</span><Timestamp value={item.createdAt} context="standalone" /></> : null}
           </p>
         </article>
       ))}
@@ -379,19 +442,4 @@ function humanActor(actor: MissionEventViewModel["actor"]) {
 
 function readCreatedAt(value: MissionNoteViewModel | MissionEventViewModel) {
   return (value as { createdAt?: string }).createdAt;
-}
-
-function formatUpdateTime(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const eventDay = new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate());
-  const dayDiff = Math.round((today.getTime() - eventDay.getTime()) / 86_400_000);
-  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(parsed);
-
-  if (dayDiff === 0) return `Today, ${time}`;
-  if (dayDiff === 1) return `Yesterday, ${time}`;
-  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(parsed);
 }
