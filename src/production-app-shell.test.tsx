@@ -185,7 +185,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(screen.getAllByText("Learning about your artist profile").length).toBeGreaterThan(0);
-    expect(screen.queryByRole("heading", { name: "Manager Basics" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Give your Manager the starting point." })).not.toBeInTheDocument();
   });
 
   it("refreshes persisted setup progress and opens Desk HQ when background discovery completes", async () => {
@@ -278,13 +278,13 @@ describe("Clean production prototype-match shell", () => {
 
     const { container } = render(<ProductionApp authAdapter={authWithoutSession()} workspaceLoader={workspaceLoader} />);
 
-    expect(await screen.findByRole("heading", { name: "Sign in to Ordersounds" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
     expect(screen.getByTestId("auth-shell")).toBeInTheDocument();
     expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
     expect(container.querySelector('img[src="/logo.png"]')).toBeInTheDocument();
-    expect(screen.getAllByText("Artist operating desk").length).toBeGreaterThan(0);
-    expect(screen.getByText("Open the artist's operating read.")).toBeInTheDocument();
-    expect(screen.getByText("Return to the signals, blockers, tasks, and Manager decisions that need the team's attention today.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Know what to do next." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
+    expect(screen.queryByText(/signals, blockers, tasks/i)).not.toBeInTheDocument();
     expect(screen.queryByText("Account")).not.toBeInTheDocument();
     expect(screen.queryByText("Manager basics")).not.toBeInTheDocument();
     expect(screen.queryByText("Desk ready")).not.toBeInTheDocument();
@@ -292,7 +292,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Use your account to open the production workspace.")).not.toBeInTheDocument();
     expect(screen.queryByText("Secure desk")).not.toBeInTheDocument();
     expect(screen.queryByText(/provider login options/i)).not.toBeInTheDocument();
-    expect(screen.getByTestId("auth-mode-switch")).toBeInTheDocument();
+    expect(screen.queryByTestId("auth-mode-switch")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Sign in" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create account" })).toBeInTheDocument();
 
@@ -301,13 +301,12 @@ describe("Clean production prototype-match shell", () => {
     expect(workspaceLoader.calls).toBe(0);
   });
 
-  it("uses the branded loader while checking the signed-in session", async () => {
+  it("uses the quiet Desk transition while checking the signed-in session", async () => {
     render(<ProductionApp authAdapter={authWithPendingSession()} workspaceLoader={workspaceLoaderWith(workspace)} />);
 
-    expect(screen.getByTestId("branded-loader")).toBeInTheDocument();
-    expect(screen.getByTestId("auth-brand-logo")).toBeInTheDocument();
-    expect(screen.getByText("Loading Ordersounds")).toBeInTheDocument();
-    expect(screen.getByText("Checking session and active artist workspace.")).toBeInTheDocument();
+    expect(screen.getByTestId("front-door-transition")).toBeInTheDocument();
+    expect(screen.getByText("Opening Desk")).toBeInTheDocument();
+    expect(screen.queryByText("Checking session and active artist workspace.")).not.toBeInTheDocument();
   });
 
   it("keeps Paystack returns isolated from any existing browser workspace session", async () => {
@@ -343,8 +342,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Confirming payment" })).toBeInTheDocument();
-    expect(screen.getByText("This payment is not linked to the signed-in session in this browser.")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /Opening your Desk|Sign in with the account that started this Desk/ })).toBeInTheDocument();
+    expect(screen.getByText("This checkout belongs to a different account.")).toBeInTheDocument();
     expect((screen.queryAllByRole("heading", { name: "Home" })[0] ?? null)).not.toBeInTheDocument();
     expect(screen.queryByText("Wrong Browser Desk")).not.toBeInTheDocument();
     expect(workspaceLoader.calls).toBe(0);
@@ -382,7 +381,7 @@ describe("Clean production prototype-match shell", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole("heading", { name: "Confirming payment" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Opening your Desk|Sign in with the account that started this Desk/ })).toBeInTheDocument();
     expect(loadBillingStatus).toHaveBeenCalledTimes(1);
     expect(loadBillingStatus).toHaveBeenLastCalledWith({ reference: "ors_slow_return" });
 
@@ -390,14 +389,14 @@ describe("Clean production prototype-match shell", () => {
       await vi.advanceTimersByTimeAsync(300_000);
     });
     const callsAtDeadline = loadBillingStatus.mock.calls.length;
-    expect(screen.getByRole("button", { name: "Retry payment confirmation" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check again" })).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(60_000);
     });
     expect(loadBillingStatus).toHaveBeenCalledTimes(callsAtDeadline);
     expect(workspaceLoader.calls).toBe(0);
 
-    fireEvent.click(screen.getByRole("button", { name: "Retry payment confirmation" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
     await act(async () => {
       await Promise.resolve();
     });
@@ -493,7 +492,7 @@ describe("Clean production prototype-match shell", () => {
     const signIns: string[] = [];
     render(<ProductionApp authAdapter={authWithPendingPasswordSignIn(signIns)} workspaceLoader={workspaceLoaderWith(workspace)} />);
 
-    expect(await screen.findByRole("heading", { name: "Sign in to Ordersounds" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "artist@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "super-secret" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
@@ -517,7 +516,7 @@ describe("Clean production prototype-match shell", () => {
 
     render(<ProductionApp authAdapter={authAdapter} workspaceLoader={workspaceLoaderWith(null)} />);
 
-    expect(await screen.findByRole("heading", { name: "Sign in to Ordersounds" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: testUser.email } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "safe-test-password" } });
@@ -533,10 +532,10 @@ describe("Clean production prototype-match shell", () => {
   it("keeps a fixture runtime available for demo and parity verification", async () => {
     render(<ProductionApp fixtureMode initialView="connectArtist" />);
 
-    expect(await screen.findByRole("heading", { name: "Connect artist profile" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Sign in to Ordersounds" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /Find your artist\.|Your artist\./ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Welcome back." })).not.toBeInTheDocument();
     expect(screen.getByText("Sable Day")).toBeInTheDocument();
-    expect(screen.getAllByText("Artist identity").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Artist identity")).not.toBeInTheDocument();
     expect(screen.queryByText("Account")).not.toBeInTheDocument();
     expect(screen.queryByText("Manager basics")).not.toBeInTheDocument();
     expect(screen.queryByText("Desk ready")).not.toBeInTheDocument();
@@ -631,17 +630,16 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Connect artist profile" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Search artists")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /Find your artist\.|Your artist\./ })).toBeInTheDocument();
+    expect(screen.getByLabelText("Search artist name")).toBeInTheDocument();
     expect(screen.queryByText("Step 1 / Identity")).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Search artists"), { target: { value: "Nova" } });
-    expect(screen.getByTestId("spotify-search-loader")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Search artist name"), { target: { value: "Nova" } });
+    expect(screen.getByTestId("artist-search-loader")).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: "Select artist Nova Vale" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Select artist Nova Vale" }));
-    expect(await screen.findByRole("heading", { name: "Preparing Nova Vale Desk" })).toBeInTheDocument();
-    expect(screen.getByText("Preparing your subscription options.")).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Connect artist profile" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Found. Opening the Desk preview.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Find your artist." })).toBeInTheDocument();
 
     await act(async () => {
       resolveCatalogPreview?.({
@@ -655,7 +653,7 @@ describe("Clean production prototype-match shell", () => {
       });
     });
 
-    await screen.findByRole("heading", { name: "Unlock Nova Vale Desk" });
+    await screen.findByRole("heading", { name: "Open Nova Vale’s Desk." });
     expect(selectionActions).toEqual(["preview:Nova Vale", "checkout:Nova Vale"]);
     expect(checkoutArtists).toEqual(["Nova Vale"]);
     expect(analyticsMock.trackEvent).toHaveBeenCalledWith("artist selected", {
@@ -692,8 +690,8 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Connect artist profile" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Manager Basics" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /Find your artist\.|Your artist\./ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Give your Manager the starting point." })).not.toBeInTheDocument();
     expect(retrySetup).not.toHaveBeenCalled();
   }, 20000);
 
@@ -731,10 +729,10 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Enter Desk HQ" })).toBeDisabled();
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Build my Desk" })).toBeDisabled();
     expect(screen.queryByText(/human inputs|human constraints|enrichment|infer stage|artist direction and monthly budget/i)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Back to profile" })).toHaveClass("rounded-[10px]");
+    expect(screen.getByRole("button", { name: "Back" })).toHaveClass("rounded-[10px]");
     expect(screen.queryByLabelText("Artist stage")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Home market")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Genre")).not.toBeInTheDocument();
@@ -743,7 +741,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(screen.getByLabelText("Artist goals"), { target: { value: "Build Nova Vale around precise catalog proof before scale spend." } });
     fireEvent.change(screen.getByLabelText("Monthly budget"), { target: { value: "$3,000" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
     await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading);
     expect(saves).toEqual(["|||Build Nova Vale around precise catalog proof before scale spend.|$3,000"]);
   }, 20000);
@@ -776,11 +774,11 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
     expect(screen.queryByText(/catalog import is running in the background/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
     expect(screen.queryByTestId("setup-save-loader")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Preparing Desk HQ" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Build my Desk" })).toBeDisabled();
     resolveSave?.({
       ...setupWorkspace,
       status: "active",
@@ -867,9 +865,9 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
     expect(screen.queryByText(/spotify catalog import failed/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 
     await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading);
     expect(setupPhases).toEqual(["checkout-1:contextualize"]);
@@ -946,8 +944,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 
     await screen.findByRole("heading", { name: "Preparing your workspace" });
     expect(contextualizeCalls).toBe(1);
@@ -1000,8 +998,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
     expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect(contextualizeCalls).toBe(1);
     expect(workspaceLoads).toBe(3);
@@ -1105,8 +1103,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 
     expect(await screen.findByRole("heading", { name: "Preparing your workspace" })).toBeInTheDocument();
     expect((screen.queryAllByRole("heading", { name: "Home" })[0] ?? null)).not.toBeInTheDocument();
@@ -1243,8 +1241,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 
     await waitFor(() => expect(screen.getAllByText(setupMapBrief.headlineRead).length).toBeGreaterThan(0));
     await waitFor(() => expect(generationModes).toEqual(["setup-map"]));
@@ -1286,8 +1284,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 
     expect(await screen.findByRole("heading", { name: "Setup paused" })).toBeInTheDocument();
     expect(await screen.findByText("OpenAI setup map failed")).toBeInTheDocument();
@@ -1348,8 +1346,8 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 
     expect(await screen.findByText("Setup map needs a live Manager read. Retry to regenerate it.")).toBeInTheDocument();
     expect(screen.getByText("Setup paused while preparing your workspace. Your completed work is safe.")).toBeInTheDocument();
@@ -1374,9 +1372,9 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(await screen.findByRole("heading", { name: "Manager Basics" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Give your Manager the starting point." })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
-    await screen.findByRole("heading", { name: "Sign in to Ordersounds" });
+    await screen.findByRole("heading", { name: "Welcome back." });
     expect(signOutFromSetup).toHaveBeenCalledTimes(1);
     expect(analyticsMock.resetAnalyticsUser).toHaveBeenCalledTimes(1);
 
@@ -1394,7 +1392,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     fireEvent.click(screen.getAllByRole("button", { name: "Sign out" })[0]);
-    await screen.findByRole("heading", { name: "Sign in to Ordersounds" });
+    await screen.findByRole("heading", { name: "Welcome back." });
     expect(signOutFromDesk).toHaveBeenCalledTimes(1);
     expect(analyticsMock.resetAnalyticsUser).toHaveBeenCalledTimes(2);
   }, 20000);
@@ -1436,7 +1434,7 @@ describe("Clean production prototype-match shell", () => {
 
     fireEvent.click(within(activityCenter).getByRole("button", { name: "Close Activity Center" }));
     fireEvent.click(within(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getByAltText("Nova Vale artist image")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     fireEvent.click(screen.getByRole("tab", { name: "Account" }));
@@ -2093,7 +2091,7 @@ describe("Clean production prototype-match shell", () => {
     expect(within(mobileNav).queryByText("Settings")).not.toBeInTheDocument();
 
     fireEvent.click(within(topbar).getByRole("button", { name: "Open artist settings" }));
-    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.getAllByRole("button", { name: "Sign out" }).length).toBeGreaterThan(0);
   }, 20000);
 
@@ -6255,7 +6253,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByRole("button", { name: /^Updates/ })).toHaveAttribute("aria-pressed", "true");
 
     fireEvent.click(within(rail).getByRole("button", { name: "Settings" }));
-    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
   }, 20000);
 
   it("opens Missions from the sidebar when no missions exist yet", async () => {
@@ -6604,9 +6602,9 @@ describe("Clean production prototype-match shell", () => {
 async function enterDeskHq() {
   render(<ProductionApp fixtureMode initialView="connectArtist" />);
 
-  await screen.findByRole("heading", { name: "Connect artist profile" });
+  await screen.findByRole("heading", { name: /Find your artist\.|Your artist\./ });
   fireEvent.click(screen.getByRole("button", { name: "Continue to artist context" }));
-  fireEvent.click(screen.getByRole("button", { name: "Enter Desk HQ" }));
+  fireEvent.click(screen.getByRole("button", { name: "Build my Desk" }));
 }
 
 function openManagerFromDesk() {

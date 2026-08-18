@@ -21,7 +21,7 @@ describe("SettingsScreen", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Settings." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Artist profile." })).not.toBeInTheDocument();
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Profile", "Workspace", "Preferences", "Account"]);
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
@@ -56,7 +56,7 @@ describe("SettingsScreen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await vi.waitFor(() => expect(onSaveProfile).toHaveBeenCalledWith(expect.objectContaining({ name: "Burna Boy International" })));
-    expect(await screen.findByText("Changes saved.")).toBeInTheDocument();
+    expect(await screen.findByText("Saved.")).toBeInTheDocument();
   });
 
   it("keeps an unsaved profile draft after a save failure", async () => {
@@ -95,7 +95,7 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText("Appearance")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Preferences" }));
     expect(screen.getByText("Appearance")).toBeTruthy();
-    expect(screen.getByText("Following system: Dark")).toBeTruthy();
+    expect(screen.getByText("Following system · Dark")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Use system appearance" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "Use dark appearance" }));
@@ -105,7 +105,7 @@ describe("SettingsScreen", () => {
     expect(screen.queryByText("Appearance")).not.toBeInTheDocument();
   });
 
-  it("lets users edit manual profile fields while keeping the connected artist managed", () => {
+  it("lets users edit manual profile fields without exposing provider plumbing", () => {
     render(
       <SettingsScreen
         profile={profileWithArtistIntelligence()}
@@ -118,7 +118,8 @@ describe("SettingsScreen", () => {
     for (const label of ["Artist name", "Artist stage", "Home market", "Genre", "Monthly budget", "TikTok", "Instagram", "YouTube", "X"]) {
       expect(screen.getByLabelText(label)).toBeEnabled();
     }
-    expect(screen.getByLabelText("Connected artist")).toBeDisabled();
+    expect(screen.queryByLabelText("Connected artist")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Spotify public catalog/i)).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
   });
 
@@ -206,8 +207,8 @@ describe("SettingsScreen", () => {
     );
 
     fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
-    expect(screen.getByRole("heading", { name: "Active workspace access" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "No active access" })).not.toBeInTheDocument();
+    expect(screen.getByText("Active access")).toBeInTheDocument();
+    expect(screen.queryByText("No active access")).not.toBeInTheDocument();
   });
 
   it("offers Paddle self-service billing from the workspace tab", () => {

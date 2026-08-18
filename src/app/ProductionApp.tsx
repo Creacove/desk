@@ -20,8 +20,16 @@ import {
 } from "../features/manager/ManagerScreens";
 import { MissionsWorkspace } from "../features/missions/MissionScreens";
 import { MusicWorkspace } from "../features/music/MusicScreens";
-import { ConnectArtistScreen, PaywallPreviewScreen, SetupScreen } from "../features/onboarding/OnboardingScreens";
+import { ConnectArtistScreen, PaywallPreviewScreen, SetupScreen } from "../features/onboarding/FrontDoorScreens";
+import {
+  FrontDoorAuthScreen,
+  FrontDoorMessageScreen,
+  FrontDoorPaymentReturnScreen,
+  FrontDoorTransitionScreen,
+} from "../features/onboarding/FrontDoorAuth";
+import { runFrontDoorTransition } from "../features/onboarding/frontDoorTransition";
 import { SetupActivityScreen } from "../features/onboarding/SetupActivityScreen";
+import { enterDeskWithProgressiveTransition } from "../features/onboarding/setup-presentation/setupPresentationTransition";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { LockedAgentWorkspace, StaffWorkspace } from "../features/staff/StaffScreens";
 import {
@@ -459,23 +467,16 @@ export function ProductionApp({
   }
 
   if (status === "loading") {
-    return (
-      <BrandedLoader
-        title="Loading Ordersounds"
-        body="Checking session and active artist workspace."
-        steps={["Session", "Workspace", "Sources"]}
-        logoTestId="auth-brand-logo"
-      />
-    );
+    return <FrontDoorTransitionScreen title="Opening Desk" />;
   }
 
   if (status === "signed-out") {
-    return <AuthScreen authAdapter={runtime.authAdapter} onAuthenticated={loadProductionState} />;
+    return <FrontDoorAuthScreen authAdapter={runtime.authAdapter} onAuthenticated={loadProductionState} />;
   }
 
   if (status === "payment-return" && paymentReturn) {
     return (
-      <PaymentReturnScreen
+      <FrontDoorPaymentReturnScreen
         state={paymentReturn}
         onRetry={paymentReturn.status === "timed-out" ? retryPaymentConfirmation : undefined}
         onSignOut={sessionUser ? handleSignOut : undefined}
@@ -493,11 +494,13 @@ export function ProductionApp({
         spotifyArtistAdapter={runtime.spotifyArtistAdapter}
         onSignOut={handleSignOut}
         onWorkspaceReady={(nextWorkspace) => {
-          setWorkspace(nextWorkspace);
-          setStatus("ready");
-          if (nextWorkspace.accessType === "private_beta") {
-            setSuccessNotice(`Code accepted — private-beta access is active until ${formatAccessDate(nextWorkspace.accessEndsAt)}.`);
-          }
+          runFrontDoorTransition(() => {
+            setWorkspace(nextWorkspace);
+            setStatus("ready");
+            if (nextWorkspace.accessType === "private_beta") {
+              setSuccessNotice(`Code accepted — private-beta access is active until ${formatAccessDate(nextWorkspace.accessEndsAt)}.`);
+            }
+          });
         }}
       />
     );
@@ -505,14 +508,11 @@ export function ProductionApp({
 
   if (status === "error") {
     return (
-      <AuthFrame>
-        <AuthMessageCard
-          eyebrow="Load failed"
-          title="Production workspace could not load"
-          body={error}
-          action={<ProductButton onClick={loadProductionState}>Retry</ProductButton>}
-        />
-      </AuthFrame>
+      <FrontDoorMessageScreen
+        title="Couldn’t open Desk"
+        body="Try again."
+        action={<ProductButton onClick={loadProductionState}>Retry</ProductButton>}
+      />
     );
   }
 
@@ -526,8 +526,10 @@ export function ProductionApp({
         spotifyArtistAdapter={runtime.spotifyArtistAdapter}
         onSignOut={handleSignOut}
         onWorkspaceReady={(nextWorkspace) => {
-          setWorkspace(nextWorkspace);
-          setStatus("ready");
+          runFrontDoorTransition(() => {
+            setWorkspace(nextWorkspace);
+            setStatus("ready");
+          });
         }}
       />
     );
@@ -743,7 +745,7 @@ function CleanProductionWorkspace({
       const refreshed = await workspaceLoader.loadActiveWorkspace(analyticsUser);
       if (disposed || !refreshed) return;
       onWorkspaceChange?.(refreshed);
-      if (isWorkspaceReadyForDesk(refreshed)) setView("labelHQ");
+      if (isWorkspaceReadyForDesk(refreshed)) enterDeskWithProgressiveTransition(() => setView("labelHQ"));
     }
     window.addEventListener("online", rehydrateAfterReconnect);
     return () => {
@@ -759,7 +761,7 @@ function CleanProductionWorkspace({
       workspace.setupStatus === "completed" &&
       isWorkspaceReadyForDesk(workspace)
     ) {
-      setView("labelHQ");
+      enterDeskWithProgressiveTransition(() => setView("labelHQ"));
     }
   }, [view, workspace?.contextComplete, workspace?.entitlementActive, workspace?.billingCheckoutSessionId, workspace?.setupStatus]);
 
@@ -1855,7 +1857,7 @@ function CleanProductionWorkspace({
         { artist_id: nextWorkspace.artistId, setup_mode: "setup-map", is_test_user: isTestUser },
         `${analyticsUser.id}:${nextWorkspace.artistWorkspaceId}`,
       );
-      setView("labelHQ");
+      enterDeskWithProgressiveTransition(() => setView("labelHQ"));
     } catch (error) {
       setSetupActivityError(readErrorMessage(error, "Setup map could not be generated."));
     } finally {
@@ -2100,6 +2102,7 @@ function CleanProductionWorkspace({
     if (showPersistedSetup || setupActivityPending || setupActivityError) {
       return (
         <SetupActivityScreen
+          artistWorkspaceId={workspace?.artistWorkspaceId}
           status={setupActivityError ? "failed" : workspace?.setupStatus ?? "running"}
           stage={workspace?.setupStage}
           stageStatus={workspace?.setupStageStatus}
@@ -2146,7 +2149,7 @@ function CleanProductionWorkspace({
         />
         {setupError ? (
           <div className="fixed bottom-4 left-1/2 z-50 w-[min(92vw,420px)] -translate-x-1/2">
-            <div className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-sm font-semibold text-muted-foreground">{setupError}</div>
+            <div className="rounded-xl border border-foreground/10 bg-background shadow-sm p-4 text-sm font-semibold text-muted-foreground">Couldn’t save this yet. Try again.</div>
           </div>
         ) : null}
       </>
@@ -2618,6 +2621,7 @@ function SpotifyIdentityGate({
   const [searchPending, setSearchPending] = useState(false);
   const [selectPending, setSelectPending] = useState(false);
   const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
+  const [selectedArtistId, setSelectedArtistId] = useState<string | null>(null);
   const [billingProviderPreference, setBillingProviderPreference] = useState<ProductionBillingProviderPreference>("auto");
   const [selectedBillingInterval, setSelectedBillingInterval] = useState<"monthly" | "yearly">("monthly");
   const pricingRequestRef = useRef(0);
@@ -2721,6 +2725,7 @@ function SpotifyIdentityGate({
     try {
       setSelectPending(true);
       setSelectedArtistName(candidate.name);
+      setSelectedArtistId(candidate.spotifyArtistId);
       setBillingProviderPreference("auto");
       setMessage(null);
       const catalog = spotifyArtistAdapter?.previewCatalog
@@ -2744,12 +2749,15 @@ function SpotifyIdentityGate({
         selection_source: "spotify search",
         is_test_user: isTestUserEmail(user.email),
       });
-      setCatalogPreview(catalog);
-      setCheckoutPreview(preview);
-      setSelectedBillingInterval(preview.interval);
+      runFrontDoorTransition(() => {
+        setCatalogPreview(catalog);
+        setCheckoutPreview(preview);
+        setSelectedBillingInterval(preview.interval);
+      });
     } catch (connectError) {
       setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
       setSelectedArtistName(null);
+      setSelectedArtistId(null);
     } finally {
       setSelectPending(false);
     }
@@ -2869,12 +2877,15 @@ function SpotifyIdentityGate({
         pending={selectPending}
         error={message}
         onBack={() => {
-          setCheckoutPreview(null);
-          setCatalogPreview(null);
-          setMessage(null);
-          setSelectedArtistName(null);
-          setBillingProviderPreference("auto");
-          setSelectedBillingInterval("monthly");
+          runFrontDoorTransition(() => {
+            setCheckoutPreview(null);
+            setCatalogPreview(null);
+            setMessage(null);
+            setSelectedArtistName(null);
+            setSelectedArtistId(null);
+            setBillingProviderPreference("auto");
+            setSelectedBillingInterval("monthly");
+          });
         }}
         onSubscribe={subscribeToPreview}
         onIntervalChange={changeBillingInterval}
@@ -2888,11 +2899,15 @@ function SpotifyIdentityGate({
 
   if (selectPending && selectedArtistName) {
     return (
-      <BrandedLoader
-        title={`Preparing ${selectedArtistName} Desk`}
-        body="Preparing your subscription options."
-        steps={["Artist identity", "Latest project", "Recent singles", "Secure checkout"]}
-        logoTestId="auth-brand-logo"
+      <ConnectArtistScreen
+        query={query}
+        candidates={candidates}
+        pending
+        selectedArtistName={selectedArtistName}
+        selectedArtistId={selectedArtistId}
+        onQueryChange={setQuery}
+        onSelectCandidate={selectCandidate}
+        onSignOut={onSignOut}
       />
     );
   }
@@ -2902,7 +2917,9 @@ function SpotifyIdentityGate({
       query={query}
       candidates={candidates}
       pending={searchPending || selectPending}
-      message={selectPending ? "Preparing secure subscription checkout." : message}
+      message={message}
+      selectedArtistName={selectedArtistName}
+      selectedArtistId={selectedArtistId}
       onQueryChange={setQuery}
       onSelectCandidate={selectCandidate}
       onSignOut={onSignOut}

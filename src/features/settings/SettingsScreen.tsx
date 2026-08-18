@@ -1,6 +1,6 @@
 import { LogOut, Monitor, Moon, Sun } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
-import { Field, TextAreaField, WorkspaceShell, WorkspaceTabRail } from "../../design-system/components";
+import { Field, TextAreaField, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
@@ -11,7 +11,7 @@ export function SettingsScreen({
   profile,
   onChange,
   onSaveProfile,
-  onBack,
+  onBack: _onBack,
   onSignOut,
   accountEmail,
   themeMode = "system",
@@ -43,8 +43,10 @@ export function SettingsScreen({
   ];
 
   return (
-    <WorkspaceShell eyebrow="Workspace" title="Settings" onBack={onBack}>
-      <div className="sticky top-[109px] z-20 -mx-3 mb-5 border-y border-foreground/8 bg-background/95 px-3 py-2 backdrop-blur-xl lg:static lg:mx-0 lg:mb-7 lg:border-0 lg:bg-transparent lg:p-0">
+    <section className="app-workspace app-workspace-reveal settings-workspace relative isolate min-w-0 pb-12">
+      <WorkspaceHeader title="Settings" />
+
+      <div className="mb-7 border-b border-foreground/8 sm:mb-8">
         <WorkspaceTabRail
           ariaLabel="Settings sections"
           semanticTabs
@@ -52,7 +54,7 @@ export function SettingsScreen({
           items={tabs}
           active={activeTab}
           onChange={setActiveTab}
-          className="grid-cols-4 lg:max-w-[560px]"
+          className="grid-cols-4 lg:max-w-[36rem]"
         />
       </div>
 
@@ -60,7 +62,7 @@ export function SettingsScreen({
         id={`settings-panel-${activeTab}`}
         role="tabpanel"
         aria-labelledby={`settings-tab-${activeTab}`}
-        className="app-workspace-reveal max-w-[960px]"
+        className="min-w-0"
       >
         {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
         {activeTab === "workspace" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
@@ -75,7 +77,7 @@ export function SettingsScreen({
           />
         ) : null}
       </div>
-    </WorkspaceShell>
+    </section>
   );
 }
 
@@ -111,7 +113,7 @@ function ProfileSettings({
       setSaveError(null);
       await onSaveProfile(draft);
       onChange(draft);
-      setSaveMessage("Changes saved.");
+      setSaveMessage("Saved.");
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : "Changes could not be saved. Please try again.");
     } finally {
@@ -120,43 +122,45 @@ function ProfileSettings({
   }
 
   return (
-    <section className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background p-4 sm:p-5 lg:rounded-none lg:border-x-0 lg:px-0 lg:py-0">
-      <div data-testid="settings-mobile-profile-summary" className="mb-5 border-b border-foreground/8 pb-4 sm:hidden">
+    <div className="max-w-[58rem]">
+      <div data-testid="settings-mobile-profile-summary" className="mb-7 sm:hidden">
         <ArtistSummary profile={draft} compact />
       </div>
-      <div data-testid="settings-desktop-profile-summary" className="mb-1 hidden border-b border-foreground/8 pb-6 sm:flex">
+      <div data-testid="settings-desktop-profile-summary" className="mb-8 hidden sm:flex">
         <ArtistSummary profile={draft} />
       </div>
 
-      <SettingsGroup title="Identity">
-        <Field label="Artist name" value={draft.name} onChange={(value) => update("name", value)} disabled={savePending} />
-        <Field label="Connected artist" value={draft.spotify} onChange={() => undefined} disabled helper="Managed by your connected Spotify artist." />
-      </SettingsGroup>
-      <SettingsGroup title="Career context">
-        <Field label="Artist stage" value={draft.stage} onChange={(value) => update("stage", value)} disabled={savePending} />
-        <Field label="Home market" value={draft.market} onChange={(value) => update("market", value)} disabled={savePending} />
-        <Field label="Genre" value={draft.genre} onChange={(value) => update("genre", value)} disabled={savePending} />
-      </SettingsGroup>
-      <SettingsGroup title="Operating context">
-        <TextAreaField label="Artist goals" value={draft.goal} onChange={(value) => update("goal", value)} />
-        <Field label="Monthly budget" value={draft.budget} onChange={(value) => update("budget", value)} disabled={savePending} />
-      </SettingsGroup>
-      <SettingsGroup title="Channels" last>
-        <Field label="TikTok" value={draft.tiktok} onChange={(value) => update("tiktok", value)} disabled={savePending} />
-        <Field label="Instagram" value={draft.instagram} onChange={(value) => update("instagram", value)} disabled={savePending} />
-        <Field label="YouTube" value={draft.youtube} onChange={(value) => update("youtube", value)} disabled={savePending} />
-        <Field label="X" value={draft.x} onChange={(value) => update("x", value)} disabled={savePending} />
-      </SettingsGroup>
+      <div className="border-t border-foreground/8">
+        <SettingsGroup title="Identity">
+          <Field label="Artist name" value={draft.name} onChange={(value) => update("name", value)} disabled={savePending} />
+        </SettingsGroup>
+        <SettingsGroup title="Career">
+          <Field label="Artist stage" value={draft.stage} onChange={(value) => update("stage", value)} disabled={savePending} />
+          <Field label="Home market" value={draft.market} onChange={(value) => update("market", value)} disabled={savePending} />
+          <Field label="Genre" value={draft.genre} onChange={(value) => update("genre", value)} disabled={savePending} />
+        </SettingsGroup>
+        <SettingsGroup title="Direction">
+          <TextAreaField label="Artist goals" value={draft.goal} onChange={(value) => update("goal", value)} />
+          <Field label="Monthly budget" value={draft.budget} onChange={(value) => update("budget", value)} disabled={savePending} />
+        </SettingsGroup>
+        <SettingsGroup title="Channels">
+          <Field label="TikTok" value={draft.tiktok} onChange={(value) => update("tiktok", value)} disabled={savePending} />
+          <Field label="Instagram" value={draft.instagram} onChange={(value) => update("instagram", value)} disabled={savePending} />
+          <Field label="YouTube" value={draft.youtube} onChange={(value) => update("youtube", value)} disabled={savePending} />
+          <Field label="X" value={draft.x} onChange={(value) => update("x", value)} disabled={savePending} />
+        </SettingsGroup>
+      </div>
+
       {onSaveProfile ? (
         <div className="flex flex-wrap items-center gap-3 border-t border-foreground/8 pt-5">
           <Button onClick={() => void save()} disabled={!dirty} pending={savePending}>
             Save changes
           </Button>
-          {saveMessage ? <p role="status" className="text-[12px] font-medium text-success">{saveMessage}</p> : null}
+          {saveMessage ? <p role="status" className="text-[12px] font-semibold text-muted-foreground">{saveMessage}</p> : null}
           {saveError ? <p role="alert" className="text-[12px] font-medium text-destructive">{saveError}</p> : null}
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -169,30 +173,34 @@ function sameEditableProfile(a: ArtistProfileViewModel, b: ArtistProfileViewMode
 }
 
 function ArtistSummary({ profile, compact = false }: { profile: ArtistProfileViewModel; compact?: boolean }) {
+  const context = [profile.market, profile.genre].filter(Boolean).join(" · ");
   return (
-    <div className="flex min-w-0 items-center gap-3">
+    <div className="flex min-w-0 items-center gap-3.5">
       {profile.imageUrl ? (
-        <img className={cn("shrink-0 rounded-[14px] object-cover", compact ? "h-12 w-12" : "h-14 w-14")} src={profile.imageUrl} alt={compact ? "" : `${profile.name} artist image`} />
+        <img
+          className={cn("shrink-0 rounded-xl object-cover", compact ? "h-12 w-12" : "h-14 w-14")}
+          src={profile.imageUrl}
+          alt={compact ? "" : `${profile.name} artist image`}
+        />
       ) : (
-        <div className={cn("flex shrink-0 items-center justify-center rounded-[14px] border border-foreground/10 bg-foreground/[0.035] font-semibold text-muted-foreground", compact ? "h-12 w-12 text-[16px]" : "h-14 w-14 text-[18px]")}>
+        <div className={cn("flex shrink-0 items-center justify-center rounded-xl bg-foreground/[0.05] font-semibold text-muted-foreground", compact ? "h-12 w-12 text-[15px]" : "h-14 w-14 text-[17px]")}>
           {profile.name.slice(0, 2).toUpperCase()}
         </div>
       )}
       <div className="min-w-0">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.09em] text-brand-accent">Active artist</p>
-        <p className={cn("mt-1 truncate font-display font-semibold tracking-[-0.015em] text-foreground", compact ? "text-[18px]" : "text-[20px]")}>{profile.name}</p>
-        <p className="mt-0.5 truncate text-[12px] font-medium text-muted-foreground">{[profile.market, profile.genre].filter(Boolean).join(" / ")}</p>
+        <p className={cn("truncate font-display font-semibold tracking-[-0.02em] text-foreground", compact ? "text-[20px]" : "text-[22px]")}>{profile.name}</p>
+        {context ? <p className="mt-1 truncate text-[12px] font-medium text-muted-foreground">{context}</p> : null}
       </div>
     </div>
   );
 }
 
-function SettingsGroup({ title, children, last = false }: { title: string; children: ReactNode; last?: boolean }) {
+function SettingsGroup({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className={cn("py-6", !last && "border-b border-foreground/8")}>
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">{title}</h2>
-      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
-    </div>
+    <section className="grid gap-4 border-b border-foreground/8 py-6 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8">
+      <h2 className="pt-1 text-[12px] font-semibold text-foreground">{title}</h2>
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">{children}</div>
+    </section>
   );
 }
 
@@ -205,20 +213,21 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
     : workspace.accessType === "private_beta"
       ? "Private beta"
       : workspace.entitlementActive
-        ? "Active workspace access"
+        ? "Active access"
         : "No active access";
+
   return (
-    <section className="border-y border-foreground/8 py-6">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workspace access</p>
-      <h2 className="mt-2 font-display text-[24px] font-semibold tracking-[-0.02em] text-foreground">{accessLabel}</h2>
-      <dl className="mt-6 divide-y divide-foreground/8 border-y border-foreground/8 text-[13px]">
+    <div className="max-w-[44rem]">
+      <SettingsSectionHeading title="Workspace" />
+      <dl className="border-t border-foreground/8 text-[13px]">
+        <AccessRow label="Access" value={accessLabel} />
         <AccessRow label="Status" value={workspace.accessStatus ?? (workspace.entitlementActive ? "Active" : "Inactive")} />
         {workspace.accessStartsAt ? <AccessRow label="Started" value={formatDate(workspace.accessStartsAt)} /> : null}
         {paid && workspace.renewalAt ? <AccessRow label="Renews" value={formatDate(workspace.renewalAt)} /> : null}
         {!paid && workspace.accessEndsAt ? <AccessRow label="Expires" value={formatDate(workspace.accessEndsAt)} /> : null}
       </dl>
       {paid && workspace.billingProvider === "paddle" && onManageBilling ? (
-        <div className="mt-5">
+        <div className="pt-5">
           <Button
             variant="secondary"
             pending={portalPending}
@@ -239,26 +248,27 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
           {portalError ? <p role="alert" className="mt-3 text-[12px] font-medium text-destructive">{portalError}</p> : null}
         </div>
       ) : null}
-    </section>
+    </div>
   );
 }
 
 function AccessRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-6 py-4">
+    <div className="flex items-center justify-between gap-6 border-b border-foreground/8 py-4">
       <dt className="font-medium text-muted-foreground">{label}</dt>
-      <dd className="text-right font-semibold capitalize text-foreground">{value}</dd>
+      <dd className="min-w-0 break-words text-right font-semibold capitalize text-foreground">{value}</dd>
     </div>
   );
 }
 
 function AccessEmptyState() {
   return (
-    <section className="border-y border-foreground/8 py-8">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Workspace access</p>
-      <h2 className="mt-2 font-display text-[24px] font-semibold tracking-[-0.02em] text-foreground">Access details unavailable</h2>
-      <p className="mt-3 max-w-[640px] text-[13px] font-medium leading-[1.6] text-muted-foreground">Your plan details will appear here when this workspace finishes loading.</p>
-    </section>
+    <div className="max-w-[44rem]">
+      <SettingsSectionHeading title="Workspace" />
+      <div className="border-t border-foreground/8 py-5">
+        <p className="text-[13px] font-medium text-muted-foreground">Access details are unavailable while this workspace is loading.</p>
+      </div>
+    </div>
   );
 }
 
@@ -271,7 +281,12 @@ function PreferencesSettings({
   resolvedMode: ResolvedThemeMode;
   onThemeModeChange?: (mode: ThemeMode) => void;
 }) {
-  return <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />;
+  return (
+    <div className="max-w-[44rem]">
+      <SettingsSectionHeading title="Appearance" />
+      <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />
+    </div>
+  );
 }
 
 function AccountSettings({
@@ -284,17 +299,15 @@ function AccountSettings({
   onSignOut?: () => void;
 }) {
   return (
-    <div className="divide-y divide-foreground/8 border-y border-foreground/8">
+    <div className="max-w-[52rem] border-t border-foreground/8">
       <AccountIdentity accountEmail={accountEmail} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (
-        <section className="py-6">
-          <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-8">
-            <div>
-              <p className="text-[14px] font-semibold text-foreground">Sign out</p>
-              <p className="mt-1 text-[13px] font-medium text-muted-foreground">Return to the sign-in screen on this device.</p>
-            </div>
-            <Button variant="secondary" onClick={onSignOut} leadingIcon={<LogOut className="h-4 w-4" aria-hidden="true" />}>
+        <section className="grid gap-4 border-b border-foreground/8 py-6 sm:grid-cols-[10rem_minmax(0,1fr)] sm:items-center sm:gap-8">
+          <h2 className="text-[12px] font-semibold text-foreground">Session</h2>
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[13px] font-medium text-muted-foreground">Sign out on this device.</p>
+            <Button variant="ghost" onClick={onSignOut} leadingIcon={<LogOut className="h-4 w-4" aria-hidden="true" />}>
               Sign out
             </Button>
           </div>
@@ -308,12 +321,9 @@ function AccountIdentity({ accountEmail }: { accountEmail?: string }) {
   const displayEmail = accountEmail?.trim() || "Email unavailable";
 
   return (
-    <section className="py-6">
-      <p className="text-[14px] font-semibold text-foreground">Account email</p>
-      <p className="mt-1 text-[13px] font-medium text-muted-foreground">Used to sign in and recover this account.</p>
-      <div className="mt-4 max-w-[620px]">
-        <Field label="Email address" value={displayEmail} onChange={() => undefined} type="email" readOnly />
-      </div>
+    <section className="grid gap-4 border-b border-foreground/8 py-6 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8">
+      <h2 className="pt-1 text-[12px] font-semibold text-foreground">Email</h2>
+      <Field label="Email address" value={displayEmail} onChange={() => undefined} type="email" readOnly />
     </section>
   );
 }
@@ -342,18 +352,22 @@ function PasswordSettings({ onUpdatePassword }: { onUpdatePassword: (input: { pa
   }
 
   return (
-    <section className="py-6">
-      <p className="text-[14px] font-semibold text-foreground">Password</p>
-      <form className="mt-4 grid max-w-[620px] gap-3 sm:grid-cols-2" onSubmit={submit}>
-        <Field label="New password" value={password} onChange={setPassword} type="password" disabled={pending} />
-        <Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" disabled={pending} />
-        {message ? <p role="status" className="text-[12px] font-medium text-muted-foreground sm:col-span-2">{message}</p> : null}
+    <section className="grid gap-4 border-b border-foreground/8 py-6 sm:grid-cols-[10rem_minmax(0,1fr)] sm:gap-8">
+      <h2 className="pt-1 text-[12px] font-semibold text-foreground">Password</h2>
+      <form className="grid min-w-0 gap-3 sm:grid-cols-2" onSubmit={submit}>
+        <Field label="New password" value={password} onChange={setPassword} type="password" />
+        <Field label="Confirm password" value={confirmation} onChange={setConfirmation} type="password" />
+        {message ? <p className="text-[12px] font-semibold text-muted-foreground sm:col-span-2">{message}</p> : null}
         <div className="sm:col-span-2">
           <Button type="submit" pending={pending}>Change password</Button>
         </div>
       </form>
     </section>
   );
+}
+
+function SettingsSectionHeading({ title }: { title: string }) {
+  return <h2 className="mb-5 font-display text-[22px] font-semibold tracking-[-0.02em] text-foreground">{title}</h2>;
 }
 
 function formatDate(value: string) {
@@ -370,21 +384,18 @@ function AppearanceControl({
   onChange?: (mode: ThemeMode) => void;
 }) {
   const resolvedLabel = resolvedMode === "dark" ? "Dark" : "Light";
-  const status = mode === "system" ? `Following system: ${resolvedLabel}` : `Appearance locked to ${resolvedLabel}`;
+  const status = mode === "system" ? `Following system · ${resolvedLabel}` : `${resolvedLabel} mode`;
   const options: Array<{ mode: ThemeMode; label: string; ariaLabel: string; icon: ReactNode }> = [
-    { mode: "system", label: "System", ariaLabel: "Use system appearance", icon: <Monitor className="h-3.5 w-3.5" aria-hidden="true" /> },
-    { mode: "light", label: "Light", ariaLabel: "Use light appearance", icon: <Sun className="h-3.5 w-3.5" aria-hidden="true" /> },
-    { mode: "dark", label: "Dark", ariaLabel: "Use dark appearance", icon: <Moon className="h-3.5 w-3.5" aria-hidden="true" /> },
+    { mode: "system", label: "System", ariaLabel: "Use system appearance", icon: <Monitor className="h-4 w-4" aria-hidden="true" /> },
+    { mode: "light", label: "Light", ariaLabel: "Use light appearance", icon: <Sun className="h-4 w-4" aria-hidden="true" /> },
+    { mode: "dark", label: "Dark", ariaLabel: "Use dark appearance", icon: <Moon className="h-4 w-4" aria-hidden="true" /> },
   ];
 
   return (
-    <section className="border-y border-foreground/8 py-6">
-      <div className="grid gap-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-8">
-        <div>
-          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">Appearance</p>
-          <p className="mt-2 text-[13px] font-medium leading-[1.6] text-muted-foreground">{status}</p>
-        </div>
-        <div className="grid min-w-0 grid-cols-3 rounded-[12px] border border-foreground/10 bg-foreground/[0.025] p-1">
+    <div className="border-t border-foreground/8">
+      <div className="flex flex-col gap-4 border-b border-foreground/8 py-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-[13px] font-medium text-muted-foreground">{status}</p>
+        <div className="grid min-w-0 grid-cols-3 rounded-[10px] bg-foreground/[0.045] p-1">
           {options.map((option) => {
             const active = option.mode === mode;
             return (
@@ -395,10 +406,10 @@ function AppearanceControl({
                 aria-pressed={active}
                 onClick={() => onChange?.(option.mode)}
                 className={cn(
-                  "inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-[9px] px-2 font-ui text-[12px] font-semibold outline-none transition-[background-color,color,box-shadow] duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/20 sm:gap-2 sm:px-3",
+                  "inline-flex h-9 min-w-0 items-center justify-center gap-1.5 rounded-[8px] px-2 text-[11px] font-semibold transition-colors sm:gap-2 sm:px-3 sm:text-[12px]",
                   active
-                    ? "bg-background text-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.06)] ring-1 ring-foreground/8"
-                    : "text-muted-foreground hover:bg-foreground/[0.035] hover:text-foreground",
+                    ? "bg-background text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {option.icon}
@@ -408,6 +419,6 @@ function AppearanceControl({
           })}
         </div>
       </div>
-    </section>
+    </div>
   );
 }

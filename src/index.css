@@ -286,6 +286,40 @@
 }
 
 @layer utilities {
+  @keyframes setup-resolve-in {
+    from { opacity: 0; transform: translateY(7px); filter: blur(5px); }
+    to { opacity: 1; transform: translateY(0); filter: blur(0); }
+  }
+
+  @keyframes setup-knowledge-in {
+    from { opacity: 0; transform: translateX(-12px); filter: blur(4px); }
+    to { opacity: 1; transform: translateX(0); filter: blur(0); }
+  }
+
+  @keyframes setup-live-pulse {
+    0%, 100% { opacity: 0.45; transform: scale(0.9); }
+    50% { opacity: 1; transform: scale(1); }
+  }
+
+  .setup-resolve-in {
+    opacity: 0;
+    animation: setup-resolve-in 520ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  .setup-knowledge-in {
+    opacity: 0;
+    animation: setup-knowledge-in 460ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  .setup-live-pulse {
+    animation: setup-live-pulse 1.8s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .setup-resolve-in, .setup-knowledge-in { opacity: 1; animation: none; transform: none; filter: none; }
+    .setup-live-pulse { animation: none; opacity: 1; }
+  }
+
   :root {
     --os-bg: 220 20% 98%;
     --os-foreground: 222 24% 9%;
