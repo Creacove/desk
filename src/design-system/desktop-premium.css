@@ -1,9 +1,11 @@
 /* OrderSounds desktop finish layer.
-   This deliberately restores optical hierarchy that the legacy app-light compatibility
-   rules flatten, while leaving the simplified mobile composition alone. */
+   This restores optical hierarchy flattened by the legacy app-light compatibility
+   rules while keeping the simplified mobile composition intact. */
 
 .os-action-button {
   font-weight: 600 !important;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .app-light .os-action-button[data-variant="primary"] {
@@ -45,83 +47,43 @@
   border: 0 !important;
 }
 
+.app-workspace-reveal {
+  animation: os-workspace-reveal 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes os-workspace-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (min-width: 1024px) {
-  /* Desktop type should keep the scale specified by the component. The legacy light
-     compatibility layer intentionally collapsed these sizes for the old prototype. */
-  .app-light [class*="text-[15px]"] {
-    font-size: 15px !important;
-  }
+  /* The old compatibility layer collapsed intentional component typography.
+     Desktop keeps the authored optical scale instead. */
+  .app-light [class*="text-[15px]"] { font-size: 15px !important; }
+  .app-light [class*="text-[16px]"] { font-size: 16px !important; }
+  .app-light [class*="text-[17px]"] { font-size: 17px !important; }
+  .app-light [class*="text-[18px]"] { font-size: 18px !important; }
+  .app-light [class*="text-[20px]"] { font-size: 20px !important; }
+  .app-light [class*="text-[22px]"] { font-size: 22px !important; }
+  .app-light [class*="text-[24px]"] { font-size: 24px !important; }
+  .app-light [class*="text-[25px]"] { font-size: 25px !important; }
+  .app-light [class*="text-[26px]"] { font-size: 26px !important; }
+  .app-light [class*="text-[28px]"] { font-size: 28px !important; }
+  .app-light [class*="text-[30px]"] { font-size: 30px !important; }
+  .app-light [class*="text-[32px]"] { font-size: 32px !important; }
+  .app-light [class*="text-[34px]"] { font-size: 34px !important; }
+  .app-light [class*="text-[36px]"] { font-size: 36px !important; }
+  .app-light [class*="text-[38px]"] { font-size: 38px !important; }
+  .app-light [class*="text-[40px]"] { font-size: 40px !important; }
 
-  .app-light [class*="text-[16px]"] {
-    font-size: 16px !important;
-  }
-
-  .app-light [class*="text-[17px]"] {
-    font-size: 17px !important;
-  }
-
-  .app-light [class*="text-[18px]"] {
-    font-size: 18px !important;
-  }
-
-  .app-light [class*="text-[20px]"] {
-    font-size: 20px !important;
-  }
-
-  .app-light [class*="text-[22px]"] {
-    font-size: 22px !important;
-  }
-
-  .app-light [class*="text-[24px]"] {
-    font-size: 24px !important;
-  }
-
-  .app-light [class*="text-[25px]"] {
-    font-size: 25px !important;
-  }
-
-  .app-light [class*="text-[26px]"] {
-    font-size: 26px !important;
-  }
-
-  .app-light [class*="text-[28px]"] {
-    font-size: 28px !important;
-  }
-
-  .app-light [class*="text-[30px]"] {
-    font-size: 30px !important;
-  }
-
-  .app-light [class*="text-[32px]"] {
-    font-size: 32px !important;
-  }
-
-  .app-light [class*="text-[34px]"] {
-    font-size: 34px !important;
-  }
-
-  .app-light [class*="text-[36px]"] {
-    font-size: 36px !important;
-  }
-
-  .app-light [class*="text-[38px]"] {
-    font-size: 38px !important;
-  }
-
-  .app-light [class*="text-[40px]"] {
-    font-size: 40px !important;
-  }
-
-  .app-light [class*="text-[9px]"] {
-    font-size: 11px !important;
-    line-height: 1.35 !important;
-  }
-
-  .app-light [class*="text-[10px]"] {
-    font-size: 11px !important;
-    line-height: 1.35 !important;
-  }
-
+  .app-light [class*="text-[9px]"],
+  .app-light [class*="text-[10px]"],
   .app-light [class*="text-[10.5px]"] {
     font-size: 11px !important;
     line-height: 1.35 !important;
@@ -133,14 +95,24 @@
     margin-inline: auto;
   }
 
+  .app-theme > div > main {
+    padding-inline: 32px !important;
+  }
+
   .os-manager-composer {
     min-height: 56px;
+  }
+
+  /* A command surface, not a chat underline. */
+  .os-manager-composer textarea::placeholder {
+    opacity: 0.72;
   }
 
   /* Catalog is a professional index, not a set of cards. */
   [data-testid="music-library"] > div.hidden.lg\:block {
     border-radius: 14px;
     border-color: rgb(17 19 24 / 0.09);
+    overflow: hidden;
   }
 
   [data-testid="music-library"] button[aria-label^="Open song "] {
@@ -167,7 +139,7 @@
     background: rgb(17 19 24 / 0.025) !important;
   }
 
-  /* Song/project detail pages should use the full desktop canvas while keeping prose readable. */
+  /* Song/project detail pages use the working canvas while prose remains readable. */
   [data-testid="music-song-detail"],
   [data-testid="music-project-detail"] {
     width: 100%;
@@ -177,6 +149,7 @@
   [data-testid="song-room-files"],
   [data-testid="song-room-details"],
   [data-testid="song-room-rights"] {
+    width: 100%;
     max-width: 1120px;
   }
 
@@ -185,10 +158,47 @@
     font-size: 11px !important;
   }
 
-  /* Conversation content remains readable even on very large monitors. */
+  /* Conversation prose stays readable on large monitors; artifacts may exceed it. */
   [data-testid="manager-conversation-loading"],
   [data-testid="manager-conversation-load-error"] {
     max-width: 760px !important;
+  }
+
+  [data-testid="manager-composer-dock"] > div {
+    max-width: 760px !important;
+  }
+
+  /* Desktop drawers and sheets share one calm edge/radius vocabulary. */
+  .app-theme [role="dialog"] {
+    border-color: hsl(var(--foreground) / 0.1);
+  }
+
+  /* Desktop activity is a compact working rail, not a mobile sheet stretched wider. */
+  .app-theme [role="dialog"][aria-label="Activity"] {
+    width: min(34rem, calc(100vw - 2rem));
+  }
+
+  /* Settings should read as one workspace, not a stack of floating dashboard cards. */
+  .app-theme [id^="settings-panel-"] > section,
+  .app-theme [id^="settings-panel-"] > div > section {
+    box-shadow: none !important;
+  }
+
+  /* Staff/list rows use horizontal desktop composition and stay quiet until hover. */
+  [data-testid="staff-desktop-list"] button {
+    border-radius: 0;
+  }
+}
+
+@media (min-width: 1280px) {
+  .app-theme > div > main {
+    padding-inline: 40px !important;
+  }
+}
+
+@media (min-width: 1600px) {
+  .app-theme > div > main {
+    padding-inline: 48px !important;
   }
 }
 
@@ -198,5 +208,9 @@
   .app-workspace-reveal {
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
+  }
+
+  .app-workspace-reveal {
+    transform: none !important;
   }
 }
