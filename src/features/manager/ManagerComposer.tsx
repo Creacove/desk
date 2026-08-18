@@ -1,5 +1,6 @@
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, SendHorizontal } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Button, IconButton } from "../../design-system/desktopPrimitives";
 import type { ManagerMissionContextQuestion } from "../../types/cleanProduction";
 
 export type ManagerComposerProps = {
@@ -63,7 +64,7 @@ export function ManagerComposer({
   sendPending,
   sendError,
   canSend = Boolean(draft.trim()),
-  placeholder = "Message the Manager…",
+  placeholder = "What do you want to work on?",
   guidedQuestion,
   workspaceActions,
   attachments,
@@ -77,13 +78,13 @@ export function ManagerComposer({
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 24), 160)}px`;
   }, [draft, guided]);
 
   function handleDraftChange(event: React.ChangeEvent<HTMLTextAreaElement>) {
     onDraftChange(event.target.value);
     event.target.style.height = "auto";
-    event.target.style.height = `${Math.min(event.target.scrollHeight, 200)}px`;
+    event.target.style.height = `${Math.min(Math.max(event.target.scrollHeight, 24), 160)}px`;
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -99,38 +100,44 @@ export function ManagerComposer({
     >
       <div className="pointer-events-auto mx-auto w-full max-w-[48rem]">
         {workspaceActions ? <div className="mb-2">{workspaceActions}</div> : null}
-        <div data-testid="manager-composer-surface" className="overflow-visible rounded-[1.5rem] border border-foreground/12 bg-background/96 p-2 shadow-[0_8px_30px_rgba(0,0,0,0.08)] backdrop-blur-xl">
+        <div
+          data-testid="manager-composer-surface"
+          className="overflow-visible rounded-[16px] border border-foreground/10 bg-background/96 p-2 shadow-[0_10px_36px_hsl(var(--foreground)/0.10)] backdrop-blur-xl transition-[border-color,box-shadow] duration-150 focus-within:border-brand-accent/30 focus-within:shadow-[0_10px_36px_hsl(var(--foreground)/0.10),0_0_0_3px_hsl(var(--brand-accent)/0.055)]"
+        >
           {attachments ? <div className="px-2 pt-1">{attachments}</div> : null}
           {guidedQuestion ? (
             <div data-testid="manager-composer-guided" className="px-2 py-1">{guidedQuestion}</div>
           ) : (
-            <div className="flex items-end gap-2 px-2">
-              {leadingAction ? <div className="mb-1.5 shrink-0">{leadingAction}</div> : null}
+            <div className="flex items-end gap-2 px-1.5 py-0.5">
+              {leadingAction ? <div className="mb-1 shrink-0">{leadingAction}</div> : null}
               <textarea
                 ref={textareaRef}
                 value={draft}
                 onChange={handleDraftChange}
                 onKeyDown={handleKeyDown}
                 placeholder={placeholder}
-                aria-label="Message the Manager"
+                aria-label="Work with Manager"
                 rows={1}
-                className="min-h-11 w-full resize-none bg-transparent px-2 py-3 text-[15px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/45"
-                style={{ maxHeight: "200px", overflowY: "auto" }}
+                className="min-h-10 w-full resize-none bg-transparent px-2.5 py-2.5 text-[15px] font-medium leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground/50"
+                style={{ maxHeight: "160px", overflowY: "auto" }}
               />
-              <button
+              <IconButton
                 type="button"
                 onClick={onSend}
-                disabled={!canSend || sendPending}
-                aria-label="Send Manager message"
-                className="mb-1.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-background transition-colors hover:bg-foreground/85 disabled:opacity-25"
+                disabled={!canSend}
+                pending={sendPending}
+                label="Send to Manager"
+                variant="primary"
+                size="md"
+                className="mb-0.5 rounded-[11px]"
               >
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </button>
+                <SendHorizontal className="h-4 w-4" aria-hidden="true" />
+              </IconButton>
             </div>
           )}
-          {sendError ? <p role="alert" className="px-4 pb-2 text-[11px] font-medium text-red-600">{sendError}</p> : null}
+          {sendError ? <p role="alert" className="px-4 pb-2 pt-1 text-[12px] font-medium text-destructive">{sendError}</p> : null}
         </div>
-        {verificationNote && !guided ? <p className="mt-1.5 text-center text-[10px] text-muted-foreground/40">Verify important decisions before acting.</p> : null}
+        {verificationNote && !guided ? <p className="mt-1.5 text-center text-[11px] font-medium text-muted-foreground/48">Verify important decisions before acting.</p> : null}
       </div>
     </div>
   );
@@ -150,24 +157,26 @@ export function ManagerWorkspaceActions({
     <section
       data-testid="manager-workspace-actions"
       aria-label="Manager required actions"
-      className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background/98 shadow-[0_8px_28px_rgba(0,0,0,0.08)] backdrop-blur-xl"
+      className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background/98 shadow-[0_8px_28px_hsl(var(--foreground)/0.08)] backdrop-blur-xl"
     >
       <div className="divide-y divide-foreground/8">
         {actions.map((action) => (
-          <div key={action.key} className="grid grid-cols-1 gap-2.5 px-3.5 py-3 sm:flex sm:items-center sm:gap-3 sm:px-4">
+          <div key={action.key} className="grid grid-cols-1 gap-3 px-3.5 py-3 sm:flex sm:items-center sm:gap-4 sm:px-4">
             <div className="min-w-0 flex-1">
               <p className="text-[13px] font-semibold leading-snug text-foreground">{action.title}</p>
-              {action.description ? <p className="mt-0.5 line-clamp-1 text-[11px] leading-relaxed text-muted-foreground sm:line-clamp-2">{action.description}</p> : null}
+              {action.description ? <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground">{action.description}</p> : null}
             </div>
-            <button
+            <Button
               type="button"
+              variant="primary"
+              size="sm"
               onClick={() => onOpen(action)}
               disabled={disabled}
-              className="inline-flex min-h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 py-2 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 disabled:opacity-35 sm:w-auto"
+              trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}
+              className="w-full sm:w-auto"
             >
               {action.actionLabel}
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
+            </Button>
           </div>
         ))}
       </div>
@@ -224,8 +233,8 @@ export function GuidedContextQuestion({
   return (
     <div data-testid="manager-guided-question" className="grid gap-3 py-1">
       <div className="min-w-0">
-        {total > 1 ? <p className="text-[10px] font-medium text-muted-foreground/65">{position + 1} of {total}</p> : null}
-        <p className={`${total > 1 ? "mt-1" : ""} line-clamp-3 text-[15px] font-semibold leading-snug text-foreground`}>{question.question}</p>
+        {total > 1 ? <p className="text-[11px] font-medium text-muted-foreground/65">{position + 1} of {total}</p> : null}
+        <p className={`${total > 1 ? "mt-1" : ""} text-[15px] font-semibold leading-snug text-foreground`}>{question.question}</p>
       </div>
 
       {isChoiceQuestion && options.length ? (
@@ -241,17 +250,17 @@ export function GuidedContextQuestion({
                 onClick={() => choose(option)}
                 disabled={sendPending}
                 aria-pressed={selected}
-                className={`flex min-h-11 w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left transition-colors disabled:opacity-40 ${
+                className={`flex min-h-11 w-full items-center gap-3 rounded-[11px] border px-3.5 py-2.5 text-left outline-none transition-colors duration-150 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-brand-accent/20 ${
                   selected
-                    ? "border-foreground bg-foreground/[0.055]"
-                    : "border-foreground/12 bg-background hover:border-foreground/28 hover:bg-foreground/[0.025]"
+                    ? "border-brand-accent/25 bg-brand-accent/[0.055]"
+                    : "border-foreground/10 bg-background hover:border-foreground/18 hover:bg-foreground/[0.025]"
                 }`}
               >
-                <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-foreground bg-foreground text-background" : "border-foreground/25"}`}>
+                <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-brand-accent bg-brand-accent text-white" : "border-foreground/25"}`}>
                   {selected ? <Check className="h-2.5 w-2.5" aria-hidden="true" /> : null}
                 </span>
-                <span className="min-w-0 flex-1 line-clamp-2 text-[12px] font-semibold leading-snug text-foreground">{option}</span>
-                {isRecommended ? <span className="shrink-0 rounded-full bg-foreground/[0.06] px-2 py-1 text-[9px] font-semibold text-muted-foreground">Recommended</span> : null}
+                <span className="min-w-0 flex-1 text-[12px] font-semibold leading-snug text-foreground">{option}</span>
+                {isRecommended ? <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[11px] font-medium text-muted-foreground">Recommended</span> : null}
               </button>
             );
           })}
@@ -268,10 +277,10 @@ export function GuidedContextQuestion({
                 window.setTimeout(() => onSubmit(recommended), 0);
               }}
               disabled={sendPending}
-              className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-foreground/12 px-3.5 py-2.5 text-left transition-colors hover:bg-foreground/[0.025] disabled:opacity-40"
+              className="flex min-h-11 w-full items-center justify-between gap-3 rounded-[11px] border border-foreground/10 px-3.5 py-2.5 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.025] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-brand-accent/20"
             >
-              <span className="min-w-0 line-clamp-2 text-[12px] font-semibold leading-snug text-foreground">{recommended}</span>
-              <span className="shrink-0 rounded-full bg-foreground/[0.06] px-2 py-1 text-[9px] font-semibold text-muted-foreground">Recommended</span>
+              <span className="min-w-0 text-[12px] font-semibold leading-snug text-foreground">{recommended}</span>
+              <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[11px] font-medium text-muted-foreground">Recommended</span>
             </button>
           ) : null}
           <textarea
@@ -288,23 +297,25 @@ export function GuidedContextQuestion({
             rows={1}
             aria-label={question.question}
             placeholder={question.answerKind === "money_range" ? "Enter a range or amount" : otherOpen ? "Tell Manager what you prefer" : "Write your answer"}
-            className="min-h-11 max-h-32 w-full resize-none rounded-xl border border-foreground/12 bg-background px-3 py-3 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/45 focus:border-foreground/35"
+            className="min-h-11 max-h-32 w-full resize-none rounded-[11px] border border-foreground/10 bg-background px-3 py-3 text-[14px] font-medium leading-relaxed text-foreground outline-none placeholder:text-muted-foreground/45 focus:border-brand-accent/35 focus:ring-2 focus:ring-brand-accent/8"
           />
         </>
       ) : null}
 
       <div className="flex items-center justify-between gap-3">
-        {position > 0 ? <button type="button" onClick={onBack} disabled={sendPending} className="min-h-9 px-1 text-[11px] font-semibold text-muted-foreground hover:text-foreground">Back</button> : <span />}
+        {position > 0 ? <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={sendPending}>Back</Button> : <span />}
         {question.answerKind === "multi_select" || !isChoiceQuestion || otherOpen ? (
-          <button
+          <Button
             type="button"
+            variant="primary"
+            size="sm"
             onClick={() => onSubmit()}
-            disabled={!canSubmit || sendPending}
-            className="inline-flex min-h-9 items-center gap-2 rounded-full bg-foreground px-4 py-2 text-[11px] font-semibold text-background transition-colors hover:bg-foreground/85 disabled:opacity-25"
+            pending={sendPending}
+            disabled={!canSubmit}
+            trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}
           >
             {position + 1 === total ? "Continue" : "Next"}
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          </Button>
         ) : null}
       </div>
     </div>
