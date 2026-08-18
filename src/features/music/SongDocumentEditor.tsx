@@ -1,6 +1,6 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { Check, FileText, Pencil, X } from "lucide-react";
-
+import { Button, IconButton } from "../../design-system/desktopPrimitives";
 import type { SongDocumentType, SongMaterialViewModel } from "../../types/cleanProduction";
 
 const DOCUMENT_TYPES: Array<{ value: SongDocumentType; label: string }> = [
@@ -69,52 +69,54 @@ export function SongDocumentEditor({
   }
 
   return (
-    <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/28 p-3 backdrop-blur-sm sm:p-6" role="presentation">
-      <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="song-document-editor-title" className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] border border-foreground/10 bg-background shadow-2xl">
+    <div className="fixed inset-0 z-[80] grid place-items-center bg-foreground/24 p-3 backdrop-blur-[2px] sm:p-6" role="presentation">
+      <form onSubmit={submit} role="dialog" aria-modal="true" aria-labelledby="song-document-editor-title" className="flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-[20px] border border-foreground/10 bg-background shadow-[0_28px_90px_hsl(var(--foreground)/0.18)]">
         <header className="flex items-start justify-between gap-3 border-b border-foreground/8 px-5 py-4 sm:px-7 sm:py-5">
           <div className="flex min-w-0 items-start gap-3">
-            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-foreground/[0.055] text-muted-foreground"><FileText className="h-4 w-4" /></span>
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[11px] bg-foreground/[0.05] text-muted-foreground"><FileText className="h-4 w-4" /></span>
             <div className="min-w-0">
-              <p className="font-ui text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{internalNarrative ? "Internal strategy" : typeLabel}</p>
-              <h2 id="song-document-editor-title" className="mt-1 max-w-[34rem] font-display text-[20px] font-semibold leading-tight text-foreground sm:text-[22px]">{document ? title : "New document"}</h2>
+              <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{internalNarrative ? "Internal strategy" : typeLabel}</p>
+              <h2 id="song-document-editor-title" className="mt-1 max-w-[34rem] font-display text-[20px] font-semibold leading-tight tracking-[-0.02em] text-foreground sm:text-[22px]">{document ? title : "New document"}</h2>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             {managerArtifact && !editing && !previewOnly ? (
-              <button type="button" onClick={() => setEditing(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-foreground/10 px-3 text-[11px] font-semibold text-foreground hover:bg-foreground/[0.04]"><Pencil className="h-3.5 w-3.5" /> Edit</button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => setEditing(true)} leadingIcon={<Pencil className="h-3.5 w-3.5" />}>Edit</Button>
             ) : null}
-            <button type="button" aria-label="Close document editor" onClick={onCancel} className="inline-flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground hover:bg-foreground/[0.05] hover:text-foreground"><X className="h-4 w-4" /></button>
+            <IconButton type="button" label="Close document editor" onClick={onCancel} variant="ghost" size="md">
+              <X className="h-4 w-4" />
+            </IconButton>
           </div>
         </header>
 
         {editing ? (
           <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto p-5 sm:p-7">
             <div className="grid gap-4 sm:grid-cols-[210px_minmax(0,1fr)]">
-              <label className="grid gap-1.5 text-[11px] font-semibold text-muted-foreground">Type
-                <select aria-label="Document type" value={documentType} disabled={Boolean(document)} onChange={(event) => setDocumentType(event.target.value as SongDocumentType)} className="h-10 rounded-[10px] border border-foreground/12 bg-background px-3 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-brand-accent/25">
+              <label className="grid gap-1.5 text-[12px] font-semibold text-muted-foreground">Type
+                <select aria-label="Document type" value={documentType} disabled={Boolean(document)} onChange={(event) => setDocumentType(event.target.value as SongDocumentType)} className="h-10 rounded-[10px] border border-foreground/12 bg-background px-3 text-[14px] font-medium text-foreground outline-none focus:border-brand-accent/35 focus:ring-2 focus:ring-brand-accent/8">
                   {DOCUMENT_TYPES.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                 </select>
               </label>
-              <label className="grid gap-1.5 text-[11px] font-semibold text-muted-foreground">Title
-                <input aria-label="Document title" value={title} onChange={(event) => setTitle(event.target.value)} className="h-10 rounded-[10px] border border-foreground/12 bg-background px-3 text-[13px] text-foreground outline-none focus:ring-2 focus:ring-brand-accent/25" />
+              <label className="grid gap-1.5 text-[12px] font-semibold text-muted-foreground">Title
+                <input aria-label="Document title" value={title} onChange={(event) => setTitle(event.target.value)} className="h-10 rounded-[10px] border border-foreground/12 bg-background px-3 text-[14px] font-medium text-foreground outline-none focus:border-brand-accent/35 focus:ring-2 focus:ring-brand-accent/8" />
               </label>
             </div>
-            <label className="grid min-h-[320px] gap-1.5 text-[11px] font-semibold text-muted-foreground">Content
-              <textarea aria-label="Document content" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Start writing…" className="min-h-[420px] resize-y rounded-[14px] border border-foreground/12 bg-background p-4 font-body text-[14px] leading-7 text-foreground outline-none focus:ring-2 focus:ring-brand-accent/25" />
+            <label className="grid min-h-[320px] gap-1.5 text-[12px] font-semibold text-muted-foreground">Content
+              <textarea aria-label="Document content" value={body} onChange={(event) => setBody(event.target.value)} placeholder="Start writing…" className="min-h-[420px] resize-y rounded-[14px] border border-foreground/12 bg-background p-4 font-body text-[15px] leading-7 text-foreground outline-none focus:border-brand-accent/35 focus:ring-2 focus:ring-brand-accent/8" />
             </label>
-            {error ? <p role="alert" className="rounded-lg border border-danger/20 bg-danger/10 px-3 py-2 text-[12px] font-semibold text-danger">{error}</p> : null}
+            {error ? <p role="alert" className="rounded-[10px] border border-destructive/20 bg-destructive/5 px-3 py-2 text-[12px] font-medium text-destructive">{error}</p> : null}
           </div>
         ) : (
           <DocumentPreview body={initialBody} internalNarrative={internalNarrative} documentType={documentType} />
         )}
 
         <footer className="flex flex-wrap items-center justify-end gap-2 border-t border-foreground/8 px-5 py-3.5 sm:px-7 sm:py-4">
-          {contextNote ? <p className="mr-auto min-w-0 flex-1 basis-full text-[11px] font-medium leading-relaxed text-muted-foreground sm:basis-auto">{contextNote}</p> : null}
-          {editing && managerArtifact ? <button type="button" onClick={resetPreview} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Cancel edit</button> : null}
-          {onOpenFiles && !editing ? <button type="button" onClick={onOpenFiles} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground hover:bg-foreground/[0.04]">Open in Files</button> : null}
-          <button type="button" onClick={onCancel} className="h-9 rounded-lg border border-foreground/10 px-3 text-[12px] font-semibold text-foreground">Close</button>
-          {canApprove && !editing ? <button type="button" disabled={pending} onClick={() => void onApprove?.()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-foreground px-4 text-[12px] font-semibold text-background disabled:opacity-40"><Check className="h-3.5 w-3.5" /> {pending ? "Approving…" : "Approve"}</button> : null}
-          {editing ? <button type="submit" disabled={pending || !title.trim() || !body.trim()} className="h-9 rounded-lg bg-foreground px-4 py-2.5 text-[12px] font-semibold text-background disabled:opacity-40">{pending ? "Saving…" : "Save"}</button> : null}
+          {contextNote ? <p className="mr-auto min-w-0 flex-1 basis-full text-[12px] font-medium leading-relaxed text-muted-foreground sm:basis-auto">{contextNote}</p> : null}
+          {editing && managerArtifact ? <Button type="button" variant="ghost" size="sm" onClick={resetPreview}>Cancel edit</Button> : null}
+          {onOpenFiles && !editing ? <Button type="button" variant="secondary" size="sm" onClick={onOpenFiles}>Open in Files</Button> : null}
+          <Button type="button" variant="secondary" size="sm" onClick={onCancel}>Close</Button>
+          {canApprove && !editing ? <Button type="button" size="sm" pending={pending} onClick={() => void onApprove?.()} leadingIcon={<Check className="h-3.5 w-3.5" />}>Approve</Button> : null}
+          {editing ? <Button type="submit" size="sm" pending={pending} disabled={!title.trim() || !body.trim()}>Save</Button> : null}
         </footer>
       </form>
     </div>
@@ -128,7 +130,7 @@ function DocumentPreview({ body, internalNarrative, documentType }: { body: stri
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-foreground/[0.012] px-5 py-6 sm:px-8 sm:py-9">
       <article className={`mx-auto ${compact ? "max-w-2xl" : "max-w-3xl"}`}>
-        {internalNarrative ? <p className="mb-6 rounded-[12px] border border-brand-accent/14 bg-brand-accent/[0.035] px-4 py-3 text-[11px] font-medium leading-relaxed text-foreground/70">Internal campaign strategy. Not for external sharing.</p> : null}
+        {internalNarrative ? <p className="mb-6 rounded-[12px] border border-brand-accent/14 bg-brand-accent/[0.035] px-4 py-3 text-[12px] font-medium leading-relaxed text-foreground/70">Internal campaign strategy. Not for external sharing.</p> : null}
         <div className="grid gap-5 sm:gap-6">
           {blocks.map((block, index) => <MarkdownBlockView key={`${block.kind}-${index}`} block={block} />)}
         </div>
@@ -145,8 +147,8 @@ type MarkdownBlock =
   | { kind: "table"; headers: string[]; rows: string[][] };
 
 function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
-  if (block.kind === "h1") return <h1 className="font-display text-[28px] font-semibold leading-[1.08] tracking-[-0.02em] text-foreground sm:text-[36px]">{renderInline(block.text)}</h1>;
-  if (block.kind === "h2") return <h2 className="pt-2 font-ui text-[10px] font-bold uppercase tracking-[0.1em] text-muted-foreground">{renderInline(block.text)}</h2>;
+  if (block.kind === "h1") return <h1 className="font-display text-[28px] font-semibold leading-[1.08] tracking-[-0.02em] text-foreground sm:text-[34px]">{renderInline(block.text)}</h1>;
+  if (block.kind === "h2") return <h2 className="pt-2 font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground">{renderInline(block.text)}</h2>;
   if (block.kind === "h3") return <h3 className="font-display text-[17px] font-semibold text-foreground">{renderInline(block.text)}</h3>;
   if (block.kind === "quote") return <blockquote className="border-l-2 border-foreground/15 pl-4 text-[15px] font-medium leading-7 text-foreground/82">{renderInline(block.text)}</blockquote>;
   if (block.kind === "list") return <ul className="grid gap-2 pl-1">{block.items.map((item, index) => <li key={`${item}-${index}`} className="flex gap-2.5 text-[14px] font-medium leading-6 text-foreground/84"><span className="mt-[0.62rem] h-1.5 w-1.5 shrink-0 rounded-full bg-foreground/35" /><span>{renderInline(item)}</span></li>)}</ul>;
@@ -155,7 +157,7 @@ function MarkdownBlockView({ block }: { block: MarkdownBlock }) {
       <div className="overflow-x-auto rounded-[14px] border border-foreground/10 bg-background">
         <table className="w-full min-w-[560px] border-collapse text-left">
           <thead className="bg-foreground/[0.035]">
-            <tr>{block.headers.map((header, index) => <th key={`${header}-${index}`} className="border-b border-foreground/10 px-3.5 py-3 font-ui text-[9px] font-bold uppercase tracking-[0.07em] text-muted-foreground">{renderInline(header)}</th>)}</tr>
+            <tr>{block.headers.map((header, index) => <th key={`${header}-${index}`} className="border-b border-foreground/10 px-3.5 py-3 font-ui text-[11px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">{renderInline(header)}</th>)}</tr>
           </thead>
           <tbody>{block.rows.map((row, rowIndex) => <tr key={rowIndex} className="border-b border-foreground/[0.065] last:border-b-0">{block.headers.map((_, cellIndex) => <td key={cellIndex} className="px-3.5 py-3 align-top text-[12px] font-medium leading-5 text-foreground/82">{renderInline(row[cellIndex] ?? "")}</td>)}</tr>)}</tbody>
         </table>
