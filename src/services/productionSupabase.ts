@@ -2390,7 +2390,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async sendMessage(input) {
         const body = input.body.trim();
         if (!body) {
-          throw new Error("Ask Manager requires a directive or question.");
+          throw new Error("Tell Manager what you want to work on.");
         }
 
         const { data, error } = await client.functions.invoke("manager-conversation", {
@@ -2413,7 +2413,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       async sendMessageStream(input, handlers) {
         const body = input.body.trim();
         if (!body) {
-          throw new Error("Ask Manager requires a directive or question.");
+          throw new Error("Tell Manager what you want to work on.");
         }
 
         const session = await client.auth.getSession();
@@ -3996,7 +3996,7 @@ type SupabaseStorageClient = {
     };
   };
   auth?: {
-    getSession(): Promise<{ data?: { session?: { access_token?: string | null } | null } | null; error?: unknown }>;
+    getSession(): Promise<{ data?: { session?: { access_token?: string | null } | null; error?: unknown }>;
   };
 };
 
@@ -6849,6 +6849,7 @@ function missionFromRow(
     type: e.event_type ?? "mission_change",
     actor: e.actor_type === "manager" ? "Manager" : e.actor_type === "user" ? "Artist" : "System",
     summary: e.summary ?? "Operating event recorded.",
+    createdAt: e.created_at ?? undefined,
   }));
 
   const mappedNotes: MissionNoteViewModel[] = memoryEntries.map((m) => ({
@@ -6861,6 +6862,7 @@ function missionFromRow(
     recommendedAction: m.content,
     resultingChange: m.reason ?? "Memory recorded",
     briefType: "Manager note",
+    createdAt: m.created_at ?? undefined,
   }));
 
   return {
