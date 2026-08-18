@@ -1,0 +1,202 @@
+/* OrderSounds desktop finish layer.
+   This deliberately restores optical hierarchy that the legacy app-light compatibility
+   rules flatten, while leaving the simplified mobile composition alone. */
+
+.os-action-button {
+  font-weight: 600 !important;
+}
+
+.app-light .os-action-button[data-variant="primary"] {
+  background-color: #9A3BDC !important;
+  color: #fff !important;
+  border-color: transparent !important;
+}
+
+.app-light .os-action-button[data-variant="primary"] * {
+  color: inherit !important;
+}
+
+.app-light .os-action-button[data-variant="primary"]:hover {
+  background-color: #8f31cf !important;
+}
+
+.app-light .os-action-button[data-variant="primary"]:active {
+  background-color: #842ac2 !important;
+}
+
+.app-light .os-action-button[data-variant="secondary"] {
+  background-color: #fff !important;
+  color: #111318 !important;
+  border-color: rgb(17 19 24 / 0.12) !important;
+}
+
+.app-light .os-action-button[data-variant="ghost"] {
+  background-color: transparent !important;
+  color: var(--os-text-tertiary) !important;
+}
+
+.app-light .os-action-button[data-variant="destructive"] {
+  background-color: hsl(var(--destructive)) !important;
+  color: #fff !important;
+}
+
+.app-light .os-manager-composer textarea {
+  background: transparent !important;
+  border: 0 !important;
+}
+
+@media (min-width: 1024px) {
+  /* Desktop type should keep the scale specified by the component. The legacy light
+     compatibility layer intentionally collapsed these sizes for the old prototype. */
+  .app-light [class*="text-[15px]"] {
+    font-size: 15px !important;
+  }
+
+  .app-light [class*="text-[16px]"] {
+    font-size: 16px !important;
+  }
+
+  .app-light [class*="text-[17px]"] {
+    font-size: 17px !important;
+  }
+
+  .app-light [class*="text-[18px]"] {
+    font-size: 18px !important;
+  }
+
+  .app-light [class*="text-[20px]"] {
+    font-size: 20px !important;
+  }
+
+  .app-light [class*="text-[22px]"] {
+    font-size: 22px !important;
+  }
+
+  .app-light [class*="text-[24px]"] {
+    font-size: 24px !important;
+  }
+
+  .app-light [class*="text-[25px]"] {
+    font-size: 25px !important;
+  }
+
+  .app-light [class*="text-[26px]"] {
+    font-size: 26px !important;
+  }
+
+  .app-light [class*="text-[28px]"] {
+    font-size: 28px !important;
+  }
+
+  .app-light [class*="text-[30px]"] {
+    font-size: 30px !important;
+  }
+
+  .app-light [class*="text-[32px]"] {
+    font-size: 32px !important;
+  }
+
+  .app-light [class*="text-[34px]"] {
+    font-size: 34px !important;
+  }
+
+  .app-light [class*="text-[36px]"] {
+    font-size: 36px !important;
+  }
+
+  .app-light [class*="text-[38px]"] {
+    font-size: 38px !important;
+  }
+
+  .app-light [class*="text-[40px]"] {
+    font-size: 40px !important;
+  }
+
+  .app-light [class*="text-[9px]"] {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  .app-light [class*="text-[10px]"] {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  .app-light [class*="text-[10.5px]"] {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  .app-workspace {
+    width: 100%;
+    max-width: 1320px;
+    margin-inline: auto;
+  }
+
+  .os-manager-composer {
+    min-height: 56px;
+  }
+
+  /* Catalog is a professional index, not a set of cards. */
+  [data-testid="music-library"] > div.hidden.lg\:block {
+    border-radius: 14px;
+    border-color: rgb(17 19 24 / 0.09);
+  }
+
+  [data-testid="music-library"] button[aria-label^="Open song "] {
+    min-height: 72px;
+    grid-template-columns: 28px 44px minmax(280px, 1fr) auto !important;
+    column-gap: 16px !important;
+    padding: 12px 18px !important;
+  }
+
+  [data-testid="music-library"] button[aria-label^="Open project "] {
+    min-height: 72px;
+    grid-template-columns: 28px 44px minmax(280px, 1fr) minmax(120px, 160px) 100px auto !important;
+    column-gap: 16px !important;
+    padding: 12px 18px !important;
+  }
+
+  [data-testid="music-library"] button[aria-label^="Open song "] > span:first-child,
+  [data-testid="music-library"] button[aria-label^="Open project "] > span:first-child {
+    font-size: 11px !important;
+  }
+
+  [data-testid="music-library"] button[aria-label^="Open song "]:hover,
+  [data-testid="music-library"] button[aria-label^="Open project "]:hover {
+    background: rgb(17 19 24 / 0.025) !important;
+  }
+
+  /* Song/project detail pages should use the full desktop canvas while keeping prose readable. */
+  [data-testid="music-song-detail"],
+  [data-testid="music-project-detail"] {
+    width: 100%;
+    max-width: 1120px;
+  }
+
+  [data-testid="song-room-files"],
+  [data-testid="song-room-details"],
+  [data-testid="song-room-rights"] {
+    max-width: 1120px;
+  }
+
+  [data-testid="song-room-desktop-details"] [class*="text-[10px]"],
+  [data-testid="song-room-files"] [class*="text-[10px]"] {
+    font-size: 11px !important;
+  }
+
+  /* Conversation content remains readable even on very large monitors. */
+  [data-testid="manager-conversation-loading"],
+  [data-testid="manager-conversation-load-error"] {
+    max-width: 760px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-action-button,
+  .os-manager-composer,
+  .app-workspace-reveal {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}
