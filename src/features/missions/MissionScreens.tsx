@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import {
   Button,
@@ -30,6 +30,7 @@ import {
 } from "./missionModel";
 
 type MissionListTab = "todo" | "progress" | "done";
+type PendingMissionDetail = { id: string; source: MissionViewModel };
 
 export function MissionsWorkspace({
   missions,
@@ -72,10 +73,24 @@ export function MissionsWorkspace({
 }) {
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
   const [surface, setSurface] = useState<MissionSurface>("work");
+  const [pendingDetail, setPendingDetail] = useState<PendingMissionDetail | null>(null);
 
   const activeMissions = missions.filter((mission) => mission.status !== "complete");
   const completedMissions = missions.filter((mission) => mission.status === "complete");
   const selected = missions.find((mission) => mission.id === selectedMissionId) ?? activeMissions[0] ?? missions[0] ?? null;
+  const roomPending = detailPending || Boolean(pendingDetail && pendingDetail.id === selected?.id);
+
+  useEffect(() => {
+    if (!pendingDetail) return;
+    const current = missions.find((mission) => mission.id === pendingDetail.id);
+    if (current && current !== pendingDetail.source) setPendingDetail(null);
+  }, [missions, pendingDetail]);
+
+  useEffect(() => {
+    if (!pendingDetail) return;
+    const timeout = window.setTimeout(() => setPendingDetail((current) => current?.id === pendingDetail.id ? null : current), 10_000);
+    return () => window.clearTimeout(timeout);
+  }, [pendingDetail]);
 
   useEffect(() => {
     if (openRoomRequestKey <= 0) return;
@@ -87,6 +102,7 @@ export function MissionsWorkspace({
     if (listRequestKey <= 0) return;
     setRoomMode("list");
     setSurface("work");
+    setPendingDetail(null);
   }, [listRequestKey]);
 
   useEffect(() => {
@@ -95,6 +111,7 @@ export function MissionsWorkspace({
   }, [roomMode, onRoomModeChange]);
 
   function openMission(mission: MissionViewModel) {
+    setPendingDetail({ id: mission.id, source: mission });
     onSelectMission(mission.id);
     setSurface("work");
     setRoomMode("room");
@@ -134,10 +151,13 @@ export function MissionsWorkspace({
   return (
     <MissionRoom
       mission={selected}
-      detailPending={detailPending}
+      detailPending={roomPending}
       surface={surface}
       onSurface={setSurface}
-      onBack={() => setRoomMode("list")}
+      onBack={() => {
+        setPendingDetail(null);
+        setRoomMode("list");
+      }}
       onApproveTask={onApproveTask}
       onCompleteTask={onCompleteTask}
       onUploadTaskDeliverable={onUploadTaskDeliverable}
@@ -365,7 +385,7 @@ function MissionRoom({
   );
 }
 
-function MissionRoomSkeleton({ back }: { back: React.ReactNode }) {
+function MissionRoomSkeleton({ back }: { back: ReactNode }) {
   return (
     <div className="grid gap-7">
       <div>
