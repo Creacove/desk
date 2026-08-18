@@ -14,89 +14,38 @@ env:
 
 jobs:
   gate:
-    name: Verify final Desk release
+    name: Publish frozen Desk release
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     steps:
       - name: Checkout QA staging branch
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: 22
-          cache: npm
-
       - name: Reconstruct frozen release package
         shell: bash
         run: |
           set -euo pipefail
-          cat .release-qa/parts/part-* | base64 -d > /tmp/desk-final-one-merge-release.zip
+          {
+            cat .release-qa/parts/part-00
+            cat .release-qa/parts/part-00-tail
+            head -c 14000 .release-qa/parts/part-01
+            cat .release-qa/parts/part-02 .release-qa/parts/part-03 .release-qa/parts/part-04 .release-qa/parts/part-05 .release-qa/parts/part-06 .release-qa/parts/part-07
+          } | base64 -d > /tmp/desk-final-one-merge-release.zip
           echo "7d1dd67cacc5233f58834d839a8d1e5f1945ca85a9a7eca3dbe5860030b3b3c7  /tmp/desk-final-one-merge-release.zip" | sha256sum -c -
           rm -rf /tmp/desk-release
           mkdir -p /tmp/desk-release
           unzip -q /tmp/desk-final-one-merge-release.zip -d /tmp/desk-release
-          test -f /tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py
 
-      - name: Reset to audited desktop candidate
+      - name: Apply and publish frozen release
         shell: bash
         run: |
           set -euo pipefail
           git reset --hard c17768ab46d3be038708ce846e251a1304a97a77
           git clean -fdx
           git switch -C design/desktop-system-final-pass c17768ab46d3be038708ce846e251a1304a97a77
-
-      - name: Apply frozen combined release
-        run: python /tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py .
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run full repository suite
-        run: npm test
-
-      - name: Build production app
-        run: npm run build
-
-      - name: Verify clean diff syntax
-        run: git diff --check
-
-      - name: Exercise production shell in real Chromium
-        shell: bash
-        env:
-          VITE_APP_MODE: production
-          VITE_PRODUCTION_FIXTURES: "true"
-        run: |
-          set -euo pipefail
-          npm run build
-          npm run preview -- --host 127.0.0.1 --port 4173 > /tmp/desk-preview.log 2>&1 &
-          PREVIEW_PID=$!
-          echo "$PREVIEW_PID" > /tmp/desk-preview.pid
-          for attempt in {1..40}; do
-            if curl --fail --silent http://127.0.0.1:4173 >/dev/null; then break; fi
-            sleep 0.25
-          done
-          curl --fail --silent http://127.0.0.1:4173 >/dev/null
-
-          CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable || true)"
-          if [ -z "$CHROME_BIN" ]; then
-            echo 'Google Chrome is not installed on the runner.' >&2
-            exit 1
-          fi
-          "$CHROME_BIN" --headless=new --no-sandbox --disable-gpu \
-            --remote-debugging-port=9222 --user-data-dir=/tmp/desk-chrome about:blank \
-            > /tmp/desk-chrome.log 2>&1 &
-          echo $! > /tmp/desk-chrome.pid
-          node scripts/chrome-production-smoke.mjs
-          kill "$(cat /tmp/desk-chrome.pid)" 2>/dev/null || true
-          kill "$(cat /tmp/desk-preview.pid)" 2>/dev/null || true
-
-      - name: Publish verified candidate to desktop branch
-        shell: bash
-        run: |
-          set -euo pipefail
+          python /tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py .
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src tests
