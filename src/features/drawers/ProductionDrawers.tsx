@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { IconButton } from "../../design-system/desktopPrimitives";
+import { IconButton, SkeletonBlock } from "../../design-system/desktopPrimitives";
 import type { DrawerKind, EvidenceItemViewModel, MissionViewModel } from "../../types/cleanProduction";
 
 export function ProductionDrawers({
@@ -44,7 +44,25 @@ export function ProductionDrawers({
 }
 
 function EvidenceContent({ evidence }: { evidence: EvidenceItemViewModel[] }) {
-  if (!evidence.length) return <p className="py-6 text-[13px] font-medium text-muted-foreground">No evidence yet</p>;
+  if (!evidence.length) {
+    return (
+      <div data-testid="evidence-drawer-unresolved">
+        <div data-evidence-loading className="hidden grid-cols-1 gap-5" aria-hidden="true">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="border-b border-foreground/8 pb-5 last:border-b-0">
+              <SkeletonBlock className="h-3 w-28" />
+              <SkeletonBlock className="mt-3 h-5 w-[70%]" />
+              <div className="mt-4 grid grid-cols-2 gap-3">
+                <SkeletonBlock className="h-9" />
+                <SkeletonBlock className="h-9" />
+              </div>
+            </div>
+          ))}
+        </div>
+        <p data-evidence-empty className="py-6 text-[13px] font-medium text-muted-foreground">No evidence yet</p>
+      </div>
+    );
+  }
 
   return (
     <div className="border-y border-foreground/8">
