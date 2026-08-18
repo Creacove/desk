@@ -52,8 +52,8 @@ jobs:
           from pathlib import Path
           p = Path('/tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py')
           s = p.read_text()
-          old = '      workspace?.contextComplete &&\n      workspace.entitlementActive &&\n      workspace.setupStatus'
-          new = '      workspace?.billingCheckoutSessionId &&\n      workspace.setupStatus'
+          old = r'      workspace?.contextComplete &&\n      workspace.entitlementActive &&\n      workspace.setupStatus'
+          new = r'      workspace?.billingCheckoutSessionId &&\n      workspace.setupStatus'
           if s.count(old) != 2:
               raise SystemExit(f'Unexpected release-script reconciliation count: {s.count(old)}')
           p.write_text(s.replace(old, new))
