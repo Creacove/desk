@@ -27,6 +27,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          echo "part-01-head=$(head -c 14000 .release-qa/parts/part-01 | git hash-object --stdin)"
+          echo "part-02=$(git hash-object .release-qa/parts/part-02)"
           {
             cat .release-qa/parts/part-00
             cat .release-qa/parts/part-00-tail
