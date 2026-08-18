@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 const source = (path: string) => readFileSync(`${process.cwd()}/src/${path}`, "utf8");
 const manager = [source("features/manager/ManagerScreens.tsx"), source("features/manager/ManagerScreensLegacy.tsx")].join("\n");
 const composer = source("features/manager/ManagerComposer.tsx");
+const primitives = source("design-system/desktopPrimitives.tsx");
 const theme = source("index.css");
 const app = source("app/ProductionApp.tsx");
 
@@ -13,11 +14,18 @@ describe("Manager conversation premium UI contract", () => {
     expect(theme).not.toMatch(/\.app-theme \[class\*="font-semibold"\][^{]*\{[^}]*!important/s);
   });
 
-  it("uses the same compact shell for the Office and conversation", () => {
+  it("uses a compact Office/conversation shell and work-first language", () => {
     expect(manager).toContain('title="Manager\'s Office"');
     expect(manager).toContain('variant="conversation"');
     expect(manager).not.toContain("Ask your Manager anything");
-    expect(manager).toContain("formatConversationTimestamp(conversation.lastUpdate)");
+    expect(manager).toContain("What do you want to work on?");
+    expect(manager).toContain('<Timestamp value={conversation.lastUpdate} context="rail"');
+  });
+
+  it("uses one shared product timestamp formatter", () => {
+    expect(primitives).toContain("formatProductTimestamp");
+    expect(primitives).toContain('context === "rail"');
+    expect(primitives).toContain('context === "grouped"');
   });
 
   it("keeps messages quiet and artifacts turn-owned", () => {
@@ -52,7 +60,7 @@ describe("Manager conversation premium UI contract", () => {
     expect(composer).toContain("Next");
   });
 
-  it("uses the thinking-orbs inline preset while the Manager is working", () => {
+  it("uses the thinking-orbs inline preset while Manager is working", () => {
     expect(manager).toContain('<AppThinkingOrb state={orbState} size={20} />');
     expect(manager).not.toContain('<AppThinkingOrb state={orbState} size={18} />');
   });
