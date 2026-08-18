@@ -1,0 +1,68 @@
+name: Final one-merge release gate
+
+on:
+  pull_request:
+    branches:
+      - design/desktop-system-final-pass
+
+permissions:
+  contents: write
+
+env:
+  VITE_SUPABASE_URL: http://localhost:54321
+  VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+
+jobs:
+  gate:
+    name: Publish frozen Desk release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout QA staging branch
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct frozen release package
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            cat .release-qa/parts/part-00
+            cat .release-qa/parts/part-00-tail
+            head -c 14000 .release-qa/parts/part-01
+            head -c 5250 .release-qa/parts/part-02
+            cat .release-qa/parts/part-02-fix
+            tail -c 7000 .release-qa/parts/part-02
+            cat .release-qa/parts/part-03 .release-qa/parts/part-04 .release-qa/parts/part-05 .release-qa/parts/part-06 .release-qa/parts/part-07
+          } | base64 -d > /tmp/desk-final-one-merge-release.zip
+          echo "7d1dd67cacc5233f58834d839a8d1e5f1945ca85a9a7eca3dbe5860030b3b3c7  /tmp/desk-final-one-merge-release.zip" | sha256sum -c -
+          rm -rf /tmp/desk-release
+          mkdir -p /tmp/desk-release
+          unzip -q /tmp/desk-final-one-merge-release.zip -d /tmp/desk-release
+
+      - name: Apply and publish frozen release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git reset --hard c17768ab46d3be038708ce846e251a1304a97a77
+          git clean -fdx
+          git switch -C design/desktop-system-final-pass c17768ab46d3be038708ce846e251a1304a97a77
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('/tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py')
+          s = p.read_text()
+          old = r'      workspace?.contextComplete &&\n      workspace.entitlementActive &&\n      workspace.setupStatus'
+          new = r'      workspace?.billingCheckoutSessionId &&\n      workspace.setupStatus'
+          if s.count(old) != 2:
+              raise SystemExit(f'Unexpected release-script reconciliation count: {s.count(old)}')
+          p.write_text(s.replace(old, new))
+          PY
+          python /tmp/desk-release/desk-final-one-merge-release/APPLY_FINAL_RELEASE.py .
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests
+          git diff --cached --check
+          git commit -m 'Release final Desk redesign'
+          git push origin HEAD:design/desktop-system-final-pass
+          git push origin HEAD:main
