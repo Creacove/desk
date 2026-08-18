@@ -47,6 +47,16 @@
   border: 0 !important;
 }
 
+/* ProductionApp already owns evidence loading at the drawer boundary. The drawer
+   consumes that semantic state through CSS so unresolved data can never read empty. */
+[aria-busy="true"] [data-evidence-empty] {
+  display: none !important;
+}
+
+[aria-busy="true"] [data-evidence-loading] {
+  display: grid !important;
+}
+
 .app-workspace-reveal {
   animation: os-workspace-reveal 160ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
