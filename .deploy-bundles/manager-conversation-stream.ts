@@ -5802,41 +5802,46 @@ function assessReleaseSuccess(packet, assessedAt = (/* @__PURE__ */ new Date()).
       unknownCount: 0,
       recommendation: {
         kind: "keep",
-        reason: "This is released or catalog music; pre-release gates are not reopened."
+        reason: "This is released or catalog music; pre-release checks are not reopened."
       }
     };
   }
+  const stage = normalizedStage(packet.lifecycleStage);
+  const releaseDate = effectiveReleaseDate(packet);
   const foundationDefinitions = [
-    assetGate("final_master", "Final master", packet.assets.finalMaster, "Designate the final delivery master in Files.", "An uploaded demo or rough mix is not delivery evidence."),
-    assetGate("artwork", "Approved artwork", packet.assets.artwork, "Add or designate the approved cover artwork.", "Artwork presence is known only from the song asset record."),
-    factGate("metadata", "Release metadata", packet.metadata, "Confirm the required release metadata in the song details.", "The assessment does not replace distributor-specific metadata validation."),
-    factGate("credits", "Credits", packet.credits, "Complete and confirm the contributor credits.", "Credit completeness depends on the workspace records supplied to Desk."),
-    factGate("splits", "Splits", packet.splits, "Resolve pending split confirmations before external delivery.", "Splits are an operating readiness signal, not legal advice."),
-    factGate("clearances", "Clearance declarations", packet.clearances, "Answer the focused clearance question or attach the relevant evidence.", "Desk records user-provided declarations and does not infer clearance from audio."),
+    assetGate("final_master", "Final master", stageRequiresDeliveryAssets(stage) ? packet.assets.finalMaster : optionalFact(packet.assets.finalMaster), "Choose the final delivery master in Files.", "A designated uploaded master is valid evidence; a rough/demo file is not automatically the final master."),
+    assetGate("artwork", "Artwork", stageRequiresDeliveryAssets(stage) ? packet.assets.artwork : optionalFact(packet.assets.artwork), "Add or choose the release artwork before delivery.", "Artwork is required later in the release workflow, not while a song is still being made."),
+    factGate("metadata", "Release details", stageRequiresDeliveryMetadata(stage) ? packet.metadata : optionalFact(packet.metadata), "Complete the release details needed for delivery.", "Distributor-specific fields can still differ by provider."),
+    factGate("credits", "Credits", stageRequiresCredits(stage) ? packet.credits : optionalFact(packet.credits), "Complete the contributor credits when the recording team is known.", "A credit does not imply an ownership share."),
+    factGate("splits", "Rights & splits", stageRequiresRights(stage) ? packet.splits : optionalFact(packet.splits), "Resolve ownership splits before external delivery where applicable.", "People can legitimately have a credit and 0% ownership."),
+    factGate("clearances", "Clearances", stageRequiresRights(stage) ? packet.clearances : optionalFact(packet.clearances), "Confirm any clearance declarations that apply to this recording.", "Desk records declarations and evidence; it does not infer legal clearance from audio."),
     {
       key: "operational_release_date",
-      label: "Approved release date",
+      label: "Release date",
       group: "foundation",
-      fact: packet.approvedReleaseDate ? {
+      fact: releaseDate ? {
         state: "confirmed",
-        source: "music_release_plans",
-        detail: packet.approvedReleaseDate
-      } : {
+        source: packet.approvedReleaseDate ? "music_release_plans" : "music_items",
+        detail: releaseDate
+      } : stageRequiresReleaseDate(stage) ? {
         state: "missing",
-        source: "music_release_plans"
+        source: "music_items"
+      } : {
+        state: "not_applicable",
+        source: "lifecycle_stage"
       },
-      nextAction: "Choose and approve an operational release date.",
-      limitation: "A provider date is historical evidence, not approval for an unreleased plan."
+      nextAction: stageRequiresReleaseDate(stage) ? "Choose a release date." : "Choose a release date when release planning starts.",
+      limitation: "The canonical song date is valid current state; an operational plan approval may add scheduling semantics later."
     },
-    factGate("distributor_delivery", "Distributor delivery", packet.distributor, "Record the distributor submission or delivery evidence.", "Desk cannot claim distributor acceptance without a user or provider receipt."),
-    factGate("identifiers", "Identifiers", packet.identifiers, "Add the applicable ISRC or release identifier.", "Some identifiers may be assigned by a distributor later.")
+    factGate("distributor_delivery", "Distributor delivery", stageRequiresDistributor(stage) ? packet.distributor : optionalFact(packet.distributor), "Record distributor delivery when the release is submitted.", "Desk cannot claim distributor acceptance without a receipt or explicit user confirmation."),
+    factGate("identifiers", "ISRC / identifiers", stageRequiresIdentifier(packet, stage) ? packet.identifiers : optionalIdentifierFact(packet.identifiers), stageRequiresIdentifier(packet, stage) ? "Add the ISRC, or confirm that your distributor will assign it during delivery." : "No ISRC is needed yet. Add it when it is assigned.", "An unreleased recording can legitimately have no ISRC until distribution.")
   ];
   const campaignDefinitions = [];
-  addCampaignGate(campaignDefinitions, packet.campaign.spotifyEditorialEnabled, "spotify_editorial_pitch", "Spotify editorial pitch", packet.campaignFacts.spotifyEditorialPitch, "Prepare and submit the pitch through Spotify for Artists.", "Desk prepares the pitch but does not submit it.");
-  addCampaignGate(campaignDefinitions, packet.campaign.independentPlaylistsEnabled, "independent_playlist_targets", "Independent playlist targets", packet.campaignFacts.independentPlaylistTargets, "Research and shortlist source-backed playlist opportunities.", "A playlist reach claim is not a guarantee of fan conversion.");
-  addCampaignGate(campaignDefinitions, packet.campaign.pressEnabled, "press_package", "Press package", packet.campaignFacts.pressPackage, "Create or approve the release-specific press package.", "Press preparation does not guarantee coverage.");
-  addCampaignGate(campaignDefinitions, packet.campaign.contentEnabled, "content_plan", "Content rollout", packet.campaignFacts.contentPlan, "Create the campaign-specific content plan and assets.", "V1 does not enforce a universal asset count.");
-  addCampaignGate(campaignDefinitions, packet.campaign.postReleaseMeasurementEnabled, "post_release_measurement", "Post-release measurement", packet.campaignFacts.postReleaseMeasurement, "Choose the evidence that will be reviewed after launch.", "Private platform analytics require a connected or uploaded source.");
+  addCampaignGate(campaignDefinitions, packet.campaign.spotifyEditorialEnabled, "spotify_editorial_pitch", "Spotify editorial pitch", packet.campaignFacts.spotifyEditorialPitch, "Prepare the pitch and submit it through Spotify for Artists.", "Desk prepares the pitch but does not submit it.");
+  addCampaignGate(campaignDefinitions, packet.campaign.independentPlaylistsEnabled, "independent_playlist_targets", "Playlist targets", packet.campaignFacts.independentPlaylistTargets, "Research and shortlist source-backed playlist opportunities.", "Playlist placement is never guaranteed.");
+  addCampaignGate(campaignDefinitions, packet.campaign.pressEnabled, "press_package", "Press package", packet.campaignFacts.pressPackage, "Create or approve the release-specific press package.", "Preparation does not guarantee coverage.");
+  addCampaignGate(campaignDefinitions, packet.campaign.contentEnabled, "content_plan", "Content rollout", packet.campaignFacts.contentPlan, "Create the campaign-specific content plan and assets.", "Desk does not enforce a universal asset count.");
+  addCampaignGate(campaignDefinitions, packet.campaign.postReleaseMeasurementEnabled, "post_release_measurement", "Post-release measurement", packet.campaignFacts.postReleaseMeasurement, "Choose the evidence that will be reviewed after launch.", "Private analytics require a connected or uploaded source.");
   const foundation = buildGroup(foundationDefinitions, packet);
   const campaign = buildGroup(campaignDefinitions, packet);
   return {
@@ -5848,6 +5853,80 @@ function assessReleaseSuccess(packet, assessedAt = (/* @__PURE__ */ new Date()).
     unknownCount: foundation.unknownCount + campaign.unknownCount,
     recommendation: recommendReleaseDate(packet, foundation, campaign)
   };
+}
+function stageRequiresDeliveryAssets(stage) {
+  return [
+    "ready",
+    "scheduled"
+  ].includes(stage);
+}
+function stageRequiresDeliveryMetadata(stage) {
+  return [
+    "ready",
+    "scheduled"
+  ].includes(stage);
+}
+function stageRequiresCredits(stage) {
+  return [
+    "mixing",
+    "mastering",
+    "ready",
+    "scheduled"
+  ].includes(stage);
+}
+function stageRequiresRights(stage) {
+  return [
+    "ready",
+    "scheduled"
+  ].includes(stage);
+}
+function stageRequiresReleaseDate(stage) {
+  return [
+    "ready",
+    "scheduled"
+  ].includes(stage);
+}
+function stageRequiresDistributor(stage) {
+  return stage === "scheduled";
+}
+function stageRequiresIdentifier(packet, stage) {
+  if (stage === "scheduled") return true;
+  if (stage !== "ready") return false;
+  return [
+    "confirmed",
+    "pending",
+    "uploaded"
+  ].includes(packet.distributor?.state ?? "");
+}
+function normalizedStage(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+function effectiveReleaseDate(packet) {
+  return packet.approvedReleaseDate ?? packet.plannedReleaseDate ?? packet.providerReleaseDate ?? null;
+}
+function optionalFact(fact) {
+  if (!fact || [
+    "missing",
+    "pending",
+    "unknown"
+  ].includes(fact.state)) return {
+    state: "not_applicable",
+    source: fact?.source ?? "lifecycle_stage",
+    detail: fact?.detail
+  };
+  return fact;
+}
+function optionalIdentifierFact(fact) {
+  if (!fact || [
+    "missing",
+    "pending",
+    "unknown"
+  ].includes(fact.state)) return {
+    state: "not_applicable",
+    source: fact?.source ?? "lifecycle_stage",
+    detail: "Identifier can be assigned later in distribution."
+  };
+  return fact;
 }
 function factGate(key, label, fact, nextAction, limitation) {
   return {
@@ -5891,7 +5970,7 @@ function buildGroup(definitions, packet) {
     ...counts
   };
 }
-function toGateResult(definition, packet) {
+function toGateResult(definition, _packet) {
   const fact = definition.fact;
   const state = factToGateState(fact);
   const evidence = fact?.source ? [
@@ -5911,7 +5990,7 @@ function toGateResult(definition, packet) {
     group: definition.group,
     state,
     evidence,
-    freshness: fact?.observedAt ?? "No fresh evidence supplied",
+    freshness: fact?.observedAt ?? "Current workspace state",
     limitation: fact?.detail ? `${definition.limitation} ${fact.detail}` : definition.limitation,
     nextAction: definition.nextAction
   };
@@ -5921,6 +6000,9 @@ function factToGateState(fact) {
   switch (fact.state) {
     case "confirmed":
       return "confirmed";
+    case "uploaded":
+      return "confirmed";
+    // presence is confirmed; validation/risk must be a separate fact
     case "not_applicable":
       return "not_applicable";
     case "missing":
@@ -5928,8 +6010,6 @@ function factToGateState(fact) {
     case "pending":
       return "blocked";
     case "draft":
-      return "at_risk";
-    case "uploaded":
       return "at_risk";
     default:
       return "unknown";
@@ -5950,36 +6030,37 @@ function isReleasedCatalog(packet) {
     "released",
     "catalog",
     "archived"
-  ].includes(packet.lifecycleStage);
+  ].includes(normalizedStage(packet.lifecycleStage));
 }
 function recommendReleaseDate(packet, foundation, campaign) {
-  const approvedDate = packet.approvedReleaseDate;
-  if (!approvedDate) {
+  const releaseDate = effectiveReleaseDate(packet);
+  if (!releaseDate) {
+    if (!stageRequiresReleaseDate(normalizedStage(packet.lifecycleStage))) return {
+      kind: "keep",
+      reason: "A release date is not required at this stage."
+    };
     return {
       kind: "recover",
-      reason: "Choose an operational release date before calculating the campaign runway."
+      reason: "Choose a release date before calculating campaign runway."
     };
   }
   const today = packet.today ?? (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-  const daysToRelease = daysBetween(today, approvedDate);
+  const daysToRelease = daysBetween(today, releaseDate);
   const hasMaterialWork = foundation.blockedCount > 0 || foundation.atRiskCount > 0 || foundation.unknownCount > 0 || campaign.blockedCount > 0 || campaign.atRiskCount > 0 || campaign.unknownCount > 0;
   if (hasMaterialWork && daysToRelease <= RELEASE_SUCCESS_POLICY.minimumOperationalBufferDays) {
-    const proposedDate = addDays(approvedDate, RELEASE_SUCCESS_POLICY.minimumOperationalBufferDays);
     return {
       kind: "move",
-      proposedDate,
-      reason: `${daysToRelease} days remain and material release or campaign evidence is unresolved. Moving the date by ${RELEASE_SUCCESS_POLICY.minimumOperationalBufferDays} days creates a clearer operating window.`
+      proposedDate: addDays(releaseDate, RELEASE_SUCCESS_POLICY.minimumOperationalBufferDays),
+      reason: `${daysToRelease} days remain and material release work is unresolved. Moving the date creates a safer operating window.`
     };
   }
-  if (foundation.blockedCount > 0 || foundation.unknownCount > 0) {
-    return {
-      kind: "recover",
-      reason: "The release date can remain, but foundation evidence must be resolved before external delivery or outreach."
-    };
-  }
+  if (foundation.blockedCount > 0 || foundation.unknownCount > 0) return {
+    kind: "recover",
+    reason: "The release date can remain, but the remaining foundation work should be resolved before external delivery."
+  };
   return {
     kind: "keep",
-    reason: "The current date has no deterministic timing reason to move. Complete the highest-impact campaign actions next."
+    reason: "There is no deterministic timing reason to move the current release date."
   };
 }
 function daysBetween(from, to) {
@@ -9429,18 +9510,16 @@ function normalizeManagerTurnPresentation(value) {
 var MAX_OPENING_BRIEF_BYTES = 48e3;
 var encoder = new TextEncoder();
 function buildManagerConversationModelContext(input, packet, conversationId, previousResponseId = "") {
-  const scope = {
-    accountId: input.accountId,
-    artistWorkspaceId: input.artistWorkspaceId,
-    artistId: input.artistId,
-    conversationId,
-    taskId: input.taskId ?? "",
-    musicSubject: compactMusicSubjectPointer(input.musicSubject)
-  };
-  const message = compactText(input.body, 6e3);
   const common = {
-    scope,
-    userMessage: message,
+    scope: {
+      accountId: input.accountId,
+      artistWorkspaceId: input.artistWorkspaceId,
+      artistId: input.artistId,
+      conversationId,
+      taskId: input.taskId ?? "",
+      musicSubject: compactMusicSubjectPointer(input.musicSubject)
+    },
+    userMessage: compactText(input.body, 6e3),
     contextRequestId: compactText(input.contextRequestId ?? "", 160),
     contextAnswers: normalizeContextAnswers(input.contextAnswers)
   };
@@ -9479,28 +9558,149 @@ function classifyManagerConversationError(error, fallback = "Manager could not c
 function compactOpeningPacket(packet) {
   const source = record2(packet);
   const latestIntelligence = record2(source.latestManagerIntelligencePacket);
+  const focusedMusicSubject = compactFocusedMusicSubject(source.focusedMusicSubject);
   const openingBrief = {
-    version: "manager_opening_brief_v1",
+    version: "manager_opening_brief_v2",
+    truthPriority: [
+      "focusedMusicSubject is current workspace truth and overrides old conversation/memory/Manager Read",
+      "durableMemory is preference/history, not a replacement for current structured song state",
+      "Manager Read is derived analysis and can be stale"
+    ],
     artist: compactArtist(source.artist),
+    focusedMusicSubject,
     taskContext: compactTask(source.taskContext),
-    focusedMusicSubject: compactFocusedMusicSubject(source.focusedMusicSubject),
+    conversationHistory: compactConversationHistory(source.conversationHistory),
+    durableMemory: compactMemoryList(source.memory, 6),
     evidence: compactEvidenceList(source.evidence, 8),
     music: compactMusic(source.music),
-    durableMemory: compactMemoryList(source.memory, 6),
     activeMissions: compactMissionList(source.existingMissions, 6),
     activeTasks: compactTaskList(source.existingTasks, 8),
     recentAgentReports: compactAgentReportList(source.recentAgentReports, 4),
-    conversationHistory: compactConversationHistory(source.conversationHistory),
     intelligenceSummary: {
       packetType: compactText(latestIntelligence.packet_type, 120),
-      strategicDiagnosis: compactJson(latestIntelligence.strategic_diagnosis_json, 3e3),
-      missionSeed: compactJson(latestIntelligence.mission_seed_json, 3e3)
+      strategicDiagnosis: compactJson(latestIntelligence.strategic_diagnosis_json, 2500),
+      missionSeed: compactJson(latestIntelligence.mission_seed_json, 2e3)
     },
     activePlaybookKeys: compactStringList(source.activePlaybookKeys, 8, 80),
     recommendedMissionPatterns: compactPatternList(source.recommendedMissionPatterns, 4),
     rules: compactRules(source.rules)
   };
   return enforceByteBudget(openingBrief, MAX_OPENING_BRIEF_BYTES);
+}
+function compactFocusedMusicSubject(value) {
+  const subject = record2(value);
+  const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
+  const id = compactText(subject.id, 120);
+  if (!type || !id) return null;
+  const metadata = record2(subject.metadata);
+  return {
+    type,
+    id,
+    title: compactText(subject.title, 240),
+    kind: compactText(subject.kind, 120),
+    lifecycleStage: compactText(subject.lifecycleStage ?? subject.lifecycle_stage, 120),
+    plannedReleaseDate: compactText(subject.plannedReleaseDate ?? subject.planned_release_date ?? metadata.planned_release_date ?? metadata.release_date, 120),
+    releasedAt: compactText(subject.releasedAt ?? subject.released_at, 120),
+    sourceKind: compactText(subject.sourceKind ?? subject.source_kind, 120),
+    sourceLimit: compactText(subject.sourceLimit ?? subject.source_limit, 600),
+    metadata: compactStructured(metadata, 8e3),
+    identifiers: array(subject.identifiers).slice(0, 24).map((item) => {
+      const row = record2(item);
+      return {
+        id: compactText(row.id, 120),
+        type: compactText(row.type ?? row.identifierType ?? row.identifier_type, 120),
+        value: compactText(row.value ?? row.identifierValue ?? row.identifier_value, 500),
+        confidence: compactText(row.confidence, 80)
+      };
+    }),
+    credits: array(subject.credits).slice(0, 32).map((item) => {
+      const row = record2(item);
+      return {
+        id: compactText(row.id, 120),
+        contributorId: compactText(row.contributorId ?? row.contributor_id, 120),
+        role: compactText(row.role, 160),
+        name: compactText(row.name ?? row.displayName ?? row.display_name, 240),
+        status: compactText(row.status, 100)
+      };
+    }),
+    assets: array(subject.assets).slice(0, 24).map((item) => {
+      const asset = record2(item);
+      return {
+        id: compactText(asset.id, 120),
+        assetType: compactText(asset.assetType ?? asset.asset_type, 120),
+        title: compactText(asset.title, 240),
+        status: compactText(asset.status, 120),
+        uploadedFileId: compactText(asset.uploadedFileId ?? asset.uploaded_file_id, 120),
+        updatedAt: compactText(asset.updatedAt ?? asset.updated_at ?? asset.createdAt ?? asset.created_at, 120)
+      };
+    }),
+    documents: array(subject.documents).slice(0, 24).map((item) => {
+      const document = record2(item);
+      return {
+        id: compactText(document.id, 120),
+        title: compactText(document.title, 240),
+        documentType: compactText(document.documentType ?? document.document_type, 160),
+        status: compactText(document.status, 120),
+        summary: compactText(document.summary, 600),
+        updatedAt: compactText(document.updatedAt ?? document.updated_at ?? document.createdAt ?? document.created_at, 120)
+      };
+    }),
+    rights: compactFocusedRights(subject.rights),
+    contributors: array(subject.contributors).slice(0, 32).map(compactContributor),
+    splitConfirmations: array(subject.splitConfirmations ?? subject.split_confirmations).slice(0, 32).map((item) => {
+      const row = record2(item);
+      return {
+        id: compactText(row.id, 120),
+        contributorId: compactText(row.contributorId ?? row.contributor_id ?? row.music_split_contributor_id, 120),
+        status: compactText(row.status, 100),
+        confirmedAt: compactText(row.confirmedAt ?? row.confirmed_at, 120)
+      };
+    }),
+    recentActivity: array(subject.recentActivity).slice(0, 10).map((item) => {
+      const event = record2(item);
+      return {
+        eventType: compactText(event.eventType ?? event.event_type, 160),
+        summary: compactText(event.summary, 500),
+        createdAt: compactText(event.createdAt ?? event.created_at, 120)
+      };
+    }),
+    managerRead: compactFocusedManagerRead(subject.managerRead)
+  };
+}
+function compactContributor(value) {
+  const row = record2(value);
+  return {
+    id: compactText(row.id ?? row.contributorId ?? row.contributor_id, 120),
+    name: compactText(row.name ?? row.displayName ?? row.display_name, 240),
+    email: compactText(row.email, 240),
+    role: compactText(row.role, 160),
+    roles: compactStringList(row.roles, 10, 160),
+    publishingShare: numberOrText(row.publishingShare ?? row.publishing_share, 80),
+    masterShare: numberOrText(row.masterShare ?? row.master_share, 80),
+    approval: compactText(row.approval ?? row.approvalStatus ?? row.approval_status, 120)
+  };
+}
+function compactFocusedRights(value) {
+  const rights = record2(value);
+  if (!Object.keys(rights).length) return null;
+  return {
+    status: compactText(rights.status, 120),
+    publishingTotal: numberOrText(rights.publishingTotal ?? rights.publishing_total, 80),
+    masterTotal: numberOrText(rights.masterTotal ?? rights.master_total, 80),
+    summary: compactText(rights.summary, 700),
+    documentAssetId: compactText(rights.documentAssetId ?? rights.document_asset_id, 120),
+    contributors: array(rights.contributors).slice(0, 32).map(compactContributor)
+  };
+}
+function compactFocusedManagerRead(value) {
+  const read = record2(value);
+  if (!Object.keys(read).length) return null;
+  return {
+    id: compactText(read.id, 120),
+    summary: compactText(read.summary, 1500),
+    recommendation: compactText(read.recommendation, 2e3),
+    createdAt: compactText(read.createdAt ?? read.created_at, 120)
+  };
 }
 function compactArtist(value) {
   const artist = record2(value);
@@ -9514,112 +9714,12 @@ function compactArtist(value) {
     budgetContext: compactText(artist.budgetContext, 1e3)
   };
 }
-function compactEvidenceList(value, limit) {
-  return array(value).slice(0, limit).map((item) => {
-    const row = record2(item);
-    return {
-      id: compactText(row.id, 120),
-      source: compactText(row.source, 160),
-      kind: compactText(row.kind, 120),
-      subjectId: compactText(row.subjectId, 120),
-      subject: compactText(row.subject, 240),
-      label: compactText(row.label, 240),
-      value: compactText(row.value, 500),
-      freshness: compactText(row.freshness, 120),
-      confidence: compactText(row.confidence, 120),
-      provenance: compactText(row.provenance, 700),
-      limitation: compactText(row.limitation, 700)
-    };
-  });
-}
 function compactMusic(value) {
   const music = record2(value);
   return {
     items: compactCatalogList(music.items, 8),
     projects: compactCatalogList(music.projects, 6)
   };
-}
-function compactMusicSubjectPointer(value) {
-  const subject = record2(value);
-  const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
-  const id = compactText(subject.id, 120);
-  return type && id ? {
-    type,
-    id
-  } : null;
-}
-function compactFocusedMusicSubject(value) {
-  const subject = record2(value);
-  const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
-  const id = compactText(subject.id, 120);
-  if (!type || !id) return null;
-  return {
-    type,
-    id,
-    title: compactText(subject.title, 240),
-    kind: compactText(subject.kind, 120),
-    lifecycleStage: compactText(subject.lifecycleStage ?? subject.lifecycle_stage, 120),
-    releasedAt: compactText(subject.releasedAt ?? subject.released_at, 120),
-    sourceKind: compactText(subject.sourceKind ?? subject.source_kind, 120),
-    sourceLimit: compactText(subject.sourceLimit ?? subject.source_limit, 600),
-    assets: array(subject.assets).slice(0, 12).map((item) => {
-      const asset = record2(item);
-      return {
-        id: compactText(asset.id, 120),
-        assetType: compactText(asset.assetType ?? asset.asset_type, 120),
-        title: compactText(asset.title, 240),
-        status: compactText(asset.status, 120)
-      };
-    }),
-    rights: compactFocusedRights(subject.rights),
-    analysis: array(subject.analysis).slice(0, 8).map((item) => {
-      const analysis = record2(item);
-      return {
-        id: compactText(analysis.id, 120),
-        source: compactText(analysis.source, 120),
-        evidenceType: compactText(analysis.evidenceType ?? analysis.evidence_type, 120),
-        metric: compactText(analysis.metric, 120),
-        value: numberOrText(analysis.value, 120),
-        unit: compactText(analysis.unit, 80),
-        freshness: compactText(analysis.freshness, 80),
-        confidence: compactText(analysis.confidence, 80),
-        provenance: compactText(analysis.provenance, 500),
-        limitation: compactText(analysis.limitation, 500)
-      };
-    }),
-    recentActivity: array(subject.recentActivity).slice(0, 8).map((item) => {
-      const event = record2(item);
-      return {
-        eventType: compactText(event.eventType ?? event.event_type, 160),
-        summary: compactText(event.summary, 500),
-        createdAt: compactText(event.createdAt ?? event.created_at, 120)
-      };
-    }),
-    managerRead: compactFocusedManagerRead(subject.managerRead)
-  };
-}
-function compactFocusedManagerRead(value) {
-  const read = record2(value);
-  if (!Object.keys(read).length) return null;
-  return {
-    id: compactText(read.id, 120),
-    summary: compactText(read.summary, 2e3),
-    recommendation: compactText(read.recommendation, 3e3),
-    createdAt: compactText(read.createdAt ?? read.created_at, 120)
-  };
-}
-function compactFocusedRights(value) {
-  const rights = record2(value);
-  if (!Object.keys(rights).length) return null;
-  return {
-    status: compactText(rights.status, 120),
-    publishingTotal: numberOrText(rights.publishingTotal ?? rights.publishing_total, 80),
-    masterTotal: numberOrText(rights.masterTotal ?? rights.master_total, 80),
-    summary: compactText(rights.summary, 500)
-  };
-}
-function numberOrText(value, maxLength) {
-  return typeof value === "number" && Number.isFinite(value) ? value : compactText(value, maxLength);
 }
 function compactCatalogList(value, limit) {
   return array(value).slice(0, limit).map((item) => {
@@ -9629,9 +9729,25 @@ function compactCatalogList(value, limit) {
       title: compactText(row.title, 240),
       type: compactText(row.item_type ?? row.project_type ?? row.type, 120),
       lifecycleStage: compactText(row.lifecycle_stage ?? row.lifecycleStage, 120),
-      releasedAt: compactText(row.released_at ?? row.releasedAt, 120),
-      sourceKind: compactText(row.source_kind ?? row.sourceKind, 120),
-      sourceLimit: compactText(row.source_limit ?? row.sourceLimit, 500)
+      plannedReleaseDate: compactText(row.planned_release_date ?? row.plannedReleaseDate, 120),
+      releasedAt: compactText(row.released_at ?? row.releasedAt, 120)
+    };
+  });
+}
+function compactEvidenceList(value, limit) {
+  return array(value).slice(0, limit).map((item) => {
+    const row = record2(item);
+    return {
+      id: compactText(row.id, 120),
+      source: compactText(row.source, 160),
+      kind: compactText(row.kind ?? row.evidence_type, 120),
+      subjectId: compactText(row.subjectId ?? row.subject_id, 120),
+      subject: compactText(row.subject ?? row.subject_label, 240),
+      value: compactText(row.value ?? row.metric_value, 500),
+      freshness: compactText(row.freshness, 120),
+      confidence: compactText(row.confidence, 120),
+      provenance: compactText(row.provenance, 500),
+      limitation: compactText(row.limitation, 500)
     };
   });
 }
@@ -9642,37 +9758,29 @@ function compactMemoryList(value, limit) {
       id: compactText(row.id, 120),
       scope: compactText(row.scope, 120),
       kind: compactText(row.kind, 120),
-      content: compactText(row.content, 1200),
+      content: compactText(row.content, 1e3),
       confidence: compactText(row.confidence, 120),
-      reason: compactText(row.reason, 500),
-      missionId: compactText(row.mission_id ?? row.missionId, 120)
+      reason: compactText(row.reason, 400)
     };
   });
 }
 function compactMissionList(value, limit) {
-  return array(value).slice(0, limit).map((item) => compactMission(item));
+  return array(value).slice(0, limit).map(compactMission);
 }
 function compactMission(value) {
   const row = record2(value);
   return {
     id: compactText(row.id, 120),
     title: compactText(row.title, 240),
-    objective: compactText(row.objective, 1e3),
-    reason: compactText(row.reason, 700),
+    objective: compactText(row.objective, 900),
     status: compactText(row.status, 120),
-    priority: numberOrEmpty(row.priority),
     progress: numberOrEmpty(row.progress),
-    summary: compactText(row.summary, 1e3),
-    patternName: compactText(row.pattern_name ?? row.patternName, 160),
-    currentRecommendation: compactText(row.current_recommendation ?? row.currentRecommendation, 1e3),
-    requiredEvidence: compactStringList(row.required_evidence ?? row.requiredEvidence, 8, 400),
-    missingEvidence: compactStringList(row.missing_evidence ?? row.missingEvidence, 8, 400),
-    changeConditions: compactStringList(row.change_conditions ?? row.changeConditions, 8, 400),
-    reviewPoint: compactText(row.review_point ?? row.reviewPoint, 500)
+    summary: compactText(row.summary, 800),
+    currentRecommendation: compactText(row.current_recommendation ?? row.currentRecommendation, 800)
   };
 }
 function compactTaskList(value, limit) {
-  return array(value).slice(0, limit).map((item) => compactTask(item));
+  return array(value).slice(0, limit).map(compactTask);
 }
 function compactTask(value) {
   const row = record2(value);
@@ -9680,18 +9788,11 @@ function compactTask(value) {
     id: compactText(row.id, 120),
     missionId: compactText(row.mission_id ?? row.missionId, 120),
     title: compactText(row.title, 240),
-    ownerRole: compactText(row.owner_role ?? row.ownerRole, 120),
-    workMode: compactText(row.work_mode ?? row.workMode, 120),
     status: compactText(row.status, 120),
-    purpose: compactText(row.purpose, 1e3),
-    evidenceNeeded: compactStringList(row.evidence_needed ?? row.evidenceNeeded, 8, 400),
-    completionExpectation: compactText(row.completion_expectation ?? row.completionExpectation, 700),
-    completionMode: compactText(row.completion_mode ?? row.completionMode, 120),
-    deliverableTitle: compactText(row.deliverable_title ?? row.deliverableTitle, 240),
-    deliverableRequirements: compactStringList(row.deliverable_requirements ?? row.deliverableRequirements, 8, 400),
-    managerResponsibility: compactText(row.manager_responsibility ?? row.managerResponsibility, 700),
-    userResponsibility: compactText(row.user_responsibility ?? row.userResponsibility, 700),
-    riskIfLate: compactText(row.risk_if_late ?? row.riskIfLate, 700)
+    workMode: compactText(row.work_mode ?? row.workMode, 120),
+    purpose: compactText(row.purpose, 700),
+    managerResponsibility: compactText(row.manager_responsibility ?? row.managerResponsibility, 600),
+    userResponsibility: compactText(row.user_responsibility ?? row.userResponsibility, 600)
   };
 }
 function compactAgentReportList(value, limit) {
@@ -9700,12 +9801,8 @@ function compactAgentReportList(value, limit) {
     return {
       id: compactText(row.id, 120),
       agentKey: compactText(row.agent_key ?? row.agentKey, 120),
-      missionId: compactText(row.mission_id ?? row.missionId, 120),
-      summary: compactText(row.summary, 1e3),
-      confidence: compactText(row.confidence, 120),
-      limitations: compactText(row.limitations, 700),
-      finding: compactText(row.finding, 1e3),
-      recommendedAction: compactText(row.recommended_internal_action ?? row.recommendedAction, 700)
+      summary: compactText(row.summary, 800),
+      finding: compactText(row.finding, 800)
     };
   });
 }
@@ -9715,7 +9812,6 @@ function compactConversationHistory(value) {
     return {
       id: compactText(row.id, 120),
       speaker: compactText(row.speaker, 40),
-      label: compactText(row.label, 100),
       body: compactText(row.body, 1500),
       createdAt: compactText(row.created_at ?? row.createdAt, 80)
     };
@@ -9727,7 +9823,7 @@ function compactPatternList(value, limit) {
     return {
       key: compactText(row.key ?? row.patternName ?? row.name, 160),
       name: compactText(row.name ?? row.patternName, 200),
-      summary: compactText(row.summary ?? row.description, 700)
+      summary: compactText(row.summary ?? row.description, 600)
     };
   });
 }
@@ -9740,6 +9836,15 @@ function compactRules(value) {
     createdWorkMustBeConcrete: Boolean(rules.createdWorkMustBeConcrete)
   };
 }
+function compactMusicSubjectPointer(value) {
+  const subject = record2(value);
+  const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
+  const id = compactText(subject.id, 120);
+  return type && id ? {
+    type,
+    id
+  } : null;
+}
 function normalizeContextAnswers(value) {
   return array(value).slice(0, 8).map((item) => {
     const answer = record2(item);
@@ -9750,16 +9855,33 @@ function normalizeContextAnswers(value) {
   }).filter((item) => item.questionKey && item.answer);
 }
 function enforceByteBudget(value, maxBytes) {
-  const serialized = JSON.stringify(value);
-  if (encoder.encode(serialized).byteLength <= maxBytes) return value;
-  return {
-    version: "manager_opening_brief_v1",
-    notice: "Opening brief was compacted for a safe context budget.",
+  if (encoder.encode(JSON.stringify(value)).byteLength <= maxBytes) return value;
+  const compacted = {
+    version: "manager_opening_brief_v2_compact",
+    notice: "Secondary context was compacted; current focused-subject truth is preserved.",
+    truthPriority: value.truthPriority,
     artist: value.artist,
+    focusedMusicSubject: value.focusedMusicSubject,
     taskContext: value.taskContext,
-    conversationHistory: value.conversationHistory.slice(-3),
-    activePlaybookKeys: value.activePlaybookKeys
+    conversationHistory: array(value.conversationHistory).slice(-3),
+    durableMemory: array(value.durableMemory).slice(0, 3),
+    activePlaybookKeys: value.activePlaybookKeys,
+    rules: value.rules
   };
+  return compacted;
+}
+function compactStructured(value, maxChars) {
+  if (value == null) return {};
+  try {
+    const serialized = JSON.stringify(value);
+    if (serialized.length <= maxChars) return value;
+    return {
+      compacted: true,
+      summary: serialized.slice(0, maxChars)
+    };
+  } catch {
+    return {};
+  }
 }
 function compactJson(value, maxChars) {
   if (value == null) return "";
@@ -9775,6 +9897,18 @@ function compactStringList(value, limit, maxChars) {
 function compactText(value, maxChars) {
   const text = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
   return text.length > maxChars ? `${text.slice(0, Math.max(0, maxChars - 1))}\u2026` : text;
+}
+function numberOrText(value, maxLength) {
+  return typeof value === "number" && Number.isFinite(value) ? value : compactText(value, maxLength);
+}
+function numberOrEmpty(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : "";
+}
+function array(value) {
+  return Array.isArray(value) ? value : [];
+}
+function record2(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 function readErrorMessage4(error, fallback) {
   if (error instanceof Error && error.message.trim()) return error.message;
@@ -9802,25 +9936,16 @@ function readErrorMessage4(error, fallback) {
         "hint",
         source.hint
       ]
-    ].flatMap(([label, value]) => {
-      if (typeof value !== "string" && typeof value !== "number") return [];
-      const text = String(value).trim();
+    ].flatMap(([label, item]) => {
+      if (typeof item !== "string" && typeof item !== "number") return [];
+      const text = String(item).trim();
       return text ? [
         `${label}=${text}`
       ] : [];
     });
-    if (parts.length > 0) return parts.join(" | ");
+    if (parts.length) return parts.join(" | ");
   }
   return fallback;
-}
-function numberOrEmpty(value) {
-  return typeof value === "number" && Number.isFinite(value) ? value : "";
-}
-function array(value) {
-  return Array.isArray(value) ? value : [];
-}
-function record2(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
 // supabase/functions/_shared/manager-conversation/musicSubject.ts
