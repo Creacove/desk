@@ -27,10 +27,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "part-01-head=$(head -c 14000 .release-qa/parts/part-01 | git hash-object --stdin)"
-          echo "part-02=$(git hash-object .release-qa/parts/part-02)"
-          echo "part-02-a=$(head -c 7000 .release-qa/parts/part-02 | git hash-object --stdin)"
-          echo "part-02-b=$(tail -c 7000 .release-qa/parts/part-02 | git hash-object --stdin)"
+          echo "a1=$(head -c 3500 .release-qa/parts/part-02 | git hash-object --stdin)"
+          echo "a2=$(head -c 7000 .release-qa/parts/part-02 | tail -c 3500 | git hash-object --stdin)"
+          echo "b=$(tail -c 7000 .release-qa/parts/part-02 | git hash-object --stdin)"
           {
             cat .release-qa/parts/part-00
             cat .release-qa/parts/part-00-tail
