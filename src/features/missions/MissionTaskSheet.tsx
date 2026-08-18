@@ -1,5 +1,6 @@
-import { Check, Loader2, Upload, X } from "lucide-react";
+import { Check, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Button, IconButton } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
 import type {
   MissionCheckpointViewModel,
@@ -81,26 +82,21 @@ export function TaskSheet({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/32 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-foreground/28 backdrop-blur-[2px] sm:items-center sm:p-6" onMouseDown={onClose}>
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby="mission-task-sheet-title"
         onMouseDown={(event) => event.stopPropagation()}
-        className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[26px] border border-foreground/10 bg-background shadow-2xl sm:max-w-[620px] sm:rounded-[24px]"
+        className="max-h-[92dvh] w-full overflow-y-auto rounded-t-[24px] border border-foreground/10 bg-background shadow-[0_28px_80px_hsl(var(--foreground)/0.18)] sm:max-w-[620px] sm:rounded-[20px]"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between border-b border-foreground/8 bg-background/96 px-4 py-3 backdrop-blur-xl sm:px-5">
-          <p className="truncate text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">
+          <p className="truncate text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/68">
             {checkpoint ? `Step ${checkpoint.phase} · ${checkpoint.title}` : "Mission work"}
           </p>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close task"
-            className="flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.05] hover:text-foreground"
-          >
+          <IconButton type="button" onClick={onClose} label="Close task" variant="ghost" size="md">
             <X className="h-4 w-4" />
-          </button>
+          </IconButton>
         </div>
 
         <div className="px-4 pb-[calc(24px+env(safe-area-inset-bottom))] pt-5 sm:px-6 sm:pb-6">
@@ -109,15 +105,15 @@ export function TaskSheet({
               {done ? <Check className="h-3.5 w-3.5" /> : null}
             </span>
             <div className="min-w-0">
-              <h2 id="mission-task-sheet-title" className="font-display text-[25px] font-semibold leading-tight tracking-[-0.025em] text-foreground">
+              <h2 id="mission-task-sheet-title" className="font-display text-[24px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[26px]">
                 {task.title}
               </h2>
-              {task.deadline ? <p className="mt-2 text-[12px] font-semibold text-muted-foreground">{task.deadline}</p> : null}
+              {task.deadline ? <p className="mt-2 text-[12px] font-medium text-muted-foreground">{task.deadline}</p> : null}
             </div>
           </div>
 
           {availableAfter ? (
-            <p className="mt-5 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-semibold text-muted-foreground">
+            <p className="mt-5 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
               Available after {availableAfter}
             </p>
           ) : null}
@@ -128,12 +124,12 @@ export function TaskSheet({
 
           {task.steps.length ? (
             <section className="mt-6 border-t border-foreground/8 pt-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">What to do</p>
-              <div className="mt-3 grid gap-2.5">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/68">What to do</p>
+              <div className="mt-3 grid gap-3">
                 {task.steps.map((step, index) => (
-                  <div key={`${task.id}-step-${index}`} className="grid grid-cols-[20px_minmax(0,1fr)] gap-2.5">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-foreground/[0.055] text-[9px] font-bold text-muted-foreground">{index + 1}</span>
-                    <p className="pt-0.5 text-[12.5px] font-medium leading-relaxed text-foreground/78">{step}</p>
+                  <div key={`${task.id}-step-${index}`} className="grid grid-cols-[22px_minmax(0,1fr)] gap-2.5">
+                    <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-foreground/[0.055] text-[11px] font-semibold text-muted-foreground">{index + 1}</span>
+                    <p className="pt-0.5 text-[13px] font-medium leading-[1.6] text-foreground/78">{step}</p>
                   </div>
                 ))}
               </div>
@@ -146,23 +142,25 @@ export function TaskSheet({
                 {deliverables.map((deliverable) => (
                   <div key={deliverable.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-foreground/8 px-3.5 py-3">
                     <div className="min-w-0">
-                      <p className="truncate text-[12.5px] font-bold text-foreground">{deliverable.title}</p>
-                      <p className="mt-1 truncate text-[10.5px] font-semibold text-muted-foreground">
+                      <p className="truncate text-[13px] font-semibold text-foreground">{deliverable.title}</p>
+                      <p className="mt-1 truncate text-[12px] font-medium text-muted-foreground">
                         {deliverable.fileName || humanDeliverableStatus(deliverable.status)}
                       </p>
                     </div>
                     {!["uploaded", "checking", "accepted"].includes(deliverable.status) ? (
-                      <button
+                      <Button
                         type="button"
+                        variant="secondary"
+                        size="sm"
                         onClick={() => pickFile(deliverable)}
                         disabled={pending || unavailable}
-                        className="inline-flex min-h-10 shrink-0 items-center gap-2 rounded-[10px] border border-foreground/10 px-3 text-[11px] font-bold text-foreground transition-colors hover:bg-foreground/[0.04] disabled:cursor-not-allowed disabled:opacity-35"
+                        pending={pending && mutation?.kind === "upload" && uploadTargetId === deliverable.id}
+                        leadingIcon={<Upload className="h-3.5 w-3.5" />}
                       >
-                        <Upload className="h-3.5 w-3.5" />
                         Upload
-                      </button>
+                      </Button>
                     ) : (
-                      <span className="text-[11px] font-bold text-brand-accent">Ready</span>
+                      <span className="text-[12px] font-semibold text-brand-accent">Ready</span>
                     )}
                   </div>
                 ))}
@@ -184,49 +182,45 @@ export function TaskSheet({
 
           {task.managerDraft ? (
             <section className="mt-6 rounded-[16px] bg-foreground/[0.03] px-4 py-4">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Draft</p>
-              <p className="mt-2 text-[13px] font-bold text-foreground">{task.managerDraft.title}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/68">Draft</p>
+              <p className="mt-2 text-[13px] font-semibold text-foreground">{task.managerDraft.title}</p>
               <ManagerDraftDocument content={task.managerDraft.summary} />
             </section>
           ) : null}
 
           {task.result?.summary ? (
             <section className="mt-5 border-t border-foreground/8 pt-5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground/65">Result</p>
-              <p className="mt-2 text-[13px] font-bold leading-relaxed text-foreground">{task.result.summary}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/68">Result</p>
+              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground">{task.result.summary}</p>
               {task.result.interpretation ? <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-muted-foreground">{task.result.interpretation}</p> : null}
-              {task.result.followUp ? <p className="mt-2 text-[12px] font-bold leading-relaxed text-brand-accent">{task.result.followUp}</p> : null}
+              {task.result.followUp ? <p className="mt-2 text-[12px] font-semibold leading-relaxed text-brand-accent">{task.result.followUp}</p> : null}
             </section>
           ) : null}
 
           {mutation?.status === "error" ? (
-            <p role="alert" className="mt-5 rounded-[12px] bg-red-50 px-3.5 py-3 text-[12px] font-semibold text-red-700">
+            <p role="alert" className="mt-5 rounded-[12px] bg-destructive/5 px-3.5 py-3 text-[12px] font-medium text-destructive">
               {mutation.message}
             </p>
           ) : null}
 
           {done ? (
-            <div className="mt-7 flex min-h-12 items-center gap-2 rounded-[14px] bg-brand-accent/[0.07] px-4 text-[13px] font-bold text-brand-accent">
+            <div className="mt-7 flex min-h-12 items-center gap-2 rounded-[14px] bg-brand-accent/[0.07] px-4 text-[13px] font-semibold text-brand-accent">
               <Check className="h-4 w-4" />
               Done
             </div>
           ) : unavailable ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
-              <button
-                type="button"
-                disabled
-                className="min-h-12 w-full rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background opacity-35"
-              >
-                {task.approvalState === "needs approval" ? "Review" : completionMode === "manager_draft" ? "Continue" : deliverables.length ? "Upload" : "Complete"}
-              </button>
+              <Button type="button" size="lg" disabled className="w-full">
+                {task.approvalState === "needs approval" ? "Approve" : completionMode === "manager_draft" ? "Work with Manager" : deliverables.length ? "Upload" : "Mark complete"}
+              </Button>
             </div>
           ) : workMode === "manager_work" ? (
             <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
-              <p className="text-[13px] font-bold text-foreground">In progress</p>
+              <p className="text-[13px] font-semibold text-foreground">In progress</p>
             </div>
           ) : intent ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
-              <label htmlFor={`task-note-${task.id}`} className="text-[11px] font-bold text-foreground">
+              <label htmlFor={`task-note-${task.id}`} className="text-[12px] font-semibold text-foreground">
                 {intent === "blocked" ? "What’s stopping this?" : completionMode === "result_note" ? "What changed?" : "Add a note (optional)"}
               </label>
               <textarea
@@ -235,69 +229,62 @@ export function TaskSheet({
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder={intent === "blocked" ? "Describe what’s stopping the work." : "Add the outcome."}
-                className="mt-2 w-full resize-none rounded-[14px] border border-foreground/10 bg-background px-3.5 py-3 text-[13px] font-medium leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/55 focus:border-brand-accent/45"
+                className="mt-2 w-full resize-none rounded-[14px] border border-foreground/10 bg-background px-3.5 py-3 text-[14px] font-medium leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/55 focus:border-brand-accent/45 focus:ring-2 focus:ring-brand-accent/8"
               />
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <button
+                <Button
                   type="button"
+                  variant="secondary"
+                  size="lg"
                   onClick={() => { setIntent(null); setNote(""); }}
                   disabled={pending}
-                  className="min-h-11 rounded-[11px] border border-foreground/10 text-[12px] font-bold text-foreground"
                 >
                   Cancel
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
+                  size="lg"
                   onClick={submitCompletion}
-                  disabled={pending || (noteRequired && !note.trim())}
-                  className="inline-flex min-h-11 items-center justify-center rounded-[11px] bg-foreground px-4 text-[12px] font-bold text-background disabled:opacity-40"
+                  pending={pending}
+                  disabled={noteRequired && !note.trim()}
                 >
-                  {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  {intent === "blocked" ? "Send" : completionMode === "manager_draft" ? "Submit for review" : "Mark complete"}
-                </button>
+                  {intent === "blocked" ? "Report blocker" : completionMode === "manager_draft" ? "Submit for review" : "Mark complete"}
+                </Button>
               </div>
             </div>
           ) : (
             <div className="mt-7 grid gap-2 border-t border-foreground/8 pt-5">
               {task.approvalState === "needs approval" && !approved ? (
-                <button
-                  type="button"
-                  onClick={onApprove}
-                  disabled={pending}
-                  className="inline-flex min-h-12 items-center justify-center rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-45"
-                >
-                  {pending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                  Review
-                </button>
+                <Button type="button" size="lg" onClick={onApprove} pending={pending} className="w-full">
+                  Approve
+                </Button>
               ) : completionMode === "manager_draft" && (!task.managerDraft || managerDraftNeedsRevision(task)) ? (
-                <button
-                  type="button"
-                  onClick={onWorkWithManager}
-                  disabled={pending}
-                  className="min-h-12 rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-45"
-                >
-                  Continue
-                </button>
+                <Button type="button" size="lg" onClick={onWorkWithManager} disabled={pending} className="w-full">
+                  Work with Manager
+                </Button>
               ) : (
-                <button
+                <Button
                   type="button"
+                  size="lg"
                   onClick={() => setIntent("completed")}
                   disabled={pending || blocked || !canComplete}
-                  className="min-h-12 rounded-[12px] bg-foreground px-4 text-[13px] font-bold text-background disabled:opacity-40"
+                  className="w-full"
                 >
                   {completionMode === "manager_draft" ? "Submit for review" : completionMode === "result_note" ? "Add result" : "Mark complete"}
-                </button>
+                </Button>
               )}
 
               {!blocked ? (
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="lg"
                   onClick={() => setIntent("blocked")}
                   disabled={pending}
-                  className="min-h-11 rounded-[11px] text-[12px] font-bold text-muted-foreground transition-colors hover:bg-foreground/[0.035] hover:text-foreground disabled:opacity-45"
+                  className="w-full"
                 >
-                  Something’s blocking me
-                </button>
+                  Report a blocker
+                </Button>
               ) : null}
             </div>
           )}
@@ -311,7 +298,7 @@ function ManagerDraftDocument({ content }: { content: string }) {
   const lines = content.split("\n");
 
   return (
-    <div className="mt-3 grid gap-2.5 text-[12.5px] font-medium leading-relaxed text-foreground/78">
+    <div className="mt-3 grid gap-2.5 text-[13px] font-medium leading-relaxed text-foreground/78">
       {lines.map((rawLine, index) => {
         const line = rawLine.trim();
         if (!line) return <span key={`space-${index}`} className="h-0.5" aria-hidden="true" />;
@@ -338,6 +325,6 @@ function ManagerDraftDocument({ content }: { content: string }) {
 function renderInlineMarkdown(value: string) {
   const parts = value.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
   return parts.map((part, index) => part.startsWith("**") && part.endsWith("**")
-    ? <strong key={`${index}-${part}`} className="font-bold text-foreground">{part.slice(2, -2)}</strong>
+    ? <strong key={`${index}-${part}`} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>
     : <span key={`${index}-${part}`}>{part}</span>);
 }
