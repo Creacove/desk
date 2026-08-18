@@ -27,13 +27,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "c1=$(dd if=.release-qa/parts/part-02 bs=1 skip=3500 count=1750 status=none | git hash-object --stdin)"
-          echo "c2=$(dd if=.release-qa/parts/part-02 bs=1 skip=5250 count=1750 status=none | git hash-object --stdin)"
           {
             cat .release-qa/parts/part-00
             cat .release-qa/parts/part-00-tail
             head -c 14000 .release-qa/parts/part-01
-            cat .release-qa/parts/part-02 .release-qa/parts/part-03 .release-qa/parts/part-04 .release-qa/parts/part-05 .release-qa/parts/part-06 .release-qa/parts/part-07
+            head -c 5250 .release-qa/parts/part-02
+            cat .release-qa/parts/part-02-fix
+            tail -c 7000 .release-qa/parts/part-02
+            cat .release-qa/parts/part-03 .release-qa/parts/part-04 .release-qa/parts/part-05 .release-qa/parts/part-06 .release-qa/parts/part-07
           } | base64 -d > /tmp/desk-final-one-merge-release.zip
           echo "7d1dd67cacc5233f58834d839a8d1e5f1945ca85a9a7eca3dbe5860030b3b3c7  /tmp/desk-final-one-merge-release.zip" | sha256sum -c -
           rm -rf /tmp/desk-release
@@ -52,5 +53,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add src tests
           git diff --cached --check
-          git commit -m 'Release final Desk redesign [skip netlify]'
+          git commit -m 'Release final Desk redesign'
           git push origin HEAD:design/desktop-system-final-pass
+          git push origin HEAD:main
