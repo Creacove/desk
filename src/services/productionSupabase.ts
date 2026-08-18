@@ -3996,7 +3996,7 @@ type SupabaseStorageClient = {
     };
   };
   auth?: {
-    getSession(): Promise<{ data?: { session?: { access_token?: string | null } | null; error?: unknown }>;
+    getSession(): Promise<{ data?: { session?: { access_token?: string | null } | null; error?: unknown } }>;
   };
 };
 
