@@ -52,8 +52,10 @@ describe("OrderSounds desktop finish contract", () => {
   });
 
   it("uses horizontal desktop rows for secondary metadata", () => {
-    expect(manager).toContain("formatConversationTimestamp(conversation.lastUpdate)");
-    expect(activity).toContain('sm:grid-cols-[minmax(0,1fr)_auto]');
+    expect(manager).toContain('grid-cols-[minmax(0,1fr)_auto]');
+    expect(manager).toContain('<Timestamp value={conversation.lastUpdate} context="rail"');
+    expect(activity).toContain('<Timestamp value={event.createdAt} context="grouped"');
+    expect(activity).toContain('hidden shrink-0 items-center gap-3 sm:flex');
     expect(missions).toContain('lg:grid-cols-[minmax(0,1fr)_auto]');
     expect(staff).toContain('grid-cols-[44px_minmax(0,1fr)_auto]');
   });
