@@ -18,21 +18,15 @@ export async function setSongIdentifier(db: SupabaseLike, scope: SongDomainScope
   if (!value) throw new Error("Identifier value is required.");
   if (type === "isrc") assertIsrc(value);
 
-  const query = scoped(db, "music_identifiers", scope)
-    .select("id,identifier_value")
-    .eq("music_item_id", scope.musicItemId)
-    .eq("identifier_type", type)
-    .order("created_at", { ascending: false })
-    .limit(1);
-  const { data: existing, error: readError } = await query;
+  const { data: existing, error: readError } = await scoped(
+    db.from("music_identifiers").select("id,identifier_value"), scope,
+  ).eq("music_item_id", scope.musicItemId).eq("identifier_type", type).order("created_at", { ascending: false }).limit(1);
   if (readError) throw readError;
   const row = existing?.[0];
   if (row?.id) {
-    const { data, error } = await scoped(db, "music_identifiers", scope)
-      .update({ identifier_value: value, confidence: input.confidence ?? "high" })
-      .eq("id", row.id)
-      .select("id,identifier_type,identifier_value,confidence")
-      .single();
+    const { data, error } = await scoped(
+      db.from("music_identifiers").update({ identifier_value: value, confidence: input.confidence ?? "high" }), scope,
+    ).eq("id", row.id).select("id,identifier_type,identifier_value,confidence").single();
     if (error) throw error;
     return { status: "updated", identifier: data };
   }
@@ -54,17 +48,15 @@ export async function setSongIdentifier(db: SupabaseLike, scope: SongDomainScope
 
 export async function setInitialSongReleaseDate(db: SupabaseLike, scope: SongDomainScope, date: string) {
   assertIsoDate(date);
-  const { data: song, error: songError } = await scoped(db, "music_items", scope)
-    .select("id,planned_release_date,lifecycle_stage")
-    .eq("id", scope.musicItemId)
-    .maybeSingle();
+  const { data: song, error: songError } = await scoped(
+    db.from("music_items").select("id,planned_release_date,lifecycle_stage"), scope,
+  ).eq("id", scope.musicItemId).maybeSingle();
   if (songError) throw songError;
   if (!song) throw new Error("Song was not found.");
 
-  const { data: plans, error: planError } = await scoped(db, "music_release_plans", scope)
-    .select("id,status,approved_release_date,revision")
-    .eq("music_item_id", scope.musicItemId)
-    .limit(1);
+  const { data: plans, error: planError } = await scoped(
+    db.from("music_release_plans").select("id,status,approved_release_date,revision"), scope,
+  ).eq("music_item_id", scope.musicItemId).limit(1);
   if (planError) throw planError;
   const plan = plans?.[0];
   const establishedDate = plan?.approved_release_date ?? song.planned_release_date;
@@ -79,11 +71,9 @@ export async function setInitialSongReleaseDate(db: SupabaseLike, scope: SongDom
     };
   }
 
-  const { data, error } = await scoped(db, "music_items", scope)
-    .update({ planned_release_date: date, updated_at: new Date().toISOString() })
-    .eq("id", scope.musicItemId)
-    .select("id,planned_release_date")
-    .single();
+  const { data, error } = await scoped(
+    db.from("music_items").update({ planned_release_date: date, updated_at: new Date().toISOString() }), scope,
+  ).eq("id", scope.musicItemId).select("id,planned_release_date").single();
   if (error) throw error;
   return { status: "updated", releaseDate: data.planned_release_date };
 }
@@ -98,26 +88,19 @@ export async function upsertSongContributor(db: SupabaseLike, scope: SongDomainS
   if (!displayName) throw new Error("Contributor name is required.");
 
   if (input.contributorId) {
-    const { data, error } = await scoped(db, "music_contributors", scope)
-      .update({
-        display_name: displayName,
-        legal_name: clean(input.legalName),
-        email: clean(input.email),
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", input.contributorId)
-      .select("id,display_name,legal_name,email")
-      .single();
+    const { data, error } = await scoped(db.from("music_contributors").update({
+      display_name: displayName,
+      legal_name: clean(input.legalName),
+      email: clean(input.email),
+      updated_at: new Date().toISOString(),
+    }), scope).eq("id", input.contributorId).select("id,display_name,legal_name,email").single();
     if (error) throw error;
     return data;
   }
 
-  // Identity resolution is intentionally conservative. Same scoped name+email can
-  // be reused; name alone is returned as ambiguous rather than silently merged.
-  const { data: candidates, error: candidateError } = await scoped(db, "music_contributors", scope)
-    .select("id,display_name,legal_name,email")
-    .ilike("display_name", displayName)
-    .limit(10);
+  const { data: candidates, error: candidateError } = await scoped(
+    db.from("music_contributors").select("id,display_name,legal_name,email"), scope,
+  ).ilike("display_name", displayName).limit(10);
   if (candidateError) throw candidateError;
   const email = clean(input.email)?.toLowerCase();
   const exact = (candidates ?? []).find((candidate: any) => email && String(candidate.email ?? "").toLowerCase() === email);
@@ -148,28 +131,25 @@ export async function upsertSongCredit(db: SupabaseLike, scope: SongDomainScope,
   status?: string;
 }) {
   const role = normalizeRole(input.role);
-  const { data: existing, error: readError } = await scoped(db, "music_credits", scope)
-    .select("id")
-    .eq("music_item_id", scope.musicItemId)
-    .eq("contributor_id", input.contributorId)
-    .eq("role", role)
-    .limit(1);
+  const { data: existing, error: readError } = await scoped(
+    db.from("music_credits").select("id"), scope,
+  ).eq("music_item_id", scope.musicItemId).eq("contributor_id", input.contributorId).eq("role", role).limit(1);
   if (readError) throw readError;
   const id = existing?.[0]?.id;
   if (id) {
-    const { data, error } = await scoped(db, "music_credits", scope)
-      .update({ name: input.displayName.trim(), status: input.status ?? "confirmed", updated_at: new Date().toISOString() })
-      .eq("id", id)
-      .select("id,contributor_id,role,name,status")
-      .single();
+    const { data, error } = await scoped(
+      db.from("music_credits").update({ name: input.displayName.trim(), status: input.status ?? "confirmed", updated_at: new Date().toISOString() }), scope,
+    ).eq("id", id).select("id,contributor_id,role,name,status").single();
     if (error) throw error;
     return data;
   }
+
   const { data, error } = await db.from("music_credits").insert({
     account_id: scope.accountId,
     artist_workspace_id: scope.artistWorkspaceId,
     artist_id: scope.artistId,
     music_item_id: scope.musicItemId,
+    music_project_id: null,
     contributor_id: input.contributorId,
     role,
     name: input.displayName.trim(),
@@ -194,10 +174,9 @@ export async function previewSongSplitChange(db: SupabaseLike, scope: SongDomain
   validateShare(input.publishingShare);
   validateShare(input.masterShare);
   const split = await ensureSplit(db, scope);
-  const { data: rows, error } = await scoped(db, "music_split_contributors", scope)
-    .select("id,contributor_id,name,role,email,publishing_share,master_share,approval_status")
-    .eq("music_split_id", split.id)
-    .limit(100);
+  const { data: rows, error } = await scoped(
+    db.from("music_split_contributors").select("id,contributor_id,name,role,email,publishing_share,master_share,approval_status"), scope,
+  ).eq("music_split_id", split.id).limit(100);
   if (error) throw error;
   const others = (rows ?? []).filter((row: any) => row.contributor_id !== input.contributorId);
   const publishingTotal = round(others.reduce((total: number, row: any) => total + Number(row.publishing_share ?? 0), 0) + input.publishingShare);
@@ -226,12 +205,11 @@ export async function applyConfirmedSongSplitChange(db: SupabaseLike, scope: Son
   const preview = await previewSongSplitChange(db, scope, input);
   if (!preview.validTotals) throw new Error("Publishing and master allocations cannot exceed 100%.");
 
-  const { data: existing, error: existingError } = await scoped(db, "music_split_contributors", scope)
-    .select("id")
-    .eq("music_split_id", input.splitId)
-    .eq("contributor_id", input.contributorId)
-    .limit(1);
+  const { data: existing, error: existingError } = await scoped(
+    db.from("music_split_contributors").select("id"), scope,
+  ).eq("music_split_id", input.splitId).eq("contributor_id", input.contributorId).limit(1);
   if (existingError) throw existingError;
+
   const payload = {
     contributor_id: input.contributorId,
     name: input.displayName.trim(),
@@ -243,7 +221,7 @@ export async function applyConfirmedSongSplitChange(db: SupabaseLike, scope: Son
     updated_at: new Date().toISOString(),
   };
   if (existing?.[0]?.id) {
-    const { error } = await scoped(db, "music_split_contributors", scope).update(payload).eq("id", existing[0].id);
+    const { error } = await scoped(db.from("music_split_contributors").update(payload), scope).eq("id", existing[0].id);
     if (error) throw error;
   } else {
     const { error } = await db.from("music_split_contributors").insert({
@@ -256,31 +234,25 @@ export async function applyConfirmedSongSplitChange(db: SupabaseLike, scope: Son
     if (error) throw error;
   }
 
-  const { data: all, error: allError } = await scoped(db, "music_split_contributors", scope)
-    .select("publishing_share,master_share")
-    .eq("music_split_id", input.splitId)
-    .limit(100);
+  const { data: all, error: allError } = await scoped(
+    db.from("music_split_contributors").select("publishing_share,master_share"), scope,
+  ).eq("music_split_id", input.splitId).limit(100);
   if (allError) throw allError;
   const publishingTotal = round((all ?? []).reduce((total: number, row: any) => total + Number(row.publishing_share ?? 0), 0));
   const masterTotal = round((all ?? []).reduce((total: number, row: any) => total + Number(row.master_share ?? 0), 0));
-  const nextStatus = publishingTotal === 100 && masterTotal === 100 ? "draft" : "draft";
-  const { error: splitError } = await scoped(db, "music_splits", scope)
-    .update({ publishing_total: publishingTotal, master_total: masterTotal, status: nextStatus, updated_at: new Date().toISOString() })
-    .eq("id", input.splitId);
+  const { error: splitError } = await scoped(
+    db.from("music_splits").update({ publishing_total: publishingTotal, master_total: masterTotal, status: "draft", updated_at: new Date().toISOString() }), scope,
+  ).eq("id", input.splitId);
   if (splitError) throw splitError;
   return { status: "updated", totals: { publishing: publishingTotal, master: masterTotal } };
 }
 
-export function roleCanHaveZeroOwnership(role: string) {
-  return !OWNERSHIP_ROLES.has(normalizeRole(role));
-}
+export function roleCanHaveZeroOwnership(role: string) { return !OWNERSHIP_ROLES.has(normalizeRole(role)); }
 
 async function ensureSplit(db: SupabaseLike, scope: SongDomainScope) {
-  const { data: existing, error } = await scoped(db, "music_splits", scope)
-    .select("id,status")
-    .eq("music_item_id", scope.musicItemId)
-    .order("created_at", { ascending: false })
-    .limit(1);
+  const { data: existing, error } = await scoped(
+    db.from("music_splits").select("id,status"), scope,
+  ).eq("music_item_id", scope.musicItemId).order("created_at", { ascending: false }).limit(1);
   if (error) throw error;
   if (existing?.[0]) return existing[0];
   const { data, error: insertError } = await db.from("music_splits").insert({
@@ -300,11 +272,8 @@ async function ensureSplit(db: SupabaseLike, scope: SongDomainScope) {
   return data;
 }
 
-function scoped(db: SupabaseLike, table: string, scope: SongDomainScope) {
-  return db.from(table)
-    .eq("account_id", scope.accountId)
-    .eq("artist_workspace_id", scope.artistWorkspaceId)
-    .eq("artist_id", scope.artistId);
+function scoped(query: any, scope: SongDomainScope) {
+  return query.eq("account_id", scope.accountId).eq("artist_workspace_id", scope.artistWorkspaceId).eq("artist_id", scope.artistId);
 }
 function clean(value?: string) { const next = value?.trim(); return next ? next : null; }
 function normalizeRole(value: string) { return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "contributor"; }
