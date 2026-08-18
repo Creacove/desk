@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { cn } from "../lib/utils";
+import "./desktop-premium.css";
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive";
 export type ButtonSize = "sm" | "md" | "lg";
@@ -52,10 +53,11 @@ export const Button = forwardRef<HTMLButtonElement, ButtonHTMLAttributes<HTMLBut
     <button
       ref={ref}
       {...props}
+      data-variant={variant}
       disabled={disabled || pending}
       aria-busy={pending || undefined}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-ui font-semibold leading-none outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/28 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-42",
+        "os-action-button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap font-ui font-semibold leading-none outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/28 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-42",
         buttonSizeClass[size],
         buttonVariantClass[variant],
         className,
@@ -89,12 +91,13 @@ export const IconButton = forwardRef<HTMLButtonElement, Omit<ButtonHTMLAttribute
     <button
       ref={ref}
       type="button"
+      data-variant={variant}
       aria-label={label}
       aria-busy={pending || undefined}
       disabled={disabled || pending}
       {...props}
       className={cn(
-        "inline-flex shrink-0 items-center justify-center outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/28 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-42",
+        "os-action-button inline-flex shrink-0 items-center justify-center outline-none transition-[background-color,border-color,color,box-shadow,transform] duration-150 focus-visible:ring-2 focus-visible:ring-brand-accent/28 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-42",
         dimensions,
         buttonVariantClass[variant],
         className,
@@ -283,6 +286,12 @@ export function ManagerComposer({
 }: ManagerComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const canSubmit = Boolean(value.trim()) && !pending && !disabled;
+  const {
+    onKeyDown: externalOnKeyDown,
+    className: textareaClassName,
+    style: textareaStyle,
+    ...restTextareaProps
+  } = textareaProps ?? {};
 
   useLayoutEffect(() => {
     const element = textareaRef.current;
@@ -301,11 +310,12 @@ export function ManagerComposer({
       aria-label={ariaLabel}
       onSubmit={submit}
       className={cn(
-        "flex w-full min-w-0 items-end gap-3 rounded-[14px] border border-foreground/10 bg-foreground/[0.018] p-2.5 pl-4 shadow-[0_1px_0_hsl(var(--foreground)/0.02)] transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-brand-accent/35 focus-within:bg-background focus-within:shadow-[0_0_0_3px_hsl(var(--brand-accent)/0.055)]",
+        "os-manager-composer flex w-full min-w-0 items-end gap-3 rounded-[14px] border border-foreground/10 bg-foreground/[0.018] p-2.5 pl-4 shadow-[0_1px_0_hsl(var(--foreground)/0.02)] transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-brand-accent/35 focus-within:bg-background focus-within:shadow-[0_0_0_3px_hsl(var(--brand-accent)/0.055)]",
         className,
       )}
     >
       <textarea
+        {...restTextareaProps}
         ref={textareaRef}
         rows={1}
         value={value}
@@ -313,19 +323,18 @@ export function ManagerComposer({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={(event) => {
-          textareaProps?.onKeyDown?.(event);
+          externalOnKeyDown?.(event);
           if (event.defaultPrevented) return;
           if (event.key === "Enter" && !event.shiftKey) {
             event.preventDefault();
             if (canSubmit) onSubmit();
           }
         }}
-        {...textareaProps}
         className={cn(
           "min-h-9 min-w-0 flex-1 resize-none bg-transparent py-2 text-[15px] font-medium leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground/58 disabled:cursor-not-allowed disabled:opacity-55",
-          textareaProps?.className,
+          textareaClassName,
         )}
-        style={{ maxHeight: 160, overflowY: "auto", ...textareaProps?.style }}
+        style={{ maxHeight: 160, overflowY: "auto", ...textareaStyle }}
       />
       <IconButton
         type="submit"
