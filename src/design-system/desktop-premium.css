@@ -178,6 +178,35 @@
     width: min(34rem, calc(100vw - 2rem));
   }
 
+  /* The share builder predates the semantic Button component. Scope its legacy
+     forward-action buttons into the same purple hierarchy without changing its flow. */
+  .app-light [role="dialog"][aria-label^="Share "] button[class~="bg-foreground"] {
+    background-color: #9A3BDC !important;
+    color: #fff !important;
+    border-color: transparent !important;
+  }
+
+  .app-light [role="dialog"][aria-label^="Share "] button[class~="bg-foreground"] * {
+    color: inherit !important;
+  }
+
+  .app-light [role="dialog"][aria-label^="Share "] button[class~="bg-foreground"]:hover {
+    background-color: #8f31cf !important;
+  }
+
+  .app-light [role="dialog"][aria-label^="Share "] [data-testid="share-primary-cta"] {
+    min-height: 44px !important;
+    border-radius: 11px !important;
+    padding-inline: 18px !important;
+    font-size: 13px !important;
+    font-weight: 600 !important;
+  }
+
+  .app-light [role="dialog"][aria-label^="Share "] button[class*="transition-all"] {
+    transition-property: background-color, border-color, color, transform !important;
+    transition-duration: 150ms !important;
+  }
+
   /* Settings should read as one workspace, not a stack of floating dashboard cards. */
   .app-theme [id^="settings-panel-"] > section,
   .app-theme [id^="settings-panel-"] > div > section {
