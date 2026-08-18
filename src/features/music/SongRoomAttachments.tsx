@@ -1,5 +1,5 @@
 import { ArrowRight, BriefcaseBusiness, MessageCircle, Play } from "lucide-react";
-
+import { Button, IconButton } from "../../design-system/desktopPrimitives";
 import type { MissionViewModel } from "../../types/cleanProduction";
 import type { SongCampaignState } from "./songCampaign";
 
@@ -30,41 +30,41 @@ export function ReleaseWorkAttachment({
     : postRelease
       ? "Start with Manager when you want to actively service this record."
       : "Manager can turn the current song state into a focused release plan.";
-  const managerLabel = activeCampaign ? "Continue with Manager" : postRelease ? "Start with Manager" : "Talk to Manager";
 
   return (
-    <section role="region" aria-label="Work on this song" className="surface-elevated overflow-hidden rounded-[16px] shadow-sm lg:sticky lg:top-5 lg:rounded-[22px]">
+    <section role="region" aria-label="Work on this song" className="overflow-hidden rounded-[16px] border border-foreground/9 bg-background lg:sticky lg:top-5">
       <div className="border-b border-foreground/8 p-4 sm:p-5">
-        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-[10px] bg-foreground/[0.05] text-muted-foreground">
           <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
         </span>
-        <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight text-foreground">{title}</h4>
-        <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{copy}</p>
+        <h4 className="mt-3 font-display text-[17px] font-semibold leading-tight tracking-[-0.015em] text-foreground">{title}</h4>
+        <p className="mt-1.5 text-[12px] font-medium leading-[1.55] text-muted-foreground">{copy}</p>
 
         {activeCampaign && onOpenCampaign ? (
-          <button type="button" aria-label="Open campaign" onClick={onOpenCampaign} className="mt-4 inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background transition-opacity hover:opacity-85 focus:outline-none focus:ring-2 focus:ring-brand-accent/30">
+          <Button type="button" aria-label="Open campaign" onClick={onOpenCampaign} size="md" className="mt-4 w-full" trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}>
             Open campaign
-            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-          </button>
+          </Button>
         ) : null}
         {onTalkToManager ? (
-          <button
+          <Button
             type="button"
-            aria-label="Talk to Manager"
+            aria-label="Work with Manager"
             onClick={onTalkToManager}
-            className={`${activeCampaign ? "mt-2 border border-foreground/10 text-foreground hover:bg-foreground/[0.035]" : "mt-4 bg-foreground text-background hover:opacity-85"} inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-lg px-3 text-[11px] font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-brand-accent/25`}
+            variant={activeCampaign ? "secondary" : "primary"}
+            size="md"
+            className={`${activeCampaign ? "mt-2" : "mt-4"} w-full`}
+            leadingIcon={<MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />}
           >
-            <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />
-            {managerLabel}
-          </button>
+            Work with Manager
+          </Button>
         ) : null}
       </div>
       {missions.length ? (
         <div className="divide-y divide-foreground/7">
           {missions.map((mission) => (
-            <button key={mission.id} type="button" aria-label={`Open mission ${mission.title}`} onClick={() => onOpenPlan?.(mission.id)} disabled={!onOpenPlan} className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-foreground/[0.025] disabled:cursor-default sm:px-5">
-              <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-foreground">{mission.title}</span>
-              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+            <button key={mission.id} type="button" aria-label={`Open mission ${mission.title}`} onClick={() => onOpenPlan?.(mission.id)} disabled={!onOpenPlan} className="group flex w-full items-center gap-3 px-4 py-3.5 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20 disabled:cursor-default sm:px-5">
+              <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-foreground">{mission.title}</span>
+              <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5" aria-hidden="true" />
             </button>
           ))}
         </div>
@@ -95,16 +95,16 @@ export function SongContextAttachment({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate text-[13px] font-semibold text-foreground">{title}</span>
-        {stage ? <span className="mt-0.5 block text-[11px] font-medium text-muted-foreground">{stage}</span> : null}
+        {stage ? <span className="mt-0.5 block text-[12px] font-medium text-muted-foreground">{stage}</span> : null}
       </span>
       {canPlay && onPlay ? (
-        <button type="button" aria-label={`Play ${title}`} onClick={onPlay} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-foreground/10 text-foreground focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+        <IconButton type="button" label={`Play ${title}`} onClick={onPlay} variant="secondary" size="sm" className="rounded-full">
           <Play className="ml-0.5 h-3.5 w-3.5 fill-current" aria-hidden="true" />
-        </button>
+        </IconButton>
       ) : null}
-      <button type="button" aria-label={`Open song ${title}`} onClick={onOpenSong} className="shrink-0 text-[11px] font-semibold text-brand-accent hover:underline focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+      <Button type="button" aria-label={`Open song ${title}`} onClick={onOpenSong} variant="ghost" size="sm">
         Open song
-      </button>
+      </Button>
     </section>
   );
 }
