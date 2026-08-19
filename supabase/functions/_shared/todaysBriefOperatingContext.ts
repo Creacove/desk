@@ -57,7 +57,20 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
 }
 
 export async function loadTodaysBriefOperatingContext(db: any, input: OperatingBriefContextInput) {
-  const [missions, tasks, conversations, memory, agentReports, events, currentMusicReads, previousBrief] = await Promise.all([
+  const [
+    missions,
+    tasks,
+    conversations,
+    memory,
+    agentReports,
+    events,
+    currentMusicReads,
+    currentSongs,
+    currentProjects,
+    musicSplits,
+    splitContributors,
+    previousBrief,
+  ] = await Promise.all([
     selectMany(db, "missions", "id,title,objective,reason,status,priority,progress,summary,current_recommendation,required_evidence,missing_evidence,review_point,created_at", input, 8),
     selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,manager_responsibility,user_responsibility,risk_if_late,created_at", input, 16),
     selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 8),
@@ -65,6 +78,10 @@ export async function loadTodaysBriefOperatingContext(db: any, input: OperatingB
     selectMany(db, "agent_reports", "id,agent_key,mission_id,summary,confidence,limitations,finding,risk_or_opportunity,recommended_internal_action,created_at", input, 6),
     selectMeaningfulEvents(db, input, 16),
     selectCurrentMusicReads(db, input, 8),
+    selectCurrentMusic(db, "music_items", "id,title,item_type,lifecycle_stage,released_at,source_kind,source_limit,metadata,created_at", input, 12),
+    selectCurrentMusic(db, "music_projects", "id,title,project_type,lifecycle_stage,released_at,source_kind,source_limit,metadata,created_at", input, 8),
+    selectMany(db, "music_splits", "id,music_item_id,status,summary,publishing_total,master_total,created_at", input, 20),
+    selectMany(db, "music_split_contributors", "id,music_split_id,name,role,publishing_share,master_share,approval_status,created_at", input, 40),
     selectPreviousBrief(db, input),
   ]);
 
@@ -75,21 +92,33 @@ export async function loadTodaysBriefOperatingContext(db: any, input: OperatingB
     .sort(compareTaskPriority)
     .slice(0, 10);
   const recentConversations = await attachConversationMessages(db, input, conversations.slice(0, 6));
+  const rightsState = musicSplits.slice(0, 12).map((split: any) => ({
+    ...split,
+    contributors: splitContributors
+      .filter((contributor: any) => contributor.music_split_id === split.id)
+      .slice(0, 16),
+  }));
 
   return {
     version: "todays_brief_operating_context_v1",
     truthPriority: [
       "Current structured workspace state overrides older conversation prose, memory, and Manager Reads.",
+      "Current song/project metadata, release dates, task status, mission state, and rights/split state are authoritative when newer than derived analysis.",
       "Manager Reads and the previous Today's Brief are derived analysis and may be stale.",
       "Recent activity matters only when it changed a decision, deliverable, deadline, approval, blocker, mission, or music state.",
     ],
     activeMissions,
     priorityTasks,
+    currentMusic: {
+      songs: currentSongs,
+      projects: currentProjects,
+    },
+    rightsState,
+    currentMusicReads,
     recentConversations,
     durableMemory: memory.slice(0, 6),
     recentAgentReports: agentReports.slice(0, 4),
     meaningfulEvents: events.slice(0, 12),
-    currentMusicReads,
     previousBrief,
   };
 }
@@ -101,6 +130,26 @@ async function selectMany(db: any, table: string, columns: string, input: Operat
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function selectCurrentMusic(
+  db: any,
+  table: "music_items" | "music_projects",
+  columns: string,
+  input: OperatingBriefContextInput,
+  limit: number,
+) {
+  const { data, error } = await db
+    .from(table)
+    .select(columns)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("status", "active")
     .order("created_at", { ascending: false })
     .limit(limit);
   if (error) throw error;
