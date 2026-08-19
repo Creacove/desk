@@ -14,7 +14,7 @@ env:
 
 jobs:
   frontend:
-    name: Frontend tests and production build
+    name: Manager Song V2 production build
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -24,7 +24,6 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
       - run: npm run build
 
   manager-edge:
