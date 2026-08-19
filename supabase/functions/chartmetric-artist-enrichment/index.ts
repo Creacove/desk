@@ -22,6 +22,7 @@ type ArtistEnrichmentInput = {
   chartmetricArtistId?: string;
   spotifyArtistId?: string;
   artistName?: string;
+  skipTodaysBriefHandoff?: boolean;
 };
 
 type QueuedJobContext = {
@@ -110,6 +111,8 @@ Deno.serve(withAppErrorCapture("chartmetric-artist-enrichment", async (request) 
     if (!resolvedChartmetricArtistId) {
       throw new Error("No exact Chartmetric artist match was found from the Spotify artist ID.");
     }
+    await persistResolvedChartmetricArtistId(authClient, sourceConnectionId, queuedJob.metadata, resolvedChartmetricArtistId);
+
     const enrichment = await chartmetric.requestJson<Record<string, unknown>>(
       `/api/artist/${encodeURIComponent(resolvedChartmetricArtistId)}`,
     );
@@ -156,7 +159,9 @@ Deno.serve(withAppErrorCapture("chartmetric-artist-enrichment", async (request) 
         evidence_count: evidenceItems.length,
       },
     });
-    const todaysBrief = await generateTodaysBriefAfterArtistEvidence(input);
+    const todaysBrief = input.skipTodaysBriefHandoff
+      ? { status: "skipped" }
+      : await generateTodaysBriefAfterArtistEvidence(input);
 
     return json({
       status: "completed",
@@ -213,6 +218,20 @@ async function loadSourceConnection(supabase: any, input: ArtistEnrichmentInput,
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+async function persistResolvedChartmetricArtistId(
+  supabase: any,
+  sourceConnectionId: string,
+  existingMetadata: Record<string, unknown>,
+  chartmetricArtistId: string,
+) {
+  if (readString(existingMetadata.chartmetric_artist_id) === chartmetricArtistId) return;
+  const { error } = await supabase
+    .from("source_connections")
+    .update({ metadata: { ...existingMetadata, chartmetric_artist_id: chartmetricArtistId } })
+    .eq("id", sourceConnectionId);
+  if (error) throw error;
 }
 
 async function loadArtistProfile(supabase: any, input: ArtistEnrichmentInput): Promise<ArtistProfileRow | null> {
