@@ -14,7 +14,7 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
 }) {
   const { data, error } = await args.db
     .from("source_sync_jobs")
-    .select("id,completed_at")
+    .select("id,completed_at,source_connection_id")
     .eq("account_id", args.input.accountId)
     .eq("artist_workspace_id", args.input.artistWorkspaceId)
     .eq("artist_id", args.input.artistId)
@@ -24,10 +24,16 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
     .limit(1);
   if (error) throw error;
 
-  const completedAt = typeof data?.[0]?.completed_at === "string" ? Date.parse(data[0].completed_at) : NaN;
+  const latest = data?.[0] ?? null;
+  const completedAt = typeof latest?.completed_at === "string" ? Date.parse(latest.completed_at) : NaN;
   if (Number.isFinite(completedAt) && Date.now() - completedAt < DAY_MS) {
     return { attempted: false, refreshed: false, reason: "fresh" as const };
   }
+
+  const sourceConnectionId = typeof latest?.source_connection_id === "string" ? latest.source_connection_id : undefined;
+  const chartmetricArtistId = sourceConnectionId
+    ? await loadStoredChartmetricArtistId(args.db, args.input, sourceConnectionId)
+    : undefined;
 
   try {
     const response = await fetch(`${args.supabaseUrl}/functions/v1/chartmetric-artist-enrichment`, {
@@ -38,6 +44,8 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
       },
       body: JSON.stringify({
         ...args.input,
+        ...(sourceConnectionId ? { sourceConnectionId } : {}),
+        ...(chartmetricArtistId ? { chartmetricArtistId } : {}),
         skipTodaysBriefHandoff: true,
       }),
     });
@@ -54,6 +62,26 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
     console.warn("Today's Brief Chartmetric refresh failed; using last saved evidence.", { error });
     return { attempted: true, refreshed: false, reason: "failed" as const };
   }
+}
+
+async function loadStoredChartmetricArtistId(
+  db: any,
+  input: OperatingBriefContextInput,
+  sourceConnectionId: string,
+) {
+  const { data, error } = await db
+    .from("source_connections")
+    .select("metadata")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("id", sourceConnectionId)
+    .maybeSingle();
+  if (error) throw error;
+  const metadata = record(data?.metadata);
+  return typeof metadata.chartmetric_artist_id === "string" && metadata.chartmetric_artist_id.trim()
+    ? metadata.chartmetric_artist_id.trim()
+    : undefined;
 }
 
 export async function loadTodaysBriefOperatingContext(db: any, input: OperatingBriefContextInput) {
