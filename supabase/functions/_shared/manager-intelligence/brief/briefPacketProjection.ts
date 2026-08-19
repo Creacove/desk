@@ -105,16 +105,22 @@ function projectOperatingContextForBrief(managerIntelligencePacket: ManagerPacke
   const internalOnly = record(managerIntelligencePacket.internal_only_json);
   const context = record(internalOnly.operating_context);
   if (!Object.keys(context).length) return null;
+  const currentMusic = record(context.currentMusic);
   return {
     version: stringValue(context.version),
     truthPriority: stringArray(context.truthPriority).slice(0, 4),
     activeMissions: arrayValue(context.activeMissions).slice(0, 6),
     priorityTasks: arrayValue(context.priorityTasks).slice(0, 10),
+    currentMusic: {
+      songs: arrayValue(currentMusic.songs).slice(0, 12),
+      projects: arrayValue(currentMusic.projects).slice(0, 8),
+    },
+    rightsState: arrayValue(context.rightsState).slice(0, 12),
+    currentMusicReads: arrayValue(context.currentMusicReads).slice(0, 8),
     recentConversations: arrayValue(context.recentConversations).slice(0, 6),
     durableMemory: arrayValue(context.durableMemory).slice(0, 6),
     recentAgentReports: arrayValue(context.recentAgentReports).slice(0, 4),
     meaningfulEvents: arrayValue(context.meaningfulEvents).slice(0, 12),
-    currentMusicReads: arrayValue(context.currentMusicReads).slice(0, 8),
     previousBrief: record(context.previousBrief),
   };
 }
