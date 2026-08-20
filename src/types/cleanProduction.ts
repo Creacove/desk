@@ -551,6 +551,7 @@ export type MusicObjectViewModel = {
   lifecycle: string;
   lifecycleStage?: string;
   blocker: string;
+  nextMove?: string;
   sourceKind: string;
   sourceLimit: string;
   sourceSummary?: {
@@ -610,6 +611,7 @@ export type MusicObjectViewModel = {
     summary: string;
     writers?: string;
     producers?: string;
+    approvalLog?: string[];
     publishingTotal?: string;
     masterTotal?: string;
     contributors?: Array<{
