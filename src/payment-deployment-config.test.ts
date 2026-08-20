@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import billingCountry from "../api/billing-country";
 
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), ...parts), "utf8");
 
@@ -87,6 +88,15 @@ describe("payment deployment configuration", () => {
     expect(edge).toContain('"Cache-Control": "private, no-store"');
     expect(edge).toContain('"Vary": "Cookie"');
     expect(edge).not.toContain("OTHERS");
+  });
+
+  it("reads the country header from Vercel's deployed request shape", async () => {
+    const response = billingCountry({
+      headers: { "x-vercel-ip-country": "ng" },
+    } as unknown as Request);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ countryCode: "NG" });
   });
 
   it("pins the Vercel build to the same Node major used by Netlify", () => {
