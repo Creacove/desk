@@ -125,6 +125,25 @@ describe("Home premium briefing", () => {
     expect(screen.queryByText(/compiling for this section/i)).not.toBeInTheDocument();
   });
 
+  it("centers Manager's Read in one rail without a first-row padding exception", () => {
+    renderHome();
+
+    const managerRead = screen.getByTestId("desk-manager-read");
+    const rail = screen.getByTestId("desk-manager-read-grid");
+    const segments = within(rail).getAllByTestId("desk-manager-read-segment");
+    const firstSegment = segments[0];
+
+    expect({
+      centeredRail: managerRead.classList.contains("mx-auto") && managerRead.classList.contains("max-w-[1120px]"),
+      singleColumn: rail.classList.contains("grid-cols-1") && !rail.classList.contains("lg:grid-cols-2"),
+      firstRowPaddingException: firstSegment.classList.contains("lg:first:pl-0"),
+    }).toEqual({
+      centeredRail: true,
+      singleColumn: true,
+      firstRowPaddingException: false,
+    });
+  });
+
   it("refreshes only on explicit action and keeps the current brief visible during pending or failure", () => {
     const onRefreshBrief = vi.fn();
     const first = renderHome({ onRefreshBrief });
