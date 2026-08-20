@@ -25,6 +25,7 @@ import type {
   MusicManagerRunStatus,
   MusicManagerReadViewModel,
   MusicObjectViewModel,
+  MusicReadTarget,
   MusicUploadProgress,
   ManualSongWorkspaceResult,
   PriorityItem,
@@ -5590,7 +5591,7 @@ function buildFallbackTodayBrief(workspace: ProductionWorkspace): TodayBriefView
   };
 }
 
-function readSetupMusicReadTargets(value: unknown) {
+function readSetupMusicReadTargets(value: unknown): MusicReadTarget[] {
   if (!Array.isArray(value)) return [];
   return value.filter(isPlainRecord).flatMap((item) => {
     const subjectType = item.subjectType === "music_item" || item.subjectType === "music_project" ? item.subjectType : undefined;
@@ -7023,3 +7024,4 @@ function formatEventTime(value: string | null | undefined) {
   const months = Math.max(1, Math.floor(elapsedMs / month));
   return `${months}mo ago`;
 }
+
