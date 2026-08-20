@@ -142,6 +142,9 @@ describe("Home premium briefing", () => {
       singleColumn: true,
       firstRowPaddingException: false,
     });
+    expect(managerRead).toHaveAttribute("aria-labelledby", "desk-manager-read-title");
+    expect(within(managerRead).getByRole("heading", { name: "Manager's Read" })).toHaveAttribute("id", "desk-manager-read-title");
+    expect(within(managerRead).getByRole("button", { name: "Evidence" })).toHaveClass("min-h-11");
   });
 
   it("keeps Manager's Read metadata separate from readable body copy", () => {
@@ -157,7 +160,7 @@ describe("Home premium briefing", () => {
     expect(new Set(segmentClassNames).size).toBe(1);
     expect(firstSegment).toHaveClass("px-5", "py-5", "sm:px-7", "sm:py-7");
     expect(firstSegment).toHaveClass("grid-cols-1", "sm:grid-cols-[9rem_minmax(0,1fr)]");
-    expect(metadata).toHaveClass("grid-cols-[2rem_minmax(0,1fr)]");
+    expect(metadata).toHaveClass("grid-cols-1", "sm:grid-cols-[2.25rem_minmax(0,1fr)]");
     expect(within(metadata).getByTestId("desk-manager-read-number")).toHaveTextContent("01");
     expect(within(metadata).getByTestId("desk-manager-read-label")).toBeInTheDocument();
     expect(within(metadata).queryByTestId("desk-manager-read-body")).not.toBeInTheDocument();

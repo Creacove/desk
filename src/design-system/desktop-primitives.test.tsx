@@ -59,7 +59,8 @@ describe("desktop design primitives", () => {
   });
 
   it("locks the deliberate desktop composition widths and adaptive gutters", () => {
-    expect(desktopCss).toContain("max-width: 1320px");
+    expect(desktopCss).toContain("--os-content-max: 1320px");
+    expect(desktopCss).toContain("max-width: var(--os-content-max)");
     expect(desktopCss).toContain("padding-inline: 32px !important");
     expect(desktopCss).toContain("padding-inline: 40px !important");
     expect(desktopCss).toContain("padding-inline: 48px !important");

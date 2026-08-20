@@ -30,4 +30,8 @@ describe("Song Room manager hierarchy", () => {
     expect(source).not.toContain('See what needs attention.');
     expect(source).not.toContain('A quick assessment of the song, files, rights and release setup.');
   });
+
+  it("gives an ungenerated project review an intentional next step", () => {
+    expect(source).toContain("Ask Manager for a concise view of the release package before choosing the next move.");
+  });
 });

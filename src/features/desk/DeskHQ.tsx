@@ -322,10 +322,10 @@ function ManagerRead({
   if (!segments.length) return null;
 
   return (
-    <section data-testid="desk-manager-read" className="os-briefing-rail mx-auto mt-9 sm:mt-11">
+    <section data-testid="desk-manager-read" aria-labelledby="desk-manager-read-title" className="os-briefing-rail mx-auto mt-9 sm:mt-11">
       <div className="flex items-end justify-between gap-4">
-        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</p>
-        <Button type="button" variant="ghost" size="sm" onClick={onEvidence}>Evidence</Button>
+        <h2 id="desk-manager-read-title" className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</h2>
+        <Button type="button" variant="ghost" size="sm" onClick={onEvidence} className="min-h-11 px-4">Evidence</Button>
       </div>
 
       <div data-testid="desk-manager-read-grid" className="mt-3 grid grid-cols-1 divide-y divide-foreground/8 border-y border-foreground/8">
@@ -337,7 +337,7 @@ function ManagerRead({
           >
             <div
               data-testid="desk-manager-read-metadata"
-              className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-baseline gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
+              className="grid min-w-0 grid-cols-1 items-baseline gap-1 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
             >
               <span data-testid="desk-manager-read-number" className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
               <p data-testid="desk-manager-read-label" className="font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/68">{segment.label}</p>

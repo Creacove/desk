@@ -1679,9 +1679,12 @@ function MusicProjectBrief({
       ) : readBusy ? (
         <div className="mt-4 flex items-center gap-3 py-2"><AppThinkingOrb surface="normal" state="composing" size={20} /><p className="text-[13px] font-semibold text-muted-foreground">Reviewing this project…</p></div>
       ) : (
-        <button type="button" aria-label={managerReadButtonLabel("project", project.managerReadStatus)} onClick={onGenerateBrief} className="mt-4 inline-flex h-9 items-center gap-2 rounded-[10px] bg-foreground px-3.5 text-[11px] font-semibold text-background">
-          <Sparkles className="h-3.5 w-3.5" /> {failed ? "Try again" : "Review this project"}
-        </button>
+        <div className="os-reading-measure mt-4">
+          <p className="text-[13px] font-medium leading-6 text-muted-foreground/78">Ask Manager for a concise view of the release package before choosing the next move.</p>
+          <button type="button" aria-label={managerReadButtonLabel("project", project.managerReadStatus)} onClick={onGenerateBrief} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-foreground px-4 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
+            <Sparkles className="h-3.5 w-3.5" /> {failed ? "Try again" : "Review this project"}
+          </button>
+        </div>
       )}
     </section>
   );
