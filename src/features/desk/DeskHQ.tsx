@@ -324,18 +324,18 @@ function ManagerRead({
   if (!segments.length) return null;
 
   return (
-    <section data-testid="desk-manager-read" className="mt-9 sm:mt-11">
+    <section data-testid="desk-manager-read" className="mx-auto mt-9 w-full max-w-[1120px] sm:mt-11">
       <div className="flex items-end justify-between gap-4">
         <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</p>
         <Button type="button" variant="ghost" size="sm" onClick={onEvidence}>Evidence</Button>
       </div>
 
-      <div data-testid="desk-manager-read-grid" className="mt-3 grid border-y border-foreground/8 lg:grid-cols-2">
+      <div data-testid="desk-manager-read-grid" className="mt-3 grid grid-cols-1 divide-y divide-foreground/8 border-y border-foreground/8">
         {segments.map((segment, index) => (
           <article
             key={`${segment.label}-${index}`}
             data-testid="desk-manager-read-segment"
-            className={`min-w-0 py-5 sm:py-6 lg:px-7 lg:py-7 lg:first:pl-0 ${managerReadCellClass(index, segments.length)}`}
+            className="min-w-0 px-5 py-5 sm:px-7 sm:py-7"
           >
             <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4">
               <span className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
@@ -349,21 +349,6 @@ function ManagerRead({
       </div>
     </section>
   );
-}
-
-function managerReadCellClass(index: number, count: number) {
-  const mobileBorder = index < count - 1 ? "border-b border-foreground/8" : "";
-  if (count === 1) return mobileBorder;
-  if (count === 2) return `${mobileBorder} ${index === 0 ? "lg:border-b-0 lg:border-r" : "lg:border-b-0"}`;
-  if (count === 3) {
-    if (index === 0) return "border-b border-foreground/8 lg:border-r";
-    if (index === 1) return "border-b border-foreground/8";
-    return "lg:col-span-2 lg:border-b-0";
-  }
-  if (index === 0) return "border-b border-foreground/8 lg:border-r";
-  if (index === 1) return "border-b border-foreground/8";
-  if (index === 2) return "border-b border-foreground/8 lg:border-b-0 lg:border-r";
-  return "lg:border-b-0";
 }
 
 function buildDeskMetricTiles(brief: TodayBriefViewModel): DeskSignalMetric[] {
