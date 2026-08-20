@@ -1,4 +1,12 @@
 import type { LucideIcon } from "lucide-react";
+import type {
+  ReleaseDateChangeReceipt,
+  ReleaseGateResult,
+  ReleaseSchedulePreview,
+  ReleaseSuccessAssessment,
+} from "../../supabase/functions/_shared/release-success/types";
+
+export type { ReleaseGateResult } from "../../supabase/functions/_shared/release-success/types";
 
 export type CleanProductionView =
   | "labelHQ"
@@ -182,29 +190,20 @@ export type ManagerConversationStreamEvent =
   | { type: "run_completed"; runId: string; conversation: ConversationViewModel }
   | { type: "run_failed"; runId: string; error: string; conversation?: ConversationViewModel };
 
-export type ReleaseDateChangeMovedItem = {
-  taskId: string;
-  title: string;
-  from: string | null;
-  to: string;
-};
+export type ReleaseSuccessArtifactState =
+  | "investigating"
+  | "assessed"
+  | "proposed"
+  | "awaiting_approval"
+  | "applying"
+  | "applied"
+  | "failed";
 
-export type ReleaseDateChangePreservedItem = {
-  taskId: string;
-  reason: string;
-};
-
-export type ReleaseDateChangePreview = {
-  musicItemId: string;
-  releasePlanId: string;
-  missionId?: string;
-  fromDate: string | null;
-  proposedDate: string;
-  expectedRevision: number;
-  moved: ReleaseDateChangeMovedItem[];
-  preserved: ReleaseDateChangePreservedItem[];
-  nextDeadline: { taskId: string; title: string; deadline: string } | null;
-};
+export type ReleaseSuccessAssessmentViewModel = ReleaseSuccessAssessment;
+export type ReleaseSchedulePreviewViewModel = ReleaseSchedulePreview;
+export type ReleaseDateChangePreview = ReleaseSchedulePreview;
+export type ReleaseDateChangeMovedItem = ReleaseSchedulePreview["changes"][number];
+export type ReleaseDateChangePreservedItem = ReleaseSchedulePreview["preserved"][number];
 
 export type ReleaseDateChangeProposalInput = {
   musicItemId: string;
@@ -228,24 +227,11 @@ export type ReleaseDateChangeRequestViewModel = {
   status: "pending" | "approved" | "rejected" | "superseded" | "expired" | "failed";
   expectedPlanRevision: number;
   previewHash: string;
-  preview: ReleaseDateChangePreview;
+  preview: ReleaseSchedulePreviewViewModel;
   expiresAt: string;
 };
 
-export type ReleaseDateChangeReceiptViewModel = {
-  requestId: string;
-  releasePlanId: string;
-  musicItemId: string;
-  missionId?: string;
-  fromDate: string | null;
-  approvedDate: string;
-  previousRevision: number;
-  revision: number;
-  moved: ReleaseDateChangeMovedItem[];
-  preserved: ReleaseDateChangePreservedItem[];
-  nextDeadline: { taskId: string; title: string; deadline: string } | null;
-  operatingEventId?: string;
-};
+export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
 
 export type ConversationViewModel = {
   id: string;
@@ -261,6 +247,7 @@ export type ConversationViewModel = {
     speaker: "artist" | "manager";
     label: string;
     body: string;
+    status?: "sending" | "streaming" | "sent" | "failed";
     createdWork?: Array<{
       type: "music_item" | "mission" | "task";
       title: string;
@@ -385,38 +372,16 @@ export type ReleaseOpportunityArtifactViewModel = {
 export type ReleaseSuccessArtifactViewModel = {
   id: string;
   musicItemId: string;
-  musicTitle: string;
   missionId?: string;
-  recommendation: "hold" | "move" | "review";
-  shortAnswer: string;
-  confidence: "high" | "medium" | "low" | "unknown";
-  limitations: string[];
-  evidenceIds: string[];
-  nextReviewAt?: string;
-  createdAt?: string;
   requestId?: string;
-  sourceRevision?: number;
-  actionPolicy?: string;
-  movement?: Array<{
-    type: "music_item" | "mission" | "task";
-    id?: string;
-    title: string;
-    body: string;
-    status?: "created" | "updated" | "approval_required" | "failed" | "pending";
-  }>;
-  change?: {
-    state: "preview" | "approved" | "failed";
-    proposedDate: string;
-    fromDate?: string | null;
-    reason?: string;
-    expectedPlanRevision: number;
-    previewHash: string;
-    idempotencyKey: string;
-    preview: ReleaseDateChangePreview;
-    request?: ReleaseDateChangeRequestViewModel;
-    receipt?: ReleaseDateChangeReceiptViewModel;
-    error?: string;
-  };
+  previewHash?: string;
+  idempotencyKey?: string;
+  state: ReleaseSuccessArtifactState;
+  subject: { title: string; itemType: string; approvedReleaseDate?: string };
+  assessment?: ReleaseSuccessAssessmentViewModel;
+  preview?: ReleaseSchedulePreviewViewModel;
+  receipt?: ReleaseDateChangeReceiptViewModel;
+  error?: { message: string; reference?: string; retryable: boolean };
 };
 
 export type MissionGenesisResultViewModel = {
