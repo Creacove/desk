@@ -49,18 +49,21 @@ export function ProductButton({
   type = "button",
   variant = "primary",
   disabled,
+  ariaLabel,
 }: {
   children: ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
   variant?: "primary" | "secondary" | "quiet";
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <Button
       type={type}
       disabled={disabled}
       onClick={onClick}
+      aria-label={ariaLabel}
       variant={variant === "quiet" ? "ghost" : variant}
       size="md"
     >

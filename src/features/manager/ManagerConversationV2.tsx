@@ -44,6 +44,8 @@ export type ManagerConversationV2Props = {
   sendError: string | null;
 };
 
+type ManagerWorkItem = NonNullable<ConversationViewModel["createdWork"]>[number];
+
 type ComposerAttachment = {
   id: string;
   file: File;
@@ -102,6 +104,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
   const releaseSuccessArtifact = conversation.releaseSuccessArtifacts?.[0];
   const opportunityArtifacts = conversation.releaseOpportunityArtifacts ?? [];
   const lastManagerMessageId = [...conversation.messages].reverse().find((message) => message.speaker === "manager")?.id;
+  const hasFailedManagerMessage = conversation.messages.some((message) => message.speaker === "manager" && message.status === "failed");
 
   const resolvedRequestIds = useMemo(() => new Set(conversation.messages.flatMap((message) =>
     message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length ? [message.contextRequestId] : [],
@@ -122,6 +125,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
 
   useEffect(() => {
     if (!sendPending) return;
+    tailRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" });
     const frame = requestAnimationFrame(() => tailRef.current?.scrollIntoView?.({ block: "end", behavior: "smooth" }));
     return () => cancelAnimationFrame(frame);
   }, [sendPending, conversation.messages.length]);
@@ -214,7 +218,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
     <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office">
       <div data-testid="manager-conversation-v2" className="mx-auto w-full max-w-[48rem] px-1 pb-[calc(12rem+env(safe-area-inset-bottom))] pt-3 sm:px-2 sm:pt-5 lg:px-0">
         {conversation.musicSubject?.type === "music_item" ? (
-          <div className="mb-5"><SongContextAttachment title={conversation.musicSubject.title} stage={conversation.musicSubject.lifecycleStage} onOpenSong={() => onOpenMusicSubject?.(conversation.musicSubject!)} /></div>
+          <div data-testid="conversation-song-context" className="mb-5"><SongContextAttachment title={conversation.musicSubject.title} stage={conversation.musicSubject.lifecycleStage} onOpenSong={() => onOpenMusicSubject?.(conversation.musicSubject!)} /></div>
         ) : null}
         {taskContext ? (
           <div className="mb-6 flex items-start justify-between gap-4 border-b border-foreground/8 pb-4">
@@ -239,10 +243,10 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
                 ) : (
                   <div className="w-full">
                     <ManagerText body={message.body} failed={message.status === "failed"} />
-                    {message.status === "failed" && onRetryLastMessage ? <button type="button" onClick={onRetryLastMessage} className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"><RotateCcw className="h-3.5 w-3.5" /> Retry</button> : null}
+                    {message.status === "failed" && onRetryLastMessage ? <button type="button" onClick={onRetryLastMessage} className="mt-3 inline-flex min-h-8 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground"><RotateCcw className="h-3.5 w-3.5" /> Retry Manager message</button> : null}
                     {actions.length ? <ManagerWorkspaceActions actions={actions} onOpen={openWorkspaceAction} disabled={sendPending} /> : null}
                     {turn.work.length ? <WorkGroup groups={turn.work} onOpen={onOpenCreatedWork} /> : null}
-                    {isLastManager && releaseSuccessArtifact ? <ReleaseSuccessArtifact artifact={releaseSuccessArtifact} onApprove={onApproveReleaseDateChange ?? (async () => undefined)} onKeepDate={onKeepReleaseDate ?? (() => undefined)} onReviewAll={onReviewReleaseSuccess ?? (() => undefined)} onOpenSong={(id) => void onOpenCreatedWork("music_item", id)} onOpenMission={(id) => void onOpenCreatedWork("mission", id)} onRetry={onRetryReleaseSuccess ?? (async () => undefined)} /> : null}
+                    {isLastManager && releaseSuccessArtifact ? <ReleaseSuccessArtifact musicItemTitle={conversation.musicSubject?.type === "music_item" ? conversation.musicSubject.title : undefined} artifact={releaseSuccessArtifact} onApprove={onApproveReleaseDateChange ?? (async () => undefined)} onKeepDate={onKeepReleaseDate ?? (() => undefined)} onReviewAll={onReviewReleaseSuccess ?? (() => undefined)} onOpenSong={(id) => void onOpenCreatedWork("music_item", id)} onOpenMission={(id) => void onOpenCreatedWork("mission", id)} onRetry={onRetryReleaseSuccess ?? (async () => undefined)} /> : null}
                     {isLastManager ? opportunityArtifacts.map((artifact) => <OpportunityArtifact key={artifact.id} artifact={artifact} onPreparePitch={(target) => onPrepareOpportunityPitch?.(artifact, target)} onRecordOutcome={(target, input) => onRecordOpportunityOutcome?.(artifact, target, input)} onOpenFiles={(id) => onOpenCreatedWork("music_item", id, "files")} onOpenMission={(id) => onOpenCreatedWork("mission", id)} onRetry={(failed) => onRetryOpportunityResearch?.(failed)} />) : null}
                     {isLastManager && conversation.decisionPackage && onOpenDecisionPackage ? <button type="button" onClick={onOpenDecisionPackage} className="mt-4 text-[11px] font-semibold text-muted-foreground hover:text-foreground">View decision package</button> : null}
                   </div>
@@ -251,7 +255,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
             );
           })}
           {sendPending && !conversation.messages.some((message) => message.status === "streaming") ? <p className="text-[12px] font-medium text-muted-foreground">Manager is working…</p> : null}
-          <div ref={tailRef} className="h-8" aria-hidden="true" />
+          <div data-testid="manager-chat-tail" ref={tailRef} className="h-32 shrink-0" aria-hidden="true" />
         </div>
       </div>
 
@@ -261,7 +265,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
         onSend={send}
         sendPending={sendPending}
         canSend={!activeQuestion && !uploading && (Boolean(draft.trim()) || attachmentIds.length > 0)}
-        sendError={sendError}
+        sendError={hasFailedManagerMessage ? null : sendError}
         attachments={composerAttachments.length ? <AttachmentTray attachments={composerAttachments} onRemove={(id) => setComposerAttachments((current) => current.filter((item) => item.id !== id))} onRetry={(item) => void uploadAttachment(item.id, item.file, item.assetType)} /> : undefined}
         leadingAction={canAttach && !activeQuestion ? (
           <AttachmentButton
@@ -306,26 +310,60 @@ function ManagerText({ body, failed }: { body: string; failed?: boolean }) {
 }
 
 function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: ManagerConversationV2Props["onOpenCreatedWork"] }) {
-  const items = groups.flatMap((group) => {
-    if (group.kind === "workspace") return [group.musicItem, group.mission, ...group.tasks].filter(Boolean);
-    if (group.kind === "draft") return [group.item];
-    if (group.kind === "mission") return [group.mission, ...group.tasks];
-    if (group.kind === "tasks") return group.tasks;
-    return [group.item];
-  });
-  if (!items.length) return null;
+  if (!groups.length) return null;
+
+  function openItem(item: ManagerWorkItem, destination?: "files") {
+    const type = item.type === "task" || item.type === "mission" ? item.type : "music_item";
+    const id = item.musicItemId ?? item.id;
+    const artifactId = item.artifactKind === "song_document" ? item.id : undefined;
+    void onOpen(type, id, destination, artifactId);
+  }
+
   return (
-    <div className="mt-4 divide-y divide-foreground/8 border-y border-foreground/8">
-      {items.map((item: any, index) => (
-        <button key={item.id ?? `${item.title}-${index}`} type="button" onClick={() => {
-          const type = item.type === "task" || item.type === "mission" ? item.type : "music_item";
-          const destination = item.artifactKind === "song_document" ? "files" : undefined;
-          void onOpen(type, item.musicItemId ?? item.id, destination, item.artifactKind === "song_document" ? item.id : undefined);
-        }} className="flex min-h-12 w-full items-center justify-between gap-3 py-3 text-left">
-          <span className="min-w-0"><span className="block truncate text-[12px] font-semibold text-foreground">{item.title}</span>{item.body ? <span className="mt-0.5 block line-clamp-1 text-[11px] font-medium text-muted-foreground">{item.body}</span> : null}</span>
-          <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">Open</span>
-        </button>
-      ))}
+    <div data-testid="manager-result-group" className="mt-4 grid gap-3">
+      {groups.map((group, index) => {
+        if (group.kind === "draft") {
+          return <article key={`draft-${index}`} data-testid="manager-document-result" className="grid gap-2 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
+            <div className="min-w-0"><p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p><p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.item.title}</p></div>
+            {group.item.id ? <button type="button" onClick={() => openItem(group.item, "files")} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">Open draft</button> : null}
+          </article>;
+        }
+
+        if (group.kind === "workspace") {
+          const song = group.musicItem;
+          const mission = group.mission;
+          return <section key={`workspace-${index}`} data-testid="manager-workspace-result" className="rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:px-3.5">
+            <p className="text-[11px] font-semibold text-muted-foreground">Song ready</p>
+            {song ? <p className="mt-0.5 text-[13px] font-semibold text-foreground">{song.title}</p> : null}
+            {mission ? <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{mission.body || `${group.tasks.length} task${group.tasks.length === 1 ? "" : "s"} ready for the mission.`}</p> : null}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {song ? <button type="button" onClick={() => openItem(song)} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground">Open song</button> : null}
+              {mission?.id ? <button type="button" onClick={() => openItem(mission)} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground">View mission</button> : null}
+            </div>
+          </section>;
+        }
+
+        if (group.kind === "mission") {
+          return <section key={`mission-${index}`} className="grid gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-3.5">
+            <div className="min-w-0"><p className="text-[13px] font-semibold text-foreground">{group.mission.title}</p><p className="mt-0.5 text-[11px] font-medium text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</p></div>
+            {group.mission.id ? <button type="button" onClick={() => openItem(group.mission)} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">View mission</button> : null}
+          </section>;
+        }
+
+        if (group.kind === "tasks") {
+          const task = group.tasks[0];
+          return <section key={`tasks-${index}`} className="grid gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-3.5">
+            <div className="min-w-0"><p className="text-[11px] font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>{task ? <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{task.title}</p> : null}</div>
+            {task?.id ? <button type="button" onClick={() => openItem(task)} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">View task</button> : null}
+          </section>;
+        }
+
+        const item = group.item;
+        return <section key={`${group.kind}-${index}`} className="grid gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-3.5">
+          <div className="min-w-0"><p className="text-[11px] font-semibold text-muted-foreground">{group.kind === "music" ? "Song ready" : "Work ready"}</p><p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>{item.body ? <p className="mt-1 line-clamp-1 text-[11px] font-medium text-muted-foreground">{item.body}</p> : null}</div>
+          <button type="button" onClick={() => openItem(item)} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">{group.kind === "music" ? "Open song" : "Open"}</button>
+        </section>;
+      })}
     </div>
   );
 }

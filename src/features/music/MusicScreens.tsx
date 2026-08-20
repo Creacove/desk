@@ -2093,6 +2093,10 @@ function MusicRightsWorkspace({
           <p className="mt-3 text-[11px] font-medium leading-5 text-muted-foreground/72">{rights.description}</p>
         ) : null}
 
+        {contributors.length && ["pending confirmation", "pending_confirmation"].includes(normalizedStatus) ? (
+          <p className="mt-2 text-[11px] font-semibold leading-5 text-success">Confirmation requests were sent to {contributors.length} collaborators.</p>
+        ) : null}
+
         {!contributors.length ? (
           <section className="py-6">
             <h5 className="font-display text-[18px] font-semibold leading-tight text-foreground">Set up song rights</h5>

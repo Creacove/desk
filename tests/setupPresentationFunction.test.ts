@@ -16,7 +16,7 @@ describe("setup presentation direct-read safety boundary", () => {
   });
 
   it("uses only the authenticated browser Supabase client and RLS-readable tables", () => {
-    expect(source).toContain('client\n        .from("workspace_setup_runs")');
+    expect(source.replace(/\s+/g, " ")).toContain('client .from("workspace_setup_runs")');
     expect(source).toContain('.from("artist_profiles")');
     expect(source).toContain('.from("music_items")');
     expect(source).toContain('.from("music_projects")');

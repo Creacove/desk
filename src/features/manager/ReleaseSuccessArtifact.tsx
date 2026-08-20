@@ -8,6 +8,7 @@ type ArtifactWithRequest = ReleaseSuccessArtifactViewModel & { request?: Release
 
 export type ReleaseSuccessArtifactProps = {
   artifact: ArtifactWithRequest;
+  musicItemTitle?: string;
   onApprove(request: ReleaseDateChangeRequestViewModel): Promise<void>;
   onKeepDate(artifact: ReleaseSuccessArtifactViewModel): void;
   onReviewAll(artifact: ReleaseSuccessArtifactViewModel): void;
@@ -41,7 +42,7 @@ class ReleaseSuccessArtifactBoundary extends Component<{ artifact: ArtifactWithR
   }
 }
 
-function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onReviewAll, onOpenSong, onOpenMission, onRetry }: ReleaseSuccessArtifactProps) {
+function ReleaseSuccessArtifactContent({ artifact, musicItemTitle, onApprove, onKeepDate, onReviewAll, onOpenSong, onOpenMission, onRetry }: ReleaseSuccessArtifactProps) {
   const [showAll, setShowAll] = useState(false);
   const [applying, setApplying] = useState(false);
   const request = artifact.request ?? requestFromArtifact(artifact);
@@ -79,6 +80,7 @@ function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onRevi
 
   return (
     <section data-testid="release-success-artifact" className="mt-5 border-t border-foreground/8 pt-5">
+      {musicItemTitle ? <p className="text-[11px] font-semibold text-muted-foreground">{musicItemTitle}</p> : null}
       <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{heading}</h2>
       <div role="status" aria-live="polite" className={isApplying ? "mt-2 text-[12px] font-medium text-muted-foreground" : "sr-only"}>{status}</div>
       {assessment?.recommendation?.reason ? <p className="mt-2 max-w-[42rem] text-[12px] font-medium leading-relaxed text-muted-foreground">{assessment.recommendation.reason}</p> : null}
@@ -123,7 +125,7 @@ function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onRevi
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {canApprove ? (
-          <ProductButton onClick={() => void handleApprove()} disabled={isApplying}>
+          <ProductButton ariaLabel="Approve release date change" onClick={() => void handleApprove()} disabled={isApplying}>
             {isApplying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             Approve date change
           </ProductButton>

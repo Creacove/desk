@@ -194,7 +194,7 @@ describe("release success conversation artifact", () => {
     expect(screen.getByText("Playlist pitch")).toBeInTheDocument();
     expect(screen.getByText("Preserved deadlines")).toBeInTheDocument();
     expect(screen.getByText("Artwork lock")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Approve date change" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Approve release date change" })).toBeInTheDocument();
 
     fireEvent.click(within(card).getByRole("button", { name: "Open song" }));
     expect(onOpenSong).toHaveBeenCalledWith("song-1");
@@ -220,7 +220,7 @@ describe("release success conversation artifact", () => {
       />,
     );
 
-    const approve = screen.getByRole("button", { name: "Approve date change" });
+    const approve = screen.getByRole("button", { name: "Approve release date change" });
     fireEvent.click(approve);
     expect(onApprove).toHaveBeenCalledWith(videoOneRequest);
     expect(approve).toBeDisabled();
@@ -260,7 +260,7 @@ describe("release success conversation artifact", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Approve date change" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve release date change" }));
     await waitFor(() => expect(onApprove).toHaveBeenCalledWith(expect.objectContaining({
       requestId: videoOneRequest.requestId,
       previewHash: videoOneRequest.previewHash,
@@ -302,7 +302,7 @@ describe("release success conversation artifact", () => {
     expect(screen.getByText("2026-09-09")).toBeInTheDocument();
     expect(screen.getByText("Receipt saved, but the workspace refresh needs a retry.")).toBeInTheDocument();
     expect(screen.getByText("Operating event: event-1")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Approve date change" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Approve release date change" })).not.toBeInTheDocument();
   });
 
   it("renders stale-preview and transaction failures without success copy and keeps retry available", async () => {

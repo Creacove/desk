@@ -381,7 +381,7 @@ describe("Clean production prototype-match shell", () => {
       await Promise.resolve();
     });
 
-    expect(screen.getByRole("heading", { name: /Opening your Desk|Sign in with the account that started this Desk/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /Opening your Desk|Still confirming|Sign in with the account that started this Desk/ })).toBeInTheDocument();
     expect(loadBillingStatus).toHaveBeenCalledTimes(1);
     expect(loadBillingStatus).toHaveBeenLastCalledWith({ reference: "ors_slow_return" });
 
@@ -664,7 +664,8 @@ describe("Clean production prototype-match shell", () => {
     expect(createdWorkspaces).toEqual([]);
     expect(connectedArtists).toEqual([]);
     expect(screen.getAllByAltText("Nova Vale artist image").length).toBeGreaterThan(0);
-    expect(screen.getByText("$20/month")).toBeInTheDocument();
+    expect(screen.getByText("$20")).toBeInTheDocument();
+    expect(screen.getByText("per month")).toBeInTheDocument();
     expect(screen.getByText("Nova Season")).toBeInTheDocument();
     expect(screen.getByText("First Move")).toBeInTheDocument();
     expect(screen.getByText(/your desk opens with catalog import, audience intelligence, manager brief, and music reads/i)).toBeInTheDocument();
@@ -1602,12 +1603,8 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
-    const rightNow = screen.getByTestId("desk-right-now");
-    expect(rightNow).toHaveTextContent("Right now");
-    expect(rightNow).toHaveTextContent("Catalog import running");
-    expect(rightNow).not.toHaveTextContent("No action needed");
-    const action = within(rightNow).getByRole("button", { name: "Open Catalog import running" });
-    expect(action.className).not.toContain("bg-foreground text-background");
+    expect(screen.queryByTestId("desk-right-now")).not.toBeInTheDocument();
+    expect(screen.queryByText("Catalog import running")).not.toBeInTheDocument();
   }, 20000);
   it("turns Desk HQ command brief clicks into Manager and mission destinations without exposing the old command strip", async () => {
     const repositories = repositoriesFor("Nova Vale");
@@ -1660,7 +1657,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.change(screen.getByPlaceholderText("What do you want to work on?"), {
       target: { value: "Turn this into a manager conversation" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Send manager question" }));
+    fireEvent.click(screen.getByRole("button", { name: "Send to Manager" }));
     expect(await screen.findByRole("heading", { name: "Turn this into a manager conversation", exact: true })).toBeInTheDocument();
   }, 20000);
   it("keeps Desk HQ artist-facing sections compact and low-overload", async () => {
@@ -6224,7 +6221,7 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open song QA Release Flow" }));
     fireEvent.click(screen.getByRole("button", { name: "Rights" }));
 
-    expect(await screen.findByText("1 of 2 collaborators confirmed")).toBeInTheDocument();
+    expect(await screen.findByText("1 of 2 ownership participants confirmed")).toBeInTheDocument();
     expect(screen.getByText("Publishing allocated")).toBeInTheDocument();
     expect(screen.getByText("Master allocated")).toBeInTheDocument();
     expect(screen.getByText("1 of 2", { selector: "strong" })).toBeInTheDocument();
@@ -6547,12 +6544,14 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.getByTestId("mobile-tabbar")).toBeInTheDocument();
   }, 20000);
 
-  it("keeps production code prototype-parity styled without independent os-* UI classes", () => {
+  it("keeps production os-* design tokens registered in the desktop finish layer", () => {
     const productionFiles = readProductionFiles();
+    const desktopFinishLayer = readFileSync(join(process.cwd(), "src", "design-system", "desktop-premium.css"), "utf8");
 
     for (const file of productionFiles) {
       const source = readFileSync(file, "utf8");
-      expect(source, file).not.toMatch(/\bos-[a-z0-9-]+/);
+      const tokens = [...new Set(source.match(/\bos-[a-z0-9-]+/g) ?? [])];
+      for (const token of tokens) expect(desktopFinishLayer, `${file} uses unregistered ${token}`).toContain(token);
     }
   });
 

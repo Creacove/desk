@@ -43,7 +43,7 @@ Publish the current Desk product line from the actual GitHub `main`, including P
 ### 4. Reconcile and promote Supabase
 
 1. Compare the repository migration files with the hosted Desk migration ledger for project ref `bbwbxmnanccwottrmkqu`.
-2. Validate `20260818000100_manager_song_system_v2.sql` for additive/backward-compatible DDL, data backfill safety, grants, and RLS before applying it. Do not reset or overwrite the hosted database.
+2. Validate `20260820094704_manager_song_system_v2.sql` for additive/backward-compatible DDL, data backfill safety, grants, and RLS before applying it. Do not reset or overwrite the hosted database. The filename is aligned to the hosted migration ledger timestamp created by the authenticated migration apply.
 3. Apply only migrations shown as pending by the hosted ledger, then re-list migrations and run the relevant schema/RPC/RLS smoke checks and Supabase security/performance advisors.
 4. Deploy the release's changed Edge Functions (`generate-todays-brief` and `chartmetric-artist-enrichment`, including their shared modules) with JWT verification settings matching the existing functions.
 5. Verify the deployed function versions and production configuration without exposing secrets.
