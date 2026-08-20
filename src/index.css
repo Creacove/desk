@@ -1737,10 +1737,10 @@
   border-radius: 0.6rem;
   color: hsl(var(--muted-foreground) / 0.86);
   font-family: var(--font-ui);
-  font-size: 0.67rem;
-  font-weight: 700;
-  letter-spacing: 0.035em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  font-weight: 650;
+  letter-spacing: 0;
+  text-transform: none;
   transition: color 180ms ease, background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
 }
 
@@ -1761,7 +1761,7 @@
   border-radius: 999px;
   color: hsl(var(--muted-foreground));
   background: hsl(var(--foreground) / 0.055);
-  font-size: 0.58rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   letter-spacing: 0;
   text-transform: none;

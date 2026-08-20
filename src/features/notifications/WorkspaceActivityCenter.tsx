@@ -183,10 +183,10 @@ function ActivityRow({ event, onSelect }: { event: WorkspaceOperatingEvent; onSe
       </span>
       <span className="min-w-0 flex-1">
         <span className={`block text-[13px] leading-[1.45] text-foreground ${actionable ? "font-semibold" : "font-medium"}`}>{event.summary}</span>
-        <Timestamp value={event.createdAt} context="grouped" className="mt-1 block sm:hidden" />
+        <Timestamp value={event.createdAt} context="activity" className="mt-1 block sm:hidden" />
       </span>
       <span className="hidden shrink-0 items-center gap-3 sm:flex">
-        <Timestamp value={event.createdAt} context="grouped" />
+        <Timestamp value={event.createdAt} context="activity" />
         {hasTarget ? <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground/40 transition-transform duration-150 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 motion-reduce:transition-none" aria-hidden="true" /> : null}
       </span>
       {hasTarget ? <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground/40 sm:hidden" aria-hidden="true" /> : null}
@@ -212,5 +212,9 @@ function dayLabel(date: Date, now: Date) {
   const days = Math.round((today.getTime() - target.getTime()) / 86_400_000);
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
-  return new Intl.DateTimeFormat(undefined, { month: "long", day: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  }).format(date);
 }

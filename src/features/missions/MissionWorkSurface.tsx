@@ -177,10 +177,10 @@ export function WorkSurface({
                 aria-expanded={open}
               >
                 <span className="min-w-0">
-                  <span className="block text-[14px] font-bold leading-snug text-foreground">
+                  <span className="os-list-title block text-foreground">
                     Step {checkpoint.phase} · {checkpoint.title}
                   </span>
-                  <span className="mt-1 block text-[11px] font-semibold text-muted-foreground">
+                  <span className="os-list-meta mt-1 block font-semibold text-muted-foreground">
                     {stageDone} of {stageTasks.length} done
                   </span>
                 </span>

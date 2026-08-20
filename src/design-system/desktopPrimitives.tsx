@@ -215,7 +215,7 @@ export function SkeletonRows({ count = 4, className }: { count?: number; classNa
   );
 }
 
-export type TimestampContext = "standalone" | "grouped" | "rail";
+export type TimestampContext = "standalone" | "grouped" | "rail" | "activity";
 
 export function formatProductTimestamp(value: string, context: TimestampContext = "standalone", now = new Date()) {
   const date = new Date(value);
@@ -231,6 +231,18 @@ export function formatProductTimestamp(value: string, context: TimestampContext 
     : { hour: "numeric", minute: "2-digit" }).format(date);
 
   if (context === "grouped") return time;
+  if (context === "activity") {
+    if (delta >= 0 && delta < 60_000) return "Just now";
+    if (dayDiff === 0) return time;
+    if (dayDiff === 1) return `Yesterday, ${time}`;
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  }
   if (delta >= 0 && delta < 60_000) return "Just now";
   if (context === "rail") {
     if (dayDiff === 0) return time;

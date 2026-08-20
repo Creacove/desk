@@ -58,6 +58,13 @@ describe("desktop design primitives", () => {
     expect(first).not.toBe(second);
   });
 
+  it("uses day-aware labels for the Activity Center without second-level noise", () => {
+    const now = new Date("2026-08-18T11:34:59+01:00");
+    expect(formatProductTimestamp("2026-08-18T11:34:30+01:00", "activity", now)).toBe("Just now");
+    expect(formatProductTimestamp("2026-08-18T09:30:00+01:00", "activity", now)).toMatch(/9:30/);
+    expect(formatProductTimestamp("2026-08-17T16:18:00+01:00", "activity", now)).toContain("Yesterday");
+  });
+
   it("locks the deliberate desktop composition widths and adaptive gutters", () => {
     expect(desktopCss).toContain("--os-content-max: 1320px");
     expect(desktopCss).toContain("max-width: var(--os-content-max)");

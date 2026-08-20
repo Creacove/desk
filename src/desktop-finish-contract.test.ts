@@ -15,6 +15,7 @@ const drawers = read("features/drawers/ProductionDrawers.tsx");
 const settings = read("features/settings/SettingsScreen.tsx");
 const staff = read("features/staff/StaffScreens.tsx");
 const split = read("features/music/SplitConfirmationPortal.tsx");
+const productionApp = read("app/ProductionApp.tsx");
 
 describe("OrderSounds desktop finish contract", () => {
   it("uses one semantic forward-action system instead of page-specific black buttons", () => {
@@ -34,12 +35,15 @@ describe("OrderSounds desktop finish contract", () => {
     expect(manager).not.toContain("Ask Manager anything");
   });
 
-  it("keeps Mission detail loading structural and Mission updates desktop-native", () => {
-    expect(missions).toContain("MissionRoomSkeleton");
-    expect(missions).toContain('max-w-[1120px]');
+  it("keeps known Mission detail visible during refresh and Mission updates desktop-native", () => {
+    expect(missions).not.toContain("MissionRoomSkeleton");
+    expect(missions).toContain('aria-busy={detailPending || undefined}');
+    expect(missions).toContain("os-room-rail");
     expect(missions).toContain('lg:grid-cols-[minmax(0,1fr)_auto]');
     expect(missions).toContain("<Timestamp");
     expect(missions).not.toContain('lg:text-[50px]');
+    expect(productionApp).toContain("detailPending={missionDetailPending}");
+    expect(missions).toContain('data-testid="mission-room-detail-skeleton"');
   });
 
   it("preserves real Mission update timestamps from the repository", () => {
@@ -62,7 +66,7 @@ describe("OrderSounds desktop finish contract", () => {
   it("uses horizontal desktop rows for secondary metadata", () => {
     expect(manager).toContain('grid-cols-[minmax(0,1fr)_auto]');
     expect(manager).toContain('<Timestamp value={conversation.lastUpdate} context="rail"');
-    expect(activity).toContain('<Timestamp value={event.createdAt} context="grouped"');
+    expect(activity).toContain('<Timestamp value={event.createdAt} context="activity"');
     expect(activity).toContain('hidden shrink-0 items-center gap-3 sm:flex');
     expect(missions).toContain('lg:grid-cols-[minmax(0,1fr)_auto]');
     expect(staff).toContain('grid-cols-[44px_minmax(0,1fr)_auto]');

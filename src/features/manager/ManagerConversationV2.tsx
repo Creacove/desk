@@ -237,7 +237,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
               <article key={message.id} data-testid={`manager-message-${isArtist ? "artist" : "manager"}`} className={`flex flex-col ${isArtist ? "items-end" : "items-start"}`}>
                 {isArtist ? (
                   <div className="max-w-[85%] rounded-[1.25rem] bg-foreground/[0.06] px-4 py-2.5 text-foreground sm:max-w-[75%]">
-                    <p className="whitespace-pre-wrap text-[15px] leading-[1.65]">{message.body}</p>
+                    <p className="os-body-copy whitespace-pre-wrap">{message.body}</p>
                     {message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
                   </div>
                 ) : (
@@ -306,7 +306,7 @@ function workspaceActions(message: ConversationViewModel["messages"][number]) {
 
 function ManagerText({ body, failed }: { body: string; failed?: boolean }) {
   const paragraphs = body.split(/\n{2,}/).map((value) => value.trim()).filter(Boolean);
-  return <div className={`grid gap-3 text-[15px] leading-[1.7] ${failed ? "text-destructive" : "text-foreground"}`}>{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 18)}`} className="whitespace-pre-wrap">{paragraph}</p>)}</div>;
+  return <div className={`os-body-copy grid gap-3 ${failed ? "text-destructive" : "text-foreground"}`}>{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 18)}`} className="whitespace-pre-wrap">{paragraph}</p>)}</div>;
 }
 
 function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: ManagerConversationV2Props["onOpenCreatedWork"] }) {
@@ -324,7 +324,7 @@ function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: Man
       {groups.map((group, index) => {
         if (group.kind === "draft") {
           return <article key={`draft-${index}`} data-testid="manager-document-result" className="grid gap-2 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4">
-            <div className="min-w-0"><p className="text-[11px] font-semibold text-muted-foreground">Draft saved</p><p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{group.item.title}</p></div>
+            <div className="min-w-0"><p className="os-list-meta font-semibold text-muted-foreground">Draft saved</p><p className="os-list-title mt-0.5 truncate text-foreground">{group.item.title}</p></div>
             {group.item.id ? <button type="button" onClick={() => openItem(group.item, "files")} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">Open draft</button> : null}
           </article>;
         }
@@ -333,9 +333,9 @@ function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: Man
           const song = group.musicItem;
           const mission = group.mission;
           return <section key={`workspace-${index}`} data-testid="manager-workspace-result" className="rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:px-3.5">
-            <p className="text-[11px] font-semibold text-muted-foreground">Song ready</p>
-            {song ? <p className="mt-0.5 text-[13px] font-semibold text-foreground">{song.title}</p> : null}
-            {mission ? <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">{mission.body || `${group.tasks.length} task${group.tasks.length === 1 ? "" : "s"} ready for the mission.`}</p> : null}
+            <p className="os-list-meta font-semibold text-muted-foreground">Song ready</p>
+            {song ? <p className="os-list-title mt-0.5 text-foreground">{song.title}</p> : null}
+            {mission ? <p className="os-list-meta mt-1 font-medium text-muted-foreground">{mission.body || `${group.tasks.length} task${group.tasks.length === 1 ? "" : "s"} ready for the mission.`}</p> : null}
             <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
               {song ? <button type="button" onClick={() => openItem(song)} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground">Open song</button> : null}
               {mission?.id ? <button type="button" onClick={() => openItem(mission)} className="text-[11px] font-semibold text-muted-foreground hover:text-foreground">View mission</button> : null}
@@ -345,7 +345,7 @@ function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: Man
 
         if (group.kind === "mission") {
           return <section key={`mission-${index}`} className="grid gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-3.5">
-            <div className="min-w-0"><p className="text-[13px] font-semibold text-foreground">{group.mission.title}</p><p className="mt-0.5 text-[11px] font-medium text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</p></div>
+            <div className="min-w-0"><p className="os-list-title text-foreground">{group.mission.title}</p><p className="os-list-meta mt-0.5 font-medium text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"}</p></div>
             {group.mission.id ? <button type="button" onClick={() => openItem(group.mission)} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">View mission</button> : null}
           </section>;
         }
@@ -353,14 +353,14 @@ function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: Man
         if (group.kind === "tasks") {
           const task = group.tasks[0];
           return <section key={`tasks-${index}`} className="grid gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-3.5">
-            <div className="min-w-0"><p className="text-[11px] font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>{task ? <p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{task.title}</p> : null}</div>
+            <div className="min-w-0"><p className="os-list-meta font-semibold text-muted-foreground">{group.tasks.length} {group.tasks.length === 1 ? "task" : "tasks"} ready</p>{task ? <p className="os-list-title mt-0.5 truncate text-foreground">{task.title}</p> : null}</div>
             {task?.id ? <button type="button" onClick={() => openItem(task)} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">View task</button> : null}
           </section>;
         }
 
         const item = group.item;
         return <section key={`${group.kind}-${index}`} className="grid gap-1 rounded-[14px] border border-foreground/8 bg-foreground/[0.012] px-3 py-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-4 sm:px-3.5">
-          <div className="min-w-0"><p className="text-[11px] font-semibold text-muted-foreground">{group.kind === "music" ? "Song ready" : "Work ready"}</p><p className="mt-0.5 truncate text-[13px] font-semibold text-foreground">{item.title}</p>{item.body ? <p className="mt-1 line-clamp-1 text-[11px] font-medium text-muted-foreground">{item.body}</p> : null}</div>
+          <div className="min-w-0"><p className="os-list-meta font-semibold text-muted-foreground">{group.kind === "music" ? "Song ready" : "Work ready"}</p><p className="os-list-title mt-0.5 truncate text-foreground">{item.title}</p>{item.body ? <p className="os-list-meta mt-1 line-clamp-1 font-medium text-muted-foreground">{item.body}</p> : null}</div>
           <button type="button" onClick={() => openItem(item)} className="text-left text-[11px] font-semibold text-muted-foreground hover:text-foreground sm:text-right">{group.kind === "music" ? "Open song" : "Open"}</button>
         </section>;
       })}

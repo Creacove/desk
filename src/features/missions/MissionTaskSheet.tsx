@@ -119,7 +119,7 @@ export function TaskSheet({
           ) : null}
 
           {task.purpose ? (
-            <p className="mt-5 max-w-[540px] text-[14px] font-medium leading-[1.65] text-foreground/80">{task.purpose}</p>
+            <p className="os-body-copy mt-5 w-full font-medium text-foreground/80">{task.purpose}</p>
           ) : null}
 
           {task.steps.length ? (
@@ -129,7 +129,7 @@ export function TaskSheet({
                 {task.steps.map((step, index) => (
                   <div key={`${task.id}-step-${index}`} className="grid grid-cols-[22px_minmax(0,1fr)] gap-2.5">
                     <span className="flex h-[22px] w-[22px] items-center justify-center rounded-full bg-foreground/[0.055] text-[11px] font-semibold text-muted-foreground">{index + 1}</span>
-                    <p className="pt-0.5 text-[13px] font-medium leading-[1.6] text-foreground/78">{step}</p>
+                    <p className="os-body-copy pt-0.5 font-medium text-foreground/78">{step}</p>
                   </div>
                 ))}
               </div>
@@ -142,8 +142,8 @@ export function TaskSheet({
                 {deliverables.map((deliverable) => (
                   <div key={deliverable.id} className="flex items-center justify-between gap-3 rounded-[14px] border border-foreground/8 px-3.5 py-3">
                     <div className="min-w-0">
-                      <p className="truncate text-[13px] font-semibold text-foreground">{deliverable.title}</p>
-                      <p className="mt-1 truncate text-[12px] font-medium text-muted-foreground">
+                      <p className="os-list-title truncate text-foreground">{deliverable.title}</p>
+                      <p className="os-list-meta mt-1 truncate font-medium text-muted-foreground">
                         {deliverable.fileName || humanDeliverableStatus(deliverable.status)}
                       </p>
                     </div>

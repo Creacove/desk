@@ -75,6 +75,28 @@ describe("mobile-first mission workspace", () => {
     expect(onRoomModeChange).toHaveBeenLastCalledWith(false);
   });
 
+  it("keeps known mission content mounted while fresh detail is loading", () => {
+    const { container } = renderWorkspace({ openRoomRequestKey: 1, detailPending: true });
+
+    expect(screen.getByRole("heading", { name: "Define the artist's 90-day position" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Step 1 · Positioning thesis/i })).toBeInTheDocument();
+    expect(container.querySelector(".animate-pulse")).not.toBeInTheDocument();
+  });
+
+  it("keeps the mission header visible and skeletons only unresolved room details", () => {
+    const summaryOnly = mission();
+    summaryOnly.checkpoints = [];
+    summaryOnly.notes = [];
+    summaryOnly.events = [];
+
+    renderWorkspace({ missions: [summaryOnly], openRoomRequestKey: 1, detailPending: true });
+
+    expect(screen.getByRole("heading", { name: summaryOnly.title })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Work" })).toBeInTheDocument();
+    expect(screen.getByTestId("mission-room-detail-skeleton")).toBeInTheDocument();
+    expect(screen.queryByText("No work yet")).not.toBeInTheDocument();
+  });
+
   it("keeps future-stage work visible but non-actionable until its dependency clears", () => {
     renderMission();
 

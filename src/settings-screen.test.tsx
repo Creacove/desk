@@ -29,6 +29,7 @@ describe("SettingsScreen", () => {
     expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tablist", { name: "Settings sections" })).toHaveClass("workspace-tab-rail");
+    expect(document.querySelector("#settings-panel-profile")).toHaveClass("os-room-rail");
     expect(screen.getByLabelText("Artist name")).toBeInTheDocument();
     expect(screen.queryByText("Artist intelligence")).not.toBeInTheDocument();
     expect(screen.queryByText("Chartmetric shows Burna Boy has strong verified artist context.")).not.toBeInTheDocument();

@@ -2146,7 +2146,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(source).not.toContain("group-hover:bg-brand-accent");
     expect(source).not.toContain("group-hover:bg-brand-accent/10 group-hover:text-brand-accent");
-    expect(source).toContain("hover:bg-foreground/[0.018]");
+    expect(source).toContain("hover:bg-foreground/[0.035]");
     expect(source).toContain("focus-visible:ring-2 focus-visible:ring-inset");
   });
 
@@ -3960,7 +3960,8 @@ describe("Clean production prototype-match shell", () => {
     const mobileTracklist = within(projectRoom).getByTestId("project-room-mobile-tracklist");
     const nightBusTrack = within(mobileTracklist).getByTestId("project-mobile-track-Night Bus");
     expect(mobileTracklist).toHaveClass("lg:hidden");
-    expect(nightBusTrack).toHaveClass("grid-cols-[28px_44px_minmax(0,1fr)_auto]");
+    expect(nightBusTrack).toHaveClass("grid-cols-[24px_48px_minmax(0,1fr)_auto]");
+    expect(nightBusTrack).toHaveClass("music-ledger-row");
     expect(nightBusTrack).not.toHaveClass("gap-3 px-5 py-4");
     expect(within(nightBusTrack).getByText("Night Bus")).toBeInTheDocument();
 

@@ -44,38 +44,40 @@ export function SettingsScreen({
 
   return (
     <section className="app-workspace app-workspace-reveal settings-workspace relative isolate min-w-0 pb-12">
-      <WorkspaceHeader title="Settings" />
+      <div className="os-room-rail">
+        <WorkspaceHeader title="Settings" />
 
-      <div className="mb-7 border-b border-foreground/8 sm:mb-8">
-        <WorkspaceTabRail
-          ariaLabel="Settings sections"
-          semanticTabs
-          idPrefix="settings"
-          items={tabs}
-          active={activeTab}
-          onChange={setActiveTab}
-          className="grid-cols-4 lg:max-w-[36rem]"
-        />
-      </div>
-
-      <div
-        id={`settings-panel-${activeTab}`}
-        role="tabpanel"
-        aria-labelledby={`settings-tab-${activeTab}`}
-        className="min-w-0"
-      >
-        {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
-        {activeTab === "workspace" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
-        {activeTab === "preferences" ? (
-          <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
-        ) : null}
-        {activeTab === "account" ? (
-          <AccountSettings
-            onUpdatePassword={onUpdatePassword}
-            onSignOut={onSignOut}
-            accountEmail={accountEmail}
+        <div className="mb-7 border-b border-foreground/8 sm:mb-8">
+          <WorkspaceTabRail
+            ariaLabel="Settings sections"
+            semanticTabs
+            idPrefix="settings"
+            items={tabs}
+            active={activeTab}
+            onChange={setActiveTab}
+            className="grid-cols-4 lg:max-w-[36rem]"
           />
-        ) : null}
+        </div>
+
+        <div
+          id={`settings-panel-${activeTab}`}
+          role="tabpanel"
+          aria-labelledby={`settings-tab-${activeTab}`}
+          className="os-room-rail min-w-0"
+        >
+          {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
+          {activeTab === "workspace" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
+          {activeTab === "preferences" ? (
+            <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
+          ) : null}
+          {activeTab === "account" ? (
+            <AccountSettings
+              onUpdatePassword={onUpdatePassword}
+              onSignOut={onSignOut}
+              accountEmail={accountEmail}
+            />
+          ) : null}
+        </div>
       </div>
     </section>
   );
@@ -122,7 +124,7 @@ function ProfileSettings({
   }
 
   return (
-    <div className="max-w-[58rem]">
+    <div className="w-full">
       <div data-testid="settings-mobile-profile-summary" className="mb-7 sm:hidden">
         <ArtistSummary profile={draft} compact />
       </div>
@@ -217,7 +219,7 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
         : "No active access";
 
   return (
-    <div className="max-w-[44rem]">
+    <div className="w-full">
       <SettingsSectionHeading title="Workspace" />
       <dl className="border-t border-foreground/8 text-[13px]">
         <AccessRow label="Access" value={accessLabel} />
@@ -263,7 +265,7 @@ function AccessRow({ label, value }: { label: string; value: string }) {
 
 function AccessEmptyState() {
   return (
-    <div className="max-w-[44rem]">
+    <div className="w-full">
       <SettingsSectionHeading title="Workspace" />
       <div className="border-t border-foreground/8 py-5">
         <p className="text-[13px] font-medium text-muted-foreground">Access details are unavailable while this workspace is loading.</p>
@@ -282,7 +284,7 @@ function PreferencesSettings({
   onThemeModeChange?: (mode: ThemeMode) => void;
 }) {
   return (
-    <div className="max-w-[44rem]">
+    <div className="w-full">
       <SettingsSectionHeading title="Appearance" />
       <AppearanceControl mode={mode} resolvedMode={resolvedMode} onChange={onThemeModeChange} />
     </div>
@@ -299,7 +301,7 @@ function AccountSettings({
   onSignOut?: () => void;
 }) {
   return (
-    <div className="max-w-[52rem] border-t border-foreground/8">
+    <div className="w-full border-t border-foreground/8">
       <AccountIdentity accountEmail={accountEmail} />
       {onUpdatePassword ? <PasswordSettings onUpdatePassword={onUpdatePassword} /> : null}
       {onSignOut ? (

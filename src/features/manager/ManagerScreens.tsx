@@ -53,8 +53,9 @@ export function ManagerOfficeScreen({
 
   return (
     <section className="app-workspace app-workspace-reveal pb-12">
-      <WorkspaceHeader title="Manager's Office" />
-      <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <div className="os-room-rail">
+        <WorkspaceHeader title="Manager's Office" />
+        <div className="grid min-w-0 gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_22rem]">
         <main className="min-w-0">
           <ManagerMissionContext
             result={missionGenesisResult}
@@ -76,14 +77,15 @@ export function ManagerOfficeScreen({
 
         <aside className="min-w-0 border-t border-foreground/8 pt-6 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
           <div className="flex items-center justify-between gap-3"><h2 className="text-[14px] font-semibold text-foreground">Conversations</h2>{conversations.length ? <span className="text-[12px] tabular-nums text-muted-foreground/55">{conversations.length}</span> : null}</div>
-          {conversationsPending ? (
+          {conversationsPending && !conversations.length ? (
             <div data-testid="manager-office-conversations-loading" className="mt-3 divide-y divide-foreground/7" aria-label="Loading conversations">{[0,1,2,3].map((index) => <div key={index} className="grid min-h-[50px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 py-3"><SkeletonBlock className="h-3.5 w-[min(82%,13rem)]" /><SkeletonBlock className="h-3 w-12" /></div>)}</div>
           ) : conversationsError ? (
             <div className="mt-4 border-l-2 border-destructive pl-3"><p className="text-[12px] font-medium leading-relaxed text-destructive">Conversations could not load.</p>{onRetryConversations ? <Button type="button" variant="secondary" size="sm" onClick={onRetryConversations} className="mt-3">Try again</Button> : null}</div>
           ) : conversations.length ? (
-            <div className="mt-3 divide-y divide-foreground/7">{conversations.map((conversation) => <button key={conversation.id} type="button" aria-label={conversation.topic} onClick={() => onConversation(conversation)} className="group grid min-h-[50px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-[8px] px-2 -mx-2 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:ring-2 focus-visible:ring-brand-accent/20"><p className="truncate text-[13px] font-semibold text-foreground/92">{conversation.topic}</p>{conversation.lastUpdate ? <Timestamp value={conversation.lastUpdate} context="rail" className="text-[12px] text-muted-foreground/58" /> : null}</button>)}</div>
+            <div className="os-list-frame mt-3 divide-y divide-foreground/7">{conversations.map((conversation) => <button key={conversation.id} type="button" aria-label={conversation.topic} onClick={() => onConversation(conversation)} className="os-list-row group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.025] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"><p className="os-list-title truncate text-foreground/92">{conversation.topic}</p>{conversation.lastUpdate ? <Timestamp value={conversation.lastUpdate} context="rail" className="os-list-meta text-muted-foreground/58" /> : null}</button>)}</div>
           ) : <p className="mt-4 text-[12px] font-medium leading-relaxed text-muted-foreground">No conversations yet. Start working with Manager.</p>}
         </aside>
+        </div>
       </div>
     </section>
   );
@@ -175,13 +177,6 @@ function slug(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g,
 export function ConversationWorkspace(props: ConversationWorkspaceProps) {
   const { conversation, onOpenCreatedWork, musicRepository, detailPending = false, detailError, onRetryDetail } = props;
   const [documentPreviewTarget,setDocumentPreviewTarget] = useState<DocumentPreviewTarget | null>(null);
-  const [showDetailLoading,setShowDetailLoading] = useState(false);
-
-  useEffect(() => {
-    if (!detailPending) { setShowDetailLoading(false); return; }
-    const timer = window.setTimeout(() => setShowDetailLoading(true),140);
-    return () => window.clearTimeout(timer);
-  },[detailPending]);
 
   async function openCreatedWorkInContext(type: "music_item" | "mission" | "task", id?: string, destination?: "files", artifactId?: string) {
     if (type === "music_item" && destination === "files" && id && artifactId && musicRepository) {
@@ -195,7 +190,7 @@ export function ConversationWorkspace(props: ConversationWorkspaceProps) {
   }
 
   if (detailError) return <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={props.onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office"><div data-testid="manager-conversation-load-error" className="os-reading-measure mx-auto px-1 py-8 sm:px-2"><p className="text-[13px] font-semibold text-foreground">Couldn't load this conversation</p><p className="mt-2 max-w-md text-[12px] font-medium leading-relaxed text-muted-foreground">{detailError}</p>{onRetryDetail ? <div className="mt-4"><Button variant="secondary" onClick={onRetryDetail}>Try again</Button></div> : null}</div></WorkspaceShell>;
-  if (detailPending && (showDetailLoading || !conversation.messages?.length)) return <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={props.onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office"><div data-testid="manager-conversation-loading" aria-label="Loading conversation" className="os-reading-measure mx-auto px-1 pb-28 pt-7 sm:px-2"><SkeletonBlock className="h-3 w-28" /><SkeletonBlock className="mt-4 h-4 w-5/6" /><SkeletonBlock className="mt-2 h-4 w-2/3" /><SkeletonBlock className="mt-8 ml-auto h-10 w-2/3 rounded-[18px]" /></div></WorkspaceShell>;
+  if (detailPending && !conversation.messages?.length) return <WorkspaceShell eyebrow="Manager conversation" title={conversation.topic} onBack={props.onBack} punctuateTitle={false} variant="conversation" backLabel="Back to Manager's Office"><div data-testid="manager-conversation-loading" aria-label="Loading conversation" className="os-reading-measure mx-auto px-1 pb-28 pt-7 sm:px-2"><SkeletonBlock className="h-3 w-28" /><SkeletonBlock className="mt-4 h-4 w-5/6" /><SkeletonBlock className="mt-2 h-4 w-2/3" /><SkeletonBlock className="mt-8 ml-auto h-10 w-2/3 rounded-[18px]" /></div></WorkspaceShell>;
 
   const presented = prepareManagerConversationForPresentation(conversation);
   return <>

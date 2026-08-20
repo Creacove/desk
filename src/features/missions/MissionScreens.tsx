@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronRight } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import {
   Button,
@@ -30,8 +30,6 @@ import {
 } from "./missionModel";
 
 type MissionListTab = "todo" | "progress" | "done";
-type PendingMissionDetail = { id: string; source: MissionViewModel };
-
 export function MissionsWorkspace({
   missions,
   selectedMissionId,
@@ -73,34 +71,21 @@ export function MissionsWorkspace({
 }) {
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
   const [surface, setSurface] = useState<MissionSurface>("work");
-  const [pendingDetailId, setPendingDetailId] = useState<string | null>(null);
-  const pendingDetailSource = useRef<PendingMissionDetail | null>(null);
-  const pendingDetailTimer = useRef<number | null>(null);
+  const [roomMissionSnapshot, setRoomMissionSnapshot] = useState<MissionViewModel | null>(null);
 
   const activeMissions = missions.filter((mission) => mission.status !== "complete");
   const completedMissions = missions.filter((mission) => mission.status === "complete");
-  const selected = missions.find((mission) => mission.id === selectedMissionId) ?? activeMissions[0] ?? missions[0] ?? null;
-  const roomPending = detailPending || Boolean(pendingDetailId && pendingDetailId === selected?.id);
+  const selectedFromData = missions.find((mission) => mission.id === selectedMissionId);
+  const selected = selectedFromData
+    ?? (roomMissionSnapshot?.id === selectedMissionId ? roomMissionSnapshot : null)
+    ?? activeMissions[0]
+    ?? missions[0]
+    ?? null;
+  const roomPending = detailPending;
 
   useEffect(() => {
-    const pending = pendingDetailSource.current;
-    if (!pending) return;
-    const current = missions.find((mission) => mission.id === pending.id);
-    if (!current || current === pending.source) return;
-    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
-    pendingDetailTimer.current = null;
-    pendingDetailSource.current = null;
-    setPendingDetailId(null);
-  }, [missions]);
-
-  useEffect(() => {
-    if (!pendingDetailId) return;
-    const timeout = window.setTimeout(() => {
-      if (pendingDetailSource.current?.id === pendingDetailId) pendingDetailSource.current = null;
-      setPendingDetailId((current) => current === pendingDetailId ? null : current);
-    }, 10_000);
-    return () => window.clearTimeout(timeout);
-  }, [pendingDetailId]);
+    if (selectedFromData) setRoomMissionSnapshot(selectedFromData);
+  }, [selectedFromData]);
 
   useEffect(() => {
     if (openRoomRequestKey <= 0) return;
@@ -110,10 +95,6 @@ export function MissionsWorkspace({
 
   useEffect(() => {
     if (listRequestKey <= 0) return;
-    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
-    pendingDetailTimer.current = null;
-    pendingDetailSource.current = null;
-    setPendingDetailId(null);
     setRoomMode("list");
     setSurface("work");
   }, [listRequestKey]);
@@ -123,47 +104,35 @@ export function MissionsWorkspace({
     window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   }, [roomMode, onRoomModeChange]);
 
-  useEffect(() => () => {
-    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
-  }, []);
-
-  function clearPendingDetail() {
-    if (pendingDetailTimer.current !== null) window.clearTimeout(pendingDetailTimer.current);
-    pendingDetailTimer.current = null;
-    pendingDetailSource.current = null;
-    setPendingDetailId(null);
-  }
-
   function openMission(mission: MissionViewModel) {
-    clearPendingDetail();
-    pendingDetailSource.current = { id: mission.id, source: mission };
-    pendingDetailTimer.current = window.setTimeout(() => {
-      if (pendingDetailSource.current?.id === mission.id) setPendingDetailId(mission.id);
-      pendingDetailTimer.current = null;
-    }, 120);
+    setRoomMissionSnapshot(mission);
     onSelectMission(mission.id);
     setSurface("work");
     setRoomMode("room");
   }
 
-  if (!missions.length && detailPending) {
+  if (!selected && detailPending) {
     return (
       <section className="app-workspace app-workspace-reveal pb-12" aria-busy="true">
-        <WorkspaceHeader title="Missions" />
-        <MissionListSkeleton />
+        <div className="os-room-rail">
+          <WorkspaceHeader title="Missions" />
+          <MissionListSkeleton />
+        </div>
       </section>
     );
   }
 
-  if (!missions.length) {
+  if (!selected && !missions.length) {
     return (
       <section className="app-workspace app-workspace-reveal pb-12">
-        <WorkspaceHeader title="Missions" />
-        <EmptyMissionState
-          onCreateFirstMission={onCreateFirstMission}
-          onOpenManager={onOpenManager}
-          firstMissionPending={firstMissionPending}
-        />
+        <div className="os-room-rail">
+          <WorkspaceHeader title="Missions" />
+          <EmptyMissionState
+            onCreateFirstMission={onCreateFirstMission}
+            onOpenManager={onOpenManager}
+            firstMissionPending={firstMissionPending}
+          />
+        </div>
       </section>
     );
   }
@@ -171,8 +140,10 @@ export function MissionsWorkspace({
   if (!selected || roomMode === "list") {
     return (
       <section className="app-workspace app-workspace-reveal pb-12">
-        <WorkspaceHeader title="Missions" />
-        <MissionList activeMissions={activeMissions} completedMissions={completedMissions} onOpen={openMission} />
+        <div className="os-room-rail">
+          <WorkspaceHeader title="Missions" />
+          <MissionList activeMissions={activeMissions} completedMissions={completedMissions} onOpen={openMission} />
+        </div>
       </section>
     );
   }
@@ -184,7 +155,6 @@ export function MissionsWorkspace({
       surface={surface}
       onSurface={setSurface}
       onBack={() => {
-        clearPendingDetail();
         setRoomMode("list");
       }}
       onApproveTask={onApproveTask}
@@ -266,7 +236,7 @@ function MissionList({
       />
 
       {visible.length ? (
-        <div className="divide-y divide-foreground/8 border-y border-foreground/8">
+        <div className="os-list-frame divide-y divide-foreground/8">
           {visible.map((mission) => (
             <MissionRow
               key={mission.id}
@@ -310,14 +280,14 @@ function MissionRow({
     <button
       type="button"
       onClick={onOpen}
-      className="group grid min-h-[78px] w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-5 py-4 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.018] focus-visible:bg-foreground/[0.022] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20 sm:min-h-[84px] lg:px-3 lg:-mx-3 lg:w-[calc(100%+1.5rem)]"
+      className="os-list-row group grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-5 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.018] focus-visible:bg-foreground/[0.022] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
     >
       <div className="min-w-0">
-        <h3 className="truncate font-display text-[16px] font-semibold tracking-[-0.012em] text-foreground sm:text-[17px]">{mission.title}</h3>
-        {currentTask ? <p className="mt-1.5 truncate text-[13px] font-medium text-foreground/72">{currentTask.title}</p> : null}
+        <h3 className="os-list-title truncate font-display text-foreground">{mission.title}</h3>
+        {currentTask ? <p className="os-list-meta mt-1.5 truncate font-medium text-foreground/72">{currentTask.title}</p> : null}
       </div>
       <div className="flex shrink-0 items-center gap-4">
-        <span className="hidden text-[12px] font-medium text-muted-foreground sm:inline">{doneCount} of {tasks.length} done</span>
+        <span className="os-list-meta hidden font-medium text-muted-foreground sm:inline">{doneCount} of {tasks.length} done</span>
         <ChevronRight className="h-4 w-4 text-muted-foreground/45 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
       </div>
     </button>
@@ -357,6 +327,9 @@ function MissionRoom({
   const notes = missionNotes(mission);
   const events = missionEvents(mission);
   const doneCount = tasks.filter(taskIsDone).length;
+  const workDetailsUnresolved = detailPending && checkpoints.length === 0;
+  const updateDetailsUnresolved = detailPending && notes.length === 0 && events.length === 0;
+  const detailsUnresolved = surface === "work" ? workDetailsUnresolved : updateDetailsUnresolved;
 
   const back = (
     <button
@@ -371,12 +344,9 @@ function MissionRoom({
   );
 
   return (
-    <section className="app-workspace app-workspace-reveal grid w-full min-w-0 gap-5 overflow-x-clip pb-14 sm:gap-7" aria-busy={detailPending || undefined}>
-      {detailPending ? (
-        <MissionRoomSkeleton back={back} />
-      ) : (
-        <>
-          <DetailHeader back={back} title={mission.title} meta={`${doneCount} of ${tasks.length} done`} />
+    <section className="app-workspace app-workspace-reveal w-full min-w-0 overflow-x-clip pb-14" aria-busy={detailPending || undefined}>
+      <div className="os-room-rail grid gap-5 sm:gap-7">
+          <DetailHeader back={back} title={mission.title} meta={workDetailsUnresolved ? "Loading details" : `${doneCount} of ${tasks.length} done`} />
 
           {mission.subjectType === "music_item" && mission.subjectId && onOpenMusicSubject ? (
             <div className="os-reading-measure">
@@ -396,7 +366,9 @@ function MissionRoom({
             ]}
           />
 
-          {surface === "work" ? (
+          {detailsUnresolved ? (
+            <MissionRoomDetailSkeleton surface={surface} />
+          ) : surface === "work" ? (
             <WorkSurface
               mission={mission}
               checkpoints={checkpoints}
@@ -408,30 +380,27 @@ function MissionRoom({
               onWorkWithManager={onWorkWithManager}
             />
           ) : <UpdatesSurface notes={notes} events={events} />}
-        </>
-      )}
+      </div>
     </section>
   );
 }
 
-function MissionRoomSkeleton({ back }: { back: ReactNode }) {
+function MissionRoomDetailSkeleton({ surface }: { surface: MissionSurface }) {
   return (
-    <div className="grid gap-7">
-      <div>
-        <div className="mb-5">{back}</div>
-        <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-          <div>
-            <SkeletonBlock className="h-9 w-[min(70%,38rem)]" />
-            <SkeletonBlock className="mt-2 h-9 w-[min(46%,24rem)]" />
+    <div
+      data-testid="mission-room-detail-skeleton"
+      aria-label={`Loading mission ${surface}`}
+      className="os-list-frame grid divide-y divide-foreground/8"
+    >
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="grid min-h-[76px] grid-cols-[minmax(0,1fr)_5rem] items-center gap-5 px-4 py-4">
+          <div className="grid gap-2.5">
+            <SkeletonBlock className={row === 0 ? "h-4 w-[58%]" : "h-4 w-[44%]"} />
+            <SkeletonBlock className="h-3 w-[28%]" />
           </div>
-          <SkeletonBlock className="h-4 w-20" />
+          <SkeletonBlock className="h-8 w-full rounded-[10px]" />
         </div>
-      </div>
-      <div className="grid max-w-[280px] grid-cols-2 gap-1 rounded-[11px] bg-foreground/[0.025] p-1">
-        <SkeletonBlock className="h-9" />
-        <SkeletonBlock className="h-9" />
-      </div>
-      <SkeletonRows count={4} />
+      ))}
     </div>
   );
 }
@@ -466,14 +435,14 @@ function UpdatesSurface({ notes, events }: { notes: MissionNoteViewModel[]; even
   }
 
   return (
-    <section className="w-full max-w-[1120px] border-y border-foreground/9">
+    <section className="os-list-frame w-full divide-y divide-foreground/8">
       {items.map((item) => (
         <article
           key={item.id}
-          className="grid min-w-0 gap-1 border-b border-foreground/8 py-4 last:border-b-0 sm:py-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-8"
+          className="os-list-row grid min-w-0 gap-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-8"
         >
-          <p className="os-reading-measure text-[14px] font-medium leading-[1.6] text-foreground/88">{item.message}</p>
-          <p className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-muted-foreground lg:justify-end lg:text-right">
+          <p className="os-list-title font-medium text-foreground/88">{item.message}</p>
+          <p className="os-list-meta flex shrink-0 items-center gap-1.5 font-medium text-muted-foreground lg:justify-end lg:text-right">
             <span>{item.actor}</span>
             {item.createdAt ? <><span aria-hidden="true">·</span><Timestamp value={item.createdAt} context="standalone" /></> : null}
           </p>
