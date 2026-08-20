@@ -199,7 +199,7 @@ npx tsc --noEmit --target ES2020 --module ESNext --moduleResolution Node --stric
 
 Expected: `vercel.json valid`, followed by a successful TypeScript exit.
 
-- [ ] **Step 2: Run the full automated suite**
+- [ ] **Step 2: Run the full automated suite as a follow-up quality gate**
 
 Run:
 
@@ -207,7 +207,7 @@ Run:
 npm test
 ```
 
-Expected: all repository tests pass.
+Expected: this follow-up suite is clean before unrelated application work is merged. It is not a prerequisite for the hosting cutover: the migration gate is the focused deployment contract suite, the production build, and the Vercel preview/production smoke checks. The clean baseline recorded 7 pre-existing failing test files (43 failures), which remain outside this hosting change.
 
 - [ ] **Step 3: Run the production build**
 
