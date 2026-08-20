@@ -5,6 +5,7 @@ import {
   type ArtistBriefPacket,
   type TodaysBriefOutput,
 } from "../../openaiTodaysBrief.ts";
+import { compactTodaysBriefOperatingContext } from "../../todaysBriefOperatingContext.ts";
 
 export type ManagerEvidenceRead = {
   label: string;
@@ -106,7 +107,7 @@ function projectOperatingContextForBrief(managerIntelligencePacket: ManagerPacke
   const context = record(internalOnly.operating_context);
   if (!Object.keys(context).length) return null;
   const currentMusic = record(context.currentMusic);
-  return {
+  const projected = {
     version: stringValue(context.version),
     truthPriority: stringArray(context.truthPriority).slice(0, 4),
     activeMissions: arrayValue(context.activeMissions).slice(0, 6),
@@ -123,6 +124,7 @@ function projectOperatingContextForBrief(managerIntelligencePacket: ManagerPacke
     meaningfulEvents: arrayValue(context.meaningfulEvents).slice(0, 12),
     previousBrief: record(context.previousBrief),
   };
+  return compactTodaysBriefOperatingContext(projected) as Record<string, unknown>;
 }
 
 function compactArtistBriefPacket(packet: ArtistBriefPacket): ArtistBriefPacket {

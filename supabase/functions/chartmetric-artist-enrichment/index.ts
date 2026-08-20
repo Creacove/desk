@@ -88,6 +88,16 @@ Deno.serve(withAppErrorCapture("chartmetric-artist-enrichment", async (request) 
     const providerId = await getChartmetricProvider(authClient);
     const sourceConnectionId =
       queuedJob.sourceConnectionId ?? input.sourceConnectionId ?? (await createChartmetricArtistConnection(authClient, input, providerId, artistProfile));
+    const sourceConnection = sourceConnectionId && !queuedJob.sourceConnectionId
+      ? await loadSourceConnection(authClient, input, sourceConnectionId)
+      : null;
+    if (!queuedJob.sourceConnectionId && !sourceConnection?.id) {
+      throw new Error("Chartmetric source connection was not found in the current artist scope.");
+    }
+    const sourceConnectionMetadata = {
+      ...(isRecord(sourceConnection?.metadata) ? sourceConnection.metadata : {}),
+      ...queuedJob.metadata,
+    };
 
     jobId =
       queuedJob.sourceSyncJobId ??
@@ -107,11 +117,12 @@ Deno.serve(withAppErrorCapture("chartmetric-artist-enrichment", async (request) 
       refreshToken: requireEnv("CHARTMETRIC_REFRESH_TOKEN"),
       baseUrl: Deno.env.get("CHARTMETRIC_BASE_URL") || undefined,
     });
+    queuedJob.metadata = sourceConnectionMetadata;
     const resolvedChartmetricArtistId = await resolveChartmetricArtistId(input, queuedJob, artistProfile, chartmetric);
     if (!resolvedChartmetricArtistId) {
       throw new Error("No exact Chartmetric artist match was found from the Spotify artist ID.");
     }
-    await persistResolvedChartmetricArtistId(authClient, sourceConnectionId, queuedJob.metadata, resolvedChartmetricArtistId);
+    await persistResolvedChartmetricArtistId(authClient, input, sourceConnectionId, sourceConnectionMetadata, resolvedChartmetricArtistId);
 
     const enrichment = await chartmetric.requestJson<Record<string, unknown>>(
       `/api/artist/${encodeURIComponent(resolvedChartmetricArtistId)}`,
@@ -222,16 +233,23 @@ async function loadSourceConnection(supabase: any, input: ArtistEnrichmentInput,
 
 async function persistResolvedChartmetricArtistId(
   supabase: any,
+  input: ArtistEnrichmentInput,
   sourceConnectionId: string,
   existingMetadata: Record<string, unknown>,
   chartmetricArtistId: string,
 ) {
   if (readString(existingMetadata.chartmetric_artist_id) === chartmetricArtistId) return;
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("source_connections")
     .update({ metadata: { ...existingMetadata, chartmetric_artist_id: chartmetricArtistId } })
-    .eq("id", sourceConnectionId);
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("id", sourceConnectionId)
+    .select("id")
+    .maybeSingle();
   if (error) throw error;
+  if (!data?.id) throw new Error("Chartmetric source connection was not found in the current artist scope.");
 }
 
 async function loadArtistProfile(supabase: any, input: ArtistEnrichmentInput): Promise<ArtistProfileRow | null> {
@@ -323,6 +341,7 @@ async function createChartmetricArtistConnection(
     .select("id")
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
     .eq("provider_id", providerId)
     .eq("handle_or_external_ref", handleOrExternalRef)
     .maybeSingle();

@@ -1,4 +1,9 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
+const MAX_CONTEXT_ARRAY_ITEMS = 24;
+const MAX_CONTEXT_OBJECT_KEYS = 32;
+const MAX_CONTEXT_DEPTH = 5;
+
+export const TODAYS_BRIEF_CONTEXT_TEXT_LIMIT = 1200;
 
 export type OperatingBriefContextInput = {
   accountId: string;
@@ -26,7 +31,8 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
 
   const latest = data?.[0] ?? null;
   const completedAt = typeof latest?.completed_at === "string" ? Date.parse(latest.completed_at) : NaN;
-  if (Number.isFinite(completedAt) && Date.now() - completedAt < DAY_MS) {
+  const now = Date.now();
+  if (Number.isFinite(completedAt) && completedAt <= now && now - completedAt < DAY_MS) {
     return { attempted: false, refreshed: false, reason: "fresh" as const };
   }
 
@@ -135,20 +141,44 @@ export async function loadTodaysBriefOperatingContext(db: any, input: OperatingB
       "Manager Reads and the previous Today's Brief are derived analysis and may be stale.",
       "Recent activity matters only when it changed a decision, deliverable, deadline, approval, blocker, mission, or music state.",
     ],
-    activeMissions,
-    priorityTasks,
+    activeMissions: compactContextRows(activeMissions),
+    priorityTasks: compactContextRows(priorityTasks),
     currentMusic: {
-      songs: currentSongs,
-      projects: currentProjects,
+      songs: compactContextRows(currentSongs),
+      projects: compactContextRows(currentProjects),
     },
-    rightsState,
-    currentMusicReads,
-    recentConversations,
-    durableMemory: memory.slice(0, 6),
-    recentAgentReports: agentReports.slice(0, 4),
-    meaningfulEvents: events.slice(0, 12),
-    previousBrief,
+    rightsState: compactContextRows(rightsState),
+    currentMusicReads: compactContextRows(currentMusicReads),
+    recentConversations: compactContextRows(recentConversations),
+    durableMemory: compactContextRows(memory.slice(0, 6)),
+    recentAgentReports: compactContextRows(agentReports.slice(0, 4)),
+    meaningfulEvents: compactContextRows(events.slice(0, 12)),
+    previousBrief: previousBrief ? compactContextValue(previousBrief) as Record<string, any> : null,
   };
+}
+
+function compactContextRows(rows: any[]): Array<Record<string, any>> {
+  return rows.map((row) => compactContextValue(row) as Record<string, any>);
+}
+
+function compactContextValue(value: unknown, depth = 0): unknown {
+  if (typeof value === "string") {
+    const text = value.trim();
+    if (text.length <= TODAYS_BRIEF_CONTEXT_TEXT_LIMIT) return text;
+    return `${text.slice(0, TODAYS_BRIEF_CONTEXT_TEXT_LIMIT - 1).trimEnd()}…`;
+  }
+  if (value === null || typeof value !== "object") return value;
+  if (depth >= MAX_CONTEXT_DEPTH) return "[context depth limit]";
+  if (Array.isArray(value)) {
+    return value.slice(0, MAX_CONTEXT_ARRAY_ITEMS).map((item) => compactContextValue(item, depth + 1));
+  }
+  return Object.fromEntries(
+    Object.entries(value).slice(0, MAX_CONTEXT_OBJECT_KEYS).map(([key, item]) => [key, compactContextValue(item, depth + 1)]),
+  );
+}
+
+export function compactTodaysBriefOperatingContext(value: unknown) {
+  return compactContextValue(value);
 }
 
 async function selectMany(db: any, table: string, columns: string, input: OperatingBriefContextInput, limit: number) {
