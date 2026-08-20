@@ -222,14 +222,16 @@ export function formatProductTimestamp(value: string, context: TimestampContext 
   if (Number.isNaN(date.getTime())) return "Recently";
 
   const delta = now.getTime() - date.getTime();
-  if (delta >= 0 && delta < 60_000) return "Just now";
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dayDiff = Math.round((today.getTime() - target.getTime()) / 86_400_000);
-  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  const time = new Intl.DateTimeFormat(undefined, context === "grouped"
+    ? { hour: "numeric", minute: "2-digit", second: "2-digit" }
+    : { hour: "numeric", minute: "2-digit" }).format(date);
 
   if (context === "grouped") return time;
+  if (delta >= 0 && delta < 60_000) return "Just now";
   if (context === "rail") {
     if (dayDiff === 0) return time;
     if (dayDiff === 1) return "Yesterday";

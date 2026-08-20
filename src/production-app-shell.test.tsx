@@ -163,6 +163,10 @@ describe("Clean production prototype-match shell", () => {
     expect(productionAppSource).toContain("event.targetId === activeTodayBriefRun.id");
   });
 
+  it("keeps background brief reconciliation enabled without realtime rollout", () => {
+    expect(productionAppSource).toContain("liveUpdatesEnabled || activeWorkspaceRuns.length > 0");
+  });
+
   it("rehydrates the active persisted setup run on reload", async () => {
     const runningSetupWorkspace = {
       ...workspace,
@@ -1576,6 +1580,45 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findByRole("heading", { name: "What should I do with the UK signal today?", exact: true })).toBeInTheDocument();
     expect(generationModes).toEqual(["operating"]);
   }, 20000);
+
+  it("hydrates a completed background Today's Brief without a page reload", async () => {
+    const repositories = repositoriesFor("Nova Vale");
+    const initialBrief = (await repositories.desk.loadDesk()).todayBrief;
+    const refreshedBrief: TodayBriefViewModel = {
+      ...initialBrief,
+      headlineRead: "The completed background brief is visible without reloading the page.",
+      managerSynthesisRunId: "brief-run-background",
+    };
+    let currentBrief = initialBrief;
+    const loadRunStatus = vi.fn(async () => ({ status: "completed" }));
+    repositories.desk = {
+      ...repositories.desk,
+      loadBrief: vi.fn(async () => currentBrief),
+      generateTodaysBrief: vi.fn(async () => {
+        currentBrief = refreshedBrief;
+        return { status: "processing" as const, runId: "brief-run-background" };
+      }),
+      loadTodaysBriefRunStatus: loadRunStatus,
+    };
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(workspace)}
+        repositories={repositories}
+        initialView="labelHQ"
+      />,
+    );
+
+    expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
+    expect(screen.getByText(initialBrief.headlineRead)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Today's Brief" }));
+
+    await waitFor(() => expect(loadRunStatus).toHaveBeenCalledWith("brief-run-background"), { timeout: 3000 });
+    expect(await screen.findByText(refreshedBrief.headlineRead)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh Today's Brief" })).not.toHaveAttribute("aria-busy", "true");
+  }, 20000);
+
   it("keeps Today's Attention in the active visual mode instead of inverting the primary card", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.desk = {
