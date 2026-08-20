@@ -33,5 +33,7 @@ describe("Song Room manager hierarchy", () => {
 
   it("gives an ungenerated project review an intentional next step", () => {
     expect(source).toContain("Ask Manager for a concise view of the release package before choosing the next move.");
+    expect(source).toMatch(/<Button[\s\S]*?Review this project/);
+    expect(source).not.toContain('bg-foreground px-4 text-[12px] font-semibold text-background transition-opacity');
   });
 });

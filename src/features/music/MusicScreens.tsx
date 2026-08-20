@@ -1681,9 +1681,16 @@ function MusicProjectBrief({
       ) : (
         <div className="os-reading-measure mt-4">
           <p className="text-[13px] font-medium leading-6 text-muted-foreground/78">Ask Manager for a concise view of the release package before choosing the next move.</p>
-          <button type="button" aria-label={managerReadButtonLabel("project", project.managerReadStatus)} onClick={onGenerateBrief} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-[10px] bg-foreground px-4 text-[12px] font-semibold text-background transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-accent/25">
-            <Sparkles className="h-3.5 w-3.5" /> {failed ? "Try again" : "Review this project"}
-          </button>
+          <Button
+            type="button"
+            size="lg"
+            aria-label={managerReadButtonLabel("project", project.managerReadStatus)}
+            onClick={onGenerateBrief}
+            leadingIcon={<Sparkles className="h-3.5 w-3.5" aria-hidden="true" />}
+            className="mt-4 rounded-[10px]"
+          >
+            {failed ? "Try again" : "Review this project"}
+          </Button>
         </div>
       )}
     </section>
