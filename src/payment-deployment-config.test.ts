@@ -47,4 +47,50 @@ describe("payment deployment configuration", () => {
     expect(config).toContain('VITE_PRIVATE_BETA_ENABLED = "true"');
     expect(config).not.toContain("[build.environment]\n  VITE_PRIVATE_BETA_ENABLED");
   });
+
+  it("defines the Vite production build and SPA fallback for Vercel", () => {
+    const config = JSON.parse(read("vercel.json")) as {
+      framework?: string;
+      buildCommand?: string;
+      outputDirectory?: string;
+      rewrites?: Array<{ source?: string; destination?: string }>;
+    };
+
+    expect(config.framework).toBe("vite");
+    expect(config.buildCommand).toBe("npm run build");
+    expect(config.outputDirectory).toBe("dist");
+    expect(config.rewrites).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "/(.*)", destination: "/index.html" }),
+    ]));
+  });
+
+  it("keeps the browser hardening headers on Vercel", () => {
+    const config = JSON.parse(read("vercel.json")) as {
+      headers?: Array<{ source?: string; headers?: Array<{ key?: string; value?: string }> }>;
+    };
+    const headers = config.headers?.flatMap((entry) => entry.headers ?? []) ?? [];
+    const values = new Map(headers.map((header) => [header.key, header.value]));
+
+    expect(values.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(values.get("X-Frame-Options")).toBe("DENY");
+    expect(values.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+    expect(values.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=(), payment=(self)");
+    expect(values.get("Content-Security-Policy-Report-Only")).toContain("https://cdn.paddle.com");
+    expect(values.get("Content-Security-Policy-Report-Only")).toContain("https://eu.i.posthog.com");
+  });
+
+  it("preserves the country endpoint contract in the Vercel adapter", () => {
+    const edge = read("api", "billing-country.ts");
+    expect(edge).toContain('runtime: "edge"');
+    expect(edge).toContain("x-vercel-ip-country");
+    expect(edge).toContain("/^[A-Z]{2}$/");
+    expect(edge).toContain('"Cache-Control": "private, no-store"');
+    expect(edge).toContain('"Vary": "Cookie"');
+    expect(edge).not.toContain("OTHERS");
+  });
+
+  it("pins the Vercel build to the same Node major used by Netlify", () => {
+    const packageJson = JSON.parse(read("package.json")) as { engines?: { node?: string } };
+    expect(packageJson.engines?.node).toBe("22.x");
+  });
 });
