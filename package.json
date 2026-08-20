@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "beta:batch": "node --env-file=.env scripts/create-beta-batch.mjs",
     "dev": "vite",
