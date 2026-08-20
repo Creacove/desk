@@ -29,7 +29,6 @@ export type PriorityItem = {
   actionLabel: string;
   target: CleanProductionView;
 };
-
 export type AttentionItem = {
   title: string;
   body: string;
@@ -364,7 +363,6 @@ export type ReleaseOpportunityTargetViewModel = {
     shareUrl?: string;
   };
 };
-
 export type ReleaseOpportunityArtifactViewModel = {
   id: string;
   musicItemId: string;
@@ -902,3 +900,4 @@ export type CleanProductionRepositories = {
     loadEvidence: () => Promise<EvidenceItemViewModel[]>;
   };
 };
+

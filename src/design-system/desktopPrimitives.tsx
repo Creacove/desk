@@ -241,7 +241,7 @@ export function formatProductTimestamp(value: string, context: TimestampContext 
       ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
       hour: "numeric",
       minute: "2-digit",
-    }).format(date);
+  }).format(date);
   }
   if (delta >= 0 && delta < 60_000) return "Just now";
   if (context === "rail") {

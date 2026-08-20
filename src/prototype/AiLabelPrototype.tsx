@@ -66,7 +66,6 @@ type SourceReadinessItem = {
   detail: string;
   category: "System coverage" | "Artist/team connection" | "Artist/team upload" | "User context";
 };
-
 type ConnectorMark = {
   label: string;
   status: "active" | "needs_connection" | "needs_upload" | "system";
@@ -1939,7 +1938,6 @@ const MobileBottomNav = ({
     </nav>
   );
 };
-
 export default function AiLabelPrototype() {
   const [musicObjectsList, setMusicObjectsList] = useState<MusicObject[]>(musicObjects);
   const [externalSigning, setExternalSigning] = useState<{ songId: string; contributorName: string } | null>(null);
@@ -6412,3 +6410,4 @@ const MusicDistributionHub = ({
     </div>
   );
 };
+
