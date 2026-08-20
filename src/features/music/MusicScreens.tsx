@@ -3,6 +3,7 @@ import { BorderBeam } from "border-beam";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
+import { Button } from "../../design-system/desktopPrimitives";
 import { createClientRequestId } from "../../lib/requestId";
 import { cn } from "../../lib/utils";
 import { createActiveRunFallback } from "../../services/activeRunFallback";
@@ -1906,9 +1907,16 @@ function MusicDetailTop({ object, label, onBack, onStageChange, onOpenManager }:
             </select>
           ) : <span data-testid={lockedReleasedStage ? "mobile-locked-song-stage" : undefined} className="text-[11px] font-semibold text-muted-foreground/62">{stageValue}</span>}
           {onOpenManager ? (
-            <button type="button" onClick={onOpenManager} aria-label="Chat with Manager" className="inline-flex h-9 shrink-0 items-center gap-2 rounded-[10px] bg-brand-accent px-3 text-[11px] font-bold text-white shadow-sm transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-brand-accent/35">
-              <MessageCircle className="h-3.5 w-3.5" aria-hidden="true" /> Manager
-            </button>
+            <Button
+              type="button"
+              size="md"
+              onClick={onOpenManager}
+              aria-label="Chat with Manager"
+              leadingIcon={<MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />}
+              className="rounded-[10px] px-4 shadow-sm"
+            >
+              Manager
+            </Button>
           ) : null}
         </div>
       </div>
@@ -1940,15 +1948,16 @@ function MusicDetailTop({ object, label, onBack, onStageChange, onOpenManager }:
           </div>
 
           {onOpenManager ? (
-            <button
+            <Button
               type="button"
+              size="lg"
               onClick={onOpenManager}
               aria-label="Chat with Manager"
-              className="inline-flex h-11 shrink-0 items-center gap-2.5 self-center rounded-[12px] bg-brand-accent px-4.5 text-[12px] font-bold text-white shadow-[0_8px_24px_rgba(154,59,220,0.22)] transition-[opacity,transform] hover:-translate-y-px hover:opacity-92 focus:outline-none focus:ring-2 focus:ring-brand-accent/35"
+              leadingIcon={<MessageCircle className="h-4 w-4" aria-hidden="true" />}
+              className="self-center rounded-[12px] px-5 text-[13px] shadow-[0_8px_24px_rgba(154,59,220,0.22)] hover:-translate-y-px hover:opacity-92"
             >
-              <MessageCircle className="h-4 w-4" aria-hidden="true" />
               Chat with Manager
-            </button>
+            </Button>
           ) : null}
         </div>
       </div>

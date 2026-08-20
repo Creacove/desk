@@ -16,6 +16,14 @@ describe("Song Room manager hierarchy", () => {
     expect(source).toContain('xl:text-[48px]');
   });
 
+  it("uses the shared action primitive for Manager entry points", () => {
+    expect(source).toContain('import { Button } from "../../design-system/desktopPrimitives";');
+    expect(source).toMatch(/<Button[\s\S]*?aria-label="Chat with Manager"/);
+    expect(source).toContain('size="md"');
+    expect(source).toContain('size="lg"');
+    expect(source).not.toContain('px-4.5');
+  });
+
   it("collapses the empty Manager review into a quiet row", () => {
     expect(source).toContain('Manager review');
     expect(source).toContain('Review record');
