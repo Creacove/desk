@@ -99,6 +99,31 @@ describe("payment deployment configuration", () => {
     await expect(response.json()).resolves.toEqual({ countryCode: "NG" });
   });
 
+  it("completes the response through Vercel's serverless response object", () => {
+    const state = { status: 0, headers: new Map<string, string>(), body: null as unknown };
+    const response = {
+      status(code: number) {
+        state.status = code;
+        return response;
+      },
+      setHeader(name: string, value: string) {
+        state.headers.set(name, value);
+      },
+      json(body: unknown) {
+        state.body = body;
+        return body;
+      },
+    };
+    const handler = billingCountry as unknown as (request: unknown, response: typeof response) => unknown;
+
+    handler({ headers: { "x-vercel-ip-country": "NG" } }, response);
+
+    expect(state.status).toBe(200);
+    expect(state.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(state.headers.get("Vary")).toBe("Cookie");
+    expect(state.body).toEqual({ countryCode: "NG" });
+  });
+
   it("pins the Vercel build to the same Node major used by Netlify", () => {
     const packageJson = JSON.parse(read("package.json")) as { engines?: { node?: string } };
     expect(packageJson.engines?.node).toBe("22.x");

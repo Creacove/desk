@@ -4,6 +4,12 @@ type RequestLike = {
   headers?: Headers | Record<string, string | string[] | undefined>;
 };
 
+type ResponseLike = {
+  status(code: number): ResponseLike;
+  setHeader(name: string, value: string): void;
+  json(body: unknown): unknown;
+};
+
 function readCountryHeader(request: RequestLike) {
   const headers = request.headers;
   if (!headers) return undefined;
@@ -14,12 +20,21 @@ function readCountryHeader(request: RequestLike) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-export default function handler(request: RequestLike) {
+export default function handler(request: RequestLike, response?: ResponseLike) {
   const candidate = readCountryHeader(request);
   const normalized = typeof candidate === "string" ? candidate.trim().toUpperCase() : undefined;
   const countryCode = normalized && /^[A-Z]{2}$/.test(normalized) ? normalized : undefined;
+  const body = countryCode ? { countryCode } : {};
 
-  return new Response(JSON.stringify(countryCode ? { countryCode } : {}), {
+  if (response) {
+    response.status(200);
+    response.setHeader("Content-Type", "application/json");
+    response.setHeader("Cache-Control", "private, no-store");
+    response.setHeader("Vary", "Cookie");
+    return response.json(body);
+  }
+
+  return new Response(JSON.stringify(body), {
     headers: {
       "Content-Type": "application/json",
       "Cache-Control": "private, no-store",
