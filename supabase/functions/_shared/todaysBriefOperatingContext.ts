@@ -180,7 +180,6 @@ function compactContextValue(value: unknown, depth = 0): unknown {
 export function compactTodaysBriefOperatingContext(value: unknown) {
   return compactContextValue(value);
 }
-
 async function selectMany(db: any, table: string, columns: string, input: OperatingBriefContextInput, limit: number) {
   const { data, error } = await db
     .from(table)
