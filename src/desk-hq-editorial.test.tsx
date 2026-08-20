@@ -78,6 +78,12 @@ describe("Home premium briefing", () => {
     expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
   });
 
+  it("keeps the Activity action comfortably tappable", () => {
+    renderHome();
+
+    expect(screen.getByRole("button", { name: "Open Activity Center, 3 unread" })).toHaveClass("min-h-11");
+  });
+
   it("renders only meaningful Right Now work and preserves the existing destinations", () => {
     const onNavigate = vi.fn();
     const onDrawer = vi.fn();

@@ -21,6 +21,7 @@ describe("Song Room manager hierarchy", () => {
     expect(source).toMatch(/<Button[\s\S]*?aria-label="Chat with Manager"/);
     expect(source).toContain('size="md"');
     expect(source).toContain('size="lg"');
+    expect(source).toContain('min-h-11 rounded-[10px] px-4');
     expect(source).not.toContain('px-4.5');
   });
 

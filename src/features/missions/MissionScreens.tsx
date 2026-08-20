@@ -221,7 +221,7 @@ function EmptyMissionState({
   firstMissionPending: boolean;
 }) {
   return (
-    <section className="mt-8 max-w-[760px] border-t border-foreground/8 pt-8">
+    <section className="os-reading-measure mt-8 border-t border-foreground/8 pt-8">
       <p className="font-display text-[26px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[30px]">No missions yet</p>
       <div className="mt-6 flex flex-wrap gap-2.5">
         <Button onClick={onCreateFirstMission} pending={firstMissionPending} size="lg">
@@ -379,7 +379,7 @@ function MissionRoom({
           <DetailHeader back={back} title={mission.title} meta={`${doneCount} of ${tasks.length} done`} />
 
           {mission.subjectType === "music_item" && mission.subjectId && onOpenMusicSubject ? (
-            <div className="max-w-[760px]">
+            <div className="os-reading-measure">
               <SongContextAttachment title={mission.musicSubject} onOpenSong={() => onOpenMusicSubject({ id: mission.subjectId!, title: mission.musicSubject, type: "music_item" })} />
             </div>
           ) : null}
@@ -472,7 +472,7 @@ function UpdatesSurface({ notes, events }: { notes: MissionNoteViewModel[]; even
           key={item.id}
           className="grid min-w-0 gap-1 border-b border-foreground/8 py-4 last:border-b-0 sm:py-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:gap-8"
         >
-          <p className="max-w-[760px] text-[14px] font-medium leading-[1.6] text-foreground/88">{item.message}</p>
+          <p className="os-reading-measure text-[14px] font-medium leading-[1.6] text-foreground/88">{item.message}</p>
           <p className="flex shrink-0 items-center gap-1.5 text-[12px] font-medium text-muted-foreground lg:justify-end lg:text-right">
             <span>{item.actor}</span>
             {item.createdAt ? <><span aria-hidden="true">·</span><Timestamp value={item.createdAt} context="standalone" /></> : null}

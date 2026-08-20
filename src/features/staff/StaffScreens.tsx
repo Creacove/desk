@@ -16,7 +16,7 @@ export function StaffWorkspace({
   return (
     <section className="app-workspace app-workspace-reveal pb-12">
       <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
-      <p className="mb-6 max-w-[680px] text-[14px] font-medium leading-[1.6] text-muted-foreground">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
+      <p className="os-reading-measure mb-6 text-[14px] font-medium leading-[1.6] text-muted-foreground">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
 
       <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">
         {orderedAgents.map((agent) => {
@@ -60,7 +60,7 @@ export function StaffWorkspace({
               </span>
               <span className="min-w-0">
                 <span className="block text-[15px] font-semibold text-foreground">{agent.name}</span>
-                <span className="mt-1 block max-w-[680px] text-[13px] font-medium leading-[1.55] text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
+                <span className="os-reading-measure mt-1 block text-[13px] font-medium leading-[1.55] text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
               </span>
               <span className={`justify-self-end whitespace-nowrap text-[12px] font-medium ${locked ? "text-muted-foreground/65" : "text-brand-accent"}`}>
                 {locked ? "Locked" : "Available now"}
@@ -76,7 +76,7 @@ export function StaffWorkspace({
 export function LockedAgentWorkspace({ agent, onBack }: { agent: AgentViewModel; onBack: () => void }) {
   return (
     <WorkspaceShell eyebrow={agent.name} title={agent.workspaceTitle} onBack={onBack}>
-      <div className="grid min-h-[320px] max-w-[760px] place-items-center border-y border-foreground/8 px-6 py-10 text-center">
+      <div className="os-reading-measure grid min-h-[320px] place-items-center border-y border-foreground/8 px-6 py-10 text-center">
         <div className="max-w-sm">
           <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
             <Lock className="h-[18px] w-[18px]" aria-hidden="true" />

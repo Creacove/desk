@@ -69,7 +69,8 @@ describe("OrderSounds desktop finish contract", () => {
   });
 
   it("locks deliberate desktop widths, readable content, and adaptive gutters", () => {
-    expect(premiumCss).toContain("max-width: 1320px");
+    expect(premiumCss).toContain("--os-content-max: 1320px");
+    expect(premiumCss).toContain("max-width: var(--os-content-max)");
     expect(premiumCss).toContain("max-width: 1120px");
     expect(premiumCss).toContain("max-width: 760px");
     expect(premiumCss).toContain("padding-inline: 32px !important");

@@ -29,7 +29,7 @@ describe("Catalog and Manager beauty system", () => {
   it("anchors Manager room navigation to the workspace edge while preserving the conversation reading column", () => {
     expect(components).toContain('<div className="flex w-full items-center gap-2">');
     expect(components).not.toContain('mx-auto flex max-w-[48rem] items-center gap-3');
-    expect(readFileSync("src/features/manager/ManagerScreens.tsx", "utf8")).toContain('max-w-[48rem]');
+    expect(readFileSync("src/features/manager/ManagerScreens.tsx", "utf8")).toContain('os-reading-measure');
   });
 
   it("removes stacked Manager labels and avoids an empty history column", () => {

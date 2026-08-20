@@ -141,7 +141,7 @@ function ActivityButton({ count, onOpen }: { count: number; onOpen: () => void }
       aria-label={count ? `Open Activity Center, ${count} unread` : "Open Activity Center"}
       onClick={onOpen}
       leadingIcon={<Bell className="h-4 w-4" aria-hidden="true" />}
-      className="relative"
+      className="relative min-h-11"
     >
       <span>Activity</span>
       {count ? (
@@ -170,7 +170,7 @@ function HomeManagerComposer({ onAskManager }: { onAskManager: (body: string) =>
       onSubmit={submit}
       ariaLabel="Work with Manager"
       placeholder="What do you want to work on?"
-      className="max-w-[900px]"
+      className="os-form-measure"
     />
   );
 }

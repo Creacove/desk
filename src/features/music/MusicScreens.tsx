@@ -1923,7 +1923,7 @@ function MusicDetailTop({ object, label, onBack, onStageChange, onOpenManager }:
               onClick={onOpenManager}
               aria-label="Chat with Manager"
               leadingIcon={<MessageCircle className="h-3.5 w-3.5" aria-hidden="true" />}
-              className="rounded-[10px] px-4 shadow-sm"
+              className="min-h-11 rounded-[10px] px-4 shadow-sm"
             >
               Manager
             </Button>
