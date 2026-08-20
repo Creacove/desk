@@ -709,7 +709,7 @@ function CleanProductionWorkspace({
   }, [activeTodayBriefRun, repositories.desk]);
 
   const { status: liveUpdateStatus } = useWorkspaceLiveSync({
-    enabled: liveUpdatesEnabled && Boolean(workspace?.artistWorkspaceId),
+    enabled: Boolean(workspace?.artistWorkspaceId) && (liveUpdatesEnabled || activeWorkspaceRuns.length > 0),
     client: supabaseClient,
     userId: analyticsUser.id,
     workspaceId: workspace?.artistWorkspaceId ?? "",
