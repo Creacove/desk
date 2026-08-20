@@ -335,15 +335,16 @@ function ManagerRead({
           <article
             key={`${segment.label}-${index}`}
             data-testid="desk-manager-read-segment"
-            className="min-w-0 px-5 py-5 sm:px-7 sm:py-7"
+            className="grid min-w-0 grid-cols-1 gap-2 px-5 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-6 sm:px-7 sm:py-7"
           >
-            <div className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4">
-              <span className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
-              <div className="min-w-0">
-                <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/68">{segment.label}</p>
-                <p className="mt-2 max-w-[42rem] break-words text-[15px] font-medium leading-[1.65] text-foreground/84 [overflow-wrap:anywhere] sm:text-[16px]">{segment.body}</p>
-              </div>
+            <div
+              data-testid="desk-manager-read-metadata"
+              className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-baseline gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
+            >
+              <span data-testid="desk-manager-read-number" className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
+              <p data-testid="desk-manager-read-label" className="font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/68">{segment.label}</p>
             </div>
+            <p data-testid="desk-manager-read-body" className="min-w-0 max-w-[42rem] break-words text-[15px] font-medium leading-[1.65] text-foreground/84 [overflow-wrap:anywhere] sm:text-[16px]">{segment.body}</p>
           </article>
         ))}
       </div>
