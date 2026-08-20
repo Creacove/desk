@@ -322,7 +322,7 @@ function ManagerRead({
   if (!segments.length) return null;
 
   return (
-    <section data-testid="desk-manager-read" className="mx-auto mt-9 w-full max-w-[1120px] sm:mt-11">
+    <section data-testid="desk-manager-read" className="os-briefing-rail mx-auto mt-9 sm:mt-11">
       <div className="flex items-end justify-between gap-4">
         <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</p>
         <Button type="button" variant="ghost" size="sm" onClick={onEvidence}>Evidence</Button>

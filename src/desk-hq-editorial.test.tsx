@@ -134,7 +134,7 @@ describe("Home premium briefing", () => {
     const firstSegment = segments[0];
 
     expect({
-      centeredRail: managerRead.classList.contains("mx-auto") && managerRead.classList.contains("max-w-[1120px]"),
+      centeredRail: managerRead.classList.contains("os-briefing-rail") && managerRead.classList.contains("mx-auto"),
       singleColumn: rail.classList.contains("grid-cols-1") && !rail.classList.contains("lg:grid-cols-2"),
       firstRowPaddingException: firstSegment.classList.contains("lg:first:pl-0"),
     }).toEqual({
