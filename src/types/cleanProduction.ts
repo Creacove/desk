@@ -130,8 +130,17 @@ export type AgentViewModel = {
 export type ManagerRunStepViewModel = {
   id: string;
   label: string;
-  detail: string;
-  state: "pending" | "running" | "complete" | "failed";
+  status: "queued" | "running" | "completed" | "failed";
+  detail?: string;
+  state?: "pending" | "running" | "complete" | "failed";
+};
+
+export type ManagerRunViewModel = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  steps: ManagerRunStepViewModel[];
+  streamedText?: string;
+  error?: string;
 };
 
 export type ManagerConversationContextQuestion = {
@@ -242,6 +251,7 @@ export type ConversationViewModel = {
   summary: string;
   prompt: string;
   lastUpdate?: string;
+  activeRun?: ManagerRunViewModel;
   messages: Array<{
     id: string;
     speaker: "artist" | "manager";
@@ -410,7 +420,7 @@ export type MissionTaskResultViewModel = {
 export type MissionTaskDeliverableViewModel = {
   id: string;
   title: string;
-  status: "uploaded" | "checking" | "accepted" | "needs_revision" | "failed";
+  status: "missing" | "uploading" | "uploaded" | "checking" | "accepted" | "needs_revision" | "failed";
   documentId?: string;
   fileName?: string;
   validationSummary?: string;
@@ -488,7 +498,7 @@ export type MissionEventViewModel = {
 export type MissionViewModel = {
   id: string;
   title: string;
-  status: "active" | "candidate" | "complete" | "archived" | "cancelled";
+  status: "active" | "candidate" | "blocked" | "complete" | "archived" | "cancelled";
   progress: number;
   review: string;
   summary: string;
@@ -598,8 +608,8 @@ export type MusicObjectViewModel = {
   splits?: {
     status: string;
     summary: string;
-    writers: string;
-    producers: string;
+    writers?: string;
+    producers?: string;
     publishingTotal?: string;
     masterTotal?: string;
     contributors?: Array<{

@@ -4652,7 +4652,7 @@ const CheckpointsWorkspace = ({
                       <div className="mt-4 pl-9 space-y-2">
                          {phaseTasks.map(task => {
                            const result = taskResultById.get(task.id);
-                           const isDone = result?.status === "completed" || result?.status === "approved" || result?.status === "revised";
+                           const isDone = result?.status === "completed" || task.approvalState === "approved" || result?.status === "revised";
                            const isBlocked = result?.status === "blocked" || task.approvalState === "blocked";
                            return (
                              <div key={task.id} className="flex items-center gap-2">
