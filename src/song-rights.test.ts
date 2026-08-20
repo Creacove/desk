@@ -12,10 +12,12 @@ function song(overrides: Partial<MusicObjectViewModel> = {}): MusicObjectViewMod
     lifecycleStage: "mastering",
     blocker: "None",
     sourceLimit: "Private song data",
-    managerReadStatus: "not_generated",
     linkedMissionIds: [],
     linkedTaskCount: 0,
     ...overrides,
+    status: overrides.status ?? "active",
+    sourceKind: overrides.sourceKind ?? "manual",
+    managerReadStatus: overrides.managerReadStatus ?? "not_generated",
   };
 }
 
@@ -83,3 +85,4 @@ describe("song rights state", () => {
     expect(record).toContain("not legal advice or a qualified electronic-signature certificate");
   });
 });
+

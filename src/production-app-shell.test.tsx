@@ -6088,6 +6088,8 @@ describe("Clean production prototype-match shell", () => {
         blocker: "Missing split proof",
         sourceKind: "manual",
         sourceLimit: "Test song.",
+        status: "active",
+        managerReadStatus: "not_generated",
         nextMove: "Confirm split details.",
         linkedMissionIds: [],
         linkedTaskCount: 0,
@@ -6924,3 +6926,4 @@ function walk(path: string, files: string[]) {
     }
   }
 }
+
