@@ -2,6 +2,29 @@
    This restores optical hierarchy flattened by the legacy app-light compatibility
    rules while keeping the simplified mobile composition intact. */
 
+:root {
+  --os-content-max: 1320px;
+  --os-reading-max: 720px;
+  --os-form-max: 900px;
+  --os-briefing-max: 1120px;
+}
+
+.os-reading-measure {
+  width: 100%;
+  max-width: var(--os-reading-max);
+}
+
+.os-form-measure {
+  width: 100%;
+  max-width: var(--os-form-max);
+}
+
+.os-briefing-rail {
+  width: 100%;
+  max-width: var(--os-briefing-max);
+  margin-inline: auto;
+}
+
 .os-action-button {
   font-weight: 600 !important;
   user-select: none;
@@ -118,7 +141,7 @@
 
   .app-workspace {
     width: 100%;
-    max-width: 1320px;
+    max-width: var(--os-content-max);
     margin-inline: auto;
   }
 

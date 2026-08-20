@@ -1755,7 +1755,7 @@ function SongOverviewRead({
           {readBusy ? <AppThinkingOrb surface="normal" state="composing" size={20} /> : managerReadButtonIcon(song.managerReadStatus)}
         </button>
       </div>
-      <div className="mt-4 max-w-3xl">
+      <div className="os-reading-measure mx-auto mt-4">
         {failed ? <p className="mb-3 text-[11px] font-medium text-muted-foreground">Couldn’t refresh just now. Showing the last read.</p> : null}
         <p className="whitespace-pre-line text-[14px] font-medium leading-6 text-foreground/90 sm:text-[15px] sm:leading-6">{read.body}</p>
       </div>
@@ -1814,7 +1814,7 @@ function MusicManagerReadContent({
             ))}
           </div>
 
-          <div className="px-4 py-5 sm:px-5">
+          <div className="os-reading-measure mx-auto px-4 py-5 sm:px-5">
             <p className="whitespace-pre-line text-[14px] font-semibold leading-[1.75] text-foreground/90">{read.body}</p>
           </div>
         </>

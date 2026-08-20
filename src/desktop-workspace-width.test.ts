@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 const music = readFileSync("src/features/music/MusicScreens.tsx", "utf8");
+const desktopCss = readFileSync("src/design-system/desktop-premium.css", "utf8");
 
 describe("Song Room desktop workspace width", () => {
   it("does not center Song Room tabs inside a narrow reading column", () => {
@@ -15,5 +16,13 @@ describe("Song Room desktop workspace width", () => {
     expect(music).toContain("Manager review");
     expect(music).toContain("Review record");
     expect(music).not.toContain("Get Manager’s take on this record.");
+  });
+
+  it("defines one shared width vocabulary for desk content and reading surfaces", () => {
+    expect(desktopCss).toContain("--os-content-max: 1320px");
+    expect(desktopCss).toContain("--os-reading-max: 720px");
+    expect(desktopCss).toContain("--os-form-max: 900px");
+    expect(desktopCss).toContain(".os-reading-measure");
+    expect(desktopCss).toContain(".os-form-measure");
   });
 });
