@@ -40,7 +40,7 @@ describe("song rights state", () => {
       masterAllocated: 100,
       confirmedCount: 1,
       contributorCount: 2,
-      headline: "1 of 2 collaborators confirmed",
+      headline: "1 of 2 ownership participants confirmed",
     });
   });
 
@@ -66,7 +66,7 @@ describe("song rights state", () => {
       fileAssets: [{ assetId: "split-file", group: "Documents", label: "Signed split sheet.pdf", status: "Uploaded", action: "Open", assetType: "split_sheet" }],
     }));
     expect(state).toMatchObject({ state: "document_on_file", externalRecordId: "split-file" });
-    expect(state.description).toContain("not independently verified");
+    expect(state.description).toContain("without Desk pretending it independently verified");
   });
 
   it("exports a portable record without claiming qualified legal execution", () => {

@@ -67,7 +67,6 @@ describe("Manager conversation context boundary", () => {
         lifecycleStage: "mastering",
         assets: [{ id: "asset-master", assetType: "final_master", title: "Final master", status: "uploaded" }],
         rights: { status: "pending_confirmation", publishingTotal: 100, masterTotal: 100 },
-        analysis: [{ metric: "tempo_bpm", value: 102, unit: "bpm", confidence: "medium" }],
         recentActivity: [{ eventType: "music_asset_uploaded", summary: "Uploaded Final master.", createdAt: "2026-08-09T00:00:00Z" }],
         managerRead: {
           id: "read-night-bus",
