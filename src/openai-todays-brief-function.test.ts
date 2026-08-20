@@ -167,8 +167,12 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(setupMapPrompt).toContain("first sentence");
     expect(setupMapPrompt).toContain("catalog, projects, tracks, audience geography, platform behavior");
     expect(setupMapPrompt).toContain("intelligenceSnapshot metrics must support the specific thesis of this artist");
-    expect(operatingPrompt).toContain("End the Manager's Read with one useful thing to do today");
-    expect(operatingPrompt).not.toContain("Artist Operating Map");
+    expect(setupMapPrompt).toContain("The Manager's Read has exactly 4 sections");
+    expect(setupMapPrompt).toContain("Do not pretend any of those exist");
+    expect(operatingPrompt).toContain("The Manager's Read still has exactly 4 sections");
+    expect(operatingPrompt).toContain("may be named when it genuinely exists in operatingContext");
+    expect(operatingPrompt).toContain("do not create a separate 'Today's Move'");
+    expect(operatingPrompt).not.toContain("Write the setup-map brief as an Artist Operating Map");
   });
 
   it("returns setup music read targets and dispatches their Manager Reads after the setup-map packet", () => {
@@ -233,7 +237,7 @@ describe("OpenAI Today's Brief generation function", () => {
   });
 
   it("allows complete Today's Brief copy instead of forcing short character caps", () => {
-    expect(promptSource).toContain("3-5 short paragraphs separated by blank lines");
+    expect(promptSource).toContain("Write snapshotSummary as a rich, dense synthesis (250-500 characters)");
     expect(promptSource).toContain("complete sentences");
     expect(promptSource).toContain("Do not stop mid-sentence");
     expect(promptSource).toContain("Metric value must be the atomic number or short fact only");
@@ -243,22 +247,23 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(promptSource).not.toContain('headlineRead: { type: "string", maxLength: 180 }');
     expect(promptSource).not.toContain('snapshotSummary: { type: "string", maxLength: 280 }');
     expect(promptSource).not.toContain('managerRead: { type: "string", maxLength: 1800 }');
+    expect(promptSource).toContain('managerRead: { type: "string", maxLength: 5000 }');
   });
 
   it("sanitizes style-policy terms without hard-failing a usable brief", () => {
     const output = parseTodaysBriefOutput({
-      headlineRead: "Nova Vale has a clear campaign starting point.",
+      headlineRead: "Nova Vale has a clear Chartmetric starting point.",
       intelligenceSnapshot: [
         {
           title: "Artist Intelligence",
-          insight: "The campaign read is centered on London.",
+          insight: "The Chartmetric read is centered on London.",
           metrics: [
-            { label: "Campaign signal", value: "1.2M", context: "campaign context", evidenceIds: ["ev-1"] },
+            { label: "Chartmetric signal", value: "1.2M", context: "Chartmetric context", evidenceIds: ["ev-1"] },
           ],
         },
       ],
-      snapshotSummary: "The first campaign read has a usable shape.",
-      managerRead: "The campaign should start with London because the artist already has public pull there.",
+      snapshotSummary: "The first Chartmetric read has a usable shape.",
+      managerRead: "The Chartmetric read should start with London because the artist already has public pull there.",
       sourceLine: "Based on your saved artist profile, current music in view, public audience signals, and source limits.",
       confidence: "medium",
       claimAudit: [{ claim: "London is the lead signal.", evidenceIds: ["ev-1"], limitation: "Public signal only." }],
@@ -276,7 +281,7 @@ describe("OpenAI Today's Brief generation function", () => {
       ]),
     ].join(" ");
 
-    expect(visibleCopy).not.toMatch(/\bcampaign\b/i);
+    expect(visibleCopy).not.toMatch(/\bChartmetric\b/i);
     expect(output.managerRead).toContain("London");
     expect(output.intelligenceSnapshot[0].metrics[0].evidenceIds).toEqual(["ev-1"]);
   });
@@ -438,8 +443,9 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(promptSource).toContain("Write as the artist's senior Manager");
     expect(promptSource).toContain("Do not name backend sources or data vendors");
     expect(promptSource).toContain("If a sentence could be said to another artist, delete it");
-    expect(promptSource).toContain("This is the first setup brief after onboarding");
-    expect(promptSource).toContain("Do not pretend a campaign, mission, rollout, or release plan already exists");
+    const setupMapPrompt = buildTodaysBriefInstructions("setup-map");
+    expect(setupMapPrompt).toContain("This is the first setup brief after onboarding");
+    expect(setupMapPrompt).toContain("Do not pretend any of those exist");
     expect(promptSource).toContain("Do not explain that the working catalog is not the full discography");
     expect(promptSource).toContain("Do not lead with missing data");
     expect(promptSource).toContain("derive ratios, contrasts, and ranking insights");

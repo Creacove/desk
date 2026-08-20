@@ -59,8 +59,8 @@ describe("song Campaign UX", () => {
     );
 
     expect(screen.getByText("Campaign")).toBeInTheDocument();
-    expect(screen.getByText("Continue with Manager")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Talk to Manager" }));
+    expect(screen.getByRole("button", { name: "Work with Manager" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Work with Manager" }));
     fireEvent.click(screen.getByRole("button", { name: "Open campaign" }));
     expect(onManager).toHaveBeenCalledTimes(1);
     expect(onCampaign).toHaveBeenCalledTimes(1);

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import billingCountry from "../api/billing-country";
 
 const read = (...parts: string[]) => readFileSync(join(process.cwd(), ...parts), "utf8");
 
@@ -46,5 +47,90 @@ describe("payment deployment configuration", () => {
     expect(config).toContain("[context.production.environment]");
     expect(config).toContain('VITE_PRIVATE_BETA_ENABLED = "true"');
     expect(config).not.toContain("[build.environment]\n  VITE_PRIVATE_BETA_ENABLED");
+  });
+
+  it("defines the Vite production build and SPA fallback for Vercel", () => {
+    const config = JSON.parse(read("vercel.json")) as {
+      framework?: string;
+      buildCommand?: string;
+      outputDirectory?: string;
+      rewrites?: Array<{ source?: string; destination?: string }>;
+    };
+
+    expect(config.framework).toBe("vite");
+    expect(config.buildCommand).toBe("npm run build");
+    expect(config.outputDirectory).toBe("dist");
+    expect(config.rewrites).toEqual(expect.arrayContaining([
+      expect.objectContaining({ source: "/(.*)", destination: "/index.html" }),
+    ]));
+  });
+
+  it("keeps the browser hardening headers on Vercel", () => {
+    const config = JSON.parse(read("vercel.json")) as {
+      headers?: Array<{ source?: string; headers?: Array<{ key?: string; value?: string }> }>;
+    };
+    const headers = config.headers?.flatMap((entry) => entry.headers ?? []) ?? [];
+    const values = new Map(headers.map((header) => [header.key, header.value]));
+
+    expect(values.get("X-Content-Type-Options")).toBe("nosniff");
+    expect(values.get("X-Frame-Options")).toBe("DENY");
+    expect(values.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
+    expect(values.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=(), payment=(self)");
+    expect(values.get("Content-Security-Policy-Report-Only")).toContain("https://cdn.paddle.com");
+    expect(values.get("Content-Security-Policy-Report-Only")).toContain("https://eu.i.posthog.com");
+  });
+
+  it("preserves the country endpoint contract in the Vercel adapter", () => {
+    const edge = read("api", "billing-country.ts");
+    expect(edge).toContain('runtime: "edge"');
+    expect(edge).toContain("x-vercel-ip-country");
+    expect(edge).toContain("/^[A-Z]{2}$/");
+    expect(edge).toContain('"Cache-Control": "private, no-store"');
+    expect(edge).toContain('"Vary": "Cookie"');
+    expect(edge).not.toContain("OTHERS");
+  });
+
+  it("reads the country header from Vercel's deployed request shape", async () => {
+    const response = billingCountry({
+      headers: { "x-vercel-ip-country": "ng" },
+    } as unknown as Request) as Response;
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ countryCode: "NG" });
+  });
+
+  it("completes the response through Vercel's serverless response object", () => {
+    const state = { status: 0, headers: new Map<string, string>(), body: null as unknown };
+    type VercelResponseMock = {
+      status(code: number): VercelResponseMock;
+      setHeader(name: string, value: string): void;
+      json(body: unknown): unknown;
+    };
+    const response: VercelResponseMock = {
+      status(code: number) {
+        state.status = code;
+        return response;
+      },
+      setHeader(name: string, value: string) {
+        state.headers.set(name, value);
+      },
+      json(body: unknown) {
+        state.body = body;
+        return body;
+      },
+    };
+    const handler = billingCountry as unknown as (request: unknown, response: VercelResponseMock) => unknown;
+
+    handler({ headers: { "x-vercel-ip-country": "NG" } }, response);
+
+    expect(state.status).toBe(200);
+    expect(state.headers.get("Cache-Control")).toBe("private, no-store");
+    expect(state.headers.get("Vary")).toBe("Cookie");
+    expect(state.body).toEqual({ countryCode: "NG" });
+  });
+
+  it("pins the Vercel build to the same Node major used by Netlify", () => {
+    const packageJson = JSON.parse(read("package.json")) as { engines?: { node?: string } };
+    expect(packageJson.engines?.node).toBe("22.x");
   });
 });

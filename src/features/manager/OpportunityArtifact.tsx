@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronDown, Clipboard, ExternalLink, RotateCcw, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { Check, ChevronDown, Clipboard, ExternalLink, FileText, Link2, RotateCcw, Sparkles, X } from "lucide-react";
 import type { ReleaseOpportunityArtifactViewModel, ReleaseOpportunityTargetViewModel } from "../../types/cleanProduction";
 
 export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome, onOpenFiles, onOpenMission, onRetry }: {
@@ -14,11 +14,16 @@ export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome,
   const [preparingTargetId, setPreparingTargetId] = useState<string | null>(null);
   const [savingOutcomeTargetId, setSavingOutcomeTargetId] = useState<string | null>(null);
   const [copiedTargetId, setCopiedTargetId] = useState<string | null>(null);
+  const [outcomeTargetId, setOutcomeTargetId] = useState<string | null>(null);
+  const [outcomeStatus, setOutcomeStatus] = useState<ReleaseOpportunityTargetViewModel["status"]>("submitted_manually");
+  const [outcomeNote, setOutcomeNote] = useState("");
+  const [savingOutcome, setSavingOutcome] = useState(false);
 
   const visibleTargets = useMemo(
     () => [...artifact.shortlist, ...artifact.watch],
     [artifact.shortlist, artifact.watch],
   );
+  const outcomeTarget = visibleTargets.find((target) => target.id === outcomeTargetId);
 
   // A parent may currently fire-and-forget the Manager request. Do not clear the
   // visual lock merely because that callback returned void; clear it only when the
@@ -77,6 +82,18 @@ export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome,
     }
   }
 
+  async function saveOutcome() {
+    if (!outcomeTarget || !outcomeNote.trim() || savingOutcome) return;
+    setSavingOutcome(true);
+    try {
+      await onRecordOutcome(outcomeTarget, { status: outcomeStatus, manualOutcome: outcomeNote.trim() });
+      setOutcomeTargetId(null);
+      setOutcomeNote("");
+    } finally {
+      setSavingOutcome(false);
+    }
+  }
+
   return (
     <article data-testid="release-opportunity-artifact" className="mt-5 border-t border-foreground/8 pt-5">
       <header>
@@ -98,6 +115,7 @@ export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome,
                 <button
                   type="button"
                   aria-expanded={expanded}
+                  aria-label={`Open ${target.targetName}`}
                   onClick={() => setExpandedTargetId((current) => current === target.id ? null : target.id)}
                   className="group flex w-full items-center gap-3 py-3.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25"
                 >
@@ -123,6 +141,16 @@ export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome,
                       <p className="mt-3 max-w-[42rem] text-[11px] font-medium leading-relaxed text-muted-foreground">
                         {target.requirements.slice(0, 2).join(" · ")}
                       </p>
+                    ) : null}
+
+                    {target.publicContact ? (
+                      <p className="mt-3 text-[11px] font-medium text-muted-foreground">
+                        Public contact: <ContactLink contact={target.publicContact} /> {target.publicContact.verifiedAt ? <span className="text-muted-foreground/60">· verified {target.publicContact.verifiedAt.slice(0, 10)}</span> : null}
+                      </p>
+                    ) : null}
+
+                    {/spotify\s+(?:editorial|for artists)|editorial\s+playlist/i.test(`${target.platform ?? ""} ${target.targetName}`) ? (
+                      <p className="mt-3 text-[11px] font-medium leading-relaxed text-muted-foreground">Spotify editorial pitches go through Spotify for Artists. Manager will prepare the pitch, not submit it for you.</p>
                     ) : null}
 
                     <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -151,6 +179,18 @@ export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome,
                       {target.targetUrl ? <TextLink href={target.targetUrl}>Submission route</TextLink> : null}
                       {target.sourceUrl ? <TextLink href={target.sourceUrl}>View source</TextLink> : null}
 
+                      {target.package?.shareUrl ? (
+                        <TextLink href={target.package.shareUrl} icon={<Link2 className="h-3.5 w-3.5" aria-hidden="true" />}>Open share link</TextLink>
+                      ) : (
+                        <button type="button" onClick={() => void onOpenFiles(artifact.musicItemId)} className="inline-flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground">
+                          <FileText className="h-3.5 w-3.5" aria-hidden="true" /> Open Files to create share link
+                        </button>
+                      )}
+
+                      <button type="button" onClick={() => { setOutcomeTargetId(target.id); setOutcomeNote(target.manualOutcome ?? ""); }} className="inline-flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground">
+                        <Check className="h-3.5 w-3.5" aria-hidden="true" /> Record outcome
+                      </button>
+
                       {pitchReady && !submitted ? (
                         <button
                           type="button"
@@ -167,8 +207,31 @@ export function OpportunityArtifact({ artifact, onPreparePitch, onRecordOutcome,
                     </div>
 
                     {pitchReady ? (
-                      <p className="mt-3 line-clamp-3 max-w-[42rem] whitespace-pre-wrap text-[12px] font-medium leading-relaxed text-muted-foreground">{target.package?.pitchBody}</p>
+                      <div className="mt-3 border-t border-foreground/8 pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-semibold text-foreground">Pitch draft</p>
+                        </div>
+                        <p className="mt-2 line-clamp-3 max-w-[42rem] whitespace-pre-wrap text-[12px] font-medium leading-relaxed text-muted-foreground">{target.package?.pitchBody}</p>
+                      </div>
                     ) : null}
+
+                    {outcomeTarget?.id === target.id ? (
+                      <div className="mt-4 border-t border-foreground/8 pt-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-[11px] font-semibold text-foreground">What happened?</p>
+                          <button type="button" aria-label="Close outcome form" onClick={() => setOutcomeTargetId(null)} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" aria-hidden="true" /></button>
+                        </div>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[10rem_1fr_auto]">
+                          <select value={outcomeStatus} onChange={(event) => setOutcomeStatus(event.target.value as ReleaseOpportunityTargetViewModel["status"])} className="h-10 rounded-lg border border-foreground/10 bg-background px-2.5 text-[12px] font-medium text-foreground">
+                            {(["submitted_manually", "replied", "accepted", "declined", "watch"] as const).map((status) => <option key={status} value={status}>{status.replace(/_/g, " ")}</option>)}
+                          </select>
+                          <input value={outcomeNote} onChange={(event) => setOutcomeNote(event.target.value)} placeholder="Add a short note" className="h-10 min-w-0 rounded-lg border border-foreground/10 bg-background px-3 text-[12px] font-medium text-foreground outline-none focus:border-brand-accent/35" />
+                          <button type="button" onClick={() => void saveOutcome()} disabled={!outcomeNote.trim() || savingOutcome} className="h-10 rounded-lg bg-foreground px-3 text-[11px] font-semibold text-background disabled:opacity-40">{savingOutcome ? "Saving…" : "Save"}</button>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {target.limitations?.length ? <p className="mt-3 text-[10px] font-medium leading-relaxed text-muted-foreground/65">{target.limitations.slice(0, 2).join(" · ")}</p> : null}
                   </div>
                 ) : null}
               </section>
@@ -208,10 +271,15 @@ function fitLabel(target: ReleaseOpportunityTargetViewModel) {
   return "Needs verification";
 }
 
-function TextLink({ href, children }: { href: string; children: string }) {
+function TextLink({ href, children, icon }: { href: string; children: string; icon?: ReactNode }) {
   return (
     <a href={href} target="_blank" rel="noreferrer" className="inline-flex min-h-9 items-center gap-1.5 text-[11px] font-semibold text-muted-foreground hover:text-foreground">
-      {children}<ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+      {icon ?? <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />}{children}
     </a>
   );
+}
+
+function ContactLink({ contact }: { contact: NonNullable<ReleaseOpportunityTargetViewModel["publicContact"]> }) {
+  const isEmail = contact.kind === "email";
+  return <a href={isEmail ? `mailto:${contact.value}` : contact.value} target={isEmail ? undefined : "_blank"} rel={isEmail ? undefined : "noreferrer"} className="font-semibold text-foreground underline decoration-foreground/20 underline-offset-2">{contact.value}</a>;
 }

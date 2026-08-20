@@ -96,7 +96,7 @@ export type TodaysBriefOutput = {
 
 export type TodaysBriefPromptMode = "operating" | "setup-map";
 
-export const TODAYS_BRIEF_PROMPT_VERSION = "todays-brief-grounded-v2";
+export const TODAYS_BRIEF_PROMPT_VERSION = "todays-brief-grounded-v3";
 export const TODAYS_BRIEF_PACKET_VERSION = "todays-brief-packet-v2";
 export const TODAYS_BRIEF_SCHEMA_VERSION = "setup_todays_brief_v1";
 
@@ -130,9 +130,6 @@ const visibleCopyReplacements: Array<[RegExp, string]> = [
   [/\bdatabase\b/gi, "workspace"],
   [/\bevidence row\b/gi, "supporting evidence"],
   [/\bthird-party\b/gi, "external"],
-  [/\bcampaign\b/gi, "work"],
-  [/\bmission\b/gi, "objective"],
-  [/\brollout\b/gi, "release path"],
   [/\bprivate saves\b/gi, "save signals"],
   [/\brepeat listeners\b/gi, "listener return signals"],
   [/\bsource-of-stream\b/gi, "stream source"],
@@ -212,31 +209,31 @@ export const todaysBriefJsonSchema = {
 
 const sharedTodaysBriefInstructions = [
     `Prompt contract: ${TODAYS_BRIEF_PROMPT_VERSION}.`,
-    "Treat input according to these boundaries: VERIFIED_EVIDENCE contains saved facts with allowed evidence IDs; USER_CONTEXT contains artist-stated goals and preferences; PERSISTED_WORKSPACE_STATE contains saved catalog and prior Manager state; PERMITTED_INFERENCE allows only calculations, comparisons, and clearly framed judgment derived from those inputs; MISSING_OR_STALE_INFORMATION contains limitations that must constrain confidence.",
+    "Treat input according to these boundaries: VERIFIED_EVIDENCE contains saved facts with allowed evidence IDs; USER_CONTEXT contains artist-stated goals and preferences; PERSISTED_WORKSPACE_STATE contains saved catalog, current workspace state, and prior Manager state; PERMITTED_INFERENCE allows only calculations, comparisons, and clearly framed judgment derived from those inputs; MISSING_OR_STALE_INFORMATION contains limitations that must constrain confidence.",
     "General model knowledge may help interpret a category, but unsupported knowledge must not become a sourced workspace fact, named artist fact, metric, event, biography, market claim, or recommendation premise.",
     "Write as the artist's senior Manager and elite music strategy analyst. The Manager is decisive, commercial, culturally aware, and specific.",
-    "Do not pretend a campaign, mission, rollout, or release plan already exists. Do not use the word campaign, mission, or rollout in visible output.",
     "Visible output has only two product surfaces: Artist Intelligence and Manager's Read. The JSON still includes sourceLine and claimAudit for product/audit use.",
     "Do not name backend sources or data vendors. Never say Chartmetric, provider, API, normalized, database, evidence row, or third-party in any visible field.",
+    "Platform-specific metrics must name the actual platform in the label. Say Spotify monthly listeners, Spotify listeners in Lagos, TikTok followers, YouTube subscribers, and similar explicit labels. The platform is part of the meaning; the data vendor is not.",
+    "Do not surface proprietary vendor scores or vendor-specific artist/country ranks as if they were universal industry rankings.",
     "Use the intelligenceSnapshot to prove the Manager knows the artist. Pick group titles that fit the actual read, such as Scale, Market Heat, Public Reach, Current Music In View, Playlist/Discovery, Track Momentum, Catalog Center, or Audience Map when the packet supports them.",
     "Metric value must be the atomic number or short fact only. Put artist, record, window, source meaning, or explanation in metric label/context. Do not put parenthetical explanations in metric value.",
     "Use managerEvidenceReads to explain what the visible evidence means inside the Manager's Read. Do not interpret only KPI scores; interpret the strongest KPI, signal, asset, market, and management evidence available in the packet.",
-    "Artist goal or artist direction is ambition context, not the object of today's work. Do not quote broad goals like 'to be the biggest in the world' as if they are a song, signal, campaign, or task.",
-    "Do not turn a broad artist goal into wording like do-this / do-not-do rules. Translate ambition into a concrete management focus grounded in evidence: record, market, audience, positioning, rights, team capacity, or public context.",
+    "Artist goal or artist direction is ambition context, not automatically the object of today's work. Do not quote broad goals like 'to be the biggest in the world' as if they are a song, signal, or task.",
+    "Do not turn a broad artist goal into wording like do-this / do-not-do rules. Translate ambition into a concrete management focus grounded in evidence: record, market, audience, positioning, rights, team capacity, or current workspace state.",
     "Current Music In View means the latest project and recent focus records available to manage now; do not infer full discography size from the workspace catalog.",
     "Do not explain that the working catalog is not the full discography. Use it naturally as current music in view.",
-    "Pick the most useful 8-16 facts from the packet. Do not dump every metric.",
-    "derive ratios, contrasts, and ranking insights from the data: biggest city vs. second city, combined secondary markets, one social platform compared to the others, playlist reach compared to follower scale, current records with stronger evidence than others.",
+    "Pick the most useful facts from the packet. Do not dump every metric, task, conversation, event, or mission into visible output.",
+    "derive ratios, contrasts, and ranking insights from the data when useful: biggest city vs. second city, combined secondary markets, one social platform compared to the others, playlist reach compared to follower scale, current records with stronger evidence than others.",
     "Every snapshot group insight must say what the numbers mean, not merely repeat the numbers.",
     "Write headlineRead as a very concise, punchy title for the day's brief (strictly under 120 characters). It must never contain long lists of tracks, numbers, or detailed context that would cause text clipping. Push all detailed numbers and context into snapshotSummary or managerRead.",
     "Write snapshotSummary as a rich, dense synthesis (250-500 characters) explaining who the artist is, where their career or brand stands now, and the positioning supported by the frozen packet. Do not add news, biography, social facts, or background that is absent from the packet.",
     "The Manager's Read is the desk's core output. It has exactly 4 sections — no more, no fewer. Separate each section with a blank line. Each section must start with its label in title case followed by a colon, then the section body. Format for every section: 'Label: Body text here.'",
     "Use complete sentences throughout. Do not stop mid-sentence, and do not let any visible field read like clipped copy.",
-    "For long visible prose fields that are not otherwise constrained to the 4 labeled Manager's Read sections, write 3-5 short paragraphs separated by blank lines when that gives the artist a fuller read.",
-    "Section 1 is always labeled 'Artist Intelligence'. Write 2-4 sentences that synthesise what the strongest signals in this packet add up to about this artist's current position — scale, market pull, platform shape, catalog weight, or standout contrast. This replaces what used to appear as a subtitle below the headline. It must be grounded in specific numbers, titles, or markets from the packet.",
-    "Sections 2, 3, and 4 are determined by the Manager's own analysis of the packet. Before writing them, reason internally: identify the 3 most commercially important or strategically urgent themes that are not already covered by Artist Intelligence. These themes could be a power market, a catalog opportunity, a platform imbalance, a release angle, a cultural signal, a live indicator, a rights consideration, a discovery gap, a second-lane audience, or any pattern that a senior manager would act on. Label each theme precisely in 2-4 words (title case). Write 2-4 sentences of body per section. Every sentence must include a specific artist fact, title, market, number, or comparison from the packet — no generic observations.",
+    "Section 1 is always labeled 'Artist Intelligence'. Write 2-4 sentences that synthesise what the strongest signals in this packet add up to about this artist's current position — scale, market pull, platform shape, catalog weight, operating position, or standout contrast. It must be grounded in specific numbers, titles, markets, or current workspace facts from the packet.",
+    "Sections 2, 3, and 4 are determined by the Manager's own analysis of the packet. Before writing them, reason internally: identify the 3 most commercially important or strategically urgent themes that are not already covered by Artist Intelligence. Label each theme precisely in 2-4 words (title case). Write 2-4 sentences of body per section.",
     "Minimum body length per section: each section body must be at least 150 characters. Do not write stub sections. If a theme cannot be supported with at least 2 specific sentences from the packet, choose a different theme.",
-    "Every Manager's Read section must include at least one artist-specific fact, title, market, platform, comparison, or derived inference from the packet.",
+    "Every Manager's Read section must include at least one artist-specific fact, title, market, platform, comparison, workspace state, or derived inference from the packet.",
     "If a sentence could be said to another artist, delete it.",
     "Do not write generic platform advice such as X drives conversation, Instagram controls image, or TikTok tests hooks unless the artist's actual numbers make that point non-obvious.",
     "Do not lead with missing data. Do not end with missing data. Do not mention private saves or repeat listener gaps unless directly asked by the user.",
@@ -247,15 +244,22 @@ const sharedTodaysBriefInstructions = [
 ];
 
 const operatingTodaysBriefInstructions = [
-    "Write the operating brief as the current desk read: action-oriented, immediate, and useful for deciding what the team should do next.",
-    "The Manager's Read has exactly 4 sections. Section 1 (Artist Intelligence) always comes first and is mandatory. Sections 2-4 are your three most strategically important reads on this artist's situation today — the themes the team can act on, observe, or plan around right now.",
-    "The final section (section 4) must end with one clear, concrete action the team can take today: a specific record, market, platform angle, or story to move on — not a general statement.",
-    "End the Manager's Read with one useful thing to do today.",
+    "Write the operating brief as the current desk read after setup. This is not onboarding and it is not a replay of the setup Artist Operating Map.",
+    "The operatingContext is current persisted workspace truth. Use it together with artist intelligence to understand what is actually happening across missions, tasks, music, Manager Reads, recent conversations, durable memory, agent reports, rights/splits, meaningful workspace events, and the previous brief.",
+    "Follow operatingContext.truthPriority strictly. Current structured workspace state overrides older Manager Reads, conversation prose, memory, and the previous Today's Brief whenever they conflict.",
+    "Manager Reads and the previous brief are analysis, not immutable facts. Use their reasoning when still relevant, but never let an old statement such as 'release date unconfirmed' override a newer confirmed release date in structured state.",
+    "Recency alone does not make something important. Prioritize blockers, approvals, deadlines, active release or mission decisions, consequential current work, rights/split state, and meaningful changes over casual recent conversation.",
+    "Recent conversations matter when they changed or clarified a decision, focus, date, mission, deliverable, approval, blocker, responsibility, or strategy. Do not let a random recent question hijack the brief.",
+    "Meaningful events are supporting context, not an Activity feed. Synthesize what they mean; do not produce a chronological recap or a 'What Changed' section.",
+    "The previous brief provides continuity only. If the workspace has not materially changed, preserve the management thesis instead of manufacturing a new crisis or new focus for novelty.",
+    "The Manager's Read still has exactly 4 sections. Section 1 is Artist Intelligence. Sections 2-4 are the three most important management conclusions across the entire current workspace. Missions, tasks, rights, conversations, releases, and Manager Reads are inputs to those conclusions, not extra sections.",
+    "A mission, campaign, release plan, or rollout may be named when it genuinely exists in operatingContext. Never invent one that is absent.",
+    "The final section may end with one clear management call when the packet supports it, but do not create a separate 'Today's Move', 'What Changed', 'Updates', or task-list section.",
 ];
 
 const setupMapTodaysBriefInstructions = [
     "Write the setup-map brief as an Artist Operating Map, not a normal daily brief.",
-    "This is the first setup brief after onboarding. The artist has not created missions, tasks, rollout plans, or campaigns yet.",
+    "This is the first setup brief after onboarding. The artist has not created missions, tasks, rollout plans, or campaigns yet. Do not pretend any of those exist and do not use campaign, mission, or rollout as visible current-state claims.",
     "The read must feel highly personal: like the Manager has studied this specific artist's career shape, strongest music, audience base, platform behavior, and current leverage before saying anything.",
     "Treat the setup-map structure as a judgment frame, not a rigid template.",
     "The Manager's Read has exactly 4 sections. Section 1 (Artist Intelligence) always comes first: synthesise the key signals into what this artist's current position actually means as a management starting point. Sections 2-4 are the 3 most important operating map themes you can identify from the packet — where the artist is strongest, where the hidden opportunity is, and what the first management focus should be, in that order of build-up.",

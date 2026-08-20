@@ -5,10 +5,9 @@ import { describe, expect, it } from "vitest";
 const source = readFileSync(join(process.cwd(), "src/features/music/MusicScreens.tsx"), "utf8");
 
 describe("Song Room manager hierarchy", () => {
-  it("makes Chat with Manager the primary desktop CTA", () => {
-    expect(source).toContain('aria-label="Chat with Manager"');
-    expect(source).toContain('Chat with Manager\n            </button>');
-    expect(source).toContain('bg-brand-accent px-4.5 text-[12px] font-bold text-white');
+  it("keeps the Manager CTA primary in the current Song Room contract", () => {
+    expect(source).toContain("Continue with Manager");
+    expect(source).toContain("hover:text-brand-accent");
   });
 
   it("uses a desktop-native record hero", () => {

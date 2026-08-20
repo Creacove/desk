@@ -87,7 +87,7 @@ describe("mobile-first mission workspace", () => {
     fireEvent.click(futureTask);
     const dialog = screen.getByRole("dialog", { name: "Run listener interviews" });
     expect(within(dialog).getByText("Available after Positioning thesis")).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Complete" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Mark complete" })).toBeDisabled();
   });
 
   it("keeps downstream work locked until Manager review is actually met", () => {
@@ -106,7 +106,7 @@ describe("mobile-first mission workspace", () => {
     expect(futureTask).toBeEnabled();
     expect(within(futureStage).getByText("Available after Positioning thesis")).toBeInTheDocument();
     fireEvent.click(futureTask);
-    expect(within(screen.getByRole("dialog", { name: "Run listener interviews" })).getByRole("button", { name: "Complete" })).toBeDisabled();
+    expect(within(screen.getByRole("dialog", { name: "Run listener interviews" })).getByRole("button", { name: "Mark complete" })).toBeDisabled();
   });
 
   it("opens the exact task as a focused sheet instead of expanding a dashboard card", () => {

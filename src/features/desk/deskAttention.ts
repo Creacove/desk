@@ -8,7 +8,12 @@ export function isSourceContextAttention(item: AttentionItem) {
     text.includes("private analytics") ||
     text.includes("public catalog") ||
     text.includes("source-of-stream") ||
-    text.includes("conversion remain unavailable")
+    text.includes("conversion remain unavailable") ||
+    text.includes("spotify catalog") ||
+    text.includes("catalog import") ||
+    text.includes("catalog sync") ||
+    text.includes("spotify import") ||
+    text.includes("setup sync")
   );
 }
 

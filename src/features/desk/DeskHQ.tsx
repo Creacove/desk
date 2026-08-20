@@ -42,7 +42,6 @@ type DeskHQProps = {
 type DeskSignalMetric = {
   label: string;
   value: string;
-  context: string;
   sourceFamily: string;
   qualityTier: number;
 };
@@ -50,7 +49,7 @@ type DeskSignalMetric = {
 type CompactArtistMetric = TodayBriefMetric & { groupTitle: string };
 type ManagerReadSegment = { label: string; body: string };
 
-const MANAGER_READ_LABELS = ["Artist Intelligence", "Momentum", "Today’s Move", "Key Signal"];
+const MANAGER_READ_LABELS = ["Artist Intelligence", "Management Focus", "Strategic Read", "Manager's Call"];
 
 export function DeskHQScreen({
   profile,
@@ -285,7 +284,6 @@ function SignalMetricStrip({ metrics }: { metrics: DeskSignalMetric[] }) {
           >
             <p className="break-words text-[12px] font-medium leading-[1.35] text-muted-foreground [overflow-wrap:anywhere]">{metric.label}</p>
             <p className="mt-2 break-words text-[22px] font-semibold leading-none tracking-[-0.018em] text-foreground sm:text-[24px] [overflow-wrap:anywhere]">{metric.value}</p>
-            {metric.context ? <p className="mt-1.5 break-words text-[12px] font-medium leading-snug text-muted-foreground/62 [overflow-wrap:anywhere]">{metric.context}</p> : null}
           </article>
         ))}
       </div>
@@ -432,21 +430,19 @@ function metricSourceFamily(metric: CompactArtistMetric) {
   if (/instagram/.test(text)) return "instagram";
   if (/shazam/.test(text)) return "shazam";
   if (/apple music/.test(text)) return "apple-music";
+  if (/deezer/.test(text)) return "deezer";
+  if (/pandora/.test(text)) return "pandora";
+  if (/\bx\b|twitter/.test(text)) return "x";
   return "other";
 }
 
 function formatArtistMetricDisplay(metric: CompactArtistMetric) {
   const valueParts = metric.value.match(/^(.+?)\s+\((.+)\)$/);
   const value = valueParts?.[1]?.trim() || metric.value;
-  const parentheticalContext = valueParts?.[2]?.trim();
   const source = metricSourceFamily(metric);
   const rawLabel = metric.label.replace(/\s+[—-]\s+/g, " - ").trim();
   const label = scopeMetricLabel(rawLabel, source);
-  return {
-    label,
-    value,
-    context: [metric.context, parentheticalContext].filter(Boolean).join(" / "),
-  };
+  return { label, value };
 }
 
 function scopeMetricLabel(label: string, source: string) {
@@ -461,6 +457,9 @@ function scopeMetricLabel(label: string, source: string) {
     : source === "youtube" ? "YouTube"
     : source === "instagram" ? "Instagram"
     : source === "apple-music" ? "Apple Music"
+    : source === "deezer" ? "Deezer"
+    : source === "pandora" ? "Pandora"
+    : source === "x" ? "X"
     : null;
   if (!sourceLabel || lower.includes(sourceLabel.toLowerCase())) return label;
 
@@ -523,5 +522,12 @@ function formatBriefGeneratedAt(value?: string) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  const sameLocalDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  if (sameLocalDay) return `today at ${time}`;
+  const day = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return `${day} at ${time}`;
 }

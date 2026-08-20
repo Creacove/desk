@@ -8,6 +8,7 @@ type ArtifactWithRequest = ReleaseSuccessArtifactViewModel & { request?: Release
 
 export type ReleaseSuccessArtifactProps = {
   artifact: ArtifactWithRequest;
+  musicItemTitle?: string;
   onApprove(request: ReleaseDateChangeRequestViewModel): Promise<void>;
   onKeepDate(artifact: ReleaseSuccessArtifactViewModel): void;
   onReviewAll(artifact: ReleaseSuccessArtifactViewModel): void;
@@ -41,7 +42,7 @@ class ReleaseSuccessArtifactBoundary extends Component<{ artifact: ArtifactWithR
   }
 }
 
-function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onReviewAll, onOpenSong, onOpenMission, onRetry }: ReleaseSuccessArtifactProps) {
+function ReleaseSuccessArtifactContent({ artifact, musicItemTitle, onApprove, onKeepDate, onReviewAll, onOpenSong, onOpenMission, onRetry }: ReleaseSuccessArtifactProps) {
   const [showAll, setShowAll] = useState(false);
   const [applying, setApplying] = useState(false);
   const request = artifact.request ?? requestFromArtifact(artifact);
@@ -53,13 +54,23 @@ function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onRevi
   const visible = showAll ? actionable : actionable.slice(0, 2);
   const canApprove = Boolean(request && (artifact.state === "proposed" || artifact.state === "awaiting_approval"));
 
+  const status = useMemo(() => {
+    if (artifact.state === "applied" && artifact.receipt) return "Release date updated";
+    if (artifact.state === "failed") return "Release review needs attention";
+    if (isApplying) return "Applying release date change";
+    if (canApprove) return "Release date impact preview ready";
+    if (artifact.state === "assessed") return "Release success review ready";
+    return "Release materials checked";
+  }, [artifact.receipt, artifact.state, canApprove, isApplying]);
+
   const heading = useMemo(() => {
     if (artifact.state === "applied" && artifact.receipt) return "Release date updated";
     if (artifact.state === "failed") return "Release review needs attention";
+    if (isApplying) return "Applying release date change";
     if (canApprove) return "Release date change ready for approval";
     if (!actionable.length) return "Release setup looks current";
     return `${actionable.length} ${actionable.length === 1 ? "thing needs" : "things need"} your attention`;
-  }, [actionable.length, artifact.receipt, artifact.state, canApprove]);
+  }, [actionable.length, artifact.receipt, artifact.state, canApprove, isApplying]);
 
   async function handleApprove() {
     if (!request || isApplying) return;
@@ -69,7 +80,9 @@ function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onRevi
 
   return (
     <section data-testid="release-success-artifact" className="mt-5 border-t border-foreground/8 pt-5">
+      {musicItemTitle ? <p className="text-[11px] font-semibold text-muted-foreground">{musicItemTitle}</p> : null}
       <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground">{heading}</h2>
+      <div role="status" aria-live="polite" className={isApplying ? "mt-2 text-[12px] font-medium text-muted-foreground" : "sr-only"}>{status}</div>
       {assessment?.recommendation?.reason ? <p className="mt-2 max-w-[42rem] text-[12px] font-medium leading-relaxed text-muted-foreground">{assessment.recommendation.reason}</p> : null}
 
       {visible.length ? (
@@ -93,21 +106,26 @@ function ReleaseSuccessArtifactContent({ artifact, onApprove, onKeepDate, onRevi
       {request?.preview ? <ImpactPreview request={request} /> : null}
 
       {artifact.state === "applied" && artifact.receipt ? (
-        <div className="mt-4 flex items-start gap-2 text-[12px] font-medium leading-relaxed text-emerald-700">
-          <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-          <span>Operational release date is now <strong>{formatDateLabel(artifact.receipt.approvedDate)}</strong>.</span>
-        </div>
+        <AppliedReceipt artifact={artifact} />
       ) : null}
 
       {artifact.state === "failed" && artifact.error ? (
-        <div className="mt-4 border-l-2 border-danger pl-3 text-[12px] font-medium leading-relaxed text-danger">
-          {artifact.error.message}
+        <div role="alert" className="mt-4 border-l-2 border-danger pl-3 text-[12px] font-medium leading-relaxed text-danger">
+          <p>{artifact.error.message}</p>
+          {artifact.error.reference ? <p className="mt-1 font-mono text-[10px]">Reference: {artifact.error.reference}</p> : null}
+        </div>
+      ) : null}
+
+      {artifact.error && artifact.state === "applied" ? (
+        <div role="alert" className="mt-4 border-l-2 border-amber-600/35 pl-3 text-[12px] font-medium leading-relaxed text-amber-900">
+          <p>{artifact.error.message}</p>
+          {artifact.error.reference ? <p className="mt-1 font-mono text-[10px]">Reference: {artifact.error.reference}</p> : null}
         </div>
       ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {canApprove ? (
-          <ProductButton onClick={() => void handleApprove()} disabled={isApplying}>
+          <ProductButton ariaLabel="Approve release date change" onClick={() => void handleApprove()} disabled={isApplying}>
             {isApplying ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             Approve date change
           </ProductButton>
@@ -144,8 +162,37 @@ function ImpactPreview({ request }: { request: ReleaseDateChangeRequestViewModel
   return (
     <section className="mt-5 border-l-2 border-brand-accent/25 pl-4">
       <p className="text-[11px] font-semibold text-foreground">Move release to {formatDateLabel(request.proposedDate)}?</p>
-      {request.preview.changes.length ? <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">This moves {request.preview.changes.length} scheduled {request.preview.changes.length === 1 ? "deadline" : "deadlines"}.</p> : <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">No bound deadlines need to move.</p>}
+      {request.preview.changes.length ? (
+        <div className="mt-2">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Moved deadlines</p>
+          <div className="mt-1 space-y-1">
+            {request.preview.changes.map((change) => <p key={change.taskId} className="text-[11px] font-medium leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">{change.title}</span>: {formatDateLabel(change.from)} → {formatDateLabel(change.to)}</p>)}
+          </div>
+        </div>
+      ) : <p className="mt-1 text-[11px] font-medium leading-relaxed text-muted-foreground">No bound deadlines need to move.</p>}
+      {request.preview.preserved.length ? (
+        <div className="mt-3">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Preserved deadlines</p>
+          <div className="mt-1 space-y-1">
+            {request.preview.preserved.map((item) => <p key={item.taskId} className="text-[11px] font-medium leading-relaxed text-muted-foreground"><span className="font-semibold text-foreground">{item.title}</span>: {formatDateLabel(item.deadline)} · {item.reason}</p>)}
+          </div>
+        </div>
+      ) : null}
     </section>
+  );
+}
+
+function AppliedReceipt({ artifact }: { artifact: ArtifactWithRequest }) {
+  const receipt = artifact.receipt!;
+  return (
+    <div className="mt-4 flex items-start gap-2 text-[12px] font-medium leading-relaxed text-emerald-700">
+      <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+      <div>
+        <p>Operational date: <strong>{receipt.approvedDate}</strong> ({formatDateLabel(receipt.approvedDate)})</p>
+        <p className="mt-1">Revision {receipt.previousRevision} → {receipt.revision} · {receipt.moved.length} bound deadline moved · {receipt.preserved.length} preserved</p>
+        {receipt.operatingEventId ? <p className="mt-1 font-mono text-[10px]">Operating event: {receipt.operatingEventId}</p> : null}
+      </div>
+    </div>
   );
 }
 

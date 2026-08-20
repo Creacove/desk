@@ -20,3 +20,4 @@ vite.log
 vite.*.log
 vite-*.log
 dev-server.log
+.vercel

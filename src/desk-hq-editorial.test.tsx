@@ -73,9 +73,9 @@ describe("Home premium briefing", () => {
     renderHome();
 
     expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);
-    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
     expect(screen.queryByText("Desk HQ")).not.toBeInTheDocument();
-    expect(screen.queryByRole("form", { name: "Ask your manager on mobile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
   });
 
   it("renders only meaningful Right Now work and preserves the existing destinations", () => {
