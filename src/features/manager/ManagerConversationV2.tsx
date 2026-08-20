@@ -306,7 +306,18 @@ function workspaceActions(message: ConversationViewModel["messages"][number]) {
 
 function ManagerText({ body, failed }: { body: string; failed?: boolean }) {
   const paragraphs = body.split(/\n{2,}/).map((value) => value.trim()).filter(Boolean);
-  return <div className={`os-body-copy grid gap-3 ${failed ? "text-destructive" : "text-foreground"}`}>{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 18)}`} className="whitespace-pre-wrap">{paragraph}</p>)}</div>;
+  return <div className={`os-body-copy grid gap-3 ${failed ? "text-destructive" : "text-foreground"}`}>{paragraphs.map((paragraph, index) => <p key={`${index}-${paragraph.slice(0, 18)}`} className="whitespace-pre-wrap">{renderManagerInlineMarkdown(paragraph)}</p>)}</div>;
+}
+
+function renderManagerInlineMarkdown(value: string) {
+  const parts = value.split(/(\*\*[^*]+\*\*|\[[^\]]+\]\(https?:\/\/[^)]+\))/g).filter(Boolean);
+  return parts.map((part, index) => {
+    const strong = part.match(/^\*\*([^*]+)\*\*$/);
+    if (strong) return <strong key={`strong-${index}`} className="font-semibold text-foreground">{strong[1]}</strong>;
+    const link = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    if (link) return <a key={`link-${index}`} href={link[2]} target="_blank" rel="noreferrer" className="font-medium text-brand-accent underline decoration-brand-accent/30 underline-offset-2 hover:decoration-brand-accent">{link[1]}</a>;
+    return <span key={`text-${index}`}>{part}</span>;
+  });
 }
 
 function WorkGroup({ groups, onOpen }: { groups: ManagerWorkGroup[]; onOpen: ManagerConversationV2Props["onOpenCreatedWork"] }) {

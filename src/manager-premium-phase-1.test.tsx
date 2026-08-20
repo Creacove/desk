@@ -3,6 +3,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ConversationWorkspace, ManagerOfficeScreen } from "./features/manager/ManagerScreens";
 import { ManagerComposer } from "./features/manager/ManagerComposer";
+import { MobileChrome } from "./design-system/components";
 
 afterEach(() => cleanup());
 
@@ -26,6 +27,23 @@ describe("Manager premium desktop system", () => {
 
     expect(screen.getByText("The current release plan is ready.")).toBeInTheDocument();
     expect(screen.queryByTestId("manager-conversation-loading")).not.toBeInTheDocument();
+  });
+
+  it("renders Manager markdown emphasis without leaking markdown markers", () => {
+    render(<ConversationWorkspace {...({ conversation: { id: "conversation-1", topic: "Dance — song workspace", prompt: "", createdWork: [], releaseSuccessArtifacts: [], releaseOpportunityArtifacts: [], messages: [{ id: "message-1", speaker: "manager", body: "The **release plan** is ready.", createdAt: "2026-08-20T12:00:00Z" }] }, onBack: vi.fn(), onOpenCreatedWork: vi.fn(), onSendMessage: vi.fn(), onSendContextAnswers: vi.fn(), sendPending: false, sendError: null } as any)} />);
+
+    const message = screen.getByTestId("manager-message-manager");
+    expect(message).toHaveTextContent("The release plan is ready.");
+    expect(message.querySelector("strong")).toHaveTextContent("release plan");
+    expect(message).not.toHaveTextContent("**");
+  });
+
+  it("labels the mobile app chrome as Desk", () => {
+    render(<MobileChrome active="labelHQ" title="Home" onNavigate={vi.fn()} />);
+
+    const topbar = screen.getByTestId("mobile-app-topbar");
+    expect(topbar).toHaveTextContent("Desk");
+    expect(topbar).not.toHaveTextContent("Artist workspace");
   });
 
   it("does not show a permanent verification disclaimer under normal work", () => {

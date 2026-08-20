@@ -454,7 +454,7 @@ export function MobileChrome({
         >
           <div className="min-w-0">
             <p className="font-ui truncate text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/62">
-              {active === "settings" ? "Account" : "Artist workspace"}
+              {active === "settings" ? "Account" : "Desk"}
             </p>
             <p className="font-display mt-1 truncate text-[19px] font-semibold leading-none tracking-[-0.025em] text-foreground">{title}</p>
           </div>
