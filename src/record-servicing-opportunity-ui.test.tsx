@@ -46,7 +46,7 @@ function renderArtifact(value = artifact()) {
 describe("record servicing opportunity presentation", () => {
   it("shows the answer and useful targets immediately without dashboard counters", () => {
     renderArtifact();
-    expect(screen.getByRole("heading", { name: "2 targets are ready to pitch" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "2 matches are ready to work on" })).toBeInTheDocument();
     expect(screen.getByText("Playlist opportunities")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Target one" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open Target watch" })).toBeInTheDocument();
@@ -65,8 +65,8 @@ describe("record servicing opportunity presentation", () => {
 
   it("uses plain language when nothing is ready to pitch", () => {
     renderArtifact(artifact({ shortlist: [], watch: [target("watch", { safetyState: "caution", status: "watch", publicContact: undefined })], excluded: [] }));
-    expect(screen.getByRole("heading", { name: "1 target is worth watching" })).toBeInTheDocument();
-    expect(screen.getByText("None are ready to pitch yet. You can still inspect what Manager found and what is missing.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "1 match is worth watching" })).toBeInTheDocument();
+    expect(screen.getByText("These are plausible, but Manager does not have enough confidence to recommend pitching them yet.")).toBeInTheDocument();
     expect(screen.queryByText("WATCH")).not.toBeInTheDocument();
   });
 });
