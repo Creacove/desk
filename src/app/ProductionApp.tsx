@@ -709,7 +709,7 @@ function CleanProductionWorkspace({
   }, [activeTodayBriefRun, repositories.desk]);
 
   const { status: liveUpdateStatus } = useWorkspaceLiveSync({
-    enabled: liveUpdatesEnabled && Boolean(workspace?.artistWorkspaceId),
+    enabled: Boolean(workspace?.artistWorkspaceId) && (liveUpdatesEnabled || activeWorkspaceRuns.length > 0),
     client: supabaseClient,
     userId: analyticsUser.id,
     workspaceId: workspace?.artistWorkspaceId ?? "",
@@ -878,15 +878,12 @@ function CleanProductionWorkspace({
     activeSection === "manager" ? "Manager" :
     activeSection === "missions" ? "Missions" :
     "Settings";
-  const mobileAttentionCount = splitAttentionItems(attention).actionable.length;
   const legacyWorkspaceEvents = useMemo(
     () => buildLegacyWorkspaceEvents(attention, movement, resourceWorkspaceId, legacyActivityEpoch.current),
     [attention, movement, resourceWorkspaceId],
   );
   const visibleWorkspaceEvents = liveUpdatesEnabled ? workspaceEvents : legacyWorkspaceEvents;
-  const notificationCount = liveUpdatesEnabled
-    ? countUnreadActivity(workspaceEvents, activitySeenCursor)
-    : mobileAttentionCount + movement.length;
+  const notificationCount = countUnreadActivity(visibleWorkspaceEvents, activitySeenCursor);
   const selectedMission = missions.find((mission) => mission.id === selectedMissionId) ?? missions[0] ?? null;
   const activeAgent = selectedAgent ?? agents[1] ?? agents[0] ?? null;
   const activeConversation = selectedConversation ?? conversations[0] ?? null;
@@ -2320,6 +2317,7 @@ function CleanProductionWorkspace({
               <MissionsWorkspace
                 missions={missions}
                 selectedMissionId={selectedMissionId}
+                detailPending={missionDetailPending}
                 onSelectMission={selectMissionForDetail}
                 onCreateFirstMission={createFirstMissionWithManager}
                 onOpenManager={openManager}
@@ -3620,12 +3618,31 @@ function buildLegacyWorkspaceEvents(
     id: `legacy-activity:${workspaceId}:${index}:${item.label}:${item.title}`,
     artistWorkspaceId: workspaceId,
     eventType: "legacy_activity",
-    createdAt: new Date(epoch - (actionEvents.length + index) * 1_000).toISOString(),
+    createdAt: legacyActivityCreatedAt(item.time, index, epoch, actionEvents.length),
     displayMode: "activity",
     refreshScope: [],
     summary: item.title,
   }));
-  return [...actionEvents, ...activityEvents];
+  return [...actionEvents, ...activityEvents]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt) || right.id.localeCompare(left.id));
+}
+
+function legacyActivityCreatedAt(value: string | undefined, index: number, epoch: number, actionCount: number) {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (normalized === "yesterday") return new Date(epoch - 86_400_000 - (actionCount + index) * 1_000).toISOString();
+  if (normalized === "just now" || normalized === "now") return new Date(epoch - (actionCount + index) * 1_000).toISOString();
+
+  const relative = normalized.match(/^(\d+)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks|mo|month|months)\s+ago$/);
+  if (relative) {
+    const amount = Number(relative[1]);
+    const unit = relative[2];
+    const multiplier = /^mo|^month/.test(unit) ? 2_592_000_000 : /^m/.test(unit) ? 60_000 : /^h/.test(unit) ? 3_600_000 : /^d/.test(unit) ? 86_400_000 : /^w/.test(unit) ? 604_800_000 : 2_592_000_000;
+    return new Date(epoch - amount * multiplier - (actionCount + index) * 1_000).toISOString();
+  }
+
+  const parsed = value ? new Date(value) : null;
+  if (parsed && !Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  return new Date(epoch - (actionCount + index) * 1_000).toISOString();
 }
 
 const CLEAN_PRODUCTION_VIEWS = new Set<CleanProductionView>([

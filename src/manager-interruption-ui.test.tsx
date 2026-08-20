@@ -90,7 +90,7 @@ describe("Manager interruption UI", () => {
     expect(screen.getByRole("button", { name: /Nigeria.*Recommended/i })).toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Other/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Something else/i }));
     expect(screen.getByRole("textbox", { name: "Which market should we prioritize for launch?" })).toBeInTheDocument();
   });
 });

@@ -25,7 +25,7 @@ describe("release-success cross-Hub regression contracts", () => {
     ["project, EP, and album screens", musicSource, ["projectDetail", '"ep"', '"album"']],
     ["audio and artwork uploads", serviceSource, ["uploadAsset", "MUSIC_UPLOADS_BUCKET", "cover_art"]],
     ["credit editing", serviceSource, ["saveCredit", "music_credits"]],
-    ["split allocation and confirmation locking", musicSource, ["Set up splits here", "Send split confirmation links", "approvalLog"]],
+    ["split allocation and confirmation locking", musicSource, ["Set up splits", "Send split confirmation links", "approvalLog"]],
     ["mission list/detail and task completion", appSource, ["loadMissions", "completeMissionTask", "missionsWorkspace"]],
     ["Today's Brief", appSource, ["todayBrief", "activeTodayBriefRun", "brief generated"]],
     ["artist discovery and Manager Read", serviceSource, ["previewCatalog", "managerReadStatus", "managerReadSummary"]],

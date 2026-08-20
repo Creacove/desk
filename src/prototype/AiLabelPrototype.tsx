@@ -66,7 +66,6 @@ type SourceReadinessItem = {
   detail: string;
   category: "System coverage" | "Artist/team connection" | "Artist/team upload" | "User context";
 };
-
 type ConnectorMark = {
   label: string;
   status: "active" | "needs_connection" | "needs_upload" | "system";
@@ -1939,7 +1938,6 @@ const MobileBottomNav = ({
     </nav>
   );
 };
-
 export default function AiLabelPrototype() {
   const [musicObjectsList, setMusicObjectsList] = useState<MusicObject[]>(musicObjects);
   const [externalSigning, setExternalSigning] = useState<{ songId: string; contributorName: string } | null>(null);
@@ -4652,7 +4650,7 @@ const CheckpointsWorkspace = ({
                       <div className="mt-4 pl-9 space-y-2">
                          {phaseTasks.map(task => {
                            const result = taskResultById.get(task.id);
-                           const isDone = result?.status === "completed" || result?.status === "approved" || result?.status === "revised";
+                           const isDone = result?.status === "completed" || task.approvalState === "approved" || result?.status === "revised";
                            const isBlocked = result?.status === "blocked" || task.approvalState === "blocked";
                            return (
                              <div key={task.id} className="flex items-center gap-2">
@@ -6412,3 +6410,4 @@ const MusicDistributionHub = ({
     </div>
   );
 };
+

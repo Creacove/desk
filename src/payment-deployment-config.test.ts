@@ -93,7 +93,7 @@ describe("payment deployment configuration", () => {
   it("reads the country header from Vercel's deployed request shape", async () => {
     const response = billingCountry({
       headers: { "x-vercel-ip-country": "ng" },
-    } as unknown as Request);
+    } as unknown as Request) as Response;
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ countryCode: "NG" });
@@ -101,7 +101,12 @@ describe("payment deployment configuration", () => {
 
   it("completes the response through Vercel's serverless response object", () => {
     const state = { status: 0, headers: new Map<string, string>(), body: null as unknown };
-    const response = {
+    type VercelResponseMock = {
+      status(code: number): VercelResponseMock;
+      setHeader(name: string, value: string): void;
+      json(body: unknown): unknown;
+    };
+    const response: VercelResponseMock = {
       status(code: number) {
         state.status = code;
         return response;
@@ -114,7 +119,7 @@ describe("payment deployment configuration", () => {
         return body;
       },
     };
-    const handler = billingCountry as unknown as (request: unknown, response: typeof response) => unknown;
+    const handler = billingCountry as unknown as (request: unknown, response: VercelResponseMock) => unknown;
 
     handler({ headers: { "x-vercel-ip-country": "NG" } }, response);
 

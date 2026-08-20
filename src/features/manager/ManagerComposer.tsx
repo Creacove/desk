@@ -12,6 +12,7 @@ export type ManagerComposerProps = {
   canSend?: boolean;
   placeholder?: string;
   guidedQuestion?: ReactNode;
+  /** @deprecated Workspace actions belong inline in the conversation, never in the composer. */
   workspaceActions?: ReactNode;
   attachments?: ReactNode;
   leadingAction?: ReactNode;
@@ -27,11 +28,11 @@ export type GuidedContextQuestionProps = {
   onSubmit(answerOverride?: string): void;
   onUseRecommendation(): void;
   onBack?(): void;
+  onAnswerLater?(): void;
   sendPending: boolean;
 };
 
 export type ManagerWorkspaceActionTarget = "files" | "rights" | "details";
-
 export type ManagerWorkspaceAction = {
   key: string;
   target: ManagerWorkspaceActionTarget;
@@ -41,6 +42,10 @@ export type ManagerWorkspaceAction = {
   actionLabel: string;
 };
 
+/**
+ * Compatibility parser for historical turns. New turns must emit workspace actions
+ * as actions, not encode them as questions. Keep this only at the legacy boundary.
+ */
 export function parseManagerWorkspaceAction(question: ManagerMissionContextQuestion): ManagerWorkspaceAction | null {
   const match = question.key.match(/^workspace_action:(files|rights|details):([a-z0-9_-]+)$/i);
   if (!match) return null;
@@ -66,7 +71,6 @@ export function ManagerComposer({
   canSend = Boolean(draft.trim()),
   placeholder = "What do you want to work on?",
   guidedQuestion,
-  workspaceActions,
   attachments,
   leadingAction,
   verificationNote = false,
@@ -94,16 +98,9 @@ export function ManagerComposer({
   }
 
   return (
-    <div
-      data-testid="manager-composer-dock"
-      className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-8 sm:px-6 lg:left-[13.5rem]"
-    >
+    <div data-testid="manager-composer-dock" className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 px-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-8 sm:px-6 lg:left-[13.5rem]">
       <div className="pointer-events-auto mx-auto w-full max-w-[48rem]">
-        {workspaceActions ? <div className="mb-2">{workspaceActions}</div> : null}
-        <div
-          data-testid="manager-composer-surface"
-          className="overflow-visible rounded-[16px] border border-foreground/10 bg-background/96 p-2 shadow-[0_10px_36px_hsl(var(--foreground)/0.10)] backdrop-blur-xl transition-[border-color,box-shadow] duration-150 focus-within:border-brand-accent/30 focus-within:shadow-[0_10px_36px_hsl(var(--foreground)/0.10),0_0_0_3px_hsl(var(--brand-accent)/0.055)]"
-        >
+        <div data-testid="manager-composer-surface" className="overflow-visible rounded-[16px] border border-foreground/10 bg-background/96 p-2 shadow-[0_10px_36px_hsl(var(--foreground)/0.10)] backdrop-blur-xl transition-[border-color,box-shadow] duration-150 focus-within:border-brand-accent/30 focus-within:shadow-[0_10px_36px_hsl(var(--foreground)/0.10),0_0_0_3px_hsl(var(--brand-accent)/0.055)]">
           {attachments ? <div className="px-2 pt-1">{attachments}</div> : null}
           {guidedQuestion ? (
             <div data-testid="manager-composer-guided" className="px-2 py-1">{guidedQuestion}</div>
@@ -121,16 +118,7 @@ export function ManagerComposer({
                 className="min-h-10 w-full resize-none bg-transparent px-2.5 py-2.5 text-[15px] font-medium leading-[1.5] text-foreground outline-none placeholder:text-muted-foreground/50"
                 style={{ maxHeight: "160px", overflowY: "auto" }}
               />
-              <IconButton
-                type="button"
-                onClick={onSend}
-                disabled={!canSend}
-                pending={sendPending}
-                label="Send to Manager"
-                variant="primary"
-                size="md"
-                className="mb-0.5 rounded-[11px]"
-              >
+              <IconButton type="button" onClick={onSend} disabled={!canSend} pending={sendPending} label="Send to Manager" variant="primary" size="md" className="mb-0.5 rounded-[11px]">
                 <SendHorizontal className="h-4 w-4" aria-hidden="true" />
               </IconButton>
             </div>
@@ -143,44 +131,28 @@ export function ManagerComposer({
   );
 }
 
-export function ManagerWorkspaceActions({
-  actions,
-  onOpen,
-  disabled,
-}: {
+/**
+ * Historical compatibility only. It intentionally renders without floating/card
+ * chrome so callers can place it directly underneath the Manager turn.
+ */
+export function ManagerWorkspaceActions({ actions, onOpen, disabled }: {
   actions: ManagerWorkspaceAction[];
   onOpen(action: ManagerWorkspaceAction): void;
   disabled?: boolean;
 }) {
   if (!actions.length) return null;
   return (
-    <section
-      data-testid="manager-workspace-actions"
-      aria-label="Manager required actions"
-      className="overflow-hidden rounded-[16px] border border-foreground/10 bg-background/98 shadow-[0_8px_28px_hsl(var(--foreground)/0.08)] backdrop-blur-xl"
-    >
-      <div className="divide-y divide-foreground/8">
-        {actions.map((action) => (
-          <div key={action.key} className="grid grid-cols-1 gap-3 px-3.5 py-3 sm:flex sm:items-center sm:gap-4 sm:px-4">
-            <div className="min-w-0 flex-1">
-              <p className="text-[13px] font-semibold leading-snug text-foreground">{action.title}</p>
-              {action.description ? <p className="mt-1 text-[12px] font-medium leading-relaxed text-muted-foreground">{action.description}</p> : null}
-            </div>
-            <Button
-              type="button"
-              variant="primary"
-              size="sm"
-              onClick={() => onOpen(action)}
-              disabled={disabled}
-              trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}
-              className="w-full sm:w-auto"
-            >
-              {action.actionLabel}
-            </Button>
+    <div data-testid="manager-workspace-actions" aria-label="Manager required actions" className="mt-3 grid gap-2">
+      {actions.map((action) => (
+        <div key={action.key} className="flex flex-wrap items-start justify-between gap-3 border-l border-foreground/10 pl-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-semibold leading-snug text-foreground">{action.title}</p>
+            {action.description ? <p className="mt-0.5 max-w-[36rem] text-[11px] font-medium leading-relaxed text-muted-foreground">{action.description}</p> : null}
           </div>
-        ))}
-      </div>
-    </section>
+          <Button type="button" variant="secondary" size="sm" onClick={() => onOpen(action)} disabled={disabled}>{action.actionLabel}</Button>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -193,41 +165,38 @@ export function GuidedContextQuestion({
   onSubmit,
   onUseRecommendation,
   onBack,
+  onAnswerLater,
   sendPending,
 }: GuidedContextQuestionProps) {
   const rawOptions = question.options ?? [];
   const isChoiceQuestion = question.answerKind === "single_select" || question.answerKind === "multi_select";
   const options = useMemo(() => {
-    const clean = rawOptions.map((option) => option.trim()).filter(Boolean).slice(0, 5);
-    if (!isChoiceQuestion || question.answerKind !== "single_select") return clean;
-    return clean.some((option) => /^other(?:…|\.\.\.)?$/i.test(option)) || clean.length >= 5 ? clean : [...clean, "Other…"];
-  }, [isChoiceQuestion, question.answerKind, rawOptions.join("|")]);
-  const selectedValues = value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean);
+    if (!isChoiceQuestion) return [];
+    const customPattern = /^(?:other|something else)(?:…|\.\.\.)?$/i;
+    const clean = rawOptions.map((option) => option.trim()).filter(Boolean).filter((option, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === option.toLowerCase()) === index);
+    const withoutCustom = clean.filter((option) => !customPattern.test(option)).slice(0, 4);
+    return [...withoutCustom, "Something else…"];
+  }, [isChoiceQuestion, rawOptions.join("|")]);
+
+  const selectedValues = value.split("\n").map((item) => item.trim()).filter(Boolean);
   const [otherOpen, setOtherOpen] = useState(false);
   const canSubmit = Boolean(value.trim());
   const recommended = question.recommendedAnswer?.trim() ?? "";
 
   function choose(option: string) {
-    if (/^other(?:…|\.\.\.)?$/i.test(option)) {
+    if (/^(?:other|something else)(?:…|\.\.\.)?$/i.test(option)) {
       setOtherOpen(true);
       onChange("");
       return;
     }
     setOtherOpen(false);
     if (question.answerKind === "multi_select") {
-      const next = selectedValues.includes(option)
-        ? selectedValues.filter((item) => item !== option)
-        : [...selectedValues, option];
+      const next = selectedValues.includes(option) ? selectedValues.filter((item) => item !== option) : [...selectedValues, option];
       onChange(next.join("\n"));
       return;
     }
     onChange(option);
-    if (question.answerKind === "single_select") {
-      window.setTimeout(() => onSubmit(option), 0);
-    }
+    if (question.answerKind === "single_select") window.setTimeout(() => onSubmit(option), 0);
   }
 
   return (
@@ -237,28 +206,14 @@ export function GuidedContextQuestion({
         <p className={`${total > 1 ? "mt-1" : ""} text-[15px] font-semibold leading-snug text-foreground`}>{question.question}</p>
       </div>
 
-      {isChoiceQuestion && options.length ? (
+      {isChoiceQuestion ? (
         <div className="grid gap-2" role={question.answerKind === "single_select" ? "radiogroup" : "group"} aria-label={question.question}>
           {options.map((option) => {
             const selected = selectedValues.includes(option);
             const isRecommended = Boolean(recommended && option.toLowerCase() === recommended.toLowerCase());
             return (
-              <button
-                key={option}
-                type="button"
-                data-testid="manager-choice-option"
-                onClick={() => choose(option)}
-                disabled={sendPending}
-                aria-pressed={selected}
-                className={`flex min-h-11 w-full items-center gap-3 rounded-[11px] border px-3.5 py-2.5 text-left outline-none transition-colors duration-150 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-brand-accent/20 ${
-                  selected
-                    ? "border-brand-accent/25 bg-brand-accent/[0.055]"
-                    : "border-foreground/10 bg-background hover:border-foreground/18 hover:bg-foreground/[0.025]"
-                }`}
-              >
-                <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-brand-accent bg-brand-accent text-white" : "border-foreground/25"}`}>
-                  {selected ? <Check className="h-2.5 w-2.5" aria-hidden="true" /> : null}
-                </span>
+              <button key={option} type="button" data-testid="manager-choice-option" onClick={() => choose(option)} disabled={sendPending} aria-pressed={selected} className={`flex min-h-11 w-full items-center gap-3 rounded-[11px] border px-3.5 py-2.5 text-left outline-none transition-colors duration-150 disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-brand-accent/20 ${selected ? "border-brand-accent/25 bg-brand-accent/[0.055]" : "border-foreground/10 bg-background hover:border-foreground/18 hover:bg-foreground/[0.025]"}`}>
+                <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full border ${selected ? "border-brand-accent bg-brand-accent text-white" : "border-foreground/25"}`}>{selected ? <Check className="h-2.5 w-2.5" aria-hidden="true" /> : null}</span>
                 <span className="min-w-0 flex-1 text-[12px] font-semibold leading-snug text-foreground">{option}</span>
                 {isRecommended ? <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[11px] font-medium text-muted-foreground">Recommended</span> : null}
               </button>
@@ -270,15 +225,7 @@ export function GuidedContextQuestion({
       {otherOpen || !isChoiceQuestion ? (
         <>
           {recommended && !isChoiceQuestion ? (
-            <button
-              type="button"
-              onClick={() => {
-                onUseRecommendation();
-                window.setTimeout(() => onSubmit(recommended), 0);
-              }}
-              disabled={sendPending}
-              className="flex min-h-11 w-full items-center justify-between gap-3 rounded-[11px] border border-foreground/10 px-3.5 py-2.5 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.025] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-brand-accent/20"
-            >
+            <button type="button" onClick={() => { onUseRecommendation(); window.setTimeout(() => onSubmit(recommended), 0); }} disabled={sendPending} className="flex min-h-11 w-full items-center justify-between gap-3 rounded-[11px] border border-foreground/10 px-3.5 py-2.5 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.025] disabled:opacity-40 focus-visible:ring-2 focus-visible:ring-brand-accent/20">
               <span className="min-w-0 text-[12px] font-semibold leading-snug text-foreground">{recommended}</span>
               <span className="shrink-0 rounded-full bg-foreground/[0.055] px-2 py-1 text-[11px] font-medium text-muted-foreground">Recommended</span>
             </button>
@@ -286,12 +233,7 @@ export function GuidedContextQuestion({
           <textarea
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                if (canSubmit && !sendPending) onSubmit();
-              }
-            }}
+            onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); if (canSubmit && !sendPending) onSubmit(); } }}
             disabled={sendPending}
             autoFocus
             rows={1}
@@ -303,17 +245,12 @@ export function GuidedContextQuestion({
       ) : null}
 
       <div className="flex items-center justify-between gap-3">
-        {position > 0 ? <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={sendPending}>Back</Button> : <span />}
+        <div className="flex items-center gap-1">
+          {position > 0 ? <Button type="button" variant="ghost" size="sm" onClick={onBack} disabled={sendPending}>Back</Button> : null}
+          {onAnswerLater ? <Button type="button" variant="ghost" size="sm" onClick={onAnswerLater} disabled={sendPending}>Answer later</Button> : null}
+        </div>
         {question.answerKind === "multi_select" || !isChoiceQuestion || otherOpen ? (
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            onClick={() => onSubmit()}
-            pending={sendPending}
-            disabled={!canSubmit}
-            trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}
-          >
+          <Button type="button" variant="primary" size="sm" onClick={() => onSubmit()} pending={sendPending} disabled={!canSubmit} trailingIcon={<ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />}>
             {position + 1 === total ? "Continue" : "Next"}
           </Button>
         ) : null}

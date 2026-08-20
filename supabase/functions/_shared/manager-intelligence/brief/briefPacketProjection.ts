@@ -5,6 +5,7 @@ import {
   type ArtistBriefPacket,
   type TodaysBriefOutput,
 } from "../../openaiTodaysBrief.ts";
+import { compactTodaysBriefOperatingContext } from "../../todaysBriefOperatingContext.ts";
 
 export type ManagerEvidenceRead = {
   label: string;
@@ -31,11 +32,12 @@ export function buildTodaysBriefModelPacket(
     groundingContract: {
       VERIFIED_EVIDENCE: "intelligenceSnapshotInputs, derivedInsights, managerEvidenceReads",
       USER_CONTEXT: "profile.artistDirection, profile.budgetContext",
-      PERSISTED_WORKSPACE_STATE: "profile, workingCatalog, managerIntelligence",
+      PERSISTED_WORKSPACE_STATE: "profile, workingCatalog, managerIntelligence, operatingContext",
       PERMITTED_INFERENCE: "arithmetic, comparison, ranking, and explicitly framed management judgment from supplied fields",
       MISSING_OR_STALE_INFORMATION: "sourceLimits and per-evidence limitations",
     },
     managerIntelligence: projectManagerIntelligenceForBrief(managerIntelligencePacket),
+    operatingContext: projectOperatingContextForBrief(managerIntelligencePacket),
     managerEvidenceReads,
     allowedEvidenceIds: uniqueStrings([
       ...compactPacket.intelligenceSnapshotInputs.flatMap((group) => group.metrics.flatMap((metric) => [metric.id, ...metric.evidenceIds])),
@@ -98,6 +100,31 @@ function projectManagerIntelligenceForBrief(managerIntelligencePacket: ManagerPa
     sourceLimits: record(managerIntelligencePacket.data_freshness_json),
     internalPlaybooksApplied: stringArray(internalOnly.playbooks_applied),
   };
+}
+
+function projectOperatingContextForBrief(managerIntelligencePacket: ManagerPacketRecord) {
+  const internalOnly = record(managerIntelligencePacket.internal_only_json);
+  const context = record(internalOnly.operating_context);
+  if (!Object.keys(context).length) return null;
+  const currentMusic = record(context.currentMusic);
+  const projected = {
+    version: stringValue(context.version),
+    truthPriority: stringArray(context.truthPriority).slice(0, 4),
+    activeMissions: arrayValue(context.activeMissions).slice(0, 6),
+    priorityTasks: arrayValue(context.priorityTasks).slice(0, 10),
+    currentMusic: {
+      songs: arrayValue(currentMusic.songs).slice(0, 12),
+      projects: arrayValue(currentMusic.projects).slice(0, 8),
+    },
+    rightsState: arrayValue(context.rightsState).slice(0, 12),
+    currentMusicReads: arrayValue(context.currentMusicReads).slice(0, 8),
+    recentConversations: arrayValue(context.recentConversations).slice(0, 6),
+    durableMemory: arrayValue(context.durableMemory).slice(0, 6),
+    recentAgentReports: arrayValue(context.recentAgentReports).slice(0, 4),
+    meaningfulEvents: arrayValue(context.meaningfulEvents).slice(0, 12),
+    previousBrief: record(context.previousBrief),
+  };
+  return compactTodaysBriefOperatingContext(projected) as Record<string, unknown>;
 }
 
 function compactArtistBriefPacket(packet: ArtistBriefPacket): ArtistBriefPacket {

@@ -186,9 +186,7 @@ describe("release success conversation artifact", () => {
     );
 
     const card = screen.getByTestId("release-success-artifact");
-    expect(card).toHaveTextContent("After Midnight");
-    expect(card).toHaveTextContent("Attached song");
-    expect(screen.getByRole("heading", { name: "Release date impact preview ready" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Release date change ready for approval" })).toBeInTheDocument();
     expect(screen.getByText("Move the release to create a clean campaign runway.")).toBeInTheDocument();
     expect(card.textContent).not.toMatch(/â|Â|Ã|�/);
     expect(screen.queryByText("Press angle")).not.toBeInTheDocument();
@@ -198,7 +196,7 @@ describe("release success conversation artifact", () => {
     expect(screen.getByText("Artwork lock")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Approve release date change" })).toBeInTheDocument();
 
-    fireEvent.click(within(card).getByRole("button", { name: "Open song After Midnight" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Open song" }));
     expect(onOpenSong).toHaveBeenCalledWith("song-1");
     fireEvent.click(within(card).getByRole("button", { name: "Open mission" }));
     expect(onOpenMission).toHaveBeenCalledWith("mission-1");
@@ -229,9 +227,9 @@ describe("release success conversation artifact", () => {
     expect(screen.getByRole("status")).toHaveAttribute("aria-live", "polite");
     expect(screen.getByRole("status")).toHaveTextContent("Applying release date change");
     expect(screen.queryByText("Release date updated")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Keep August 26 and show recovery plan" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Keep August 26" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Keep August 26 and show recovery plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep August 26" }));
     expect(onKeepDate).toHaveBeenCalledWith(expect.objectContaining({ id: "release-artifact-1" }));
     resolveApproval?.();
     await waitFor(() => expect(onApprove).toHaveBeenCalledTimes(1));
@@ -327,7 +325,7 @@ describe("release success conversation artifact", () => {
     expect(screen.getByText("This release preview is stale. Refresh the release review before applying.")).toBeInTheDocument();
     expect(screen.getByText("Reference: error-event-1")).toBeInTheDocument();
     expect(screen.queryByText("Release date updated")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Retry release-success review" }));
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(onRetry).toHaveBeenCalledWith(expect.objectContaining({ state: "failed" })));
   });
 
@@ -431,7 +429,7 @@ describe("playlist and press opportunity artifacts", () => {
     render(<OpportunityArtifact artifact={playlistArtifact} onPreparePitch={onPreparePitch} onRecordOutcome={onRecordOutcome} onOpenFiles={onOpenFiles} onRetry={vi.fn()} />);
 
     const card = screen.getByTestId("release-opportunity-artifact");
-    expect(screen.getByRole("heading", { name: "6 targets are ready to pitch" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "6 matches are ready to work on" })).toBeInTheDocument();
     expect(card).toHaveTextContent("Night Drive 1");
     expect(card).toHaveTextContent("Watchlist target");
     expect(card).not.toHaveTextContent("PITCH NOW");
@@ -439,7 +437,7 @@ describe("playlist and press opportunity artifacts", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open Night Drive 1" }));
     expect(card).toHaveTextContent("The song's nocturnal hook matches the playlist's stated lane.");
-    expect(card).toHaveTextContent("high confidence");
+    expect(card).toHaveTextContent("Strong fit");
     expect(card).toHaveTextContent("Public route only; placement is not guaranteed.");
     expect(screen.getByRole("link", { name: "View source" })).toHaveAttribute("rel", "noreferrer");
 
@@ -471,7 +469,7 @@ describe("playlist and press opportunity artifacts", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open Spotify Editorial Playlist" }));
     expect(screen.getByText("Spotify editorial pitches go through Spotify for Artists. Manager will prepare the pitch, not submit it for you.")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open submission route" })).toHaveAttribute("href", "https://artists.spotify.com/c/artist/submit");
+    expect(screen.getByRole("link", { name: "Submission route" })).toHaveAttribute("href", "https://artists.spotify.com/c/artist/submit");
     expect(screen.queryByText(/editor@|spotify editor email/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Send/i })).not.toBeInTheDocument();
   });
@@ -491,7 +489,7 @@ describe("playlist and press opportunity artifacts", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open Night Drive 1" }));
     expect(screen.getByText("Pitch draft")).toBeInTheDocument();
     expect(screen.getByText("A copyable song-specific pitch.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy pitch" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Open share link" })).toHaveAttribute("href", "https://desk.ordersounds.com/share/package-1");
     expect(screen.getByText("One contact route still needs verification.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));

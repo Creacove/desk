@@ -158,9 +158,9 @@ export function useWorkspaceLiveSync({
   }, [client, coordinator, enabled, onEvent, userId, workspaceId]);
 
   useEffect(() => {
-    if (!enabled || status !== "Updates delayed — Retry" || !stableRuns.length) return;
+    if (!enabled || !stableRuns.length) return;
     const fallbacks = stableRuns.map((run) => createActiveRunFallback({
-      delaysMs: [5_000, 10_000, 20_000, 30_000],
+      delaysMs: [1_000, 2_000, 5_000, 10_000, 30_000],
       deadlineMs: 6 * 60_000,
       isVisible: () => document.visibilityState === "visible",
       isOnline: () => navigator.onLine,
@@ -169,7 +169,7 @@ export function useWorkspaceLiveSync({
     }));
     fallbacks.forEach((fallback) => fallback.start());
     return () => fallbacks.forEach((fallback) => fallback.stop());
-  }, [enabled, stableRuns, status]);
+  }, [enabled, stableRuns]);
 
   return { status };
 }

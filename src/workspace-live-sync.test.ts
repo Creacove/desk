@@ -180,6 +180,8 @@ describe("workspace live sync", () => {
 });
 
 describe("useWorkspaceLiveSync", () => {
+  afterEach(() => vi.useRealTimers());
+
   it("does not subscribe when the rollout gate is disabled", () => {
     const client = { channel: vi.fn() };
     renderHook(() => useWorkspaceLiveSync({
@@ -223,6 +225,42 @@ describe("useWorkspaceLiveSync", () => {
     rendered.unmount();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
     expect(clearWorkspace).toHaveBeenCalledWith("workspace-a");
+  });
+
+  it("polls active runs while the live channel is healthy", async () => {
+    vi.useFakeTimers();
+    const channel: any = {
+      on: vi.fn(() => channel),
+      subscribe: vi.fn((callback) => {
+        callback("SUBSCRIBED");
+        return channel;
+      }),
+      unsubscribe: vi.fn(),
+    };
+    const limit = vi.fn(async () => ({ data: [], error: null }));
+    const builder: any = { select: () => builder, eq: () => builder, or: () => builder, order: () => builder, limit };
+    const check = vi.fn(async () => "active" as const);
+    const rendered = renderHook(() => useWorkspaceLiveSync({
+      enabled: true,
+      client: { channel: vi.fn(() => channel), from: vi.fn(() => builder) },
+      userId: "user-a",
+      workspaceId: "workspace-a",
+      coordinator: { invalidate: vi.fn(), clearWorkspace: vi.fn() },
+      onInvalidations: vi.fn(),
+      activeRuns: [{ id: "brief-run-1", check }],
+    }));
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(rendered.result.current.status).toBe("Up to date");
+    await act(async () => vi.advanceTimersByTimeAsync(999));
+    expect(check).not.toHaveBeenCalled();
+    await act(async () => vi.advanceTimersByTimeAsync(1));
+    expect(check).toHaveBeenCalledTimes(1);
+
+    rendered.unmount();
   });
 
   it("does not fetch while offline and catches up when connectivity returns", async () => {

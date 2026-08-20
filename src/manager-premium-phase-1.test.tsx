@@ -21,6 +21,13 @@ describe("Manager premium desktop system", () => {
     expect(screen.queryByText(/No conversations yet/i)).not.toBeInTheDocument();
   });
 
+  it("preserves an existing conversation while fresher detail is loading", () => {
+    render(<ConversationWorkspace {...({ conversation: { id: "conversation-1", topic: "Dance — song workspace", prompt: "", createdWork: [], releaseSuccessArtifacts: [], releaseOpportunityArtifacts: [], messages: [{ id: "message-1", speaker: "manager", body: "The current release plan is ready.", createdAt: "2026-08-20T12:00:00Z" }] }, onBack: vi.fn(), onOpenCreatedWork: vi.fn(), onSendMessage: vi.fn(), onSendContextAnswers: vi.fn(), sendPending: false, sendError: null, detailPending: true } as any)} />);
+
+    expect(screen.getByText("The current release plan is ready.")).toBeInTheDocument();
+    expect(screen.queryByTestId("manager-conversation-loading")).not.toBeInTheDocument();
+  });
+
   it("does not show a permanent verification disclaimer under normal work", () => {
     render(<ManagerComposer draft="" onDraftChange={vi.fn()} onSend={vi.fn()} sendPending={false} />);
     expect(screen.getByPlaceholderText("What do you want to work on?")).toBeInTheDocument();

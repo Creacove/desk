@@ -2,6 +2,90 @@
    This restores optical hierarchy flattened by the legacy app-light compatibility
    rules while keeping the simplified mobile composition intact. */
 
+:root {
+  --os-content-max: 1320px;
+  --os-room-max: 1120px;
+  --os-reading-max: 720px;
+  --os-form-max: 900px;
+  --os-list-title-size: 16px;
+  --os-list-meta-size: 13px;
+  --os-body-size: 16px;
+  --os-tab-intro-size: 15px;
+  --os-field-value-size: 16px;
+}
+
+.os-room-rail {
+  width: 100%;
+  max-width: var(--os-room-max);
+  margin-inline: auto;
+}
+
+/* Shared page/list vocabulary. These classes deliberately outrank the old
+   page-specific pixel values so Catalog, Missions, Manager, and Staff read as
+   one product at every breakpoint. */
+.os-list-frame,
+.music-ledger-frame {
+  width: 100%;
+  overflow: hidden;
+  border: 1px solid hsl(var(--foreground) / 0.08);
+  border-radius: 16px;
+  background: hsl(var(--background));
+}
+
+.os-list-row,
+.music-ledger-row {
+  min-height: 76px;
+  padding-block: 14px;
+  padding-inline: 16px;
+}
+
+.os-list-title {
+  font-size: var(--os-list-title-size) !important;
+  line-height: 1.35 !important;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.os-list-meta {
+  font-size: var(--os-list-meta-size) !important;
+  line-height: 1.45 !important;
+}
+
+.os-body-copy {
+  font-size: var(--os-body-size) !important;
+  line-height: 1.65 !important;
+}
+
+.os-tab-intro {
+  font-size: var(--os-tab-intro-size) !important;
+  line-height: 1.55 !important;
+}
+
+.os-section-label {
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+}
+
+.os-field-label {
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+.os-field-value {
+  font-size: var(--os-field-value-size) !important;
+  line-height: 1.45 !important;
+}
+
+.os-reading-measure {
+  width: 100%;
+  max-width: var(--os-reading-max);
+}
+
+.os-form-measure {
+  width: 100%;
+  max-width: var(--os-form-max);
+}
+
 .os-action-button {
   font-weight: 600 !important;
   user-select: none;
@@ -90,6 +174,11 @@
 }
 
 @media (min-width: 1024px) {
+  :root {
+    --os-list-title-size: 17px;
+    --os-list-meta-size: 13px;
+    --os-body-size: 17px;
+  }
   /* The old compatibility layer collapsed intentional component typography.
      Desktop keeps the authored optical scale instead. */
   .app-light [class*="text-[15px]"] { font-size: 15px !important; }
@@ -118,7 +207,7 @@
 
   .app-workspace {
     width: 100%;
-    max-width: 1320px;
+    max-width: var(--os-content-max);
     margin-inline: auto;
   }
 

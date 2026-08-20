@@ -73,9 +73,15 @@ describe("Home premium briefing", () => {
     renderHome();
 
     expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);
-    expect(screen.getAllByRole("form", { name: "Ask your manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
     expect(screen.queryByText("Desk HQ")).not.toBeInTheDocument();
-    expect(screen.queryByRole("form", { name: "Ask your manager on mobile" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the Activity action comfortably tappable", () => {
+    renderHome();
+
+    expect(screen.getByRole("button", { name: "Open Activity Center, 3 unread" })).toHaveClass("min-h-11");
   });
 
   it("renders only meaningful Right Now work and preserves the existing destinations", () => {
@@ -125,7 +131,7 @@ describe("Home premium briefing", () => {
     expect(screen.queryByText(/compiling for this section/i)).not.toBeInTheDocument();
   });
 
-  it("centers Manager's Read in one rail without a first-row padding exception", () => {
+  it("keeps Manager's Read on the shared room rail without a first-row padding exception", () => {
     renderHome();
 
     const managerRead = screen.getByTestId("desk-manager-read");
@@ -134,14 +140,29 @@ describe("Home premium briefing", () => {
     const firstSegment = segments[0];
 
     expect({
-      centeredRail: managerRead.classList.contains("mx-auto") && managerRead.classList.contains("max-w-[1120px]"),
+      sharedRail: managerRead.classList.contains("os-room-rail"),
       singleColumn: rail.classList.contains("grid-cols-1") && !rail.classList.contains("lg:grid-cols-2"),
       firstRowPaddingException: firstSegment.classList.contains("lg:first:pl-0"),
     }).toEqual({
-      centeredRail: true,
+      sharedRail: true,
       singleColumn: true,
       firstRowPaddingException: false,
     });
+    expect(managerRead).toHaveAttribute("aria-labelledby", "desk-manager-read-title");
+    expect(within(managerRead).getByRole("heading", { name: "Manager's Read" })).toHaveAttribute("id", "desk-manager-read-title");
+    expect(within(managerRead).queryByRole("button", { name: "Evidence" })).not.toBeInTheDocument();
+  });
+
+  it("stacks Right now below the headline and gives every item interior padding", () => {
+    renderHome();
+
+    const composition = screen.getByTestId("desk-brief-composition");
+    const rightNow = screen.getByTestId("desk-right-now");
+    const items = within(rightNow).getAllByRole("button");
+
+    expect(composition).not.toHaveClass("lg:grid-cols-[minmax(0,1fr)_18rem]");
+    expect(rightNow).toHaveClass("mt-7");
+    expect(items.every((item) => item.classList.contains("px-4") && item.classList.contains("py-4"))).toBe(true);
   });
 
   it("keeps Manager's Read metadata separate from readable body copy", () => {
@@ -157,12 +178,14 @@ describe("Home premium briefing", () => {
     expect(new Set(segmentClassNames).size).toBe(1);
     expect(firstSegment).toHaveClass("px-5", "py-5", "sm:px-7", "sm:py-7");
     expect(firstSegment).toHaveClass("grid-cols-1", "sm:grid-cols-[9rem_minmax(0,1fr)]");
-    expect(metadata).toHaveClass("grid-cols-[2rem_minmax(0,1fr)]");
+    expect(metadata).toHaveClass("grid-cols-1", "sm:grid-cols-[2.25rem_minmax(0,1fr)]");
     expect(within(metadata).getByTestId("desk-manager-read-number")).toHaveTextContent("01");
     expect(within(metadata).getByTestId("desk-manager-read-label")).toBeInTheDocument();
     expect(within(metadata).queryByTestId("desk-manager-read-body")).not.toBeInTheDocument();
     expect(firstSegment.children[0]).toBe(metadata);
     expect(firstSegment.children[1]).toBe(body);
+    expect(body).toHaveClass("os-body-copy", "w-full");
+    expect(body).not.toHaveClass("max-w-[42rem]");
   });
 
   it("refreshes only on explicit action and keeps the current brief visible during pending or failure", () => {

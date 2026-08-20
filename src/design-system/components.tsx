@@ -49,18 +49,21 @@ export function ProductButton({
   type = "button",
   variant = "primary",
   disabled,
+  ariaLabel,
 }: {
   children: ReactNode;
   onClick?: () => void;
   type?: "button" | "submit";
   variant?: "primary" | "secondary" | "quiet";
   disabled?: boolean;
+  ariaLabel?: string;
 }) {
   return (
     <Button
       type={type}
       disabled={disabled}
       onClick={onClick}
+      aria-label={ariaLabel}
       variant={variant === "quiet" ? "ghost" : variant}
       size="md"
     >
@@ -232,6 +235,7 @@ export function WorkspaceShell({
 }) {
   return (
     <div className="app-workspace app-workspace-reveal">
+      <div className="os-room-rail">
       {showBack && variant === "conversation" ? (
         <div className="sticky top-0 z-30 -mx-3 mb-2 border-b border-foreground/8 bg-background/92 px-3 py-2.5 backdrop-blur-xl lg:-mx-4 lg:px-4">
           <div className="flex w-full items-center gap-2">
@@ -265,6 +269,7 @@ export function WorkspaceShell({
         <h1 className="font-display mt-1.5 max-w-[28ch] text-[1.55rem] font-semibold leading-[1.12] tracking-[-0.025em] text-foreground sm:text-[1.75rem] lg:text-[2rem]">{title}{punctuateTitle ? "." : ""}</h1>
       </div> : null}
       {children}
+      </div>
     </div>
   );
 }

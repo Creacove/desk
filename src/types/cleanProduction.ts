@@ -1,4 +1,12 @@
 import type { LucideIcon } from "lucide-react";
+import type {
+  ReleaseDateChangeReceipt,
+  ReleaseGateResult,
+  ReleaseSchedulePreview,
+  ReleaseSuccessAssessment,
+} from "../../supabase/functions/_shared/release-success/types";
+
+export type { ReleaseGateResult } from "../../supabase/functions/_shared/release-success/types";
 
 export type CleanProductionView =
   | "labelHQ"
@@ -21,7 +29,6 @@ export type PriorityItem = {
   actionLabel: string;
   target: CleanProductionView;
 };
-
 export type AttentionItem = {
   title: string;
   body: string;
@@ -122,8 +129,17 @@ export type AgentViewModel = {
 export type ManagerRunStepViewModel = {
   id: string;
   label: string;
-  detail: string;
-  state: "pending" | "running" | "complete" | "failed";
+  status: "queued" | "running" | "completed" | "failed";
+  detail?: string;
+  state?: "pending" | "running" | "complete" | "failed";
+};
+
+export type ManagerRunViewModel = {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  steps: ManagerRunStepViewModel[];
+  streamedText?: string;
+  error?: string;
 };
 
 export type ManagerConversationContextQuestion = {
@@ -182,29 +198,20 @@ export type ManagerConversationStreamEvent =
   | { type: "run_completed"; runId: string; conversation: ConversationViewModel }
   | { type: "run_failed"; runId: string; error: string; conversation?: ConversationViewModel };
 
-export type ReleaseDateChangeMovedItem = {
-  taskId: string;
-  title: string;
-  from: string | null;
-  to: string;
-};
+export type ReleaseSuccessArtifactState =
+  | "investigating"
+  | "assessed"
+  | "proposed"
+  | "awaiting_approval"
+  | "applying"
+  | "applied"
+  | "failed";
 
-export type ReleaseDateChangePreservedItem = {
-  taskId: string;
-  reason: string;
-};
-
-export type ReleaseDateChangePreview = {
-  musicItemId: string;
-  releasePlanId: string;
-  missionId?: string;
-  fromDate: string | null;
-  proposedDate: string;
-  expectedRevision: number;
-  moved: ReleaseDateChangeMovedItem[];
-  preserved: ReleaseDateChangePreservedItem[];
-  nextDeadline: { taskId: string; title: string; deadline: string } | null;
-};
+export type ReleaseSuccessAssessmentViewModel = ReleaseSuccessAssessment;
+export type ReleaseSchedulePreviewViewModel = ReleaseSchedulePreview;
+export type ReleaseDateChangePreview = ReleaseSchedulePreview;
+export type ReleaseDateChangeMovedItem = ReleaseSchedulePreview["changes"][number];
+export type ReleaseDateChangePreservedItem = ReleaseSchedulePreview["preserved"][number];
 
 export type ReleaseDateChangeProposalInput = {
   musicItemId: string;
@@ -228,24 +235,11 @@ export type ReleaseDateChangeRequestViewModel = {
   status: "pending" | "approved" | "rejected" | "superseded" | "expired" | "failed";
   expectedPlanRevision: number;
   previewHash: string;
-  preview: ReleaseDateChangePreview;
+  preview: ReleaseSchedulePreviewViewModel;
   expiresAt: string;
 };
 
-export type ReleaseDateChangeReceiptViewModel = {
-  requestId: string;
-  releasePlanId: string;
-  musicItemId: string;
-  missionId?: string;
-  fromDate: string | null;
-  approvedDate: string;
-  previousRevision: number;
-  revision: number;
-  moved: ReleaseDateChangeMovedItem[];
-  preserved: ReleaseDateChangePreservedItem[];
-  nextDeadline: { taskId: string; title: string; deadline: string } | null;
-  operatingEventId?: string;
-};
+export type ReleaseDateChangeReceiptViewModel = ReleaseDateChangeReceipt;
 
 export type ConversationViewModel = {
   id: string;
@@ -256,11 +250,13 @@ export type ConversationViewModel = {
   summary: string;
   prompt: string;
   lastUpdate?: string;
+  activeRun?: ManagerRunViewModel;
   messages: Array<{
     id: string;
     speaker: "artist" | "manager";
     label: string;
     body: string;
+    status?: "sending" | "streaming" | "sent" | "failed";
     createdWork?: Array<{
       type: "music_item" | "mission" | "task";
       title: string;
@@ -367,7 +363,6 @@ export type ReleaseOpportunityTargetViewModel = {
     shareUrl?: string;
   };
 };
-
 export type ReleaseOpportunityArtifactViewModel = {
   id: string;
   musicItemId: string;
@@ -385,38 +380,16 @@ export type ReleaseOpportunityArtifactViewModel = {
 export type ReleaseSuccessArtifactViewModel = {
   id: string;
   musicItemId: string;
-  musicTitle: string;
   missionId?: string;
-  recommendation: "hold" | "move" | "review";
-  shortAnswer: string;
-  confidence: "high" | "medium" | "low" | "unknown";
-  limitations: string[];
-  evidenceIds: string[];
-  nextReviewAt?: string;
-  createdAt?: string;
   requestId?: string;
-  sourceRevision?: number;
-  actionPolicy?: string;
-  movement?: Array<{
-    type: "music_item" | "mission" | "task";
-    id?: string;
-    title: string;
-    body: string;
-    status?: "created" | "updated" | "approval_required" | "failed" | "pending";
-  }>;
-  change?: {
-    state: "preview" | "approved" | "failed";
-    proposedDate: string;
-    fromDate?: string | null;
-    reason?: string;
-    expectedPlanRevision: number;
-    previewHash: string;
-    idempotencyKey: string;
-    preview: ReleaseDateChangePreview;
-    request?: ReleaseDateChangeRequestViewModel;
-    receipt?: ReleaseDateChangeReceiptViewModel;
-    error?: string;
-  };
+  previewHash?: string;
+  idempotencyKey?: string;
+  state: ReleaseSuccessArtifactState;
+  subject: { title: string; itemType: string; approvedReleaseDate?: string };
+  assessment?: ReleaseSuccessAssessmentViewModel;
+  preview?: ReleaseSchedulePreviewViewModel;
+  receipt?: ReleaseDateChangeReceiptViewModel;
+  error?: { message: string; reference?: string; retryable: boolean };
 };
 
 export type MissionGenesisResultViewModel = {
@@ -445,7 +418,7 @@ export type MissionTaskResultViewModel = {
 export type MissionTaskDeliverableViewModel = {
   id: string;
   title: string;
-  status: "uploaded" | "checking" | "accepted" | "needs_revision" | "failed";
+  status: "missing" | "uploading" | "uploaded" | "checking" | "accepted" | "needs_revision" | "failed";
   documentId?: string;
   fileName?: string;
   validationSummary?: string;
@@ -523,7 +496,7 @@ export type MissionEventViewModel = {
 export type MissionViewModel = {
   id: string;
   title: string;
-  status: "active" | "candidate" | "complete" | "archived" | "cancelled";
+  status: "active" | "candidate" | "blocked" | "complete" | "archived" | "cancelled";
   progress: number;
   review: string;
   summary: string;
@@ -576,6 +549,7 @@ export type MusicObjectViewModel = {
   lifecycle: string;
   lifecycleStage?: string;
   blocker: string;
+  nextMove?: string;
   sourceKind: string;
   sourceLimit: string;
   sourceSummary?: {
@@ -633,8 +607,9 @@ export type MusicObjectViewModel = {
   splits?: {
     status: string;
     summary: string;
-    writers: string;
-    producers: string;
+    writers?: string;
+    producers?: string;
+    approvalLog?: string[];
     publishingTotal?: string;
     masterTotal?: string;
     contributors?: Array<{
@@ -925,3 +900,4 @@ export type CleanProductionRepositories = {
     loadEvidence: () => Promise<EvidenceItemViewModel[]>;
   };
 };
+

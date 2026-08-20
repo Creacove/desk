@@ -42,7 +42,6 @@ type DeskHQProps = {
 type DeskSignalMetric = {
   label: string;
   value: string;
-  context: string;
   sourceFamily: string;
   qualityTier: number;
 };
@@ -50,7 +49,7 @@ type DeskSignalMetric = {
 type CompactArtistMetric = TodayBriefMetric & { groupTitle: string };
 type ManagerReadSegment = { label: string; body: string };
 
-const MANAGER_READ_LABELS = ["Artist Intelligence", "Momentum", "Today’s Move", "Key Signal"];
+const MANAGER_READ_LABELS = ["Artist Intelligence", "Management Focus", "Strategic Read", "Manager's Call"];
 
 export function DeskHQScreen({
   profile,
@@ -76,59 +75,53 @@ export function DeskHQScreen({
 
   return (
     <section className="app-workspace app-workspace-reveal home-workspace relative isolate min-w-0 pb-12">
-      <WorkspaceHeader
-        title="Home"
-        action={(
-          <ActivityButton
-            count={visibleActivityCount}
-            onOpen={onOpenActivityCenter ?? (() => undefined)}
-          />
-        )}
-      />
-
-      <HomeManagerComposer onAskManager={onAskManager} />
-
-      <section data-testid="desk-editorial-brief" className="mt-8 sm:mt-10">
-        <BriefSectionHeader
-          updatedAt={updatedAt}
-          pending={briefPending}
-          error={todayBriefError}
-          canRefresh={Boolean(onRefreshBrief)}
-          onRefresh={onRefreshBrief}
+      <div className="os-room-rail">
+        <WorkspaceHeader
+          title="Home"
+          action={(
+            <ActivityButton
+              count={visibleActivityCount}
+              onOpen={onOpenActivityCenter ?? (() => undefined)}
+            />
+          )}
         />
 
-        <div
-          data-testid="desk-brief-composition"
-          className={rightNowItems.length
-            ? "mt-5 grid min-w-0 gap-7 lg:grid-cols-[minmax(0,1fr)_18rem] lg:gap-8 xl:grid-cols-[minmax(0,1fr)_20rem] xl:gap-10"
-            : "mt-5 min-w-0"}
-        >
-          <div className="min-w-0">
-            <p
-              data-testid="desk-brief-headline"
-              className="max-w-[62rem] break-words font-display font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]"
-              style={{ fontSize: "clamp(28px, 2.35vw, 36px)" }}
-            >
-              {brief.headlineRead}
-            </p>
+        <HomeManagerComposer onAskManager={onAskManager} />
+
+        <section data-testid="desk-editorial-brief" className="mt-8 sm:mt-10">
+          <BriefSectionHeader
+            updatedAt={updatedAt}
+            pending={briefPending}
+            error={todayBriefError}
+            canRefresh={Boolean(onRefreshBrief)}
+            onRefresh={onRefreshBrief}
+          />
+
+          <div data-testid="desk-brief-composition" className="mt-5 min-w-0">
+            <div className="min-w-0">
+              <p
+                data-testid="desk-brief-headline"
+                className="max-w-[62rem] break-words font-display font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]"
+                style={{ fontSize: "clamp(28px, 2.35vw, 36px)" }}
+              >
+                {brief.headlineRead}
+              </p>
+            </div>
+
+            {rightNowItems.length ? (
+              <RightNow
+                items={rightNowItems}
+                onNavigate={onNavigate}
+                onDrawer={onDrawer}
+              />
+            ) : null}
           </div>
+        </section>
 
-          {rightNowItems.length ? (
-            <RightNow
-              items={rightNowItems}
-              onNavigate={onNavigate}
-              onDrawer={onDrawer}
-            />
-          ) : null}
-        </div>
-      </section>
+        {metrics.length ? <SignalMetricStrip metrics={metrics} /> : null}
 
-      {metrics.length ? <SignalMetricStrip metrics={metrics} /> : null}
-
-      <ManagerRead
-        segments={managerReadSegments}
-        onEvidence={() => onDrawer("evidence")}
-      />
+        <ManagerRead segments={managerReadSegments} />
+      </div>
     </section>
   );
 }
@@ -142,7 +135,7 @@ function ActivityButton({ count, onOpen }: { count: number; onOpen: () => void }
       aria-label={count ? `Open Activity Center, ${count} unread` : "Open Activity Center"}
       onClick={onOpen}
       leadingIcon={<Bell className="h-4 w-4" aria-hidden="true" />}
-      className="relative"
+      className="relative min-h-11"
     >
       <span>Activity</span>
       {count ? (
@@ -171,7 +164,7 @@ function HomeManagerComposer({ onAskManager }: { onAskManager: (body: string) =>
       onSubmit={submit}
       ariaLabel="Work with Manager"
       placeholder="What do you want to work on?"
-      className="max-w-[900px]"
+      className="w-full"
     />
   );
 }
@@ -233,17 +226,17 @@ function RightNow({
   return (
     <aside
       data-testid="desk-right-now"
-      className="min-w-0 border-t border-foreground/8 pt-5 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0"
+      className="mt-7 min-w-0"
     >
       <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Right now</p>
-      <div className="mt-2 divide-y divide-foreground/8 border-b border-foreground/8">
+      <div className="mt-3 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.025] sm:grid-cols-2 sm:divide-x sm:divide-foreground/8">
         {items.map((item, index) => (
           <button
             key={`${item.title}-${index}`}
             type="button"
             aria-label={`Open ${item.title}`}
             onClick={() => openAttentionItem(item, onNavigate, onDrawer)}
-            className="group flex w-full items-start justify-between gap-3 py-4 text-left outline-none transition-colors duration-150 hover:bg-foreground/[0.018] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
+            className="group flex w-full items-start justify-between gap-3 border-b border-foreground/8 px-4 py-4 text-left outline-none transition-colors duration-150 last:border-b-0 hover:bg-foreground/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20 sm:border-b-0 sm:px-5"
           >
             <span className="min-w-0">
               <span className="block text-[14px] font-semibold leading-snug text-foreground">{item.title}</span>
@@ -285,7 +278,6 @@ function SignalMetricStrip({ metrics }: { metrics: DeskSignalMetric[] }) {
           >
             <p className="break-words text-[12px] font-medium leading-[1.35] text-muted-foreground [overflow-wrap:anywhere]">{metric.label}</p>
             <p className="mt-2 break-words text-[22px] font-semibold leading-none tracking-[-0.018em] text-foreground sm:text-[24px] [overflow-wrap:anywhere]">{metric.value}</p>
-            {metric.context ? <p className="mt-1.5 break-words text-[12px] font-medium leading-snug text-muted-foreground/62 [overflow-wrap:anywhere]">{metric.context}</p> : null}
           </article>
         ))}
       </div>
@@ -314,20 +306,13 @@ function metricCellBorderClass(index: number, count: number) {
   return "";
 }
 
-function ManagerRead({
-  segments,
-  onEvidence,
-}: {
-  segments: ManagerReadSegment[];
-  onEvidence: () => void;
-}) {
+function ManagerRead({ segments }: { segments: ManagerReadSegment[] }) {
   if (!segments.length) return null;
 
   return (
-    <section data-testid="desk-manager-read" className="mx-auto mt-9 w-full max-w-[1120px] sm:mt-11">
-      <div className="flex items-end justify-between gap-4">
-        <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</p>
-        <Button type="button" variant="ghost" size="sm" onClick={onEvidence}>Evidence</Button>
+    <section data-testid="desk-manager-read" aria-labelledby="desk-manager-read-title" className="os-room-rail mt-9 sm:mt-11">
+      <div>
+        <h2 id="desk-manager-read-title" className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</h2>
       </div>
 
       <div data-testid="desk-manager-read-grid" className="mt-3 grid grid-cols-1 divide-y divide-foreground/8 border-y border-foreground/8">
@@ -339,12 +324,12 @@ function ManagerRead({
           >
             <div
               data-testid="desk-manager-read-metadata"
-              className="grid min-w-0 grid-cols-[2rem_minmax(0,1fr)] items-baseline gap-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
+              className="grid min-w-0 grid-cols-1 items-baseline gap-1 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
             >
               <span data-testid="desk-manager-read-number" className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
               <p data-testid="desk-manager-read-label" className="font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/68">{segment.label}</p>
             </div>
-            <p data-testid="desk-manager-read-body" className="min-w-0 max-w-[42rem] break-words text-[15px] font-medium leading-[1.65] text-foreground/84 [overflow-wrap:anywhere] sm:text-[16px]">{segment.body}</p>
+            <p data-testid="desk-manager-read-body" className="os-body-copy min-w-0 w-full break-words font-medium text-foreground/84 [overflow-wrap:anywhere]">{segment.body}</p>
           </article>
         ))}
       </div>
@@ -418,21 +403,19 @@ function metricSourceFamily(metric: CompactArtistMetric) {
   if (/instagram/.test(text)) return "instagram";
   if (/shazam/.test(text)) return "shazam";
   if (/apple music/.test(text)) return "apple-music";
+  if (/deezer/.test(text)) return "deezer";
+  if (/pandora/.test(text)) return "pandora";
+  if (/\bx\b|twitter/.test(text)) return "x";
   return "other";
 }
 
 function formatArtistMetricDisplay(metric: CompactArtistMetric) {
   const valueParts = metric.value.match(/^(.+?)\s+\((.+)\)$/);
   const value = valueParts?.[1]?.trim() || metric.value;
-  const parentheticalContext = valueParts?.[2]?.trim();
   const source = metricSourceFamily(metric);
   const rawLabel = metric.label.replace(/\s+[—-]\s+/g, " - ").trim();
   const label = scopeMetricLabel(rawLabel, source);
-  return {
-    label,
-    value,
-    context: [metric.context, parentheticalContext].filter(Boolean).join(" / "),
-  };
+  return { label, value };
 }
 
 function scopeMetricLabel(label: string, source: string) {
@@ -447,6 +430,9 @@ function scopeMetricLabel(label: string, source: string) {
     : source === "youtube" ? "YouTube"
     : source === "instagram" ? "Instagram"
     : source === "apple-music" ? "Apple Music"
+    : source === "deezer" ? "Deezer"
+    : source === "pandora" ? "Pandora"
+    : source === "x" ? "X"
     : null;
   if (!sourceLabel || lower.includes(sourceLabel.toLowerCase())) return label;
 
@@ -509,5 +495,12 @@ function formatBriefGeneratedAt(value?: string) {
   if (!value) return null;
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const time = date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const now = new Date();
+  const sameLocalDay = date.getFullYear() === now.getFullYear()
+    && date.getMonth() === now.getMonth()
+    && date.getDate() === now.getDate();
+  if (sameLocalDay) return `today at ${time}`;
+  const day = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  return `${day} at ${time}`;
 }

@@ -28,7 +28,7 @@ export function TaskRow({
       type="button"
       onClick={onOpen}
       className={cn(
-        "group grid min-h-[58px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-2.5 text-left transition-colors",
+        "group grid min-h-[68px] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors",
         emphasized && !done && !availableAfter
           ? "bg-foreground/[0.035] hover:bg-foreground/[0.055]"
           : "hover:bg-foreground/[0.025]",
@@ -50,22 +50,22 @@ export function TaskRow({
       <span className="min-w-0">
         <span
           className={cn(
-            "block text-[13px] font-bold leading-snug text-foreground",
+            "os-list-title block text-foreground",
             done && "font-semibold text-muted-foreground",
           )}
         >
           {task.title}
         </span>
         {availableAfter ? (
-          <span className="mt-1 block text-[11px] font-medium leading-snug text-muted-foreground">
+          <span className="os-list-meta mt-1 block font-medium text-muted-foreground">
             Available after {availableAfter}
           </span>
         ) : mutation?.status === "error" ? (
-          <span className="mt-1 block text-[11px] font-medium text-destructive">Couldn’t save. Tap to retry.</span>
+          <span className="os-list-meta mt-1 block font-medium text-destructive">Couldn’t save. Tap to retry.</span>
         ) : pending ? (
-          <span className="mt-1 block text-[11px] font-medium text-muted-foreground">Saving…</span>
+          <span className="os-list-meta mt-1 block font-medium text-muted-foreground">Saving…</span>
         ) : blocked ? (
-          <span className="mt-1 block text-[11px] font-medium text-[#c65d17]">Changes requested</span>
+          <span className="os-list-meta mt-1 block font-medium text-[#c65d17]">Changes requested</span>
         ) : null}
       </span>
 

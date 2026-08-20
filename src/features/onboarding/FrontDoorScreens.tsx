@@ -342,6 +342,11 @@ export function PaywallPreviewScreen({
                         <MusicArtwork name={release.name} imageUrl={release.artworkUrl} />
                         <p className="mt-2 truncate text-[11px] font-semibold text-foreground">{release.name}</p>
                         {release.releaseDate ? <p className="mt-0.5 text-[9px] font-medium text-muted-foreground/58">{release.releaseDate.slice(0, 4)}</p> : null}
+                        {release === latestProject && release.tracks.length ? (
+                          <div className="mt-1 grid gap-0.5">
+                            {release.tracks.slice(0, 3).map((track) => <p key={track.spotifyTrackId} className="truncate text-[9px] font-medium text-muted-foreground/72">{track.name}</p>)}
+                          </div>
+                        ) : null}
                       </article>
                     ))}
                   </div>
@@ -367,7 +372,7 @@ export function PaywallPreviewScreen({
               Open {artist.name}&rsquo;s Desk.
             </h1>
             <p className="mt-3 max-w-[27rem] text-[13px] font-medium leading-relaxed text-muted-foreground/72">
-              Desk will build the first Manager view around this artist.
+              Your desk opens with catalog import, audience intelligence, Manager brief, and music reads.
             </p>
 
             <div className="mt-7 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Billing interval">

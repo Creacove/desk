@@ -15,8 +15,9 @@ export function StaffWorkspace({
 
   return (
     <section className="app-workspace app-workspace-reveal pb-12">
-      <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
-      <p className="mb-6 max-w-[680px] text-[14px] font-medium leading-[1.6] text-muted-foreground">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
+      <div className="os-room-rail">
+        <WorkspaceHeader eyebrow="Artist team" title="Artist Team Agents" />
+        <p className="os-reading-measure mb-6 text-[14px] font-medium leading-[1.6] text-muted-foreground">Your AI team helps plan, coordinate, and execute the work that moves your career forward.</p>
 
       <div data-testid="staff-mobile-list" className="grid gap-2 md:hidden">
         {orderedAgents.map((agent) => {
@@ -34,8 +35,8 @@ export function StaffWorkspace({
                 {locked ? <Lock className="h-4 w-4" aria-hidden="true" /> : <Icon className="h-4 w-4" aria-hidden="true" />}
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-semibold text-foreground">{agent.name}</span>
-                <span className="mt-0.5 line-clamp-1 block text-[12px] font-medium text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
+                <span className="os-list-title block truncate text-foreground">{agent.name}</span>
+                <span className="os-list-meta mt-0.5 line-clamp-1 block font-medium text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
               </span>
               {!locked ? <span className="shrink-0 text-[11px] font-semibold text-brand-accent">Available now</span> : null}
             </button>
@@ -43,7 +44,7 @@ export function StaffWorkspace({
         })}
       </div>
 
-      <div data-testid="staff-desktop-list" className="hidden border-y border-foreground/8 md:block">
+        <div data-testid="staff-desktop-list" className="hidden border-y border-foreground/8 md:block">
         {orderedAgents.map((agent) => {
           const Icon = agent.icon;
           const locked = agent.status !== "available";
@@ -59,8 +60,8 @@ export function StaffWorkspace({
                 {locked ? <Lock className="h-[18px] w-[18px]" aria-hidden="true" /> : <Icon className="h-[18px] w-[18px]" aria-hidden="true" />}
               </span>
               <span className="min-w-0">
-                <span className="block text-[15px] font-semibold text-foreground">{agent.name}</span>
-                <span className="mt-1 block max-w-[680px] text-[13px] font-medium leading-[1.55] text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
+                <span className="os-list-title block text-foreground">{agent.name}</span>
+                <span className="os-list-meta mt-1 block font-medium text-muted-foreground">{locked ? "Not available on this plan" : agent.purpose}</span>
               </span>
               <span className={`justify-self-end whitespace-nowrap text-[12px] font-medium ${locked ? "text-muted-foreground/65" : "text-brand-accent"}`}>
                 {locked ? "Locked" : "Available now"}
@@ -68,6 +69,7 @@ export function StaffWorkspace({
             </button>
           );
         })}
+        </div>
       </div>
     </section>
   );
@@ -76,7 +78,7 @@ export function StaffWorkspace({
 export function LockedAgentWorkspace({ agent, onBack }: { agent: AgentViewModel; onBack: () => void }) {
   return (
     <WorkspaceShell eyebrow={agent.name} title={agent.workspaceTitle} onBack={onBack}>
-      <div className="grid min-h-[320px] max-w-[760px] place-items-center border-y border-foreground/8 px-6 py-10 text-center">
+      <div className="os-reading-measure grid min-h-[320px] place-items-center border-y border-foreground/8 px-6 py-10 text-center">
         <div className="max-w-sm">
           <span className="mx-auto flex h-11 w-11 items-center justify-center rounded-[11px] bg-foreground/[0.055] text-muted-foreground">
             <Lock className="h-[18px] w-[18px]" aria-hidden="true" />

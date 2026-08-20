@@ -12,10 +12,12 @@ function song(overrides: Partial<MusicObjectViewModel> = {}): MusicObjectViewMod
     lifecycleStage: "released",
     blocker: "None",
     sourceLimit: "Spotify catalog metadata only",
-    managerReadStatus: "unknown",
     linkedMissionIds: [],
     linkedTaskCount: 0,
     ...overrides,
+    status: overrides.status ?? "active",
+    sourceKind: overrides.sourceKind ?? "spotify_public_catalog",
+    managerReadStatus: overrides.managerReadStatus ?? "unknown",
   };
 }
 
@@ -33,6 +35,7 @@ function mission(overrides: Partial<MissionViewModel> = {}): MissionViewModel {
     subjectId: "song-1",
     nextTask: "Build the release kit",
     ...overrides,
+    tasks: overrides.tasks ?? [],
   };
 }
 

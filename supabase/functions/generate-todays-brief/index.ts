@@ -33,6 +33,10 @@ import {
 } from "../_shared/durableWorkflow.ts";
 import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
+import {
+  loadTodaysBriefOperatingContext,
+  maybeRefreshChartmetricArtistForTodaysBrief,
+} from "../_shared/todaysBriefOperatingContext.ts";
 
 declare const EdgeRuntime: {
   waitUntil(promise: Promise<unknown>): void;
@@ -187,7 +191,16 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
       return json({ status: "processing", runId: recoveryRun.id, setupMusicReadTargets: [] });
     }
 
-    const { packet, sourceAudit, managerIntelligencePacket, setupMusicReadTargets } = await buildArtistBriefPacket(authClient, input);
+    if (generationMode === "operating" && !isServiceRoleInvocation) {
+      await maybeRefreshChartmetricArtistForTodaysBrief({
+        db: authClient,
+        input,
+        authHeader,
+        supabaseUrl,
+      });
+    }
+
+    const { packet, sourceAudit, managerIntelligencePacket, setupMusicReadTargets } = await buildArtistBriefPacket(authClient, input, generationMode);
     const evidenceCutoff = readEvidenceCutoff(sourceAudit);
     const packetRefs = sourceAudit.flatMap((row) => typeof row.id === "string" ? [row.id] : []);
     const targetRefs = [
@@ -435,13 +448,15 @@ async function loadCompletedTodaysBriefRun(supabase: any, input: GenerateTodaysB
 async function buildArtistBriefPacket(
   supabase: any,
   input: GenerateTodaysBriefInput,
+  generationMode: TodaysBriefPromptMode,
 ): Promise<{ packet: ArtistBriefPacket; sourceAudit: Array<Record<string, unknown>>; managerIntelligencePacket: Record<string, unknown>; setupMusicReadTargets: SetupMusicReadTarget[] }> {
-  const [profile, musicItems, musicProjects, evidenceRows, syncRows] = await Promise.all([
+  const [profile, musicItems, musicProjects, evidenceRows, syncRows, operatingContext] = await Promise.all([
     loadArtistProfile(supabase, input),
     loadMusicItems(supabase, input),
     loadMusicProjects(supabase, input),
     loadArtistEvidence(supabase, input),
     loadSourceSyncJobs(supabase, input),
+    generationMode === "operating" ? loadTodaysBriefOperatingContext(supabase, input) : Promise.resolve(null),
   ]);
 
   const spotifyIdentity = isRecord(profile.spotify_identity) ? profile.spotify_identity : {};
@@ -483,7 +498,7 @@ async function buildArtistBriefPacket(
     sourceLimits,
     generatedFor: input.trigger,
   };
-  const managerIntelligencePacket = buildManagerIntelligencePacket({
+  const baseManagerIntelligencePacket = buildManagerIntelligencePacket({
     accountId: input.accountId,
     artistWorkspaceId: input.artistWorkspaceId,
     artistId: input.artistId,
@@ -500,11 +515,25 @@ async function buildArtistBriefPacket(
     musicProjects,
     evidenceRows,
   });
+  const existingInternalOnly = isRecord(baseManagerIntelligencePacket.internal_only_json)
+    ? baseManagerIntelligencePacket.internal_only_json
+    : {};
+  const managerIntelligencePacket = operatingContext
+    ? {
+        ...baseManagerIntelligencePacket,
+        internal_only_json: {
+          ...existingInternalOnly,
+          operating_context: operatingContext,
+        },
+      }
+    : baseManagerIntelligencePacket;
 
   return {
     packet,
     managerIntelligencePacket,
-    setupMusicReadTargets: selectSetupMusicReadTargets(musicItems, musicProjects, evidenceRows),
+    setupMusicReadTargets: generationMode === "setup-map"
+      ? selectSetupMusicReadTargets(musicItems, musicProjects, evidenceRows)
+      : [],
     sourceAudit: evidenceRows.map((row) => ({
       id: row.id,
       source: row.source,
@@ -969,6 +998,9 @@ async function markUsageFailedSafe(db: any, usageId: string, failureMessage: str
 
 function evidenceMetric(row: EvidenceRow): (TodaysBriefMetricInput & { priority: number; numericValue?: number }) | null {
   const metricName = row.metric_name ?? row.evidence_type ?? "";
+  if (metricName.startsWith("chartmetric_country_rank_") || metricName === "chartmetric_artist_rank" || metricName === "chartmetric_artist_score") {
+    return null;
+  }
   const value = typeof row.metric_value === "number" ? formatMetricValue(row.metric_value, row.metric_unit) : textMetricValue(row);
   if (!metricName || !value) return null;
   const category = metricCategory(row);
@@ -1412,30 +1444,34 @@ function metricPriority(category: TodaysBriefMetricInput["category"], metricName
 }
 
 function metricLabel(metricName: string, evidenceType?: string | null) {
-  if (metricName.startsWith("chartmetric_country_rank_")) return `Country rank ${titleCase(metricName.replace("chartmetric_country_rank_", ""))}`;
-  if (metricName.startsWith("spotify_listener_city_")) return titleCase(metricName.replace("spotify_listener_city_", ""));
-  if (metricName.includes("monthly_listeners")) return "Monthly listeners";
-  if (metricName === "spotify_followers") return "Followers";
-  if (metricName === "twitter_followers") return "X";
-  if (metricName === "instagram_followers") return "Instagram";
-  if (metricName === "tiktok_followers") return "TikTok";
-  if (metricName === "youtube_subscribers") return "YouTube";
-  if (metricName.includes("playlist_total_reach")) return "Playlist reach";
-  if (metricName.includes("playlist_count")) return "Playlist count";
-  if (metricName.includes("artist_score")) return "Artist score";
-  if (metricName.includes("artist_rank")) return "Artist rank";
-  if (metricName.includes("tiktok_top_video")) return "Top TikTok video";
+  if (metricName.startsWith("spotify_listener_city_")) {
+    return `Spotify listeners in ${titleCase(metricName.replace("spotify_listener_city_", ""))}`;
+  }
+  if (metricName === "spotify_monthly_listeners") return "Spotify monthly listeners";
+  if (metricName === "spotify_followers") return "Spotify followers";
+  if (metricName === "twitter_followers") return "X followers";
+  if (metricName === "instagram_followers") return "Instagram followers";
+  if (metricName === "tiktok_followers") return "TikTok followers";
+  if (metricName === "youtube_subscribers") return "YouTube subscribers";
+  if (metricName === "youtube_monthly_video_views") return "YouTube monthly views";
+  if (metricName === "youtube_daily_video_views") return "YouTube daily views";
+  if (metricName.includes("spotify_playlist_total_reach")) return "Spotify playlist reach";
+  if (metricName.includes("spotify_playlist_count")) return "Spotify playlist count";
+  if (metricName.includes("tiktok_top_video")) return "TikTok top video views";
   if (metricName.includes("tiktok_video_creates")) return "TikTok creates";
   if (metricName.includes("tiktok_track_posts")) return "TikTok track posts";
   if (metricName.includes("tiktok_likes")) return "TikTok likes";
   if (metricName.includes("youtube")) return "YouTube";
   if (metricName.includes("instagram")) return "Instagram";
   if (metricName.includes("shazam")) return "Shazams";
+  if (metricName === "deezer_fans") return "Deezer fans";
+  if (metricName === "pandora_listeners_28_day") return "Pandora 28-day listeners";
+  if (metricName === "pandora_lifetime_streams") return "Pandora lifetime streams";
   if (metricName.includes("airplay")) return "Airplay";
-  if (metricName.includes("spotify_trailing_28d_streams")) return "Last 28 days";
-  if (metricName.includes("spotify_peak_day_streams")) return "Peak day";
-  if (metricName.includes("spotify_stream_trend")) return "Stream trend";
-  if (metricName.includes("apple_music_plays")) return "Apple Music";
+  if (metricName.includes("spotify_trailing_28d_streams")) return "Spotify streams · last 28 days";
+  if (metricName.includes("spotify_peak_day_streams")) return "Spotify peak-day streams";
+  if (metricName.includes("spotify_stream_trend")) return "Spotify stream trend";
+  if (metricName.includes("apple_music_plays")) return "Apple Music plays";
   if (metricName === "career_stage") return "Career stage";
   if (metricName === "career_trend") return "Career trend";
   if (metricName === "artist_primary_genre") return "Primary genre";

@@ -5,15 +5,15 @@ const music = readFileSync("src/features/music/MusicScreens.tsx", "utf8");
 
 describe("song room tab visual system", () => {
   it("lets every Song Room tab use the full desktop workspace width", () => {
-    expect(music).toContain('data-testid="song-room-mobile-overview" className="w-full"');
-    expect(music).toContain('data-testid="song-room-files" className="w-full"');
-    expect(music).toContain('data-testid="song-room-details" className="w-full"');
-    expect(music).toContain('data-testid="song-room-rights" className="w-full"');
+    for (const testId of ["song-room-mobile-overview", "song-room-files", "song-room-details", "song-room-rights"]) {
+      expect(music).toContain(`data-testid="${testId}" className="os-song-tab-panel w-full"`);
+    }
   });
 
   it("uses the same section-title and supporting-copy scale across the song room", () => {
     expect(music.match(/text-\[20px\].*sm:text-\[22px\]/g)?.length ?? 0).toBeGreaterThanOrEqual(3);
-    expect(music).toContain('text-[12px] font-medium leading-5 text-muted-foreground/78');
+    expect(music).toContain("os-tab-intro");
+    expect(music).toContain("os-section-label");
   });
 
   it("keeps Details and Rights mobile-native instead of forcing desktop tables onto phones", () => {
@@ -23,6 +23,7 @@ describe("song room tab visual system", () => {
   });
 
   it("keeps Rights empty-state copy short", () => {
-    expect(music).toContain('Add contributors and splits before release.');
+    expect(music).not.toContain('Add contributors and splits before release.');
+    expect(music).toContain('>Set up splits</Button>');
   });
 });

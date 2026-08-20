@@ -215,21 +215,35 @@ export function SkeletonRows({ count = 4, className }: { count?: number; classNa
   );
 }
 
-export type TimestampContext = "standalone" | "grouped" | "rail";
+export type TimestampContext = "standalone" | "grouped" | "rail" | "activity";
 
 export function formatProductTimestamp(value: string, context: TimestampContext = "standalone", now = new Date()) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Recently";
 
   const delta = now.getTime() - date.getTime();
-  if (delta >= 0 && delta < 60_000) return "Just now";
 
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const dayDiff = Math.round((today.getTime() - target.getTime()) / 86_400_000);
-  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  const time = new Intl.DateTimeFormat(undefined, context === "grouped"
+    ? { hour: "numeric", minute: "2-digit", second: "2-digit" }
+    : { hour: "numeric", minute: "2-digit" }).format(date);
 
   if (context === "grouped") return time;
+  if (context === "activity") {
+    if (delta >= 0 && delta < 60_000) return "Just now";
+    if (dayDiff === 0) return time;
+    if (dayDiff === 1) return `Yesterday, ${time}`;
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+      hour: "numeric",
+      minute: "2-digit",
+  }).format(date);
+  }
+  if (delta >= 0 && delta < 60_000) return "Just now";
   if (context === "rail") {
     if (dayDiff === 0) return time;
     if (dayDiff === 1) return "Yesterday";
