@@ -144,6 +144,27 @@ describe("Home premium briefing", () => {
     });
   });
 
+  it("keeps Manager's Read metadata separate from readable body copy", () => {
+    renderHome();
+
+    const rail = screen.getByTestId("desk-manager-read-grid");
+    const segments = within(rail).getAllByTestId("desk-manager-read-segment");
+    const segmentClassNames = segments.map((segment) => segment.className);
+    const firstSegment = segments[0];
+    const metadata = within(firstSegment).getByTestId("desk-manager-read-metadata");
+    const body = within(firstSegment).getByTestId("desk-manager-read-body");
+
+    expect(new Set(segmentClassNames).size).toBe(1);
+    expect(firstSegment).toHaveClass("px-5", "py-5", "sm:px-7", "sm:py-7");
+    expect(firstSegment).toHaveClass("grid-cols-1", "sm:grid-cols-[9rem_minmax(0,1fr)]");
+    expect(metadata).toHaveClass("grid-cols-[2rem_minmax(0,1fr)]");
+    expect(within(metadata).getByTestId("desk-manager-read-number")).toHaveTextContent("01");
+    expect(within(metadata).getByTestId("desk-manager-read-label")).toBeInTheDocument();
+    expect(within(metadata).queryByTestId("desk-manager-read-body")).not.toBeInTheDocument();
+    expect(firstSegment.children[0]).toBe(metadata);
+    expect(firstSegment.children[1]).toBe(body);
+  });
+
   it("refreshes only on explicit action and keeps the current brief visible during pending or failure", () => {
     const onRefreshBrief = vi.fn();
     const first = renderHome({ onRefreshBrief });
