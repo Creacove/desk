@@ -292,8 +292,8 @@ export function PaywallPreviewScreen({
   const checkoutError = error ? friendlyCheckoutMessage(error) : null;
 
   return (
-    <main aria-label="Desk preview" className="app-theme min-h-dvh overflow-x-hidden bg-background text-foreground">
-      <div className="mx-auto w-full max-w-[92rem] px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:px-8 lg:pt-5">
+    <main aria-label="Desk preview" className="app-theme h-dvh overflow-hidden bg-background text-foreground lg:h-auto lg:min-h-dvh lg:overflow-x-hidden">
+      <div className="mx-auto h-full w-full max-w-[92rem] overflow-hidden px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-4 sm:px-6 lg:h-auto lg:overflow-visible lg:px-8 lg:pt-5">
         <FrontDoorHeader onSignOut={onSignOut} />
 
         <button
@@ -305,8 +305,12 @@ export function PaywallPreviewScreen({
           Choose another artist
         </button>
 
-        <section className="mt-4 grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(19rem,0.42fr)] lg:items-start lg:gap-12">
-          <div className="min-w-0 rounded-[22px] border border-foreground/8 bg-foreground/[0.018] p-4 sm:p-6 lg:grid lg:grid-cols-[10.5rem_minmax(0,1fr)] lg:gap-7 lg:p-7">
+        <section className="relative mt-4 h-[calc(100dvh-8.5rem)] min-h-0 overflow-hidden lg:grid lg:h-auto lg:min-h-0 lg:grid-cols-[minmax(0,1fr)_minmax(19rem,0.42fr)] lg:items-start lg:gap-12">
+          <div
+            data-testid="paywall-preview-layer"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 min-w-0 overflow-hidden rounded-[22px] border border-foreground/8 bg-foreground/[0.018] p-4 sm:p-6 lg:pointer-events-auto lg:relative lg:inset-auto lg:grid lg:grid-cols-[10.5rem_minmax(0,1fr)] lg:gap-7 lg:overflow-visible lg:p-7"
+          >
             <aside className="hidden lg:block">
               <div className="flex items-center gap-3">
                 <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} size="lg" />
@@ -356,13 +360,19 @@ export function PaywallPreviewScreen({
               </div>
 
               <div className="mt-8 grid gap-6 sm:grid-cols-2">
-                <LockedIntelligencePreview label="Audience" lines={["58%", "78%", "44%"]} />
-                <LockedIntelligencePreview label="Manager's read" lines={["88%", "72%", "54%"]} />
+                <LockedIntelligencePreview label="Audience intelligence" lines={AUDIENCE_PREVIEW_LINES} />
+                <LockedIntelligencePreview label="Manager's read" lines={MANAGER_READ_PREVIEW_LINES} />
               </div>
             </div>
           </div>
 
-          <aside className="min-w-0 lg:sticky lg:top-7">
+          <div data-testid="paywall-mobile-veil" aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 bg-background/58 backdrop-blur-[2px] dark:bg-[#0d0f13]/68 lg:hidden" />
+
+          <aside
+            data-testid="paywall-checkout-card"
+            aria-label="Subscription checkout"
+            className="fixed inset-x-3 top-32 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 min-w-0 max-h-[calc(100dvh-6rem)] overflow-y-auto overscroll-contain rounded-[20px] border border-foreground/10 bg-background/95 p-4 shadow-[0_26px_88px_rgba(17,19,24,0.28)] backdrop-blur-xl sm:inset-x-5 sm:p-5 lg:sticky lg:top-7 lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none"
+          >
             <div className="flex items-center gap-3">
               <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} size="md" shared />
               <p className="min-w-0 truncate text-[13px] font-semibold text-foreground">{artist.name}</p>
@@ -549,14 +559,45 @@ function MusicArtwork({ name, imageUrl }: { name: string; imageUrl?: string }) {
   );
 }
 
-function LockedIntelligencePreview({ label, lines }: { label: string; lines: string[] }) {
+type LockedInsightLine = {
+  eyebrow: string;
+  copy: string;
+};
+
+const AUDIENCE_PREVIEW_LINES: LockedInsightLine[] = [
+  { eyebrow: "Listener signal", copy: "A clearer picture of who is leaning in appears here." },
+  { eyebrow: "Discovery pattern", copy: "The strongest paths into the catalog are waiting to be read." },
+  { eyebrow: "Next opportunity", copy: "Unlock the Desk to see the audience move worth acting on." },
+];
+
+const MANAGER_READ_PREVIEW_LINES: LockedInsightLine[] = [
+  { eyebrow: "Priority", copy: "The next move is shaped by the strongest current signal." },
+  { eyebrow: "Timing", copy: "Release context and audience response are read together." },
+  { eyebrow: "Recommendation", copy: "Unlock the Manager's view to see the focused action." },
+];
+
+function LockedIntelligencePreview({ label, lines }: { label: string; lines: readonly LockedInsightLine[] }) {
+  const testId = label.replace(/[’']/g, "").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
+
   return (
-    <section className="border-t border-foreground/8 pt-4" aria-label={`${label} preview locked`}>
-      <p className="font-ui text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/62">{label}</p>
-      <div className="mt-4 space-y-2.5" aria-hidden="true">
-        {lines.map((width, index) => (
-          <div key={`${label}-${index}`} className="h-2.5 rounded-full bg-foreground/[0.09] blur-[2px]" style={{ width }} />
-        ))}
+    <section className="relative overflow-hidden rounded-[14px] border border-foreground/10 bg-background/55 p-3 pt-4 dark:border-white/10 dark:bg-white/[0.06]" aria-label={`${label} preview locked`}>
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-white/28 via-transparent to-brand-accent/[0.08] dark:from-white/[0.05] dark:to-brand-accent/[0.12]" aria-hidden="true" />
+      <div className="relative">
+        <div className="flex items-center justify-between gap-2">
+          <p className="font-ui text-[9px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/78">{label}</p>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-foreground/10 bg-background/65 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-[0.08em] text-muted-foreground/72 dark:border-white/10 dark:bg-white/[0.08] dark:text-white/70">
+            <Lock className="h-2.5 w-2.5" aria-hidden="true" />
+            Locked
+          </span>
+        </div>
+        <div data-testid={`paywall-locked-insight-copy-${testId}`} className="mt-3 grid gap-2 select-none" aria-hidden="true">
+          {lines.map((line) => (
+            <div key={`${label}-${line.eyebrow}`} className="rounded-[9px] border border-foreground/8 bg-foreground/[0.035] px-2.5 py-2 dark:border-white/10 dark:bg-white/[0.05]">
+              <p className="font-ui text-[8px] font-bold uppercase tracking-[0.1em] text-foreground/82 blur-[3px] dark:text-white/78">{line.eyebrow}</p>
+              <p className="mt-1 text-[10px] font-semibold leading-snug text-foreground/78 blur-[3px] dark:text-white/72">{line.copy}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
   );
