@@ -21,3 +21,4 @@ vite.*.log
 vite-*.log
 dev-server.log
 .vercel
+.env*

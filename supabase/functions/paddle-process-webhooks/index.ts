@@ -103,6 +103,7 @@ async function mirrorSubscription(db: any, subscription: Record<string, any>, oc
     provider_plan_code: item.price.id,
     provider_product_id: item.price.productId,
     provider_price_id: item.price.id,
+    amount_minor: recurringItemAmountMinor(item),
     status: subscription.status,
     currency: subscription.currencyCode,
     current_period_start: period?.startsAt ?? null,
@@ -215,6 +216,15 @@ async function fulfillCompletedTransaction(
 
 function readRecurringItems(items: any) {
   return Array.isArray(items) ? items.filter((item) => item?.price?.billingCycle || item?.recurring === true) : [];
+}
+
+function recurringItemAmountMinor(item: any) {
+  const unitAmount = toMinor(item?.price?.unitPrice?.amount);
+  const quantity = Number(item?.quantity ?? 1);
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) throw new Error("Invalid Paddle subscription quantity.");
+  const total = unitAmount * quantity;
+  if (!Number.isSafeInteger(total)) throw new Error("Paddle subscription amount exceeds the supported range.");
+  return total;
 }
 
 function isOlder(incoming: string | null, current: string | null | undefined) {

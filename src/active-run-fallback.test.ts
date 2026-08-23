@@ -106,6 +106,29 @@ describe("createActiveRunFallback", () => {
     expect(check).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps a wake-up scheduled when a visibility resume event is missed", async () => {
+    let visible = false;
+    const check = vi.fn(async () => "active" as const);
+    const fallback = createActiveRunFallback({
+      delaysMs: [5_000],
+      deadlineMs: 60_000,
+      isVisible: () => visible,
+      isOnline: () => true,
+      check,
+      onTerminal: vi.fn(),
+    });
+
+    fallback.start();
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(check).not.toHaveBeenCalled();
+
+    visible = true;
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(check).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(check).toHaveBeenCalledTimes(1);
+  });
+
   it("calls onTerminal exactly once and stops future work", async () => {
     const onTerminal = vi.fn();
     const check = vi.fn(async () => "terminal" as const);

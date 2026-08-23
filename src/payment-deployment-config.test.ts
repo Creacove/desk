@@ -20,12 +20,18 @@ describe("payment deployment configuration", () => {
     const env = read(".env.example");
     for (const name of [
       "PADDLE_ENVIRONMENT", "PADDLE_API_KEY", "PADDLE_CLIENT_TOKEN", "PADDLE_WEBHOOK_SECRET",
+      "PADDLE_NOTIFICATION_DESTINATION_ID",
       "PADDLE_PRO_PRODUCT_ID", "PADDLE_PRO_MONTHLY_PRICE_ID", "PADDLE_PRO_YEARLY_PRICE_ID",
       "BILLING_WORKER_SECRET", "PAYSTACK_MONTHLY_PLAN_CODE", "PAYSTACK_YEARLY_PLAN_CODE",
       "PAYSTACK_MONTHLY_AMOUNT_MINOR", "PAYSTACK_YEARLY_AMOUNT_MINOR", "LOCAL_APP_ORIGIN",
     ]) expect(env).toContain(`${name}=`);
     expect(env).not.toMatch(/PADDLE_API_KEY=\S+/);
     expect(env).not.toMatch(/PADDLE_WEBHOOK_SECRET=\S+/);
+  });
+
+  it("requires the live Paddle notification destination when Paddle is configured", () => {
+    const validator = read("scripts", "validate-production-env.mjs");
+    expect(validator).toContain('"PADDLE_NOTIFICATION_DESTINATION_ID"');
   });
 
   it("adds baseline browser hardening and a report-only Paddle CSP for origin capture", () => {

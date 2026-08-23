@@ -80,7 +80,10 @@ export function createActiveRunFallback(input: ActiveRunFallbackInput): ActiveRu
       stopAtDeadline();
       return;
     }
-    if (!input.isVisible() || !input.isOnline()) return;
+    if (!input.isVisible() || !input.isOnline()) {
+      scheduleNext();
+      return;
+    }
 
     checking = true;
     try {

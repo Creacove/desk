@@ -92,10 +92,12 @@ describe("Paddle server integration contract", () => {
   it("derives the required subscription amount from verified provider minor units", () => {
     const migration = source("supabase", "migrations", "20260716000100_fix_paddle_subscription_amount.sql");
     const cancellationMigration = source("supabase", "migrations", "20260716000200_fix_paddle_cancel_flag.sql");
+    const worker = source("supabase", "functions", "paddle-process-webhooks", "index.ts");
 
     expect(migration).toContain("new.amount := new.amount_minor::numeric / 100");
     expect(migration).toContain("before insert or update of amount, amount_minor");
     expect(cancellationMigration).toContain("new.cancel_at_period_end := coalesce(new.cancel_at_period_end, false)");
+    expect(worker).toContain("amount_minor: recurringItemAmountMinor(item)");
   });
 
   it("reclaims crashed workers and rejects multiple recurring transaction items", () => {

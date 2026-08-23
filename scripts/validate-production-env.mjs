@@ -60,7 +60,7 @@ export function validateProductionEnv(env = process.env) {
     if (text(env.PADDLE_ENVIRONMENT).toLowerCase() !== "production") {
       errors.push("PADDLE_ENVIRONMENT must be production when Paddle credentials are configured for a production deploy.");
     }
-    for (const key of ["PADDLE_API_KEY", "PADDLE_CLIENT_TOKEN", "PADDLE_WEBHOOK_SECRET", "PADDLE_PRO_PRODUCT_ID", "PADDLE_PRO_MONTHLY_PRICE_ID", "PADDLE_PRO_YEARLY_PRICE_ID"]) {
+    for (const key of ["PADDLE_API_KEY", "PADDLE_CLIENT_TOKEN", "PADDLE_WEBHOOK_SECRET", "PADDLE_NOTIFICATION_DESTINATION_ID", "PADDLE_PRO_PRODUCT_ID", "PADDLE_PRO_MONTHLY_PRICE_ID", "PADDLE_PRO_YEARLY_PRICE_ID"]) {
       required(errors, env, key);
     }
   }
