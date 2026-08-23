@@ -80,6 +80,22 @@ const FINDING_DESTINATIONS = new Set<SetupPresentationFindingDestination>([
   "manager_read",
 ]);
 
+const NARRATIVE_FINDING_KINDS = new Set<SetupPresentationFindingKind>([
+  "identity",
+  "catalogue",
+  "music",
+  "public_context",
+  "manager_read",
+]);
+
+const NARRATIVE_DESTINATIONS: Partial<Record<SetupPresentationFindingKind, SetupPresentationFindingDestination>> = {
+  identity: "catalogue",
+  catalogue: "catalogue",
+  music: "catalogue",
+  public_context: "manager_read",
+  manager_read: "manager_read",
+};
+
 const PLATFORM_ALIASES: Record<string, SetupPresentationPlatform> = {
   spotify: "spotify",
   spotify_for_artists: "spotify",
@@ -205,15 +221,15 @@ export function parseSetupPresentationFeed(value: unknown, expectedRunId: string
     normalized.push(finding);
   }
 
-  const deduped = dedupeInitialFindings(sortSetupPresentationFindings(normalized));
-  omittedMalformed += normalized.length - deduped.length;
+  const deduped = dedupeInitialFindings(normalized);
+  omittedMalformed += deduped.conflictingCount;
 
   return {
     version: SETUP_PRESENTATION_FEED_VERSION,
     observedAt,
     setup,
     ...(artist ? { artist } : {}),
-    findings: deduped.slice(0, SETUP_PRESENTATION_MAX_FINDINGS),
+    findings: sortSetupPresentationFindings(deduped.findings).slice(0, SETUP_PRESENTATION_MAX_FINDINGS),
     projection: {
       bounded: true,
       maxFindings: SETUP_PRESENTATION_MAX_FINDINGS,
@@ -245,17 +261,26 @@ export function normalizeSetupPresentationFinding(
   const metric = metricName ? resolveMetric(metricName) : undefined;
   if (metricName && !metric) return null;
 
+  const hasPhase = hasField(value, "phase");
   const explicitPhase = readEnum(value.phase, FINDING_PHASES);
-  const phase = explicitPhase ?? (metric ? inferPhase(metric.kind) : undefined);
-  if (!phase) return null;
+  if (hasPhase && !explicitPhase) return null;
 
+  const hasKind = hasField(value, "kind");
   const explicitKind = readEnum(value.kind, FINDING_KINDS);
+  if (hasKind && !explicitKind) return null;
   const kind = explicitKind ?? metric?.kind;
   if (!kind || (metric && explicitKind && explicitKind !== metric.kind)) return null;
+  if (!metric && !NARRATIVE_FINDING_KINDS.has(kind)) return null;
 
+  const hasDestination = hasField(value, "destination");
   const explicitDestination = readEnum(value.destination, FINDING_DESTINATIONS);
-  const destination = explicitDestination ?? metric?.destination;
+  if (hasDestination && !explicitDestination) return null;
+  const destination = explicitDestination ?? metric?.destination ?? NARRATIVE_DESTINATIONS[kind];
   if (!destination || (metric && explicitDestination && explicitDestination !== metric.destination)) return null;
+  if (!metric && destination !== NARRATIVE_DESTINATIONS[kind]) return null;
+
+  const phase = explicitPhase ?? (metric ? inferPhase(metric.kind) : inferPhase(kind));
+  if (metric && explicitPhase && explicitPhase !== inferPhase(metric.kind)) return null;
 
   const explicitPlatform = normalizePlatform(value.platform);
   if (hasField(value, "platform") && value.platform !== undefined && value.platform !== null && !explicitPlatform) return null;
@@ -279,6 +304,11 @@ export function normalizeSetupPresentationFinding(
   if (metricValue !== undefined && metricValue !== null) {
     if (!metric || typeof metricValue !== (metric.valueKind === "number" ? "number" : "string")) return null;
     displayValue = formatMetricValue(metricValue, readMetricUnit(value));
+  }
+  if (!metric && metricValue !== undefined && metricValue !== null) return null;
+  if (metric?.valueKind === "number") {
+    if (typeof metricValue !== "number") return null;
+    if (rawValue !== undefined && !isNumericDisplayValue(rawValue, readMetricUnit(value))) return null;
   }
   if (metric?.requiresValue !== false && metricName && displayValue === undefined) return null;
   if (detail && hasForbiddenDisplayText(detail)) return null;
@@ -363,9 +393,9 @@ function normalizeSetupEnvelope(value: unknown, expectedRunId: string): SetupPre
   const artistWorkspaceId = readIdentifier(setup.artistWorkspaceId ?? setup.artist_workspace_id);
   const status = readEnum(setup.status, SETUP_STATUSES);
   const phase = readEnum(setup.phase, SETUP_PHASES);
-  const startedAt = readOptionalTimestamp(setup.startedAt ?? setup.started_at);
-  const phaseStartedAt = readOptionalTimestamp(setup.phaseStartedAt ?? setup.phase_started_at);
-  const updatedAt = readTimestamp(setup.updatedAt ?? setup.updated_at);
+  const startedAt = readOptionalTimestampAliases(setup, ["startedAt", "started_at"], "startedAt");
+  const phaseStartedAt = readOptionalTimestampAliases(setup, ["phaseStartedAt", "phase_started_at"], "phaseStartedAt");
+  const updatedAt = readRequiredTimestampAliases(setup, ["updatedAt", "updated_at"], "updatedAt");
 
   if (!isSafeIdentifier(expectedRunId) || !runId || runId !== expectedRunId) {
     throw new Error("Setup presentation feed returned an invalid setup run ID.");
@@ -373,13 +403,6 @@ function normalizeSetupEnvelope(value: unknown, expectedRunId: string): SetupPre
   if (!artistWorkspaceId) throw new Error("Setup presentation feed returned an invalid workspace ID.");
   if (!status) throw new Error("Setup presentation feed returned an invalid setup status.");
   if (!phase) throw new Error("Setup presentation feed returned an invalid setup phase.");
-  if (hasField(setup, "startedAt", "started_at") && setup.startedAt !== null && setup.startedAt !== undefined && !startedAt) {
-    throw new Error("Setup presentation feed returned an invalid startedAt.");
-  }
-  if (hasField(setup, "phaseStartedAt", "phase_started_at") && setup.phaseStartedAt !== null && setup.phaseStartedAt !== undefined && !phaseStartedAt) {
-    throw new Error("Setup presentation feed returned an invalid phaseStartedAt.");
-  }
-  if (!updatedAt) throw new Error("Setup presentation feed returned an invalid updatedAt.");
 
   return {
     runId,
@@ -579,9 +602,31 @@ function requireTimestamp(value: unknown, field: string): string {
   return timestamp;
 }
 
-function readOptionalTimestamp(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  return readTimestamp(value);
+function readOptionalTimestampAliases(
+  value: Record<string, unknown>,
+  keys: string[],
+  label: string,
+): string | undefined {
+  const timestamps: string[] = [];
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(value, key)) continue;
+    const raw = value[key];
+    if (raw === null || raw === undefined) continue;
+    const timestamp = readTimestamp(raw);
+    if (!timestamp) throw new Error(`Setup presentation feed returned an invalid ${label}.`);
+    timestamps.push(timestamp);
+  }
+  return timestamps[0];
+}
+
+function readRequiredTimestampAliases(
+  value: Record<string, unknown>,
+  keys: string[],
+  label: string,
+): string {
+  const timestamp = readOptionalTimestampAliases(value, keys, label);
+  if (!timestamp) throw new Error(`Setup presentation feed returned an invalid ${label}.`);
+  return timestamp;
 }
 
 function readOptionalDisplayString(value: unknown, maxLength: number): string | null | undefined {
@@ -619,9 +664,13 @@ function compareStrings(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-function dedupeInitialFindings(findings: SetupPresentationFinding[]): SetupPresentationFinding[] {
+function dedupeInitialFindings(findings: SetupPresentationFinding[]): {
+  findings: SetupPresentationFinding[];
+  conflictingCount: number;
+} {
   const byId = new Map<string, number>();
   const result: SetupPresentationFinding[] = [];
+  let conflictingCount = 0;
 
   for (const finding of findings) {
     const existingIndex = byId.get(finding.id);
@@ -632,13 +681,16 @@ function dedupeInitialFindings(findings: SetupPresentationFinding[]): SetupPrese
     }
 
     const existing = result[existingIndex];
-    if (existing.dedupeKey !== finding.dedupeKey) continue;
+    if (existing.dedupeKey !== finding.dedupeKey) {
+      conflictingCount += 1;
+      continue;
+    }
     if (isNewerSetupPresentationFindingRevision(finding.revision, existing.revision)) {
       result[existingIndex] = finding;
     }
   }
 
-  return result;
+  return { findings: result, conflictingCount };
 }
 
 function hasField(value: Record<string, unknown>, ...keys: string[]): boolean {

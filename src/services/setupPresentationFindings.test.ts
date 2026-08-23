@@ -160,6 +160,50 @@ describe("setup presentation v2 finding projection", () => {
     });
   });
 
+  it("requires an approved metric for quantitative findings but allows safe narrative findings", () => {
+    const { metricName: _metricName, metricValue: _metricValue, metricUnit: _metricUnit, ...arbitraryAudience } = finding({
+      kind: "audience",
+      destination: "audience",
+      title: "Audience narrative",
+      value: "A narrative without a metric name",
+    });
+    expect(normalizeSetupPresentationFinding(arbitraryAudience)).toBeNull();
+
+    expect(normalizeSetupPresentationFinding({
+      id: "narrative-1",
+      dedupeKey: "context:artist-profile",
+      revision: "1",
+      persistedAt: "2026-08-23T10:00:03.000Z",
+      phase: "synthesis",
+      kind: "public_context",
+      destination: "manager_read",
+      title: "A public artist profile was found",
+      detail: "example.com",
+    })).toMatchObject({
+      kind: "public_context",
+      title: "A public artist profile was found",
+    });
+  });
+
+  it("rejects arbitrary caller-supplied value text for numeric metrics", () => {
+    expect(normalizeSetupPresentationFinding(finding({
+      metricName: "spotify_followers",
+      metricValue: 42,
+      value: "A large and growing audience",
+    }))).toBeNull();
+    expect(normalizeSetupPresentationFinding(finding({
+      metricName: "spotify_followers",
+      value: "42 followers",
+    }))).toBeNull();
+  });
+
+  it("rejects invalid or null phase, kind, and destination fields instead of inferring them", () => {
+    for (const field of ["phase", "kind", "destination"] as const) {
+      expect(normalizeSetupPresentationFinding(finding({ [field]: null }))).toBeNull();
+      expect(normalizeSetupPresentationFinding(finding({ [field]: "not-valid" }))).toBeNull();
+    }
+  });
+
   it("rejects forbidden provider and tool text from every public string field", () => {
     const feed = parseSetupPresentationFeed({
       ...baseFeed,
@@ -244,6 +288,14 @@ describe("setup presentation v2 finding projection", () => {
       ...baseFeed,
       setup: { ...baseFeed.setup, updatedAt: "not-a-date" },
     }, runId)).toThrow(/updatedAt/i);
+    expect(() => parseSetupPresentationFeed({
+      ...baseFeed,
+      setup: { ...baseFeed.setup, started_at: "not-a-date" },
+    }, runId)).toThrow(/startedAt/i);
+    expect(() => parseSetupPresentationFeed({
+      ...baseFeed,
+      setup: { ...baseFeed.setup, phaseStartedAt: "2026-08-23T10:00:00.000Z", phase_started_at: "not-a-date" },
+    }, runId)).toThrow(/phaseStartedAt/i);
     expect(() => parseSetupPresentationFeed({ ...baseFeed, findings: {} }, runId)).toThrow(/findings/i);
     expect(() => parseSetupPresentationFeed({
       ...baseFeed,
@@ -318,5 +370,32 @@ describe("setup presentation v2 finding projection", () => {
     expect(compareSetupPresentationFindingRevision("2026-08-23T10:00:00.000Z", "2026-08-23T10:00:01.000Z")).toBeLessThan(0);
     expect(compareSetupPresentationFindingRevision("same", "same")).toBe(0);
     expect(compareSetupPresentationFindingRevision("z", "a")).toBeGreaterThan(0);
+  });
+
+  it("counts conflicting stable IDs while preserving the first valid content", () => {
+    const first = finding({
+      id: "conflicting-id",
+      dedupeKey: "audience:first-semantic-fact",
+      metricName: "spotify_followers",
+      metricValue: 42,
+    });
+    const conflict = finding({
+      id: "conflicting-id",
+      dedupeKey: "audience:second-semantic-fact",
+      metricName: "spotify_followers",
+      metricValue: 999,
+    });
+    const feed = parseSetupPresentationFeed({
+      ...baseFeed,
+      findings: [first, conflict],
+    }, runId);
+
+    expect(feed.findings).toHaveLength(1);
+    expect(feed.findings[0]).toMatchObject({
+      id: "conflicting-id",
+      dedupeKey: "audience:first-semantic-fact",
+      value: "42",
+    });
+    expect(feed.projection.omittedMalformed).toBe(1);
   });
 });
