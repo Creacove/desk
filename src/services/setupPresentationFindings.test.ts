@@ -133,8 +133,105 @@ describe("setup presentation v2 finding projection", () => {
       ],
     }, runId);
 
-    expect(feed.findings.map((item) => item.id)).toEqual(["valid-1", "valid-2"]);
-    expect(feed.projection.omittedMalformed).toBe(3);
+    expect(feed.findings.map((item) => item.id)).toEqual(["bad-art", "valid-1", "valid-2"]);
+    expect(feed.findings.find((item) => item.id === "bad-art")).not.toHaveProperty("artwork");
+    expect(feed.projection.omittedMalformed).toBe(2);
+  });
+
+  it("enforces the declared value kind for approved metrics", () => {
+    expect(normalizeSetupPresentationFinding(finding({
+      metricName: "spotify_followers",
+      metricValue: "many followers",
+    }))).toBeNull();
+    expect(normalizeSetupPresentationFinding(finding({
+      metricName: "career_stage",
+      kind: "momentum",
+      destination: "momentum",
+      metricValue: 3,
+    }))).toBeNull();
+    expect(normalizeSetupPresentationFinding(finding({
+      metricName: "career_stage",
+      kind: "momentum",
+      destination: "momentum",
+      metricValue: "Emerging",
+    }))).toMatchObject({
+      title: "Career stage",
+      value: "Emerging",
+    });
+  });
+
+  it("rejects forbidden provider and tool text from every public string field", () => {
+    const feed = parseSetupPresentationFeed({
+      ...baseFeed,
+      artist: {
+        name: "Chartmetric Artist",
+        imageUrl: "https://images.example.com/artist.jpg",
+        genres: ["web_search"],
+      },
+      findings: [
+        finding({ id: "Chartmetric-id" }),
+        finding({ id: "forbidden-dedupe", dedupeKey: "manager_discovery_tool:metric" }),
+        finding({ id: "forbidden-revision", revision: "save_public_evidence" }),
+        finding({ id: "forbidden-detail", detail: "write_strategic_memory" }),
+        finding({
+          id: "forbidden-art-alt",
+          artwork: { url: "https://images.example.com/artist.jpg", alt: "web_search" },
+        }),
+        finding({
+          id: "forbidden-host",
+          kind: "public_context",
+          destination: "manager_read",
+          metricName: "public_context_artist_identity",
+          title: "A public profile",
+          publicContextUrl: "https://chartmetric.example.com/profile",
+        }),
+      ],
+    }, runId);
+
+    const serialized = JSON.stringify(feed).toLowerCase();
+    expect(feed.artist).toBeUndefined();
+    expect(feed.findings.map((item) => item.id)).toEqual(["forbidden-art-alt"]);
+    expect(feed.findings[0]).not.toHaveProperty("artwork");
+    expect(serialized).not.toContain("chartmetric");
+    expect(serialized).not.toContain("manager_discovery_tool");
+    expect(serialized).not.toContain("save_public_evidence");
+    expect(serialized).not.toContain("write_strategic_memory");
+    expect(serialized).not.toContain("web_search");
+  });
+
+  it("skips findings whose optional scope metadata does not match the feed", () => {
+    const feed = parseSetupPresentationFeed({
+      ...baseFeed,
+      findings: [
+        finding({ id: "valid-scoped", setupRunId: runId, artistWorkspaceId: "workspace-7" }),
+        finding({ id: "wrong-run", setupRunId: "another-run", artistWorkspaceId: "workspace-7" }),
+        finding({ id: "wrong-workspace", setup_run_id: runId, artist_workspace_id: "another-workspace" }),
+        finding({ id: "valid-run-only", setup_run_id: runId }),
+      ],
+    }, runId);
+
+    expect(feed.findings.map((item) => item.id)).toEqual(["valid-run-only", "valid-scoped"]);
+    expect(JSON.stringify(feed.findings)).not.toContain("setupRunId");
+    expect(JSON.stringify(feed.findings)).not.toContain("artistWorkspaceId");
+  });
+
+  it("omits broken optional artist and finding artwork without discarding valid data", () => {
+    const feed = parseSetupPresentationFeed({
+      ...baseFeed,
+      artist: {
+        name: "Victor Ny",
+        imageUrl: "http://not-https.example.com/victor.jpg",
+        genres: ["Afrobeats"],
+      },
+      findings: [finding({
+        id: "broken-artwork",
+        artwork: { url: "javascript:alert(1)", alt: "Broken artwork" },
+      })],
+    }, runId);
+
+    expect(feed.artist).toEqual({ name: "Victor Ny", genres: ["Afrobeats"] });
+    expect(feed.findings).toEqual([expect.objectContaining({ id: "broken-artwork" })]);
+    expect(feed.findings[0]).not.toHaveProperty("artwork");
   });
 
   it("rejects malformed envelope authority and wrong setup-run scope", () => {

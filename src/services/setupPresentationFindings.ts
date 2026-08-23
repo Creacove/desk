@@ -194,7 +194,10 @@ export function parseSetupPresentationFeed(value: unknown, expectedRunId: string
 
   const normalized: SetupPresentationFinding[] = [];
   for (const candidate of candidates) {
-    const finding = normalizeSetupPresentationFinding(candidate);
+    const finding = normalizeSetupPresentationFinding(candidate, {
+      runId: setup.runId,
+      artistWorkspaceId: setup.artistWorkspaceId,
+    });
     if (!finding) {
       omittedMalformed += 1;
       continue;
@@ -222,7 +225,12 @@ export function parseSetupPresentationFeed(value: unknown, expectedRunId: string
 export const assertSetupPresentationFeed = parseSetupPresentationFeed;
 export const normalizeSetupPresentationFeed = parseSetupPresentationFeed;
 
-export function normalizeSetupPresentationFinding(value: unknown): SetupPresentationFinding | null {
+export type SetupPresentationFindingScope = Pick<SetupPresentationFeed["setup"], "runId" | "artistWorkspaceId">;
+
+export function normalizeSetupPresentationFinding(
+  value: unknown,
+  scope?: SetupPresentationFindingScope,
+): SetupPresentationFinding | null {
   if (!isRecord(value)) return null;
 
   const id = readIdentifier(value.id);
@@ -230,7 +238,7 @@ export function normalizeSetupPresentationFinding(value: unknown): SetupPresenta
   const revision = readIdentifier(value.revision);
   const persistedAt = readTimestamp(value.persistedAt ?? value.persisted_at);
   const metricName = readMetricName(value);
-  if (!id || !dedupeKey || !revision || !persistedAt || (hasField(value, "metricName", "metric_name") && !metricName)) {
+  if (!id || !dedupeKey || !revision || !persistedAt || !matchesFindingScope(value, scope) || (hasField(value, "metricName", "metric_name") && !metricName)) {
     return null;
   }
 
@@ -269,6 +277,7 @@ export function normalizeSetupPresentationFinding(value: unknown): SetupPresenta
   const metricValue = readMetricValue(value);
   if (metricValue === INVALID_VALUE) return null;
   if (metricValue !== undefined && metricValue !== null) {
+    if (!metric || typeof metricValue !== (metric.valueKind === "number" ? "number" : "string")) return null;
     displayValue = formatMetricValue(metricValue, readMetricUnit(value));
   }
   if (metric?.requiresValue !== false && metricName && displayValue === undefined) return null;
@@ -283,7 +292,6 @@ export function normalizeSetupPresentationFinding(value: unknown): SetupPresenta
   }
 
   const artwork = normalizeArtwork(value.artwork);
-  if (hasField(value, "artwork") && value.artwork !== undefined && value.artwork !== null && !artwork) return null;
 
   return {
     id,
@@ -388,16 +396,21 @@ function normalizeArtist(value: unknown): SetupPresentationFeed["artist"] {
   if (value === undefined || value === null) return undefined;
   const artist = requireRecord(value, "Setup presentation feed returned an invalid artist.");
   const name = readSafeString(artist.name, MAX_ARTIST_NAME_LENGTH);
-  if (!name) throw new Error("Setup presentation feed returned an invalid artist name.");
+  if (!name) {
+    if (hasForbiddenDisplayText(artist.name)) return undefined;
+    throw new Error("Setup presentation feed returned an invalid artist name.");
+  }
   if (!Array.isArray(artist.genres)) throw new Error("Setup presentation feed returned invalid artist genres.");
 
   const genres = artist.genres.slice(0, 2).map((genre) => readSafeString(genre, MAX_GENRE_LENGTH));
-  if (genres.some((genre) => !genre)) throw new Error("Setup presentation feed returned invalid artist genres.");
+  if (genres.some((genre) => !genre)) {
+    if (artist.genres.some((genre) => hasForbiddenDisplayText(genre))) return undefined;
+    throw new Error("Setup presentation feed returned invalid artist genres.");
+  }
 
   let imageUrl: string | undefined;
   if (artist.imageUrl !== undefined && artist.imageUrl !== null) {
     imageUrl = normalizeHttpsUrl(artist.imageUrl);
-    if (!imageUrl) throw new Error("Setup presentation feed returned unsafe artist artwork.");
   }
 
   return {
@@ -550,7 +563,7 @@ function readIdentifier(value: unknown): string | undefined {
 }
 
 function isSafeIdentifier(value: string): boolean {
-  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value);
+  return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(value) && !hasForbiddenDisplayText(value);
 }
 
 function readTimestamp(value: unknown): string | undefined {
@@ -581,11 +594,12 @@ function readSafeString(value: unknown, maxLength: number): string | undefined {
   if (/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/.test(value)) return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
   if (!normalized || normalized.length > maxLength) return undefined;
+  if (hasForbiddenDisplayText(normalized)) return undefined;
   return normalized;
 }
 
-function hasForbiddenDisplayText(value: string): boolean {
-  return /(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)/i.test(value);
+function hasForbiddenDisplayText(value: unknown): boolean {
+  return typeof value === "string" && /(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)/i.test(value);
 }
 
 function titleCaseSlug(value: string): string | undefined {
@@ -629,6 +643,27 @@ function dedupeInitialFindings(findings: SetupPresentationFinding[]): SetupPrese
 
 function hasField(value: Record<string, unknown>, ...keys: string[]): boolean {
   return keys.some((key) => Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function matchesFindingScope(value: Record<string, unknown>, scope?: SetupPresentationFindingScope): boolean {
+  const scopedFields: Array<{ keys: string[]; expected: string | undefined }> = [
+    { keys: ["setupRunId", "setup_run_id"], expected: scope?.runId },
+    { keys: ["artistWorkspaceId", "artist_workspace_id"], expected: scope?.artistWorkspaceId },
+  ];
+
+  for (const field of scopedFields) {
+    if (!hasField(value, ...field.keys)) continue;
+    if (!scope || !field.expected) return false;
+
+    const supplied = field.keys
+      .filter((key) => Object.prototype.hasOwnProperty.call(value, key))
+      .map((key) => readIdentifier(value[key]));
+    if (supplied.some((candidate) => !candidate) || new Set(supplied).size !== 1 || supplied[0] !== field.expected) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function requireRecord(value: unknown, message: string): Record<string, unknown> {
