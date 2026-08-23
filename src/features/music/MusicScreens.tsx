@@ -1248,6 +1248,7 @@ function MusicSongDetail({
           <div className="flex flex-col gap-4 border-b border-foreground/8 pb-5 sm:flex-row sm:items-center sm:justify-between">
             <div className="max-w-xl">
               <h4 className="font-display text-[20px] font-semibold leading-tight tracking-[-0.01em] text-foreground sm:text-[22px]">Song assets</h4>
+              <p className="os-tab-intro mt-2 font-medium text-muted-foreground/72">Everything your team needs for this song, in one place.</p>
             </div>
             <div className="flex items-center gap-2">
               {onShareFiles && (shareableAssets.length || nativeDocuments.length) ? (
@@ -2098,6 +2099,8 @@ function MusicRightsWorkspace({
             <Button type="button" variant="secondary" size="sm" onClick={exportRecord} leadingIcon={<Download className="h-3.5 w-3.5" />}>Export split record</Button>
           ) : null}
         </div>
+
+        <p className="os-tab-intro mt-3 font-medium text-muted-foreground/72">{rights.headline}</p>
 
         {contributors.length ? (
           <div className={cn("mt-5 grid gap-0 border-y border-foreground/8 py-4", confirmationActive ? "grid-cols-3" : "grid-cols-2")}>

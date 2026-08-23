@@ -20,6 +20,11 @@
   margin-inline: auto;
 }
 
+.os-song-tab-panel {
+  width: 100%;
+  min-width: 0;
+}
+
 /* Shared page/list vocabulary. These classes deliberately outrank the old
    page-specific pixel values so Catalog, Missions, Manager, and Staff read as
    one product at every breakpoint. */
