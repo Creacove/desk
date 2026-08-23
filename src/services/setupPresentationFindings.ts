@@ -258,38 +258,52 @@ export function normalizeSetupPresentationFinding(
     return null;
   }
 
-  const metric = metricName ? resolveMetric(metricName) : undefined;
-  if (metricName && !metric) return null;
+  const internalMetric = metricName ? resolveMetric(metricName) : undefined;
+  if (metricName && !internalMetric) return null;
+  const isPublicFinding = !metricName;
 
   const hasPhase = hasField(value, "phase");
   const explicitPhase = readEnum(value.phase, FINDING_PHASES);
   if (hasPhase && !explicitPhase) return null;
+  if (isPublicFinding && (!hasPhase || !explicitPhase)) return null;
 
   const hasKind = hasField(value, "kind");
   const explicitKind = readEnum(value.kind, FINDING_KINDS);
   if (hasKind && !explicitKind) return null;
-  const kind = explicitKind ?? metric?.kind;
-  if (!kind || (metric && explicitKind && explicitKind !== metric.kind)) return null;
-  if (!metric && !NARRATIVE_FINDING_KINDS.has(kind)) return null;
+  if (isPublicFinding && (!hasKind || !explicitKind)) return null;
+  const kind = explicitKind ?? internalMetric?.kind;
+  if (!kind || (internalMetric && explicitKind && explicitKind !== internalMetric.kind)) return null;
 
   const hasDestination = hasField(value, "destination");
   const explicitDestination = readEnum(value.destination, FINDING_DESTINATIONS);
   if (hasDestination && !explicitDestination) return null;
-  const destination = explicitDestination ?? metric?.destination ?? NARRATIVE_DESTINATIONS[kind];
-  if (!destination || (metric && explicitDestination && explicitDestination !== metric.destination)) return null;
-  if (!metric && destination !== NARRATIVE_DESTINATIONS[kind]) return null;
+  if (isPublicFinding && (!hasDestination || !explicitDestination)) return null;
+  const destination = explicitDestination ?? internalMetric?.destination ?? NARRATIVE_DESTINATIONS[kind];
+  if (!destination || (internalMetric && explicitDestination && explicitDestination !== internalMetric.destination)) return null;
+
+  let metric = internalMetric;
+
+  const explicitPlatform = normalizePlatform(value.platform);
+  if (hasField(value, "platform") && value.platform !== undefined && value.platform !== null && !explicitPlatform) return null;
+  if (internalMetric?.platform && explicitPlatform && internalMetric.platform !== explicitPlatform) return null;
+  let platform = explicitPlatform ?? internalMetric?.platform;
+
+  const rawTitle = readOptionalDisplayString(value.title, MAX_TITLE_LENGTH);
+  if (rawTitle === null) return null;
+  if (isPublicFinding && !rawTitle) return null;
+  if (isPublicFinding && !NARRATIVE_FINDING_KINDS.has(kind)) {
+    metric = resolvePublicMetricDefinition(rawTitle, kind, destination, platform);
+    if (!metric) return null;
+    platform = metric.platform ?? platform;
+  }
+  if (isPublicFinding && !metric && destination !== NARRATIVE_DESTINATIONS[kind]) return null;
 
   const phase = explicitPhase ?? (metric ? inferPhase(metric.kind) : inferPhase(kind));
   if (metric && explicitPhase && explicitPhase !== inferPhase(metric.kind)) return null;
 
-  const explicitPlatform = normalizePlatform(value.platform);
-  if (hasField(value, "platform") && value.platform !== undefined && value.platform !== null && !explicitPlatform) return null;
-  if (metric?.platform && explicitPlatform && metric.platform !== explicitPlatform) return null;
-  const platform = explicitPlatform ?? metric?.platform;
-
-  const rawTitle = readOptionalDisplayString(value.title, MAX_TITLE_LENGTH);
-  if (rawTitle === null) return null;
-  const title = metric && kind !== "public_context" ? metric.title : rawTitle ?? metric?.title;
+  const title = isPublicFinding
+    ? metric?.title ?? rawTitle
+    : metric && kind !== "public_context" ? metric.title : rawTitle ?? metric?.title;
   if (!title || hasForbiddenDisplayText(title)) return null;
 
   const rawDetail = readOptionalDisplayString(value.detail, MAX_DETAIL_LENGTH);
@@ -301,16 +315,21 @@ export function normalizeSetupPresentationFinding(
   let displayValue = rawValue ?? undefined;
   const metricValue = readMetricValue(value);
   if (metricValue === INVALID_VALUE) return null;
-  if (metricValue !== undefined && metricValue !== null) {
-    if (!metric || typeof metricValue !== (metric.valueKind === "number" ? "number" : "string")) return null;
-    displayValue = formatMetricValue(metricValue, readMetricUnit(value));
+  if (isPublicFinding) {
+    if (metricValue !== undefined && metricValue !== null) return null;
+    if (metric?.valueKind === "number" && (rawValue === undefined || !isFormattedNumericValue(rawValue))) return null;
+    if (metric?.valueKind === "text" && metric.requiresValue !== false && rawValue === undefined) return null;
+  } else {
+    if (metricValue !== undefined && metricValue !== null) {
+      if (!metric || typeof metricValue !== (metric.valueKind === "number" ? "number" : "string")) return null;
+      displayValue = formatMetricValue(metricValue, readMetricUnit(value));
+    }
+    if (metric?.valueKind === "number") {
+      if (typeof metricValue !== "number") return null;
+      if (rawValue !== undefined) return null;
+    }
+    if (metric?.requiresValue !== false && metricName && displayValue === undefined) return null;
   }
-  if (!metric && metricValue !== undefined && metricValue !== null) return null;
-  if (metric?.valueKind === "number") {
-    if (typeof metricValue !== "number") return null;
-    if (rawValue !== undefined) return null;
-  }
-  if (metric?.requiresValue !== false && metricName && displayValue === undefined) return null;
   if (detail && hasForbiddenDisplayText(detail)) return null;
   if (displayValue && hasForbiddenDisplayText(displayValue)) return null;
 
@@ -490,6 +509,43 @@ function resolveMetric(metricName: string): MetricDefinition | undefined {
   return undefined;
 }
 
+function resolvePublicMetricDefinition(
+  title: string,
+  kind: SetupPresentationFindingKind,
+  destination: SetupPresentationFindingDestination,
+  platform: SetupPresentationPlatform | undefined,
+): MetricDefinition | undefined {
+  const direct = Object.values(METRIC_DEFINITIONS).find((definition) => (
+    definition.title === title
+      && definition.kind === kind
+      && definition.destination === destination
+      && definition.platform === platform
+  ));
+  if (direct) return direct;
+
+  if (kind !== "market" || destination !== "markets" || platform !== "spotify") return undefined;
+
+  const dynamic = resolvePublicDynamicMarketMetric(title);
+  return dynamic ? metric(dynamic.title, "spotify", "market", "markets") : undefined;
+}
+
+function resolvePublicDynamicMarketMetric(title: string): { title: string } | undefined {
+  const patterns = [
+    { prefix: "Listeners in ", titlePrefix: "Listeners in " },
+    { prefix: "Listener affinity: ", titlePrefix: "Listener affinity: " },
+  ];
+
+  for (const pattern of patterns) {
+    if (!title.startsWith(pattern.prefix)) continue;
+    const location = title.slice(pattern.prefix.length);
+    const slug = location.toLowerCase().replace(/\s+/g, "_");
+    if (!/^[a-z0-9]+(?:_[a-z0-9]+)*$/.test(slug) || titleCaseSlug(slug) !== location) return undefined;
+    return { title: `${pattern.titlePrefix}${location}` };
+  }
+
+  return undefined;
+}
+
 function metric(
   title: string,
   platform: SetupPresentationPlatform | undefined,
@@ -553,6 +609,10 @@ function formatMetricValue(value: number | string, unit?: string): string {
 
 function trimDecimal(value: number): string {
   return value.toFixed(1).replace(/\.0$/, "");
+}
+
+function isFormattedNumericValue(value: string): boolean {
+  return /^(?:#\d+|-?\d+(?:\.\d+)?(?:[KMB])?)$/.test(value);
 }
 
 function sanitizePublicContextHostname(value: unknown): string | undefined {

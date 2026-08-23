@@ -185,6 +185,93 @@ describe("setup presentation v2 finding projection", () => {
     });
   });
 
+  it("accepts conforming public display findings without metricName", () => {
+    const normalized = normalizeSetupPresentationFinding({
+      id: "public-followers",
+      dedupeKey: "audience:spotify-followers",
+      revision: "1",
+      persistedAt: "2026-08-23T10:00:04.000Z",
+      phase: "discovery",
+      kind: "audience",
+      destination: "audience",
+      platform: "spotify",
+      title: "Followers",
+      value: "20",
+    });
+
+    expect(normalized).toMatchObject({
+      id: "public-followers",
+      kind: "audience",
+      destination: "audience",
+      platform: "spotify",
+      title: "Followers",
+      value: "20",
+    });
+    expect(normalized).not.toHaveProperty("metricName");
+  });
+
+  it("accepts public dynamic listener-market titles only when their display value is formatted", () => {
+    const normalized = normalizeSetupPresentationFinding({
+      id: "public-lagos",
+      dedupeKey: "market:listener-city-lagos",
+      revision: "1",
+      persistedAt: "2026-08-23T10:00:05.000Z",
+      phase: "discovery",
+      kind: "market",
+      destination: "markets",
+      platform: "spotify",
+      title: "Listeners in Lagos",
+      value: "7.5M",
+    });
+
+    expect(normalized).toMatchObject({
+      kind: "market",
+      destination: "markets",
+      platform: "spotify",
+      title: "Listeners in Lagos",
+      value: "7.5M",
+    });
+    expect(normalizeSetupPresentationFinding({
+      id: "public-lagos-bad-value",
+      dedupeKey: "market:listener-city-lagos-bad",
+      revision: "1",
+      persistedAt: "2026-08-23T10:00:05.000Z",
+      phase: "discovery",
+      kind: "market",
+      destination: "markets",
+      platform: "spotify",
+      title: "Listeners in Lagos",
+      value: "seven point five million",
+    })).toBeNull();
+  });
+
+  it("rejects arbitrary metricless quantitative titles and ambiguous public numeric values", () => {
+    expect(normalizeSetupPresentationFinding({
+      id: "public-arbitrary-audience",
+      dedupeKey: "audience:arbitrary",
+      revision: "1",
+      persistedAt: "2026-08-23T10:00:06.000Z",
+      phase: "discovery",
+      kind: "audience",
+      destination: "audience",
+      platform: "spotify",
+      title: "A made-up audience claim",
+      value: "20",
+    })).toBeNull();
+    expect(normalizeSetupPresentationFinding({
+      id: "public-followers-bad-value",
+      dedupeKey: "audience:spotify-followers-bad-value",
+      revision: "1",
+      persistedAt: "2026-08-23T10:00:06.000Z",
+      phase: "discovery",
+      kind: "audience",
+      destination: "audience",
+      platform: "spotify",
+      title: "Followers",
+      value: "twenty followers",
+    })).toBeNull();
+  });
+
   it("rejects arbitrary caller-supplied value text for numeric metrics", () => {
     expect(normalizeSetupPresentationFinding(finding({
       metricName: "spotify_followers",
