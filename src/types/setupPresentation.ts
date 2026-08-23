@@ -88,6 +88,7 @@ export type SetupPresentationActivityKind =
 export type SetupPresentationSnapshot = {
   version: 1;
   observedAt: string;
+  feed?: SetupPresentationFeed;
   setup: {
     status: "queued" | "running" | "completed" | "failed";
     phase: SetupPresentationPhase;

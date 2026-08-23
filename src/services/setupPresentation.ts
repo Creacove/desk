@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSetupPresentationSnapshot, mergeConsumedDiscoveryEvidence } from "./setupPresentationProjection";
-import type { SetupPresentationSnapshot } from "../types/setupPresentation";
+import { parseSetupPresentationFeed } from "./setupPresentationFindings";
+import type { SetupPresentationFeed, SetupPresentationSnapshot } from "../types/setupPresentation";
 
 export type SetupPresentationLoader = (
   artistWorkspaceId: string,
@@ -78,6 +79,12 @@ export function createSupabaseSetupPresentationLoader(client: SupabaseClient): S
     throwIfError(setupResult.error);
     if (!setupResult.data?.id) throw new Error("Setup presentation run is unavailable.");
     const setupRun = setupResult.data;
+
+    const v2Feed = await tryLoadSetupPresentationFeed(client, setupRun.id, signal);
+    if (v2Feed) {
+      return assertSetupPresentationSnapshot(snapshotFromFeed(v2Feed));
+    }
+
     const setupStartedAt = setupRun.started_at ?? setupRun.created_at ?? undefined;
 
     const [profileResult, itemsResult, projectsResult, eventsResult, discoveryResult, briefResult] = await Promise.all([
@@ -224,6 +231,39 @@ export function createSupabaseSetupPresentationLoader(client: SupabaseClient): S
   };
 }
 
+async function tryLoadSetupPresentationFeed(
+  client: SupabaseClient,
+  setupRunId: string,
+  signal?: AbortSignal,
+): Promise<SetupPresentationFeed | null> {
+  try {
+    const result = await withSignal(
+      client.rpc("get_setup_presentation_feed_v2", { p_setup_run_id: setupRunId }),
+      signal,
+    ) as QueryResult<unknown>;
+    if (result.error || result.data === null) return null;
+    return parseSetupPresentationFeed(result.data, setupRunId);
+  } catch {
+    return null;
+  }
+}
+
+function snapshotFromFeed(feed: SetupPresentationFeed): SetupPresentationSnapshot {
+  return {
+    version: 1,
+    observedAt: feed.observedAt,
+    feed,
+    setup: {
+      status: feed.setup.status,
+      phase: feed.setup.phase,
+      startedAt: feed.setup.startedAt,
+      phaseStartedAt: feed.setup.phaseStartedAt,
+      updatedAt: feed.setup.updatedAt,
+    },
+    artist: feed.artist,
+  };
+}
+
 function buildEventQuery(
   client: SupabaseClient,
   accountId: string,
@@ -270,6 +310,22 @@ export function assertSetupPresentationSnapshot(value: unknown): SetupPresentati
   }
   if (!new Set(["catalogue", "discovery", "synthesis", "ready"]).has(String(setupRow.phase))) {
     throw new Error("Setup presentation returned an invalid setup phase.");
+  }
+
+  if (row.feed !== undefined) {
+    if (!row.feed || typeof row.feed !== "object" || Array.isArray(row.feed)) {
+      throw new Error("Setup presentation returned an invalid v2 feed.");
+    }
+    const feedRow = row.feed as Record<string, unknown>;
+    const feedSetup = feedRow.setup;
+    const runId = feedSetup && typeof feedSetup === "object" && !Array.isArray(feedSetup)
+      ? (feedSetup as Record<string, unknown>).runId
+      : undefined;
+    if (typeof runId !== "string") throw new Error("Setup presentation returned an invalid v2 feed run ID.");
+    const feed = parseSetupPresentationFeed(row.feed, runId);
+    if (feed.setup.status !== setupRow.status || feed.setup.phase !== setupRow.phase) {
+      throw new Error("Setup presentation v2 feed disagrees with setup state.");
+    }
   }
 
   if (row.catalogue !== undefined) {
