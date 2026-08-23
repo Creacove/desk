@@ -33,13 +33,15 @@ describe("active paywall responsive surface", () => {
     expect(within(audience).getByTestId("paywall-locked-insight-copy-Audience-intelligence")).toHaveAttribute("aria-hidden", "true");
   });
 
-  it("keeps the mobile checkout above an inert preview without outer-page scrolling", () => {
+  it("keeps a visible preview band above a bottom-sheet checkout on mobile", () => {
     render(<PaywallPreviewScreen preview={preview} onSubscribe={() => undefined} onBack={() => undefined} />);
 
     expect(screen.getByTestId("paywall-preview-layer")).toHaveAttribute("aria-hidden", "true");
     expect(screen.getByTestId("paywall-preview-layer")).toHaveClass("pointer-events-none");
-    expect(screen.getByTestId("paywall-mobile-veil")).toHaveAttribute("aria-hidden", "true");
-    expect(screen.getByTestId("paywall-checkout-card")).toHaveClass("fixed", "top-32", "bottom-[max(0.75rem,env(safe-area-inset-bottom))]", "overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("paywall-mobile-veil")).toHaveClass("bg-background/20", "backdrop-blur-[3px]");
+    expect(screen.getByTestId("paywall-checkout-card")).toHaveClass("fixed", "bottom-[max(0.75rem,env(safe-area-inset-bottom))]", "max-h-[68dvh]", "overflow-y-auto", "overscroll-contain");
+    expect(screen.getByTestId("paywall-checkout-card")).not.toHaveClass("top-32");
+    expect(screen.getByTestId("paywall-mobile-sheet-handle")).toBeInTheDocument();
     expect(screen.getByLabelText("Desk preview")).toHaveClass("overflow-hidden");
     expect(screen.getByRole("heading", { name: /Open Sable Day.?s Desk/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start my Desk" })).toBeInTheDocument();

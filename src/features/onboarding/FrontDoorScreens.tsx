@@ -366,13 +366,14 @@ export function PaywallPreviewScreen({
             </div>
           </div>
 
-          <div data-testid="paywall-mobile-veil" aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 bg-background/58 backdrop-blur-[2px] dark:bg-[#0d0f13]/68 lg:hidden" />
+          <div data-testid="paywall-mobile-veil" aria-hidden="true" className="pointer-events-none absolute inset-0 z-10 bg-background/20 backdrop-blur-[3px] dark:bg-[#0d0f13]/32 lg:hidden" />
 
           <aside
             data-testid="paywall-checkout-card"
             aria-label="Subscription checkout"
-            className="fixed inset-x-3 top-32 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 min-w-0 max-h-[calc(100dvh-6rem)] overflow-y-auto overscroll-contain rounded-[20px] border border-foreground/10 bg-background/95 p-4 shadow-[0_26px_88px_rgba(17,19,24,0.28)] backdrop-blur-xl sm:inset-x-5 sm:p-5 lg:sticky lg:top-7 lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none"
+            className="fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-20 min-w-0 max-h-[68dvh] overflow-y-auto overscroll-contain rounded-[24px] border border-foreground/10 bg-background/95 p-4 shadow-[0_26px_88px_rgba(17,19,24,0.28)] backdrop-blur-xl sm:inset-x-5 sm:p-5 lg:sticky lg:top-7 lg:z-auto lg:max-h-none lg:overflow-visible lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none lg:backdrop-blur-none"
           >
+            <div data-testid="paywall-mobile-sheet-handle" className="mx-auto mb-3 h-1 w-9 rounded-full bg-foreground/16 sm:hidden" aria-hidden="true" />
             <div className="flex items-center gap-3">
               <ArtistAvatar name={artist.name} imageUrl={artist.imageUrl} size="md" shared />
               <p className="min-w-0 truncate text-[13px] font-semibold text-foreground">{artist.name}</p>
