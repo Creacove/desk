@@ -9,6 +9,7 @@ import {
   UsersRound,
 } from "lucide-react";
 import { useMemo, useState } from "react";
+import { BrandMark } from "../../../design-system/components";
 import type {
   SetupPresentationFinding,
   SetupPresentationFindingDestination,
@@ -71,6 +72,17 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
       data-reduced-motion={String(queue.reducedMotion)}
       className="manager-working-file app-theme"
     >
+      <header className="manager-working-file__header">
+        <div className="manager-working-file__brand" aria-label="Ordersounds Desk">
+          <BrandMark size="sm" />
+          <div className="manager-working-file__brand-copy">
+            <span>Ordersounds</span>
+            <strong>Desk</strong>
+          </div>
+        </div>
+        <span className="manager-working-file__mode">Setup</span>
+      </header>
+
       <div className="manager-working-file__layout">
         <aside className="manager-working-file__rail" aria-label="Setup status">
           <div className="manager-working-file__eyebrow">
@@ -106,7 +118,6 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
             <ActiveFinding
               finding={queue.active}
               motionPhase={queue.state.phase}
-              reducedMotion={queue.reducedMotion}
               onAnimationEnd={queue.onLandingAnimationEnd}
             />
           ) : null}
@@ -147,7 +158,6 @@ function ActiveFinding({
 }: {
   finding: SetupPresentationFinding;
   motionPhase: string;
-  reducedMotion: boolean;
   onAnimationEnd: () => void;
 }) {
   const platform = finding.platform ? PLATFORM_LABELS[finding.platform] : null;
@@ -163,7 +173,10 @@ function ActiveFinding({
           <FindingIcon finding={finding} />
           {platform ? `${platform} ${destinationNoun(finding.destination)}` : semanticFindingLabel(finding)}
         </span>
-        <span>Found now</span>
+        <span className="manager-working-file__finding-status">
+          <span className="manager-working-file__finding-status-dot" aria-hidden="true" />
+          Reading now
+        </span>
       </div>
 
       <div className="manager-working-file__finding-body">
@@ -174,7 +187,11 @@ function ActiveFinding({
             title={finding.artwork.alt || finding.title}
             className="manager-working-file__active-artwork"
           />
-        ) : null}
+        ) : (
+          <span className="manager-working-file__active-artwork manager-working-file__active-artwork--fallback" aria-hidden="true">
+            <FindingIcon finding={finding} />
+          </span>
+        )}
         <div className="manager-working-file__finding-copy">
           <p className="manager-working-file__finding-label">{finding.title}</p>
           {finding.value ? <p className="manager-working-file__finding-value">{finding.value}</p> : null}
@@ -183,9 +200,7 @@ function ActiveFinding({
       </div>
 
       <div className="manager-working-file__finding-footer">
-        <span>For {destinationLabel(finding.destination)}</span>
-        <span className="manager-working-file__finding-dot" aria-hidden="true" />
-        <span>{reducedMotion ? "Filed in order" : "Working file"}</span>
+        <span>Filing into {destinationLabel(finding.destination)}</span>
       </div>
     </article>
   );
@@ -208,6 +223,12 @@ function WorkingFileSheet({
   collapsedSettledCount: number;
   activeDestination: SetupPresentationFindingDestination | null;
 }) {
+  const visibleSections = SECTION_DEFINITIONS.map((section) => ({
+    section,
+    rows: settled.filter((finding) => finding.destination === section.destination),
+    receiving: activeDestination === section.destination,
+  })).filter(({ rows, receiving }, index) => rows.length > 0 || receiving || (settled.length === 0 && !activeFinding && index === 0));
+
   return (
     <div className="manager-working-file__stack">
       <div className="manager-working-file__sheet manager-working-file__sheet--back-two" aria-hidden="true" />
@@ -226,15 +247,16 @@ function WorkingFileSheet({
             <h2>{artistName}</h2>
             {genres.length ? <p>{genres.slice(0, 2).join(" · ")}</p> : null}
           </div>
-          <span className="manager-working-file__file-status">Building first read</span>
+          <span className="manager-working-file__file-status">
+            <span className="manager-working-file__file-status-dot" aria-hidden="true" />
+            Building first read
+          </span>
         </header>
 
         <div className="manager-working-file__file-rule" aria-hidden="true" />
 
         <div className="manager-working-file__sections">
-          {SECTION_DEFINITIONS.map((section) => {
-            const rows = settled.filter((finding) => finding.destination === section.destination);
-            const receiving = activeDestination === section.destination;
+          {visibleSections.map(({ section, rows, receiving }) => {
             return (
               <section
                 key={section.destination}
@@ -245,7 +267,7 @@ function WorkingFileSheet({
                 <div className="manager-working-file__section-heading">
                   <span className="manager-working-file__section-index">{section.index}</span>
                   <h3>{section.label}</h3>
-                  {receiving ? <span className="manager-working-file__receiving-label">Receiving</span> : null}
+                  {receiving ? <span className="manager-working-file__receiving-label">Filing now</span> : null}
                 </div>
                 {rows.length ? (
                   <div data-testid={section.destination === "catalogue" ? "manager-file-settled" : undefined} className="manager-working-file__settled-rows">
