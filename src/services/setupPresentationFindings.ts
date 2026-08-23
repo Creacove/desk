@@ -308,7 +308,7 @@ export function normalizeSetupPresentationFinding(
   if (!metric && metricValue !== undefined && metricValue !== null) return null;
   if (metric?.valueKind === "number") {
     if (typeof metricValue !== "number") return null;
-    if (rawValue !== undefined && !isNumericDisplayValue(rawValue, readMetricUnit(value))) return null;
+    if (rawValue !== undefined) return null;
   }
   if (metric?.requiresValue !== false && metricName && displayValue === undefined) return null;
   if (detail && hasForbiddenDisplayText(detail)) return null;

@@ -352,7 +352,7 @@ describe("setup presentation v2 finding projection", () => {
   it("sorts the initial batch deterministically by time, phase, kind, and id", () => {
     const candidates = [
       normalizeSetupPresentationFinding(finding({ id: "z", persistedAt: "2026-08-23T10:00:02.000Z" })),
-      normalizeSetupPresentationFinding(finding({ id: "catalogue", persistedAt: "2026-08-23T10:00:01.000Z", phase: "catalogue", kind: "playlist", destination: "audience", metricName: "spotify_playlist_count", metricValue: 3, metricUnit: "playlists" })),
+      normalizeSetupPresentationFinding(finding({ id: "catalogue", persistedAt: "2026-08-23T10:00:01.000Z", phase: "discovery", kind: "playlist", destination: "audience", metricName: "spotify_playlist_count", metricValue: 3, metricUnit: "playlists" })),
       normalizeSetupPresentationFinding(finding({ id: "audience-b", persistedAt: "2026-08-23T10:00:00.000Z" })),
       normalizeSetupPresentationFinding(finding({ id: "audience-a", persistedAt: "2026-08-23T10:00:00.000Z" })),
     ].filter((item): item is NonNullable<typeof item> => Boolean(item));
