@@ -28,6 +28,7 @@ describe("setup presentation direct-read safety boundary", () => {
   });
 
   it("scopes discovery, brief, actions, evidence, and output to the active setup run", () => {
+    expect(source).toContain('.eq("id", options.setupRunId)');
     expect(source).toContain('.eq("classification", "manager_artist_discovery_v1")');
     expect(source).toContain('.eq("classification", "setup_todays_brief_v1")');
     expect(source).toContain('.eq("scope_key", setupRun.id)');

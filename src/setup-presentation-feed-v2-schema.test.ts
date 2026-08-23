@@ -67,6 +67,13 @@ describe("setup presentation feed v2 schema", () => {
     expect(migration).toContain("action.manager_synthesis_run_id = discovery_run.id");
     expect(migration).toContain("action.status::text = 'applied'");
     expect(migration).toContain("event.event_type in ('spotify_catalog_bootstrap_completed', 'spotify_catalog_bootstrap_completed_with_limits')");
+    expect(migration).toContain("event.workspace_setup_run_id = setup.id");
+    expect(migration).toContain("item.created_from_run_id = setup.id");
+    expect(migration).toContain("project.created_from_run_id = setup.id");
+    expect(migration).toContain("order by discovery.created_at desc, discovery.id desc");
+    expect(migration).toContain("action.discovery_status::text in ('completed', 'completed_with_limits')");
+    expect(migration).toContain("lower(coalesce(evidence.subject_label, '')) !~");
+    expect(migration).toContain("lower(coalesce(output.render_json ->> 'headlineread'");
     expect(migration).toContain("output.is_current = true");
     expect(migration).toContain("brief.status::text in ('completed', 'completed_with_limits')");
     expect(migration).toContain("output.output_type = 'setup_first_manager_read'");

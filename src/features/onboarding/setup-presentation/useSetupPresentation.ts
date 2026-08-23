@@ -14,11 +14,13 @@ export type SetupPresentationClientState = {
 
 export function useSetupPresentation({
   artistWorkspaceId,
+  setupRunId,
   enabled,
   loadSnapshot,
   fixture,
 }: {
   artistWorkspaceId: string;
+  setupRunId?: string;
   enabled: boolean;
   loadSnapshot: SetupPresentationLoader;
   fixture?: SetupPresentationSnapshot | null;
@@ -31,6 +33,7 @@ export function useSetupPresentation({
   const failuresRef = useRef(0);
   const degradedRef = useRef(false);
   const workspaceRef = useRef(artistWorkspaceId);
+  const setupRunRef = useRef(setupRunId);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -50,8 +53,9 @@ export function useSetupPresentation({
   }, [clearTimer, enabled, fixture, stopRequest]);
 
   useEffect(() => {
-    if (workspaceRef.current !== artistWorkspaceId) {
+    if (workspaceRef.current !== artistWorkspaceId || setupRunRef.current !== setupRunId) {
       workspaceRef.current = artistWorkspaceId;
+      setupRunRef.current = setupRunId;
       failuresRef.current = 0;
       degradedRef.current = false;
       setSnapshot(fixture ?? null);
@@ -81,7 +85,7 @@ export function useSetupPresentation({
       requestRef.current = controller;
 
       try {
-        const next = await loadSnapshot(artistWorkspaceId, { signal: controller.signal });
+        const next = await loadSnapshot(artistWorkspaceId, { signal: controller.signal, setupRunId });
         if (disposed || controller.signal.aborted) return;
         failuresRef.current = 0;
         setSnapshot(next);
@@ -128,7 +132,7 @@ export function useSetupPresentation({
       clearTimer();
       stopRequest();
     };
-  }, [artistWorkspaceId, clearTimer, enabled, fixture, loadSnapshot, refreshNonce, stopRequest]);
+  }, [artistWorkspaceId, clearTimer, enabled, fixture, loadSnapshot, refreshNonce, setupRunId, stopRequest]);
 
   return { snapshot, state, refresh };
 }

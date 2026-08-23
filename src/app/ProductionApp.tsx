@@ -2100,6 +2100,7 @@ function CleanProductionWorkspace({
       return (
         <SetupActivityScreen
           artistWorkspaceId={workspace?.artistWorkspaceId}
+          setupRunId={workspace?.setupRunId}
           status={setupActivityError ? "failed" : workspace?.setupStatus ?? "running"}
           stage={workspace?.setupStage}
           stageStatus={workspace?.setupStageStatus}
@@ -3704,6 +3705,7 @@ function areWorkspacesEquivalent(currentWorkspace: ProductionWorkspace, nextWork
       currentWorkspace.subscriptionStatus === nextWorkspace.subscriptionStatus &&
       currentWorkspace.setupStatus === nextWorkspace.setupStatus &&
       currentWorkspace.setupStage === nextWorkspace.setupStage &&
+      currentWorkspace.setupRunId === nextWorkspace.setupRunId &&
       currentWorkspace.billingCheckoutSessionId === nextWorkspace.billingCheckoutSessionId
     );
 }

@@ -249,6 +249,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         setupStageStatus: readLatestSetupStageStatus(workspace.workspace_setup_runs),
         setupLastError: latestSetupRun(workspace.workspace_setup_runs)?.last_error ?? undefined,
         billingCheckoutSessionId: readLatestSetupCheckoutSessionId(workspace.workspace_setup_runs),
+        setupRunId: latestSetupRun(workspace.workspace_setup_runs)?.id ?? undefined,
       } satisfies ProductionWorkspace;
     },
     async loadCatalogSyncStatus(workspace) {

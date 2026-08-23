@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const ui = readFileSync(join(process.cwd(), "src", "features", "onboarding", "setup-presentation", "SetupPresentationV2.tsx"), "utf8");
+const workingFile = readFileSync(join(process.cwd(), "src", "features", "onboarding", "setup-presentation", "ManagerWorkingFile.tsx"), "utf8");
+const motion = readFileSync(join(process.cwd(), "src", "features", "onboarding", "setup-presentation", "setupPresentationMotion.css"), "utf8");
 const shell = readFileSync(join(process.cwd(), "src", "features", "onboarding", "SetupActivityScreen.tsx"), "utf8");
 const flag = readFileSync(join(process.cwd(), "src", "features", "onboarding", "setup-presentation", "useSetupPresentationFlag.ts"), "utf8");
 const app = readFileSync(join(process.cwd(), "src", "app", "ProductionApp.tsx"), "utf8");
@@ -16,19 +18,22 @@ describe("setup presentation release safety", () => {
   });
 
   it("keeps mobile vertical overflow available and every artwork path defensive", () => {
-    expect(ui).toContain("overflow-x-hidden");
-    expect(ui).not.toContain("min-h-screen overflow-hidden");
-    expect(ui).toContain("function SafeArtwork");
-    expect(ui).toContain("onError={() => setFailed(true)}");
+    expect(motion).toContain("overflow-x: hidden");
+    expect(motion).not.toContain("min-height: 100vh;\n  overflow: hidden");
+    expect(workingFile).toContain("function SafeArtwork");
+    expect(workingFile).toContain("onError={() => setFailed(true)}");
   });
 
-  it("always preserves the Manager insight when the editorial budget is full", () => {
-    expect(ui).toContain('const managerBlock = blocks.find((block) => block.key === "manager")');
-    expect(ui).toContain('blocks.filter((block) => block.key !== "manager").slice(0, 5)');
+  it("always preserves the Manager read section when the settled tail is full", () => {
+    expect(workingFile).toContain('destination: "manager_read"');
+    expect(workingFile).toContain('label: "Manager read"');
+    expect(workingFile).toContain("collapsedSettledCount");
   });
 
-  it("does not mark catalogue resolved while it is still working", () => {
-    expect(ui).toContain('snapshot.catalogue.state === "complete" ? <ResolvedMark /> : <WorkingMark />');
+  it("marks only settled findings as filed", () => {
+    expect(workingFile).toContain("function SettledFinding");
+    expect(workingFile).toContain('aria-label="Filed"');
+    expect(workingFile).toContain("activeDestination");
   });
 
   it("does not regress into a staged progress wizard", () => {

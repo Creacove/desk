@@ -181,4 +181,17 @@ describe("setup presentation FIFO queue", () => {
     });
     expect(stopped).toEqual(state);
   });
+
+  it("can restart after a terminal stop when setup is retried", () => {
+    let state = ingest(createSetupPresentationQueueState("run-1"), [finding(1)]);
+    state = setupPresentationQueueReducer(state, { type: "stop" });
+    state = setupPresentationQueueReducer(state, {
+      type: "restart",
+      sourceKey: "run-1",
+      findings: [finding(2)],
+      nowMs: 100,
+    });
+    expect(state.phase).toBe("holding");
+    expect(state.active?.id).toBe("finding-2");
+  });
 });

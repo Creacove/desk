@@ -34,6 +34,8 @@ profile_row as (
     on setup.account_id = profile.account_id
    and setup.artist_workspace_id = profile.artist_workspace_id
    and setup.artist_id = profile.artist_id
+  where lower(coalesce(profile.display_name, '')) !~ '(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)'
+    and lower(coalesce(array_to_string(profile.genres, ' '), '')) !~ '(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)'
 ),
 catalogue_completion as (
   select event.id, event.created_at, event.payload
@@ -43,6 +45,13 @@ catalogue_completion as (
    and setup.artist_workspace_id = event.artist_workspace_id
    and setup.artist_id = event.artist_id
   where event.event_type in ('spotify_catalog_bootstrap_completed', 'spotify_catalog_bootstrap_completed_with_limits')
+    and (
+      event.workspace_setup_run_id = setup.id
+      or (
+        event.workspace_setup_run_id is null
+        and event.created_at >= coalesce(setup.started_at, setup.created_at)
+      )
+    )
   order by event.created_at asc, event.id asc
   limit 1
 ),
@@ -55,11 +64,12 @@ discovery_run as (
    and setup.artist_id = discovery.artist_id
   where discovery.classification = 'manager_artist_discovery_v1'
     and discovery.scope_key = setup.id::text
-  order by discovery.created_at asc, discovery.id asc
+    and coalesce(discovery.status::text, '') not in ('failed', 'cancelled', 'canceled')
+  order by discovery.created_at desc, discovery.id desc
   limit 1
 ),
 applied_actions as (
-  select action.id, action.manager_synthesis_run_id
+  select action.id, action.manager_synthesis_run_id, discovery_run.status as discovery_status
   from public.manager_run_actions as action
   join discovery_run as discovery_run
     on action.manager_synthesis_run_id = discovery_run.id
@@ -163,6 +173,14 @@ raw_findings as (
    and setup.artist_id = item.artist_id
   join catalogue_completion as completion on true
   where nullif(trim(item.title), '') is not null
+    and lower(item.title) !~ '(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)'
+    and (
+      item.created_from_run_id = setup.id
+      or (
+        item.created_from_run_id is null
+        and item.created_at >= coalesce(setup.started_at, setup.created_at)
+      )
+    )
 
   union all
 
@@ -188,6 +206,14 @@ raw_findings as (
    and setup.artist_id = project.artist_id
   join catalogue_completion as completion on true
   where nullif(trim(project.title), '') is not null
+    and lower(project.title) !~ '(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)'
+    and (
+      project.created_from_run_id = setup.id
+      or (
+        project.created_from_run_id is null
+        and project.created_at >= coalesce(setup.started_at, setup.created_at)
+      )
+    )
 
   union all
 
@@ -271,11 +297,18 @@ raw_findings as (
   join applied_actions as action on action.id = evidence.created_from_action_id
   join authorized_setup as setup
     on setup.account_id = evidence.account_id
-   and setup.artist_workspace_id = evidence.artist_workspace_id
+    and setup.artist_workspace_id = evidence.artist_workspace_id
    and setup.artist_id = evidence.artist_id
   where evidence.id is not null
     and evidence.created_at is not null
     and evidence.metric_name is not null
+    and lower(coalesce(evidence.subject_label, '')) !~ '(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)'
+    and (
+      lower(evidence.metric_name) not in ('artist_current_city', 'listener_market')
+      and lower(evidence.metric_name) !~ '^(spotify_)?listener_city_[a-z0-9_-]+$'
+      and lower(evidence.metric_name) !~ '^city_affinity_[a-z0-9_-]+$'
+      or action.discovery_status::text in ('completed', 'completed_with_limits')
+    )
     and (
       lower(evidence.metric_name) in (
         'spotify_monthly_listeners', 'spotify_followers', 'spotify_playlist_total_reach', 'spotify_playlist_reach', 'spotify_playlist_count', 'spotify_editorial_playlist_count', 'spotify_editorial_playlist_total_reach', 'spotify_editorial_playlist_reach',
@@ -314,6 +347,7 @@ raw_findings as (
     and brief.classification = 'setup_todays_brief_v1'
     and brief.scope_key = setup.id::text
     and nullif(trim(coalesce(output.render_json ->> 'headlineRead', output.render_json ->> 'headline_read')), '') is not null
+    and lower(coalesce(output.render_json ->> 'headlineRead', output.render_json ->> 'headline_read', '')) !~ '(chartmetric|manager_discovery_tool|save_public_evidence|write_strategic_memory|web_search)'
 ),
 ranked_findings as (
   select

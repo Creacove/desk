@@ -1,11 +1,16 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSetupPresentationSnapshot, mergeConsumedDiscoveryEvidence } from "./setupPresentationProjection";
 import { parseSetupPresentationFeed } from "./setupPresentationFindings";
-import type { SetupPresentationFeed, SetupPresentationSnapshot } from "../types/setupPresentation";
+import type {
+  SetupPresentationActivityKind,
+  SetupPresentationFeed,
+  SetupPresentationFinding,
+  SetupPresentationSnapshot,
+} from "../types/setupPresentation";
 
 export type SetupPresentationLoader = (
   artistWorkspaceId: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; setupRunId?: string },
 ) => Promise<SetupPresentationSnapshot>;
 
 type QueryError = { message?: string; code?: string; details?: string; hint?: string };
@@ -62,15 +67,18 @@ const RELEVANT_EVENT_TYPES = [
 export function createSupabaseSetupPresentationLoader(client: SupabaseClient): SetupPresentationLoader {
   return async (artistWorkspaceId, options = {}) => {
     assertUuid(artistWorkspaceId);
+    if (options.setupRunId) assertUuid(options.setupRunId);
     const signal = options.signal;
 
     // This first query is both discovery and authorization: workspace_setup_runs is RLS-protected
     // by account membership, so an inaccessible workspace resolves to no visible setup run.
+    let setupQuery = client
+      .from("workspace_setup_runs")
+      .select("id,account_id,artist_id,status,current_stage,stage_status,started_at,created_at,updated_at")
+      .eq("artist_workspace_id", artistWorkspaceId);
+    if (options.setupRunId) setupQuery = setupQuery.eq("id", options.setupRunId);
     const setupResult = await withSignal(
-      client
-        .from("workspace_setup_runs")
-        .select("id,account_id,artist_id,status,current_stage,stage_status,started_at,created_at,updated_at")
-        .eq("artist_workspace_id", artistWorkspaceId)
+      setupQuery
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle(),
@@ -99,30 +107,38 @@ export function createSupabaseSetupPresentationLoader(client: SupabaseClient): S
         signal,
       ),
       withSignal(
-        client
+        (() => {
+          let query = client
           .from("music_items")
-          .select("id,title,metadata,released_at")
+          .select("id,title,metadata,released_at,created_from_run_id,created_at")
           .eq("account_id", setupRun.account_id)
           .eq("artist_workspace_id", artistWorkspaceId)
           .eq("artist_id", setupRun.artist_id)
-          .order("released_at", { ascending: false, nullsFirst: false })
-          .order("id", { ascending: true })
-          .limit(10),
+          ;
+          if (setupStartedAt) {
+            query = query.or(`created_from_run_id.eq.${setupRun.id},and(created_from_run_id.is.null,created_at.gte.${setupStartedAt})`);
+          }
+          return query.order("released_at", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).limit(10);
+        })(),
         signal,
       ),
       withSignal(
-        client
+        (() => {
+          let query = client
           .from("music_projects")
-          .select("id,title,metadata,released_at")
+          .select("id,title,metadata,released_at,created_from_run_id,created_at")
           .eq("account_id", setupRun.account_id)
           .eq("artist_workspace_id", artistWorkspaceId)
           .eq("artist_id", setupRun.artist_id)
-          .order("released_at", { ascending: false, nullsFirst: false })
-          .order("id", { ascending: true })
-          .limit(5),
+          ;
+          if (setupStartedAt) {
+            query = query.or(`created_from_run_id.eq.${setupRun.id},and(created_from_run_id.is.null,created_at.gte.${setupStartedAt})`);
+          }
+          return query.order("released_at", { ascending: false, nullsFirst: false }).order("id", { ascending: true }).limit(5);
+        })(),
         signal,
       ),
-      withSignal(buildEventQuery(client, setupRun.account_id, artistWorkspaceId, setupRun.artist_id, setupStartedAt), signal),
+      withSignal(buildEventQuery(client, setupRun.account_id, artistWorkspaceId, setupRun.artist_id, setupStartedAt, setupRun.id), signal),
       withSignal(
         client
           .from("manager_synthesis_runs")
@@ -249,6 +265,48 @@ async function tryLoadSetupPresentationFeed(
 }
 
 function snapshotFromFeed(feed: SetupPresentationFeed): SetupPresentationSnapshot {
+  const catalogueFindings = feed.findings.filter((finding) => finding.destination === "catalogue");
+  const audienceFinding = latestFinding(feed.findings, (finding) => finding.destination === "audience" && Boolean(finding.value));
+  const marketFindings = feed.findings.filter((finding) => finding.destination === "markets");
+  const focusMusic = latestFinding(feed.findings, (finding) => finding.kind === "music");
+  const managerFinding = latestFinding(feed.findings, (finding) => finding.kind === "manager_read");
+  const catalogue = catalogueFindings.length
+    ? {
+        state: feed.setup.phase === "catalogue" ? "working" as const : "complete" as const,
+        trackCount: readFindingNumber(catalogueFindings, "Tracks"),
+        releaseCount: readFindingNumber(catalogueFindings, "Releases"),
+        covers: catalogueFindings
+          .filter((finding) => finding.artwork)
+          .map((finding) => ({ title: finding.title, imageUrl: finding.artwork?.url }))
+          .slice(0, 4),
+      }
+    : undefined;
+  const markets = marketFindings
+    .map((finding) => finding.value ?? finding.detail)
+    .filter((value): value is string => Boolean(value));
+  const intelligence = audienceFinding || markets.length || focusMusic
+    ? {
+        primaryMetric: audienceFinding?.value ? { label: audienceFinding.title, value: audienceFinding.value } : undefined,
+        markets,
+        publicSources: [],
+        focusMusic: focusMusic
+          ? { title: focusMusic.title, imageUrl: focusMusic.artwork?.url }
+          : undefined,
+      }
+    : undefined;
+  const activityKind: SetupPresentationActivityKind = feed.setup.phase === "catalogue"
+    ? "catalogue"
+    : feed.setup.phase === "discovery"
+      ? "audience"
+      : "manager";
+  const activityLabel = feed.setup.phase === "catalogue"
+    ? "Bringing your music into view"
+    : feed.setup.phase === "discovery"
+      ? "Learning about your artist"
+      : feed.setup.phase === "synthesis"
+        ? "Your Manager is putting it together"
+        : "Your Manager is ready";
+
   return {
     version: 1,
     observedAt: feed.observedAt,
@@ -261,7 +319,39 @@ function snapshotFromFeed(feed: SetupPresentationFeed): SetupPresentationSnapsho
       updatedAt: feed.setup.updatedAt,
     },
     artist: feed.artist,
+    catalogue,
+    activity: {
+      kind: activityKind,
+      state: feed.setup.status === "completed" || feed.setup.phase === "ready" ? "complete" : "working",
+      label: activityLabel,
+      occurredAt: feed.setup.updatedAt,
+    },
+    intelligence,
+    manager: {
+      state: managerFinding
+        ? "ready"
+        : feed.setup.phase === "synthesis"
+          ? "working"
+          : feed.setup.phase === "ready"
+            ? "ready"
+            : "waiting",
+      insight: managerFinding?.value,
+    },
   };
+}
+
+function latestFinding(
+  findings: SetupPresentationFinding[],
+  predicate: (finding: SetupPresentationFinding) => boolean,
+) {
+  return [...findings].reverse().find(predicate);
+}
+
+function readFindingNumber(findings: SetupPresentationFinding[], title: string) {
+  const finding = latestFinding(findings, (candidate) => candidate.title === title && Boolean(candidate.value));
+  if (!finding?.value || !/^\d+$/.test(finding.value)) return undefined;
+  const value = Number(finding.value);
+  return Number.isSafeInteger(value) ? value : undefined;
 }
 
 function buildEventQuery(
@@ -270,17 +360,22 @@ function buildEventQuery(
   artistWorkspaceId: string,
   artistId: string,
   setupStartedAt?: string,
+  setupRunId?: string,
 ) {
   let query = client
     .from("operating_events")
-    .select("event_type,payload,created_at")
+    .select("event_type,payload,created_at,workspace_setup_run_id")
     .eq("account_id", accountId)
     .eq("artist_workspace_id", artistWorkspaceId)
     .eq("artist_id", artistId)
     .in("event_type", [...RELEVANT_EVENT_TYPES])
     .order("created_at", { ascending: false })
     .limit(120);
-  if (setupStartedAt) query = query.gte("created_at", setupStartedAt);
+  if (setupRunId && setupStartedAt) {
+    query = query.or(`workspace_setup_run_id.eq.${setupRunId},and(workspace_setup_run_id.is.null,created_at.gte.${setupStartedAt})`);
+  } else if (setupStartedAt) {
+    query = query.gte("created_at", setupStartedAt);
+  }
   return query;
 }
 

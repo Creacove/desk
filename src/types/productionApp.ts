@@ -46,6 +46,7 @@ export type ProductionWorkspace = {
   setupStageStatus?: ProductionSetupStageStatus;
   setupLastError?: string;
   billingCheckoutSessionId?: string;
+  setupRunId?: string;
   accessType?: "paid_subscription" | "private_beta" | "none";
   accessStatus?: "active" | "expired" | "inactive";
   accessStartsAt?: string;

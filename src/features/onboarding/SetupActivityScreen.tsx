@@ -23,6 +23,7 @@ const visibleStages = Object.keys(setupStageCopy) as Array<keyof typeof setupSta
 
 type SetupActivityProps = {
   artistWorkspaceId?: string;
+  setupRunId?: string;
   status: NonNullable<ProductionWorkspace["setupStatus"]>;
   stage?: ProductionSetupStage;
   stageStatus?: ProductionSetupStageStatus;
@@ -44,6 +45,7 @@ export function SetupActivityScreen(props: SetupActivityProps) {
       <Suspense fallback={legacy}>
         <SetupPresentationController
           artistWorkspaceId={props.artistWorkspaceId}
+          setupRunId={props.setupRunId}
           fixture={fixture}
           fallback={legacy}
         />
@@ -54,10 +56,12 @@ export function SetupActivityScreen(props: SetupActivityProps) {
 
 function SetupPresentationController({
   artistWorkspaceId,
+  setupRunId,
   fixture,
   fallback,
 }: {
   artistWorkspaceId: string;
+  setupRunId?: string;
   fixture: ReturnType<typeof readDevelopmentSetupFixture>;
   fallback: ReactNode;
 }) {
@@ -67,6 +71,7 @@ function SetupPresentationController({
   }, [fixture]);
   const presentation = useSetupPresentation({
     artistWorkspaceId,
+    setupRunId,
     enabled: true,
     loadSnapshot: loader,
     fixture,
@@ -86,7 +91,7 @@ function SetupPresentationPrelude() {
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-[0.18] [background-image:linear-gradient(hsl(var(--foreground)/0.035)_1px,transparent_1px),linear-gradient(90deg,hsl(var(--foreground)/0.028)_1px,transparent_1px)] [background-size:56px_56px]" />
       <section className="relative z-10 w-full max-w-[42rem]">
         <div className="flex items-center gap-2 font-ui text-[9px] font-bold uppercase tracking-[0.16em] text-brand-accent">
-          <span className="h-1.5 w-1.5 rounded-full bg-brand-accent setup-live-pulse" aria-hidden="true" />
+          <span className="h-1.5 w-1.5 rounded-full bg-brand-accent" aria-hidden="true" />
           Desk setup
         </div>
         <h1 className="mt-5 font-display text-[clamp(2.35rem,6vw,4.6rem)] font-semibold leading-[0.98] tracking-[-0.045em]">Building your Desk</h1>

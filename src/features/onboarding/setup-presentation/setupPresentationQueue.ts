@@ -36,6 +36,12 @@ export type SetupPresentationQueueAction =
       nowMs: number;
     }
   | {
+      type: "restart";
+      sourceKey: string;
+      findings: SetupPresentationFinding[];
+      nowMs: number;
+    }
+  | {
       type: "dwell_elapsed";
       nowMs: number;
       generation: number;
@@ -76,11 +82,16 @@ export function setupPresentationQueueReducer(
   state: SetupPresentationQueueState,
   action: SetupPresentationQueueAction,
 ): SetupPresentationQueueState {
-  if (state.phase === "stopped") return state;
+  if (state.phase === "stopped" && action.type !== "restart") return state;
 
   switch (action.type) {
     case "ingest":
       return ingestFindings(state, action);
+    case "restart": {
+      const reset = createSetupPresentationQueueState(action.sourceKey);
+      reset.generation = state.generation + 1;
+      return ingestIntoState(reset, sortSetupPresentationFindings(action.findings), action.nowMs);
+    }
     case "dwell_elapsed":
       if (
         state.phase !== "holding"
@@ -272,4 +283,3 @@ export function getCollapsedSettledCount(state: SetupPresentationQueueState): nu
 export function hasQueuedSuccessor(state: SetupPresentationQueueState): boolean {
   return state.pending.length > 0;
 }
-
