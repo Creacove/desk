@@ -63,4 +63,3 @@ function evidenceVariant(finding: SetupPresentationFinding): EvidenceVariant {
 - [ ] Run `npm run build` and confirm exit code 0.
 - [ ] Open the discovery fixture at desktop and mobile widths, verify the old left border and long list are gone, and capture a screenshot for review.
 - [ ] Run `git diff --check` and inspect the final diff before committing.
-

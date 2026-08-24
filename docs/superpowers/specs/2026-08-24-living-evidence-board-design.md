@@ -126,4 +126,3 @@ The composition must remain useful at 320px wide, with values and platform marks
 - Production build must pass.
 - Visual verification covers desktop, mobile, populated, sparse, and reduced-motion fixtures.
 - Final QA checks copy density, brand color restraint, platform mark accuracy, overflow, animation cleanup, and the absence of the active card's left border.
-
