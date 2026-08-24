@@ -1176,21 +1176,77 @@
 
 @media (max-width: 560px) {
   .manager-working-file__header {
-    padding-right: 18px;
-    padding-left: 18px;
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .manager-working-file__layout {
+    padding: 22px 14px 20px;
+  }
+
+  .manager-working-file__phase-block {
+    margin-top: 26px;
+  }
+
+  .manager-working-file__phase-title {
+    max-width: 360px;
+    font-size: clamp(30px, 9vw, 38px);
+    line-height: 1;
+  }
+
+  .manager-working-file__phase-detail {
+    margin-top: 10px;
+  }
+
+  .manager-working-file__reassurance {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+
+  .manager-working-file__stage {
+    padding: 18px 0 0;
+  }
+
+  .manager-working-file__stage.has-active {
+    padding-top: 160px;
   }
 
   .manager-working-file__evidence-shell {
-    border-radius: 18px;
-    padding: 16px;
+    min-height: 0;
+    border-radius: 16px;
+    padding: 12px;
   }
 
   .manager-working-file__evidence-header {
     grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding-bottom: 12px;
+  }
+
+  .manager-working-file__artist-artwork,
+  .manager-working-file__artist-monogram {
+    width: 44px;
+    height: 44px;
+  }
+
+  .manager-working-file__evidence-heading h2 {
+    font-size: 18px;
+  }
+
+  .manager-working-file__evidence-heading p {
+    margin-top: 2px;
   }
 
   .manager-working-file__evidence-status {
     display: none;
+  }
+
+  .manager-working-file__evidence-board {
+    padding-top: 10px;
+  }
+
+  .manager-working-file__evidence-grid {
+    gap: 8px;
   }
 
   .manager-working-file__evidence-module,
@@ -1198,17 +1254,67 @@
   .manager-working-file__evidence-module--music,
   .manager-working-file__evidence-module--narrative,
   .manager-working-file__evidence-module--identity {
-    min-height: 116px;
-    grid-column: span 12;
+    min-height: 92px;
+    grid-column: span 6;
+    border-radius: 12px;
+    padding: 10px;
   }
 
   .manager-working-file__evidence-module--music {
-    min-height: 190px;
+    min-height: 104px;
+    padding: 0;
+  }
+
+  .manager-working-file__module-source {
+    gap: 5px;
+    font-size: 8px;
+  }
+
+  .manager-working-file__platform-mark {
+    width: 19px;
+    height: 19px;
+    border-radius: 6px;
+  }
+
+  .manager-working-file__evidence-module--music .manager-working-file__module-source {
+    top: 8px;
+    left: 8px;
+    padding: 3px 6px 3px 3px;
+    backdrop-filter: none;
+  }
+
+  .manager-working-file__module-copy strong {
+    margin-top: 3px;
+    font-size: clamp(19px, 6vw, 25px);
+  }
+
+  .manager-working-file__module-copy span {
+    margin-top: 4px;
+  }
+
+  .manager-working-file__evidence-module--music .manager-working-file__module-copy {
+    padding: 38px 10px 10px;
+  }
+
+  .manager-working-file__collapsed-count,
+  .manager-working-file__waiting {
+    margin-top: 10px;
   }
 
   .manager-working-file__active-finding {
-    top: 18px;
-    width: calc(100% - 16px);
+    top: 0;
+    width: calc(100% - 8px);
+    border-radius: 14px;
+    padding: 12px 14px;
+    box-shadow: 0 12px 28px rgba(18, 18, 20, 0.08);
+  }
+
+  .manager-working-file__finding-meta {
+    margin-bottom: 10px;
+  }
+
+  .manager-working-file__finding-value {
+    font-size: 25px;
   }
 }
 

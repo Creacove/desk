@@ -89,7 +89,7 @@ export function createSupabaseSetupPresentationLoader(client: SupabaseClient): S
     const setupRun = setupResult.data;
 
     const v2Feed = await tryLoadSetupPresentationFeed(client, setupRun.id, signal);
-    if (v2Feed) {
+    if (v2Feed && (v2Feed.findings.length > 0 || !v2Feed.artist)) {
       return assertSetupPresentationSnapshot(snapshotFromFeed(v2Feed));
     }
 

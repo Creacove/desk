@@ -55,6 +55,23 @@ function finding(overrides: Record<string, unknown> = {}) {
 }
 
 describe("setup presentation v2 finding projection", () => {
+  it("accepts the PostgreSQL timestamp revision emitted by the production feed", () => {
+    const feed = parseSetupPresentationFeed({
+      ...baseFeed,
+      findings: [finding({
+        revision: "2026-08-24 09:06:14.707418+00",
+        persistedAt: "2026-08-24 09:06:14.707418+00",
+      })],
+    }, runId);
+
+    expect(feed.findings).toHaveLength(1);
+    expect(feed.findings[0]).toMatchObject({
+      revision: "2026-08-24T09:06:14.707Z",
+      value: "7.5M",
+    });
+    expect(feed.projection.omittedMalformed).toBe(0);
+  });
+
   it("normalizes an approved metric into a bounded display-safe finding", () => {
     const feed = parseSetupPresentationFeed({
       ...baseFeed,

@@ -251,7 +251,7 @@ export function normalizeSetupPresentationFinding(
 
   const id = readIdentifier(value.id);
   const dedupeKey = readIdentifier(value.dedupeKey ?? value.dedupe_key);
-  const revision = readIdentifier(value.revision);
+  const revision = readRevision(value.revision);
   const persistedAt = readTimestamp(value.persistedAt ?? value.persisted_at);
   const metricName = readMetricName(value);
   if (!id || !dedupeKey || !revision || !persistedAt || !matchesFindingScope(value, scope) || (hasField(value, "metricName", "metric_name") && !metricName)) {
@@ -643,6 +643,10 @@ function readIdentifier(value: unknown): string | undefined {
   const string = readSafeString(value, MAX_IDENTIFIER_LENGTH);
   if (!string || !isSafeIdentifier(string)) return undefined;
   return string;
+}
+
+function readRevision(value: unknown): string | undefined {
+  return readIdentifier(value) ?? readTimestamp(value);
 }
 
 function isSafeIdentifier(value: string): boolean {

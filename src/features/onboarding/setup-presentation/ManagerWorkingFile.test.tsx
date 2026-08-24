@@ -113,6 +113,27 @@ describe("ManagerWorkingFile", () => {
     expect(screen.queryByText(/Filing into/i)).toBeNull();
   });
 
+  it("keeps the rendered evidence board bounded to four settled findings", () => {
+    vi.useFakeTimers();
+    const current = feed(Array.from({ length: 6 }, (_, index) => finding({
+      id: `finding-${index + 1}`,
+      dedupeKey: `fact:${index + 1}`,
+      persistedAt: `2026-08-23T10:00:0${index + 1}.000Z`,
+      title: `Signal ${index + 1}`,
+      value: String(index + 1),
+    })));
+
+    render(<ManagerWorkingFile snapshot={snapshot(current)} />);
+    for (let index = 0; index < 5; index += 1) {
+      act(() => vi.advanceTimersByTime(600));
+      act(() => vi.advanceTimersByTime(220));
+    }
+
+    const modules = screen.getByTestId("manager-file-evidence-board").querySelectorAll("[data-evidence-variant]");
+    expect(modules).toHaveLength(4);
+    expect(screen.getByText("+1 earlier finding")).toBeTruthy();
+  });
+
   it("keeps platform wording user-facing and never renders an internal vendor", () => {
     const current = feed([finding({ detail: "Spotify catalogue" })]);
     render(<ManagerWorkingFile snapshot={snapshot(current)} />);

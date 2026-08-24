@@ -33,6 +33,8 @@ const PLATFORM_LABELS: Record<string, string> = {
   youtube: "YouTube",
 };
 
+const MAX_RENDERED_EVIDENCE = 4;
+
 export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps) {
   const feed = snapshot.feed;
   const findings = useMemo(
@@ -89,7 +91,7 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
           ) : null}
         </aside>
 
-        <section className="manager-working-file__stage" aria-label="Manager working file">
+        <section className={`manager-working-file__stage ${queue.active ? "has-active" : "is-idle"}`} aria-label="Manager working file">
           {queue.active ? (
             <ActiveFinding
               finding={queue.active}
@@ -187,8 +189,11 @@ function WorkingFileSheet({
   settled: SetupPresentationFinding[];
   collapsedSettledCount: number;
 }) {
+  const visibleSettled = settled.slice(-MAX_RENDERED_EVIDENCE);
+  const hiddenSettledCount = collapsedSettledCount + Math.max(0, settled.length - visibleSettled.length);
+
   return (
-    <article className={`manager-working-file__evidence-shell ${collapsedSettledCount ? "has-overflow" : ""}`}>
+    <article className={`manager-working-file__evidence-shell ${hiddenSettledCount ? "has-overflow" : ""} ${visibleSettled.length === 0 ? "is-empty" : ""}`}>
         <header className="manager-working-file__evidence-header">
           <SafeArtwork
             src={artistImageUrl}
@@ -204,13 +209,13 @@ function WorkingFileSheet({
 
         <div data-testid="manager-file-evidence-board" className="manager-working-file__evidence-board">
           <div data-testid="manager-file-settled" className="manager-working-file__evidence-grid">
-            {settled.map((finding) => <EvidenceModule key={finding.id} finding={finding} />)}
+            {visibleSettled.map((finding) => <EvidenceModule key={finding.id} finding={finding} />)}
           </div>
         </div>
 
-        {collapsedSettledCount ? (
+        {hiddenSettledCount ? (
           <p className="manager-working-file__collapsed-count">
-            +{collapsedSettledCount} earlier {collapsedSettledCount === 1 ? "finding" : "findings"}
+            +{hiddenSettledCount} earlier {hiddenSettledCount === 1 ? "finding" : "findings"}
           </p>
         ) : null}
 
