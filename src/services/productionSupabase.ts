@@ -673,6 +673,25 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
 
       return billingStatusFromPayload(data);
     },
+    subscribeBillingStatus({ reference, checkoutSessionId }, onChange) {
+      const column = checkoutSessionId ? "id" : "provider_reference";
+      const value = (checkoutSessionId ?? reference)?.trim();
+      if (!value) return () => undefined;
+
+      const channel = client
+        .channel(`billing-confirmation:${crypto.randomUUID()}`)
+        .on("postgres_changes", {
+          event: "UPDATE",
+          schema: "public",
+          table: "billing_checkout_sessions",
+          filter: `${column}=eq.${value}`,
+        }, onChange)
+        .subscribe();
+
+      return () => {
+        void client.removeChannel(channel);
+      };
+    },
     async retrySetup({ checkoutSessionId }) {
       const { data, error } = await client.functions.invoke("billing-status", {
         body: { checkoutSessionId, retrySetup: true },

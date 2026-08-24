@@ -133,6 +133,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   window.history.replaceState({}, "", "/");
+  window.sessionStorage.clear();
   vi.useRealTimers();
   supabaseDiscoveryPoll.responses = [];
   vi.clearAllMocks();
@@ -407,6 +408,63 @@ describe("Clean production prototype-match shell", () => {
     });
     expect(loadBillingStatus).toHaveBeenCalledTimes(callsAtDeadline + 1);
     expect(loadBillingStatus).toHaveBeenLastCalledWith({ reference: "ors_slow_return" });
+  });
+
+  it("revalidates canonical billing status immediately when the backend checkout row changes", async () => {
+    window.history.pushState({}, "", "/welcome");
+    window.sessionStorage.setItem("ordersounds.paddleCheckoutSessionId", "checkout-realtime-1");
+
+    let notifyCheckoutChanged: (() => void) | undefined;
+    const unsubscribe = vi.fn();
+    const loadBillingStatus = vi
+      .fn()
+      .mockResolvedValueOnce({
+        checkoutStatus: "initialized" as const,
+        subscriptionStatus: "none" as const,
+        entitlementActive: false,
+        setupStatus: "not_started" as const,
+      })
+      .mockResolvedValueOnce({
+        checkoutStatus: "paid" as const,
+        subscriptionStatus: "active" as const,
+        entitlementActive: true,
+        setupStatus: "completed" as const,
+        workspace,
+      });
+    const billingService = {
+      async createCheckoutPreview() {
+        throw new Error("Checkout preview should not be created on a payment return.");
+      },
+      loadBillingStatus,
+      subscribeBillingStatus(input, onChange) {
+        expect(input).toEqual({ checkoutSessionId: "checkout-realtime-1" });
+        notifyCheckoutChanged = onChange;
+        return unsubscribe;
+      },
+    } satisfies ProductionBillingService;
+
+    const rendered = render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(null)}
+        billingService={billingService}
+        repositories={repositoriesFor("Nova Vale")}
+      />,
+    );
+
+    await waitFor(() => expect(notifyCheckoutChanged).toBeTypeOf("function"));
+    expect(loadBillingStatus).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      notifyCheckoutChanged?.();
+    });
+
+    await waitFor(() => expect(loadBillingStatus).toHaveBeenCalledTimes(2));
+    expect(loadBillingStatus).toHaveBeenLastCalledWith({ checkoutSessionId: "checkout-realtime-1" });
+    await screen.findByText("Nova Vale Desk");
+
+    rendered.unmount();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
   it("uses the branded loader while preparing workspace view data", async () => {

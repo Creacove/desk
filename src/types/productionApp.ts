@@ -344,6 +344,10 @@ export type ProductionBillingService = {
   }): Promise<ProductionBillingCheckoutPreview>;
   loadLatestCheckoutPreview?(): Promise<ProductionBillingCheckoutPreview | null>;
   loadBillingStatus(input: { reference?: string; checkoutSessionId?: string }): Promise<ProductionBillingStatus>;
+  subscribeBillingStatus?(
+    input: { reference?: string; checkoutSessionId?: string },
+    onChange: () => void,
+  ): () => void;
   retrySetup?(input: { checkoutSessionId: string }): Promise<ProductionBillingStatus>;
   runSetupPhase?(input: {
     checkoutSessionId: string;

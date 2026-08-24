@@ -305,7 +305,7 @@ export function ProductionApp({
 
     let cancelled = false;
     const fallback = createActiveRunFallback({
-      delaysMs: [3_000, 6_000, 12_000, 20_000, 30_000],
+      delaysMs: [500, 1_000, 2_000, 3_000, 5_000, 10_000, 30_000],
       deadlineMs: 5 * 60_000,
       isVisible: () => document.visibilityState !== "hidden",
       isOnline: () => navigator.onLine !== false,
@@ -320,6 +320,9 @@ export function ProductionApp({
         },
         (nextStatus) => {
           if (!cancelled) setStatus(nextStatus);
+        },
+        (message) => {
+          if (!cancelled) setSuccessNotice(message);
         },
       ),
       onTerminal: () => undefined,
@@ -338,9 +341,16 @@ export function ProductionApp({
     document.addEventListener("visibilitychange", resume);
     window.addEventListener("online", resume);
     fallback.start();
+    const unsubscribeBillingStatus = runtime.billingService.subscribeBillingStatus?.(
+      paymentReturn.reference.startsWith("paddle:")
+        ? { checkoutSessionId: paymentReturn.reference.slice("paddle:".length) }
+        : { reference: paymentReturn.reference },
+      resume,
+    );
 
     return () => {
       cancelled = true;
+      unsubscribeBillingStatus?.();
       document.removeEventListener("visibilitychange", resume);
       window.removeEventListener("online", resume);
       fallback.stop();
@@ -3132,7 +3142,7 @@ async function refreshPaymentReturnStatus(
     setPaymentReturn({
       reference: pointer,
       status: "waiting",
-      message: "Payment confirmation could not be loaded. We will retry safely.",
+      message: "Desk could not reach the confirmation service. Retrying automatically.",
     });
     return "active";
   }
