@@ -30,6 +30,7 @@ type SetupActivityProps = {
   error?: string | null;
   retrying?: boolean;
   onRetry: () => void;
+  onComplete?: () => void;
 };
 
 export function SetupActivityScreen(props: SetupActivityProps) {
@@ -48,6 +49,7 @@ export function SetupActivityScreen(props: SetupActivityProps) {
           setupRunId={props.setupRunId}
           fixture={fixture}
           fallback={legacy}
+          onComplete={props.onComplete}
         />
       </Suspense>
     </SetupPresentationErrorBoundary>
@@ -59,11 +61,13 @@ function SetupPresentationController({
   setupRunId,
   fixture,
   fallback,
+  onComplete,
 }: {
   artistWorkspaceId: string;
   setupRunId?: string;
   fixture: ReturnType<typeof readDevelopmentSetupFixture>;
   fallback: ReactNode;
+  onComplete?: () => void;
 }) {
   const loader = useMemo<SetupPresentationLoader>(() => {
     if (fixture) return async () => fixture;
@@ -75,6 +79,7 @@ function SetupPresentationController({
     enabled: true,
     loadSnapshot: loader,
     fixture,
+    onCompleted: onComplete ? () => onComplete() : undefined,
   });
 
   if (presentation.state === "degraded" || presentation.snapshot?.setup.status === "failed") return <>{fallback}</>;

@@ -2117,6 +2117,10 @@ function CleanProductionWorkspace({
           error={setupActivityError ?? workspace?.setupLastError}
           retrying={setupActivityPending}
           onRetry={() => void retryPersistedSetup()}
+          onComplete={() => {
+            if (workspace) onWorkspaceChange?.({ ...workspace, setupStatus: "completed" });
+            enterDeskWithProgressiveTransition(() => setView("labelHQ"));
+          }}
         />
       );
     }

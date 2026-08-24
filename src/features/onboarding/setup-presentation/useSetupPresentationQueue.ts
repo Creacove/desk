@@ -42,20 +42,23 @@ export function useSetupPresentationQueue({
   );
   const [systemReducedMotion, setSystemReducedMotion] = useState(readPrefersReducedMotion);
   const reducedMotion = reducedMotionOverride ?? systemReducedMotion;
-  const terminal = status === "completed" || status === "failed";
+  const completed = status === "completed";
+  const failed = status === "failed";
+  const terminal = completed || failed;
   const findingsSignature = JSON.stringify(findings);
 
   useEffect(() => {
-    if (!enabled || terminal) {
+    if (!enabled || failed) {
       dispatch({ type: "stop" });
       return;
     }
+    if (completed) return;
     if (state.phase === "stopped") {
       dispatch({ type: "restart", sourceKey, findings, nowMs: Date.now() });
       return;
     }
     dispatch({ type: "ingest", sourceKey, findings, nowMs: Date.now() });
-  }, [enabled, findingsSignature, sourceKey, state.phase, terminal]);
+  }, [completed, enabled, failed, findingsSignature, sourceKey, state.phase]);
 
   useEffect(() => {
     const mediaQuery = readMotionMediaQuery();
@@ -80,26 +83,26 @@ export function useSetupPresentationQueue({
   }, [enabled, terminal]);
 
   useEffect(() => {
-    if (state.phase !== "holding" || state.active === null || state.pending.length === 0 || state.activeSinceMs === null) return;
+    if (completed || state.phase !== "holding" || state.active === null || state.pending.length === 0 || state.activeSinceMs === null) return;
     const remaining = Math.max(0, SETUP_PRESENTATION_MIN_DWELL_MS - (Date.now() - state.activeSinceMs));
     const timer = window.setTimeout(() => {
       dispatch({ type: "dwell_elapsed", nowMs: Date.now(), generation: state.generation });
     }, remaining);
     return () => window.clearTimeout(timer);
-  }, [state.active, state.activeSinceMs, state.generation, state.pending.length, state.phase]);
+  }, [completed, state.active, state.activeSinceMs, state.generation, state.pending.length, state.phase]);
 
   useEffect(() => {
-    if (state.phase !== "landing" || state.active === null) return;
+    if (completed || state.phase !== "landing" || state.active === null) return;
     const timer = window.setTimeout(() => {
       dispatch({ type: "landing_complete", nowMs: Date.now(), generation: state.generation });
     }, reducedMotion ? 0 : SETUP_PRESENTATION_LANDING_MS);
     return () => window.clearTimeout(timer);
-  }, [reducedMotion, state.active, state.generation, state.phase]);
+  }, [completed, reducedMotion, state.active, state.generation, state.phase]);
 
   const onLandingAnimationEnd = useCallback(() => {
-    if (state.phase !== "landing") return;
+    if (completed || state.phase !== "landing") return;
     dispatch({ type: "landing_complete", nowMs: Date.now(), generation: state.generation });
-  }, [state.generation, state.phase]);
+  }, [completed, state.generation, state.phase]);
 
   return useMemo(() => ({
     state,

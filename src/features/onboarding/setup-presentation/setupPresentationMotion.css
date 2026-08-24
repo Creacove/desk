@@ -620,11 +620,10 @@
   gap: 6px;
 }
 
-.manager-working-file__finding-status-dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 999px;
-  background: hsl(var(--tone-success));
+.manager-working-file__finding-spinner {
+  width: 12px;
+  height: 12px;
+  animation: manager-finding-spin 800ms linear infinite;
 }
 
 .manager-working-file__quiet-rail {
@@ -665,6 +664,10 @@
   }
 }
 
+@keyframes manager-finding-spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes manager-finding-enter {
   from {
     opacity: 0;
@@ -692,6 +695,10 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .manager-working-file__finding-spinner {
+    animation: none;
+  }
+
   .manager-working-file__sheet--main,
   .manager-working-file__active-finding {
     animation-duration: 100ms;

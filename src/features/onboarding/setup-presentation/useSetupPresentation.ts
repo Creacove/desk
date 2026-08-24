@@ -18,12 +18,14 @@ export function useSetupPresentation({
   enabled,
   loadSnapshot,
   fixture,
+  onCompleted,
 }: {
   artistWorkspaceId: string;
   setupRunId?: string;
   enabled: boolean;
   loadSnapshot: SetupPresentationLoader;
   fixture?: SetupPresentationSnapshot | null;
+  onCompleted?: (snapshot: SetupPresentationSnapshot) => void;
 }): SetupPresentationClientState {
   const [snapshot, setSnapshot] = useState<SetupPresentationSnapshot | null>(fixture ?? null);
   const [state, setState] = useState<SetupPresentationClientState["state"]>(fixture ? "ready" : "loading");
@@ -32,8 +34,14 @@ export function useSetupPresentation({
   const requestRef = useRef<AbortController | null>(null);
   const failuresRef = useRef(0);
   const degradedRef = useRef(false);
+  const completedRef = useRef(false);
+  const onCompletedRef = useRef(onCompleted);
   const workspaceRef = useRef(artistWorkspaceId);
   const setupRunRef = useRef(setupRunId);
+
+  useEffect(() => {
+    onCompletedRef.current = onCompleted;
+  }, [onCompleted]);
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
@@ -58,6 +66,7 @@ export function useSetupPresentation({
       setupRunRef.current = setupRunId;
       failuresRef.current = 0;
       degradedRef.current = false;
+      completedRef.current = false;
       setSnapshot(fixture ?? null);
       setState(fixture ? "ready" : "loading");
     }
@@ -88,6 +97,13 @@ export function useSetupPresentation({
         const next = await loadSnapshot(artistWorkspaceId, { signal: controller.signal, setupRunId });
         if (disposed || controller.signal.aborted) return;
         failuresRef.current = 0;
+        if (next.setup.status === "completed" && onCompletedRef.current) {
+          if (!completedRef.current) {
+            completedRef.current = true;
+            onCompletedRef.current(next);
+          }
+          return;
+        }
         setSnapshot(next);
         setState("ready");
         if (next.setup.status !== "completed" && next.setup.status !== "failed") schedule(setupPresentationPollDelay(next));

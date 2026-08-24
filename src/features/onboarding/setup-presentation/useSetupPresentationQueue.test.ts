@@ -103,7 +103,7 @@ describe("useSetupPresentationQueue", () => {
     Object.defineProperty(document, "visibilityState", { configurable: true, value: originalVisibility });
   });
 
-  it("stops immediately when setup reaches a terminal state", () => {
+  it("freezes the last visible finding when setup completes", () => {
     vi.useFakeTimers();
     const rendered = renderHook(({ status }) => useSetupPresentationQueue({
       sourceKey: "run-1",
@@ -113,9 +113,9 @@ describe("useSetupPresentationQueue", () => {
     }), { initialProps: { status: "running" as const } });
 
     rendered.rerender({ status: "completed" });
-    expect(rendered.result.current.active).toBeNull();
-    expect(rendered.result.current.state.phase).toBe("stopped");
-    expect(rendered.result.current.state.pending).toEqual([]);
+    expect(rendered.result.current.active?.id).toBe("finding-1");
+    expect(rendered.result.current.state.phase).toBe("holding");
+    expect(rendered.result.current.state.pending.map((item) => item.id)).toEqual(["finding-2"]);
   });
 
   it("does not spend a landing duration when reduced motion is requested", () => {

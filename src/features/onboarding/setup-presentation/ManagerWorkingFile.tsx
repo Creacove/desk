@@ -2,6 +2,7 @@ import {
   Activity,
   FileText,
   Library,
+  LoaderCircle,
   MapPin,
   Music2,
   TrendingUp,
@@ -146,7 +147,11 @@ function ActiveFinding({
           {platform ? `${platform} ${destinationNoun(finding.destination)}` : semanticFindingLabel(finding)}
         </span>
         <span className="manager-working-file__finding-status">
-          <span className="manager-working-file__finding-status-dot" aria-hidden="true" />
+          <LoaderCircle
+            data-testid="manager-file-active-spinner"
+            className="manager-working-file__finding-spinner"
+            aria-hidden="true"
+          />
           Reading now
         </span>
       </div>

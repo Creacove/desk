@@ -81,6 +81,7 @@ describe("ManagerWorkingFile", () => {
 
     expect(screen.getByTestId("manager-working-file")).toBeTruthy();
     expect(screen.getByTestId("manager-file-active-finding").textContent).toContain("28");
+    expect(screen.getByTestId("manager-file-active-spinner")).toBeTruthy();
     expect(screen.getByTestId("manager-file-phase").textContent).toContain("Finding the signals that matter");
 
     act(() => vi.advanceTimersByTime(600));
