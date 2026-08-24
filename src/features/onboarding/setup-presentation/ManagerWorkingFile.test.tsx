@@ -90,6 +90,29 @@ describe("ManagerWorkingFile", () => {
     expect(screen.getByTestId("manager-file-settled").textContent).toContain("Tracks");
   });
 
+  it("composes settled findings as a living evidence board", () => {
+    vi.useFakeTimers();
+    const current = feed([
+      finding({ title: "Monthly listeners", value: "4.8M", kind: "audience", destination: "audience" }),
+      finding({ id: "finding-2", dedupeKey: "market:accra", persistedAt: "2026-08-23T10:00:02.000Z", kind: "market", destination: "markets", title: "Listener market", value: "Accra", platform: undefined }),
+      finding({ id: "finding-3", dedupeKey: "music:maitama", persistedAt: "2026-08-23T10:00:03.000Z", kind: "music", title: "Maitama", value: undefined, detail: "Music in view", artwork: { url: "https://cdn.example.com/maitama.jpg", alt: "Maitama" } }),
+      finding({ id: "finding-4", dedupeKey: "audience:youtube", persistedAt: "2026-08-23T10:00:04.000Z", kind: "audience", destination: "audience", platform: "youtube", title: "Subscribers", value: "812K" }),
+    ]);
+
+    render(<ManagerWorkingFile snapshot={snapshot(current)} />);
+    for (let index = 0; index < 3; index += 1) {
+      act(() => vi.advanceTimersByTime(600));
+      act(() => vi.advanceTimersByTime(220));
+    }
+
+    const board = screen.getByTestId("manager-file-evidence-board");
+    expect(board.querySelector('[data-evidence-variant="metric"]')?.textContent).toContain("4.8M");
+    expect(board.querySelector('[data-evidence-variant="market"]')?.textContent).toContain("Accra");
+    expect(board.querySelector('[data-evidence-variant="music"]')?.textContent).toContain("Maitama");
+    expect(screen.getByTestId("manager-file-active-finding").textContent).toContain("YouTube");
+    expect(screen.queryByText(/Filing into/i)).toBeNull();
+  });
+
   it("keeps platform wording user-facing and never renders an internal vendor", () => {
     const current = feed([finding({ detail: "Spotify catalogue" })]);
     render(<ManagerWorkingFile snapshot={snapshot(current)} />);

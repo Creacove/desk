@@ -1,6 +1,5 @@
 import {
   Activity,
-  Check,
   FileText,
   Library,
   MapPin,
@@ -23,18 +22,6 @@ import "./setupPresentationMotion.css";
 type ManagerWorkingFileProps = {
   snapshot: SetupPresentationSnapshot;
 };
-
-const SECTION_DEFINITIONS: Array<{
-  destination: SetupPresentationFindingDestination;
-  index: string;
-  label: string;
-}> = [
-  { destination: "catalogue", index: "01", label: "Catalogue" },
-  { destination: "audience", index: "02", label: "Audience" },
-  { destination: "markets", index: "03", label: "Markets" },
-  { destination: "momentum", index: "04", label: "Momentum" },
-  { destination: "manager_read", index: "05", label: "Manager read" },
-];
 
 const PLATFORM_LABELS: Record<string, string> = {
   apple_music: "Apple Music",
@@ -64,7 +51,6 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
   const artistName = feed?.artist?.name ?? snapshot.artist?.name ?? "Your artist";
   const artistImageUrl = feed?.artist?.imageUrl ?? snapshot.artist?.imageUrl;
   const genres = feed?.artist?.genres ?? snapshot.artist?.genres ?? [];
-  const activeDestination = queue.active?.destination ?? null;
 
   return (
     <main
@@ -85,25 +71,15 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
 
       <div className="manager-working-file__layout">
         <aside className="manager-working-file__rail" aria-label="Setup status">
-          <div className="manager-working-file__eyebrow">
-            <span className="manager-working-file__eyebrow-dot" aria-hidden="true" />
-            Desk setup
-          </div>
           <p className="manager-working-file__artist-line">Getting to know {artistName}</p>
 
           <div className="manager-working-file__phase-block">
-            <p className="manager-working-file__phase-label">{phaseLabel(phase)}</p>
             <h1 data-testid="manager-file-phase" className="manager-working-file__phase-title">
               {phaseCopy(phase)}
             </h1>
             <p className="manager-working-file__phase-detail">
-              {phaseDetail(phase, queue.active)}
+              {activeInvestigationCopy(phase, queue.active)}
             </p>
-          </div>
-
-          <div className="manager-working-file__saved">
-            <span className="manager-working-file__saved-mark" aria-hidden="true" />
-            <span>{setupStatus === "completed" ? "Setup complete" : "Progress saved"}</span>
           </div>
 
           {timing.message ? (
@@ -129,14 +105,8 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
             activeFinding={queue.active}
             settled={queue.settled}
             collapsedSettledCount={queue.collapsedSettledCount}
-            activeDestination={activeDestination}
           />
         </section>
-
-        <div className="manager-working-file__quiet-rail" aria-hidden="true">
-          <span>Working file</span>
-          <span>Read-only view</span>
-        </div>
       </div>
 
       <p className="manager-working-file__live-region" role="status" aria-live="polite">
@@ -153,7 +123,6 @@ export default function ManagerWorkingFile({ snapshot }: ManagerWorkingFileProps
 function ActiveFinding({
   finding,
   motionPhase,
-  reducedMotion,
   onAnimationEnd,
 }: {
   finding: SetupPresentationFinding;
@@ -164,6 +133,7 @@ function ActiveFinding({
   return (
     <article
       data-testid="manager-file-active-finding"
+      data-evidence-variant={evidenceVariant(finding)}
       data-motion-phase={motionPhase}
       className={`manager-working-file__active-finding ${motionPhase === "landing" ? "is-landing" : "is-entering"}`}
       onAnimationEnd={onAnimationEnd}
@@ -198,10 +168,6 @@ function ActiveFinding({
           {finding.detail ? <p className="manager-working-file__finding-detail">{finding.detail}</p> : null}
         </div>
       </div>
-
-      <div className="manager-working-file__finding-footer">
-        <span>Filing into {destinationLabel(finding.destination)}</span>
-      </div>
     </article>
   );
 }
@@ -213,7 +179,6 @@ function WorkingFileSheet({
   activeFinding,
   settled,
   collapsedSettledCount,
-  activeDestination,
 }: {
   artistName: string;
   artistImageUrl?: string;
@@ -221,67 +186,31 @@ function WorkingFileSheet({
   activeFinding: SetupPresentationFinding | null;
   settled: SetupPresentationFinding[];
   collapsedSettledCount: number;
-  activeDestination: SetupPresentationFindingDestination | null;
 }) {
-  const visibleSections = SECTION_DEFINITIONS.map((section) => ({
-    section,
-    rows: settled.filter((finding) => finding.destination === section.destination),
-    receiving: activeDestination === section.destination,
-  })).filter(({ rows, receiving }, index) => rows.length > 0 || receiving || (settled.length === 0 && !activeFinding && index === 0));
-
   return (
-    <div className="manager-working-file__stack">
-      <div className="manager-working-file__sheet manager-working-file__sheet--back-two" aria-hidden="true" />
-      <div className="manager-working-file__sheet manager-working-file__sheet--back-one" aria-hidden="true" />
-      <article className="manager-working-file__sheet manager-working-file__sheet--main">
-        <div className="manager-working-file__tab">{artistName} / Manager file</div>
-
-        <header className="manager-working-file__file-header">
+    <article className={`manager-working-file__evidence-shell ${collapsedSettledCount ? "has-overflow" : ""}`}>
+        <header className="manager-working-file__evidence-header">
           <SafeArtwork
             src={artistImageUrl}
             title={artistName}
             className="manager-working-file__artist-artwork"
           />
-          <div className="manager-working-file__file-heading">
-            <p className="manager-working-file__file-kicker">Artist working file</p>
+          <div className="manager-working-file__evidence-heading">
             <h2>{artistName}</h2>
             {genres.length ? <p>{genres.slice(0, 2).join(" · ")}</p> : null}
           </div>
-          <span className="manager-working-file__file-status">
-            <span className="manager-working-file__file-status-dot" aria-hidden="true" />
-            Building first read
-          </span>
+          <span className="manager-working-file__evidence-status">Manager is still looking</span>
         </header>
 
-        <div className="manager-working-file__file-rule" aria-hidden="true" />
-
-        <div className="manager-working-file__sections">
-          {visibleSections.map(({ section, rows, receiving }) => {
-            return (
-              <section
-                key={section.destination}
-                data-section={section.destination}
-                data-populated={rows.length > 0}
-                className={`manager-working-file__section ${receiving ? "is-receiving" : ""}`}
-              >
-                <div className="manager-working-file__section-heading">
-                  <span className="manager-working-file__section-index">{section.index}</span>
-                  <h3>{section.label}</h3>
-                  {receiving ? <span className="manager-working-file__receiving-label">Filing now</span> : null}
-                </div>
-                {rows.length ? (
-                  <div data-testid={section.destination === "catalogue" ? "manager-file-settled" : undefined} className="manager-working-file__settled-rows">
-                    {rows.map((finding) => <SettledFinding key={finding.id} finding={finding} />)}
-                  </div>
-                ) : null}
-              </section>
-            );
-          })}
+        <div data-testid="manager-file-evidence-board" className="manager-working-file__evidence-board">
+          <div data-testid="manager-file-settled" className="manager-working-file__evidence-grid">
+            {settled.map((finding) => <EvidenceModule key={finding.id} finding={finding} />)}
+          </div>
         </div>
 
         {collapsedSettledCount ? (
           <p className="manager-working-file__collapsed-count">
-            {collapsedSettledCount} earlier {collapsedSettledCount === 1 ? "finding" : "findings"} filed
+            +{collapsedSettledCount} earlier {collapsedSettledCount === 1 ? "finding" : "findings"}
           </p>
         ) : null}
 
@@ -290,30 +219,48 @@ function WorkingFileSheet({
             Waiting for the next confirmed finding
           </p>
         ) : null}
-      </article>
-    </div>
+    </article>
   );
 }
 
-function SettledFinding({ finding }: { finding: SetupPresentationFinding }) {
+function EvidenceModule({ finding }: { finding: SetupPresentationFinding }) {
+  const variant = evidenceVariant(finding);
+  const platform = finding.platform ? PLATFORM_LABELS[finding.platform] : semanticFindingLabel(finding);
   return (
-    <div className="manager-working-file__settled-row">
+    <article
+      data-evidence-variant={variant}
+      className={`manager-working-file__evidence-module manager-working-file__evidence-module--${variant}`}
+    >
+      <div className="manager-working-file__module-source">
+        <span className="manager-working-file__platform-mark" aria-hidden="true">
+          {finding.platform ? PLATFORM_LABELS[finding.platform]?.slice(0, 1) : <FindingIcon finding={finding} />}
+        </span>
+        <span>{platform}</span>
+      </div>
       {finding.artwork ? (
         <SafeArtwork
           src={finding.artwork.url}
           title={finding.artwork.alt || finding.title}
-          className="manager-working-file__settled-artwork"
+          className="manager-working-file__module-artwork"
         />
-      ) : (
-        <span className="manager-working-file__settled-icon" aria-hidden="true"><FindingIcon finding={finding} /></span>
-      )}
-      <div className="manager-working-file__settled-copy">
+      ) : null}
+      <div className="manager-working-file__module-copy">
         <p>{finding.title}</p>
-        {finding.value ? <span>{finding.value}</span> : finding.detail ? <span>{finding.detail}</span> : null}
+        {finding.value ? <strong>{finding.value}</strong> : null}
+        {finding.detail ? <span>{finding.detail}</span> : null}
       </div>
-      <span className="manager-working-file__filed-mark" aria-label="Filed"><Check aria-hidden="true" /></span>
-    </div>
+    </article>
   );
+}
+
+type EvidenceVariant = "identity" | "market" | "metric" | "music" | "narrative";
+
+function evidenceVariant(finding: SetupPresentationFinding): EvidenceVariant {
+  if (finding.artwork || finding.kind === "music") return "music";
+  if (finding.kind === "market" || finding.destination === "markets") return "market";
+  if (finding.kind === "identity") return "identity";
+  if (finding.kind === "manager_read" || finding.kind === "public_context") return "narrative";
+  return "metric";
 }
 
 function SafeArtwork({
@@ -402,13 +349,6 @@ function legacySourceKey(snapshot: SetupPresentationSnapshot) {
   return `legacy:${snapshot.artist?.name ?? "artist"}:${snapshot.setup.startedAt ?? snapshot.observedAt}`;
 }
 
-function phaseLabel(phase: SetupPresentationPhase) {
-  if (phase === "catalogue") return "Working through the catalogue";
-  if (phase === "discovery") return "Learning about your artist";
-  if (phase === "synthesis") return "Preparing the first read";
-  return "Working file complete";
-}
-
 function phaseCopy(phase: SetupPresentationPhase) {
   if (phase === "catalogue") return "Bringing the music into view.";
   if (phase === "discovery") return "Finding the signals that matter.";
@@ -416,12 +356,12 @@ function phaseCopy(phase: SetupPresentationPhase) {
   return "Your Manager has the picture.";
 }
 
-function phaseDetail(phase: SetupPresentationPhase, active: SetupPresentationFinding | null) {
-  if (active) return `${active.title} is joining the file now.`;
-  if (phase === "catalogue") return "Confirmed catalogue facts will file here as they arrive.";
-  if (phase === "discovery") return "The next confirmed signal will join the working file.";
-  if (phase === "synthesis") return "The working file is being shaped into your first Manager read.";
-  return "The file is ready to open in Desk.";
+function activeInvestigationCopy(phase: SetupPresentationPhase, active: SetupPresentationFinding | null) {
+  if (active?.platform) return `Checking ${PLATFORM_LABELS[active.platform] ?? active.platform}.`;
+  if (active) return `Reading ${active.title.toLowerCase()}.`;
+  if (phase === "synthesis") return "Shaping your first Manager read.";
+  if (phase === "ready") return "Ready to open in Desk.";
+  return "Looking for the next signal.";
 }
 
 function destinationLabel(destination: SetupPresentationFindingDestination) {
