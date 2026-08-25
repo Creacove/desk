@@ -5,9 +5,9 @@ type ManagerTurnInput = {
   contextAnswers?: Array<{ questionKey: string; answer: string }>;
 };
 
-const decisionIntentPattern = /\b(?:should|do|can|would)\s+(?:we|i)|\bis\s+it\s+worth\b|\bwhich\s+(?:option|path|offer|deal|choice)\b|\b(?:accept|reject|take|decline|turn down|sign|spend|invest|delay|postpone|keep|choose|negotiate|counter|license|sell|commit|approve|pause|continue)\b|\b(?:better|cheaper|stronger|safer)\s+(?:to|than)\b/i;
+const decisionIntentPattern = /\bshould\s+(?:we|i)\b|\bdo\s+(?:we|i)\s+(?:accept|reject|take|decline|turn down|sign|spend|invest|delay|postpone|keep|choose|negotiate|counter|licen[cs]e|sell|commit|approve|pause|give|buy|fund|borrow|raise)\b|\bwould\s+you\s+recommend\b|\bwhat\s+(?:do|would)\s+you\s+(?:recommend|do|think)\b|\bis\s+(?:this|that|it)\b[\s\S]{0,80}\b(?:worth|fair|good|bad|smart|reasonable)\b|\bwhich\s+(?:option|path|offer|deal|choice)\b|\b(?:better|cheaper|stronger|safer)\s+(?:to|than)\b/i;
 const comparisonPattern = /\b(?:versus|vs\.?|or should|compared with|instead of|rather than|trade-?off)\b/i;
-const materialStakePattern = /(?:[$€£₦]\s?\d|\b\d[\d,.]*\s*(?:dollars?|usd|eur|gbp|naira|percent|%)\b)|\b(?:money|cash|advance|offer|budget|spend|investment|payment|guarantee|fee|financing|loan|cost|runway|revenue|income|royalt(?:y|ies)|masters?|rights?|ownership|licen[cs]e|publishing|points|splits?|recoup(?:ment|able)?|catalog(?:ue)?|term|years?|months?|exclusiv(?:e|ity)|options?|control|reversion|territor(?:y|ies)|cross-collateralization|contract|agreement|deal|distribution|distributor|partnership|brand|sponsor|tour|festival|show|release date|delay|postpone|commitment|reputation)\b/i;
+const materialStakePattern = /(?:[$€£₦]\s?\d|\b\d[\d,.]*\s*(?:dollars?|usd|eur|gbp|naira|percent\b|%)|\b\d+\s+(?:years?|months?)\b)|\b(?:money|cash|advance|offer|budget|spend|investment|payment|guarantee|fee|financing|loan|cost|runway|revenue|income|royalt(?:y|ies)|masters?|rights?|ownership|licen[cs]e|publishing|points|splits?|recoup(?:ment|able)?|catalog(?:ue)?|term|exclusiv(?:e|ity)|control|reversion|territor(?:y|ies)|cross-collateralization|contract|agreement|deal|distribution|distributor|partnership|brand|sponsor|tour|festival|show|release date|delay|postpone|commitment|reputation)\b/i;
 const artifactRequestPattern = /\b(?:draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\b[\s\S]{0,80}\b(?:epk|press kit|press release|pitch|content plan|release calendar|one[- ]sheet|bio(?:graphy)?|lyrics|credits|distributor notes|document)\b/i;
 
 export function classifyManagerTurn(input: ManagerTurnInput): { mode: ManagerTurnMode; reason: string } {
@@ -16,14 +16,18 @@ export function classifyManagerTurn(input: ManagerTurnInput): { mode: ManagerTur
     .join(" ");
   const text = `${input.body ?? ""} ${context}`.replace(/[_-]+/g, " ").trim();
 
-  if (!text || artifactRequestPattern.test(text)) {
-    return { mode: "normal", reason: text ? "artifact_or_workflow_request" : "empty_turn" };
+  if (!text) {
+    return { mode: "normal", reason: "empty_turn" };
   }
 
   const hasDecisionIntent = decisionIntentPattern.test(text) || comparisonPattern.test(text);
   const hasMaterialStake = materialStakePattern.test(text);
   if (hasDecisionIntent && hasMaterialStake) {
     return { mode: "decision_grade", reason: "material_choice_with_long_term_tradeoffs" };
+  }
+
+  if (artifactRequestPattern.test(text)) {
+    return { mode: "normal", reason: "artifact_or_workflow_request" };
   }
 
   return { mode: "normal", reason: hasDecisionIntent ? "choice_without_material_stakes" : "ordinary_manager_turn" };

@@ -13,6 +13,10 @@ describe("Manager decision-grade turn contract", () => {
     "Should we accept this festival guarantee and commit to the tour?",
     "Do we sign this exclusive brand partnership for the next two years?",
     "Should we delay the release or keep the date and spend more to recover?",
+    "Would you recommend this 50,000-dollar campaign?",
+    "Is this seven-year exclusive deal fair?",
+    "Should we give them 50%?",
+    "Should we accept the masters deal and draft a counteroffer pitch?",
   ])("classifies a consequential decision across management domains: %s", (body) => {
     expect(classifyManagerTurn({ body })).toMatchObject({ mode: "decision_grade" });
   });
@@ -23,6 +27,10 @@ describe("Manager decision-grade turn contract", () => {
     "Which songs are in the catalog?",
     "Draft an EPK for this release",
     "I uploaded the new artwork",
+    "Can we review the catalog?",
+    "Can I see catalog revenue?",
+    "Do I have an agreement on file?",
+    "Continue explaining royalty statements from last year.",
   ])("keeps ordinary and workflow turns fast: %s", (body) => {
     expect(classifyManagerTurn({ body })).toMatchObject({ mode: "normal" });
   });
