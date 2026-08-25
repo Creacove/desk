@@ -5,6 +5,14 @@ import { readFileSync } from "node:fs";
 import { hydrateReleaseSuccessArtifacts, invalidationsFromManagerRefreshHint, parseManagerConversationEventStream } from "./services/managerConversationStream";
 
 describe("Manager conversation stream parser", () => {
+  it("emits a user-facing reasoning phase while preserving specific tool progress", () => {
+    const source = readFileSync("supabase/functions/manager-conversation-stream/index.ts", "utf8");
+    expect(source).toContain("managerAnalysisPhaseLabel(turn.mode)");
+    expect(source).toContain('if (tool === "query_music_catalog") return "Checking catalog"');
+    expect(source).toContain('if (tool === "query_evidence_items") return "Checking evidence"');
+    expect(source).toContain('if (tool === "web_search") return "Searching the web"');
+  });
+
   it("updates the same run artifact while moving from proposed to awaiting approval", () => {
     const source = readFileSync("supabase/functions/manager-conversation-stream/index.ts", "utf8");
     expect(source).toContain('eq("created_from_run_id", runId)');

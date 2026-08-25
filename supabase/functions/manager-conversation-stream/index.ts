@@ -22,6 +22,12 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import {
+  classifyManagerTurn,
+  managerAnalysisPhaseLabel,
+  managerReasoningEffort,
+  type ManagerTurnMode,
+} from "../_shared/manager-conversation/decisionGrade.ts";
 import { buildManagerTurnPresentation, enforceExplicitDecisionPackagePolicy, normalizeManagerTurnPresentation, reconcileManagerCreatedWork } from "../_shared/manager-conversation/turnContract.ts";
 import {
   buildManagerConversationModelContext,
@@ -149,7 +155,8 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
 
         runId = await createManagerRun(db, input, conversationId, packet);
         usageId = await createUsageEvent(db, input, runId);
-        emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "running" });
+        const turn = classifyManagerTurn({ body: input.body, contextAnswers: input.contextAnswers });
+        emit({ type: "run.step", runId, label: managerAnalysisPhaseLabel(turn.mode), status: "running" });
 
         // Each turn is intentionally grounded from the bounded source-of-truth opening
     // brief. Do not chain opaque provider history on top of that packet: it duplicates
@@ -163,6 +170,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           managerConversationPlaybookKeys(packet),
           conversationId,
           runId,
+          turn.mode,
           (event) => {
             if (event.status === "started" && isReleaseSuccessTool(event.tool) && input?.musicSubject?.type === "music_item") {
               emit({
@@ -201,7 +209,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
             refresh: refreshHintForCreatedWorkItems(workspaceCreatedWork),
           });
         }
-        emit({ type: "run.step", runId, label: "Matching missions and evidence", status: "completed" });
+        emit({ type: "run.step", runId, label: managerAnalysisPhaseLabel(turn.mode), status: "completed" });
         emit({ type: "tool.started", runId, tool: "manager-router", label: "Preparing Manager answer", status: "running" });
 
         for (const delta of chunkText(output.responseBody)) {
@@ -842,8 +850,10 @@ async function callOpenAIManagerConversation(
   playbookKeys: PlaybookKey[],
   conversationId: string,
   runId: string | null,
+  turnMode: ManagerTurnMode,
   onToolEvent: (event: ManagerAgentToolTrace) => void,
 ) {
+  const turn = { mode: turnMode };
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
   const releaseSuccessToolResults: ReleaseSuccessToolResult[] = [];
@@ -857,7 +867,7 @@ async function callOpenAIManagerConversation(
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
     model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
-    instructions: buildManagerConversationInstructions(playbookInstructions),
+    instructions: buildManagerConversationInstructions(playbookInstructions, turn.mode),
     context,
     previousResponseId,
     tools,
@@ -870,7 +880,7 @@ async function callOpenAIManagerConversation(
       contextAnswers: input.contextAnswers,
     }) ? 24 : 8,
     jsonSchema: managerConversationJsonSchema,
-    reasoningEffort: "medium",
+    reasoningEffort: managerReasoningEffort(turn.mode),
     maxOutputTokens: 6000,
     contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,

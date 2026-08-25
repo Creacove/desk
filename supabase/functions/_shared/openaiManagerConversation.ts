@@ -4,6 +4,10 @@ import {
   buildManagerConversationInstructions as buildLegacyManagerConversationInstructions,
   parseManagerConversationOutput as parseLegacyManagerConversationOutput,
 } from "./openaiManagerConversationLegacy.ts";
+import {
+  decisionGradeInstructions,
+  type ManagerTurnMode,
+} from "./manager-conversation/decisionGrade.ts";
 
 const WORKSPACE_ACTION_KEY = /^workspace_action:(files|rights|details):([a-z0-9_-]+)$/i;
 
@@ -18,8 +22,12 @@ const managerInterruptionProtocol = [
   "Do not include a normal contextQuestion and a workspace-action item for the same missing input. If the blocker is an upload or workspace edit, the workspace action is sufficient.",
 ].join("\n");
 
-export function buildManagerConversationInstructions(playbookInstructions = "") {
-  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerInterruptionProtocol}`;
+export function buildManagerConversationInstructions(
+  playbookInstructions = "",
+  turnMode: ManagerTurnMode = "normal",
+) {
+  const turnInstructions = turnMode === "decision_grade" ? `\n${decisionGradeInstructions}` : "";
+  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerInterruptionProtocol}${turnInstructions}`;
 }
 
 export function parseManagerConversationOutput(raw: string) {

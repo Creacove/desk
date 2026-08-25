@@ -67,6 +67,16 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(streamFunctionSource).toContain("memory_entries");
   });
 
+  it("uses one local decision-grade classification to raise reasoning without a second model call", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toContain("classifyManagerTurn");
+      expect(source).toContain("managerReasoningEffort(turn.mode)");
+      expect(source).toContain("buildManagerConversationInstructions(playbookInstructions, turn.mode)");
+      expect(source.match(/runManagerAgentLoop\s*\(/g)).toHaveLength(1);
+    }
+    expect(streamFunctionSource).toContain("managerAnalysisPhaseLabel(turn.mode)");
+  });
+
   it("accepts short non-empty Manager messages in both conversation functions", () => {
     for (const source of [functionSource, streamFunctionSource]) {
       expect(source).toContain('if (!input.body || !input.body.trim()) throw new Error("Manager conversation requires a directive or question.");');

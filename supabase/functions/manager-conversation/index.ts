@@ -22,6 +22,10 @@ import {
   type ManagerAgentToolTrace,
 } from "../_shared/manager-conversation/agentLoop.ts";
 import { executeManagerConversationTool } from "../_shared/manager-conversation/toolExecutor.ts";
+import {
+  classifyManagerTurn,
+  managerReasoningEffort,
+} from "../_shared/manager-conversation/decisionGrade.ts";
 import { buildManagerTurnPresentation, enforceExplicitDecisionPackagePolicy, normalizeManagerTurnPresentation, reconcileManagerCreatedWork } from "../_shared/manager-conversation/turnContract.ts";
 import {
   buildManagerConversationModelContext,
@@ -686,6 +690,7 @@ async function callOpenAIManagerConversation(
   conversationId: string,
   runId: string | null,
 ) {
+  const turn = classifyManagerTurn({ body: input.body, contextAnswers: input.contextAnswers });
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const toolCreatedWork: ManagerConversationOutput["createdWork"] = [];
   const toolInput = { ...input, conversationId, runId: runId ?? undefined, createdWork: toolCreatedWork };
@@ -698,7 +703,7 @@ async function callOpenAIManagerConversation(
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
     model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
-    instructions: buildManagerConversationInstructions(playbookInstructions),
+    instructions: buildManagerConversationInstructions(playbookInstructions, turn.mode),
     context,
     previousResponseId,
     tools,
@@ -711,7 +716,7 @@ async function callOpenAIManagerConversation(
       contextAnswers: input.contextAnswers,
     }) ? 24 : 8,
     jsonSchema: managerConversationJsonSchema,
-    reasoningEffort: "medium",
+    reasoningEffort: managerReasoningEffort(turn.mode),
     maxOutputTokens: 6000,
     contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
