@@ -3466,6 +3466,61 @@ describe("Clean production prototype-match shell", () => {
     }
   });
 
+  it("shows the latest truthful Manager run phase until answer text starts streaming", () => {
+    const base: ConversationViewModel = {
+      id: "conv-progress",
+      topic: "Deal review",
+      status: "Manager is thinking",
+      summary: "Review the offer.",
+      prompt: "Should we take the deal?",
+      activeRun: {
+        id: "run-progress",
+        status: "running",
+        streamedText: "",
+        steps: [
+          { id: "packet", label: "Reading workspace packet", status: "completed" },
+          { id: "analysis", label: "Working through the economics and trade-offs", status: "running" },
+        ],
+      },
+      messages: [{ id: "artist-progress", speaker: "artist", label: "You", body: "Should we take the deal?" }],
+      createdWork: [],
+    };
+
+    const { rerender } = render(
+      <ConversationWorkspace
+        conversation={base}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending
+        sendError={null}
+      />,
+    );
+
+    expect(screen.getByRole("status")).toHaveTextContent("Working through the economics and trade-offs…");
+
+    rerender(
+      <ConversationWorkspace
+        conversation={{
+          ...base,
+          messages: [
+            ...base.messages,
+            { id: "manager-progress", speaker: "manager", label: "Manager", body: "Our position is", status: "streaming" },
+          ],
+        }}
+        onBack={() => undefined}
+        onOpenCreatedWork={() => undefined}
+        onSendMessage={() => undefined}
+        onSendContextAnswers={() => undefined}
+        sendPending
+        sendError={null}
+      />,
+    );
+
+    expect(screen.queryByText("Working through the economics and trade-offs…")).not.toBeInTheDocument();
+  });
+
   it("pins the linked song above a Manager conversation and returns to its song room", () => {
     const onOpenMusicSubject = vi.fn();
     const conversation: ConversationViewModel = {

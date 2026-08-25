@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { managerRunStatusLabel } from "./features/manager/managerRunStatus";
 
 const source = (path: string) => readFileSync(`${process.cwd()}/src/${path}`, "utf8");
 const manager = [source("features/manager/ManagerScreens.tsx"), source("features/manager/ManagerScreensLegacy.tsx")].join("\n");
@@ -7,6 +8,7 @@ const composer = source("features/manager/ManagerComposer.tsx");
 const primitives = source("design-system/desktopPrimitives.tsx");
 const theme = source("index.css");
 const app = source("app/ProductionApp.tsx");
+const conversationV2 = source("features/manager/ManagerConversationV2.tsx");
 
 describe("Manager conversation premium UI contract", () => {
   it("does not globally override component heading sizes and weights", () => {
@@ -67,5 +69,27 @@ describe("Manager conversation premium UI contract", () => {
 
   it("imports the attachment icon used by durable conversation receipts", () => {
     expect(manager).toMatch(/import\s+\{[^}]*\bPaperclip\b[^}]*\}\s+from "lucide-react"/s);
+  });
+
+  it("selects one meaningful live Manager status with a safe fallback", () => {
+    expect(managerRunStatusLabel([
+      { id: "packet", label: "Reading workspace packet", status: "completed" },
+      { id: "analysis", label: "Working through the economics and trade-offs", status: "running" },
+      { id: "catalog", label: "Checking catalog", status: "completed" },
+    ])).toBe("Working through the economics and trade-offs…");
+    expect(managerRunStatusLabel([
+      { id: "packet", label: "Reading workspace packet...", status: "completed" },
+    ])).toBe("Reading workspace packet…");
+    expect(managerRunStatusLabel([
+      { id: "raw", label: "query_music_catalog", status: "running" },
+    ])).toBe("Manager is working…");
+    expect(managerRunStatusLabel()).toBe("Manager is working…");
+  });
+
+  it("renders the live run label as an accessible status instead of fixed loading copy", () => {
+    expect(conversationV2).toContain("managerRunStatusLabel(conversation.activeRun?.steps)");
+    expect(conversationV2).toContain('role="status"');
+    expect(conversationV2).toContain('aria-live="polite"');
+    expect(conversationV2).not.toContain(">Manager is working…</p>");
   });
 });

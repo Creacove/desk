@@ -18,6 +18,7 @@ import { GuidedContextQuestion, ManagerComposer, ManagerWorkspaceActions, parseM
 import { OpportunityArtifact } from "./OpportunityArtifact";
 import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
 import { buildManagerTurns, type ManagerWorkGroup } from "./managerPresentation";
+import { managerRunStatusLabel } from "./managerRunStatus";
 
 export type CreatedWorkDestination = "files";
 export type ManagerConversationV2Props = {
@@ -254,7 +255,11 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
               </article>
             );
           })}
-          {sendPending && !conversation.messages.some((message) => message.status === "streaming") ? <p className="text-[12px] font-medium text-muted-foreground">Manager is working…</p> : null}
+          {sendPending && !conversation.messages.some((message) => message.status === "streaming") ? (
+            <p role="status" aria-live="polite" className="text-[12px] font-medium text-muted-foreground">
+              {managerRunStatusLabel(conversation.activeRun?.steps)}
+            </p>
+          ) : null}
           <div data-testid="manager-chat-tail" ref={tailRef} className="h-32 shrink-0" aria-hidden="true" />
         </div>
       </div>
