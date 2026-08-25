@@ -1234,6 +1234,56 @@ function cleanStringArray(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
 }
 
+// supabase/functions/_shared/manager-conversation/decisionGrade.ts
+var decisionIntentPattern = /\bshould\s+(?:we|i)\b|\bdo\s+(?:we|i)\s+(?:accept|reject|take|decline|turn down|sign|spend|invest|delay|postpone|keep|choose|negotiate|counter|licen[cs]e|sell|commit|approve|pause|give|buy|fund|borrow|raise)\b|\bwould\s+you\s+recommend\b|\bwhat\s+(?:do|would)\s+you\s+(?:recommend|do|think)\b|\bis\s+(?:this|that|it)\b[\s\S]{0,80}\b(?:worth|fair|good|bad|smart|reasonable)\b|\bwhich\s+(?:option|path|offer|deal|choice)\b|\b(?:better|cheaper|stronger|safer)\s+(?:to|than)\b/i;
+var comparisonPattern = /\b(?:versus|vs\.?|or should|compared with|instead of|rather than|trade-?off)\b/i;
+var materialStakePattern = /(?:[$€£₦]\s?\d|\b\d[\d,.]*\s*(?:dollars?|usd|eur|gbp|naira|percent\b|%)|\b\d+\s+(?:years?|months?)\b)|\b(?:money|cash|advance|offer|budget|spend|investment|payment|guarantee|fee|financing|loan|cost|runway|revenue|income|royalt(?:y|ies)|masters?|rights?|ownership|licen[cs]e|publishing|points|splits?|recoup(?:ment|able)?|catalog(?:ue)?|term|exclusiv(?:e|ity)|control|reversion|territor(?:y|ies)|cross-collateralization|contract|agreement|deal|distribution|distributor|partnership|brand|sponsor|tour|festival|show|release date|delay|postpone|commitment|reputation)\b/i;
+var artifactRequestPattern = /\b(?:draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\b[\s\S]{0,80}\b(?:epk|press kit|press release|pitch|content plan|release calendar|one[- ]sheet|bio(?:graphy)?|lyrics|credits|distributor notes|document)\b/i;
+function classifyManagerTurn(input) {
+  const context = (input.contextAnswers ?? []).map((item) => `${item.questionKey} ${item.answer}`).join(" ");
+  const text = `${input.body ?? ""} ${context}`.replace(/[_-]+/g, " ").trim();
+  if (!text) {
+    return {
+      mode: "normal",
+      reason: "empty_turn"
+    };
+  }
+  const hasDecisionIntent = decisionIntentPattern.test(text) || comparisonPattern.test(text);
+  const hasMaterialStake = materialStakePattern.test(text);
+  if (hasDecisionIntent && hasMaterialStake) {
+    return {
+      mode: "decision_grade",
+      reason: "material_choice_with_long_term_tradeoffs"
+    };
+  }
+  if (artifactRequestPattern.test(text)) {
+    return {
+      mode: "normal",
+      reason: "artifact_or_workflow_request"
+    };
+  }
+  return {
+    mode: "normal",
+    reason: hasDecisionIntent ? "choice_without_material_stakes" : "ordinary_manager_turn"
+  };
+}
+function managerReasoningEffort(mode) {
+  return mode === "decision_grade" ? "high" : "medium";
+}
+function managerAnalysisPhaseLabel(mode) {
+  return mode === "decision_grade" ? "Working through the economics and trade-offs" : "Preparing the answer";
+}
+var decisionGradeInstructions = [
+  "Decision-grade management standard: this turn asks for a consequential choice. The following standard overrides the normal 1-3 paragraph rule for this turn only.",
+  "First identify the artist's actual objective and the immediate need the proposed move solves. Establish the current artist, catalog, financial, and leverage position from available workspace evidence.",
+  "Separate verified facts, user-provided terms, assumptions, and unknowns. Public popularity, playlist reach, social attention, and catalog visibility must not be treated as revenue proof.",
+  "Quantify what the artist receives and what the artist surrenders. When numbers materially affect the choice, show clearly labeled downside, base, and upside scenarios, the assumptions behind them, and the break-even or opportunity-cost implication. Never present an estimate as known artist revenue.",
+  "Inspect only the mechanics that could change this decision, including scope, ownership versus license, revenue definition, recoupment, deductions, term, extensions, territory, control, partner obligations, accounting, audit, cross-collateralization, reversion, and exit conditions when applicable.",
+  "Compare credible and less expensive alternatives that could achieve the same objective. Give a ranked negotiating position with concrete terms, then identify the unanswered questions capable of reversing the recommendation.",
+  "Give an actionable conditional recommendation. Use this hierarchy when it helps: Manager's position; What the move solves; Current position; What is surrendered; Economics; Terms that change the answer; Alternatives; Our counter; Questions before commitment.",
+  "Short headings, bullets, and one compact scenario table are allowed when they make the decision easier to understand. Professional legal, tax, accounting, or wellbeing review is a concise boundary after useful management judgment, never a substitute for it."
+].join("\n");
+
 // supabase/functions/_shared/openaiManagerConversation.ts
 var WORKSPACE_ACTION_KEY = /^workspace_action:(files|rights|details):([a-z0-9_-]+)$/i;
 var managerInterruptionProtocol = [
@@ -1246,9 +1296,11 @@ var managerInterruptionProtocol = [
   "For a choice question, recommendedAnswer should exactly equal the recommended option so the UI can mark that option Recommended. Do not duplicate the rationale in recommendationReason; keep recommendationReason empty or one terse sentence only when it materially changes the decision.",
   "Do not include a normal contextQuestion and a workspace-action item for the same missing input. If the blocker is an upload or workspace edit, the workspace action is sufficient."
 ].join("\n");
-function buildManagerConversationInstructions2(playbookInstructions = "") {
+function buildManagerConversationInstructions2(playbookInstructions = "", turnMode = "normal") {
+  const turnInstructions = turnMode === "decision_grade" ? `
+${decisionGradeInstructions}` : "";
   return `${buildManagerConversationInstructions(playbookInstructions)}
-${managerInterruptionProtocol}`;
+${managerInterruptionProtocol}${turnInstructions}`;
 }
 function parseManagerConversationOutput2(raw) {
   const output = parseManagerConversationOutput(raw);
@@ -10191,14 +10243,18 @@ data: ${JSON.stringify(event)}
         });
         runId = await createManagerRun(db, input, conversationId, packet);
         usageId = await createUsageEvent(db, input, runId);
+        const turn = classifyManagerTurn({
+          body: input.body,
+          contextAnswers: input.contextAnswers
+        });
         emit({
           type: "run.step",
           runId,
-          label: "Matching missions and evidence",
+          label: managerAnalysisPhaseLabel(turn.mode),
           status: "running"
         });
         const previousResponseId = "";
-        const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId, (event) => {
+        const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId, turn.mode, (event) => {
           if (event.status === "started" && isReleaseSuccessTool(event.tool) && input?.musicSubject?.type === "music_item") {
             emit({
               type: "release_success.changed",
@@ -10236,7 +10292,7 @@ data: ${JSON.stringify(event)}
         emit({
           type: "run.step",
           runId,
-          label: "Matching missions and evidence",
+          label: managerAnalysisPhaseLabel(turn.mode),
           status: "completed"
         });
         emit({
@@ -10768,7 +10824,10 @@ async function selectConversationMessages(db, input, conversationId) {
   if (error) throw error;
   return data ?? [];
 }
-async function callOpenAIManagerConversation(db, input, context, previousResponseId, playbookKeys, conversationId, runId, onToolEvent) {
+async function callOpenAIManagerConversation(db, input, context, previousResponseId, playbookKeys, conversationId, runId, turnMode, onToolEvent) {
+  const turn = {
+    mode: turnMode
+  };
   const playbookInstructions = getPlaybooksInstructions(playbookKeys);
   const toolCreatedWork = [];
   const releaseSuccessToolResults = [];
@@ -10787,7 +10846,7 @@ async function callOpenAIManagerConversation(db, input, context, previousRespons
     endpoint: "https://api.openai.com/v1/responses",
     apiKey: requireEnv("OPENAI_API_KEY"),
     model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_MANAGER_CONVERSATION_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5.6-luna",
-    instructions: buildManagerConversationInstructions2(playbookInstructions),
+    instructions: buildManagerConversationInstructions2(playbookInstructions, turn.mode),
     context,
     previousResponseId,
     tools,
@@ -10800,7 +10859,7 @@ async function callOpenAIManagerConversation(db, input, context, previousRespons
       contextAnswers: input.contextAnswers
     }) ? 24 : 8,
     jsonSchema: managerConversationJsonSchema,
-    reasoningEffort: "medium",
+    reasoningEffort: managerReasoningEffort(turn.mode),
     maxOutputTokens: 6e3,
     contextManagement: [
       {
