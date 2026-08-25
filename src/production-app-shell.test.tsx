@@ -3498,7 +3498,9 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("Working through the economics and trade-offs…");
+    const activity = screen.getByTestId("manager-activity");
+    expect(activity).toHaveTextContent("Working through the economics and trade-offs…");
+    expect(activity.querySelector("canvas")).toHaveAttribute("width", "20");
 
     rerender(
       <ConversationWorkspace
@@ -3519,6 +3521,12 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(screen.queryByText("Working through the economics and trade-offs…")).not.toBeInTheDocument();
+  });
+
+  it("never exposes the fabricated Manager run label", () => {
+    const appSource = readFileSync(`${process.cwd()}/src/app/ProductionApp.tsx`, "utf8");
+    expect(appSource).not.toContain('label: "Starting Manager run"');
+    expect(appSource).toContain('label: "Reviewing your request"');
   });
 
   it("pins the linked song above a Manager conversation and returns to its song room", () => {

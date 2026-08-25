@@ -3273,7 +3273,7 @@ function createOptimisticManagerConversation(body: string, musicSubject?: Conver
       id: runId,
       status: "running",
       streamedText: "",
-      steps: [{ id: "start", label: "Starting Manager run", status: "running" }],
+      steps: [{ id: "start", label: "Reviewing your request", status: "running" }],
     },
     messages: [
       {
@@ -3301,7 +3301,7 @@ function withOptimisticManagerMessage(conversation: ConversationViewModel | unde
       id: runId,
       status: "running",
       streamedText: "",
-      steps: [{ id: "start", label: "Starting Manager run", status: "running" }],
+      steps: [{ id: "start", label: "Reviewing your request", status: "running" }],
     },
     messages: [
       ...conversation.messages,
@@ -3345,7 +3345,7 @@ function conversationFromStartedEvent(
       id: runId,
       status: event.run?.status ?? "running",
       streamedText: "",
-      steps: [{ id: "start", label: "Starting Manager run", status: "completed" }],
+      steps: [{ id: "start", label: "Reviewing your request", status: "completed" }],
     },
     createdWork: event.conversation.createdWork ?? [],
     releaseSuccessArtifacts: event.conversation.releaseSuccessArtifacts ?? [],

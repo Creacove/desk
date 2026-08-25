@@ -1,5 +1,6 @@
 import { FileAudio, FileImage, FileText, Paperclip, Plus, RotateCcw, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AppThinkingOrb } from "../../design-system/AppThinkingOrb";
 import { WorkspaceShell } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import type {
@@ -18,7 +19,7 @@ import { GuidedContextQuestion, ManagerComposer, ManagerWorkspaceActions, parseM
 import { OpportunityArtifact } from "./OpportunityArtifact";
 import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
 import { buildManagerTurns, type ManagerWorkGroup } from "./managerPresentation";
-import { managerRunStatusLabel } from "./managerRunStatus";
+import { managerRunActivity } from "./managerRunStatus";
 
 export type CreatedWorkDestination = "files";
 export type ManagerConversationV2Props = {
@@ -106,6 +107,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
   const opportunityArtifacts = conversation.releaseOpportunityArtifacts ?? [];
   const lastManagerMessageId = [...conversation.messages].reverse().find((message) => message.speaker === "manager")?.id;
   const hasFailedManagerMessage = conversation.messages.some((message) => message.speaker === "manager" && message.status === "failed");
+  const activity = managerRunActivity(conversation.activeRun?.steps);
 
   const resolvedRequestIds = useMemo(() => new Set(conversation.messages.flatMap((message) =>
     message.speaker === "artist" && message.contextRequestId && message.contextAnswers?.length ? [message.contextRequestId] : [],
@@ -256,9 +258,10 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
             );
           })}
           {sendPending && !conversation.messages.some((message) => message.status === "streaming") ? (
-            <p role="status" aria-live="polite" className="text-[12px] font-medium text-muted-foreground">
-              {managerRunStatusLabel(conversation.activeRun?.steps)}
-            </p>
+            <div data-testid="manager-activity" role="status" aria-live="polite" className="manager-conversation-motion flex items-center gap-2.5 py-2 text-[12px] font-medium text-muted-foreground animate-in fade-in duration-300">
+              <AppThinkingOrb state={activity.orbState} size={20} aria-hidden="true" />
+              <span key={activity.label} className="animate-in fade-in duration-300">{activity.label}</span>
+            </div>
           ) : null}
           <div data-testid="manager-chat-tail" ref={tailRef} className="h-32 shrink-0" aria-hidden="true" />
         </div>
