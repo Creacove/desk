@@ -81,16 +81,9 @@ export function useManagerKnowledgeUploads(repository?: ManagerRepository) {
 
 export function ManagerKnowledgeUploadButton({ onFiles, disabled = false }: { onFiles(files: FileList | null): void | Promise<void>; disabled?: boolean }) {
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [open, setOpen] = useState(false);
   return <div className="relative">
-    <input ref={inputRef} aria-label="Choose files for Manager" type="file" multiple accept={MANAGER_KNOWLEDGE_ACCEPT} className="sr-only" tabIndex={-1} onChange={(event) => { void onFiles(event.target.files); event.target.value = ""; setOpen(false); }} />
-    <button type="button" aria-label="Add files for Manager" aria-expanded={open} disabled={disabled} onClick={() => setOpen((value) => !value)} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30"><Plus className="h-4 w-4" /></button>
-    {open ? <div className="absolute bottom-12 left-0 z-50 w-72 rounded-2xl border border-foreground/10 bg-background p-2 shadow-[0_18px_55px_rgba(0,0,0,0.18)]">
-      <button type="button" onClick={() => inputRef.current?.click()} className="flex w-full items-start gap-3 rounded-xl px-3 py-3 text-left hover:bg-foreground/[0.05]">
-        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-        <span><span className="block text-[12px] font-semibold text-foreground">Upload Manager knowledge</span><span className="mt-0.5 block text-[11px] font-medium leading-relaxed text-muted-foreground">PDF, Word, text, CSV, Excel, or JSON · private to this workspace</span></span>
-      </button>
-    </div> : null}
+    <input ref={inputRef} aria-label="Choose files for Manager" type="file" multiple accept={MANAGER_KNOWLEDGE_ACCEPT} className="sr-only" tabIndex={-1} onChange={(event) => { void onFiles(event.target.files); event.target.value = ""; }} />
+    <button type="button" aria-label="Add files for Manager" disabled={disabled} onClick={() => inputRef.current?.click()} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30"><Plus className="h-4 w-4" /></button>
   </div>;
 }
 

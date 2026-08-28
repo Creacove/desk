@@ -23,6 +23,20 @@ function repository(uploadKnowledge: CleanProductionRepositories["manager"]["upl
 }
 
 describe("Manager knowledge upload UI", () => {
+  it("opens the native file picker directly without an intermediate explanation", () => {
+    const uploadKnowledge = vi.fn();
+    render(<Harness manager={repository(uploadKnowledge)} />);
+    const picker = screen.getByLabelText("Choose files for Manager") as HTMLInputElement;
+    const pickerClick = vi.spyOn(picker, "click");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add files for Manager" }));
+
+    expect(pickerClick).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Upload Manager knowledge")).toBeNull();
+    expect(screen.queryByText(/private to this workspace/i)).toBeNull();
+    pickerClick.mockRestore();
+  });
+
   it("uploads a supported file and exposes it only when Manager can read it", async () => {
     const uploadKnowledge = vi.fn(async ({ file, onProgress }) => {
       onProgress?.({ phase: "uploading", percent: 40, bytesUploaded: 40, bytesTotal: 100 });
@@ -30,8 +44,6 @@ describe("Manager knowledge upload UI", () => {
       return { id: "doc-1", documentId: "doc-1", kind: "knowledge_document" as const, title: file.name, extractionStatus: "completed", status: "ready" };
     });
     render(<Harness manager={repository(uploadKnowledge)} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add files for Manager" }));
-    expect(screen.getByText("Upload Manager knowledge")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Choose files for Manager"), { target: { files: [new File(["private deal note"], "deal-notes.txt", { type: "text/plain" })] } });
     await waitFor(() => expect(screen.getByLabelText("attachment ids").textContent).toContain("doc-1"));
     expect(screen.getByText("Ready")).toBeTruthy();
