@@ -176,9 +176,14 @@ export type MusicConversationLinkViewModel = {
 
 export type ManagerConversationAttachmentViewModel = {
   id: string;
-  musicItemId: string;
+  kind?: "music_asset" | "knowledge_document";
+  musicItemId?: string;
+  documentId?: string;
   title: string;
   assetType?: string;
+  fileName?: string;
+  fileType?: string;
+  extractionStatus?: string;
   status?: string;
 };
 
@@ -851,6 +856,12 @@ export type CleanProductionRepositories = {
   };
   music: MusicRepository;
   manager: {
+    uploadKnowledge?: (input: {
+      title: string;
+      file: File;
+      onProgress?: (progress: MusicUploadProgress) => void;
+    }) => Promise<ManagerConversationAttachmentViewModel>;
+    revokeKnowledge?: (documentId: string) => Promise<void>;
     loadConversationList?: () => Promise<ConversationViewModel[]>;
     loadConversation?: (conversationId: string) => Promise<ConversationViewModel | null>;
     loadConversations: () => Promise<ConversationViewModel[]>;

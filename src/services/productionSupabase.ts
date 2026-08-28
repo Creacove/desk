@@ -2223,6 +2223,68 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
       },
     },
     manager: {
+      async uploadKnowledge(input) {
+        const title = input.title.trim() || input.file.name;
+        const fileType = input.file.type || inferWorkspaceDocumentMimeType(input.file.name);
+        input.onProgress?.({ phase: "preparing", percent: 2, bytesUploaded: 0, bytesTotal: input.file.size });
+        const { data: prepared, error: prepareError } = await client.functions.invoke("manager-knowledge-upload", {
+          body: {
+            action: "prepare",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            title,
+            fileName: input.file.name,
+            fileType,
+            fileSize: input.file.size,
+          },
+        });
+        if (prepareError) await throwFunctionInvokeError(prepareError, "Manager knowledge upload could not be prepared.");
+        if (!isPlainRecord(prepared) || !prepared.uploadId || !prepared.path || !prepared.token || !prepared.bucket) {
+          throw new Error("Manager knowledge upload could not be prepared.");
+        }
+        const signedUploader = (client as unknown as SupabaseStorageClient).storage?.from(String(prepared.bucket));
+        if (!signedUploader?.uploadToSignedUrl) throw new Error("Secure document upload is unavailable in this browser.");
+        input.onProgress?.({ phase: "uploading", percent: 12, bytesUploaded: 0, bytesTotal: input.file.size });
+        const { error: uploadError } = await signedUploader.uploadToSignedUrl(String(prepared.path), String(prepared.token), input.file, { contentType: fileType });
+        if (uploadError) throw new Error(readErrorMessage(uploadError, "The file could not be uploaded to secure storage."));
+        input.onProgress?.({ phase: "finalizing", percent: 72, bytesUploaded: input.file.size, bytesTotal: input.file.size });
+        const { data: finalized, error: finalizeError } = await client.functions.invoke("manager-knowledge-upload", {
+          body: {
+            action: "finalize",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            uploadId: String(prepared.uploadId),
+            title,
+          },
+        });
+        if (finalizeError) await throwFunctionInvokeError(finalizeError, "Manager could not finish reading this document.");
+        if (!isPlainRecord(finalized) || !finalized.documentId) throw new Error("The uploaded document could not be confirmed.");
+        input.onProgress?.({ phase: "complete", percent: 100, bytesUploaded: input.file.size, bytesTotal: input.file.size });
+        return {
+          id: readConversationString(finalized.documentId, ""),
+          kind: "knowledge_document" as const,
+          documentId: readConversationString(finalized.documentId, ""),
+          title: readConversationString(finalized.title, title),
+          fileName: readConversationString(finalized.fileName, input.file.name),
+          fileType,
+          extractionStatus: finalized.status === "ready" ? "completed" : "failed",
+          status: readConversationString(finalized.status, "ready"),
+        };
+      },
+      async revokeKnowledge(documentId) {
+        const { error } = await client.functions.invoke("manager-knowledge-upload", {
+          body: {
+            action: "revoke",
+            accountId: workspace.accountId,
+            artistWorkspaceId: workspace.artistWorkspaceId,
+            artistId: workspace.artistId,
+            documentId,
+          },
+        });
+        if (error) await throwFunctionInvokeError(error, "The document could not be removed.");
+      },
       async loadConversationList() {
         const { data, error } = await ownerFilters(client
           .from("conversations")
@@ -3745,12 +3807,17 @@ function normalizeConversationAttachments(value: unknown): NonNullable<Conversat
     .filter(isPlainRecord)
     .map((item) => ({
       id: readConversationString(item.id, ""),
-      musicItemId: readConversationString(item.musicItemId, ""),
+      kind: item.kind === "knowledge_document" ? "knowledge_document" as const : "music_asset" as const,
+      musicItemId: readOptionalConversationString(item.musicItemId),
+      documentId: readOptionalConversationString(item.documentId),
       title: readConversationString(item.title, "Attached file"),
       assetType: readOptionalConversationString(item.assetType),
+      fileName: readOptionalConversationString(item.fileName),
+      fileType: readOptionalConversationString(item.fileType),
+      extractionStatus: readOptionalConversationString(item.extractionStatus),
       status: readOptionalConversationString(item.status),
     }))
-    .filter((item) => item.id && item.musicItemId);
+    .filter((item) => item.id && (item.musicItemId || item.documentId));
 }
 
 function normalizeProposedActions(value: unknown): NonNullable<ConversationViewModel["decisionPackage"]>["proposedActions"] {
@@ -4027,6 +4094,7 @@ function inferWorkspaceDocumentMimeType(fileName: string) {
   if (extension === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
   if (extension === "md") return "text/markdown";
   if (extension === "csv") return "text/csv";
+  if (extension === "xlsx") return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
   if (extension === "json") return "application/json";
   if (extension === "txt") return "text/plain";
   return "application/octet-stream";

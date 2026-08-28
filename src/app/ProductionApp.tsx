@@ -2213,7 +2213,8 @@ function CleanProductionWorkspace({
               }}
               onDrawer={openDrawer}
               onOpenMusicFocus={openMusicFocus}
-              onAskManager={(body) => void sendManagerMessage(body)}
+              onAskManager={(body, attachmentIds) => void sendManagerMessage(body, undefined, undefined, { attachmentIds })}
+              managerRepository={repositories.manager}
               activityCount={notificationCount}
               onOpenActivityCenter={openActivityCenter}
               briefPending={todayBriefPending}
@@ -2264,7 +2265,8 @@ function CleanProductionWorkspace({
               onOpenCreatedMission={openCreatedMissionFromManager}
               onBack={() => navigate("labelHQ")}
               onConversation={openConversation}
-              onAskManager={(body) => void sendManagerMessage(body)}
+              onAskManager={(body, attachmentIds) => void sendManagerMessage(body, undefined, undefined, { attachmentIds })}
+              managerRepository={repositories.manager}
               askManagerPending={managerSendPending}
               askManagerError={managerSendError}
               conversationsPending={conversationListPending}
@@ -2292,6 +2294,7 @@ function CleanProductionWorkspace({
                 onRetryOpportunityResearch={retryOpportunityResearch}
                 onOpenMusicSubject={(subject) => openMusicFocus(subject.id)}
                 musicRepository={repositories.music}
+                managerRepository={repositories.manager}
                 onRefreshMusicObject={async (musicItemId) => {
                   await refreshMusicObject(musicItemId, "music_item");
                 }}

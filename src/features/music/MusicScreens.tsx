@@ -11,6 +11,7 @@ import { managerReadControls } from "./managerReadPolicy";
 import { SongDocumentEditor } from "./SongDocumentEditor";
 import { SongDocumentActions } from "./SongDocumentActions";
 import { MusicShareDialog as PolishedMusicShareDialog } from "./MusicShareDialog";
+import { musicUploadAccept, musicUploadFileError } from "./musicUploadPolicy";
 import { buildSplitRecord, deriveSongRightsState } from "./songRights";
 import type {
   MissionViewModel,
@@ -596,6 +597,11 @@ export function MusicWorkspace({
   function uploadMusicAsset(file: File) {
     if (!uploadTarget) return;
     const resolvedAsset = resolveUploadAsset(uploadTarget.asset, file);
+    const fileError = musicUploadFileError(resolvedAsset, file);
+    if (fileError) {
+      setActionError(fileError);
+      return;
+    }
     const job: MusicUploadJob = {
       id: createClientRequestId(),
       songId: uploadTarget.song.id,
@@ -645,6 +651,7 @@ export function MusicWorkspace({
     }));
     try {
       await musicRepository.uploadAsset(job.songId, {
+        group: job.asset.group,
         assetType: job.asset.assetType ?? "other",
         title: job.asset.label,
         file: job.file,
@@ -3234,7 +3241,7 @@ function MusicUploadDialog({
         </div>
         <div className="px-5 py-4">
         <label className="group grid min-h-[148px] cursor-pointer place-items-center rounded-[18px] border border-dashed border-foreground/18 bg-background px-5 py-6 text-center transition-colors hover:border-foreground/30 hover:bg-foreground/[0.02]">
-          <input aria-label="File" type="file" onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" />
+          <input aria-label="File" type="file" accept={musicUploadAccept(asset.group)} onChange={(event) => setFile(event.target.files?.[0] ?? null)} className="sr-only" />
           <span className="flex flex-col items-center gap-3">
             <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-foreground text-background shadow-sm">
               <Upload className="h-5 w-5" />

@@ -1026,6 +1026,23 @@ export function createFixtureRepositories(): CleanProductionRepositories {
       },
     },
     manager: {
+      async uploadKnowledge(input) {
+        input.onProgress?.({ phase: "complete", percent: 100, bytesUploaded: input.file.size, bytesTotal: input.file.size });
+        const documentId = `fixture-knowledge-${Date.now()}`;
+        return {
+          id: documentId,
+          kind: "knowledge_document" as const,
+          documentId,
+          title: input.title.trim() || input.file.name,
+          fileName: input.file.name,
+          fileType: input.file.type,
+          extractionStatus: "completed",
+          status: "ready",
+        };
+      },
+      async revokeKnowledge() {
+        return undefined;
+      },
       async loadConversationList() {
         return conversations.map((conversation) => ({
           ...conversation,

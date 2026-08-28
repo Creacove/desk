@@ -5,6 +5,7 @@ import { WorkspaceShell } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import type {
   ConversationViewModel,
+  CleanProductionRepositories,
   ManagerConversationAttachmentViewModel,
   ManagerConversationContextAnswer,
   MissionTaskViewModel,
@@ -20,6 +21,9 @@ import { OpportunityArtifact } from "./OpportunityArtifact";
 import { ReleaseSuccessArtifact } from "./ReleaseSuccessArtifact";
 import { buildManagerTurns, type ManagerWorkGroup } from "./managerPresentation";
 import { managerRunActivity } from "./managerRunStatus";
+import { ManagerKnowledgeAttachmentTray, useManagerKnowledgeUploads } from "./ManagerKnowledgeUpload";
+import { MANAGER_KNOWLEDGE_ACCEPT } from "./managerAttachments";
+import { musicUploadFileError } from "../music/musicUploadPolicy";
 
 export type CreatedWorkDestination = "files";
 export type ManagerConversationV2Props = {
@@ -28,6 +32,7 @@ export type ManagerConversationV2Props = {
   onOpenCreatedWork: (type: "music_item" | "mission" | "task", id?: string, destination?: CreatedWorkDestination, artifactId?: string) => void | Promise<void>;
   onOpenMusicSubject?: (subject: NonNullable<ConversationViewModel["musicSubject"]>) => void;
   musicRepository?: MusicRepository;
+  managerRepository?: CleanProductionRepositories["manager"];
   onRefreshMusicObject?: (musicItemId: string) => Promise<void> | void;
   onOpenDecisionPackage?: () => void;
   onApproveReleaseDateChange?: (request: ReleaseDateChangeRequestViewModel) => Promise<void>;
@@ -62,7 +67,7 @@ type ComposerAttachment = {
 const ATTACHMENT_CATEGORIES = [
   { label: "Audio", icon: FileAudio, accept: "audio/*", types: [["Final master", "final_master"], ["Rough mix", "rough_mix"], ["Demo", "demo"], ["Stems", "stems"]] as const },
   { label: "Artwork & images", icon: FileImage, accept: "image/*", types: [["Cover artwork", "cover_art"], ["Press photo", "press_photo"], ["Alternate artwork", "alternate_artwork"]] as const },
-  { label: "Document", icon: FileText, accept: "application/pdf,.doc,.docx,.txt", types: [["Split sheet", "split_sheet"], ["Rights document", "rights_document"], ["Lyrics", "lyrics"], ["Other document", "other"]] as const },
+  { label: "Document", icon: FileText, accept: "application/pdf,.docx,.txt", types: [["Split sheet", "split_sheet"], ["Rights document", "rights_document"], ["Lyrics", "lyrics"], ["Other document", "other"]] as const },
 ] as const;
 
 export function ConversationWorkspace(props: ManagerConversationV2Props) {
@@ -72,6 +77,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
     onOpenCreatedWork,
     onOpenMusicSubject,
     musicRepository,
+    managerRepository,
     onRefreshMusicObject,
     onSendMessage,
     onSendContextAnswers,
@@ -100,6 +106,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
   const [dismissedContextRequests, setDismissedContextRequests] = useState<string[]>([]);
   const [submittedContextRequests, setSubmittedContextRequests] = useState<string[]>([]);
   const attachmentInputRef = useRef<HTMLInputElement | null>(null);
+  const knowledgeInputRef = useRef<HTMLInputElement | null>(null);
   const tailRef = useRef<HTMLDivElement | null>(null);
 
   const turns = useMemo(() => buildManagerTurns(conversation), [conversation]);
@@ -133,16 +140,24 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
     return () => cancelAnimationFrame(frame);
   }, [sendPending, conversation.messages.length]);
 
-  const canAttach = Boolean(musicRepository && conversation.musicSubject?.type === "music_item");
-  const uploading = composerAttachments.some((item) => item.status === "uploading");
-  const attachmentIds = composerAttachments.flatMap((item) => item.attachment?.id ? [item.attachment.id] : []);
+  const knowledge = useManagerKnowledgeUploads(managerRepository);
+  const canAttachSong = Boolean(musicRepository && conversation.musicSubject?.type === "music_item");
+  const canAttach = canAttachSong || Boolean(managerRepository?.uploadKnowledge);
+  const uploading = composerAttachments.some((item) => item.status === "uploading") || knowledge.busy;
+  const attachmentIds = [...composerAttachments.flatMap((item) => item.attachment?.id ? [item.attachment.id] : []), ...knowledge.attachmentIds];
 
   async function uploadAttachment(id: string, file: File, assetType: string) {
     const musicItemId = conversation.musicSubject?.type === "music_item" ? conversation.musicSubject.id : null;
     if (!musicRepository || !musicItemId) return;
+    const fileError = musicUploadFileError({ group: songAttachmentGroup(assetType) }, file);
+    if (fileError) {
+      setComposerAttachments((current) => current.map((item) => item.id === id ? { ...item, status: "failed", error: fileError } : item));
+      return;
+    }
     setComposerAttachments((current) => current.map((item) => item.id === id ? { ...item, status: "uploading", percent: 0, error: undefined } : item));
     try {
       const uploaded = await musicRepository.uploadAsset(musicItemId, {
+        group: songAttachmentGroup(assetType),
         assetType,
         title: file.name,
         file,
@@ -162,20 +177,25 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
 
   async function handleFiles(files: FileList | null) {
     if (!files?.length || !selectedAssetType) return;
-    const next = Array.from(files).map((file, index) => ({
-      id: `manager-file-${Date.now()}-${index}`,
-      file,
-      fileName: file.name,
-      assetType: selectedAssetType,
-      status: "uploading" as const,
-      percent: 0,
-    }));
+    const next = Array.from(files).map((file, index): ComposerAttachment => {
+      const group = songAttachmentGroup(selectedAssetType);
+      const error = musicUploadFileError({ group }, file);
+      return {
+        id: `manager-file-${Date.now()}-${index}`,
+        file,
+        fileName: file.name,
+        assetType: selectedAssetType,
+        status: error ? "failed" : "uploading",
+        percent: 0,
+        ...(error ? { error } : {}),
+      };
+    });
     setComposerAttachments((current) => [...current, ...next]);
     setAttachmentMenuOpen(false);
     setAttachmentCategoryIndex(null);
     setSelectedAssetType(null);
     if (attachmentInputRef.current) attachmentInputRef.current.value = "";
-    await Promise.all(next.map((item) => uploadAttachment(item.id, item.file, item.assetType)));
+    await Promise.all(next.filter((item) => !item.error).map((item) => uploadAttachment(item.id, item.file, item.assetType)));
   }
 
   function send() {
@@ -184,6 +204,7 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
     onSendMessage(body, conversation.id, attachmentIds);
     setDraft("");
     setComposerAttachments([]);
+    knowledge.clear();
   }
 
   function submitGuided(answerOverride?: string) {
@@ -274,7 +295,10 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
         sendPending={sendPending}
         canSend={!activeQuestion && !uploading && (Boolean(draft.trim()) || attachmentIds.length > 0)}
         sendError={hasFailedManagerMessage ? null : sendError}
-        attachments={composerAttachments.length ? <AttachmentTray attachments={composerAttachments} onRemove={(id) => setComposerAttachments((current) => current.filter((item) => item.id !== id))} onRetry={(item) => void uploadAttachment(item.id, item.file, item.assetType)} /> : undefined}
+        attachments={composerAttachments.length || knowledge.items.length ? <>
+          <AttachmentTray attachments={composerAttachments} onRemove={(id) => setComposerAttachments((current) => current.filter((item) => item.id !== id))} onRetry={(item) => void uploadAttachment(item.id, item.file, item.assetType)} />
+          <ManagerKnowledgeAttachmentTray items={knowledge.items} onRemove={(id) => void knowledge.remove(id)} onRetry={(item) => void knowledge.retry(item)} />
+        </> : undefined}
         leadingAction={canAttach && !activeQuestion ? (
           <AttachmentButton
             menuOpen={attachmentMenuOpen}
@@ -284,8 +308,11 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
             selectedAssetType={selectedAssetType}
             setSelectedAssetType={setSelectedAssetType}
             inputRef={attachmentInputRef}
+            knowledgeInputRef={knowledgeInputRef}
+            canAttachSong={canAttachSong}
             disabled={sendPending || uploading}
             onFiles={handleFiles}
+            onKnowledgeFiles={knowledge.addFiles}
           />
         ) : undefined}
         guidedQuestion={activeQuestion ? <GuidedContextQuestion
@@ -303,6 +330,12 @@ export function ConversationWorkspace(props: ManagerConversationV2Props) {
       />
     </WorkspaceShell>
   );
+}
+
+function songAttachmentGroup(assetType: string): "Audio" | "Artwork" | "Documents" {
+  if (["final_master", "rough_mix", "demo", "stems"].includes(assetType)) return "Audio";
+  if (["cover_art", "press_photo", "alternate_artwork"].includes(assetType)) return "Artwork";
+  return "Documents";
 }
 
 function genuineQuestions(message: ConversationViewModel["messages"][number]) {
@@ -395,7 +428,7 @@ function AttachmentTray({ attachments, onRemove, onRetry }: { attachments: Compo
   return <div className="mb-1 grid gap-1">{attachments.map((item) => <div key={item.id} className="flex items-center gap-2 rounded-lg bg-foreground/[0.035] px-2.5 py-2"><FileText className="h-3.5 w-3.5 text-muted-foreground" /><span className="min-w-0 flex-1 truncate text-[11px] font-semibold">{item.fileName}</span><span className="text-[10px] text-muted-foreground">{item.status === "uploading" ? `${item.percent}%` : item.status}</span>{item.status === "failed" ? <button type="button" onClick={() => onRetry(item)} className="text-[10px] font-semibold">Retry</button> : null}<button type="button" aria-label={`Remove ${item.fileName}`} onClick={() => onRemove(item.id)}><X className="h-3.5 w-3.5 text-muted-foreground" /></button></div>)}</div>;
 }
 
-function AttachmentButton({ menuOpen, setMenuOpen, categoryIndex, setCategoryIndex, selectedAssetType, setSelectedAssetType, inputRef, disabled, onFiles }: {
+function AttachmentButton({ menuOpen, setMenuOpen, categoryIndex, setCategoryIndex, selectedAssetType, setSelectedAssetType, inputRef, knowledgeInputRef, canAttachSong, disabled, onFiles, onKnowledgeFiles }: {
   menuOpen: boolean;
   setMenuOpen(value: boolean): void;
   categoryIndex: number | null;
@@ -403,16 +436,23 @@ function AttachmentButton({ menuOpen, setMenuOpen, categoryIndex, setCategoryInd
   selectedAssetType: string | null;
   setSelectedAssetType(value: string | null): void;
   inputRef: React.RefObject<HTMLInputElement | null>;
+  knowledgeInputRef: React.RefObject<HTMLInputElement | null>;
+  canAttachSong: boolean;
   disabled: boolean;
   onFiles(files: FileList | null): void | Promise<void>;
+  onKnowledgeFiles(files: FileList | null): void | Promise<void>;
 }) {
   const category = categoryIndex == null ? null : ATTACHMENT_CATEGORIES[categoryIndex];
   return <div className="relative">
     <input ref={inputRef} type="file" multiple accept={category?.accept} className="sr-only" tabIndex={-1} onChange={(event) => void onFiles(event.target.files)} />
+    <input ref={knowledgeInputRef} type="file" multiple accept={MANAGER_KNOWLEDGE_ACCEPT} className="sr-only" tabIndex={-1} onChange={(event) => { void onKnowledgeFiles(event.target.files); event.target.value = ""; setMenuOpen(false); }} />
     <button type="button" aria-label="Add files" aria-expanded={menuOpen} onClick={() => { setMenuOpen(!menuOpen); setCategoryIndex(null); }} disabled={disabled} className="inline-flex h-10 w-10 items-center justify-center rounded-full text-muted-foreground hover:bg-foreground/[0.06] hover:text-foreground disabled:opacity-30"><Plus className="h-4 w-4" /></button>
     {menuOpen ? <div className="absolute bottom-12 left-0 z-50 w-64 rounded-2xl border border-foreground/10 bg-background p-2 shadow-[0_18px_55px_rgba(0,0,0,0.18)]">
       {category ? <button type="button" onClick={() => setCategoryIndex(null)} className="px-2 py-1 text-[11px] font-semibold text-muted-foreground">Back</button> : null}
-      <div className="grid gap-0.5">{category ? category.types.map(([label, value]) => <button key={value} type="button" onClick={() => { setSelectedAssetType(value); setTimeout(() => inputRef.current?.click(), 0); }} className="min-h-10 rounded-xl px-3 text-left text-[12px] font-semibold hover:bg-foreground/[0.05]">{label}</button>) : ATTACHMENT_CATEGORIES.map((item, index) => { const Icon = item.icon; return <button key={item.label} type="button" onClick={() => setCategoryIndex(index)} className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-left text-[12px] font-semibold hover:bg-foreground/[0.05]"><Icon className="h-4 w-4 text-muted-foreground" />{item.label}</button>; })}</div>
+      <div className="grid gap-0.5">{category ? category.types.map(([label, value]) => <button key={value} type="button" onClick={() => { setSelectedAssetType(value); setTimeout(() => inputRef.current?.click(), 0); }} className="min-h-10 rounded-xl px-3 text-left text-[12px] font-semibold hover:bg-foreground/[0.05]">{label}</button>) : <>
+        {canAttachSong ? ATTACHMENT_CATEGORIES.map((item, index) => { const Icon = item.icon; return <button key={item.label} type="button" onClick={() => setCategoryIndex(index)} className="flex min-h-10 items-center gap-2 rounded-xl px-3 text-left text-[12px] font-semibold hover:bg-foreground/[0.05]"><Icon className="h-4 w-4 text-muted-foreground" />{item.label}</button>; }) : null}
+        <button type="button" onClick={() => knowledgeInputRef.current?.click()} className="flex min-h-12 items-start gap-2 rounded-xl px-3 py-2 text-left hover:bg-foreground/[0.05]"><FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" /><span><span className="block text-[12px] font-semibold">Manager knowledge</span><span className="block text-[10px] font-medium text-muted-foreground">Deals, valuations, reports, criteria, and spreadsheets</span></span></button>
+      </>}</div>
     </div> : null}
   </div>;
 }

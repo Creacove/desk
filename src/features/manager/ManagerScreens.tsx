@@ -6,10 +6,13 @@ import { ConversationWorkspace as UnifiedConversationWorkspace, type ManagerConv
 import { WorkspaceHeader, WorkspaceShell } from "../../design-system/components";
 import { Button, ManagerComposer, SkeletonBlock, Timestamp } from "../../design-system/desktopPrimitives";
 import { SongDocumentEditor } from "../music/SongDocumentEditor";
+import { ManagerKnowledgeAttachmentTray, ManagerKnowledgeUploadButton, useManagerKnowledgeUploads } from "./ManagerKnowledgeUpload";
 
 export { DecisionPackageScreen, InvestigationScreen };
 
-type ManagerOfficeScreenProps = ComponentProps<typeof LegacyManagerOfficeScreen> & {
+type ManagerOfficeScreenProps = Omit<ComponentProps<typeof LegacyManagerOfficeScreen>, "onAskManager"> & {
+  onAskManager: (body: string, attachmentIds?: string[]) => void;
+  managerRepository?: import("../../types/cleanProduction").CleanProductionRepositories["manager"];
   conversationsPending?: boolean;
   conversationsError?: string | null;
   onRetryConversations?: () => void;
@@ -31,8 +34,10 @@ export function ManagerOfficeScreen({
   conversationsPending = false,
   conversationsError,
   onRetryConversations,
+  managerRepository,
 }: ManagerOfficeScreenProps) {
   const [askText, setAskText] = useState("");
+  const knowledge = useManagerKnowledgeUploads(managerRepository);
   const candidateMissionIds = useMemo(() => missionGenesisResult?.candidateMissionIds?.length
     ? missionGenesisResult.candidateMissionIds
     : missionGenesisResult?.candidateMissionId ? [missionGenesisResult.candidateMissionId] : [],
@@ -45,10 +50,11 @@ export function ManagerOfficeScreen({
   }, [candidateMissionKey]);
 
   function submitWork() {
-    const body = askText.trim();
-    if (!body || askManagerPending) return;
-    onAskManager(body);
+    const body = askText.trim() || (knowledge.attachmentIds.length ? "Review these files and tell me what matters for the artist and the business." : "");
+    if (!body || askManagerPending || knowledge.busy) return;
+    onAskManager(body, knowledge.attachmentIds);
     setAskText("");
+    knowledge.clear();
   }
 
   return (
@@ -70,7 +76,10 @@ export function ManagerOfficeScreen({
             onOpenCreatedMission={onOpenCreatedMission}
           />
           <section aria-label="Work with Manager" className="pb-7">
-            <ManagerComposer value={askText} onChange={setAskText} onSubmit={submitWork} pending={askManagerPending} ariaLabel="Work with Manager" placeholder="What do you want to work on?" className="os-form-measure" />
+            <div className="os-form-measure">
+              <ManagerKnowledgeAttachmentTray items={knowledge.items} onRemove={(id) => void knowledge.remove(id)} onRetry={(item) => void knowledge.retry(item)} />
+              <ManagerComposer value={askText} onChange={setAskText} onSubmit={submitWork} pending={askManagerPending || knowledge.busy} disabled={knowledge.busy} allowEmptySubmit={knowledge.attachmentIds.length > 0} leadingAction={<ManagerKnowledgeUploadButton onFiles={knowledge.addFiles} disabled={askManagerPending || knowledge.busy} />} ariaLabel="Work with Manager" placeholder="What do you want to work on?" />
+            </div>
             {askManagerError ? <p role="alert" className="mt-3 text-[12px] font-medium text-destructive">{askManagerError}</p> : null}
           </section>
         </main>

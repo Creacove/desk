@@ -7,6 +7,7 @@ import type {
   ArtistProfileViewModel,
   AttentionItem,
   CleanProductionView,
+  CleanProductionRepositories,
   DrawerKind,
   MissionViewModel,
   MovementItem,
@@ -16,6 +17,7 @@ import type {
   TodayBriefViewModel,
 } from "../../types/cleanProduction";
 import { splitAttentionItems } from "./deskAttention";
+import { ManagerKnowledgeAttachmentTray, ManagerKnowledgeUploadButton, useManagerKnowledgeUploads } from "../manager/ManagerKnowledgeUpload";
 
 type DeskHQProps = {
   profile: ArtistProfileViewModel;
@@ -32,7 +34,8 @@ type DeskHQProps = {
   onLockedAgent: (agent: AgentViewModel) => void;
   onDrawer: (drawer: DrawerKind) => void;
   onOpenMusicFocus: (musicObjectId?: string) => void;
-  onAskManager: (body: string) => void;
+  onAskManager: (body: string, attachmentIds?: string[]) => void;
+  managerRepository?: CleanProductionRepositories["manager"];
   activityCount?: number;
   onOpenActivityCenter?: () => void;
   briefPending?: boolean;
@@ -60,6 +63,7 @@ export function DeskHQScreen({
   onNavigate,
   onDrawer,
   onAskManager,
+  managerRepository,
   activityCount,
   onOpenActivityCenter,
   briefPending = false,
@@ -86,7 +90,7 @@ export function DeskHQScreen({
           )}
         />
 
-        <HomeManagerComposer onAskManager={onAskManager} />
+        <HomeManagerComposer onAskManager={onAskManager} managerRepository={managerRepository} />
 
         <section data-testid="desk-editorial-brief" className="mt-8 sm:mt-10">
           <BriefSectionHeader
@@ -147,25 +151,34 @@ function ActivityButton({ count, onOpen }: { count: number; onOpen: () => void }
   );
 }
 
-function HomeManagerComposer({ onAskManager }: { onAskManager: (body: string) => void }) {
+function HomeManagerComposer({ onAskManager, managerRepository }: { onAskManager: (body: string, attachmentIds?: string[]) => void; managerRepository?: CleanProductionRepositories["manager"] }) {
   const [draft, setDraft] = useState("");
+  const knowledge = useManagerKnowledgeUploads(managerRepository);
 
   function submit() {
-    const body = draft.trim();
-    if (!body) return;
-    onAskManager(body);
+    const body = draft.trim() || (knowledge.attachmentIds.length ? "Review these files and tell me what matters for the artist and the business." : "");
+    if (!body || knowledge.busy) return;
+    onAskManager(body, knowledge.attachmentIds);
     setDraft("");
+    knowledge.clear();
   }
 
   return (
-    <ManagerWorkComposer
+    <div className="w-full">
+      <ManagerKnowledgeAttachmentTray items={knowledge.items} onRemove={(id) => void knowledge.remove(id)} onRetry={(item) => void knowledge.retry(item)} />
+      <ManagerWorkComposer
       value={draft}
       onChange={setDraft}
       onSubmit={submit}
       ariaLabel="Work with Manager"
       placeholder="What do you want to work on?"
       className="w-full"
-    />
+      disabled={knowledge.busy}
+      pending={knowledge.busy}
+      allowEmptySubmit={knowledge.attachmentIds.length > 0}
+      leadingAction={<ManagerKnowledgeUploadButton onFiles={knowledge.addFiles} disabled={knowledge.busy} />}
+      />
+    </div>
   );
 }
 

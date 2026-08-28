@@ -285,6 +285,8 @@ type ManagerComposerProps = {
   ariaLabel?: string;
   className?: string;
   textareaProps?: Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "value" | "onChange" | "placeholder">;
+  leadingAction?: ReactNode;
+  allowEmptySubmit?: boolean;
 };
 
 export function ManagerComposer({
@@ -297,9 +299,11 @@ export function ManagerComposer({
   ariaLabel = "Work with Manager",
   className,
   textareaProps,
+  leadingAction,
+  allowEmptySubmit = false,
 }: ManagerComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const canSubmit = Boolean(value.trim()) && !pending && !disabled;
+  const canSubmit = (Boolean(value.trim()) || allowEmptySubmit) && !pending && !disabled;
   const {
     onKeyDown: externalOnKeyDown,
     className: textareaClassName,
@@ -327,8 +331,9 @@ export function ManagerComposer({
         "os-manager-composer flex w-full min-w-0 items-end gap-3 rounded-[14px] border border-foreground/10 bg-foreground/[0.018] p-2.5 pl-4 shadow-[0_1px_0_hsl(var(--foreground)/0.02)] transition-[border-color,background-color,box-shadow] duration-150 focus-within:border-brand-accent/35 focus-within:bg-background focus-within:shadow-[0_0_0_3px_hsl(var(--brand-accent)/0.055)]",
         className,
       )}
-    >
-      <textarea
+      >
+        {leadingAction ? <div className="mb-0 shrink-0">{leadingAction}</div> : null}
+        <textarea
         {...restTextareaProps}
         ref={textareaRef}
         rows={1}
