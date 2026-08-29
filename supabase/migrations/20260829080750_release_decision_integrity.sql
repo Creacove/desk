@@ -101,7 +101,7 @@ begin
   if not found then
     raise exception 'Approved release decision has no matching release plan.';
   end if;
-  if plan_row.approved_release_date is distinct from new.proposed_release_date then
+  if plan_row.approved_release_date is distinct from new.proposed_date then
     raise exception 'Approved release decision does not match canonical release plan state.';
   end if;
 
@@ -135,20 +135,20 @@ begin
       new.account_id, new.artist_workspace_id, new.artist_id,
       'time', 'time.release_date', 'mission', fact_scope_key_value,
       jsonb_build_object(
-        'date', new.proposed_release_date,
+        'date', new.proposed_date,
         'musicItemId', plan_row.music_item_id,
         'releasePlanId', plan_row.id,
         'revision', plan_row.revision,
         'provenance', 'approved_release_plan'
       ),
-      new.proposed_release_date::text,
+      new.proposed_date::text,
       'manager_observation', new.id,
       'high', now(), null, now(),
       'active', existing_fact.id,
       jsonb_build_object(
         'decisionType', 'release_date_change',
         'releaseDateChangeRequestId', new.id,
-        'approvalIdempotencyKey', new.approval_idempotency_key,
+        'proposalIdempotencyKey', new.idempotency_key,
         'approvedBy', new.approved_by,
         'approvedAt', new.approved_at
       )
@@ -161,7 +161,7 @@ begin
         metadata = coalesce(q.metadata, '{}'::jsonb) || jsonb_build_object(
           'supersededReason', 'canonical_release_date_approved',
           'releaseDateChangeRequestId', new.id,
-          'approvedReleaseDate', new.proposed_release_date,
+          'approvedReleaseDate', new.proposed_date,
           'releasePlanRevision', plan_row.revision
         ),
         updated_at = now()
@@ -184,10 +184,10 @@ begin
     ) values (
       new.account_id, new.artist_workspace_id, new.artist_id, plan_row.mission_id,
       'adaptive_replan', 'release_date_change_request', new.id,
-      concat('The canonical approved operational release date is ', new.proposed_release_date::text,
+      concat('The canonical approved operational release date is ', new.proposed_date::text,
         ' (release plan revision ', plan_row.revision::text, '). Provider/imported dates are not the current operating decision.'),
       concat('The artist approved moving the release date from ',
-        coalesce(new.from_release_date::text, 'unset'), ' to ', new.proposed_release_date::text, '.'),
+        coalesce(new.from_date::text, 'unset'), ' to ', new.proposed_date::text, '.'),
       'Replan from the approved release date. Supersede stale schedule assumptions and do not ask the artist to reconfirm this same release-date decision unless new evidence materially requires a new proposal.',
       'due', now(), review_key
     ) on conflict (artist_workspace_id, runtime_key)
