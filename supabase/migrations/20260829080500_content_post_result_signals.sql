@@ -15,7 +15,7 @@ as $$
   select coalesce(array_agg(distinct cleaned order by cleaned), '{}'::text[])
   from (
     select nullif(
-      regexp_replace(match_value, '[\]\[\)\(\}\{,.;:!?]+$', '', 'g'),
+      regexp_replace(match_value[1], '[\]\[\)\(\}\{,.;:!?]+$', '', 'g'),
       ''
     ) as cleaned
     from regexp_matches(
@@ -99,7 +99,6 @@ set search_path = public
 as $$
 declare
   refs text[] := '{}';
-  ref_value text;
 begin
   if new.status <> 'completed'::public.task_result_status
      or coalesce(new.raw_event ->> 'result_kind', '') <> 'content_post_result' then
