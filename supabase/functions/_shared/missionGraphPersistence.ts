@@ -26,6 +26,14 @@ export async function persistManagerMissionGraphDecisions(
   output: ManagerConversationOutput,
 ): Promise<ManagerConversationCreatedWork[]> {
   const persisted: ManagerConversationCreatedWork[] = output.createdWork.filter((work) => work.type === "music_item");
+
+  // A world-model answer belongs to an already-running adaptive review. The
+  // conversation is only the interaction surface for that missing fact; it must
+  // never create a second Mission route while the suspended review resumes.
+  if (context.sourceType === "manager_conversation" && await isWorldModelContinuationRun(db, context.runId)) {
+    return persisted;
+  }
+
   const scopedMissionId = context.scopedMissionId;
   const decisions: ManagerMissionGraphDecision[] = scopedMissionId
     ? output.missionGraphDecisions.slice(0, 1).map((decision) => ({
@@ -97,6 +105,18 @@ export async function persistManagerMissionGraphDecisions(
   }
 
   return persisted;
+}
+
+async function isWorldModelContinuationRun(db: any, runId: string) {
+  const { data, error } = await db.from("manager_synthesis_runs")
+    .select("context_payload")
+    .eq("id", runId)
+    .maybeSingle();
+  if (error) throw error;
+  const payload = data?.context_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const contextRequestId = (payload as Record<string, unknown>).contextRequestId;
+  return typeof contextRequestId === "string" && contextRequestId.startsWith("world-model:");
 }
 
 async function createMission(db: any, input: MissionGraphInput, context: ManagerGraphContext, decision: ManagerMissionGraphDecision) {
