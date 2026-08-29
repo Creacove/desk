@@ -2,375 +2,289 @@
 
 This is the entry point for the Manager Runtime work.
 
-The system should be read as one operating loop, not as independent AI features.
-
 ## North star
 
 Desk is the operating manager for the artist.
 
 The artist should experience:
 
-`Desk understands -> Desk decides -> Desk does what it can -> Desk gives exact human work -> Desk follows up -> Desk reviews reality -> Desk adapts`
+`Desk understands -> Desk decides -> Desk does what it can -> Desk gives exact human work -> Desk follows up -> Desk watches results -> Desk adapts`
 
-The artist should not need to know the right prompt or manage the Mission graph.
+The artist should not need the right prompt or have to manage the Mission graph.
 
-## Product review standard
-
-Start with:
+## Shared review standard
 
 - [`manager-runtime-product-lenses.md`](./manager-runtime-product-lenses.md)
 
-Every Manager Runtime slice must reduce management effort, preserve trust, model time correctly, have durable continuation, and move the experience toward “I have a manager now.”
+Every slice must improve real utility, reduce user effort, use fresh context, have bounded reasoning, continue durably, preserve autonomy/trust boundaries, model the three clocks correctly, and move the experience toward **“I have a manager now.”**
 
-## Runtime sequence
+---
 
-### 1. Foundation
+# Runtime sequence
+
+## 1. Foundation
 
 - [`manager-runtime-foundation.md`](./manager-runtime-foundation.md)
-
-Introduces the core operating contract:
-
-- three clocks;
-- operational memory/freshness primitives;
-- human task reminder lifecycle;
-- automatic continuation after task review;
-- checkpoint UX distinction between human work and Desk watching/review;
-- channel-agnostic reminder architecture.
 
 Core rule:
 
 > Manager-owned work is not a human task.
 
-### 2. Human execution loop
+## 2. Human execution loop
 
 - [`manager-runtime-execution-loop.md`](./manager-runtime-execution-loop.md)
 
-Turns Tasks into accountability interactions rather than static list items.
+Human actions:
 
-Human actions include:
-
-- Start;
-- Done;
-- Move it;
-- I'm blocked.
-
-The important product shift is that a change in human reality is a Manager trigger, not merely a task-status update.
+- Start
+- Done
+- Move it
+- I'm blocked
 
 Core rule:
 
 > Human reality changes -> Desk evaluates the consequence.
 
-### 3. Adaptive replan
+## 3. Adaptive replan
 
 - [`manager-runtime-adaptive-replan.md`](./manager-runtime-adaptive-replan.md)
 
-Closes the gap between “Desk noticed the plan is at risk” and “Desk actually changed the plan.”
-
-Adds:
-
-- durable adaptive reviews;
-- bounded retries;
-- one replan owner per Mission;
-- complete replacement plan compilation;
-- atomic plan installation;
-- stale-plan concurrency guard;
-- no invented dates;
-- fail-closed behavior.
-
 Core rule:
 
-> If the current route no longer works, Desk compiles and installs one coherent replacement route without another artist prompt.
+> If the current route no longer works, Desk installs one coherent replacement route without another artist prompt.
 
-### 4. Artist World Model + Question Engine
+## 4. Artist World Model + Question Engine
 
 - [`manager-world-model-question-engine.md`](./manager-world-model-question-engine.md)
 - [`manager-world-model-acceptance-matrix.md`](./manager-world-model-acceptance-matrix.md)
 
-Adds a structured operational understanding of the artist's real world:
+World Model:
 
 `People × Places × Equipment × Money × Time × Skills × Access × Preferences × Team × Language × Mobility × Execution behavior`
 
-It also gives the adaptive compiler a third outcome:
+Adaptive decisions:
 
 `no_change | needs_context | replan`
-
-A question is allowed only when one missing human fact genuinely changes the current management decision.
 
 Core rule:
 
 > Desk asks only when it already has a hypothesis and needs one fact to choose the route.
 
-### 5. Today execution surface
+## 5. Today execution surface
 
 - [`manager-today-execution-surface.md`](./manager-today-execution-surface.md)
-
-Turns Home into the Manager's current assignment surface rather than a multi-Mission task browser.
 
 Defines:
 
 - one global current priority;
-- `needs_you | human_action | human_follow_up | desk_watch` projections;
-- deterministic priority tiers from durable runtime state;
+- question / permission / human Task / quiet watch projection;
 - no OpenAI call on Home render;
-- question/permission/task/watch projection without duplicating source objects;
-- Today vs Today's Brief separation;
-- composer as changed-reality escape hatch.
+- Today = execution;
+- Today's Brief = intelligence.
 
 Core rule:
 
 > Opening Desk should answer “what does my manager need from me now?” before the artist types anything.
 
-### 6. Content execution object
+## 6. Content execution object
 
 - [`manager-content-execution-object.md`](./manager-content-execution-object.md)
 
-Defines a first-class production brief for content Tasks so strategy cannot collapse into “make engaging content.”
-
-The brief carries, when relevant:
+Content Tasks carry, where relevant:
 
 - objective/hypothesis;
 - concept;
 - resources/setup;
 - hook;
-- script mode/talking points;
+- talking points;
 - shot plan;
 - song cue;
 - edit direction;
 - CTA/desired response;
-- proof/result mode;
+- success signal;
+- lightweight proof;
 - fallback.
 
-It also defines the automatic:
+### Hard constraint
 
-`capture -> Manager review -> smallest useful revision -> publish -> response watch -> Manager evaluation`
+**Desk does not require artists to upload campaign videos/images to OrderSounds/Supabase.**
 
-loop.
+The normal content loop is:
+
+`exact brief -> artist creates/posts in existing tools -> connected platform or public URL identifies the post -> response watch -> Manager evaluates available metrics/evidence -> next move`
+
+Desk must not claim visual or comment-level insight it did not actually receive.
 
 Core rule:
 
 > A content Task is not ready until the artist can make it without another “how?” prompt.
 
-### 7. Execution behavior learning
+## 7. Execution behavior learning
 
 - [`manager-execution-behavior-learning.md`](./manager-execution-behavior-learning.md)
 
-Defines how Desk can learn from repeated real execution without turning one missed Task into a permanent judgment.
-
-Potential learned patterns include:
-
-- realistic task duration;
-- collaboration advantage;
-- useful response windows;
-- travel burden;
-- script/production mode;
-- resource fragility.
-
-Patterns require repeated observation, confidence, recency and contradiction handling.
-
 Core rule:
 
-> Desk should increasingly assign work this artist actually completes, without scoring or judging the artist.
+> Desk should increasingly assign work this artist actually completes, without scoring or judging them.
 
-### 8. Reminder channels, Calendar and WhatsApp
+## 8. Reminder channels, Calendar and WhatsApp
 
 - [`manager-reminder-channels-calendar-whatsapp.md`](./manager-reminder-channels-calendar-whatsapp.md)
-
-Preserves one source of truth while adding external delivery surfaces.
-
-Defines:
-
-- channel-neutral reminder intent;
-- reminder intensity/quiet-hour behavior;
-- WhatsApp outbound accountability and bounded inbound actions;
-- provider delivery receipts vs Task state;
-- Google Calendar human-time-only mirroring;
-- Calendar edit/delete conflict behavior;
-- idempotency/reconciliation;
-- graceful provider failure.
 
 Core rule:
 
 > Desk owns management state; WhatsApp delivers accountability; Calendar mirrors real human time.
 
-### 9. External action permissions + progressive trust
+## 9. External action permissions
 
 - [`manager-external-action-permissions.md`](./manager-external-action-permissions.md)
-
-Defines the autonomy boundary for:
-
-- spend;
-- external outreach;
-- submissions;
-- publishing;
-- release-plan changes;
-- rights/legal/finance commitments;
-- sensitive commitments;
-- source connections.
-
-The system should complete safe internal work before asking, bind approval to the exact external effect, execute immediately after approval, and record execution separately from authorization.
-
-Progressive trust must be explicitly granted, scoped, bounded, expiring and revocable. It is never inferred from repeated approvals.
 
 Core rule:
 
 > Prepare freely. Ask at the effect boundary. Bind approval to the exact effect. Continue automatically after approval.
 
-## Build sequence
+---
+
+# Build sequence
 
 - [`manager-runtime-next-implementation-roadmap.md`](./manager-runtime-next-implementation-roadmap.md)
 
-This converts the product contracts into a repo-specific stacked implementation order:
+Recommended implementation order:
 
 1. Today Runtime Projection
 2. Content Execution Task Contract
-3. Task-scoped Media Results + Automatic Content Review
+3. Connected Post Evidence + Response Watch
 4. External Action Permission Execution
 5. Execution Behavior Learning
 6. Google Calendar Human-Time Mirror
 7. WhatsApp Accountability Delivery
 8. Career Watch + Semantic Evidence Packing
 
-It names the current files, schema surfaces, compiler/finalizer changes, UI components and regression suites each slice should touch.
+There is deliberately **no campaign-media upload/storage slice**.
 
-## Combined operating loop
+---
 
-The runtime now converges on this sequence:
-
-1. **Observe** — task result, blocker, move, signal, evidence, permission, elapsed watch.
-2. **Decide** — determine whether action is needed.
-3. **Load current world** — plan, strategy, results, evidence, memory, fresh operating facts.
-4. **Ask only if necessary** — one decision-changing fact, with hypothesis/fallback.
-5. **Act immediately where safe** — research, analyze, compare, draft, review, replan.
-6. **Release exact human work** — only work a human/team must do.
-7. **Project Today** — show the one current priority/need without recomputing strategy.
-8. **Follow up** — reminders/accountability based on real human time.
-9. **Review result** — interpret what happened.
-10. **Ask approval only at the external effect boundary** — with the complete effect already prepared.
-11. **Execute approved external action** — idempotently, then record the real outcome.
-12. **Watch reality when needed** — do not invent fake Manager workdays.
-13. **Learn execution patterns cautiously** — improve task fit from repeated behavior.
-14. **Adapt** — preserve durable strategy, change the route when evidence/reality requires it.
-
-The artist should not have to prompt between these stages.
-
-## Shared ontology
+# Shared ontology
 
 | Object | Meaning |
 | --- | --- |
-| Mission | outcome Desk is responsible for managing |
-| Strategy state | durable current thesis/intent/constraints for the Mission |
+| Mission | outcome Desk manages |
+| Strategy state | durable current thesis/intent/constraints |
 | Plan version | current executable route |
-| Task | human/team/external work that consumes real human time |
-| Content execution brief | structured production instructions attached to a content Task |
-| Manager action | Desk-owned research/analysis/drafting/review/replanning; automatic |
-| Question | one missing human fact that changes a current decision |
-| Operating fact | scoped/fresh fact about the artist's execution reality |
-| Execution pattern | repeated, confidence-bounded evidence about how the artist actually completes work |
-| Permission request | exact authorization boundary before an external/irreversible effect |
-| External action run | provider/tool execution attempt after authorization; separate from approval |
-| Review/watch | waiting for enough external reality/signal to make a decision |
-| Checkpoint | meaningful phase-ending management decision gate |
-| Result | evidence of what happened after human work |
-| Reminder intent | channel-neutral accountability delivery request |
-| Channel delivery | provider-specific delivery receipt/state; never Task truth |
-| Calendar link | mapping between a real human Task/time block and provider event |
-| Today projection | current human-facing priority projection of runtime state |
-| Operating event | durable trigger/audit record for runtime continuation |
+| Task | human/team/external work consuming human time |
+| Content execution brief | structured instructions attached to a content Task |
+| Manager action | Desk-owned research/analysis/drafting/review/replan; automatic |
+| Question | one missing human fact changing a decision |
+| Operating fact | scoped/fresh fact about execution reality |
+| Execution pattern | repeated confidence-bounded evidence about how the artist executes |
+| Permission request | exact authorization before external/irreversible effect |
+| External action run | actual provider/tool execution after authorization |
+| Review/watch | waiting for external reality/signal |
+| Checkpoint | meaningful management decision gate |
+| Result | evidence of what happened |
+| Post evidence | external platform post identity/URL/metrics; no campaign media bytes required |
+| Reminder intent | channel-neutral accountability request |
+| Channel delivery | provider delivery state; never Task truth |
+| Calendar link | mapping from human Task/time block to provider event |
+| Today projection | current human-facing projection of runtime state |
+| Operating event | durable trigger/audit record |
 
-Do not collapse these back into one generic task object.
+---
 
-## Three clocks
+# Three clocks
 
-### Human time
+## Human time
 
 Calendar/reminder eligible:
 
 - filming;
 - recording;
-- calling;
+- calls;
 - meetings;
 - travel;
 - approvals;
 - posting;
 - physical/offline work.
 
-### Manager time
+## Manager time
 
-Runs as soon as prerequisites exist:
+Runs immediately when prerequisites exist:
 
 - research;
 - analysis;
-- comparison;
 - drafting;
-- review;
+- comparison;
 - synthesis;
 - replanning;
-- execution-pattern aggregation;
-- preparation of permissioned external actions.
+- response evaluation;
+- execution-pattern aggregation.
 
-### Reality time
+## Reality time
 
 Represented as watch/review:
 
 - audience response;
-- platform signal;
+- platform metrics;
 - collaborator reply;
 - release/event timing;
 - external outcomes.
 
 Never schedule `Day 4 — Desk analyzes`.
 
-## Odaeshi golden path
+---
 
-Use Odaeshi as the cross-slice acceptance scenario.
+# Odaeshi golden path
 
-1. Desk understands the artist-confirmed resilience / bulletproof / tested-but-still-standing / collective-strength meaning.
+1. Desk understands the artist-confirmed Odaeshi meaning.
 2. Strategy chooses participation proof before broad spend.
-3. Desk has a specific first content hypothesis.
-4. One required resource fact is unknown.
-5. Desk asks one contextual question, not a questionnaire.
-6. Artist answer becomes scoped/fresh operating fact.
+3. Desk has a specific content hypothesis.
+4. One resource fact is unknown.
+5. Desk asks one contextual question.
+6. Answer becomes scoped/fresh operating fact.
 7. Runtime continues automatically.
 8. Today projects the exact next human action.
-9. Full content execution brief tells the artist exactly what to make.
-10. Artist completes/submits raw result.
-11. Desk reviews immediately and chooses the smallest useful revision.
-12. Follow-up human work is released or a reality watch begins.
-13. If Desk later recommends an external effect such as spend/outreach/publish, it prepares the exact effect before requesting approval.
-14. Approval executes automatically and records a distinct execution receipt.
-15. Calendar/WhatsApp may mirror/deliver the same canonical work according to preference.
-16. Enough evidence reaches a real checkpoint.
-17. Desk chooses what expression deserves repetition and installs the next route.
-18. Repeated execution outcomes can cautiously improve how future work is sized/timed.
+9. Content execution brief says exactly what to make.
+10. Artist creates and posts through normal tools/platforms.
+11. TikTok connection identifies the post automatically where possible; otherwise artist pastes the public URL.
+12. Desk starts a response watch.
+13. Available post metrics mature.
+14. Desk evaluates the campaign signal without pretending it watched unseen footage or read unavailable comments.
+15. Desk releases the next Task, asks one needed question, requests permission, or replans.
+16. If an external effect is recommended, Desk prepares it fully before asking approval.
+17. Calendar/WhatsApp may mirror/deliver the same canonical work according to preference.
+18. Repeated outcomes can cautiously improve future task fit.
 
-Failure anywhere the artist must ask “what next?” or reconcile competing systems is a Manager Runtime failure.
+Failure anywhere the artist has to ask **“what next?”** or reconcile competing systems is a Manager Runtime failure.
 
-## Source-of-truth hierarchy
+---
 
-To prevent competing systems:
+# Source-of-truth hierarchy
 
 - Manager Runtime owns continuation.
 - Mission owns the outcome.
 - Strategy state owns durable campaign intent.
 - Plan version owns the current route.
 - Tasks own human execution.
-- Content execution brief describes a content Task; it does not own a separate campaign.
-- World Model owns scoped/fresh operational facts.
-- Execution learning summarizes repeated behavior; it does not become a separate planner.
-- Permission Request authorizes an exact effect; External Action Run records whether it actually happened.
-- Today projects current work; it does not become another task database.
-- Manager conversation is an interaction surface, not the only memory/state store.
+- Content execution brief describes the Task; it does not own a separate campaign.
+- World Model owns scoped/fresh operating facts.
+- Post evidence owns lightweight public/result evidence; it does not store campaign media.
+- Execution learning summarizes repeated behavior; it is not another planner.
+- Permission Request authorizes an exact effect; External Action Run records whether it happened.
+- Today projects current work; it is not another task database.
+- Manager conversation is an interaction surface, not the only state store.
 - WhatsApp is a delivery/conversation surface, not a second Manager brain.
 - Calendar mirrors human time, not the plan.
 
-## Remaining documentation areas
+---
 
-The major runtime/product contracts are now covered. The next deeper documents can be added when implementation reaches them:
+# Remaining deeper contracts
 
-1. **Media result pipeline** — concrete storage/security/vision-review contract for Task video/image evidence.
-2. **Career Watch** — material-change event detection that wakes Manager without expensive constant research.
-3. **Semantic evidence packing** — bounded public/private evidence fields in every relevant Manager opening packet.
-4. **Team authority model** — who can approve spend/publish/rights/release actions in multi-user workspaces.
-5. **Provider-specific Calendar/WhatsApp implementation runbooks** — only when those integrations are being built.
+The next documents can be added when implementation reaches them:
 
-Do not jump to broad channel/chat integrations before the core Manager loop is reliable.
+1. **TikTok / connected post evidence implementation** — OAuth, post matching, metric snapshots, response watches.
+2. **Career Watch** — material-change detection without expensive constant research.
+3. **Semantic evidence packing** — bounded public/private evidence fields in Manager packets.
+4. **Team authority model** — who can approve spend/publish/rights/release actions.
+5. **Provider-specific Calendar/WhatsApp runbooks** — when those integrations are implemented.
+
+Do not add campaign-media upload infrastructure to recover capabilities the core product explicitly does not depend on.
