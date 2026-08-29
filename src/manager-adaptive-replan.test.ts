@@ -18,8 +18,8 @@ describe("Adaptive Manager replan runtime", () => {
   });
 
   it("does not let the compiler invent calendar commitments", () => {
-    expect(compiler).toContain("deadline may be non-empty ONLY when it exactly matches one of context.allowedDeadlines");
-    expect(compiler).toContain("availableFrom may be non-empty ONLY when it exactly matches one of context.allowedAvailability");
+    expect(compiler).toContain("deadline may be non-empty ONLY when it exactly matches one of context.validation.allowedDeadlines");
+    expect(compiler).toContain("availableFrom may be non-empty ONLY when it exactly matches one of context.validation.allowedAvailability");
     expect(compiler).toContain("Adaptive plan invented an unsupported deadline");
     expect(compiler).toContain("Adaptive plan invented unsupported availability");
     expect(runner).toContain("allowedDeadlines = uniqueIso");
@@ -71,7 +71,7 @@ describe("Adaptive Manager replan runtime", () => {
 
   it("does not let telemetry failure replay a successful plan swap", () => {
     const finalizeIndex = runner.indexOf("const result = await finalizeReplan(db, claimedReview.id, runId, output)");
-    const accountingIndex = runner.indexOf("await completeUsageEventSafe(db, usageId, usage)");
+    const accountingIndex = runner.indexOf("await completeUsageEventSafe(db, usageId, usage)", finalizeIndex);
     expect(finalizeIndex).toBeGreaterThan(-1);
     expect(accountingIndex).toBeGreaterThan(finalizeIndex);
     expect(runner).toContain("Telemetry is downstream of the user-visible state transition");
