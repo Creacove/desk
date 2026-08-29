@@ -83,7 +83,7 @@ export function normalizeCareerWatchOutput(input: {
         artist_workspace_id: input.artistWorkspaceId,
         artist_id: input.artistId,
         source: "public_web",
-        source_kind: "career_watch",
+        source_kind: "public_web",
         evidence_type: "manager_career_watch",
         subject_type: "artist",
         subject_id: null,
@@ -101,6 +101,7 @@ export function normalizeCareerWatchOutput(input: {
         raw_ref: url,
         created_from_run_id: input.createdFromRunId ?? null,
         metadata: {
+          pipeline: "manager_career_watch",
           title: finding.title ?? "",
           claim: finding.claim ?? "",
           why_it_matters: finding.whyItMatters ?? "",
