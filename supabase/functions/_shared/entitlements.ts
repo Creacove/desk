@@ -1,8 +1,14 @@
+export type WorkspaceEntitlementScope = {
+  artistWorkspaceId?: string | null;
+  accountId?: string | null;
+  artistId?: string | null;
+};
+
 export async function assertActiveWorkspaceEntitlement(
   client: {
     rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
   },
-  input: { artistWorkspaceId?: string | null },
+  input: WorkspaceEntitlementScope,
 ) {
   if (!input.artistWorkspaceId) {
     throw new Error("Artist workspace is required for entitlement checks.");
