@@ -4,11 +4,16 @@ on:
   pull_request:
     paths:
       - "src/features/desk/DeskHQ.tsx"
+      - "src/features/desk/TodayRuntimeExecution.tsx"
+      - "src/features/desk/todayProjection.ts"
       - "src/features/missions/**"
       - "src/services/taskExecutionClient.ts"
+      - "src/services/todayExecutionSupabase.ts"
+      - "src/services/todayQuestionAction.ts"
       - "src/manager-execution-loop.test.ts"
       - "src/manager-adaptive-replan.test.ts"
       - "src/manager-world-model-question-engine.test.ts"
+      - "src/manager-today-execution.test.ts"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-dispatcher/**"
@@ -54,6 +59,7 @@ jobs:
           src/manager-execution-loop.test.ts
           src/manager-adaptive-replan.test.ts
           src/manager-world-model-question-engine.test.ts
+          src/manager-today-execution.test.ts
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
