@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, Eye, Play, RefreshCw } from "lucide-react";
+import { Bell, ChevronRight, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { WorkspaceHeader } from "../../design-system/components";
 import { Button, ManagerComposer as ManagerWorkComposer } from "../../design-system/desktopPrimitives";
@@ -16,8 +16,8 @@ import type {
   TodayBriefSnapshotGroup,
   TodayBriefViewModel,
 } from "../../types/cleanProduction";
-import { missionCheckpoints, missionTasks, getNextArtistTask } from "../missions/missionModel";
 import { splitAttentionItems } from "./deskAttention";
+import { TodayRuntimeExecution } from "./TodayRuntimeExecution";
 import { ManagerKnowledgeAttachmentTray, ManagerKnowledgeUploadButton, useManagerKnowledgeUploads } from "../manager/ManagerKnowledgeUpload";
 
 type DeskHQProps = {
@@ -63,6 +63,7 @@ export function DeskHQScreen({
   movement,
   missions,
   onNavigate,
+  onManager,
   onOpenMission,
   onDrawer,
   onAskManager,
@@ -93,7 +94,12 @@ export function DeskHQScreen({
           )}
         />
 
-        <TodayExecution missions={missions} onOpenMission={onOpenMission} />
+        <TodayRuntimeExecution
+          missions={missions}
+          onOpenMission={onOpenMission}
+          onManager={onManager}
+          refreshKey={visibleActivityCount}
+        />
 
         <div className="mt-6 sm:mt-7">
           <HomeManagerComposer onAskManager={onAskManager} managerRepository={managerRepository} />
@@ -133,84 +139,6 @@ export function DeskHQScreen({
 
         <ManagerRead segments={managerReadSegments} />
       </div>
-    </section>
-  );
-}
-
-function TodayExecution({ missions, onOpenMission }: { missions: MissionViewModel[]; onOpenMission: (missionId: string) => void }) {
-  const active = missions.filter((mission) => !["complete", "archived", "cancelled"].includes(mission.status));
-  const humanWork = active.flatMap((mission) => {
-    const tasks = missionTasks(mission);
-    const checkpoints = missionCheckpoints(mission);
-    const task = getNextArtistTask(tasks, checkpoints, []);
-    return task ? [{ mission, task }] : [];
-  }).slice(0, 3);
-  const watches = active.flatMap((mission) => {
-    if (humanWork.some((item) => item.mission.id === mission.id)) return [];
-    const checkpoint = missionCheckpoints(mission).find((item) => item.status === "Watching signal");
-    return checkpoint ? [{ mission, checkpoint }] : [];
-  }).slice(0, 2);
-
-  if (!humanWork.length && !watches.length) return null;
-
-  return (
-    <section data-testid="desk-today-execution" className="mt-2 border-y border-foreground/9 py-5 sm:py-6">
-      <div className="flex items-end justify-between gap-4">
-        <div className="min-w-0">
-          <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Today</p>
-          {humanWork[0] ? (
-            <h2 className="mt-1.5 max-w-[48rem] font-display text-[22px] font-semibold leading-tight tracking-[-0.022em] text-foreground sm:text-[25px]">
-              {humanWork[0].mission.title} is the priority today.
-            </h2>
-          ) : (
-            <h2 className="mt-1.5 font-display text-[22px] font-semibold tracking-[-0.022em] text-foreground sm:text-[25px]">Desk is watching the active plan.</h2>
-          )}
-        </div>
-      </div>
-
-      {humanWork.length ? (
-        <div className="mt-5 divide-y divide-foreground/8 border-t border-foreground/8">
-          {humanWork.map(({ mission, task }, index) => (
-            <button
-              key={task.id}
-              type="button"
-              onClick={() => onOpenMission(mission.id)}
-              className="group grid w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-start gap-3 py-4 text-left outline-none hover:bg-foreground/[0.018] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
-              aria-label={`Open today's work: ${task.title}`}
-            >
-              <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-full bg-foreground/[0.055] font-mono text-[11px] font-semibold text-muted-foreground">{index + 1}</span>
-              <span className="min-w-0">
-                <span className="block text-[14px] font-semibold leading-snug text-foreground">{task.title}</span>
-                <span className="mt-1 block text-[12px] font-medium leading-relaxed text-muted-foreground">
-                  {[task.owner, task.deadline].filter(Boolean).join(" · ")}
-                </span>
-              </span>
-              <span className="mt-0.5 flex items-center gap-1.5 text-[12px] font-semibold text-brand-accent">
-                <Play className="h-3.5 w-3.5" aria-hidden="true" />
-                Open
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {watches.length ? (
-        <div data-testid="desk-today-watches" className={humanWork.length ? "mt-3" : "mt-5"}>
-          {watches.map(({ mission, checkpoint }) => (
-            <button
-              key={checkpoint.id}
-              type="button"
-              onClick={() => onOpenMission(mission.id)}
-              className="flex w-full items-start gap-3 rounded-[12px] px-2 py-2.5 text-left outline-none hover:bg-foreground/[0.025] focus-visible:ring-2 focus-visible:ring-brand-accent/20"
-            >
-              <Eye className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" aria-hidden="true" />
-              <span className="min-w-0 text-[12px] font-medium leading-relaxed text-muted-foreground">
-                <strong className="font-semibold text-foreground/75">Desk is watching:</strong> {checkpoint.title}. No action needed from you right now.
-              </span>
-            </button>
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }
