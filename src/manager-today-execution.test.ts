@@ -87,6 +87,58 @@ describe("Today runtime projection", () => {
     expect(projection.primary).toBeUndefined();
   });
 
+  it("does not jump to a later phase while an earlier checkpoint is still watching reality", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("odaeshi", "Odaeshi", 5)],
+      tasks: [task("phase-two-task", "odaeshi", { checkpointId: "phase-two", title: "Post the second Odaeshi test" })],
+      checkpoints: [
+        checkpoint("phase-one", "odaeshi", 1, "watching_signal", "First response test"),
+        checkpoint("phase-two", "odaeshi", 2, "waiting", "Second content test"),
+      ],
+    }));
+
+    expect(projection.primary).toBeUndefined();
+    expect(projection.watches.map((item) => item.id)).toEqual(["phase-one"]);
+  });
+
+  it("unlocks the next phase only after the earlier checkpoint resolves", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("odaeshi", "Odaeshi", 5)],
+      tasks: [task("phase-two-task", "odaeshi", { checkpointId: "phase-two", title: "Record the next Odaeshi test" })],
+      checkpoints: [
+        checkpoint("phase-one", "odaeshi", 1, "met", "First response test"),
+        checkpoint("phase-two", "odaeshi", 2, "waiting", "Second content test"),
+      ],
+    }));
+
+    expect(projection.primary?.id).toBe("phase-two-task");
+    expect(projection.primary?.title).toBe("Record the next Odaeshi test");
+  });
+
+  it("keeps a later task-linked approval hidden until its phase is current", () => {
+    const projection = projectTodayExecution(packet({
+      missions: [mission("odaeshi", "Odaeshi", 5)],
+      tasks: [task("later-task", "odaeshi", { checkpointId: "phase-two", title: "Publish second test" })],
+      checkpoints: [
+        checkpoint("phase-one", "odaeshi", 1, "watching_signal", "First response test"),
+        checkpoint("phase-two", "odaeshi", 2, "waiting", "Second content test"),
+      ],
+      permissions: [{
+        id: "later-permission",
+        missionId: "odaeshi",
+        taskId: "later-task",
+        checkpointId: "phase-two",
+        requestType: "external_send",
+        title: "Approve the second post",
+        status: "pending",
+      }],
+    }));
+
+    expect(projection.primary).toBeUndefined();
+    expect(projection.supporting).toHaveLength(0);
+    expect(projection.watches.map((item) => item.id)).toEqual(["phase-one"]);
+  });
+
   it("turns blocked human work into a Resolve action", () => {
     const projection = projectTodayExecution(packet({
       missions: [mission("m1", "Odaeshi", 1)],
@@ -197,6 +249,17 @@ function task(id: string, missionId: string, overrides: Record<string, unknown> 
     createdAt: "2026-08-20T00:00:00.000Z",
     ...overrides,
   } as TodayRuntimePacket["tasks"][number];
+}
+
+function checkpoint(id: string, missionId: string, orderIndex: number, status: string, title: string): TodayRuntimePacket["checkpoints"][number] {
+  return {
+    id,
+    missionId,
+    planVersionId: "plan-1",
+    title,
+    status,
+    orderIndex,
+  };
 }
 
 function question(id: string, missionId: string): TodayRuntimePacket["questions"][number] {
