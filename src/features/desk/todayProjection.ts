@@ -43,15 +43,20 @@ export type TodayCheckpointState = {
   createdAt?: string;
 };
 
+export type TodayQuestionAnswerKind = "short_text" | "single_select" | "multi_select" | "money_range";
+
 export type TodayQuestionState = {
   id: string;
   missionId?: string;
   taskId?: string;
   conversationId?: string;
   contextRequestId: string;
+  questionKey: string;
   status: string;
   question: string;
   reason: string;
+  answerKind: TodayQuestionAnswerKind;
+  options: string[];
   expiresAt?: string;
   createdAt?: string;
 };
@@ -93,6 +98,9 @@ export type TodayManagerItem = {
   taskId?: string;
   conversationId?: string;
   contextRequestId?: string;
+  questionKey?: string;
+  answerKind?: TodayQuestionAnswerKind;
+  options?: string[];
   permissionRequestId?: string;
   checkpointId?: string;
   estimatedMinutes?: number;
@@ -141,6 +149,9 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
       taskId: question.taskId,
       conversationId: question.conversationId,
       contextRequestId: question.contextRequestId,
+      questionKey: question.questionKey,
+      answerKind: question.answerKind,
+      options: question.options,
     });
   }
 
@@ -292,7 +303,7 @@ function taskWhyNow(task: TodayTaskState, checkpoint: TodayCheckpointState | und
 }
 
 function isTaskOnCurrentPlan(task: TodayTaskState, mission: TodayMissionState) {
-  if (!mission.activePlanVersionId) return !task.planVersionId || true;
+  if (!mission.activePlanVersionId) return true;
   return !task.planVersionId || task.planVersionId === mission.activePlanVersionId;
 }
 
