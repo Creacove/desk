@@ -111,8 +111,10 @@ Deno.serve(withAppErrorCapture("manager-runtime-runner", async (request) => {
     failureStage = "finalize_plan";
     const result = await finalizeReplan(db, claimedReview.id, runId, output);
 
-    failureStage = "complete_usage";
-    await completeUsageEvent(db, usageId, usage);
+    // Telemetry is downstream of the user-visible state transition. Once the
+    // atomic finalizer succeeds, accounting failure must not requeue the replan
+    // or make the caller believe the Mission did not change.
+    await completeUsageEventSafe(db, usageId, usage);
 
     return json({ status: "completed", source: input.source ?? "runtime", ...result });
   } catch (error) {
@@ -165,6 +167,9 @@ function validateInput(input: RunnerInput) {
 
 async function claimReview(db: any, reviewId: string): Promise<ClaimedReview | null> {
   const { data, error } = await db.rpc("claim_manager_runtime_review_v2", { p_review_id: reviewId });
+  // A concurrent adaptive review for the same Mission owns the runtime slot.
+  // The still-due review will be picked up after that run finishes.
+  if (error?.code === "23505") return null;
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
   return row?.id ? row as ClaimedReview : null;
@@ -464,6 +469,16 @@ async function completeUsageEvent(db: any, usageId: string, usage: Record<string
     metadata: usage,
   }).eq("id", usageId);
   if (error) throw error;
+}
+
+async function completeUsageEventSafe(db: any, usageId: string, usage: Record<string, unknown>) {
+  try {
+    await completeUsageEvent(db, usageId, usage);
+  } catch (error) {
+    const message = describeError(error, "Adaptive plan usage accounting failed after completion.");
+    console.warn("manager-runtime-runner: usage accounting failed after successful finalize", message);
+    await failUsageSafe(db, usageId, message);
+  }
 }
 
 async function failRunSafe(db: any, runId: string, message: string) {
