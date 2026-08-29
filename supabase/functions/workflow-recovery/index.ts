@@ -7,7 +7,7 @@ const PERMANENT_HTTP_STATUSES = new Set([400, 401, 403, 404, 409, 422]);
 const SETUP_WORKFLOW_VERSIONS = new Set(["workspace-setup-v1", "workspace_setup_v1"]);
 
 type RecoveryMode = "observe" | "run";
-type DirectManagerMode = "adaptive_replan" | "dispatch_reminders";
+type DirectManagerMode = "adaptive_replan" | "external_action_decision" | "dispatch_reminders";
 type WorkflowVersion =
   | "workspace-setup-v1" | "workspace_setup_v1"
   | "source-sync-v1" | "spotify_catalog_bootstrap_v1"
@@ -157,6 +157,16 @@ async function dispatchDirectManagerWork({
     return proxyDispatchResponse(response, "adaptive_replan", { reviewId });
   }
 
+  if (mode === "external_action_decision") {
+    const candidateId = readString(body.candidateId);
+    if (!candidateId) return json({ error: "External action decision dispatch requires a candidate ID." }, 400);
+    const response = await invokeServiceRoleFunction(supabaseUrl, serviceRoleKey, "manager-action-intent-runner", {
+      candidateId,
+      source: readString(body.source) || "workflow-recovery",
+    });
+    return proxyDispatchResponse(response, "external_action_decision", { candidateId });
+  }
+
   const response = await invokeServiceRoleFunction(supabaseUrl, serviceRoleKey, "manager-dispatcher", {
     source: readString(body.source) || "workflow-recovery",
   });
@@ -172,7 +182,7 @@ async function proxyDispatchResponse(response: Response, mode: DirectManagerMode
 }
 
 function readDirectManagerMode(value: unknown): DirectManagerMode | null {
-  return value === "adaptive_replan" || value === "dispatch_reminders" ? value : null;
+  return value === "adaptive_replan" || value === "external_action_decision" || value === "dispatch_reminders" ? value : null;
 }
 
 function recoveryErrorRefs(candidate: RecoveryCandidate) {
