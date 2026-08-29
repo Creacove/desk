@@ -6,6 +6,7 @@ const taskExecution = read("supabase/functions/manager-task-execution/index.ts")
 const taskSheet = read("src/features/missions/MissionTaskSheet.tsx");
 const workSurface = read("src/features/missions/MissionWorkSurface.tsx");
 const deskHome = read("src/features/desk/DeskHQ.tsx");
+const todayExecution = read("src/features/desk/TodayRuntimeExecution.tsx");
 
 describe("Manager execution loop", () => {
   it("keeps Start deterministic and reserves model reasoning for a changed plan", () => {
@@ -52,13 +53,13 @@ describe("Manager execution loop", () => {
   });
 
   it("makes Home manager-led: execution appears before the conversation escape hatch", () => {
-    const todayIndex = deskHome.indexOf("<TodayExecution");
+    const todayIndex = deskHome.indexOf("<TodayRuntimeExecution");
     const composerIndex = deskHome.indexOf("<HomeManagerComposer");
     expect(todayIndex).toBeGreaterThan(-1);
     expect(composerIndex).toBeGreaterThan(todayIndex);
     expect(deskHome).toContain('placeholder="Tell Desk what changed, or ask something"');
     expect(deskHome).not.toContain('placeholder="What do you want to work on?"');
-    expect(deskHome).toContain("Desk is watching:");
+    expect(todayExecution).toContain("Desk is watching:");
   });
 });
 
