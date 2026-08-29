@@ -10,6 +10,7 @@ declare
     'title', 'Record “What couldn''t finish us?”',
     'purpose', 'Test Odaeshi as a shared language for resilience with a simple, relatable short-form video.',
     'completionExpectation', 'One vertical video is recorded and posted to TikTok or Reels; return the public post link or confirm it is live.',
+    'completionMode', 'result_note',
     'managerResponsibility', 'Desk defines the concept, hook, shot sequence, song cue, caption direction and what response to watch next.',
     'userResponsibility', 'Otmos records the piece in a parked car with two friends and posts it from the normal social app.',
     'riskIfLate', 'The Mission loses the current content-learning window and Desk cannot evaluate whether the resilience framing is landing.'
@@ -18,6 +19,7 @@ declare
     'title', 'Create Odaeshi content',
     'purpose', 'Promote Odaeshi on social media.',
     'completionExpectation', 'Content is created.',
+    'completionMode', 'result_note',
     'managerResponsibility', 'Desk will review results.',
     'userResponsibility', 'Create and post content.',
     'riskIfLate', 'Momentum may slow.'
@@ -26,6 +28,7 @@ declare
     'title', 'Confirm collaborator split',
     'purpose', 'Resolve the remaining split confirmation before delivery.',
     'completionExpectation', 'The collaborator confirms the agreed percentage in writing.',
+    'completionMode', 'result_note',
     'managerResponsibility', 'Desk keeps the split record and updates the release route after confirmation.',
     'userResponsibility', 'Send the prepared split summary to the collaborator and record the answer.',
     'riskIfLate', 'Distribution delivery remains blocked.'
@@ -106,6 +109,24 @@ begin
   exception
     when sqlstate '22023' then
       if position('content_requires_at_least_four_execution_steps' in sqlerrm) = 0 then
+        raise;
+      end if;
+  end;
+
+  begin
+    perform public.assert_generated_human_task_execution_contract_v1(
+      valid_content || jsonb_build_object('completionMode', 'evidence'),
+      array[
+        'Setup: sit in a parked car and frame the phone vertically.',
+        'Opening hook: ask “What couldn''t finish you?”',
+        'Film the answers and close with “That''s Odaeshi.”',
+        'Edit with hard cuts, add a comment CTA, and post to TikTok. If the car is unavailable, use a quiet room instead.'
+      ]
+    );
+    raise exception 'expected content file-deliverable rejection did not happen';
+  exception
+    when sqlstate '22023' then
+      if position('content_file_deliverable_forbidden' in sqlerrm) = 0 then
         raise;
       end if;
   end;
