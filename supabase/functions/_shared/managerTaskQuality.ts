@@ -19,9 +19,10 @@ export class HumanTaskContractError extends Error {
 }
 
 /**
- * Deterministic validation for invariants that should never be delegated to a model.
- * Semantic quality is intentionally NOT inferred from keywords, synonyms, content nouns,
- * or domain-specific regexes. The independent model reviewer owns that judgement.
+ * Deterministic validation is deliberately limited to objective runtime invariants.
+ * It does not infer quality from length, vocabulary, synonyms, content nouns, or
+ * domain-specific regexes. Semantic quality belongs in the generation contract;
+ * this guard exists only to prevent malformed structured Tasks from persisting.
  */
 export function assertExecutableHumanTask(task: ExecutableHumanTaskShape) {
   const title = clean(task.title);
@@ -33,28 +34,17 @@ export function assertExecutableHumanTask(task: ExecutableHumanTaskShape) {
   const steps = task.steps.map(clean).filter(Boolean);
   const issues: string[] = [];
 
-  if (title.length < 8) issues.push("Title is missing or too short to identify the work safely.");
-  if (purpose.length < 24) issues.push("Purpose is missing or too thin.");
-  if (steps.length < 3) issues.push("At least three execution steps are required by the runtime contract.");
-  if (completionExpectation.length < 20) issues.push("Completion expectation is missing or too thin.");
-  if (managerResponsibility.length < 20) issues.push("Manager responsibility is missing or too thin.");
-  if (userResponsibility.length < 20) issues.push("Human responsibility is missing or too thin.");
-  if (riskIfLate.length < 20) issues.push("Consequence of delay is missing or too thin.");
+  if (!title) issues.push("Title is required.");
+  if (!purpose) issues.push("Purpose is required.");
+  if (steps.length < 3) issues.push("The structured Task contract requires at least three execution steps.");
+  if (!completionExpectation) issues.push("Completion expectation is required.");
+  if (!managerResponsibility) issues.push("Manager responsibility is required.");
+  if (!userResponsibility) issues.push("Human responsibility is required.");
+  if (!riskIfLate) issues.push("Consequence of delay is required.");
 
   const normalizedSteps = steps.map(normalize);
   if (new Set(normalizedSteps).size !== normalizedSteps.length) {
     issues.push("Execution steps contain exact or punctuation-only duplicates.");
-  }
-
-  for (const step of steps) {
-    if (step.length < 18) {
-      issues.push("An execution step is too short to carry a usable instruction.");
-      break;
-    }
-  }
-
-  if (steps.join(" ").length < 100) {
-    issues.push("The execution sequence is structurally too thin for a multi-step human Task.");
   }
 
   if (issues.length) throw new HumanTaskContractError(title, issues);
