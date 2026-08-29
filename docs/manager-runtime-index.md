@@ -192,6 +192,46 @@ Core rule:
 
 > Desk owns management state; WhatsApp delivers accountability; Calendar mirrors real human time.
 
+### 9. External action permissions + progressive trust
+
+- [`manager-external-action-permissions.md`](./manager-external-action-permissions.md)
+
+Defines the autonomy boundary for:
+
+- spend;
+- external outreach;
+- submissions;
+- publishing;
+- release-plan changes;
+- rights/legal/finance commitments;
+- sensitive commitments;
+- source connections.
+
+The system should complete safe internal work before asking, bind approval to the exact external effect, execute immediately after approval, and record execution separately from authorization.
+
+Progressive trust must be explicitly granted, scoped, bounded, expiring and revocable. It is never inferred from repeated approvals.
+
+Core rule:
+
+> Prepare freely. Ask at the effect boundary. Bind approval to the exact effect. Continue automatically after approval.
+
+## Build sequence
+
+- [`manager-runtime-next-implementation-roadmap.md`](./manager-runtime-next-implementation-roadmap.md)
+
+This converts the product contracts into a repo-specific stacked implementation order:
+
+1. Today Runtime Projection
+2. Content Execution Task Contract
+3. Task-scoped Media Results + Automatic Content Review
+4. External Action Permission Execution
+5. Execution Behavior Learning
+6. Google Calendar Human-Time Mirror
+7. WhatsApp Accountability Delivery
+8. Career Watch + Semantic Evidence Packing
+
+It names the current files, schema surfaces, compiler/finalizer changes, UI components and regression suites each slice should touch.
+
 ## Combined operating loop
 
 The runtime now converges on this sequence:
@@ -205,9 +245,11 @@ The runtime now converges on this sequence:
 7. **Project Today** — show the one current priority/need without recomputing strategy.
 8. **Follow up** — reminders/accountability based on real human time.
 9. **Review result** — interpret what happened.
-10. **Watch reality when needed** — do not invent fake Manager workdays.
-11. **Learn execution patterns cautiously** — improve task fit from repeated behavior.
-12. **Adapt** — preserve durable strategy, change the route when evidence/reality requires it.
+10. **Ask approval only at the external effect boundary** — with the complete effect already prepared.
+11. **Execute approved external action** — idempotently, then record the real outcome.
+12. **Watch reality when needed** — do not invent fake Manager workdays.
+13. **Learn execution patterns cautiously** — improve task fit from repeated behavior.
+14. **Adapt** — preserve durable strategy, change the route when evidence/reality requires it.
 
 The artist should not have to prompt between these stages.
 
@@ -224,7 +266,8 @@ The artist should not have to prompt between these stages.
 | Question | one missing human fact that changes a current decision |
 | Operating fact | scoped/fresh fact about the artist's execution reality |
 | Execution pattern | repeated, confidence-bounded evidence about how the artist actually completes work |
-| Permission request | Desk knows what to do but needs approval before the external/irreversible action |
+| Permission request | exact authorization boundary before an external/irreversible effect |
+| External action run | provider/tool execution attempt after authorization; separate from approval |
 | Review/watch | waiting for enough external reality/signal to make a decision |
 | Checkpoint | meaningful phase-ending management decision gate |
 | Result | evidence of what happened after human work |
@@ -262,7 +305,8 @@ Runs as soon as prerequisites exist:
 - review;
 - synthesis;
 - replanning;
-- execution-pattern aggregation.
+- execution-pattern aggregation;
+- preparation of permissioned external actions.
 
 ### Reality time
 
@@ -292,10 +336,12 @@ Use Odaeshi as the cross-slice acceptance scenario.
 10. Artist completes/submits raw result.
 11. Desk reviews immediately and chooses the smallest useful revision.
 12. Follow-up human work is released or a reality watch begins.
-13. Calendar/WhatsApp may mirror/deliver the same canonical work according to preference.
-14. Enough evidence reaches a real checkpoint.
-15. Desk chooses what expression deserves repetition and installs the next route.
-16. Repeated execution outcomes can cautiously improve how future work is sized/timed.
+13. If Desk later recommends an external effect such as spend/outreach/publish, it prepares the exact effect before requesting approval.
+14. Approval executes automatically and records a distinct execution receipt.
+15. Calendar/WhatsApp may mirror/deliver the same canonical work according to preference.
+16. Enough evidence reaches a real checkpoint.
+17. Desk chooses what expression deserves repetition and installs the next route.
+18. Repeated execution outcomes can cautiously improve how future work is sized/timed.
 
 Failure anywhere the artist must ask “what next?” or reconcile competing systems is a Manager Runtime failure.
 
@@ -311,20 +357,20 @@ To prevent competing systems:
 - Content execution brief describes a content Task; it does not own a separate campaign.
 - World Model owns scoped/fresh operational facts.
 - Execution learning summarizes repeated behavior; it does not become a separate planner.
+- Permission Request authorizes an exact effect; External Action Run records whether it actually happened.
 - Today projects current work; it does not become another task database.
 - Manager conversation is an interaction surface, not the only memory/state store.
 - WhatsApp is a delivery/conversation surface, not a second Manager brain.
 - Calendar mirrors human time, not the plan.
 
-## Remaining documentation/implementation areas
+## Remaining documentation areas
 
-The next important contracts are:
+The major runtime/product contracts are now covered. The next deeper documents can be added when implementation reaches them:
 
-1. **External action permissions / progressive trust** — outreach, submissions, publishing, spend and irreversible external actions.
-2. **Today/content implementation plan** — exact migrations/components/compiler/finalizer changes from the new specs.
-3. **Media result pipeline** — task-scoped video/image evidence storage and Manager review without misusing canonical song assets.
-4. **Career Watch** — material-change event detection that wakes Manager without expensive constant research.
-5. **Semantic evidence packing** — bounded public/private evidence fields in every relevant Manager opening packet.
-6. **Calendar/WhatsApp provider implementation** — only after core Today/content execution remains green.
+1. **Media result pipeline** — concrete storage/security/vision-review contract for Task video/image evidence.
+2. **Career Watch** — material-change event detection that wakes Manager without expensive constant research.
+3. **Semantic evidence packing** — bounded public/private evidence fields in every relevant Manager opening packet.
+4. **Team authority model** — who can approve spend/publish/rights/release actions in multi-user workspaces.
+5. **Provider-specific Calendar/WhatsApp implementation runbooks** — only when those integrations are being built.
 
 Do not jump to broad channel/chat integrations before the core Manager loop is reliable.
