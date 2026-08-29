@@ -66,7 +66,7 @@ begin
   from pg_trigger t
   where t.tgname = 'apply_approved_release_decision_integrity'
     and not t.tgisinternal;
-  if position('UPDATE OF status' in upper(trigger_definition)) = 0
+  if position('UPDATE OF STATUS' in upper(trigger_definition)) = 0
      or position('approved' in lower(trigger_definition)) = 0 then
     raise exception 'release decision trigger is not bound to approved status transitions';
   end if;
