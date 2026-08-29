@@ -8,6 +8,7 @@ import {
   decisionGradeInstructions,
   type ManagerTurnMode,
 } from "./manager-conversation/decisionGrade.ts";
+import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGenerationContract.ts";
 
 const WORKSPACE_ACTION_KEY = /^workspace_action:(files|rights|details):([a-z0-9_-]+)$/i;
 
@@ -35,7 +36,7 @@ export function buildManagerConversationInstructions(
   turnMode: ManagerTurnMode = "normal",
 ) {
   const turnInstructions = turnMode === "decision_grade" ? `\n${decisionGradeInstructions}` : "";
-  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}${turnInstructions}`;
+  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}${turnInstructions}`;
 }
 
 export function parseManagerConversationOutput(raw: string) {
