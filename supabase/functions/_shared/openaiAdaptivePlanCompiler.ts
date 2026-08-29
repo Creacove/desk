@@ -1,3 +1,6 @@
+import { assertExecutableHumanTask } from "./managerTaskQuality.ts";
+import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGenerationContract.ts";
+
 export type AdaptivePlanStrategyState = {
   objective: string;
   strategicThesis: string;
@@ -219,7 +222,7 @@ export const adaptivePlanCompilerJsonSchema = {
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative"] },
             purpose: { type: "string" },
-            steps: { type: "array", minItems: 2, maxItems: 8, items: { type: "string" } },
+            steps: { type: "array", minItems: 3, maxItems: 8, items: { type: "string" } },
             completionMode: { type: "string", enum: ["result_note", "manager_draft"] },
             completionExpectation: { type: "string" },
             managerResponsibility: { type: "string" },
@@ -256,7 +259,8 @@ export function buildAdaptivePlanCompilerInstructions() {
     "Your job is not to brainstorm a fresh campaign. Preserve the Mission's durable objective and strategic intent unless the supplied changed reality directly invalidates them.",
     "First decide whether the current route still works, whether one decision-changing human fact is genuinely required, or whether the route needs a new plan version.",
     "Return no_change when the current route still works. Return needs_context ONLY when one missing fact changes which concrete route you would choose. Return replan when the supplied context is already enough to choose the route.",
-    "QUESTION QUALITY GATE: before needs_context, verify all of these: (1) Desk cannot safely infer/research the fact, (2) context.operatingFacts does not already contain a fresh answer, (3) the answer materially changes the current plan, (4) you know the exact decision it changes, (5) the question reveals the idea/hypothesis behind why you need it, (6) you have a fallback if the answer is no/unavailable, (7) context.questionHistory does not show the same question already answered or expired.",
+    buildManagerHumanTaskGenerationContract(),
+    "QUESTION DECISION CONTRACT: before needs_context, verify all of these: (1) Desk cannot safely infer/research the fact, (2) context.operatingFacts does not already contain a fresh answer, (3) the answer materially changes the current plan, (4) you know the exact decision it changes, (5) the question reveals the idea/hypothesis behind why you need it, (6) you have a fallback if the answer is no/unavailable, (7) context.questionHistory does not show the same question already answered or expired.",
     "Ask ONE question by default and this schema allows at most one. Never ask a generic inventory question such as 'what resources do you have?', 'what is your budget?', 'where are you located?', or 'what equipment do you have?'. Start from a concrete Manager idea and ask only for the missing fact that determines whether that idea is usable.",
     "Good question: 'I have a stronger first Odaeshi video if you can get a car for 30 minutes. Yours or a friend's is fine. Can you get one this week?' Bad question: 'What resources do you have for content creation?'",
     "For needs_context, return exactly one questions item and EMPTY checkpoints/tasks/permissionRequests. Preserve current strategyState. The artist is providing a fact, not doing the Manager's planning.",
@@ -265,12 +269,8 @@ export function buildAdaptivePlanCompilerInstructions() {
     "validForHours reflects freshness. Durable preferences can last weeks; current access, money or availability should expire sooner. Do not make temporary access permanent.",
     "If context.questionHistory shows an expired unanswered request for the fact, DO NOT ask it again in this review. Use that request's fallbackIfNo as the operating assumption and continue with no_change or replan.",
     "If replanning is required, produce one coherent replacement plan graph. The persistence layer will atomically supersede the old plan; never assume old open tasks remain active.",
-    "HARD CLOCK RULE: Manager/Desk machine work does not consume calendar time. Research, analysis, drafting, comparison, review, synthesis, monitoring setup, and replanning happen now and MUST NOT be emitted as tasks or future-day work.",
-    "A visible task is only human/team/external work: recording, filming, attending, contacting when permissioned, approving, providing a private fact that cannot be answered through a Manager context question, performing an offline action, or reporting an outcome Desk cannot observe itself.",
     "A checkpoint is a management decision gate after enough meaningful work or signal exists. It is not a task heading. Prefer a few real checkpoints over one checkpoint per task.",
-    "Every human task must be executable without asking 'okay, but how?'. State the exact action, practical sequence, expected result, owner, estimated time, and why delay matters.",
-    "For content work, steps must carry the execution itself when relevant: setup/location/resources, people, format or hook, what to say/do, song moment, edit treatment, CTA/desired response, and what result to report. Do not emit generic 'create content' tasks.",
-    "Do not invent resources, budgets, collaborators, locations, availability, audience facts, deadlines, release dates, external commitments, or permissions. Use only supplied context, including context.operatingFacts.",
+    "STRUCTURED TASK CONTRACT: when a visible Task is warranted, return a specific title, at least three distinct concrete steps, a completion expectation, separate Manager and human responsibilities, a delay consequence, and a realistic estimated time. These fields express the executable brief; they are not a substitute for the semantic generation contract above.",
     "deadline may be non-empty ONLY when it exactly matches one of context.validation.allowedDeadlines. Otherwise use an empty string.",
     "availableFrom may be non-empty ONLY when it exactly matches one of context.validation.allowedAvailability. Otherwise use an empty string. Do not create fake sequencing by putting Manager thinking on future days.",
     "If the user moved one task because a collaborator/resource/time constraint changed, use that fact as a real constraint and adapt the route around it instead of merely marking the old task late.",
@@ -433,7 +433,7 @@ function parseTask(value: unknown): AdaptivePlanTask {
   const completionMode = row.completionMode === "manager_draft" ? "manager_draft" : row.completionMode === "result_note" ? "result_note" : null;
   if (!workMode || !completionMode) throw new Error("Adaptive task has an invalid work/completion mode.");
   const steps = strings(row.steps, 8);
-  if (steps.length < 2) throw new Error("Adaptive human task requires at least two executable steps.");
+  if (steps.length < 3) throw new Error("Adaptive human task requires at least three executable steps.");
   const estimatedMinutes = Number(row.estimatedMinutes);
   if (!Number.isInteger(estimatedMinutes) || estimatedMinutes < 5 || estimatedMinutes > 240) throw new Error("Adaptive task estimated minutes are invalid.");
   const task = {
@@ -452,7 +452,10 @@ function parseTask(value: unknown): AdaptivePlanTask {
     deadline: optionalIso(row.deadline),
     estimatedMinutes,
   } satisfies AdaptivePlanTask;
-  if (!task.title || !task.checkpointKey || !task.purpose || !task.userResponsibility) throw new Error("Adaptive human task is incomplete.");
+  if (!task.title || !task.checkpointKey || !task.purpose || !task.completionExpectation || !task.managerResponsibility || !task.userResponsibility || !task.riskIfLate) {
+    throw new Error("Adaptive human task is incomplete.");
+  }
+  assertExecutableHumanTask(task);
   return task;
 }
 

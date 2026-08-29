@@ -15,6 +15,7 @@ on:
       - "src/manager-adaptive-replan.test.ts"
       - "src/manager-world-model-question-engine.test.ts"
       - "src/manager-today-execution.test.ts"
+      - "src/manager-task-quality.test.ts"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-dispatcher/**"
@@ -22,6 +23,12 @@ on:
       - "supabase/functions/send-split-confirmations/**"
       - "supabase/functions/workflow-recovery/**"
       - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
+      - "supabase/functions/_shared/openaiMissionGenesis.ts"
+      - "supabase/functions/_shared/openaiManagerConversation.ts"
+      - "supabase/functions/_shared/openaiManagerConversationLegacy.ts"
+      - "supabase/functions/_shared/openaiManagerTaskQuality.ts"
+      - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
+      - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/functions/_shared/manager-conversation/context.ts"
       - "supabase/migrations/*manager_runtime*"
@@ -70,6 +77,7 @@ jobs:
           src/manager-adaptive-replan.test.ts
           src/manager-world-model-question-engine.test.ts
           src/manager-today-execution.test.ts
+          src/manager-task-quality.test.ts
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -79,7 +87,12 @@ jobs:
       - name: Check Manager runtime Edge boundaries
         run: >-
           deno check
+          supabase/functions/_shared/managerHumanTaskGenerationContract.ts
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
+          supabase/functions/_shared/openaiMissionGenesis.ts
+          supabase/functions/_shared/openaiManagerConversation.ts
+          supabase/functions/_shared/openaiManagerTaskQuality.ts
+          supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/_shared/manager-conversation/context.ts
           supabase/functions/manager-task-execution/index.ts

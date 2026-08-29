@@ -7,6 +7,13 @@ import {
   type AdaptivePlanOutput,
   type AdaptivePlanStrategyState,
 } from "../_shared/openaiAdaptivePlanCompiler.ts";
+import {
+  buildManagerTaskQualityReviewInstructions,
+  buildManagerTaskRepairInstructions,
+  managerTaskQualityReviewJsonSchema,
+  parseManagerTaskQualityReview,
+  type ManagerTaskQualityReview,
+} from "../_shared/openaiManagerTaskQuality.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const MODEL = () => Deno.env.get("OPENAI_MANAGER_REASONING_MODEL")
@@ -14,6 +21,7 @@ const MODEL = () => Deno.env.get("OPENAI_MANAGER_REASONING_MODEL")
   || Deno.env.get("OPENAI_SUMMARY_MODEL")
   || "gpt-5-mini";
 
+const TASK_REVIEW_MODEL = () => Deno.env.get("OPENAI_MANAGER_TASK_REVIEW_MODEL") || MODEL();
 const TERMINAL_MISSION_STATUSES = new Set(["complete", "archived", "cancelled"]);
 
 type RunnerInput = {
@@ -365,6 +373,9 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
       askOneQuestionByDefault: true,
       freshOperatingFactsBeatGenericProfileAssumptions: true,
       expiredQuestionUsesFallbackInsteadOfRepeating: true,
+      visibleHumanTasksRequireIndependentSemanticReview: true,
+      semanticReviewMustNotUseKeywordMatching: true,
+      oneBoundedQualityRepairAttempt: true,
     },
   };
 }
@@ -447,6 +458,52 @@ async function createManagerRun(db: any, context: RuntimeContext, source?: strin
 }
 
 async function callAdaptivePlanCompiler(context: RuntimeContext) {
+  const usages: Record<string, unknown>[] = [];
+  const initial = await requestAdaptivePlan(context);
+  usages.push(initial.usage);
+  let output = initial.output;
+
+  if (output.decision !== "replan" || output.tasks.length === 0) {
+    return { output, usage: combineUsage(usages, { qualityReview: "not_required" }) };
+  }
+
+  const firstReview = await callManagerTaskQualityReview(context, output);
+  usages.push(firstReview.usage);
+  if (firstReview.review.verdict === "pass") {
+    return { output, usage: combineUsage(usages, { qualityReview: firstReview.review }) };
+  }
+
+  const repair = await requestAdaptivePlan(context, buildManagerTaskRepairInstructions(firstReview.review, output));
+  usages.push(repair.usage);
+  output = repair.output;
+
+  if (output.decision === "needs_context" || output.tasks.length === 0) {
+    return {
+      output,
+      usage: combineUsage(usages, {
+        qualityReview: firstReview.review,
+        qualityRepair: output.decision === "needs_context" ? "converted_to_context_question" : "no_visible_tasks_after_repair",
+      }),
+    };
+  }
+
+  const finalReview = await callManagerTaskQualityReview(context, output);
+  usages.push(finalReview.usage);
+  if (finalReview.review.verdict !== "pass") {
+    throw new Error(`Manager Task quality repair failed closed: ${qualityFailureSummary(finalReview.review)}`);
+  }
+
+  return {
+    output,
+    usage: combineUsage(usages, {
+      qualityReview: firstReview.review,
+      qualityRepair: "repaired_once_and_passed",
+      finalQualityReview: finalReview.review,
+    }),
+  };
+}
+
+async function requestAdaptivePlan(context: RuntimeContext, repairInstructions?: string) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
@@ -458,33 +515,63 @@ async function callAdaptivePlanCompiler(context: RuntimeContext) {
       reasoning: { effort: "medium" },
       instructions: [
         buildAdaptivePlanCompilerInstructions(),
+        "Before returning structured output, audit every visible human Task semantically. Do not rely on the presence of particular words. Ask whether the artist can execute it without making the Manager decisions themselves.",
         "Runtime rule: do not recreate work already completed and accepted unless the changed reality invalidates that exact result; if it does, explain the invalidation in whatChanged.",
         "Runtime rule: the persistence layer will supersede every nonterminal task in the old active plan. A replan output must therefore be a complete coherent replacement route for remaining human work, not a patch list.",
         "Runtime rule: current task deadlines and availability are supplied in validation allow-lists. Empty date strings mean the work can be ready immediately; never manufacture sequencing dates.",
         "Runtime rule: operatingFacts are canonical current operating context. Do not ask for a fact that is already fresh there.",
         "Runtime rule: questionHistory contains prior proactive questions. An expired unanswered question must use its fallbackIfNo rather than being repeated.",
-      ].join("\n"),
+        repairInstructions || "",
+      ].filter(Boolean).join("\n"),
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...adaptivePlanCompilerJsonSchema } },
     }),
   });
 
+  const { raw, usage } = await readStructuredOpenAIResponse(response, "Adaptive Plan Compiler");
+  const output = parseAdaptivePlanOutput(raw, context.validation);
+  return { output, usage };
+}
+
+async function callManagerTaskQualityReview(context: RuntimeContext, output: AdaptivePlanOutput) {
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: TASK_REVIEW_MODEL(),
+      reasoning: { effort: "medium" },
+      instructions: buildManagerTaskQualityReviewInstructions(),
+      input: JSON.stringify({
+        runtimeContext: context,
+        proposedPlan: output,
+      }),
+      text: { format: { type: "json_schema", ...managerTaskQualityReviewJsonSchema } },
+    }),
+  });
+
+  const { raw, usage } = await readStructuredOpenAIResponse(response, "Manager Task quality reviewer");
+  const review = parseManagerTaskQualityReview(raw, output.tasks.length);
+  return { review, usage };
+}
+
+async function readStructuredOpenAIResponse(response: Response, label: string) {
   if (!response.ok) {
     const body = await response.text();
-    throw new Error(`Adaptive Plan Compiler failed with status ${response.status}: ${body.slice(0, 500)}`);
+    throw new Error(`${label} failed with status ${response.status}: ${body.slice(0, 500)}`);
   }
 
   const payload = await response.json();
-  const rawText = readOutputText(payload);
-  let rawOutput: unknown;
+  const rawText = readOutputText(payload, label);
+  let raw: unknown;
   try {
-    rawOutput = JSON.parse(rawText);
+    raw = JSON.parse(rawText);
   } catch {
-    throw new Error("Adaptive Plan Compiler returned invalid JSON.");
+    throw new Error(`${label} returned invalid JSON.`);
   }
-
-  const output = parseAdaptivePlanOutput(rawOutput, context.validation);
-  return { output, usage: record(payload.usage) };
+  return { raw, usage: record(payload.usage) };
 }
 
 async function persistContextQuestion(db: any, reviewId: string, runId: string, output: AdaptivePlanOutput) {
@@ -537,6 +624,7 @@ async function completeUsageEvent(db: any, usageId: string, usage: Record<string
     input_tokens: numericUsage(usage.input_tokens),
     output_tokens: numericUsage(usage.output_tokens),
     reasoning_tokens: numericUsage(outputDetails.reasoning_tokens),
+    provider_request_count: numericUsage(usage.provider_request_count) ?? 1,
     completed_at: new Date().toISOString(),
     metadata: usage,
   }).eq("id", usageId);
@@ -588,7 +676,7 @@ async function requeueReviewSafe(db: any, reviewId: string, message: string) {
   }
 }
 
-function readOutputText(payload: Record<string, unknown>) {
+function readOutputText(payload: Record<string, unknown>, label = "OpenAI structured response") {
   if (typeof payload.output_text === "string" && payload.output_text.trim()) return payload.output_text.trim();
   const output = Array.isArray(payload.output) ? payload.output : [];
   for (const item of output) {
@@ -599,7 +687,34 @@ function readOutputText(payload: Record<string, unknown>) {
       if (typeof contentRow.text === "string" && contentRow.text.trim()) return contentRow.text.trim();
     }
   }
-  throw new Error("Adaptive Plan Compiler returned no structured output.");
+  throw new Error(`${label} returned no structured output.`);
+}
+
+function combineUsage(usages: Record<string, unknown>[], metadata: Record<string, unknown>) {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let reasoningTokens = 0;
+  for (const usage of usages) {
+    inputTokens += numericUsage(usage.input_tokens) ?? 0;
+    outputTokens += numericUsage(usage.output_tokens) ?? 0;
+    reasoningTokens += numericUsage(record(usage.output_tokens_details).reasoning_tokens) ?? 0;
+  }
+  return {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+    output_tokens_details: { reasoning_tokens: reasoningTokens },
+    provider_request_count: usages.length,
+    calls: usages,
+    ...metadata,
+  };
+}
+
+function qualityFailureSummary(review: ManagerTaskQualityReview) {
+  const issues = [
+    ...review.globalIssues,
+    ...review.taskFindings.flatMap((finding) => finding.verdict === "repair_required" ? finding.issues : []),
+  ].filter(Boolean);
+  return (issues.join(" | ") || review.summary || "semantic Task quality did not pass").slice(0, 1_000);
 }
 
 function uniqueIso(values: unknown[]) {

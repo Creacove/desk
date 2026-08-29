@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const compiler = read("supabase/functions/_shared/openaiAdaptivePlanCompiler.ts");
+const humanTaskContract = read("supabase/functions/_shared/managerHumanTaskGenerationContract.ts");
 const runner = read("supabase/functions/manager-runtime-runner/index.ts");
 const finalizer = read("supabase/migrations/20260829080000_adaptive_manager_replan.sql");
 const dispatchHardening = read("supabase/migrations/20260829080100_manager_runtime_dispatch_hardening.sql");
@@ -11,7 +12,8 @@ const recovery = read("supabase/functions/workflow-recovery/index.ts");
 
 describe("Adaptive Manager replan runtime", () => {
   it("keeps Manager machine work off the human calendar", () => {
-    expect(compiler).toContain("Manager/Desk machine work does not consume calendar time");
+    expect(compiler).toContain("buildManagerHumanTaskGenerationContract");
+    expect(humanTaskContract).toContain("Manager machine work happens now");
     expect(compiler).toContain('workMode: "artist_action" | "collaborative"');
     expect(compiler).not.toContain('workMode: "artist_action" | "collaborative" | "manager_work"');
     expect(finalizer).toContain("Replacement plan attempted to schedule Manager-owned work as a task");

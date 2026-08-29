@@ -20,7 +20,7 @@ describe("Artist World Model + Question Engine", () => {
   });
 
   it("requires a concrete management hypothesis and fallback before asking", () => {
-    expect(compiler).toContain("QUESTION QUALITY GATE");
+    expect(compiler).toContain("QUESTION DECISION CONTRACT");
     expect(compiler).toContain("hypothesis");
     expect(compiler).toContain("fallbackIfNo");
     expect(compiler).toContain("Never ask a generic inventory question");
