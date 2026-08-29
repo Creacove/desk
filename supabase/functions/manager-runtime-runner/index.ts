@@ -39,7 +39,7 @@ type ClaimedReview = {
 };
 
 type RuntimeContext = {
-  packetVersion: "adaptive_manager_runtime_v1";
+  packetVersion: "adaptive_manager_runtime_v2";
   generatedAt: string;
   review: ClaimedReview;
   artist: Record<string, unknown>;
@@ -51,12 +51,15 @@ type RuntimeContext = {
   taskSteps: Record<string, unknown>[];
   recentTaskResults: Record<string, unknown>[];
   freshMemory: Record<string, unknown>[];
+  operatingFacts: Record<string, unknown>[];
+  questionHistory: Record<string, unknown>[];
   recentOperatingEvents: Record<string, unknown>[];
   pendingPermissions: Record<string, unknown>[];
   latestManagerPacket: Record<string, unknown> | null;
   validation: {
     allowedDeadlines: string[];
     allowedAvailability: string[];
+    allowedFactScopes: string[];
   };
   policy: Record<string, unknown>;
 };
@@ -108,6 +111,18 @@ Deno.serve(withAppErrorCapture("manager-runtime-runner", async (request) => {
     failureStage = "compile_plan";
     const { output, usage } = await callAdaptivePlanCompiler(context);
 
+    if (output.decision === "needs_context") {
+      failureStage = "persist_context_question";
+      const questionResult = await persistContextQuestion(db, claimedReview.id, runId, output);
+      await completeUsageEventSafe(db, usageId, usage);
+      return json({
+        status: "needs_context",
+        source: input.source ?? "runtime",
+        reviewId: claimedReview.id,
+        ...questionResult,
+      });
+    }
+
     failureStage = "finalize_plan";
     const result = await finalizeReplan(db, claimedReview.id, runId, output);
 
@@ -127,7 +142,7 @@ Deno.serve(withAppErrorCapture("manager-runtime-runner", async (request) => {
     const errorEventId = await captureAppError(error, {
       functionName: "manager-runtime-runner",
       operation: "adaptive_replan",
-      source: failureStage === "finalize_plan" || failureStage === "finalize_no_change" ? "database" : "worker",
+      source: failureStage === "finalize_plan" || failureStage === "finalize_no_change" || failureStage === "persist_context_question" ? "database" : "worker",
       publicMessage: "Manager runtime could not safely update the plan.",
       requestId: request.headers.get("x-request-id") ?? undefined,
       accountId: claimedReview?.account_id,
@@ -200,6 +215,8 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
     stepResult,
     resultResult,
     memoryResult,
+    operatingFactResult,
+    questionHistoryResult,
     eventResult,
     permissionResult,
     packetResult,
@@ -249,6 +266,19 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
       .eq("artist_id", review.artist_id)
       .or(`valid_until.is.null,valid_until.gt.${now}`)
       .order("created_at", { ascending: false }).limit(60),
+    db.from("artist_operating_facts")
+      .select("id,domain,fact_key,scope_type,scope_key,value_json,display_value,source_type,confidence,valid_from,valid_until,last_confirmed_at,metadata,created_at")
+      .eq("artist_workspace_id", review.artist_workspace_id)
+      .eq("artist_id", review.artist_id)
+      .eq("status", "active")
+      .or(`valid_until.is.null,valid_until.gt.${now}`)
+      .order("created_at", { ascending: false }).limit(80),
+    db.from("manager_question_requests")
+      .select("id,review_id,task_id,conversation_id,context_request_id,question_key,status,question,reason,answer_kind,options,hypothesis,fallback_if_no,fact_domain,fact_key,fact_scope_type,fact_scope_key,valid_for_hours,answer,answered_at,expires_at,created_at")
+      .eq("artist_workspace_id", review.artist_workspace_id)
+      .eq("artist_id", review.artist_id)
+      .eq("mission_id", review.mission_id)
+      .order("created_at", { ascending: false }).limit(20),
     db.from("operating_events")
       .select("event_type,target_type,target_id,source_type,mission_id,checkpoint_id,task_id,summary,payload,created_at")
       .eq("artist_workspace_id", review.artist_workspace_id)
@@ -269,7 +299,21 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
       .order("created_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
-  for (const result of [profileResult, planResult, triggerTaskResult, checkpointResult, taskResult, stepResult, resultResult, memoryResult, eventResult, permissionResult, packetResult]) {
+  for (const result of [
+    profileResult,
+    planResult,
+    triggerTaskResult,
+    checkpointResult,
+    taskResult,
+    stepResult,
+    resultResult,
+    memoryResult,
+    operatingFactResult,
+    questionHistoryResult,
+    eventResult,
+    permissionResult,
+    packetResult,
+  ]) {
     if (result.error) throw result.error;
   }
 
@@ -283,9 +327,15 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
       ? (triggerTaskResult.data as Record<string, unknown>).available_from
       : null,
   ]);
+  const allowedFactScopes = [
+    "artist",
+    `mission:${review.mission_id}`,
+    ...(review.trigger_object_type === "task" && review.trigger_object_id ? [`task:${review.trigger_object_id}`] : []),
+  ];
+  const operatingFacts = asRows(operatingFactResult.data).filter((fact) => allowedFactScopes.includes(String(fact.scope_key ?? "")));
 
   return {
-    packetVersion: "adaptive_manager_runtime_v1",
+    packetVersion: "adaptive_manager_runtime_v2",
     generatedAt: now,
     review,
     artist: record(profileResult.data),
@@ -297,10 +347,12 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
     taskSteps,
     recentTaskResults: asRows(resultResult.data),
     freshMemory: asRows(memoryResult.data),
+    operatingFacts,
+    questionHistory: asRows(questionHistoryResult.data),
     recentOperatingEvents: asRows(eventResult.data),
     pendingPermissions: asRows(permissionResult.data),
     latestManagerPacket: recordOrNull(packetResult.data),
-    validation: { allowedDeadlines, allowedAvailability },
+    validation: { allowedDeadlines, allowedAvailability, allowedFactScopes },
     policy: {
       managerWorkDoesNotConsumeCalendarTime: true,
       currentPlanMustRemainUntouchedUntilAtomicFinalize: true,
@@ -309,6 +361,10 @@ async function buildRuntimeContext(db: any, review: ClaimedReview): Promise<Runt
       datesMustComeFromValidationAllowLists: true,
       changedHumanAvailabilityIsNotANewDeadline: true,
       artistShouldNotNeedToAskWhatHappensNext: true,
+      askOnlyWhenAnswerMateriallyChangesCurrentPlan: true,
+      askOneQuestionByDefault: true,
+      freshOperatingFactsBeatGenericProfileAssumptions: true,
+      expiredQuestionUsesFallbackInsteadOfRepeating: true,
     },
   };
 }
@@ -340,6 +396,7 @@ function buildNoChangeOutput(context: RuntimeContext, reason: string): AdaptiveP
     missionRecommendation: String(context.mission.current_recommendation ?? ""),
     planSummary: String(context.activePlan?.summary ?? ""),
     strategyState: existingStrategyState(context),
+    questions: [],
     checkpoints: [],
     tasks: [],
     permissionRequests: [],
@@ -404,6 +461,8 @@ async function callAdaptivePlanCompiler(context: RuntimeContext) {
         "Runtime rule: do not recreate work already completed and accepted unless the changed reality invalidates that exact result; if it does, explain the invalidation in whatChanged.",
         "Runtime rule: the persistence layer will supersede every nonterminal task in the old active plan. A replan output must therefore be a complete coherent replacement route for remaining human work, not a patch list.",
         "Runtime rule: current task deadlines and availability are supplied in validation allow-lists. Empty date strings mean the work can be ready immediately; never manufacture sequencing dates.",
+        "Runtime rule: operatingFacts are canonical current operating context. Do not ask for a fact that is already fresh there.",
+        "Runtime rule: questionHistory contains prior proactive questions. An expired unanswered question must use its fallbackIfNo rather than being repeated.",
       ].join("\n"),
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...adaptivePlanCompilerJsonSchema } },
@@ -428,7 +487,20 @@ async function callAdaptivePlanCompiler(context: RuntimeContext) {
   return { output, usage: record(payload.usage) };
 }
 
+async function persistContextQuestion(db: any, reviewId: string, runId: string, output: AdaptivePlanOutput) {
+  const question = output.questions[0];
+  if (output.decision !== "needs_context" || !question) throw new Error("Adaptive context question is missing.");
+  const { data, error } = await db.rpc("persist_manager_question_request_v1", {
+    p_review_id: reviewId,
+    p_run_id: runId,
+    p_question: question,
+  });
+  if (error) throw error;
+  return record(data);
+}
+
 async function finalizeReplan(db: any, reviewId: string, runId: string, output: AdaptivePlanOutput) {
+  if (output.decision === "needs_context") throw new Error("Context questions must be persisted before plan finalization.");
   const { data, error } = await db.rpc("finalize_manager_replan_v1", {
     p_review_id: reviewId,
     p_run_id: runId,
