@@ -188,20 +188,20 @@ begin
   if fact_scope_type_text not in ('artist', 'mission', 'task') then
     raise exception 'Manager question fact scope is invalid';
   end if;
-  if fact_key_text !~ ('^' || fact_domain_text || '\.[a-z0-9_]+(?:\.[a-z0-9_]+)*$') then
+  if fact_key_text !~ ('^' || fact_domain_text || '\.[a-z0-9_]+(\.[a-z0-9_]+)*$') then
     raise exception 'Manager question fact key must be namespaced to its domain';
   end if;
 
   if fact_scope_type_text = 'artist' and fact_scope_key_text <> 'artist' then
     raise exception 'Artist-scoped fact key is invalid';
   end if;
-  if fact_scope_type_text = 'mission' and fact_scope_key_text <> 'mission:' || review_row.mission_id::text then
+  if fact_scope_type_text = 'mission' and fact_scope_key_text <> ('mission:' || review_row.mission_id::text) then
     raise exception 'Mission-scoped fact key is invalid';
   end if;
   if fact_scope_type_text = 'task' and (
     review_row.trigger_object_type <> 'task'
     or review_row.trigger_object_id is null
-    or fact_scope_key_text <> 'task:' || review_row.trigger_object_id::text
+    or fact_scope_key_text <> ('task:' || review_row.trigger_object_id::text)
   ) then
     raise exception 'Task-scoped fact key is invalid';
   end if;
@@ -573,15 +573,15 @@ begin
     jsonb_build_object(
       'questionRequestId', request_row.id,
       'conversationId', new.conversation_id,
-      'contextRequestId', context_request
+      'contextRequestId', context_request,
+      'answerMessageId', new.id
     )
   ) returning id into new_fact_id;
 
   update public.manager_question_requests
   set status = 'answered',
       answer = answer_text,
-      answered_at = now(),
-      answered_by_user_id = new.created_by_user_id
+      answered_at = now()
   where id = request_row.id;
 
   update public.reviews
@@ -600,7 +600,7 @@ begin
   where id = new.conversation_id;
 
   insert into public.operating_events (
-    account_id, artist_workspace_id, artist_id, event_type, actor_type, actor_id,
+    account_id, artist_workspace_id, artist_id, event_type, actor_type,
     target_type, target_id, source_type, source_id, mission_id, task_id,
     dedupe_key, display_mode, refresh_scope, summary, payload
   ) values (
@@ -609,7 +609,6 @@ begin
     request_row.artist_id,
     'manager_context_answered',
     'user',
-    new.created_by_user_id,
     'mission',
     request_row.mission_id,
     'manager_question_request',
@@ -657,9 +656,9 @@ begin
 end;
 $$;
 
--- conversation_messages.created_by_user_id exists in the current message schema;
--- if a future migration changes message authorship, this trigger must preserve the
--- authenticated user id before writing canonical user_answer facts.
+-- The user identity is not currently stored on conversation_messages. The fact
+-- therefore records its provenance through the exact question request and answer
+-- message, while answered_by_user_id remains null rather than being inferred.
 drop trigger if exists capture_world_model_answer on public.conversation_messages;
 create trigger capture_world_model_answer
 after insert on public.conversation_messages
