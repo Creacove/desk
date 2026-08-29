@@ -20,6 +20,7 @@ on:
       - "src/manager-state-integrity.test.ts"
       - "src/artist-understanding.test.ts"
       - "src/manager-career-watch.test.ts"
+      - "src/manager-e2e-golden.test.ts"
       - "supabase/functions/manager-artist-understanding/**"
       - "supabase/functions/manager-career-watch/**"
       - "supabase/functions/manager-career-watch-dispatcher/**"
@@ -74,6 +75,7 @@ on:
       - "supabase/tests/artist_understanding_smoke.sql"
       - "supabase/tests/artist_understanding_runtime_smoke.sql"
       - "supabase/tests/manager_career_watch_smoke.sql"
+      - "supabase/tests/manager_e2e_golden_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -111,6 +113,7 @@ jobs:
           src/manager-state-integrity.test.ts
           src/artist-understanding.test.ts
           src/manager-career-watch.test.ts
+          src/manager-e2e-golden.test.ts
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
@@ -186,6 +189,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_runtime_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_career_watch_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_e2e_golden_smoke.sql
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true
