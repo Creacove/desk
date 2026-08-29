@@ -1,3 +1,5 @@
+import { assertExecutableHumanTask } from "./managerTaskQuality.ts";
+
 export type AdaptivePlanStrategyState = {
   objective: string;
   strategicThesis: string;
@@ -219,7 +221,7 @@ export const adaptivePlanCompilerJsonSchema = {
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative"] },
             purpose: { type: "string" },
-            steps: { type: "array", minItems: 2, maxItems: 8, items: { type: "string" } },
+            steps: { type: "array", minItems: 3, maxItems: 8, items: { type: "string" } },
             completionMode: { type: "string", enum: ["result_note", "manager_draft"] },
             completionExpectation: { type: "string" },
             managerResponsibility: { type: "string" },
@@ -269,6 +271,7 @@ export function buildAdaptivePlanCompilerInstructions() {
     "A visible task is only human/team/external work: recording, filming, attending, contacting when permissioned, approving, providing a private fact that cannot be answered through a Manager context question, performing an offline action, or reporting an outcome Desk cannot observe itself.",
     "A checkpoint is a management decision gate after enough meaningful work or signal exists. It is not a task heading. Prefer a few real checkpoints over one checkpoint per task.",
     "Every human task must be executable without asking 'okay, but how?'. State the exact action, practical sequence, expected result, owner, estimated time, and why delay matters.",
+    "HARD TASK QUALITY GATE: every visible human task is parser-validated. Use a specific title, at least three distinct concrete steps, a real completion expectation, separate Manager and human responsibilities, and a specific consequence of delay. Placeholder language and generic 'make content / post it' steps are rejected.",
     "For content work, steps must carry the execution itself when relevant: setup/location/resources, people, format or hook, what to say/do, song moment, edit treatment, CTA/desired response, and what result to report. Do not emit generic 'create content' tasks.",
     "Do not invent resources, budgets, collaborators, locations, availability, audience facts, deadlines, release dates, external commitments, or permissions. Use only supplied context, including context.operatingFacts.",
     "deadline may be non-empty ONLY when it exactly matches one of context.validation.allowedDeadlines. Otherwise use an empty string.",
@@ -433,7 +436,7 @@ function parseTask(value: unknown): AdaptivePlanTask {
   const completionMode = row.completionMode === "manager_draft" ? "manager_draft" : row.completionMode === "result_note" ? "result_note" : null;
   if (!workMode || !completionMode) throw new Error("Adaptive task has an invalid work/completion mode.");
   const steps = strings(row.steps, 8);
-  if (steps.length < 2) throw new Error("Adaptive human task requires at least two executable steps.");
+  if (steps.length < 3) throw new Error("Adaptive human task requires at least three executable steps.");
   const estimatedMinutes = Number(row.estimatedMinutes);
   if (!Number.isInteger(estimatedMinutes) || estimatedMinutes < 5 || estimatedMinutes > 240) throw new Error("Adaptive task estimated minutes are invalid.");
   const task = {
@@ -452,7 +455,10 @@ function parseTask(value: unknown): AdaptivePlanTask {
     deadline: optionalIso(row.deadline),
     estimatedMinutes,
   } satisfies AdaptivePlanTask;
-  if (!task.title || !task.checkpointKey || !task.purpose || !task.userResponsibility) throw new Error("Adaptive human task is incomplete.");
+  if (!task.title || !task.checkpointKey || !task.purpose || !task.completionExpectation || !task.managerResponsibility || !task.userResponsibility || !task.riskIfLate) {
+    throw new Error("Adaptive human task is incomplete.");
+  }
+  assertExecutableHumanTask(task);
   return task;
 }
 
