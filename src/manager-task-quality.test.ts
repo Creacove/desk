@@ -52,7 +52,7 @@ describe("Manager human Task quality", () => {
   it("rejects content Tasks that have words but still omit the execution context", () => {
     const output = replanWithTask({
       title: "Record Odaeshi launch video for TikTok",
-      purpose: "Use a short video to introduce the song and give the audience something they can engage with before release.",
+      purpose: "Use a short video to introduce the song and give the audience a launch message they can react to before release.",
       steps: [
         "Record a polished video explaining that Odaeshi is coming soon and keep the delivery energetic throughout.",
         "Make sure the message is clear and use good pacing so people understand that the song matters.",
