@@ -1,6 +1,12 @@
 import { Eye, MessageCircleQuestion, Play, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "../../lib/supabaseClient";
+import {
+  describeTodayPermissionEffect,
+  loadTodayManagerPermission,
+  resolveTodayManagerPermission,
+  type TodayPermissionDetail,
+} from "../../services/todayPermissionAction";
 import { answerTodayManagerQuestion } from "../../services/todayQuestionAction";
 import { loadTodayExecutionProjection } from "../../services/todayExecutionSupabase";
 import type { MissionViewModel } from "../../types/cleanProduction";
@@ -52,13 +58,13 @@ export function TodayRuntimeExecution({
     };
   }, [fallback, currentMissionIds, missionSignature, refreshKey]);
 
-  async function refreshProjectionAfterQuestion() {
+  async function refreshProjection() {
     try {
       const client = createBrowserSupabaseClient();
       setProjection(await loadTodayExecutionProjection(client, currentMissionIds));
     } catch {
-      // The answer is already durably submitted through Manager. Live-sync or the
-      // next Home refresh will reconcile Today if this convenience refresh fails.
+      // The mutation is already durable. Live-sync or the next Home refresh will
+      // reconcile Today if this convenience refresh fails.
     }
   }
 
@@ -86,7 +92,16 @@ export function TodayRuntimeExecution({
               index={index}
               primary={projection.primary?.id === item.id && projection.primary.kind === item.kind}
               onManager={onManager}
-              onResolved={refreshProjectionAfterQuestion}
+              onResolved={refreshProjection}
+            />
+          ) : item.kind === "permission" && item.permissionRequestId ? (
+            <TodayPermissionRow
+              key={`${item.kind}:${item.id}`}
+              item={item}
+              index={index}
+              primary={projection.primary?.id === item.id && projection.primary.kind === item.kind}
+              onOpenMission={onOpenMission}
+              onResolved={refreshProjection}
             />
           ) : (
             <TodayActionRow
@@ -212,6 +227,149 @@ function TodayQuestionRow({
         Answer
       </span>
     </button>
+  );
+}
+
+function TodayPermissionRow({
+  item,
+  index,
+  primary,
+  onOpenMission,
+  onResolved,
+}: {
+  item: TodayManagerItem;
+  index: number;
+  primary: boolean;
+  onOpenMission: (missionId: string) => void;
+  onResolved: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [detail, setDetail] = useState<TodayPermissionDetail | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [pendingDecision, setPendingDecision] = useState<"approve" | "reject" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const permissionId = item.permissionRequestId ?? item.id;
+
+  async function openReview() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const client = createBrowserSupabaseClient();
+      const next = await loadTodayManagerPermission(client, permissionId);
+      if (next.status !== "pending") {
+        await onResolved();
+        return;
+      }
+      setDetail(next);
+      setOpen(true);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Desk could not load this approval.");
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function decide(decision: "approve" | "reject") {
+    if (pendingDecision) return;
+    try {
+      setPendingDecision(decision);
+      setError(null);
+      const client = createBrowserSupabaseClient();
+      await resolveTodayManagerPermission(client, permissionId, decision);
+      setOpen(false);
+      setDetail(null);
+      await onResolved();
+    } catch (decisionError) {
+      setError(decisionError instanceof Error ? decisionError.message : "Desk could not resolve this approval.");
+    } finally {
+      setPendingDecision(null);
+    }
+  }
+
+  const effect = detail ? describeTodayPermissionEffect(detail) : null;
+
+  return (
+    <div data-testid="desk-today-permission" data-today-primary={primary ? "true" : "false"}>
+      <button
+        type="button"
+        onClick={openReview}
+        className="group grid w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-start gap-3 py-4 text-left outline-none hover:bg-foreground/[0.018] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
+        aria-label={`Review: ${item.title}`}
+        data-today-kind="permission"
+      >
+        <span className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-full font-mono text-[11px] font-semibold ${primary ? "bg-brand-accent/10 text-brand-accent" : "bg-foreground/[0.055] text-muted-foreground"}`}>
+          {index + 1}
+        </span>
+        <span className="min-w-0">
+          <span className="block text-[14px] font-semibold leading-snug text-foreground">{item.title}</span>
+          <span className="mt-1 block max-w-[50rem] text-[12px] font-medium leading-relaxed text-muted-foreground">{item.whyNow}</span>
+        </span>
+        <span className="mt-0.5 flex items-center gap-1.5 text-[12px] font-semibold text-brand-accent">
+          <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
+          {loading ? "Loading…" : open ? "Close" : "Review"}
+        </span>
+      </button>
+
+      {open ? (
+        <div className="mb-4 ml-10 max-w-[52rem] rounded-[14px] border border-foreground/10 bg-foreground/[0.018] p-4">
+          {detail && effect ? (
+            <>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-[13px] font-semibold text-foreground">{effect.actionLabel}</p>
+                  {effect.targetLabel ? <p className="mt-1 text-[11px] font-medium text-muted-foreground">{effect.targetLabel}</p> : null}
+                </div>
+                <span className="rounded-full border border-foreground/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+                  {effect.executable ? "Desk can execute" : "Prepared only"}
+                </span>
+              </div>
+
+              {effect.details.length ? (
+                <ul className="mt-3 space-y-1.5 text-[12px] font-medium leading-relaxed text-foreground/80">
+                  {effect.details.map((line) => <li key={line}>{line}</li>)}
+                </ul>
+              ) : null}
+
+              {detail.risk ? <p className="mt-3 text-[12px] font-medium leading-relaxed text-muted-foreground"><strong className="text-foreground/75">Risk:</strong> {detail.risk}</p> : null}
+              {effect.caution ? <p className="mt-3 text-[11px] font-medium leading-relaxed text-muted-foreground">{effect.caution}</p> : null}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void decide("approve")}
+                  disabled={Boolean(pendingDecision)}
+                  className="rounded-[10px] bg-foreground px-3.5 py-2 text-[12px] font-semibold text-background disabled:opacity-50"
+                >
+                  {pendingDecision === "approve" ? "Approving…" : effect.executable ? "Approve & run" : "Approve"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void decide("reject")}
+                  disabled={Boolean(pendingDecision)}
+                  className="rounded-[10px] border border-foreground/12 px-3.5 py-2 text-[12px] font-semibold text-foreground disabled:opacity-50"
+                >
+                  {pendingDecision === "reject" ? "Rejecting…" : "Reject"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenMission(item.missionId)}
+                  disabled={Boolean(pendingDecision)}
+                  className="px-2 py-2 text-[12px] font-semibold text-muted-foreground disabled:opacity-50"
+                >
+                  Open Mission
+                </button>
+              </div>
+            </>
+          ) : null}
+          {error ? <p role="alert" className="text-[12px] font-medium text-destructive">{error}</p> : null}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
