@@ -31,12 +31,21 @@ const attachmentEvidenceProtocol = [
   "If extractionStatus is not completed or content is empty, say that the original was uploaded but could not be fully read; do not invent its contents.",
 ].join("\n");
 
+const executableActionIntentProtocol = [
+  "Manager executable-action intent protocol: proposedActions is a machine-readable command boundary, not a place to describe vague future work.",
+  "For split-confirmation outreach, the only supported Manager command is preparation for approval. When the exact attached song has a complete current draft split, every active collaborator has an email, publishing and master totals each equal 100%, and sending confirmations is genuinely the next management move, emit exactly one proposedAction with actionType prepare_split_confirmations_for_approval, targetType focused_music_item, and approvalRequired false.",
+  "prepare_split_confirmations_for_approval NEVER sends email. It asks the server to resolve the trusted focused song, validate canonical split state, freeze the exact recipients/shares, deduplicate the effect, and create a separate approval-gated send_split_confirmations action for the artist to review.",
+  "Never put split IDs, collaborator IDs, emails, share percentages, or other executable target identifiers into this proposedAction. The server derives all executable targets from canonical workspace state.",
+  "If split readiness is missing, uncertain, disputed, or requires a human correction, do not emit the preparation command. Use the rights workspace action when the artist/team must edit splits or collaborator details.",
+  "Never tell the user split confirmations were sent merely because the preparation command was emitted or an approval was created. Sending is complete only after the execution receipt records a real provider outcome.",
+].join("\n");
+
 export function buildManagerConversationInstructions(
   playbookInstructions = "",
   turnMode: ManagerTurnMode = "normal",
 ) {
   const turnInstructions = turnMode === "decision_grade" ? `\n${decisionGradeInstructions}` : "";
-  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}${turnInstructions}`;
+  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}\n${executableActionIntentProtocol}${turnInstructions}`;
 }
 
 export function parseManagerConversationOutput(raw: string) {
