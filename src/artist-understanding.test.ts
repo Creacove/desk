@@ -6,6 +6,7 @@ import {
   isSemanticArtistUnderstanding,
 } from '../supabase/functions/_shared/artistUnderstanding';
 import { buildManagerHumanTaskGenerationContract } from '../supabase/functions/_shared/managerHumanTaskGenerationContract';
+import { buildManagerConversationModelContext } from '../supabase/functions/_shared/manager-conversation/context';
 
 describe('Gate 5 artist understanding contract', () => {
   it('keeps artist-confirmed semantic meaning ahead of inference and scopes song context', () => {
@@ -46,5 +47,66 @@ describe('Gate 5 artist understanding contract', () => {
     expect(taskContract).toContain('semanticUnderstanding owns current artist identity');
     expect(taskContract).toContain('make it materially shape the work');
     expect(taskContract).toContain('Never invent meaning');
+    expect(taskContract).toContain('focused song or project');
+  });
+
+  it('golden: deeper Odaeshi understanding reaches the actual conversation model input and changes it without cross-song leakage', () => {
+    const input={
+      accountId:'account',artistWorkspaceId:'workspace',artistId:'artist',body:'What should we do for this release?',
+      musicSubject:{type:'music_item' as const,id:'odaeshi'},
+    };
+    const baseKnowledge={
+      contractVersion:'manager-knowledge-v1',
+      operatingReality:[
+        {id:'people',domain:'people',key:'people.friends_available_for_content',scopeType:'artist',scopeKey:'artist',displayValue:'two friends are available'},
+        {id:'place',domain:'places',key:'places.parked_car_access',scopeType:'artist',scopeKey:'artist',displayValue:'parked car is available'},
+        {id:'money',domain:'money',key:'money.content_budget',scopeType:'artist',scopeKey:'artist',displayValue:'₦0 available for this content'},
+      ],
+      rules:[],
+    };
+    const packetFor=(meaning:string)=>({
+      artist:{id:'artist',name:'Otmos'},
+      focusedMusicSubject:{type:'music_item',id:'odaeshi',title:'Odaeshi'},
+      memory:[{
+        id:'knowledge',scope:'artist',kind:'fact',source_type:'manager_knowledge_v1',confidence:'high',reason:'canonical',
+        content:JSON.stringify({
+          ...baseKnowledge,
+          semanticUnderstanding:[
+            {id:'identity',scopeType:'artist',scopeId:null,key:'artist.identity',category:'artist_identity',statement:'strength and unity are central to the artist world',authority:'artist_confirmed',confidence:'high'},
+            {id:'odaeshi',scopeType:'music_item',scopeId:'odaeshi',key:'music.meaning',category:'song_meaning',statement:meaning,authority:'artist_confirmed',confidence:'high'},
+            {id:'other',scopeType:'music_item',scopeId:'other-song',key:'music.meaning',category:'song_meaning',statement:'romantic nightlife and escape',authority:'artist_confirmed',confidence:'high'},
+          ],
+        }),
+      }],
+      existingMissions:[],existingTasks:[],conversationHistory:[],evidence:[],music:{items:[],projects:[]},recentAgentReports:[],activePlaybookKeys:[],recommendedMissionPatterns:[],rules:{},
+    });
+
+    const resilience:any=buildManagerConversationModelContext(input,packetFor('surviving difficult things that should have broken us and remaining standing'),'conversation');
+    const celebration:any=buildManagerConversationModelContext(input,packetFor('celebrating a breakthrough after years of work'),'conversation');
+    const resilienceJson=JSON.stringify(resilience.openingBrief.managerKnowledge);
+    const celebrationJson=JSON.stringify(celebration.openingBrief.managerKnowledge);
+
+    expect(resilienceJson).toContain('remaining standing');
+    expect(resilienceJson).toContain('strength and unity');
+    expect(resilienceJson).toContain('two friends');
+    expect(resilienceJson).toContain('parked car');
+    expect(resilienceJson).toContain('₦0');
+    expect(resilienceJson).not.toContain('romantic nightlife and escape');
+    expect(celebrationJson).toContain('celebrating a breakthrough');
+    expect(celebrationJson).not.toBe(resilienceJson);
+    expect(resilience.openingBrief.truthPriority.join(' ')).toContain('use it before deciding, planning, reviewing, or asking the artist');
+  });
+
+  it('keeps managerKnowledge even when the opening brief hits the byte budget', () => {
+    const context:any=buildManagerConversationModelContext({
+      accountId:'account',artistWorkspaceId:'workspace',artistId:'artist',body:'Decide the next move',musicSubject:{type:'music_item',id:'odaeshi'},
+    },{
+      artist:{id:'artist',name:'Otmos'},
+      focusedMusicSubject:{type:'music_item',id:'odaeshi',title:'Odaeshi',metadata:{noise:'x'.repeat(60000)}},
+      memory:[{source_type:'manager_knowledge_v1',content:JSON.stringify({contractVersion:'manager-knowledge-v1',semanticUnderstanding:[{scopeType:'music_item',scopeId:'odaeshi',key:'music.meaning',category:'song_meaning',statement:'remaining standing',authority:'artist_confirmed'}],operatingReality:[]})}],
+      conversationHistory:[],evidence:[],music:{items:[],projects:[]},existingMissions:[],existingTasks:[],recentAgentReports:[],activePlaybookKeys:[],recommendedMissionPatterns:[],rules:{},
+    },'conversation');
+    expect(context.openingBrief.version).toBe('manager_opening_brief_v5_compact');
+    expect(JSON.stringify(context.openingBrief.managerKnowledge)).toContain('remaining standing');
   });
 });
