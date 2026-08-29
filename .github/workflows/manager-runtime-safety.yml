@@ -14,6 +14,7 @@ on:
       - "src/manager-adaptive-replan.test.ts"
       - "src/manager-world-model-question-engine.test.ts"
       - "src/manager-today-execution.test.ts"
+      - "src/manager-release-decision-integrity.test.ts"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-dispatcher/**"
@@ -71,6 +72,7 @@ jobs:
           src/manager-adaptive-replan.test.ts
           src/manager-world-model-question-engine.test.ts
           src/manager-today-execution.test.ts
+          src/manager-release-decision-integrity.test.ts
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
