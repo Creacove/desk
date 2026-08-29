@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { parseAdaptivePlanOutput } from "../supabase/functions/_shared/openaiAdaptivePlanCompiler";
+import {
+  buildManagerTaskQualityReviewInstructions,
+  buildManagerTaskRepairInstructions,
+  parseManagerTaskQualityReview,
+} from "../supabase/functions/_shared/openaiManagerTaskQuality";
 
 const validation = {
   allowedDeadlines: [],
@@ -8,25 +13,110 @@ const validation = {
 };
 
 describe("Manager human Task quality", () => {
-  it("rejects generic create-content work before it can reach a Mission", () => {
+  it("keeps deterministic validation structural instead of pretending words prove semantic quality", () => {
     const output = replanWithTask({
-      title: "Create content",
-      purpose: "Make something for the song so we have a post to put out this week.",
+      title: "Record Odaeshi launch message for the audience",
+      purpose: "Use one launch message to introduce Odaeshi and give the audience something to react to before release.",
       steps: [
-        "Make a video for the song.",
-        "Edit the video when finished.",
-        "Post it on TikTok when ready.",
+        "Record a polished launch message that explains Odaeshi and keeps the delivery energetic from beginning to end.",
+        "Keep the message clear and pace the recording carefully so the finished piece feels intentional and easy to follow.",
+        "Publish the finished piece when it is ready and return the result to Desk so the Manager can continue from reality.",
       ],
-      completionExpectation: "The content is posted on social media.",
-      managerResponsibility: "Desk will review the post after it goes live.",
-      userResponsibility: "The artist needs to make and publish the content.",
-      riskIfLate: "The campaign may lose some momentum if this is late.",
+      completionExpectation: "The finished launch piece is public and its result is returned to Desk for the next management decision.",
+      managerResponsibility: "Desk reviews the real result, interprets the response, and decides whether this creative direction should continue.",
+      userResponsibility: "Otmos records the launch message, completes the human publishing action, and returns the resulting public reference.",
+      riskIfLate: "A late launch piece leaves less time for Desk to learn from the response before the release campaign advances.",
     });
 
-    expect(() => parseAdaptivePlanOutput(output, validation)).toThrow(/too generic|vague execution step|execution context/i);
+    // This is intentionally allowed through the deterministic parser. Whether it is
+    // actually manager-grade is a semantic question for the independent reviewer,
+    // not a regex/synonym detector in application code.
+    expect(parseAdaptivePlanOutput(output, validation).tasks).toHaveLength(1);
   });
 
-  it("accepts an Odaeshi-quality executable content Task", () => {
+  it("defines semantic quality as behavior rather than vocabulary", () => {
+    const instructions = buildManagerTaskQualityReviewInstructions();
+    expect(instructions).toMatch(/Judge meaning and executability, not vocabulary/i);
+    expect(instructions).toMatch(/Do NOT use keyword matching, synonym lists/i);
+    expect(instructions).toMatch(/without having to invent the strategy/i);
+    expect(instructions).toMatch(/paying artist or team/i);
+  });
+
+  it("requires the reviewer to identify every Task before a pass can be trusted", () => {
+    const review = parseManagerTaskQualityReview({
+      verdict: "pass",
+      summary: "Both Tasks are directly executable.",
+      globalIssues: [],
+      taskFindings: [
+        { taskIndex: 0, verdict: "pass", issues: [], repairInstructions: [] },
+        { taskIndex: 1, verdict: "pass", issues: [], repairInstructions: [] },
+      ],
+    }, 2);
+
+    expect(review.verdict).toBe("pass");
+    expect(review.taskFindings).toHaveLength(2);
+
+    expect(() => parseManagerTaskQualityReview({
+      verdict: "pass",
+      summary: "Looks fine.",
+      globalIssues: [],
+      taskFindings: [
+        { taskIndex: 0, verdict: "pass", issues: [], repairInstructions: [] },
+      ],
+    }, 2)).toThrow(/evaluate every visible human Task/i);
+  });
+
+  it("rejects contradictory reviewer output instead of trusting a superficial PASS", () => {
+    expect(() => parseManagerTaskQualityReview({
+      verdict: "pass",
+      summary: "Pass.",
+      globalIssues: ["The route still leaves the artist to choose the creative concept."],
+      taskFindings: [
+        {
+          taskIndex: 0,
+          verdict: "repair_required",
+          issues: ["The concept is unresolved."],
+          repairInstructions: ["Resolve the concept without inventing new resources."],
+        },
+      ],
+    }, 1)).toThrow(/contradicted its PASS verdict/i);
+  });
+
+  it("builds a bounded repair prompt from exact semantic findings without authorizing invented facts", () => {
+    const draft = parseAdaptivePlanOutput(replanWithTask({
+      title: "Record Odaeshi launch message for the audience",
+      purpose: "Use one launch message to introduce Odaeshi and give the audience something to react to before release.",
+      steps: [
+        "Record a polished launch message that explains Odaeshi and keeps the delivery energetic from beginning to end.",
+        "Keep the message clear and pace the recording carefully so the finished piece feels intentional and easy to follow.",
+        "Publish the finished piece when it is ready and return the result to Desk so the Manager can continue from reality.",
+      ],
+      completionExpectation: "The finished launch piece is public and its result is returned to Desk for the next management decision.",
+      managerResponsibility: "Desk reviews the real result, interprets the response, and decides whether this creative direction should continue.",
+      userResponsibility: "Otmos records the launch message, completes the human publishing action, and returns the resulting public reference.",
+      riskIfLate: "A late launch piece leaves less time for Desk to learn from the response before the release campaign advances.",
+    }), validation);
+
+    const review = parseManagerTaskQualityReview({
+      verdict: "repair_required",
+      summary: "The Task is polished but still delegates the concept to the artist.",
+      globalIssues: [],
+      taskFindings: [{
+        taskIndex: 0,
+        verdict: "repair_required",
+        issues: ["The brief does not resolve what the artist should actually say or do."],
+        repairInstructions: ["Use the confirmed Odaeshi resilience thesis to resolve the creative action without inventing a new location or collaborator."],
+      }],
+    }, 1);
+
+    const repair = buildManagerTaskRepairInstructions(review, draft);
+    expect(repair).toMatch(/Repair the draft once/i);
+    expect(repair).toMatch(/Never invent specificity/i);
+    expect(repair).toMatch(/return needs_context/i);
+    expect(repair).toContain("does not resolve what the artist should actually say or do");
+  });
+
+  it("accepts an Odaeshi-quality executable Task structurally before semantic review", () => {
     const output = replanWithTask({
       title: "Shoot Odaeshi resilience conversation in a parked car",
       purpose: "Turn Odaeshi's resilience meaning into a human story viewers can immediately recognise and respond to.",
@@ -49,40 +139,16 @@ describe("Manager human Task quality", () => {
     });
   });
 
-  it("rejects content Tasks that have words but still omit the execution context", () => {
+  it("still fails closed on objective structural defects before any semantic review", () => {
     const output = replanWithTask({
-      title: "Record Odaeshi launch video for TikTok",
-      purpose: "Use a short video to introduce the song and give the audience a launch message they can react to before release.",
       steps: [
-        "Record a polished video explaining that Odaeshi is coming soon and keep the delivery energetic throughout.",
-        "Make sure the message is clear and use good pacing so people understand that the song matters.",
-        "Post the finished video on TikTok and keep an eye on how the audience responds after it is live.",
+        "Record the agreed Odaeshi concept exactly as prepared for the active Mission.",
+        "Record the agreed Odaeshi concept exactly as prepared for the active Mission.",
+        "Return the result to Desk after the human action is actually complete.",
       ],
-      completionExpectation: "The finished launch video is live on TikTok and ready for Desk to review after posting.",
-      managerResponsibility: "Desk reviews the result after posting and decides whether the creative direction should continue.",
-      userResponsibility: "Otmos records the launch message, finishes the video, and publishes the approved version on TikTok.",
-      riskIfLate: "A late launch video leaves less time to learn from audience response before the release campaign advances.",
     });
 
-    expect(() => parseAdaptivePlanOutput(output, validation)).toThrow(/missing execution context/i);
-  });
-
-  it("allows concrete non-content human work", () => {
-    const output = replanWithTask({
-      title: "Attend the booked radio interview with prepared talking points",
-      purpose: "Use the confirmed interview to explain Odaeshi's resilience story clearly and create a reusable media proof point.",
-      steps: [
-        "Arrive at the station 20 minutes before the booked interview and check in with the producer handling the segment.",
-        "Keep the Odaeshi story focused on resilience and collective strength, using the three talking points Desk prepared for the conversation.",
-        "After the interview, ask the producer for the broadcast or replay link and send it to Desk with any audience feedback you noticed.",
-      ],
-      completionExpectation: "Desk receives the replay or broadcast link plus a short result note confirming how the interview went.",
-      managerResponsibility: "Desk prepares the talking points beforehand, reviews the interview result, and decides how to reuse the strongest angle.",
-      userResponsibility: "The artist attends the confirmed interview, delivers the prepared story, and sends Desk the replay link afterward.",
-      riskIfLate: "Missing or arriving late to the confirmed slot risks losing the media opportunity and weakening the current release sequence.",
-    });
-
-    expect(parseAdaptivePlanOutput(output, validation).tasks).toHaveLength(1);
+    expect(() => parseAdaptivePlanOutput(output, validation)).toThrow(/duplicates/i);
   });
 });
 
