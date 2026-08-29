@@ -175,21 +175,24 @@ jobs:
           set -euo pipefail
           DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
           if [ -z "$DB_CONTAINER" ]; then echo 'Supabase database container was not found.' >&2; exit 1; fi
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_runtime_replan_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_world_model_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_execution_contract_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_result_signal_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_result_adaptation_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_result_adaptation_continuation_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_execution_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_action_candidate_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_action_producer_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_outcome_nudge_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_state_integrity_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_runtime_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_career_watch_smoke.sql
-          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_e2e_golden_smoke.sql
+          run_sql() {
+            docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < "$1"
+          }
+          run_sql supabase/tests/manager_runtime_replan_smoke.sql
+          run_sql supabase/tests/manager_world_model_smoke.sql
+          run_sql supabase/tests/manager_content_execution_contract_smoke.sql
+          run_sql supabase/tests/manager_content_result_signal_smoke.sql
+          run_sql supabase/tests/manager_result_adaptation_smoke.sql
+          run_sql supabase/tests/manager_result_adaptation_continuation_smoke.sql
+          run_sql supabase/tests/manager_permission_execution_smoke.sql
+          run_sql supabase/tests/manager_action_candidate_smoke.sql
+          run_sql supabase/tests/manager_action_producer_smoke.sql
+          run_sql supabase/tests/manager_permission_outcome_nudge_smoke.sql
+          run_sql supabase/tests/manager_state_integrity_smoke.sql
+          run_sql supabase/tests/artist_understanding_smoke.sql
+          run_sql supabase/tests/artist_understanding_runtime_smoke.sql
+          run_sql supabase/tests/manager_career_watch_smoke.sql
+          run_sql supabase/tests/manager_e2e_golden_smoke.sql
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true
