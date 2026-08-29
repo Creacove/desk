@@ -1,0 +1,106 @@
+name: Manager Runtime Safety
+
+on:
+  pull_request:
+    paths:
+      - "src/features/desk/DeskHQ.tsx"
+      - "src/features/missions/**"
+      - "src/services/taskExecutionClient.ts"
+      - "src/manager-execution-loop.test.ts"
+      - "src/manager-adaptive-replan.test.ts"
+      - "supabase/functions/manager-task-execution/**"
+      - "supabase/functions/manager-runtime-runner/**"
+      - "supabase/functions/manager-dispatcher/**"
+      - "supabase/functions/workflow-recovery/**"
+      - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
+      - "supabase/migrations/*manager_runtime*"
+      - "supabase/migrations/*adaptive*replan*"
+      - "supabase/tests/manager_runtime_replan_smoke.sql"
+      - ".github/workflows/manager-runtime-safety.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VITE_SUPABASE_URL: http://localhost:54321
+  VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+
+jobs:
+  runtime-contract:
+    name: Manager runtime type and contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Manager runtime regression contracts
+        run: >-
+          npx vitest run --environment jsdom --pool=vmThreads
+          src/manager-execution-loop.test.ts
+          src/manager-adaptive-replan.test.ts
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check Manager runtime Edge boundaries
+        run: >-
+          deno check
+          supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
+          supabase/functions/manager-task-execution/index.ts
+          supabase/functions/manager-runtime-runner/index.ts
+          supabase/functions/manager-dispatcher/index.ts
+          supabase/functions/workflow-recovery/index.ts
+
+  runtime-database:
+    name: Fresh Manager runtime database smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+
+      - name: Add disposable local-only Vault prerequisites
+        shell: bash
+        run: |
+          cat > supabase/migrations/20260525000000_ci_vault_prereqs.sql <<'SQL'
+          create extension if not exists supabase_vault with schema vault;
+          select vault.create_secret('http://host.docker.internal:54321', 'project_url');
+          select vault.create_secret('ci-billing-worker-secret', 'billing_worker_secret');
+          select vault.create_secret('ci-workflow-worker-secret', 'workflow_worker_secret');
+          SQL
+
+      - name: Start fresh database and apply all migrations
+        run: supabase db start
+
+      - name: Verify Manager runtime functions, guards and cron routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then
+            echo 'Supabase database container was not found.' >&2
+            exit 1
+          fi
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_runtime_replan_smoke.sql
+
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true
