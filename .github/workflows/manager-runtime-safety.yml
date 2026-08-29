@@ -63,6 +63,7 @@ on:
       - "supabase/tests/manager_permission_outcome_nudge_smoke.sql"
       - "supabase/tests/manager_state_integrity_smoke.sql"
       - "supabase/tests/artist_understanding_smoke.sql"
+      - "supabase/tests/artist_understanding_runtime_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -176,6 +177,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_outcome_nudge_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_state_integrity_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_runtime_smoke.sql
 
       - name: Stop local Supabase
         if: always()
