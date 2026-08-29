@@ -61,18 +61,27 @@ function compactOpeningPacket(packet: unknown) {
   const canonicalState = findCanonicalStateSnapshot(source.memory);
   const canonicalMissions = array(canonicalState.activeMissions);
   const canonicalTasks = array(canonicalState.activeTasks);
+  const focusedPointer = compactMusicSubjectPointer(record(source.focusedMusicSubject));
+  const managerKnowledge = compactManagerKnowledge(
+    findManagerKnowledgeSnapshot(source.memory, latestIntelligence),
+    focusedPointer,
+  );
   const openingBrief = {
-    version: "manager_opening_brief_v4",
+    version: "manager_opening_brief_v5",
     truthPriority: [
       "canonicalState is the current durable product truth and overrides older conversation messages, durable memory, superseded plans, superseded Tasks, and derived Manager reads when they conflict",
+      "managerKnowledge is current canonical semantic understanding plus current operating reality; use it before deciding, planning, reviewing, or asking the artist for context",
+      "artist-confirmed semantic understanding in managerKnowledge outranks supported or inferred interpretations and derived Manager Reads",
       "focusedMusicSubject is freshly loaded structured product state for the current song or project and overrides historical conversation claims about that subject",
+      "managerKnowledge is focus-scoped: artist-level understanding plus understanding for the focused song/project; never borrow semantic meaning from another music asset",
       "activeMissions and activeTasks come from the current active Mission plan when canonicalState is available; never revive completed, rejected, archived, or superseded work from conversation history",
       "resolved decisions in canonicalState remain resolved: approved, rejected, executed, failed, indeterminate, superseded, or revoked state must not be presented as a new pending decision unless canonical state has materially changed",
-      "fresh operatingFacts in canonicalState are already known; do not ask the artist to provide or reconfirm them while they remain valid",
+      "fresh operatingFacts in canonicalState and operatingReality in managerKnowledge are already known; do not ask the artist to provide or reconfirm them while they remain valid",
       "conversationHistory and durableMemory are historical context, not authority against newer canonical product state",
       "Manager Read and intelligence summaries are derived analysis and can be stale",
     ],
     canonicalState: compactCanonicalState(canonicalState),
+    managerKnowledge,
     artist: compactArtist(source.artist),
     focusedMusicSubject: compactFocusedMusicSubject(source.focusedMusicSubject),
     taskContext: compactTask(source.taskContext),
@@ -80,7 +89,7 @@ function compactOpeningPacket(packet: unknown) {
     durableMemory: compactMemoryList(
       array(source.memory).filter((item) => {
         const sourceType = compactText(record(item).source_type, 120);
-        return sourceType !== "manager_canonical_state_v1" && sourceType !== "canonical_release_plan";
+        return sourceType !== "manager_canonical_state_v1" && sourceType !== "canonical_release_plan" && sourceType !== "manager_knowledge_v1";
       }),
       6,
     ),
@@ -118,6 +127,75 @@ function findCanonicalStateSnapshot(memoryValue: unknown) {
     }
   }
   return {} as Record<string, unknown>;
+}
+
+function findManagerKnowledgeSnapshot(memoryValue: unknown, latestIntelligence: Record<string, unknown>) {
+  for (const item of array(memoryValue)) {
+    const row = record(item);
+    if (row.source_type !== "manager_knowledge_v1") continue;
+    const content = typeof row.content === "string" ? row.content.trim() : "";
+    if (!content) continue;
+    try {
+      const parsed = JSON.parse(content);
+      if (record(parsed).contractVersion === "manager-knowledge-v1") return parsed;
+    } catch {
+      continue;
+    }
+  }
+  const profileProjection = record(latestIntelligence.profile_projection_json);
+  const fromPacket = record(profileProjection.managerKnowledge);
+  return fromPacket.contractVersion === "manager-knowledge-v1" ? fromPacket : {};
+}
+
+function compactManagerKnowledge(value: unknown, focused: { type: "music_item" | "music_project"; id: string } | null) {
+  const knowledge = record(value);
+  const semantic = array(knowledge.semanticUnderstanding).filter((item) => {
+    const row = record(item);
+    const scopeType = compactText(row.scopeType ?? row.scope_type, 80);
+    const scopeId = compactText(row.scopeId ?? row.scope_id, 120);
+    if (scopeType === "artist") return true;
+    if (!focused) return false;
+    return scopeType === focused.type && scopeId === focused.id;
+  }).slice(0, 24).map((item) => {
+    const row = record(item);
+    return {
+      id: compactText(row.id, 120),
+      scopeType: compactText(row.scopeType ?? row.scope_type, 80),
+      scopeId: compactText(row.scopeId ?? row.scope_id, 120),
+      key: compactText(row.key ?? row.understanding_key, 180),
+      category: compactText(row.category, 120),
+      statement: compactText(row.statement, 900),
+      confidence: compactText(row.confidence, 80),
+      authority: compactText(row.authority, 80),
+      sourceKind: compactText(row.sourceKind ?? row.source_kind, 120),
+      sourceRef: compactText(row.sourceRef ?? row.source_ref, 300),
+      updatedAt: compactText(row.updatedAt ?? row.updated_at, 120),
+    };
+  });
+  const operating = array(knowledge.operatingReality).slice(0, 30).map((item) => {
+    const row = record(item);
+    return {
+      id: compactText(row.id, 120),
+      domain: compactText(row.domain, 80),
+      key: compactText(row.key ?? row.fact_key, 180),
+      scopeType: compactText(row.scopeType ?? row.scope_type, 80),
+      scopeKey: compactText(row.scopeKey ?? row.scope_key, 180),
+      displayValue: compactText(row.displayValue ?? row.display_value, 700),
+      value: compactStructured(row.value ?? row.value_json, 1_500),
+      confidence: compactText(row.confidence, 80),
+      validUntil: compactText(row.validUntil ?? row.valid_until, 120),
+    };
+  });
+  return {
+    contractVersion: semantic.length || operating.length ? "manager-knowledge-v1" : "",
+    semanticUnderstanding: semantic,
+    operatingReality: operating,
+    rules: [
+      "Use relevant current semantic understanding and operating reality before asking the artist or choosing work.",
+      "Artist-confirmed semantic understanding outranks supported/inferred interpretation.",
+      "Do not let meaning from another song/project leak into the focused subject.",
+    ],
+  };
 }
 
 function compactCanonicalState(value: unknown) {
@@ -450,7 +528,7 @@ function compactRules(value: unknown) {
   };
 }
 
-function compactMusicSubjectPointer(value: unknown) {
+function compactMusicSubjectPointer(value: unknown): { type: "music_item" | "music_project"; id: string } | null {
   const subject = record(value);
   const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
   const id = compactText(subject.id, 120);
@@ -470,10 +548,11 @@ function normalizeContextAnswers(value: unknown) {
 function enforceByteBudget<T extends Record<string, any>>(value: T, maxBytes: number): T {
   if (encoder.encode(JSON.stringify(value)).byteLength <= maxBytes) return value;
   const compacted = {
-    version: "manager_opening_brief_v4_compact",
-    notice: "Secondary context was compacted. canonicalState and current focused-subject truth remain authoritative over historical conversation and memory.",
+    version: "manager_opening_brief_v5_compact",
+    notice: "Secondary context was compacted. canonicalState, managerKnowledge and current focused-subject truth remain authoritative over historical conversation and memory.",
     truthPriority: value.truthPriority,
     canonicalState: value.canonicalState,
+    managerKnowledge: value.managerKnowledge,
     artist: value.artist,
     focusedMusicSubject: value.focusedMusicSubject,
     taskContext: value.taskContext,
