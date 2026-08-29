@@ -329,7 +329,7 @@ async function persistPreparationIntent(
   runId: string,
   decision: ManagerActionDecision,
 ) {
-  const { data, error } = await db.from("manager_run_actions").insert({
+  const { data: inserted, error: insertError } = await db.from("manager_run_actions").insert({
     account_id: candidate.account_id,
     artist_workspace_id: candidate.artist_workspace_id,
     artist_id: candidate.artist_id,
@@ -347,7 +347,24 @@ async function persistPreparationIntent(
       approvalRequired: false,
     },
     result_payload: {},
-  }).select("id,status,target_type,target_id,result_payload,error").single();
+  }).select("id").single();
+  if (insertError) throw insertError;
+
+  // PostgreSQL RETURNING does not promise visibility of a separate UPDATE issued
+  // by an AFTER trigger. Re-read after the insert transaction settles so the
+  // runner verifies the actual durable trigger result instead of stale pending
+  // state and accidentally requeuing a successfully prepared permission.
+  const actionId = String(inserted?.id ?? "");
+  if (!actionId) throw new Error("Typed split-confirmation preparation action was not persisted.");
+
+  const { data, error } = await db.from("manager_run_actions")
+    .select("id,status,target_type,target_id,result_payload,error")
+    .eq("id", actionId)
+    .eq("manager_synthesis_run_id", runId)
+    .eq("account_id", candidate.account_id)
+    .eq("artist_workspace_id", candidate.artist_workspace_id)
+    .eq("artist_id", candidate.artist_id)
+    .single();
   if (error) throw error;
 
   const action = record(data);
