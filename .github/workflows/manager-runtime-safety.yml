@@ -23,7 +23,11 @@ on:
       - "supabase/functions/send-split-confirmations/**"
       - "supabase/functions/workflow-recovery/**"
       - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
+      - "supabase/functions/_shared/openaiMissionGenesis.ts"
+      - "supabase/functions/_shared/openaiManagerConversation.ts"
+      - "supabase/functions/_shared/openaiManagerConversationLegacy.ts"
       - "supabase/functions/_shared/openaiManagerTaskQuality.ts"
+      - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
       - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/functions/_shared/manager-conversation/context.ts"
@@ -83,7 +87,10 @@ jobs:
       - name: Check Manager runtime Edge boundaries
         run: >-
           deno check
+          supabase/functions/_shared/managerHumanTaskGenerationContract.ts
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
+          supabase/functions/_shared/openaiMissionGenesis.ts
+          supabase/functions/_shared/openaiManagerConversation.ts
           supabase/functions/_shared/openaiManagerTaskQuality.ts
           supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
