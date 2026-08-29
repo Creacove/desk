@@ -83,6 +83,8 @@ on:
       - "supabase/tests/manager_career_watch_smoke.sql"
       - "supabase/tests/manager_e2e_golden_smoke.sql"
       - "supabase/tests/manager_production_hardening_smoke.sql"
+      - "supabase/tests/manager_production_concurrency_setup.sql"
+      - "supabase/tests/manager_production_concurrency_verify.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -204,6 +206,19 @@ jobs:
           run_sql supabase/tests/manager_career_watch_smoke.sql
           run_sql supabase/tests/manager_e2e_golden_smoke.sql
           run_sql supabase/tests/manager_production_hardening_smoke.sql
+      - name: Stress concurrent Manager admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_setup.sql
+          pids=""
+          for i in $(seq 1 12); do
+            docker exec "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -Atqc "select public.claim_manager_runtime_admission_v1('80000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000003','80000000-0000-4000-8000-000000000002','concurrent-stress',1,180);" > "/tmp/manager-admission-$i.log" 2>&1 &
+            pids="$pids $!"
+          done
+          for pid in $pids; do wait "$pid"; done
+          docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_verify.sql
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true
