@@ -110,7 +110,7 @@ describe("Today runtime projection", () => {
 
   it("does not show a watch as competing work for a Mission that already needs the artist", () => {
     const projection = projectTodayExecution(packet({
-      missions: [mission("m1", "Odaishi", 1)],
+      missions: [mission("m1", "Odaeshi", 1)],
       tasks: [task("human", "m1")],
       checkpoints: [{ id: "watch", missionId: "m1", title: "Response", status: "watching_signal" }],
     }));
