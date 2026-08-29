@@ -74,6 +74,15 @@ const SEMANTIC_KEY_PREFIXES = [
   "music.community_context",
   "music.narrative",
   "music.why_it_matters",
+  "song.meaning",
+  "song.theme",
+  "song.cultural_context",
+  "song.creative_intent",
+  "song.communication",
+  "song.audience_context",
+  "song.community_context",
+  "song.narrative",
+  "song.why_it_matters",
 ];
 
 const extractionSchema = {
@@ -127,7 +136,7 @@ Deno.serve(withAppErrorCapture("manager-artist-understanding", async (request) =
       const material = await loadSourceMaterial(db, row);
       if (!material || !material.text.trim()) {
         await completeQueue(db, row.id);
-        results.push({ id: row.id, status: "completed_no_text", claims: 0 });
+        results.push({ id: row.id, status: "completed_no_current_text", claims: 0 });
         continue;
       }
 
@@ -221,7 +230,9 @@ async function loadSourceMaterial(db: any, row: QueueRow): Promise<SourceMateria
   if (!document || !document.current_version_id) return null;
   if (["superseded", "revoked", "failed"].includes(String(document.status ?? ""))) return null;
 
-  const versionId = row.source_version_id ?? String(document.current_version_id);
+  const currentVersionId = String(document.current_version_id);
+  if (row.source_version_id && row.source_version_id !== currentVersionId) return null;
+  const versionId = currentVersionId;
   const { data: version, error: versionError } = await db.from("document_versions")
     .select("id,version_number,manager_output_id,file_name,file_type,extraction_status,extracted_text_ref,metadata")
     .eq("id", versionId)
@@ -344,7 +355,7 @@ function validateClaims(claims: ExtractedClaim[], material: SourceMaterial, sour
     if (!allowed.has(`${raw.scopeType}:${scopeId}`)) continue;
     const key = normalizeKey(raw.key);
     if (!SEMANTIC_KEY_PREFIXES.some((prefix) => key === prefix || key.startsWith(`${prefix}.`))) continue;
-    if (raw.scopeType === "artist" && key.startsWith("music.")) continue;
+    if (raw.scopeType === "artist" && (key.startsWith("music.") || key.startsWith("song."))) continue;
     if (raw.scopeType !== "artist" && key.startsWith("artist.")) continue;
     if (artistControlled && raw.directlyAsserted !== true) continue;
     const statement = String(raw.statement ?? "").trim().replace(/\s+/g, " ").slice(0, 700);
@@ -359,8 +370,7 @@ function validateClaims(claims: ExtractedClaim[], material: SourceMaterial, sour
 
 async function persistClaims(db: any, row: QueueRow, material: SourceMaterial, claims: ExtractedClaim[]) {
   if (row.source_kind === "document") {
-    const keys = claims.map((claim) => claim.key);
-    let staleQuery = db.from("artist_understandings")
+    const { error } = await db.from("artist_understandings")
       .update({ status: "superseded" })
       .eq("account_id", row.account_id)
       .eq("artist_workspace_id", row.artist_workspace_id)
@@ -369,8 +379,6 @@ async function persistClaims(db: any, row: QueueRow, material: SourceMaterial, c
       .eq("source_type", "document_semantic_extraction")
       .eq("source_id", row.source_id)
       .neq("source_ref", material.sourceRef);
-    if (keys.length) staleQuery = staleQuery.not("understanding_key", "in", `(${keys.map(escapePostgrestValue).join(",")})`);
-    const { error } = await staleQuery;
     if (error) throw error;
   }
 
@@ -385,10 +393,7 @@ async function persistClaims(db: any, row: QueueRow, material: SourceMaterial, c
       p_understanding_key: claim.key,
       p_category: claim.category,
       p_statement: claim.statement,
-      p_structured_value: {
-        extractedFrom: material.sourceLabel,
-        directlyAsserted: claim.directlyAsserted,
-      },
+      p_structured_value: { extractedFrom: material.sourceLabel, directlyAsserted: claim.directlyAsserted },
       p_source_kind: material.sourceKind,
       p_source_type: material.sourceType,
       p_source_id: row.source_id,
@@ -401,7 +406,6 @@ async function persistClaims(db: any, row: QueueRow, material: SourceMaterial, c
     if (error) throw error;
   }
 
-  // Ensure an empty extraction that superseded stale document claims also refreshes the projection.
   if (!claims.length && row.source_kind === "document") {
     const { error } = await db.rpc("sync_manager_knowledge_projection_v1", {
       p_account_id: row.account_id,
@@ -440,10 +444,6 @@ function textFromJson(value: unknown): string {
 
 function normalizeKey(value: unknown) {
   return String(value ?? "").trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "_").replace(/_+/g, "_").slice(0, 160);
-}
-
-function escapePostgrestValue(value: string) {
-  return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
 }
 
 function readOutputText(payload: unknown) {
