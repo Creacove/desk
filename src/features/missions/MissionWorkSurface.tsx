@@ -16,6 +16,7 @@ import {
   getBlockingDependency,
   getInitialCheckpointId,
   getNextArtistTask,
+  humanCheckpointStatus,
   isTaskOptimisticallyDone,
   omitKey,
   replaceDeliverable,
@@ -164,9 +165,13 @@ export function WorkSurface({
         {checkpoints.map((checkpoint) => {
           const stageTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
           const stageDone = stageTasks.filter((task) => isTaskOptimisticallyDone(task, optimisticCompleted)).length;
+          const managerOnlyCheckpoint = stageTasks.length === 0;
           const open = openStageIds.includes(checkpoint.id);
           const lockedBy = getBlockingDependency(checkpoint, checkpoints);
           const currentTaskInStep = attentionTask?.checkpointId === checkpoint.id ? attentionTask : null;
+          const checkpointLabel = managerOnlyCheckpoint
+            ? checkpoint.status === "Watching signal" ? "Desk is watching" : "Desk review"
+            : `Step ${checkpoint.phase}`;
 
           return (
             <section key={checkpoint.id} data-testid={`task-group-${checkpoint.id}`} className="border-b border-foreground/8 last:border-b-0">
@@ -178,10 +183,12 @@ export function WorkSurface({
               >
                 <span className="min-w-0">
                   <span className="os-list-title block text-foreground">
-                    Step {checkpoint.phase} · {checkpoint.title}
+                    {checkpointLabel} · {checkpoint.title}
                   </span>
                   <span className="os-list-meta mt-1 block font-semibold text-muted-foreground">
-                    {stageDone} of {stageTasks.length} done
+                    {managerOnlyCheckpoint
+                      ? humanCheckpointStatus(checkpoint.status)
+                      : `${stageDone} of ${stageTasks.length} done`}
                   </span>
                 </span>
                 <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground/55 transition-transform", open && "rotate-180")} />
@@ -209,7 +216,13 @@ export function WorkSurface({
                         />
                       ))}
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="grid gap-1 py-1 text-[12px] font-medium leading-relaxed text-muted-foreground">
+                      {checkpoint.managerRead ? <p>{checkpoint.managerRead}</p> : null}
+                      {checkpoint.nextAction ? <p className="font-semibold text-foreground/70">Next: {checkpoint.nextAction}</p> : null}
+                      {!checkpoint.managerRead && !checkpoint.nextAction ? <p>No action is needed from you here.</p> : null}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </section>
