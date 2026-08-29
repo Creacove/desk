@@ -1,5 +1,7 @@
--- Gate 4 capability smoke: canonical split readiness -> exact permission ->
--- approve once -> one execution receipt -> persisted outcome -> adaptive continuation.
+-- Gate 4 capability smoke: canonical readiness is necessary but never sufficient.
+-- Only an explicit typed Manager preparation intent may create the frozen approval
+-- transaction; approval then claims one receipt and a real terminal outcome wakes
+-- the Manager continuation runtime.
 
 begin;
 
@@ -9,12 +11,16 @@ declare
   v_actor_id uuid := gen_random_uuid();
   v_artist_id uuid := gen_random_uuid();
   v_workspace_id uuid := gen_random_uuid();
+  v_conversation_id uuid := gen_random_uuid();
   v_mission_id uuid := gen_random_uuid();
   v_plan_id uuid := gen_random_uuid();
   v_checkpoint_id uuid := gen_random_uuid();
   v_task_id uuid := gen_random_uuid();
   v_music_item_id uuid := gen_random_uuid();
   v_split_id uuid := gen_random_uuid();
+  v_run_id uuid := gen_random_uuid();
+  v_intent_action_id uuid := gen_random_uuid();
+  v_replay_intent_action_id uuid := gen_random_uuid();
   v_permission_id uuid;
   v_action_id uuid;
   v_receipt_id uuid;
@@ -25,10 +31,10 @@ declare
   v_receipt_count integer;
 begin
   insert into public.accounts (id, name, status)
-  values (v_account_id, 'Manager action producer smoke', 'active');
+  values (v_account_id, 'Manager explicit action intent smoke', 'active');
 
   insert into public.users (id, email, display_name, status)
-  values (v_actor_id, 'manager-action-producer-smoke@example.com', 'Smoke Owner', 'active');
+  values (v_actor_id, 'manager-action-intent-smoke@example.com', 'Smoke Owner', 'active');
 
   insert into public.account_memberships (account_id, user_id, role, status)
   values (v_account_id, v_actor_id, 'owner', 'active');
@@ -80,7 +86,7 @@ begin
     'Confirm the agreed split', 'Artist / team', 'artist_action', 1, 'open', 'not_required',
     'Make the agreed collaborator shares ready for formal confirmation.',
     'The split totals 100% and every collaborator has a valid email.',
-    'Desk validates the exact effect and prepares the confirmation send.',
+    'Desk validates canonical state, prepares the exact approval, and executes only after approval.',
     'Provide or correct collaborator shares and email addresses.',
     'The release can carry unresolved rights/admin risk.'
   );
@@ -101,31 +107,102 @@ begin
     v_music_item_id, 'draft', v_task_id, 'Two-way agreed split'
   );
 
-  -- The first contributor is not a sendable exact effect yet.
   insert into public.music_split_contributors (
     account_id, artist_workspace_id, artist_id, music_split_id,
     name, role, email, publishing_share, master_share, approval_status
-  ) values (
+  ) values
+  (
     v_account_id, v_workspace_id, v_artist_id, v_split_id,
     'Artist', 'Primary artist', 'artist@example.com', 50, 50, 'draft'
+  ),
+  (
+    v_account_id, v_workspace_id, v_artist_id, v_split_id,
+    'Producer', 'Producer', 'producer@example.com', 50, 50, 'draft'
   );
+
+  -- Canonical readiness alone must never authorize external outreach.
+  if exists (
+    select 1 from public.permission_requests as permission
+    where permission.parameters ->> 'splitId' = v_split_id::text
+  ) then
+    raise exception 'Ready split created an external-action permission without explicit Manager intent.';
+  end if;
+
+  -- Ordinary canonical edits must also remain side-effect free.
+  update public.music_split_contributors as contributor
+  set email = contributor.email
+  where contributor.music_split_id = v_split_id;
+
+  update public.tasks set status = 'in_progress' where id = v_task_id;
+  update public.missions set status = 'review' where id = v_mission_id;
+  update public.missions set status = 'active' where id = v_mission_id;
 
   if exists (
     select 1 from public.permission_requests as permission
     where permission.parameters ->> 'splitId' = v_split_id::text
   ) then
-    raise exception 'Producer created a permission before the split was canonically ready.';
+    raise exception 'Canonical split/task/mission changes still behave like external-action intent.';
   end if;
 
-  -- This transition makes the exact effect ready. The trigger must create the
-  -- permission transaction without another Manager/model prompt.
-  insert into public.music_split_contributors (
-    account_id, artist_workspace_id, artist_id, music_split_id,
-    name, role, email, publishing_share, master_share, approval_status
+  insert into public.conversations (
+    id, account_id, artist_workspace_id, artist_id,
+    topic, status, linked_mission_id
   ) values (
-    v_account_id, v_workspace_id, v_artist_id, v_split_id,
-    'Producer', 'Producer', 'producer@example.com', 50, 50, 'draft'
+    v_conversation_id, v_account_id, v_workspace_id, v_artist_id,
+    'Smoke Song workspace', 'active', v_mission_id
   );
+
+  insert into public.manager_synthesis_runs (
+    id, account_id, artist_workspace_id, artist_id,
+    trigger_type, conversation_id, mission_id, status,
+    classification, confidence, context_payload, steps_payload,
+    action_plan, limitations, started_at
+  ) values (
+    v_run_id, v_account_id, v_workspace_id, v_artist_id,
+    'conversation', v_conversation_id, v_mission_id, 'running',
+    'manager_conversation_router_v1', 'high',
+    jsonb_build_object(
+      'scope', jsonb_build_object(
+        'accountId', v_account_id,
+        'artistWorkspaceId', v_workspace_id,
+        'artistId', v_artist_id,
+        'conversationId', v_conversation_id,
+        'musicSubject', jsonb_build_object('type', 'music_item', 'id', v_music_item_id)
+      )
+    ),
+    '[]'::jsonb, '[]'::jsonb, '{}'::text[], now()
+  );
+
+  -- This is the explicit machine-readable Manager command. It prepares review;
+  -- it is not itself the external send and therefore does not require approval.
+  insert into public.manager_run_actions (
+    id, account_id, artist_workspace_id, artist_id,
+    manager_synthesis_run_id, order_index, action_type, target_type,
+    status, approval_required, payload, result_payload
+  ) values (
+    v_intent_action_id, v_account_id, v_workspace_id, v_artist_id,
+    v_run_id, 0, 'prepare_split_confirmations_for_approval', 'focused_music_item',
+    'pending', false,
+    jsonb_build_object(
+      'actionType', 'prepare_split_confirmations_for_approval',
+      'targetType', 'focused_music_item',
+      'title', 'Prepare split confirmations',
+      'body', 'Prepare the current split for collaborator confirmation.',
+      'approvalRequired', false
+    ),
+    '{}'::jsonb
+  );
+
+  if not exists (
+    select 1 from public.manager_run_actions as intent
+    where intent.id = v_intent_action_id
+      and intent.status = 'applied'
+      and intent.target_type = 'music_item'
+      and intent.target_id = v_music_item_id
+      and intent.result_payload ->> 'status' = 'prepared'
+  ) then
+    raise exception 'Explicit Manager intent was not safely resolved to the canonical focused song.';
+  end if;
 
   select permission.id, permission.created_from_action_id
   into v_permission_id, v_action_id
@@ -139,7 +216,7 @@ begin
   limit 1;
 
   if v_permission_id is null or v_action_id is null then
-    raise exception 'Canonically ready split did not produce an exact approval transaction.';
+    raise exception 'Explicit Manager intent did not create an exact approval transaction.';
   end if;
 
   if not exists (
@@ -156,19 +233,42 @@ begin
       and action.status = 'approval_required'
       and action.approval_required
   ) then
-    raise exception 'Produced permission is not bound to the exact frozen executable effect.';
+    raise exception 'Prepared permission is not bound to the exact frozen executable effect.';
   end if;
 
-  -- Re-firing readiness with the exact same shares/addresses must replay the
-  -- existing permission instead of creating a second external action.
-  update public.music_split_contributors as contributor
-  set email = contributor.email
-  where contributor.music_split_id = v_split_id;
+  -- A second Manager turn may reach the same conclusion. Exact-effect dedupe must
+  -- bind that intent to the existing permission rather than create another send.
+  insert into public.manager_run_actions (
+    id, account_id, artist_workspace_id, artist_id,
+    manager_synthesis_run_id, order_index, action_type, target_type,
+    status, approval_required, payload, result_payload
+  ) values (
+    v_replay_intent_action_id, v_account_id, v_workspace_id, v_artist_id,
+    v_run_id, 1, 'prepare_split_confirmations_for_approval', 'focused_music_item',
+    'pending', false,
+    jsonb_build_object(
+      'actionType', 'prepare_split_confirmations_for_approval',
+      'targetType', 'focused_music_item',
+      'title', 'Prepare split confirmations',
+      'body', 'Prepare the current split for collaborator confirmation.',
+      'approvalRequired', false
+    ),
+    '{}'::jsonb
+  );
+
+  if not exists (
+    select 1 from public.manager_run_actions as intent
+    where intent.id = v_replay_intent_action_id
+      and intent.status = 'applied'
+      and intent.result_payload ->> 'status' = 'replayed'
+      and nullif(intent.result_payload ->> 'permissionId', '')::uuid = v_permission_id
+  ) then
+    raise exception 'Repeated explicit intent did not replay the exact existing permission.';
+  end if;
 
   select count(*) into v_permission_count
   from public.permission_requests as permission
-  where permission.mission_id = v_mission_id
-    and permission.parameters ->> 'actionKind' = 'send_split_confirmations'
+  where permission.parameters ->> 'actionKind' = 'send_split_confirmations'
     and permission.parameters ->> 'splitId' = v_split_id::text;
 
   if v_permission_count <> 1 then
@@ -250,43 +350,44 @@ begin
   ) then
     raise exception 'Execution outcome did not queue automatic Manager continuation.';
   end if;
-
-  if not exists (
-    select 1
-    from public.manager_synthesis_runs as run
-    where run.mission_id = v_mission_id
-      and run.classification = 'deterministic_external_action_producer_v1'
-      and run.status = 'completed'
-      and run.action_plan <> '[]'::jsonb
-  ) then
-    raise exception 'Deterministic action producer audit run was not completed.';
-  end if;
 end;
 $$;
 
 rollback;
 
--- Guard the trigger/function topology separately from the fixture behavior.
+-- Guard the authorization topology separately from fixture behavior.
 do $$
 begin
-  if to_regprocedure('public.maybe_prepare_split_confirmation_permission_v1(uuid)') is null then
-    raise exception 'maybe_prepare_split_confirmation_permission_v1 is missing';
+  if to_regprocedure('public.prepare_manager_split_confirmation_intent_v1(uuid)') is null then
+    raise exception 'explicit Manager split intent function is missing';
   end if;
 
-  if not exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_split' and not tgisinternal) then
-    raise exception 'split readiness producer trigger is missing';
+  if not exists (
+    select 1 from pg_trigger
+    where tgname = 'prepare_split_permission_from_manager_intent'
+      and not tgisinternal
+  ) then
+    raise exception 'explicit Manager intent trigger is missing';
   end if;
 
-  if not exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_contributor' and not tgisinternal) then
-    raise exception 'contributor readiness producer trigger is missing';
+  if exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_split' and not tgisinternal) then
+    raise exception 'unsafe split-readiness producer trigger still exists';
   end if;
 
-  if not exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_task' and not tgisinternal) then
-    raise exception 'Task-currentness producer trigger is missing';
+  if exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_contributor' and not tgisinternal) then
+    raise exception 'unsafe contributor-readiness producer trigger still exists';
   end if;
 
-  if not exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_mission' and not tgisinternal) then
-    raise exception 'Mission-plan activation producer trigger is missing';
+  if exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_task' and not tgisinternal) then
+    raise exception 'unsafe Task-currentness producer trigger still exists';
+  end if;
+
+  if exists (select 1 from pg_trigger where tgname = 'produce_split_permission_from_mission' and not tgisinternal) then
+    raise exception 'unsafe Mission-plan producer trigger still exists';
+  end if;
+
+  if to_regprocedure('public.maybe_prepare_split_confirmation_permission_v1(uuid)') is not null then
+    raise exception 'legacy readiness-driven split permission function is still callable';
   end if;
 end;
 $$;
