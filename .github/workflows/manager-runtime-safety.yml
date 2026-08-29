@@ -1,0 +1,224 @@
+name: Manager Runtime Safety
+
+on:
+  pull_request:
+    paths:
+      - "src/features/desk/DeskHQ.tsx"
+      - "src/features/desk/TodayRuntimeExecution.tsx"
+      - "src/features/desk/todayProjection.ts"
+      - "src/features/missions/**"
+      - "src/services/taskExecutionClient.ts"
+      - "src/services/todayExecutionSupabase.ts"
+      - "src/services/todayQuestionAction.ts"
+      - "src/services/todayPermissionAction.ts"
+      - "src/manager-execution-loop.test.ts"
+      - "src/manager-adaptive-replan.test.ts"
+      - "src/manager-world-model-question-engine.test.ts"
+      - "src/manager-today-execution.test.ts"
+      - "src/manager-task-quality.test.ts"
+      - "src/manager-permission-intent.test.ts"
+      - "src/manager-state-integrity.test.ts"
+      - "src/artist-understanding.test.ts"
+      - "src/manager-career-watch.test.ts"
+      - "src/manager-e2e-golden.test.ts"
+      - "src/manager-production-hardening.test.ts"
+      - "supabase/functions/manager-artist-understanding/**"
+      - "supabase/functions/manager-career-watch/**"
+      - "supabase/functions/manager-career-watch-dispatcher/**"
+      - "supabase/functions/manager-runtime-health/**"
+      - "supabase/functions/manager-task-execution/**"
+      - "supabase/functions/manager-runtime-runner/**"
+      - "supabase/functions/manager-action-intent-runner/**"
+      - "supabase/functions/manager-dispatcher/**"
+      - "supabase/functions/manager-permission-action/**"
+      - "supabase/functions/send-split-confirmations/**"
+      - "supabase/functions/workflow-recovery/**"
+      - "supabase/functions/generate-music-summary/**"
+      - "supabase/functions/generate-todays-brief/**"
+      - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
+      - "supabase/functions/_shared/openaiMissionGenesis.ts"
+      - "supabase/functions/_shared/openaiManagerConversation.ts"
+      - "supabase/functions/_shared/openaiManagerConversationLegacy.ts"
+      - "supabase/functions/_shared/openaiManagerTaskQuality.ts"
+      - "supabase/functions/_shared/openaiMusicManagerRead.ts"
+      - "supabase/functions/_shared/todaysBriefOperatingContext.ts"
+      - "supabase/functions/_shared/manager-intelligence/**"
+      - "supabase/functions/_shared/managerRuntimeGuardrails.ts"
+      - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
+      - "supabase/functions/_shared/managerTaskQuality.ts"
+      - "supabase/functions/_shared/missionGraphPersistence.ts"
+      - "supabase/functions/_shared/manager-conversation/context.ts"
+      - "supabase/functions/_shared/artistUnderstanding.ts"
+      - "supabase/migrations/*manager_runtime*"
+      - "supabase/migrations/*manager_production_hardening*"
+      - "supabase/migrations/*manager_runtime_limits*"
+      - "supabase/migrations/*manager_runtime_incidents*"
+      - "supabase/migrations/*manager_state_integrity*"
+      - "supabase/migrations/*manager_permission_execution*"
+      - "supabase/migrations/*manager_split_permission_producer*"
+      - "supabase/migrations/*manager_explicit_split_action_intent*"
+      - "supabase/migrations/*manager_external_action_candidates*"
+      - "supabase/migrations/*manager_permission_outcome_nudge*"
+      - "supabase/migrations/*adaptive*replan*"
+      - "supabase/migrations/*world_model*question_engine*"
+      - "supabase/migrations/*human_task*execution_contract*"
+      - "supabase/migrations/*content_post_result_signals*"
+      - "supabase/migrations/*task_result_adaptation*"
+      - "supabase/migrations/*manager_result_adaptation_continuation*"
+      - "supabase/migrations/*artist_understanding*"
+      - "supabase/migrations/*manager_career_watch*"
+      - "supabase/tests/manager_runtime_replan_smoke.sql"
+      - "supabase/tests/manager_world_model_smoke.sql"
+      - "supabase/tests/manager_content_execution_contract_smoke.sql"
+      - "supabase/tests/manager_content_result_signal_smoke.sql"
+      - "supabase/tests/manager_result_adaptation_smoke.sql"
+      - "supabase/tests/manager_result_adaptation_continuation_smoke.sql"
+      - "supabase/tests/manager_permission_execution_smoke.sql"
+      - "supabase/tests/manager_action_candidate_smoke.sql"
+      - "supabase/tests/manager_action_producer_smoke.sql"
+      - "supabase/tests/manager_permission_outcome_nudge_smoke.sql"
+      - "supabase/tests/manager_state_integrity_smoke.sql"
+      - "supabase/tests/artist_understanding_smoke.sql"
+      - "supabase/tests/artist_understanding_runtime_smoke.sql"
+      - "supabase/tests/manager_career_watch_smoke.sql"
+      - "supabase/tests/manager_e2e_golden_smoke.sql"
+      - "supabase/tests/manager_production_hardening_smoke.sql"
+      - "supabase/tests/manager_production_concurrency_setup.sql"
+      - "supabase/tests/manager_production_concurrency_verify.sql"
+      - ".github/workflows/manager-runtime-safety.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  VITE_SUPABASE_URL: http://localhost:54321
+  VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+
+jobs:
+  runtime-contract:
+    name: Manager runtime type and contract checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run Manager runtime regression contracts
+        run: >-
+          npx vitest run --environment jsdom --pool=vmThreads
+          src/manager-execution-loop.test.ts
+          src/manager-adaptive-replan.test.ts
+          src/manager-world-model-question-engine.test.ts
+          src/manager-today-execution.test.ts
+          src/manager-task-quality.test.ts
+          src/manager-permission-intent.test.ts
+          src/manager-state-integrity.test.ts
+          src/artist-understanding.test.ts
+          src/manager-career-watch.test.ts
+          src/manager-e2e-golden.test.ts
+          src/manager-production-hardening.test.ts
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check Manager runtime Edge boundaries
+        run: >-
+          deno check
+          supabase/functions/_shared/artistUnderstanding.ts
+          supabase/functions/_shared/manager-intelligence/careerWatch.ts
+          supabase/functions/_shared/managerRuntimeGuardrails.ts
+          supabase/functions/_shared/managerHumanTaskGenerationContract.ts
+          supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
+          supabase/functions/_shared/openaiMissionGenesis.ts
+          supabase/functions/_shared/openaiManagerConversation.ts
+          supabase/functions/_shared/openaiManagerTaskQuality.ts
+          supabase/functions/_shared/openaiMusicManagerRead.ts
+          supabase/functions/_shared/todaysBriefOperatingContext.ts
+          supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts
+          supabase/functions/_shared/managerTaskQuality.ts
+          supabase/functions/_shared/missionGraphPersistence.ts
+          supabase/functions/_shared/manager-conversation/context.ts
+          supabase/functions/manager-artist-understanding/index.ts
+          supabase/functions/manager-career-watch/index.ts
+          supabase/functions/manager-career-watch-dispatcher/index.ts
+          supabase/functions/manager-runtime-health/index.ts
+          supabase/functions/generate-music-summary/index.ts
+          supabase/functions/generate-todays-brief/index.ts
+          supabase/functions/manager-task-execution/index.ts
+          supabase/functions/manager-runtime-runner/index.ts
+          supabase/functions/manager-action-intent-runner/index.ts
+          supabase/functions/manager-dispatcher/index.ts
+          supabase/functions/manager-permission-action/index.ts
+          supabase/functions/send-split-confirmations/index.ts
+          supabase/functions/workflow-recovery/index.ts
+
+  runtime-database:
+    name: Fresh Manager runtime database smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+      - name: Add disposable local-only Vault prerequisites
+        shell: bash
+        run: |
+          cat > supabase/migrations/20260525000000_ci_vault_prereqs.sql <<'SQL'
+          create extension if not exists supabase_vault with schema vault;
+          select vault.create_secret('http://host.docker.internal:54321', 'project_url');
+          select vault.create_secret('ci-billing-worker-secret', 'billing_worker_secret');
+          select vault.create_secret('ci-workflow-worker-secret', 'workflow_worker_secret');
+          SQL
+      - name: Start fresh database and apply all migrations
+        run: supabase db start
+      - name: Verify Manager runtime functions, guards and cron routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then echo 'Supabase database container was not found.' >&2; exit 1; fi
+          run_sql() {
+            docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < "$1"
+          }
+          run_sql supabase/tests/manager_runtime_replan_smoke.sql
+          run_sql supabase/tests/manager_world_model_smoke.sql
+          run_sql supabase/tests/manager_content_execution_contract_smoke.sql
+          run_sql supabase/tests/manager_content_result_signal_smoke.sql
+          run_sql supabase/tests/manager_result_adaptation_smoke.sql
+          run_sql supabase/tests/manager_result_adaptation_continuation_smoke.sql
+          run_sql supabase/tests/manager_permission_execution_smoke.sql
+          run_sql supabase/tests/manager_action_candidate_smoke.sql
+          run_sql supabase/tests/manager_action_producer_smoke.sql
+          run_sql supabase/tests/manager_permission_outcome_nudge_smoke.sql
+          run_sql supabase/tests/manager_state_integrity_smoke.sql
+          run_sql supabase/tests/artist_understanding_smoke.sql
+          run_sql supabase/tests/artist_understanding_runtime_smoke.sql
+          run_sql supabase/tests/manager_career_watch_smoke.sql
+          run_sql supabase/tests/manager_e2e_golden_smoke.sql
+          run_sql supabase/tests/manager_production_hardening_smoke.sql
+      - name: Stress concurrent Manager admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_setup.sql
+          pids=""
+          for i in $(seq 1 12); do
+            docker exec "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -Atqc "select public.claim_manager_runtime_admission_v1('80000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000003','80000000-0000-4000-8000-000000000002','concurrent-stress',1,180);" > "/tmp/manager-admission-$i.log" 2>&1 &
+            pids="$pids $!"
+          done
+          for pid in $pids; do wait "$pid"; done
+          docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_verify.sql
+      - name: Stop local Supabase
+        if: always()
+        run: supabase stop --no-backup || true

@@ -1,7 +1,8 @@
-import { Check, Upload, X } from "lucide-react";
+import { Check, Clock3, Play, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, IconButton } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
+import type { TaskExecutionState, TaskMoveReview } from "../../services/taskExecutionClient";
 import type {
   MissionCheckpointViewModel,
   MissionTaskDeliverableViewModel,
@@ -24,8 +25,13 @@ export function TaskSheet({
   mutation,
   deliverables,
   availableAfter,
+  executionState,
+  moveReview,
+  moveReviewDeferred,
   onClose,
   onApprove,
+  onStart,
+  onMove,
   onComplete,
   onUpload,
   onWorkWithManager,
@@ -37,23 +43,37 @@ export function TaskSheet({
   mutation?: TaskMutationState;
   deliverables: MissionTaskDeliverableViewModel[];
   availableAfter?: string;
+  executionState?: TaskExecutionState | null;
+  moveReview?: TaskMoveReview | null;
+  moveReviewDeferred?: boolean;
   onClose: () => void;
   onApprove: () => void;
+  onStart: () => Promise<void>;
+  onMove: (availableFrom: string, note: string) => Promise<void>;
   onComplete: (intent: CompletionIntent, note: string) => void;
   onUpload: (deliverable: MissionTaskDeliverableViewModel, file: File) => void;
   onWorkWithManager: () => void;
 }) {
   const [intent, setIntent] = useState<CompletionIntent | null>(null);
   const [note, setNote] = useState("");
+  const [moving, setMoving] = useState(false);
+  const [moveAt, setMoveAt] = useState("");
+  const [moveNote, setMoveNote] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadTargetId, setUploadTargetId] = useState<string | null>(null);
 
   const workMode = resolveTaskWorkMode(task);
   const completionMode = resolveTaskCompletionMode(task);
   const pending = mutation?.status === "pending";
-  const blocked = task.result?.status === "blocked" || task.approvalState === "blocked";
+  const executionStatus = executionState?.status ?? "";
+  const blocked = executionState
+    ? executionStatus === "blocked"
+    : task.result?.status === "blocked" || task.approvalState === "blocked";
+  const started = executionStatus === "in_progress";
+  const scheduledForLater = Boolean(executionState?.availableFrom && new Date(executionState.availableFrom).getTime() > Date.now());
   const unavailable = Boolean(availableAfter);
-  const canComplete = !unavailable && (task.approvalState !== "needs approval" || approved);
+  const canActNow = !unavailable && !scheduledForLater;
+  const canComplete = canActNow && (task.approvalState !== "needs approval" || approved);
   const noteRequired = intent === "blocked" || completionMode === "result_note";
 
   useEffect(() => {
@@ -70,15 +90,24 @@ export function TaskSheet({
   }, [onClose, pending]);
 
   function pickFile(deliverable: MissionTaskDeliverableViewModel) {
-    if (unavailable) return;
+    if (!canActNow) return;
     setUploadTargetId(deliverable.id);
     fileInputRef.current?.click();
   }
 
   function submitCompletion() {
-    if (!intent || unavailable) return;
+    if (!intent || !canActNow) return;
     if (noteRequired && !note.trim()) return;
     onComplete(intent, note);
+  }
+
+  async function submitMove() {
+    const parsed = new Date(moveAt);
+    if (!moveAt || Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) return;
+    await onMove(parsed.toISOString(), moveNote);
+    setMoving(false);
+    setMoveAt("");
+    setMoveNote("");
   }
 
   return (
@@ -108,13 +137,24 @@ export function TaskSheet({
               <h2 id="mission-task-sheet-title" className="font-display text-[24px] font-semibold leading-tight tracking-[-0.025em] text-foreground sm:text-[26px]">
                 {task.title}
               </h2>
-              {task.deadline ? <p className="mt-2 text-[12px] font-medium text-muted-foreground">{task.deadline}</p> : null}
+              <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] font-medium text-muted-foreground">
+                {task.deadline ? <span>{task.deadline}</span> : null}
+                {executionState?.estimatedMinutes ? <span>{executionState.estimatedMinutes} min</span> : null}
+                {started ? <span className="font-semibold text-brand-accent">In progress</span> : null}
+              </div>
             </div>
           </div>
 
           {availableAfter ? (
             <p className="mt-5 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
               Available after {availableAfter}
+            </p>
+          ) : null}
+
+          {executionState?.availableFrom ? (
+            <p className="mt-4 flex items-center gap-2 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
+              <Clock3 className="h-3.5 w-3.5" aria-hidden="true" />
+              Available {formatAvailability(executionState.availableFrom)}
             </p>
           ) : null}
 
@@ -153,7 +193,7 @@ export function TaskSheet({
                         variant="secondary"
                         size="sm"
                         onClick={() => pickFile(deliverable)}
-                        disabled={pending || unavailable}
+                        disabled={pending || !canActNow}
                         pending={pending && mutation?.kind === "upload" && uploadTargetId === deliverable.id}
                         leadingIcon={<Upload className="h-3.5 w-3.5" />}
                       >
@@ -173,7 +213,7 @@ export function TaskSheet({
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   const target = deliverables.find((deliverable) => deliverable.id === uploadTargetId);
-                  if (file && target && !unavailable) onUpload(target, file);
+                  if (file && target && canActNow) onUpload(target, file);
                   event.currentTarget.value = "";
                 }}
               />
@@ -186,6 +226,18 @@ export function TaskSheet({
               <p className="mt-2 text-[13px] font-semibold text-foreground">{task.managerDraft.title}</p>
               <ManagerDraftDocument content={task.managerDraft.summary} />
             </section>
+          ) : null}
+
+          {moveReview ? (
+            <section data-testid="task-move-manager-review" className="mt-5 rounded-[14px] border border-brand-accent/12 bg-brand-accent/[0.045] px-4 py-4">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-brand-accent">Desk checked the plan</p>
+              <p className="mt-2 text-[13px] font-semibold leading-relaxed text-foreground">{moveReview.summary}</p>
+              {moveReview.nextHumanMove ? <p className="mt-1.5 text-[12px] font-medium leading-relaxed text-foreground/70">{moveReview.nextHumanMove}</p> : null}
+            </section>
+          ) : moveReviewDeferred ? (
+            <p className="mt-5 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
+              The new timing is saved. Desk queued the downstream impact review.
+            </p>
           ) : null}
 
           {task.result?.summary ? (
@@ -211,12 +263,43 @@ export function TaskSheet({
           ) : unavailable ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
               <Button type="button" size="lg" disabled className="w-full">
-                {task.approvalState === "needs approval" ? "Approve" : completionMode === "manager_draft" ? "Work with Manager" : deliverables.length ? "Upload" : "Mark complete"}
+                Available after {availableAfter}
               </Button>
             </div>
           ) : workMode === "manager_work" ? (
             <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
-              <p className="text-[13px] font-semibold text-foreground">In progress</p>
+              <p className="text-[13px] font-semibold text-foreground">Desk is handling this</p>
+            </div>
+          ) : moving ? (
+            <div className="mt-7 border-t border-foreground/8 pt-5">
+              <p className="text-[12px] font-semibold text-foreground">When can you realistically get back to this?</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" size="sm" variant="secondary" onClick={() => setMoveAt(localDateTimeValue(addHours(new Date(), 3)))} disabled={pending}>Later today</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => setMoveAt(localDateTimeValue(addDays(new Date(), 1)))} disabled={pending}>Tomorrow</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => setMoveAt(localDateTimeValue(addDays(new Date(), 3)))} disabled={pending}>In 3 days</Button>
+              </div>
+              <label htmlFor={`task-move-at-${task.id}`} className="mt-4 block text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/70">Or choose a time</label>
+              <input
+                id={`task-move-at-${task.id}`}
+                type="datetime-local"
+                value={moveAt}
+                min={localDateTimeValue(new Date(Date.now() + 60_000))}
+                onChange={(event) => setMoveAt(event.target.value)}
+                className="mt-2 min-h-11 w-full rounded-[12px] border border-foreground/10 bg-background px-3.5 text-[14px] font-medium text-foreground outline-none focus:border-brand-accent/45 focus:ring-2 focus:ring-brand-accent/8"
+              />
+              <label htmlFor={`task-move-note-${task.id}`} className="mt-4 block text-[12px] font-semibold text-foreground">Anything changed? <span className="font-medium text-muted-foreground">Optional</span></label>
+              <textarea
+                id={`task-move-note-${task.id}`}
+                rows={3}
+                value={moveNote}
+                onChange={(event) => setMoveNote(event.target.value)}
+                placeholder="e.g. Daniel can’t make it, but Sunday works."
+                className="mt-2 w-full resize-none rounded-[14px] border border-foreground/10 bg-background px-3.5 py-3 text-[14px] font-medium leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/55 focus:border-brand-accent/45 focus:ring-2 focus:ring-brand-accent/8"
+              />
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Button type="button" variant="secondary" size="lg" onClick={() => { setMoving(false); setMoveAt(""); setMoveNote(""); }} disabled={pending}>Cancel</Button>
+                <Button type="button" size="lg" onClick={() => void submitMove()} pending={pending && mutation?.kind === "move"} disabled={!moveAt || new Date(moveAt).getTime() <= Date.now()}>Move it</Button>
+              </div>
             </div>
           ) : intent ? (
             <div className="mt-7 border-t border-foreground/8 pt-5">
@@ -228,7 +311,7 @@ export function TaskSheet({
                 rows={4}
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                placeholder={intent === "blocked" ? "Describe what’s stopping the work." : "Add the outcome."}
+                placeholder={intent === "blocked" ? "Tell Desk what changed so it can adjust the plan." : "Add the outcome."}
                 className="mt-2 w-full resize-none rounded-[14px] border border-foreground/10 bg-background px-3.5 py-3 text-[14px] font-medium leading-relaxed text-foreground outline-none transition-colors placeholder:text-muted-foreground/55 focus:border-brand-accent/45 focus:ring-2 focus:ring-brand-accent/8"
               />
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -248,9 +331,15 @@ export function TaskSheet({
                   pending={pending}
                   disabled={noteRequired && !note.trim()}
                 >
-                  {intent === "blocked" ? "Report blocker" : completionMode === "manager_draft" ? "Submit for review" : "Mark complete"}
+                  {intent === "blocked" ? "Tell Desk" : completionMode === "manager_draft" ? "Submit for review" : "Done"}
                 </Button>
               </div>
+            </div>
+          ) : scheduledForLater ? (
+            <div className="mt-7 grid gap-2 border-t border-foreground/8 pt-5">
+              <Button type="button" size="lg" disabled className="w-full">Available {formatAvailability(executionState!.availableFrom!)}</Button>
+              <Button type="button" variant="secondary" size="lg" onClick={() => setMoving(true)} disabled={pending} className="w-full">Move it</Button>
+              {!blocked ? <Button type="button" variant="ghost" size="lg" onClick={() => setIntent("blocked")} disabled={pending} className="w-full">I’m blocked</Button> : null}
             </div>
           ) : (
             <div className="mt-7 grid gap-2 border-t border-foreground/8 pt-5">
@@ -262,6 +351,10 @@ export function TaskSheet({
                 <Button type="button" size="lg" onClick={onWorkWithManager} disabled={pending} className="w-full">
                   Work with Manager
                 </Button>
+              ) : !started ? (
+                <Button type="button" size="lg" onClick={() => void onStart()} pending={pending && mutation?.kind === "start"} disabled={pending || blocked} leadingIcon={<Play className="h-4 w-4" />} className="w-full">
+                  Start
+                </Button>
               ) : (
                 <Button
                   type="button"
@@ -270,9 +363,19 @@ export function TaskSheet({
                   disabled={pending || blocked || !canComplete}
                   className="w-full"
                 >
-                  {completionMode === "manager_draft" ? "Submit for review" : completionMode === "result_note" ? "Add result" : "Mark complete"}
+                  Done
                 </Button>
               )}
+
+              {!started && task.approvalState !== "needs approval" ? (
+                <Button type="button" variant="secondary" size="lg" onClick={() => setIntent("completed")} disabled={pending || blocked || !canComplete} className="w-full">
+                  Already done
+                </Button>
+              ) : null}
+
+              <Button type="button" variant="secondary" size="lg" onClick={() => setMoving(true)} disabled={pending} className="w-full">
+                Move it
+              </Button>
 
               {!blocked ? (
                 <Button
@@ -283,7 +386,7 @@ export function TaskSheet({
                   disabled={pending}
                   className="w-full"
                 >
-                  Report a blocker
+                  I’m blocked
                 </Button>
               ) : null}
             </div>
@@ -327,4 +430,31 @@ function renderInlineMarkdown(value: string) {
   return parts.map((part, index) => part.startsWith("**") && part.endsWith("**")
     ? <strong key={`${index}-${part}`} className="font-semibold text-foreground">{part.slice(2, -2)}</strong>
     : <span key={`${index}-${part}`}>{part}</span>);
+}
+
+function localDateTimeValue(date: Date) {
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 16);
+}
+
+function addHours(date: Date, hours: number) {
+  return new Date(date.getTime() + hours * 60 * 60_000);
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60_000);
+}
+
+function formatAvailability(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "later";
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const sameDay = date.toDateString() === now.toDateString();
+  const nextDay = date.toDateString() === tomorrow.toDateString();
+  const time = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" }).format(date);
+  if (sameDay) return `today at ${time}`;
+  if (nextDay) return `tomorrow at ${time}`;
+  return new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(date);
 }

@@ -54,6 +54,9 @@ Deno.serve(withAppErrorCapture("refresh-public-context", async (request) => {
     usageId = await createUsageEvent(db, input, runId);
 
     const output = await callOpenAIPublicWebContext(profile);
+    // Keep the distilled semantic payload. Manager reasoning needs the claim,
+    // management use, identity/market clues and mission implications; stripping
+    // metadata here turned successful web research into almost-empty evidence.
     const evidenceRows = normalizePublicWebContextOutput({
       accountId: input.accountId,
       artistWorkspaceId: input.artistWorkspaceId,
@@ -61,7 +64,7 @@ Deno.serve(withAppErrorCapture("refresh-public-context", async (request) => {
       artistName: profile.artistName,
       output,
       createdFromRunId: runId,
-    }).map(({ metadata: _metadata, ...row }) => row);
+    });
 
     let insertedEvidenceIds: string[] = [];
     if (evidenceRows.length) {

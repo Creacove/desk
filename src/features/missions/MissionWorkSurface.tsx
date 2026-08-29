@@ -1,6 +1,12 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { cn } from "../../lib/utils";
+import {
+  loadTaskExecutionState,
+  moveMissionTask,
+  startMissionTask,
+  type TaskExecutionResponse,
+} from "../../services/taskExecutionClient";
 import type {
   MissionCheckpointViewModel,
   MissionTaskDeliverableViewModel,
@@ -16,6 +22,7 @@ import {
   getBlockingDependency,
   getInitialCheckpointId,
   getNextArtistTask,
+  humanCheckpointStatus,
   isTaskOptimisticallyDone,
   omitKey,
   replaceDeliverable,
@@ -48,6 +55,8 @@ export function WorkSurface({
   const [optimisticCompleted, setOptimisticCompleted] = useState<string[]>([]);
   const [mutations, setMutations] = useState<Record<string, TaskMutationState>>({});
   const [deliverablesByTask, setDeliverablesByTask] = useState<Record<string, MissionTaskDeliverableViewModel[]>>({});
+  const [executionByTask, setExecutionByTask] = useState<Record<string, TaskExecutionResponse>>({});
+  const [executionLoaded, setExecutionLoaded] = useState<string[]>([]);
 
   useEffect(() => {
     setSelectedTaskId(targetTaskId ?? null);
@@ -60,6 +69,20 @@ export function WorkSurface({
       return [initialCheckpointId];
     });
   }, [checkpoints, initialCheckpointId]);
+
+  useEffect(() => {
+    if (!selectedTaskId || executionLoaded.includes(selectedTaskId)) return;
+    let cancelled = false;
+    setExecutionLoaded((current) => [...new Set([...current, selectedTaskId])]);
+    void loadTaskExecutionState(selectedTaskId)
+      .then((state) => {
+        if (!cancelled && state) {
+          setExecutionByTask((current) => ({ ...current, [selectedTaskId]: { task: state, managerReview: null } }));
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [executionLoaded, selectedTaskId]);
 
   const selectedTask = selectedTaskId ? tasks.find((task) => task.id === selectedTaskId) ?? null : null;
   const attentionTask = getNextArtistTask(tasks, checkpoints, optimisticCompleted);
@@ -82,6 +105,34 @@ export function WorkSurface({
     }
   }
 
+  async function startTask(task: MissionTaskViewModel) {
+    setMutations((current) => ({ ...current, [task.id]: { kind: "start", status: "pending" } }));
+    try {
+      const response = await startMissionTask(task.id);
+      setExecutionByTask((current) => ({ ...current, [task.id]: response }));
+      setMutations((current) => omitKey(current, task.id));
+    } catch (error) {
+      setMutations((current) => ({
+        ...current,
+        [task.id]: { kind: "start", status: "error", message: errorMessage(error, "Desk could not start this task.") },
+      }));
+    }
+  }
+
+  async function moveTask(task: MissionTaskViewModel, availableFrom: string, note: string) {
+    setMutations((current) => ({ ...current, [task.id]: { kind: "move", status: "pending" } }));
+    try {
+      const response = await moveMissionTask(task.id, { availableFrom, note });
+      setExecutionByTask((current) => ({ ...current, [task.id]: response }));
+      setMutations((current) => omitKey(current, task.id));
+    } catch (error) {
+      setMutations((current) => ({
+        ...current,
+        [task.id]: { kind: "move", status: "error", message: errorMessage(error, "Desk could not move this task.") },
+      }));
+    }
+  }
+
   async function completeTask(task: MissionTaskViewModel, intent: CompletionIntent, note: string) {
     setMutations((current) => ({ ...current, [task.id]: { kind: intent === "blocked" ? "block" : "complete", status: "pending" } }));
     const deliverables = resolveTaskDeliverables(task, deliverablesByTask[task.id]);
@@ -94,6 +145,15 @@ export function WorkSurface({
         task.managerDraft?.id,
       );
       if (intent === "completed") setOptimisticCompleted((current) => [...new Set([...current, task.id])]);
+      setExecutionByTask((current) => current[task.id]
+        ? {
+            ...current,
+            [task.id]: {
+              ...current[task.id],
+              task: { ...current[task.id].task, status: intent === "completed" ? "completed" : "blocked" },
+            },
+          }
+        : current);
       setMutations((current) => omitKey(current, task.id));
     } catch (error) {
       setMutations((current) => ({
@@ -164,9 +224,13 @@ export function WorkSurface({
         {checkpoints.map((checkpoint) => {
           const stageTasks = tasks.filter((task) => task.checkpointId === checkpoint.id);
           const stageDone = stageTasks.filter((task) => isTaskOptimisticallyDone(task, optimisticCompleted)).length;
+          const managerOnlyCheckpoint = stageTasks.length === 0;
           const open = openStageIds.includes(checkpoint.id);
           const lockedBy = getBlockingDependency(checkpoint, checkpoints);
           const currentTaskInStep = attentionTask?.checkpointId === checkpoint.id ? attentionTask : null;
+          const checkpointLabel = managerOnlyCheckpoint
+            ? checkpoint.status === "Watching signal" ? "Desk is watching" : "Desk review"
+            : `Step ${checkpoint.phase}`;
 
           return (
             <section key={checkpoint.id} data-testid={`task-group-${checkpoint.id}`} className="border-b border-foreground/8 last:border-b-0">
@@ -178,10 +242,12 @@ export function WorkSurface({
               >
                 <span className="min-w-0">
                   <span className="os-list-title block text-foreground">
-                    Step {checkpoint.phase} · {checkpoint.title}
+                    {checkpointLabel} · {checkpoint.title}
                   </span>
                   <span className="os-list-meta mt-1 block font-semibold text-muted-foreground">
-                    {stageDone} of {stageTasks.length} done
+                    {managerOnlyCheckpoint
+                      ? humanCheckpointStatus(checkpoint.status)
+                      : `${stageDone} of ${stageTasks.length} done`}
                   </span>
                 </span>
                 <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground/55 transition-transform", open && "rotate-180")} />
@@ -209,7 +275,13 @@ export function WorkSurface({
                         />
                       ))}
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="grid gap-1 py-1 text-[12px] font-medium leading-relaxed text-muted-foreground">
+                      {checkpoint.managerRead ? <p>{checkpoint.managerRead}</p> : null}
+                      {checkpoint.nextAction ? <p className="font-semibold text-foreground/70">Next: {checkpoint.nextAction}</p> : null}
+                      {!checkpoint.managerRead && !checkpoint.nextAction ? <p>No action is needed from you here.</p> : null}
+                    </div>
+                  )}
                 </div>
               ) : null}
             </section>
@@ -227,8 +299,13 @@ export function WorkSurface({
           mutation={mutations[selectedTask.id]}
           deliverables={resolveTaskDeliverables(selectedTask, deliverablesByTask[selectedTask.id])}
           availableAfter={selectedBlocker?.title}
+          executionState={executionByTask[selectedTask.id]?.task}
+          moveReview={executionByTask[selectedTask.id]?.managerReview}
+          moveReviewDeferred={executionByTask[selectedTask.id]?.reviewDeferred}
           onClose={() => setSelectedTaskId(null)}
           onApprove={() => approveTask(selectedTask)}
+          onStart={() => startTask(selectedTask)}
+          onMove={(availableFrom, note) => moveTask(selectedTask, availableFrom, note)}
           onComplete={(intent, note) => {
             if (intent === "completed" && selectedTask.completionMode === "manager_draft") setSelectedTaskId(null);
             void completeTask(selectedTask, intent, note);

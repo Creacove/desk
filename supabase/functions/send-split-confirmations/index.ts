@@ -8,12 +8,39 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+type ManagerExecutionInput = {
+  permissionRequestId: string;
+  managerRunActionId: string;
+  executionReceiptId: string;
+  executionKey: string;
+};
+
 type SendInput = {
   accountId: string;
   artistWorkspaceId: string;
   artistId: string;
   musicItemId: string;
   appOrigin: string;
+  managerExecution?: ManagerExecutionInput;
+};
+
+type ManagerExecutionContext = {
+  permissionRequestId: string;
+  managerRunActionId: string;
+  managerRunId: string;
+  missionId: string | null;
+  executionReceiptId: string;
+  executionKey: string;
+  actionPayload: Record<string, unknown>;
+};
+
+type DeliveryReceipt = {
+  contributorId: string;
+  email: string;
+  confirmationId: string;
+  status: "sent" | "failed";
+  providerMessageId: string | null;
+  providerError?: string;
 };
 
 Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
@@ -26,12 +53,14 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
 
     const supabaseUrl = requireEnv("SUPABASE_URL");
     const anonKey = requireEnv("SUPABASE_ANON_KEY");
+    const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
     const authHeader = request.headers.get("Authorization");
     if (!authHeader) return json({ error: "Missing Authorization header." }, 401);
 
     const client = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     });
+    const workflowDb = createClient(supabaseUrl, serviceRoleKey);
 
     const { data: membership, error: membershipError } = await client.rpc("is_account_member", {
       target_account_id: input.accountId,
@@ -40,12 +69,18 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
     if (!membership) return json({ error: "Forbidden." }, 403);
     await assertActiveWorkspaceEntitlement(client, input);
 
+    const managerContext = input.managerExecution
+      ? await loadManagerExecutionContext(workflowDb, input)
+      : null;
+
     const { data: split, error: splitError } = await client
       .from("music_splits")
       .select("id,status,publishing_total,master_total,music_items(title)")
       .eq("account_id", input.accountId)
       .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
       .eq("music_item_id", input.musicItemId)
+      .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
     if (splitError) throw splitError;
@@ -58,6 +93,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
     if (contributorError) throw contributorError;
 
     validateReadyToSend(split, contributors ?? []);
+    if (managerContext) validateFrozenManagerEffect(managerContext, split, contributors ?? [], input.musicItemId);
 
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
     const resendApiKey = requireEnv("RESEND_API_KEY");
@@ -65,7 +101,12 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
     const songTitle = readNestedTitle(split) ?? "Split proposal";
     const sent: string[] = [];
     const failed: string[] = [];
-    const recipients = (contributors ?? []).filter((contributor) => !["confirmed", "cleared"].includes(String(contributor.approval_status ?? "").toLowerCase()));
+    const deliveries: DeliveryReceipt[] = [];
+    const recipients = managerContext
+      ? (contributors ?? [])
+        .filter((contributor) => String(contributor.approval_status ?? "").toLowerCase() === "draft")
+        .sort((a, b) => String(a.id).localeCompare(String(b.id)))
+      : (contributors ?? []).filter((contributor) => !["confirmed", "cleared"].includes(String(contributor.approval_status ?? "").toLowerCase()));
 
     for (const contributor of recipients) {
       const { error: supersedeError } = await client
@@ -75,27 +116,35 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
         .eq("music_split_contributor_id", contributor.id)
         .in("status", ["sent", "opened"]);
       if (supersedeError) throw supersedeError;
+
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
-      const confirmation_token_hash = await hashToken(token);
+      const confirmationTokenHash = await hashToken(token);
       const confirmationUrl = `${input.appOrigin.replace(/\/$/, "")}/split-confirmation?token=${encodeURIComponent(token)}`;
 
-      const { error: insertError } = await client.from("music_split_confirmations").insert({
+      const { data: confirmation, error: insertError } = await client.from("music_split_confirmations").insert({
         account_id: input.accountId,
         artist_workspace_id: input.artistWorkspaceId,
         artist_id: input.artistId,
         music_split_id: split.id,
         music_split_contributor_id: contributor.id,
-        confirmation_token_hash,
-        status: "sent",
+        confirmation_token_hash: confirmationTokenHash,
+        status: "created",
         expires_at: expiresAt,
-      });
+        created_from_run_id: managerContext?.managerRunId ?? null,
+        created_from_action_id: managerContext?.managerRunActionId ?? null,
+        manager_action_execution_id: managerContext?.executionReceiptId ?? null,
+      }).select("id").single();
       if (insertError) throw insertError;
 
+      const resendIdempotencyKey = managerContext
+        ? `${managerContext.executionKey}:contributor:${contributor.id}`
+        : null;
       const emailResponse = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${resendApiKey}`,
           "Content-Type": "application/json",
+          ...(resendIdempotencyKey ? { "Idempotency-Key": resendIdempotencyKey } : {}),
         },
         body: JSON.stringify({
           from,
@@ -112,12 +161,40 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
           }),
         }),
       });
+      const providerPayload = await readJsonSafe(emailResponse);
+      const providerMessageId = typeof providerPayload?.id === "string" ? providerPayload.id : null;
+
       if (!emailResponse.ok) {
+        const providerError = readProviderError(providerPayload, emailResponse.status);
         failed.push(contributor.email);
-        await client.from("music_split_confirmations").update({ status: "revoked" }).eq("confirmation_token_hash", confirmation_token_hash);
+        deliveries.push({
+          contributorId: String(contributor.id),
+          email: String(contributor.email),
+          confirmationId: String(confirmation.id),
+          status: "failed",
+          providerMessageId,
+          providerError,
+        });
+        await client.from("music_split_confirmations")
+          .update({ status: "revoked", provider_message_id: providerMessageId })
+          .eq("id", confirmation.id);
         continue;
       }
+
       sent.push(contributor.email);
+      deliveries.push({
+        contributorId: String(contributor.id),
+        email: String(contributor.email),
+        confirmationId: String(confirmation.id),
+        status: "sent",
+        providerMessageId,
+      });
+      const { error: confirmationUpdateError } = await client
+        .from("music_split_confirmations")
+        .update({ status: "sent", provider_message_id: providerMessageId })
+        .eq("id", confirmation.id);
+      if (confirmationUpdateError) throw confirmationUpdateError;
+
       const { error: contributorStatusError } = await client
         .from("music_split_contributors")
         .update({ approval_status: "pending" })
@@ -134,20 +211,48 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
       }).eq("id", split.id);
       if (updateSplitError) throw updateSplitError;
     }
+
+    const eventPayload = {
+      music_item_id: input.musicItemId,
+      recipient_count: sent.length,
+      failed_count: failed.length,
+      execution_receipt_id: managerContext?.executionReceiptId ?? null,
+      deliveries,
+    };
     const { error: eventError } = await client.from("operating_events").insert({
       account_id: input.accountId,
       artist_workspace_id: input.artistWorkspaceId,
       artist_id: input.artistId,
-      event_type: "music_split_confirmation_sent",
-      actor_type: "user",
+      event_type: failed.length ? "music_split_confirmation_partially_sent" : "music_split_confirmation_sent",
+      actor_type: managerContext ? "manager" : "user",
       target_type: "music_split",
       target_id: split.id,
-      summary: "Sent split confirmation links to collaborators.",
-      payload: { music_item_id: input.musicItemId, recipient_count: sent.length, failed_count: failed.length },
+      source_type: managerContext ? "manager_action_execution" : "music_split",
+      source_id: managerContext?.executionReceiptId ?? split.id,
+      manager_synthesis_run_id: managerContext?.managerRunId ?? null,
+      manager_run_action_id: managerContext?.managerRunActionId ?? null,
+      mission_id: managerContext?.missionId ?? null,
+      dedupe_key: managerContext ? `split-confirmation-action:${managerContext.managerRunActionId}` : null,
+      summary: failed.length
+        ? `Sent ${sent.length} split confirmation${sent.length === 1 ? "" : "s"}; ${failed.length} did not send.`
+        : "Sent split confirmation links to collaborators.",
+      payload: eventPayload,
     });
-    if (eventError) throw eventError;
+    if (eventError && eventError.code !== "23505") throw eventError;
 
-    return json({ status: "sent", sent: sent.length, failed: failed.length });
+    return json({
+      status: failed.length ? "partial" : "sent",
+      sent: sent.length,
+      failed: failed.length,
+      deliveries,
+      managerExecution: managerContext
+        ? {
+          permissionRequestId: managerContext.permissionRequestId,
+          managerRunActionId: managerContext.managerRunActionId,
+          executionReceiptId: managerContext.executionReceiptId,
+        }
+        : null,
+    });
   } catch (error) {
     return json({ error: errorMessage(error, "Split confirmation links could not be sent.") }, 500);
   }
@@ -157,14 +262,127 @@ function validateInput(input: SendInput) {
   if (!input?.accountId || !input.artistWorkspaceId || !input.artistId || !input.musicItemId || !input.appOrigin) {
     throw new Error("Missing required split confirmation input.");
   }
+  if (input.managerExecution) {
+    const manager = input.managerExecution;
+    if (!manager.permissionRequestId || !manager.managerRunActionId || !manager.executionReceiptId || !manager.executionKey) {
+      throw new Error("Manager execution identity is incomplete.");
+    }
+  }
+}
+
+async function loadManagerExecutionContext(db: any, input: SendInput): Promise<ManagerExecutionContext> {
+  const manager = input.managerExecution!;
+  const { data: receipt, error: receiptError } = await db
+    .from("manager_action_execution_receipts")
+    .select("id,status,execution_key,request_payload,manager_run_action_id,permission_request_id")
+    .eq("id", manager.executionReceiptId)
+    .eq("manager_run_action_id", manager.managerRunActionId)
+    .eq("permission_request_id", manager.permissionRequestId)
+    .eq("execution_key", manager.executionKey)
+    .maybeSingle();
+  if (receiptError) throw receiptError;
+  if (!receipt || receipt.status !== "claimed") throw new Error("Manager execution receipt is not claimable.");
+
+  const { data: action, error: actionError } = await db
+    .from("manager_run_actions")
+    .select("id,manager_synthesis_run_id,action_type,status,approval_required,payload")
+    .eq("id", manager.managerRunActionId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (actionError) throw actionError;
+  if (!action
+    || action.action_type !== "send_split_confirmations"
+    || action.status !== "approval_required"
+    || action.approval_required !== true) {
+    throw new Error("Manager action is not an approved executable split-confirmation effect.");
+  }
+
+  const { data: permission, error: permissionError } = await db
+    .from("permission_requests")
+    .select("id,status,mission_id,parameters,created_from_action_id")
+    .eq("id", manager.permissionRequestId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (permissionError) throw permissionError;
+  if (!permission
+    || permission.status !== "approved"
+    || permission.created_from_action_id !== action.id) {
+    throw new Error("Manager action does not have matching approved permission.");
+  }
+
+  const actionPayload = asRecord(action.payload);
+  if (actionPayload.executable !== true || actionPayload.actionKind !== "send_split_confirmations") {
+    throw new Error("Manager action payload is not executable.");
+  }
+  if (String(actionPayload.musicItemId ?? "") !== input.musicItemId) {
+    throw new Error("Manager action music item does not match the requested send.");
+  }
+  if (!sameJson(action.payload, permission.parameters) || !sameJson(action.payload, receipt.request_payload)) {
+    throw new Error("Approved Manager effect no longer matches its execution receipt.");
+  }
+
+  return {
+    permissionRequestId: String(permission.id),
+    managerRunActionId: String(action.id),
+    managerRunId: String(action.manager_synthesis_run_id),
+    missionId: permission.mission_id ? String(permission.mission_id) : null,
+    executionReceiptId: String(receipt.id),
+    executionKey: String(receipt.execution_key),
+    actionPayload,
+  };
+}
+
+function validateFrozenManagerEffect(
+  manager: ManagerExecutionContext,
+  split: any,
+  contributors: any[],
+  musicItemId: string,
+) {
+  const expected = manager.actionPayload;
+  if (String(expected.musicItemId ?? "") !== musicItemId) throw new Error("Approved music item changed before execution.");
+  if (String(expected.splitId ?? "") !== String(split.id)) throw new Error("Approved split changed before execution.");
+  if (String(expected.splitStatus ?? "") !== String(split.status)) throw new Error("Approved split status changed before execution.");
+
+  const currentRecipients = contributors
+    .filter((contributor) => String(contributor.approval_status ?? "").toLowerCase() === "draft")
+    .map((contributor) => ({
+      contributorId: String(contributor.id),
+      name: String(contributor.name ?? ""),
+      role: String(contributor.role ?? ""),
+      email: String(contributor.email ?? "").trim(),
+      publishingShare: normalizeShare(contributor.publishing_share),
+      masterShare: normalizeShare(contributor.master_share),
+    }))
+    .sort((a, b) => a.contributorId.localeCompare(b.contributorId));
+  const expectedRecipients = Array.isArray(expected.recipients)
+    ? expected.recipients.map((recipient) => {
+      const row = asRecord(recipient);
+      return {
+        contributorId: String(row.contributorId ?? ""),
+        name: String(row.name ?? ""),
+        role: String(row.role ?? ""),
+        email: String(row.email ?? "").trim(),
+        publishingShare: normalizeShare(row.publishingShare),
+        masterShare: normalizeShare(row.masterShare),
+      };
+    }).sort((a, b) => a.contributorId.localeCompare(b.contributorId))
+    : [];
+
+  if (!sameJson(currentRecipients, expectedRecipients)) {
+    throw new Error("Split recipients or shares changed after approval was requested. Desk will not send a different effect under the old approval.");
+  }
 }
 
 function validateReadyToSend(split: any, contributors: any[]) {
   if (["cleared", "revoked", "superseded"].includes(split.status)) throw new Error("Split proposal cannot be sent.");
   if (!contributors.length) throw new Error("Add split contributors before sending confirmation links.");
   if (contributors.some((contributor) => !String(contributor.email ?? "").trim())) throw new Error("Every contributor needs an email.");
-  const publishingTotal = sumShares(contributors.map((contributor) => contributor.publishing_share));
-  const masterTotal = sumShares(contributors.map((contributor) => contributor.master_share));
+  const publishingTotal = sumShares(contributors.filter((contributor) => contributor.approval_status !== "revoked").map((contributor) => contributor.publishing_share));
+  const masterTotal = sumShares(contributors.filter((contributor) => contributor.approval_status !== "revoked").map((contributor) => contributor.master_share));
   if (publishingTotal !== 100 || masterTotal !== 100) throw new Error("Publishing and master split totals must both equal 100%.");
 }
 
@@ -207,10 +425,48 @@ function formatShare(value: number | string) {
   return `${Number.isFinite(parsed) ? parsed : 0}%`;
 }
 
+function normalizeShare(value: unknown) {
+  const parsed = Number.parseFloat(String(value ?? "").replace("%", ""));
+  return Number.isFinite(parsed) ? String(parsed) : "";
+}
+
 async function hashToken(token: string) {
   const bytes = new TextEncoder().encode(token);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function readJsonSafe(response: Response): Promise<Record<string, unknown> | null> {
+  try {
+    const value = await response.json();
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
+}
+
+function readProviderError(payload: Record<string, unknown> | null, status: number) {
+  const message = payload && typeof payload.message === "string" ? payload.message : null;
+  const name = payload && typeof payload.name === "string" ? payload.name : null;
+  return [name, message].filter(Boolean).join(": ") || `Resend returned HTTP ${status}.`;
+}
+
+function asRecord(value: unknown): Record<string, any> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
+}
+
+function sameJson(left: unknown, right: unknown) {
+  return JSON.stringify(sortJson(left)) === JSON.stringify(sortJson(right));
+}
+
+function sortJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJson);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, sortJson(child)]),
+  );
 }
 
 function readNestedTitle(split: any) {
@@ -225,7 +481,7 @@ function sumShares(values: Array<number | string>) {
 
 function parseShare(value: number | string) {
   if (typeof value === "number") return value;
-  const parsed = Number.parseFloat(value.replace("%", ""));
+  const parsed = Number.parseFloat(String(value).replace("%", ""));
   return Number.isFinite(parsed) ? parsed : 0;
 }
 

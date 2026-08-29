@@ -12,7 +12,7 @@ export type MissionSurface = "work" | "updates";
 export type CompletionIntent = "completed" | "blocked";
 
 export type TaskMutationState = {
-  kind: "approve" | "complete" | "block" | "upload";
+  kind: "approve" | "start" | "move" | "complete" | "block" | "upload";
   status: "pending" | "error";
   message?: string;
 };

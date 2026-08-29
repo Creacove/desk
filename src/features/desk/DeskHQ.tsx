@@ -17,6 +17,7 @@ import type {
   TodayBriefViewModel,
 } from "../../types/cleanProduction";
 import { splitAttentionItems } from "./deskAttention";
+import { TodayRuntimeExecution } from "./TodayRuntimeExecution";
 import { ManagerKnowledgeAttachmentTray, ManagerKnowledgeUploadButton, useManagerKnowledgeUploads } from "../manager/ManagerKnowledgeUpload";
 
 type DeskHQProps = {
@@ -60,7 +61,10 @@ export function DeskHQScreen({
   todayBriefError,
   attention,
   movement,
+  missions,
   onNavigate,
+  onManager,
+  onOpenMission,
   onDrawer,
   onAskManager,
   managerRepository,
@@ -90,7 +94,16 @@ export function DeskHQScreen({
           )}
         />
 
-        <HomeManagerComposer onAskManager={onAskManager} managerRepository={managerRepository} />
+        <TodayRuntimeExecution
+          missions={missions}
+          onOpenMission={onOpenMission}
+          onManager={onManager}
+          refreshKey={visibleActivityCount}
+        />
+
+        <div className="mt-6 sm:mt-7">
+          <HomeManagerComposer onAskManager={onAskManager} managerRepository={managerRepository} />
+        </div>
 
         <section data-testid="desk-editorial-brief" className="mt-8 sm:mt-10">
           <BriefSectionHeader
@@ -170,8 +183,8 @@ function HomeManagerComposer({ onAskManager, managerRepository }: { onAskManager
       value={draft}
       onChange={setDraft}
       onSubmit={submit}
-      ariaLabel="Work with Manager"
-      placeholder="What do you want to work on?"
+      ariaLabel="Update or ask Desk"
+      placeholder="Tell Desk what changed, or ask something"
       className="w-full"
       disabled={knowledge.busy}
       pending={knowledge.busy}

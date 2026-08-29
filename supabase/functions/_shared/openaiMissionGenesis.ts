@@ -1,6 +1,8 @@
+import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGenerationContract.ts";
+
 export type MissionGenesisMode = "initial" | "continuation";
 
-export const MISSION_GENESIS_PROMPT_VERSION = "mission-genesis-grounded-v2";
+export const MISSION_GENESIS_PROMPT_VERSION = "mission-genesis-grounded-v3";
 export const MISSION_GENESIS_PACKET_VERSION = "mission-genesis-packet-v2";
 export const MISSION_GENESIS_SCHEMA_VERSION = "mission_genesis_v2";
 
@@ -375,6 +377,7 @@ const sharedInstructions = [
   "Treat input according to these boundaries: VERIFIED_EVIDENCE is saved evidence and evidence-backed Manager reads; USER_CONTEXT is artist-stated intent, answers, budget, capacity, and preferences; PERSISTED_WORKSPACE_STATE is saved music, missions, tasks, sources, memory, and prior candidate state; PERMITTED_INFERENCE is bounded management judgment derived from those inputs; MISSING_OR_STALE_INFORMATION is limitations, freshness, and evidenceNeeded.",
   "General model knowledge may help interpret a management category, but unsupported knowledge must not become a sourced workspace fact, artist fact, market fact, mission premise, or sourceRef.",
   "You are the senior Manager inside an agentic artist operating system. Use first-principles artist management judgment: specific, commercially literate, creatively sensitive, and honest about uncertainty.",
+  buildManagerHumanTaskGenerationContract(),
   "The application supplies a complete artist operating packet. You alone decide whether there is a durable management objective and, if so, author its mission, checkpoints, tasks, timeline, evidence links, and permission gates.",
   "Mission Genesis is a Mission Orchestrator, not the source of first strategy. It must consume packet.managerIntelligence strategic diagnosis, mission implications, and careerConditionDiagnosis before authoring any mission.",
   "careerConditionDiagnosis is mandatory: before selecting mission families, identify the top career conditions in the packet, such as feature_leverage_moment, feature_overshadowing_risk, artist_identity_gap, song_first_attention, market_opening, rights_splits_risk, team_structure_gap, deal_readiness_moment, fan_ownership_gap, or career_direction_unclear.",
@@ -397,7 +400,7 @@ const sharedInstructions = [
   "Uploads are optional context only. Never create completionMode evidence in a new plan, never make an upload a checkpoint gate, and proceed with a limited or conservative recommendation when private data is unavailable.",
   "checkpoint.managerRead states what the available evidence means now. checkpoint.nextAction names one human action or explicitly says that nothing is needed from the artist while the Manager watches signals.",
   "Visible task steps must be human-facing only. Do not write system-support instructions such as retrieving the packet, attaching evidence refs, referencing mission.sourceRefs, or populating permission request queues.",
-  "Every task MUST include a 'steps' array with 2–6 plain-language sequential actions. Steps describe exactly what to do — specific enough that someone could execute them without needing a meeting. No vague steps like 'do the research' or 'complete the task'. Good step examples: 'Pull city-level streaming breakdown from Spotify for Artists for the last 90 days', 'Build a creator brief with hook timestamp, posting window, and niche context for each target', 'Draft contract term sheet and send to entertainment attorney for review by [week 2]'.",
+  "Every task must include 2–6 sequential human-facing steps that express the executable brief. Do not pad a simple approval or declaration merely to make it longer, and do not use step count or verbosity as a substitute for the semantic Task generation contract above.",
   "Every task must reference a checkpoint key. Every checkpoint must have a decision rule. Use realistic timelines: weeks or months based on the actual scope of the work involved.",
   "Every visible task must declare exactly one completionMode: result_note when the user can report an observable outcome or manager_draft when the Manager can prepare the substantive artifact in chat. The legacy evidence value exists for compatibility but must not be generated.",
   "Every visible task must declare workMode: artist_action when the artist or team performs or reports the work, or collaborative when the artist/team and Manager build or approve it together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put immediate Manager analysis in checkpoint.managerRead instead.",
@@ -708,15 +711,6 @@ function validateMissionJudgeSurface(
     throw new Error(`${label} returned mixed career-management objectives; split career thesis, team operations, and campaign execution into separate missions.`);
   }
 
-  for (const task of tasks) {
-    const systemFacingStep = task.steps.find((step) =>
-      /\b(packet|mission\.sourcerefs|source refs|sourcerefs|reference evidence ids|populate permissionrequests|permissionrequests queue|retrieve artist packet|attach evidence refs)\b/i.test(step),
-    );
-    if (systemFacingStep) {
-      throw new Error(`${label} returned system support inside visible human tasks: ${systemFacingStep}`);
-    }
-  }
-
   if (/(smart url|tiktok conversion|creator pilot|creator-led|saves|follows|playlist push|highest-track push)/i.test(text)) {
     const diagnosisAllowsCampaign =
       /fan capture|campaign execution|conversion proof|marketing validation|fan ownership/i.test(text) &&
@@ -752,12 +746,6 @@ function validateHumanTaskContract(tasks: MissionGenesisTask[], label: string) {
     }
     if (task.completionMode === "evidence") {
       throw new Error(`${label} returned a required upload even though uploads must remain optional context.`);
-    }
-    const taskText = [task.title, task.purpose, ...task.steps].join(" ");
-    const analysisOnly = /\b(review|analy[sz]e|compare|research|assess|validate|monitor|issue a recommendation)\b/i.test(taskText)
-      && !/\b(approve|choose|decide|publish|send|sign|perform|record|report|confirm|attend|schedule)\b/i.test(taskText);
-    if (analysisOnly) {
-      throw new Error(`${label} returned analysis-only work as a visible human task.`);
     }
   }
 }
@@ -1000,4 +988,3 @@ function readOptionalEnum(value: unknown, allowed: string[], fallback: string) {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-
