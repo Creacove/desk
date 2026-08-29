@@ -1,8 +1,10 @@
 import { Eye, MessageCircleQuestion, Play, ShieldCheck } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { createBrowserSupabaseClient } from "../../lib/supabaseClient";
+import { answerTodayManagerQuestion } from "../../services/todayQuestionAction";
 import { loadTodayExecutionProjection } from "../../services/todayExecutionSupabase";
 import type { MissionViewModel } from "../../types/cleanProduction";
+import { GuidedContextQuestion } from "../manager/ManagerComposer";
 import { getNextArtistTask, missionCheckpoints, missionTasks } from "../missions/missionModel";
 import type { TodayExecutionProjection, TodayManagerItem } from "./todayProjection";
 
@@ -49,6 +51,16 @@ export function TodayRuntimeExecution({
     };
   }, [fallback, missionSignature, refreshKey]);
 
+  async function refreshProjectionAfterQuestion() {
+    try {
+      const client = createBrowserSupabaseClient();
+      setProjection(await loadTodayExecutionProjection(client));
+    } catch {
+      // The answer is already durably submitted through Manager. Live-sync or the
+      // next Home refresh will reconcile Today if this convenience refresh fails.
+    }
+  }
+
   if (!projection.primary && !projection.supporting.length && !projection.watches.length) return null;
 
   const actionable = projection.primary ? [projection.primary, ...projection.supporting] : projection.supporting;
@@ -66,14 +78,22 @@ export function TodayRuntimeExecution({
 
       {actionable.length ? (
         <div className="mt-5 divide-y divide-foreground/8 border-t border-foreground/8">
-          {actionable.map((item, index) => (
+          {actionable.map((item, index) => item.kind === "question" ? (
+            <TodayQuestionRow
+              key={`${item.kind}:${item.id}`}
+              item={item}
+              index={index}
+              primary={projection.primary?.id === item.id && projection.primary.kind === item.kind}
+              onManager={onManager}
+              onResolved={refreshProjectionAfterQuestion}
+            />
+          ) : (
             <TodayActionRow
               key={`${item.kind}:${item.id}`}
               item={item}
               index={index}
               primary={projection.primary?.id === item.id && projection.primary.kind === item.kind}
               onOpenMission={onOpenMission}
-              onManager={onManager}
             />
           ))}
         </div>
@@ -100,27 +120,118 @@ export function TodayRuntimeExecution({
   );
 }
 
+function TodayQuestionRow({
+  item,
+  index,
+  primary,
+  onManager,
+  onResolved,
+}: {
+  item: TodayManagerItem;
+  index: number;
+  primary: boolean;
+  onManager: () => void;
+  onResolved: () => Promise<void>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const canAnswerHere = Boolean(item.contextRequestId && item.questionKey && item.conversationId && item.answerKind);
+
+  async function submit(answerOverride?: string) {
+    const answer = (answerOverride ?? value).trim();
+    if (!answer || pending) return;
+    if (!canAnswerHere) {
+      onManager();
+      return;
+    }
+
+    try {
+      setPending(true);
+      setError(null);
+      const client = createBrowserSupabaseClient();
+      await answerTodayManagerQuestion(client, item, answer);
+      setValue("");
+      setOpen(false);
+      await onResolved();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Desk could not save this answer.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  if (open && canAnswerHere) {
+    return (
+      <div data-testid="desk-today-question" data-today-primary={primary ? "true" : "false"} className="grid gap-3 py-4 pl-10">
+        <div className="max-w-[48rem]">
+          <p className="text-[12px] font-medium leading-relaxed text-muted-foreground">{item.whyNow}</p>
+        </div>
+        <GuidedContextQuestion
+          question={{
+            key: item.questionKey!,
+            question: item.title,
+            reason: item.whyNow,
+            answerKind: item.answerKind!,
+            options: item.options ?? [],
+          }}
+          position={0}
+          total={1}
+          value={value}
+          onChange={setValue}
+          onSubmit={submit}
+          onUseRecommendation={() => undefined}
+          onAnswerLater={() => setOpen(false)}
+          sendPending={pending}
+        />
+        {error ? <p role="alert" className="text-[12px] font-medium text-destructive">{error}</p> : null}
+      </div>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => canAnswerHere ? setOpen(true) : onManager()}
+      className="group grid w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-start gap-3 py-4 text-left outline-none hover:bg-foreground/[0.018] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
+      aria-label={`Answer: ${item.title}`}
+      data-today-kind="question"
+      data-today-primary={primary ? "true" : "false"}
+    >
+      <span className={`mt-0.5 flex h-7 w-7 items-center justify-center rounded-full font-mono text-[11px] font-semibold ${primary ? "bg-brand-accent/10 text-brand-accent" : "bg-foreground/[0.055] text-muted-foreground"}`}>
+        {index + 1}
+      </span>
+      <span className="min-w-0">
+        <span className="block text-[14px] font-semibold leading-snug text-foreground">{item.title}</span>
+        <span className="mt-1 block max-w-[50rem] text-[12px] font-medium leading-relaxed text-muted-foreground">{item.whyNow}</span>
+      </span>
+      <span className="mt-0.5 flex items-center gap-1.5 text-[12px] font-semibold text-brand-accent">
+        <MessageCircleQuestion className="h-3.5 w-3.5" aria-hidden="true" />
+        Answer
+      </span>
+    </button>
+  );
+}
+
 function TodayActionRow({
   item,
   index,
   primary,
   onOpenMission,
-  onManager,
 }: {
   item: TodayManagerItem;
   index: number;
   primary: boolean;
   onOpenMission: (missionId: string) => void;
-  onManager: () => void;
 }) {
-  const onClick = item.kind === "question" ? onManager : () => onOpenMission(item.missionId);
   const meta = compactMeta(item);
-  const Icon = item.kind === "question" ? MessageCircleQuestion : item.kind === "permission" ? ShieldCheck : Play;
+  const Icon = item.kind === "permission" ? ShieldCheck : Play;
 
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => onOpenMission(item.missionId)}
       className="group grid w-full grid-cols-[2rem_minmax(0,1fr)_auto] items-start gap-3 py-4 text-left outline-none hover:bg-foreground/[0.018] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20"
       aria-label={`${ctaLabel(item.cta)}: ${item.title}`}
       data-today-kind={item.kind}
