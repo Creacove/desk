@@ -2,7 +2,7 @@
 
 ## Product contract
 
-When Desk assigns content work, the artist should be able to make the content without asking:
+When Desk assigns content work, the artist should be able to make it without asking:
 
 > “Okay, but what exactly do I film?”
 
@@ -16,52 +16,55 @@ A content task is not complete because it says:
 
 Those are strategic directions, not executable work.
 
-The Manager Runtime must compile the creative idea into a practical production brief that fits the artist's real resources, time, budget, location, preferences and current campaign strategy.
+Desk must compile the creative idea into a practical production brief that fits the artist's real resources, time, budget, location, preferences and campaign strategy.
 
 The target feeling is:
 
-> **Desk did the manager/creative-producer thinking. I just need to make this.**
+> **Desk did the manager/creative-producer thinking. I just need to make and post this.**
+
+## Hard product constraint: no campaign-media upload dependency
+
+Desk should **not** require artists to upload campaign videos, rough cuts, photos or other content media into OrderSounds/Supabase as part of the Manager Runtime.
+
+Reasons:
+
+- campaign video storage is not core product value;
+- video would consume storage/egress quickly;
+- current OpenAI model stack does not make full video review a reliable core primitive;
+- forcing uploads adds another workflow artists must maintain;
+- the Manager should remain valuable even when it cannot inspect the raw media.
+
+Therefore the content loop is built around:
+
+1. a highly specific execution brief **before** the artist makes the content;
+2. normal creation/editing in the artist's existing tools;
+3. normal posting to the target platform;
+4. a public post URL or connected-platform post identity as proof;
+5. platform metrics / artist-reported result evidence for review;
+6. automatic Manager evaluation of the campaign signal, not a promise that Desk visually inspected footage it never received.
+
+If future provider integrations allow legitimate direct media access without making OrderSounds the storage layer, that can be added as an optional enhancement. It is not an MVP dependency.
 
 ---
 
 # Why content needs first-class structure
 
-The current Task model is much stronger than a title-only to-do:
+The current Task model is stronger than a title-only to-do, but `steps: string[]` alone is too weak for creative production because important fields can disappear without violating the contract.
 
-- title;
-- purpose;
-- steps;
-- completion expectation;
-- manager/user responsibility;
-- risk if late;
-- deadline/availability;
-- result/deliverables.
+Content therefore needs a typed `execution_brief` attached to the human Task.
 
-That is sufficient for many operational tasks.
-
-It is not sufficient to reliably represent a content execution brief.
-
-A `steps: string[]` array can technically hold creative detail, but it has three problems:
-
-1. the model can omit important production dimensions without violating the schema;
-2. the UI cannot distinguish hook, shot plan, script, song cue, edit direction, CTA or resources;
-3. Manager review cannot reason against the original creative intent structurally.
-
-Content therefore needs a typed execution object attached to a human Task.
-
-Do not create a separate content-planning product outside Missions. The content brief belongs to the Task that the artist is executing.
+Do not create a separate content-planning product outside Missions. Mission owns the outcome; Task owns the human action; the execution brief tells the artist exactly how to execute it.
 
 ---
 
 # Product-quality lenses
 
-## Lens 1 — utility
-
-The object must turn strategy into something filmable/postable.
+## Utility
 
 The artist should know:
 
 - what to make;
+- why this piece exists;
 - where/how to make it;
 - who is needed;
 - what happens in the opening seconds;
@@ -69,155 +72,115 @@ The artist should know:
 - where the song enters;
 - how it should be edited;
 - what response we want;
-- what to return to Desk.
+- where to post it;
+- what evidence Desk needs afterward.
 
-If the user still has to invent the creative execution, the object has not done its job.
+If the artist still has to invent the execution, the task is not ready.
 
-## Lens 2 — user effort
+## Low user effort
 
 Do not make the artist fill out a creative brief.
 
-Desk should compile it from:
+Desk compiles it from:
 
 - strategy state;
-- cultural/song meaning;
+- lyrics/song meaning;
 - World Model resources;
 - creator preferences;
 - budget;
-- current Mission phase;
-- prior test results;
-- platform/content evidence when available.
+- Mission phase;
+- prior post results;
+- platform evidence when available.
 
-Ask only for a decision-changing fact if one specific unknown blocks the concept.
+Ask one decision-changing question only when one unknown materially changes the concept.
 
-## Lens 3 — context/memory
+## Context
 
-A content brief should use current operating reality.
+Never require people, places, equipment or spend that Desk has not grounded in current facts.
 
 Examples:
 
-- artist has iPhone but no camera;
-- can get two friends Saturday;
-- can borrow car until Sunday;
+- iPhone available;
+- two friends free Saturday;
+- car access until Sunday;
 - dislikes memorized scripts;
 - speaks Igbo/Pidgin/English;
-- ₦20k exists but early proof does not justify spending it yet.
+- ₦20k exists but proof does not justify spending it yet.
 
-Do not generate a production concept that requires resources Desk does not know are available.
+## Reasoning
 
-## Lens 4 — reasoning quality
-
-A good brief has a creative hypothesis.
+Every content brief has a hypothesis.
 
 Example:
 
-> Personal resilience stories will make Odaeshi feel like language people can use for themselves, rather than only a song they passively listen to.
+> Personal resilience stories will make Odaeshi feel like language people can use for themselves rather than only a song they listen to.
 
-The execution should test that hypothesis.
+The content tests that hypothesis.
 
-Content is not valuable merely because it looks good.
+## Runtime
 
-## Lens 5 — runtime/harness
-
-A content brief must survive across:
+The brief survives across:
 
 - task creation;
 - Today projection;
-- task execution;
-- upload/result submission;
-- Manager review;
-- revision Task;
-- post/publication Task;
+- execution;
+- posted URL / platform identity;
 - response watch;
-- checkpoint decision;
+- Manager evaluation;
+- follow-up Task;
+- checkpoint;
 - adaptive replan.
 
-It cannot live only inside one model response body.
+It cannot live only inside one model response.
 
-## Lens 6 — autonomy
+## Autonomy
 
-Desk should automatically do the work that does not require the artist:
+Desk should automatically do safe machine work:
 
 - concept development;
-- hook options;
-- script/talking-point preparation;
+- hook/talking-point preparation;
 - caption drafting;
-- edit recommendation after reviewing submitted material;
-- comparison against prior tests;
-- response analysis;
-- replan.
+- response comparison;
+- strategy interpretation;
+- replanning.
 
-Artist work should be the real-world production/performance/approval/posting action.
+The artist/team does real-world production, editing, posting and approvals.
 
-## Lens 7 — three clocks
+## Three clocks
 
-Do not schedule:
+Do not schedule fake Manager workdays.
 
-- “Tomorrow: Desk reviews footage”
-- “Day 4: Desk writes caption”
+After a post exists, platform signal waiting is a **watch**.
+When metrics become available, Manager analysis runs immediately.
 
-When footage arrives, review runs immediately.
-When the cut is approved, caption preparation runs immediately.
-If audience response needs 12–24 hours, that is a watch.
+## Execution quality
 
-## Lens 8 — execution quality
+Two gates:
 
-The main quality gate is:
+1. Could the artist execute this now without asking “how?”
+2. Could the artist/song name be swapped and the task still work?
 
-> Could this artist execute the brief now without asking Desk “how?”
+If the first is no or the second is yes, reject it.
 
-Second gate:
+## Trust
 
-> If the artist/song name were swapped, would the brief still work?
+Desk must never imply it watched or reviewed a video it did not actually receive/access.
 
-If yes, it is generic and should be rejected.
+It may say:
 
-## Lens 9 — product coherence
+> “This post produced 2.1× your normal share rate.”
 
-Content remains inside the same Mission/Task runtime.
+It may not say:
 
-- Mission owns outcome;
-- Strategy State owns campaign intent;
-- Task owns human action;
-- Content Execution Brief owns the production instructions for that Task;
-- Task Result owns what happened;
-- Manager review owns interpretation;
-- Watch owns response maturation.
+> “The first five seconds are weak.”
 
-No separate “content calendar brain.”
-
-## Lens 10 — trust
-
-Never invent:
-
-- a location;
-- access to a vehicle;
-- available friends/creators;
-- budget;
-- gear;
-- song meaning;
-- performance metrics;
-- a platform trend as current fact without evidence.
-
-When a resource is a creative suggestion rather than known availability, Desk must either choose a known fallback or ask one contextual question.
-
-## Lens 11 — 11-star feeling
-
-A great brief should create the reaction:
-
-> “How did Desk think of that using the random things I already have around me?”
-
-That is the value of combining strategy with the Artist World Model.
+unless a future legitimate media-access path actually gave Desk visual evidence.
 
 ---
 
 # Object model
 
-Add a structured `execution_brief` to applicable human Tasks.
-
-Do not force every Task to have one. It is primarily for content-production work.
-
-Conceptual schema:
+Conceptual task payload:
 
 ```ts
 type ContentExecutionBrief = {
@@ -230,6 +193,7 @@ type ContentExecutionBrief = {
   conceptSummary: string;
 
   platforms: Array<"tiktok" | "instagram_reels" | "youtube_shorts" | "instagram_feed" | "x" | "other">;
+
   format: {
     media: "video" | "photo" | "carousel" | "text" | "live";
     orientation?: "9:16" | "1:1" | "4:5" | "16:9";
@@ -301,7 +265,7 @@ type ContentExecutionBrief = {
   };
 
   proof: {
-    completionMode: "raw_media" | "draft_cut" | "published_url" | "result_note";
+    completionMode: "published_url" | "connected_platform_post" | "result_note" | "attestation";
     required: string[];
   };
 
@@ -312,13 +276,11 @@ type ContentExecutionBrief = {
 };
 ```
 
-This is conceptual. The implementation may use JSONB on Tasks initially, but the contract should remain typed/validated.
+First implementation can store this as validated JSONB on Tasks.
 
 ---
 
-# Task kind
-
-The runtime should be able to distinguish content work from generic human work without guessing from title text.
+# Task kinds
 
 Recommended task-level field:
 
@@ -336,205 +298,170 @@ task_kind:
   | "result_report";
 ```
 
-The first implementation does not need bespoke UI for every kind. The important change is that content tasks can require/validate `execution_brief`.
-
-Do not infer task type at render time through regexes once the Plan Compiler can emit it directly.
+Do not infer content type from task-title regexes once the compiler can emit it directly.
 
 ---
 
 # Content capture contract
 
-A `content_capture` Task must answer these questions.
+A `content_capture` Task must answer:
 
-## What are we trying to learn/change?
+### What are we trying to learn/change?
 
 Not “promote the song.”
 
-Examples:
-
-- test whether people attach their own resilience stories to Odaeshi;
-- test whether the artist's personal story creates stronger identification than generic anthem language;
-- test whether the call-and-response phrase is naturally repeatable.
-
-## What exactly is the concept?
+### What exactly is the concept?
 
 One sentence the artist can picture.
 
-Example:
+### Which real resources are required?
 
-> Three people sit in a parked car and each says the one thing they thought would finish them; Otmos closes with “That’s Odaeshi,” then the record enters.
+Ground them in World Model facts where possible.
 
-## What resources are required?
+### What happens in the first 1–3 seconds?
 
-Use World Model fact IDs where possible.
+Avoid generic explanatory intros by default.
 
-Known vs optional should be clear.
+### What does the artist say/do?
 
-## What happens in the first 1–3 seconds?
+Match known creative preference.
 
-Do not let every video start with explanation.
-
-Example:
-
-> Start directly on the strongest friend's answer: “I thought dropping out finished me.”
-
-## What does the artist say/do?
-
-Match creative preference.
-
-If World Model says the artist dislikes scripts, use talking points rather than a polished paragraph.
-
-## What is the shot plan?
+### What is the shot plan?
 
 Specific enough for a phone shoot.
 
-## Where does the song enter?
+### Where does the song enter?
 
-Do not merely say “use the sound.”
+“Use the sound” is insufficient.
 
-The cue is part of the concept.
+### What should editing do?
 
-## What should editing do?
+Concrete cuts/pacing/text treatment, not “keep it engaging.”
 
-Examples:
-
-- no intro card;
-- cut dead air aggressively;
-- subtitles only on the actual stories;
-- keep imperfect laughter/reactions;
-- do not over-grade the footage.
-
-## What response are we inviting?
+### What response are we inviting?
 
 Not every post needs “stream now.”
 
+### What proves completion?
+
+For the normal content loop, completion should be one of:
+
+- connected platform identifies the published post;
+- artist pastes the public TikTok/Reels/Shorts URL;
+- artist confirms it was completed when no public evidence is available;
+- artist supplies a short result note/metrics when the platform is not connected.
+
+No campaign-media upload requirement.
+
+---
+
+# Content runtime loop without media uploads
+
+## 1. Capture/edit — human
+
+Artist makes the content in the tools they already use.
+
+Desk does not need the raw file.
+
+## 2. Publish — human / permission boundary
+
+Task contains the final brief, caption/CTA and platform instructions.
+
+If posting remains manual, artist posts normally.
+
+## 3. Post identity — evidence
+
+Preferred order:
+
+1. connected TikTok/platform integration detects the artist's own public post;
+2. artist pastes the public post URL;
+3. artist supplies a short attestation/result note if no public reference exists.
+
+## 4. Response watch — reality
+
+Once the post exists, start the configured observation window.
+
 Examples:
 
-- “What tried to finish you?”
-- comment one word for what you survived;
-- stitch/duet with your story;
-- tag someone who kept standing.
+- 6 hours;
+- 12 hours;
+- 24 hours;
 
-## What counts as completion?
+Do not create a human or Manager calendar Task simply to wait.
 
-Raw footage is often enough for first submission. Do not make the artist edit before Desk has reviewed whether the capture works.
+## 5. Manager evaluation — automatic
 
----
+When signal matures, evaluate what Desk can actually observe.
 
-# Capture → review → revision → publish loop
+For TikTok with creator authorization this can include:
 
-Content should move through a runtime loop rather than one giant Task.
+- views;
+- likes;
+- comments count;
+- shares;
+- post timing;
+- caption/description;
+- comparison with recent artist baseline.
 
-## 1. Capture Task — human
+Do not claim comment sentiment without comment text.
 
-Artist records raw footage.
+## 6. Next move
 
-Completion proof: raw media.
+Manager chooses:
 
-## 2. Manager review — automatic
+- repeat/scale concept;
+- alter CTA;
+- test another creative pillar;
+- change cadence;
+- ask one missing contextual question;
+- start another watch;
+- replan.
 
-As soon as media exists, Desk evaluates:
-
-- hook strength;
-- clarity;
-- emotional specificity;
-- alignment to strategy;
-- unnecessary setup;
-- performance authenticity;
-- usable moments;
-- whether reshoot is actually needed.
-
-No future-day task for Desk.
-
-## 3A. If usable
-
-Desk may automatically prepare:
-
-- edit prescription;
-- recommended opening;
-- caption;
-- CTA.
-
-Then release a human edit Task only if the artist/team must perform the edit.
-
-If connected tools can safely edit in future, that may become Manager action.
-
-## 3B. If revision needed
-
-Create a narrowly scoped human follow-up.
-
-Bad:
-
-> Improve the video.
-
-Good:
-
-> Cut the first six seconds and start on Tobi saying “I thought dropping out finished me.” Keep the rest. No reshoot.
-
-## 3C. If capture failed conceptually
-
-Only request reshoot when existing material cannot be repaired.
-
-Explain exactly what needs to change.
-
-## 4. Publish Task — human/permission boundary
-
-If posting remains human-controlled, Task contains approved asset/caption/posting notes.
-
-## 5. Response Watch — reality
-
-After published URL is submitted/observed, start watch immediately.
-
-## 6. Manager evaluation — automatic
-
-When response window matures, compare intended signal vs observed response and update Plan/Checkpoint.
+The artist never has to ask “what next?”
 
 ---
 
-# Manager review output
+# What Desk can and cannot review
 
-A content-result review should be structured enough to produce surgical follow-up work.
+## Before posting
 
-Conceptual shape:
+Desk reviews the **plan/brief**, not the actual video.
 
-```ts
-type ContentReview = {
-  outcome: "approved" | "edit_only" | "reshoot_partial" | "reshoot_full" | "blocked";
-  summary: string;
-  strategyFit: string;
-  strongestMoment?: {
-    description: string;
-    startSeconds?: number;
-    endSeconds?: number;
-  };
-  hookAssessment: string;
-  keep: string[];
-  change: string[];
-  doNotChange: string[];
-  nextManagerActions: string[];
-  nextHumanAction?: {
-    title: string;
-    exactInstruction: string;
-    estimatedMinutes: number;
-  };
-};
-```
+Its value is making the brief good enough that an emerging artist can execute it with ordinary tools.
 
-A model should not create a revision Task if its own automatic work can resolve the issue.
+## After posting
+
+Desk reviews **performance evidence**, not the unseen video itself.
+
+It may reason about:
+
+- relative response;
+- share/comment/like/view ratios;
+- posting cadence;
+- whether the hypothesis generated participation;
+- whether the concept is worth repeating.
+
+It must not invent visual critique.
+
+## Optional future enhancement
+
+If a connected provider later exposes legitimate media access, or a user deliberately supplies an external public/unlisted URL that the model can access, visual review can become an optional capability.
+
+That capability should still avoid making Supabase/OrderSounds the campaign-media storage layer.
 
 ---
 
-# Odaeshi example — complete brief
+# Odaeshi example
 
 ## Task
 
-**Record “What couldn’t finish us?”**
+**Record and post “What couldn’t finish us?”**
 
-Owner: Otmos
-Estimated time: 30–40 min
-Estimated spend: ₦0
-People: Otmos + 2 friends
-Resource: parked car
+Owner: Otmos  
+Estimated time: 30–40 min  
+Estimated spend: ₦0  
+People: Otmos + 2 friends  
+Resource: parked car  
 Platforms: TikTok / Reels
 
 ## Objective
@@ -545,27 +472,19 @@ Test whether people understand Odaeshi as language for personal resilience, not 
 
 Specific real stories followed by “That’s Odaeshi” will make the meaning easier for viewers to adopt and repeat.
 
-## Concept
-
-Three people sit in a parked car. Each answers one thing they thought they would not recover from. Otmos closes the sequence by naming that survival as Odaeshi.
-
 ## Setup
 
 - Park somewhere quiet; engine off.
 - Phone vertical.
-- Put the phone close enough that all three faces feel intimate rather than like an interview.
-- Use available daylight/window light; no extra lighting purchase.
-- Do not spend the current campaign budget on this test.
+- Keep framing intimate.
+- Use daylight/window light.
+- Do not spend campaign budget on the first test.
 
 ## Hook
 
-Do **not** start with Otmos explaining Odaeshi.
+Do not start with Otmos explaining Odaeshi.
 
-Start on the strongest friend's answer.
-
-Possible first line:
-
-> “I thought dropping out finished me.”
+Start on the strongest answer.
 
 On-screen text:
 
@@ -573,9 +492,7 @@ On-screen text:
 
 ## Talking points
 
-Otmos does not need a memorized script.
-
-Prompt each person:
+Ask each person:
 
 1. What happened?
 2. What made you think you were done?
@@ -583,331 +500,231 @@ Prompt each person:
 
 Otmos closes naturally:
 
-> “That's Odaeshi.”
+> “That’s Odaeshi.”
 
-Then let the song enter.
+Then the song enters.
 
 ## Shot plan
 
-1. Tight frame on strongest first answer — no intro.
-2. Quick reaction from the others.
-3. Second person's story in the same setup.
-4. Otmos gives his own shortest answer.
-5. Otmos says “That's Odaeshi.”
-6. Song enters; hold on the group for one human reaction/laugh/look rather than a staged pose.
+1. Strongest story first.
+2. Quick human reaction.
+3. Second story.
+4. Otmos gives his shortest story.
+5. “That’s Odaeshi.”
+6. Song enters; keep a real reaction rather than staged pose.
 
 ## Edit
 
-- Target 25–40 seconds for first test.
-- Cut pauses before each answer.
-- Keep small real reactions.
-- Subtitle the stories.
-- Do not add a branded title animation.
+- 25–40 seconds.
+- Cut pauses aggressively.
+- Keep real laughter/reactions.
+- Subtitle stories.
+- No branded intro animation.
 - Do not turn it into a polished music-video clip.
 
 ## CTA
 
 > What tried to finish you?
 
-The desired response is personal stories/comments, not “stream now.”
+Desired response: personal stories/comments, not “stream now.”
 
-## Proof
+## Completion proof
 
-Upload the raw best take before editing.
+After posting:
 
-Desk should review whether the strongest opening is already present and tell the artist exactly what to cut/use.
+- if TikTok is connected, Desk should associate the post automatically where possible;
+- otherwise paste the TikTok/Reels URL.
+
+No raw-video upload to Desk.
+
+## Watch
+
+Desk checks available platform metrics after the chosen response window and compares them with the artist's recent baseline.
+
+Example valid Manager conclusion:
+
+> This post's share rate is materially stronger than your recent posts, so the personal-resilience direction deserves another test.
+
+Invalid conclusion without comment text/media evidence:
+
+> People love the opening shot and are telling detailed survival stories in the comments.
 
 ## Fallback
 
-If car access disappears, preserve the same emotional structure in a known quiet location with close seating/framing. Do not throw away the creative hypothesis merely because one production device changed.
+If car access disappears, preserve the same emotional structure in a known quiet location with close seating/framing.
 
 ---
 
 # Resource-aware generation rules
 
-The Plan Compiler / content brief compiler should receive relevant World Model facts.
-
 When choosing a concept:
 
 1. prefer known available resources;
-2. prefer lower-cost execution until evidence justifies spend;
+2. prefer low-cost execution until evidence justifies spend;
 3. do not require professional production by default;
-4. treat relatable/unpolished execution as a legitimate creative choice when it fits the concept;
-5. ask only when one missing resource fact changes which concept should be selected;
+4. treat relatable/unpolished execution as legitimate when it fits the hypothesis;
+5. ask only when one missing resource fact changes the route;
 6. include a fallback for fragile resources.
 
-The goal is not “cheap content.”
-The goal is **resource-intelligent content**.
+The goal is not cheap content. It is **resource-intelligent content**.
 
 ---
 
 # Budget behavior
 
-A content brief should include expected/capped spend.
-
 Rules:
 
-- ₦0 is a valid strategic choice, not a missing budget;
+- ₦0 is a valid strategic choice;
 - do not spend merely because money exists;
 - profile monthly budget is not campaign authorization;
-- current Mission-scoped budget is planning context;
-- actual external spend remains permission-gated;
-- if a paid resource materially improves a proven concept, Desk can propose the spend with expected reason/impact.
+- Mission-scoped budget is planning context;
+- external spend remains permission-gated.
 
 ---
 
-# Platform behavior
+# TikTok/platform evidence contract
 
-Do not turn the schema into a giant platform template library.
+For the first platform integration, prioritize creator-authorized TikTok post identity + metrics.
 
-The Manager should select format based on:
+Useful fields:
 
-- campaign hypothesis;
-- artist identity;
-- current platform behavior/evidence when available;
-- production resources;
-- previous results.
+- platform post ID;
+- URL;
+- created time;
+- description/caption;
+- views;
+- likes;
+- comments count;
+- shares;
+- duration when available.
 
-Platform conventions can inform execution, but the idea should not reduce to:
+Store normalized platform evidence rather than the media file.
 
-> “Use a trending hook and keep it short.”
+Conceptual result object:
 
-That fails the swap test.
+```ts
+type ContentPostEvidence = {
+  taskId: string;
+  platform: "tiktok" | "instagram" | "youtube" | "other";
+  externalPostId?: string;
+  publicUrl?: string;
+  postedAt?: string;
+  source: "connected_api" | "public_url" | "artist_report";
+  metrics?: {
+    views?: number;
+    likes?: number;
+    comments?: number;
+    shares?: number;
+  };
+  capturedAt: string;
+};
+```
+
+This is lightweight database evidence, not media storage.
 
 ---
 
-# Content task UI
+# Task UI
 
-The normal Task surface should remain recognizable as a Task.
+For a content task, render structured sections:
 
-When `execution_brief.kind` is content-related, render structured sections instead of one long text blob.
-
-Recommended order:
-
-1. **What you're making**
-2. **Why this now**
-3. **Setup** — time / cost / people / location / gear
-4. **Hook**
-5. **What to say/do**
-6. **Shot plan**
-7. **Use of the song**
-8. **Edit**
-9. **Post / CTA**
-10. **What to send back to Desk**
+1. What you're making
+2. Why this now
+3. Setup — time/cost/people/location/gear
+4. Hook
+5. What to say/do
+6. Shot plan
+7. Song use
+8. Edit
+9. Post / CTA
+10. What Desk will watch afterward
 11. Start / Done / Move it / I'm blocked
 
-Keep the most important execution detail above the fold.
+On completion, ask only for the smallest evidence necessary:
 
-Do not show internal fact IDs/evidence machinery to the artist.
+- **Post URL** when not connected;
+- or **Done** if connected-platform discovery can resolve the post;
+- or a short result note if the task is not public/platform-observable.
 
----
-
-# Today preview
-
-Today should not render the entire production brief.
-
-Example:
-
-**Record “What couldn’t finish us?”**
-
-30–40 min · ₦0 · Otmos + 2 friends · parked car
-
-Start on the strongest story. Odaeshi enters after “That's Odaeshi.”
-
-**Start**
-
-Opening the Task reveals the full brief.
-
----
-
-# Result/proof types
-
-Content tasks need media-aware proof modes.
-
-Recommended evolution:
-
-- `raw_media`
-- `draft_cut`
-- `published_url`
-- `result_note`
-
-Do not force “Done” based only on an attestation when the task explicitly requires material that Desk needs to review.
-
-The upload/runtime implementation must eventually support video/image result attachments separate from canonical song masters/assets.
-
-Do not misuse `music_assets` as the permanent home for every campaign video.
-
----
-
-# Storage direction
-
-MVP options:
-
-## Option A — JSONB on Tasks
-
-Add:
-
-- `task_kind text`
-- `execution_brief jsonb`
-
-Advantages:
-
-- simplest migration;
-- version naturally follows Plan Version/task supersession;
-- easy for compiler/finalizer.
-
-Use strict application/schema validation.
-
-## Option B — separate task execution briefs table
-
-Useful later if briefs need independent versions/review history.
-
-Not necessary for first implementation unless the current task table becomes unwieldy.
-
-Recommendation for first slice: **Option A**.
-
-The brief is part of the planned Task and should be superseded with that Task when a new Plan Version replaces the route.
+Do not present a campaign-media upload control.
 
 ---
 
 # Compiler contract
 
-For a content Task, compiler must either:
+For a content task, compiler must either:
 
-1. emit a complete valid content execution brief using known context; or
+1. emit a complete valid execution brief using known context; or
 2. return `needs_context` for one decision-changing missing fact.
-
-It must not emit a vague content Task and defer the creative work to a later artist prompt.
-
-## Content quality rejection rules
 
 Reject output when:
 
 - concept could apply to almost any song;
-- hook is missing or generic;
-- required resources are not grounded;
+- hook is missing/generic;
+- resources are ungrounded;
 - no desired audience behavior exists;
-- “use the song” has no actual cue/moment;
-- editing instruction is only “keep it engaging”;
-- CTA is generic when campaign hypothesis calls for a specific behavior;
+- song use has no actual cue/moment;
+- editing instruction is generic;
+- CTA does not support the hypothesis;
 - artist is asked to invent script/shot plan;
-- script ignores stored creative preference;
-- task asks for expensive production without reason/evidence/permission;
-- content tries to test several unrelated hypotheses in one post.
-
----
-
-# Revision quality rules
-
-Manager review should prefer the smallest change that preserves usable work.
-
-Order:
-
-1. approve as-is;
-2. edit only;
-3. partial pickup/reshoot;
-4. full reshoot only if necessary.
-
-This is important for low-resource artists. “Reshoot everything” is a high-cost recommendation and should require a real reason.
+- brief ignores stored preference;
+- expensive production appears without reason;
+- multiple unrelated hypotheses are tested at once;
+- proof requires uploading campaign media to Desk.
 
 ---
 
 # Execution-behavior learning hooks
 
-The content loop should create structured evidence for future planning:
+The content loop can still learn from lightweight execution data:
 
-- actual time taken;
-- rescheduled count;
+- actual time to completion;
+- reschedule count;
 - blockers;
-- resource failures;
-- revision count;
-- script mode used;
-- solo vs collaborator;
-- whether the artist completed the task;
-- performance/result signal after publish.
+- collaborator/resource failures;
+- script mode;
+- post URL/platform;
+- response metrics;
+- whether the artist completed the task.
 
-Do not immediately convert one outcome into a permanent preference.
-
-A later Execution Behavior Learner can aggregate repeated patterns into World Model `execution.*` facts.
-
----
-
-# Odaeshi regression ladder
-
-## Failure level 1
-
-> “Create a TikTok around Odaeshi's resilience message.”
-
-Reject: strategy restatement.
-
-## Failure level 2
-
-> “Film yourself talking about a hard time. Use Odaeshi in the background.”
-
-Reject: still generic; artist must direct the creative.
-
-## Failure level 3
-
-> “Sit with two friends in a car and talk about things you survived.”
-
-Better, but incomplete.
-
-## Passing level
-
-The full brief contains:
-
-- hypothesis;
-- why car/people setup;
-- exact first beat;
-- prompts/talking points;
-- shot order;
-- Odaeshi cue;
-- edit behavior;
-- CTA;
-- expected response;
-- raw-media proof;
-- fallback;
-- time/cost/resources.
-
-The artist can execute it now.
+No raw video is required for this learning.
 
 ---
 
 # Regression failures
 
-Reject the implementation if any becomes true:
+Reject implementation if:
 
+- artist is required to upload campaign video/image to OrderSounds;
+- Supabase Storage becomes the campaign-media repository;
+- content review claims to have seen footage it never accessed;
 - Mission strategy is copied verbatim into a content Task;
 - artist still has to ask what to film;
-- the compiler invents people/places/equipment;
-- `steps[]` remains the only contract and important creative fields can silently disappear;
-- every content idea assumes a professional shoot;
-- profile monthly budget is treated as available spend;
-- raw capture is not reviewed until a future fake “Manager day”;
-- Manager generates an edit/reshoot Task for work it could do automatically;
-- revision feedback says only “make it stronger”;
-- content Task is generic after swapping artist/song names;
-- external posting/spend bypasses permission boundaries;
-- campaign video files are incorrectly treated as song master assets;
-- the content system becomes a separate calendar/strategy brain outside Missions.
+- compiler invents people/places/equipment;
+- every idea assumes professional production;
+- profile monthly budget becomes available spend;
+- waiting for post response becomes a fake Manager Task;
+- TikTok comment sentiment is claimed without comment data;
+- generic content survives the artist/song swap test;
+- content becomes a separate strategy/calendar brain outside Missions.
 
 ---
 
 # Acceptance bar
 
-For a generated content Task, a reviewer should be able to answer yes to all:
+A reviewer should answer yes:
 
-1. Can I picture the exact piece of content?
-2. Are the required resources known/realistic?
+1. Can I picture the exact content?
+2. Are the resources realistic and known?
 3. Do I know exactly how it starts?
 4. Do I know what the artist says/does?
 5. Do I know where the song enters and why?
 6. Do I know how to shoot/edit it?
 7. Do I know what audience behavior we want?
-8. Do I know what to return to Desk?
+8. Do I know how completion is proven without uploading campaign media?
 9. Is there a fallback if a fragile resource disappears?
-10. Could the artist make this without another “how?” prompt?
-11. Would it still feel specific if compared with a random artist's campaign?
-12. Will Desk automatically review and continue when the result arrives?
+10. Can the artist execute without another “how?” prompt?
+11. Will Desk automatically watch/evaluate the available post evidence afterward?
+12. Does Desk remain honest about what it can and cannot observe?
 
-If any critical answer is no, the content Task is not execution-ready.
+That is the content-execution bar.
