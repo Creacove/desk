@@ -128,7 +128,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
         music_split_id: split.id,
         music_split_contributor_id: contributor.id,
         confirmation_token_hash: confirmationTokenHash,
-        status: "sent",
+        status: "created",
         expires_at: expiresAt,
         created_from_run_id: managerContext?.managerRunId ?? null,
         created_from_action_id: managerContext?.managerRunActionId ?? null,
@@ -191,7 +191,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
       });
       const { error: confirmationUpdateError } = await client
         .from("music_split_confirmations")
-        .update({ provider_message_id: providerMessageId })
+        .update({ status: "sent", provider_message_id: providerMessageId })
         .eq("id", confirmation.id);
       if (confirmationUpdateError) throw confirmationUpdateError;
 
