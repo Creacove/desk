@@ -354,8 +354,8 @@ function validateFrozenManagerEffect(
       name: String(contributor.name ?? ""),
       role: String(contributor.role ?? ""),
       email: String(contributor.email ?? "").trim(),
-      publishingShare: String(contributor.publishing_share ?? ""),
-      masterShare: String(contributor.master_share ?? ""),
+      publishingShare: normalizeShare(contributor.publishing_share),
+      masterShare: normalizeShare(contributor.master_share),
     }))
     .sort((a, b) => a.contributorId.localeCompare(b.contributorId));
   const expectedRecipients = Array.isArray(expected.recipients)
@@ -366,8 +366,8 @@ function validateFrozenManagerEffect(
         name: String(row.name ?? ""),
         role: String(row.role ?? ""),
         email: String(row.email ?? "").trim(),
-        publishingShare: String(row.publishingShare ?? ""),
-        masterShare: String(row.masterShare ?? ""),
+        publishingShare: normalizeShare(row.publishingShare),
+        masterShare: normalizeShare(row.masterShare),
       };
     }).sort((a, b) => a.contributorId.localeCompare(b.contributorId))
     : [];
@@ -423,6 +423,11 @@ function renderEmail({
 function formatShare(value: number | string) {
   const parsed = typeof value === "number" ? value : Number.parseFloat(String(value).replace("%", ""));
   return `${Number.isFinite(parsed) ? parsed : 0}%`;
+}
+
+function normalizeShare(value: unknown) {
+  const parsed = Number.parseFloat(String(value ?? "").replace("%", ""));
+  return Number.isFinite(parsed) ? String(parsed) : "";
 }
 
 async function hashToken(token: string) {
