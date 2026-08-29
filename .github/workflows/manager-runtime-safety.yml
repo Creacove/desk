@@ -27,11 +27,16 @@ on:
       - "supabase/functions/manager-permission-action/**"
       - "supabase/functions/send-split-confirmations/**"
       - "supabase/functions/workflow-recovery/**"
+      - "supabase/functions/generate-music-summary/**"
+      - "supabase/functions/generate-todays-brief/**"
       - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
       - "supabase/functions/_shared/openaiMissionGenesis.ts"
       - "supabase/functions/_shared/openaiManagerConversation.ts"
       - "supabase/functions/_shared/openaiManagerConversationLegacy.ts"
       - "supabase/functions/_shared/openaiManagerTaskQuality.ts"
+      - "supabase/functions/_shared/openaiMusicManagerRead.ts"
+      - "supabase/functions/_shared/todaysBriefOperatingContext.ts"
+      - "supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts"
       - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
       - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
@@ -118,10 +123,15 @@ jobs:
           supabase/functions/_shared/openaiMissionGenesis.ts
           supabase/functions/_shared/openaiManagerConversation.ts
           supabase/functions/_shared/openaiManagerTaskQuality.ts
+          supabase/functions/_shared/openaiMusicManagerRead.ts
+          supabase/functions/_shared/todaysBriefOperatingContext.ts
+          supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts
           supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/_shared/manager-conversation/context.ts
           supabase/functions/manager-artist-understanding/index.ts
+          supabase/functions/generate-music-summary/index.ts
+          supabase/functions/generate-todays-brief/index.ts
           supabase/functions/manager-task-execution/index.ts
           supabase/functions/manager-runtime-runner/index.ts
           supabase/functions/manager-action-intent-runner/index.ts
