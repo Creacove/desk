@@ -19,6 +19,7 @@ on:
       - "src/manager-permission-intent.test.ts"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
+      - "supabase/functions/manager-action-intent-runner/**"
       - "supabase/functions/manager-dispatcher/**"
       - "supabase/functions/manager-permission-action/**"
       - "supabase/functions/send-split-confirmations/**"
@@ -36,6 +37,7 @@ on:
       - "supabase/migrations/*manager_permission_execution*"
       - "supabase/migrations/*manager_split_permission_producer*"
       - "supabase/migrations/*manager_explicit_split_action_intent*"
+      - "supabase/migrations/*manager_external_action_candidates*"
       - "supabase/migrations/*manager_permission_outcome_nudge*"
       - "supabase/migrations/*adaptive*replan*"
       - "supabase/migrations/*world_model*question_engine*"
@@ -50,6 +52,7 @@ on:
       - "supabase/tests/manager_result_adaptation_smoke.sql"
       - "supabase/tests/manager_result_adaptation_continuation_smoke.sql"
       - "supabase/tests/manager_permission_execution_smoke.sql"
+      - "supabase/tests/manager_action_candidate_smoke.sql"
       - "supabase/tests/manager_action_producer_smoke.sql"
       - "supabase/tests/manager_permission_outcome_nudge_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
@@ -108,6 +111,7 @@ jobs:
           supabase/functions/_shared/manager-conversation/context.ts
           supabase/functions/manager-task-execution/index.ts
           supabase/functions/manager-runtime-runner/index.ts
+          supabase/functions/manager-action-intent-runner/index.ts
           supabase/functions/manager-dispatcher/index.ts
           supabase/functions/manager-permission-action/index.ts
           supabase/functions/send-split-confirmations/index.ts
@@ -155,6 +159,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_result_adaptation_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_result_adaptation_continuation_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_execution_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_action_candidate_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_action_producer_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_outcome_nudge_smoke.sql
 
