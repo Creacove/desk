@@ -23,6 +23,7 @@ export function TodayRuntimeExecution({
 }: TodayRuntimeExecutionProps) {
   const fallback = useMemo(() => fallbackProjection(missions), [missions]);
   const [projection, setProjection] = useState<TodayExecutionProjection>(fallback);
+  const currentMissionIds = useMemo(() => missions.map((mission) => mission.id).filter(Boolean), [missions]);
   const missionSignature = useMemo(
     () => missions.map((mission) => `${mission.id}:${mission.status}:${mission.progress}:${mission.nextTask}`).join("|"),
     [missions],
@@ -34,7 +35,7 @@ export function TodayRuntimeExecution({
 
     try {
       const client = createBrowserSupabaseClient();
-      void loadTodayExecutionProjection(client)
+      void loadTodayExecutionProjection(client, currentMissionIds)
         .then((next) => {
           if (!cancelled) setProjection(next);
         })
@@ -49,12 +50,12 @@ export function TodayRuntimeExecution({
     return () => {
       cancelled = true;
     };
-  }, [fallback, missionSignature, refreshKey]);
+  }, [fallback, currentMissionIds, missionSignature, refreshKey]);
 
   async function refreshProjectionAfterQuestion() {
     try {
       const client = createBrowserSupabaseClient();
-      setProjection(await loadTodayExecutionProjection(client));
+      setProjection(await loadTodayExecutionProjection(client, currentMissionIds));
     } catch {
       // The answer is already durably submitted through Manager. Live-sync or the
       // next Home refresh will reconcile Today if this convenience refresh fails.
