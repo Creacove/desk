@@ -5,6 +5,7 @@ import {
   type TodayExecutionProjection,
   type TodayMissionState,
   type TodayPermissionState,
+  type TodayQuestionAnswerKind,
   type TodayQuestionState,
   type TodayRuntimePacket,
   type TodayTaskState,
@@ -57,7 +58,7 @@ export async function loadTodayExecutionProjection(
       .limit(200),
     client
       .from("manager_question_requests")
-      .select("id,mission_id,task_id,conversation_id,context_request_id,status,question,reason,expires_at,created_at")
+      .select("id,mission_id,task_id,conversation_id,context_request_id,question_key,status,question,reason,answer_kind,options,expires_at,created_at")
       .eq("account_id", workspace.accountId)
       .eq("artist_workspace_id", workspace.artistWorkspaceId)
       .eq("artist_id", workspace.artistId)
@@ -203,17 +204,22 @@ function readCheckpoint(row: Record<string, unknown>, orderById: Map<string, num
 function readQuestion(row: Record<string, unknown>): TodayQuestionState | null {
   const id = text(row.id);
   const contextRequestId = text(row.context_request_id);
+  const questionKey = text(row.question_key);
   const question = text(row.question);
-  if (!id || !contextRequestId || !question) return null;
+  const answerKind = readAnswerKind(row.answer_kind);
+  if (!id || !contextRequestId || !questionKey || !question || !answerKind) return null;
   return {
     id,
     missionId: optionalText(row.mission_id),
     taskId: optionalText(row.task_id),
     conversationId: optionalText(row.conversation_id),
     contextRequestId,
+    questionKey,
     status: text(row.status) || "pending",
     question,
     reason: text(row.reason) || "Desk needs this answer before it can safely continue.",
+    answerKind,
+    options: stringArray(row.options).slice(0, 5),
     expiresAt: optionalText(row.expires_at),
     createdAt: optionalText(row.created_at),
   };
@@ -245,6 +251,17 @@ function emptyProjection(now: Date): TodayExecutionProjection {
     watches: [],
     generatedAt: now.toISOString(),
   };
+}
+
+function readAnswerKind(value: unknown): TodayQuestionAnswerKind | undefined {
+  const kind = text(value) as TodayQuestionAnswerKind;
+  return ["short_text", "single_select", "multi_select", "money_range"].includes(kind) ? kind : undefined;
+}
+
+function stringArray(value: unknown) {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
+    : [];
 }
 
 function isExpired(value: string | undefined, now: Date) {
