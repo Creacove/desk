@@ -147,7 +147,11 @@ Deno.serve(withAppErrorCapture("manager-artist-understanding", async (request) =
       results.push({ id: row.id, status: "completed", claims: acceptedClaims.length });
     } catch (error) {
       const message = describeError(error);
-      await db.rpc("fail_artist_understanding_ingestion_v1", { p_queue_id: row.id, p_error: message }).catch(() => undefined);
+      try {
+        await db.rpc("fail_artist_understanding_ingestion_v1", { p_queue_id: row.id, p_error: message });
+      } catch {
+        // Best effort only; capture the original ingestion error below.
+      }
       await captureAppError(error, {
         functionName: "manager-artist-understanding",
         operation: "semantic_understanding_ingestion",
