@@ -124,7 +124,11 @@ describe('Gate 7 full Manager golden path', () => {
     expect(producer).toContain("trigger_type = 'adaptive_replan'");
     expect(producer).toContain("runtime_key = 'permission:'");
     expect(permissionAction).toContain('shouldExecute');
-    expect(splitSender).toContain('complete_manager_action_execution_v1');
+    expect(splitSender).toContain('manager_action_execution_receipts');
+    expect(splitSender).toContain('permission.status !== "approved"');
+    expect(splitSender).toContain('sameJson(action.payload, permission.parameters)');
+    expect(splitSender).toContain('sameJson(action.payload, receipt.request_payload)');
+    expect(splitSender).toContain('"Idempotency-Key"');
     expect(workflowRecovery).toContain('adaptive_replan');
   });
 
