@@ -120,7 +120,7 @@ export type TodayExecutionProjection = {
 
 const TERMINAL_TASK_STATUSES = new Set(["completed", "rejected", "archived", "superseded"]);
 const TERMINAL_MISSION_STATUSES = new Set(["complete", "archived", "cancelled", "candidate"]);
-const TERMINAL_CHECKPOINT_STATUSES = new Set(["met", "skipped"]);
+const TERMINAL_CHECKPOINT_STATUSES = new Set(["met", "skipped", "complete", "completed"]);
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutionProjection {
@@ -130,6 +130,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
     .sort(compareMissions);
   const missionById = new Map(missions.map((mission) => [mission.id, mission]));
   const checkpointById = new Map(packet.checkpoints.map((checkpoint) => [checkpoint.id, checkpoint]));
+  const taskById = new Map(packet.tasks.map((task) => [task.id, task]));
   const actionable: TodayManagerItem[] = [];
 
   for (const question of packet.questions) {
@@ -158,6 +159,10 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
   for (const permission of packet.permissions) {
     const mission = permission.missionId ? missionById.get(permission.missionId) : undefined;
     if (!mission || normalize(permission.status) !== "pending" || isExpired(permission.expiresAt, now)) continue;
+    const linkedTask = permission.taskId ? taskById.get(permission.taskId) : undefined;
+    const linkedCheckpoint = permission.checkpointId ? checkpointById.get(permission.checkpointId) : undefined;
+    if (linkedTask && !isTaskInCurrentMissionPhase(linkedTask, mission, packet.checkpoints)) continue;
+    if (!linkedTask && linkedCheckpoint && !isCheckpointInCurrentMissionPhase(linkedCheckpoint, mission, packet.checkpoints)) continue;
     actionable.push({
       id: permission.id,
       kind: "permission",
@@ -181,7 +186,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
 
   for (const task of packet.tasks) {
     const mission = missionById.get(task.missionId);
-    if (!mission || !isTaskOnCurrentPlan(task, mission) || !isHumanTask(task) || TERMINAL_TASK_STATUSES.has(normalize(task.status))) continue;
+    if (!mission || !isTaskOnCurrentPlan(task, mission) || !isTaskInCurrentMissionPhase(task, mission, packet.checkpoints) || !isHumanTask(task) || TERMINAL_TASK_STATUSES.has(normalize(task.status))) continue;
     if (permissionTaskIds.has(task.id)) continue;
     if (!isAvailableNow(task.availableFrom, now)) continue;
 
@@ -231,6 +236,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
       return Boolean(
         mission &&
         isCheckpointOnCurrentPlan(checkpoint, mission) &&
+        isCheckpointInCurrentMissionPhase(checkpoint, mission, packet.checkpoints) &&
         !TERMINAL_CHECKPOINT_STATUSES.has(normalize(checkpoint.status)) &&
         normalize(checkpoint.status) === "watching_signal" &&
         !actionableMissionIds.has(mission.id),
@@ -310,6 +316,35 @@ function isTaskOnCurrentPlan(task: TodayTaskState, mission: TodayMissionState) {
 function isCheckpointOnCurrentPlan(checkpoint: TodayCheckpointState, mission: TodayMissionState) {
   if (!mission.activePlanVersionId) return true;
   return !checkpoint.planVersionId || checkpoint.planVersionId === mission.activePlanVersionId;
+}
+
+function currentMissionPhaseOrder(mission: TodayMissionState, checkpoints: TodayCheckpointState[]) {
+  const ordered = checkpoints.filter((checkpoint) =>
+    checkpoint.missionId === mission.id &&
+    isCheckpointOnCurrentPlan(checkpoint, mission) &&
+    Number.isInteger(checkpoint.orderIndex) &&
+    Number(checkpoint.orderIndex) > 0,
+  );
+  if (!ordered.length) return undefined;
+  const unresolved = ordered.filter((checkpoint) => !TERMINAL_CHECKPOINT_STATUSES.has(normalize(checkpoint.status)));
+  if (!unresolved.length) return null;
+  return Math.min(...unresolved.map((checkpoint) => Number(checkpoint.orderIndex)));
+}
+
+function isCheckpointInCurrentMissionPhase(checkpoint: TodayCheckpointState, mission: TodayMissionState, checkpoints: TodayCheckpointState[]) {
+  const currentOrder = currentMissionPhaseOrder(mission, checkpoints);
+  if (currentOrder === undefined) return true;
+  if (currentOrder === null || !checkpoint.orderIndex) return false;
+  return checkpoint.orderIndex === currentOrder && !TERMINAL_CHECKPOINT_STATUSES.has(normalize(checkpoint.status));
+}
+
+function isTaskInCurrentMissionPhase(task: TodayTaskState, mission: TodayMissionState, checkpoints: TodayCheckpointState[]) {
+  const currentOrder = currentMissionPhaseOrder(mission, checkpoints);
+  if (currentOrder === undefined) return true;
+  if (currentOrder === null || !task.checkpointId) return false;
+  const checkpoint = checkpoints.find((candidate) => candidate.id === task.checkpointId);
+  if (!checkpoint || !checkpoint.orderIndex) return false;
+  return checkpoint.orderIndex === currentOrder && !TERMINAL_CHECKPOINT_STATUSES.has(normalize(checkpoint.status));
 }
 
 function isHumanTask(task: TodayTaskState) {
