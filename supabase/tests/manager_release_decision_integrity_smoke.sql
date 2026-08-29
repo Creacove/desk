@@ -24,6 +24,17 @@ begin
     raise exception 'approved release decision integrity trigger is missing';
   end if;
 
+  if not exists (
+    select 1
+    from pg_indexes
+    where schemaname = 'public'
+      and tablename = 'memory_entries'
+      and indexname = 'memory_entries_canonical_release_plan_projection_uidx'
+      and indexdef ilike '%unique%'
+  ) then
+    raise exception 'canonical release Manager read projection uniqueness guard is missing';
+  end if;
+
   select pg_get_functiondef('public.manager_effective_release_state_v1(uuid)'::regprocedure)
   into definition;
   if position('approved_release_date' in definition) = 0
@@ -46,6 +57,11 @@ begin
      or position('canonical_release_date_approved' in definition) = 0
      or position('manager_question_requests' in definition) = 0 then
     raise exception 'approved release decision does not publish/supersede release-date World Model state';
+  end if;
+  if position('canonical_release_plan' in definition) = 0
+     or position('canonical_release_plan_v1' in definition) = 0
+     or position('effectiveReleaseDate' in definition) = 0 then
+    raise exception 'approved release decision does not publish the bounded Manager opening projection';
   end if;
   if position('fact_domain = ''time''' in definition) = 0
      or position('status = ''pending''' in definition) = 0 then
