@@ -25,6 +25,7 @@ on:
       - "supabase/functions/manager-artist-understanding/**"
       - "supabase/functions/manager-career-watch/**"
       - "supabase/functions/manager-career-watch-dispatcher/**"
+      - "supabase/functions/manager-runtime-health/**"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-action-intent-runner/**"
@@ -50,6 +51,8 @@ on:
       - "supabase/functions/_shared/artistUnderstanding.ts"
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*manager_production_hardening*"
+      - "supabase/migrations/*manager_runtime_limits*"
+      - "supabase/migrations/*manager_runtime_incidents*"
       - "supabase/migrations/*manager_state_integrity*"
       - "supabase/migrations/*manager_permission_execution*"
       - "supabase/migrations/*manager_split_permission_producer*"
@@ -143,6 +146,7 @@ jobs:
           supabase/functions/manager-artist-understanding/index.ts
           supabase/functions/manager-career-watch/index.ts
           supabase/functions/manager-career-watch-dispatcher/index.ts
+          supabase/functions/manager-runtime-health/index.ts
           supabase/functions/generate-music-summary/index.ts
           supabase/functions/generate-todays-brief/index.ts
           supabase/functions/manager-task-execution/index.ts
