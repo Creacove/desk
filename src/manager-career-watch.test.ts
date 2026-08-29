@@ -17,10 +17,12 @@ describe('Gate 6 Manager Career Watch',()=>{
     expect(request.input).toContain('remaining standing');
     expect(request.input).toContain('₦0');
   });
-  it('turns supported findings into evidence with explicit Manager decisions and limitations',()=>{
+  it('turns supported findings into public-web evidence with explicit Career Watch decisions and limitations',()=>{
     const rows:any[]=normalizeCareerWatchOutput({accountId:'a',artistWorkspaceId:'w',artistId:'r',artistName:'Otmos',createdFromRunId:'run',output:{findings:[{title:'Open call',url:'https://example.com/open-call',sourceDomain:'example.com',publishedAt:'2026-08-29',opportunityType:'press',subjectName:'Open call',claim:'Submissions are open',whyItMatters:'Matches the current release story',fitReason:'Odaeshi resilience angle fits',recommendedDecision:'act',urgency:'now',confidence:'high',missionObjective:'Submit a focused Odaeshi press pitch before the deadline',nextMove:'Prepare the pitch package',riskOrLimitation:'Acceptance is not guaranteed'}]}});
     expect(rows).toHaveLength(1);
-    expect(rows[0].source_kind).toBe('career_watch');
+    expect(rows[0].source_kind).toBe('public_web');
+    expect(rows[0].evidence_type).toBe('manager_career_watch');
+    expect(rows[0].metadata.pipeline).toBe('manager_career_watch');
     expect(rows[0].metadata.recommended_decision).toBe('act');
     expect(rows[0].metadata.mission_objective).toContain('Odaeshi');
     expect(rows[0].limitation).toContain('not guaranteed');
