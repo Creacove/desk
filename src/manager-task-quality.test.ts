@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseAdaptivePlanOutput } from "../supabase/functions/_shared/openaiAdaptivePlanCompiler";
+import {
+  buildAdaptivePlanCompilerInstructions,
+  parseAdaptivePlanOutput,
+} from "../supabase/functions/_shared/openaiAdaptivePlanCompiler";
+import { buildMissionGenesisInstructions } from "../supabase/functions/_shared/openaiMissionGenesis";
+import { buildManagerConversationInstructions } from "../supabase/functions/_shared/openaiManagerConversation";
+import {
+  MANAGER_HUMAN_TASK_GENERATION_CONTRACT_VERSION,
+} from "../supabase/functions/_shared/managerHumanTaskGenerationContract";
 import {
   buildManagerTaskQualityReviewInstructions,
   buildManagerTaskRepairInstructions,
@@ -13,6 +21,23 @@ const validation = {
 };
 
 describe("Manager human Task quality", () => {
+  it("frontloads the same Manager-grade Task contract into every model path that can generate Tasks", () => {
+    const generators = {
+      missionGenesis: buildMissionGenesisInstructions("initial"),
+      managerConversation: buildManagerConversationInstructions(),
+      adaptivePlanCompiler: buildAdaptivePlanCompilerInstructions(),
+    };
+
+    for (const [name, instructions] of Object.entries(generators)) {
+      expect(instructions, name).toContain(MANAGER_HUMAN_TASK_GENERATION_CONTRACT_VERSION);
+      expect(instructions, name).toMatch(/Apply this BEFORE writing any visible Task/i);
+      expect(instructions, name).toMatch(/Desk owns research, diagnosis, comparison, strategy/i);
+      expect(instructions, name).toMatch(/Do not ask the artist to invent the concept/i);
+      expect(instructions, name).toMatch(/could the named human execute this now/i);
+      expect(instructions, name).toMatch(/what next\?/i);
+    }
+  });
+
   it("keeps deterministic validation structural instead of pretending words prove semantic quality", () => {
     const output = replanWithTask({
       title: "Record Odaeshi launch message for the audience",
