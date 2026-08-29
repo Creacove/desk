@@ -67,7 +67,9 @@ begin
   end if;
 
   jwt_role := coalesce(current_setting('request.jwt.claim.role', true), '');
-  if jwt_role <> 'service_role' and not public.is_account_member(workspace_account_id) then
+  -- Empty role is an internal database/trigger invocation. Authenticated API calls
+  -- carry their JWT role and must pass membership; service-role Manager runtimes bypass it.
+  if jwt_role not in ('', 'service_role') and not public.is_account_member(workspace_account_id) then
     raise exception 'Not authorized to read Manager knowledge.' using errcode='42501';
   end if;
 
@@ -300,7 +302,7 @@ begin
   ) values (
     p_account_id,p_artist_workspace_id,p_artist_id,p_source_kind,p_source_id,p_source_version_id,'queued'
   )
-  on conflict (artist_workspace_id,source_kind,source_id,coalesce(source_version_id,'00000000-0000-0000-0000-000000000000'::uuid))
+  on conflict (artist_workspace_id,source_kind,source_id,(coalesce(source_version_id,'00000000-0000-0000-0000-000000000000'::uuid)))
   do update set
     status = case when artist_understanding_ingestion_queue.status='completed' then 'completed' else 'queued' end,
     last_error = null,
@@ -454,6 +456,41 @@ begin
 end;
 $$;
 revoke all on function public.reject_known_manager_question_v1() from public, anon, authenticated;
+
+-- Internal DB calls (migrations/triggers/tests) must be able to read the snapshot without
+-- manufacturing a user JWT, while authenticated API calls still require account membership.
+create or replace function public.manager_artist_understanding_snapshot_v1(
+  p_artist_workspace_id uuid,
+  p_artist_id uuid
+) returns jsonb
+language plpgsql stable security definer set search_path=public as $$
+declare
+  workspace_account_id uuid;
+  jwt_role text;
+  result jsonb;
+begin
+  select w.account_id into workspace_account_id
+  from public.artist_workspaces w
+  where w.id=p_artist_workspace_id and w.artist_id=p_artist_id;
+  if workspace_account_id is null then return '[]'::jsonb; end if;
+  jwt_role := coalesce(current_setting('request.jwt.claim.role',true),'');
+  if jwt_role not in ('','service_role') and not public.is_account_member(workspace_account_id) then
+    raise exception 'Not authorized to read artist understanding.' using errcode='42501';
+  end if;
+  select coalesce(jsonb_agg(
+    jsonb_build_object(
+      'id',u.id,'scopeType',u.scope_type,'scopeId',u.scope_id,'key',u.understanding_key,
+      'category',u.category,'statement',u.statement,'value',u.structured_value,
+      'sourceKind',u.source_kind,'sourceType',u.source_type,'sourceId',u.source_id,
+      'sourceRef',u.source_ref,'confidence',u.confidence,'authority',u.authority,'updatedAt',u.updated_at
+    ) order by case u.authority when 'artist_confirmed' then 4 when 'trusted_source' then 3 when 'supported' then 2 else 1 end desc,u.updated_at desc
+  ),'[]'::jsonb) into result
+  from public.artist_understandings u
+  where u.artist_workspace_id=p_artist_workspace_id and u.artist_id=p_artist_id and u.status='current';
+  return result;
+end;
+$$;
+grant execute on function public.manager_artist_understanding_snapshot_v1(uuid,uuid) to authenticated,service_role;
 
 -- Existing source material is not stranded: current documents are backfilled for semantic extraction.
 insert into public.artist_understanding_ingestion_queue(
