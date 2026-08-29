@@ -22,6 +22,12 @@ type ReminderRow = {
   payload: Record<string, unknown>;
 };
 
+type ReminderPreference = {
+  timezone?: string | null;
+  quiet_hours_start?: string | null;
+  quiet_hours_end?: string | null;
+};
+
 Deno.serve(withAppErrorCapture("manager-dispatcher", async (request) => {
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
   const suppliedSecret = request.headers.get("x-workflow-worker-secret") ?? "";
@@ -48,6 +54,14 @@ Deno.serve(withAppErrorCapture("manager-dispatcher", async (request) => {
       if (claimed.task_id && await isTaskTerminal(db, claimed.task_id)) {
         await finishReminder(db, claimed.id, "skipped", "task_is_terminal");
         results.push({ id: claimed.id, status: "skipped_terminal_task" });
+        continue;
+      }
+
+      const preference = await loadPreference(db, claimed);
+      const allowedAt = nextAllowedReminderTime(new Date(), preference);
+      if (allowedAt.getTime() > Date.now() + 30_000) {
+        await requeueReminder(db, claimed.id, allowedAt, "quiet_hours");
+        results.push({ id: claimed.id, status: "rescheduled_quiet_hours", scheduledFor: allowedAt.toISOString() });
         continue;
       }
 
@@ -94,6 +108,18 @@ async function isTaskTerminal(db: any, taskId: string) {
   return !data || TERMINAL_TASK_STATUSES.has(String(data.status ?? ""));
 }
 
+async function loadPreference(db: any, reminder: ReminderRow): Promise<ReminderPreference | null> {
+  if (!reminder.user_id) return null;
+  const { data, error } = await db
+    .from("notification_preferences")
+    .select("timezone,quiet_hours_start,quiet_hours_end")
+    .eq("artist_workspace_id", reminder.artist_workspace_id)
+    .eq("user_id", reminder.user_id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
 async function writeInAppReminder(db: any, reminder: ReminderRow, summary: string) {
   const refreshScope = ["activity"];
   if (reminder.mission_id) refreshScope.push(`mission:${reminder.mission_id}`);
@@ -122,19 +148,62 @@ async function writeInAppReminder(db: any, reminder: ReminderRow, summary: strin
       ...(reminder.payload ?? {}),
     },
   });
-  // A duplicate operating event means this reminder was already delivered by a
-  // previous worker attempt. Treat that as success rather than sending twice.
   if (error && error.code !== "23505") throw error;
 }
 
+async function requeueReminder(db: any, id: string, scheduledFor: Date, reason: string) {
+  const { error } = await db.from("reminder_queue").update({
+    status: "queued",
+    scheduled_for: scheduledFor.toISOString(),
+    last_error: reason,
+  }).eq("id", id).eq("status", "processing");
+  if (error) throw error;
+}
+
 async function finishReminder(db: any, id: string, status: "sent" | "skipped", errorMessage?: string) {
-  const patch: Record<string, unknown> = {
-    status,
-    last_error: errorMessage ?? null,
-  };
+  const patch: Record<string, unknown> = { status, last_error: errorMessage ?? null };
   if (status === "sent") patch.sent_at = new Date().toISOString();
   const { error } = await db.from("reminder_queue").update(patch).eq("id", id).eq("status", "processing");
   if (error) throw error;
+}
+
+function nextAllowedReminderTime(now: Date, preference: ReminderPreference | null) {
+  const timezone = preference?.timezone || "UTC";
+  const start = preference?.quiet_hours_start;
+  const end = preference?.quiet_hours_end;
+  if (!start || !end || start === end) return now;
+  let candidate = new Date(now);
+  for (let index = 0; index < 24 * 4; index += 1) {
+    const minute = localMinuteOfDay(candidate, timezone);
+    if (minute == null || !insideQuietHours(minute, parseClock(start), parseClock(end))) return candidate;
+    candidate = new Date(candidate.getTime() + 15 * 60_000);
+  }
+  return now;
+}
+
+function localMinuteOfDay(date: Date, timezone: string) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-GB", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(date);
+    const hour = Number(parts.find((part) => part.type === "hour")?.value);
+    const minute = Number(parts.find((part) => part.type === "minute")?.value);
+    return Number.isFinite(hour) && Number.isFinite(minute) ? hour * 60 + minute : null;
+  } catch {
+    return null;
+  }
+}
+
+function parseClock(value: string) {
+  const [hour, minute] = value.split(":").map(Number);
+  return Math.max(0, Math.min(1439, (Number.isFinite(hour) ? hour : 0) * 60 + (Number.isFinite(minute) ? minute : 0)));
+}
+
+function insideQuietHours(value: number, start: number, end: number) {
+  return start < end ? value >= start && value < end : value >= start || value < end;
 }
 
 function constantTimeEqual(left: string, right: string) {
@@ -151,8 +220,5 @@ function requireEnv(key: string) {
 }
 
 function json(body: unknown, status = 200) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+  return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 }
