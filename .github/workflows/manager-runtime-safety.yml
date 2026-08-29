@@ -16,6 +16,7 @@ on:
       - "src/manager-world-model-question-engine.test.ts"
       - "src/manager-today-execution.test.ts"
       - "src/manager-task-quality.test.ts"
+      - "src/manager-permission-intent.test.ts"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-dispatcher/**"
@@ -34,6 +35,7 @@ on:
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*manager_permission_execution*"
       - "supabase/migrations/*manager_split_permission_producer*"
+      - "supabase/migrations/*manager_explicit_split_action_intent*"
       - "supabase/migrations/*manager_permission_outcome_nudge*"
       - "supabase/migrations/*adaptive*replan*"
       - "supabase/migrations/*world_model*question_engine*"
@@ -86,6 +88,7 @@ jobs:
           src/manager-world-model-question-engine.test.ts
           src/manager-today-execution.test.ts
           src/manager-task-quality.test.ts
+          src/manager-permission-intent.test.ts
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
