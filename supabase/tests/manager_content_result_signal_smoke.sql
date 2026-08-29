@@ -11,11 +11,17 @@ begin
   if to_regprocedure('public.task_is_content_execution_v1(uuid)') is null then
     raise exception 'task_is_content_execution_v1 is missing';
   end if;
+  if to_regprocedure('public.task_expects_public_post_v1(uuid)') is null then
+    raise exception 'task_expects_public_post_v1 is missing';
+  end if;
   if to_regprocedure('public.capture_content_post_result_v1()') is null then
     raise exception 'capture_content_post_result_v1 is missing';
   end if;
   if to_regprocedure('public.publish_content_post_result_signal_v1()') is null then
     raise exception 'publish_content_post_result_signal_v1 is missing';
+  end if;
+  if to_regprocedure('public.queue_content_response_review_v1()') is null then
+    raise exception 'queue_content_response_review_v1 is missing';
   end if;
 
   if not exists (
@@ -32,6 +38,30 @@ begin
   ) then
     raise exception 'content result publish trigger is missing';
   end if;
+  if not exists (
+    select 1 from pg_trigger
+    where tgname = 'queue_content_response_review'
+      and not tgisinternal
+  ) then
+    raise exception 'content response review trigger is missing';
+  end if;
+
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'reviews'
+      and column_name = 'runtime_key'
+  ) then
+    raise exception 'reviews.runtime_key is missing';
+  end if;
+
+  if to_regclass('public.reviews_runtime_key_uidx') is null then
+    raise exception 'reviews runtime-key idempotency index is missing';
+  end if;
+  if to_regclass('public.reviews_content_response_due_idx') is null then
+    raise exception 'content response due index is missing';
+  end if;
 
   urls := public.extract_public_result_urls_v1(
     'Live now: https://www.tiktok.com/@otmos/video/12345). Backup: https://instagram.com/reel/ABC123! Same again https://www.tiktok.com/@otmos/video/12345'
@@ -44,8 +74,9 @@ begin
   into definition;
   if position('content_post_result' in definition) = 0
      or position('external_refs' in definition) = 0
-     or position('external_ref_count' in definition) = 0 then
-    raise exception 'content result capture does not persist structured external refs';
+     or position('external_ref_count' in definition) = 0
+     or position('task_expects_public_post_v1' in definition) = 0 then
+    raise exception 'content result capture does not persist structured post refs or distinguish capture-only work';
   end if;
 
   select pg_get_functiondef('public.publish_content_post_result_signal_v1()'::regprocedure)
@@ -53,7 +84,8 @@ begin
   if position('watched_signals' in definition) = 0
      or position('content_post_result_recorded' in definition) = 0
      or position('public_reference_available' in definition) = 0
-     or position('artist_report_only' in definition) = 0 then
+     or position('artist_report_only' in definition) = 0
+     or position('automaticMetricsAvailable' in definition) = 0 then
     raise exception 'content result signal does not preserve observation boundaries';
   end if;
 
@@ -62,6 +94,27 @@ begin
   if position('comment text' in lower(definition)) > 0
      or position('raw video analysis' in lower(definition)) > 0 then
     raise exception 'content result signal overclaims unavailable observation capability';
+  end if;
+
+  select pg_get_functiondef('public.queue_content_response_review_v1()'::regprocedure)
+  into definition;
+  if position('24 hours' in definition) = 0
+     or position('adaptive_replan' in definition) = 0
+     or position('runtime_key' in definition) = 0
+     or position('active_plan_version_id' in definition) = 0
+     or position('Never invent views' in definition) = 0 then
+    raise exception 'content response review is not bounded, idempotent, active-plan safe, or observation-honest';
+  end if;
+
+  -- Reuse the existing adaptive review dispatcher. This slice must not add a
+  -- second content-specific cron or external scheduler.
+  if not exists (
+    select 1
+    from cron.job
+    where jobname = 'manager-runtime-review-recovery'
+      and active
+  ) then
+    raise exception 'content response review cannot reuse the Manager runtime scheduler';
   end if;
 end;
 $$;
