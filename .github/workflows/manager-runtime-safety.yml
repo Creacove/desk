@@ -24,9 +24,11 @@ on:
       - "supabase/migrations/*adaptive*replan*"
       - "supabase/migrations/*world_model*question_engine*"
       - "supabase/migrations/*human_task*execution_contract*"
+      - "supabase/migrations/*content_post_result_signals*"
       - "supabase/tests/manager_runtime_replan_smoke.sql"
       - "supabase/tests/manager_world_model_smoke.sql"
       - "supabase/tests/manager_content_execution_contract_smoke.sql"
+      - "supabase/tests/manager_content_result_signal_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -116,6 +118,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_runtime_replan_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_world_model_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_execution_contract_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_result_signal_smoke.sql
 
       - name: Stop local Supabase
         if: always()
