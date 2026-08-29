@@ -98,9 +98,9 @@ begin
     (v_account,v_workspace,v_artist,v_task_two,0,'Read the current collaborator names, roles, shares and emails together.'),
     (v_account,v_workspace,v_artist,v_task_two,1,'Correct any wrong share or email and confirm the final split totals 100%.');
 
-  -- The question-resumed Manager run has now installed work, so the runtime can
-  -- complete and immediately expose the first exact Task.
-  update public.reviews set outcome='changed_route',status='completed' where id=v_question_review;
+  -- The question-resumed Manager run installed a real route. `replanned` is the
+  -- production outcome emitted when the adaptive compiler changes/installs work.
+  update public.reviews set outcome='replanned',status='completed' where id=v_question_review;
   if not exists(select 1 from public.operating_events where source_id=v_question_review and event_type='manager_continuation_ready' and task_id=v_task_one) then
     raise exception 'Initial Manager direction did not surface the first exact Task automatically.';
   end if;
