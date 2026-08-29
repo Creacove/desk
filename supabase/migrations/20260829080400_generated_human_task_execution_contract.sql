@@ -36,6 +36,7 @@ declare
   title_text text := btrim(coalesce(p_task ->> 'title', ''));
   purpose_text text := btrim(coalesce(p_task ->> 'purpose', ''));
   completion_text text := btrim(coalesce(p_task ->> 'completionExpectation', ''));
+  completion_mode_text text := lower(btrim(coalesce(p_task ->> 'completionMode', '')));
   manager_text text := btrim(coalesce(p_task ->> 'managerResponsibility', ''));
   user_text text := btrim(coalesce(p_task ->> 'userResponsibility', ''));
   risk_text text := btrim(coalesce(p_task ->> 'riskIfLate', ''));
@@ -97,6 +98,14 @@ begin
     raise exception using errcode = '22023', message = 'generated_human_task_contract:content_requires_at_least_four_execution_steps';
   end if;
 
+  -- A content-execution Task must resolve through a note/link/result path, not
+  -- the generic file-deliverable uploader. Otherwise the existing Task Sheet can
+  -- accidentally recreate a "upload your video to Desk" requirement even when
+  -- the prose never says it.
+  if completion_mode_text = 'evidence' then
+    raise exception using errcode = '22023', message = 'generated_human_task_contract:content_file_deliverable_forbidden';
+  end if;
+
   -- A usable content Task must explain the format/setup, the opening message,
   -- the physical/creative action, and how the piece is finished or published.
   if execution_text !~* '\m(scene|setup|location|shot|frame|camera|phone|selfie|parked|room|street|outside|indoors|studio|vertical|9:16|carousel|graphic|screen|visual|performance)\M' then
@@ -152,6 +161,7 @@ begin
     'workMode', new.work_mode,
     'purpose', new.purpose,
     'completionExpectation', new.completion_expectation,
+    'completionMode', new.completion_mode,
     'managerResponsibility', new.manager_responsibility,
     'userResponsibility', new.user_responsibility,
     'riskIfLate', new.risk_if_late
