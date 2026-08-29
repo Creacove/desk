@@ -24,6 +24,7 @@ on:
       - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*manager_permission_execution*"
+      - "supabase/migrations/*release_decision_integrity*"
       - "supabase/migrations/*adaptive*replan*"
       - "supabase/migrations/*world_model*question_engine*"
       - "supabase/migrations/*human_task*execution_contract*"
@@ -33,6 +34,7 @@ on:
       - "supabase/tests/manager_content_execution_contract_smoke.sql"
       - "supabase/tests/manager_content_result_signal_smoke.sql"
       - "supabase/tests/manager_permission_execution_smoke.sql"
+      - "supabase/tests/manager_release_decision_integrity_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -126,6 +128,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_execution_contract_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_result_signal_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_execution_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_release_decision_integrity_smoke.sql
 
       - name: Stop local Supabase
         if: always()
