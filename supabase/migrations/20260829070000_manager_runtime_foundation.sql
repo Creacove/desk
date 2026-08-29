@@ -81,9 +81,8 @@ create index if not exists reminder_queue_task_idx
 on public.reminder_queue (task_id, status, scheduled_for)
 where task_id is not null;
 
-create index if not exists memory_entries_current_artist_idx
-on public.memory_entries (artist_workspace_id, kind, created_at desc)
-where valid_until is null or valid_until > now();
+create index if not exists memory_entries_artist_kind_idx
+on public.memory_entries (artist_workspace_id, kind, valid_until, created_at desc);
 
 create index if not exists evidence_items_public_context_idx
 on public.evidence_items (artist_workspace_id, evidence_type, created_at desc)
