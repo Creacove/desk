@@ -45,6 +45,7 @@ export function buildCareerWatchRequest(profile: CareerWatchProfile, managerKnow
   const handles = Object.entries(profile.socialHandles ?? {}).filter(([, value]) => Boolean(value?.trim())).map(([key, value]) => `${key}: ${value}`).join(", ");
   return {
     model: "gpt-5-mini",
+    max_output_tokens: 4500,
     instructions: buildCareerWatchInstructions(),
     tools: [{ type: "web_search" }],
     tool_choice: "required",
