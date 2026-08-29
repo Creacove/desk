@@ -12,11 +12,23 @@ The Manager Runtime now has strong backend foundations:
 - one-question `needs_context` continuation;
 - runtime retries/concurrency/fail-closed behavior.
 
-The next work should make that intelligence **felt in the product** and then extend execution safely.
+The next work should make that intelligence felt in the product while preserving the constraints already chosen for Desk.
 
-This document converts the product contracts into a repo-specific implementation sequence for `Creacove/desk`.
+## Hard constraint carried through every slice
 
-Do not ship channel integrations or more agents before the artist-facing execution loop reaches the quality bar.
+**Do not make OrderSounds/Supabase a campaign-video or campaign-image storage product.**
+
+The artist should not have to upload rough cuts, TikTok videos, Reels, photos or other campaign media into Desk for the core Manager Runtime to work.
+
+Content execution should rely on:
+
+- exact pre-production briefs;
+- normal creation/editing in the artist's existing tools;
+- public post URL or connected-platform post identity;
+- platform metrics when connected;
+- artist-reported lightweight results when necessary.
+
+If future integrations legitimately expose media without Desk becoming the storage layer, visual review can be added as an optional capability later.
 
 ---
 
@@ -26,14 +38,12 @@ Recommended stacked slices:
 
 1. **Today Runtime Projection**
 2. **Content Execution Task Contract**
-3. **Task-scoped Media Results + Automatic Content Review**
+3. **Connected Post Evidence + Response Watch**
 4. **External Action Permission Execution**
 5. **Execution Behavior Learning**
 6. **Google Calendar Human-Time Mirror**
 7. **WhatsApp Accountability Delivery**
 8. **Career Watch + Semantic Evidence Packing**
-
-Each slice should remain independently reviewable and green before the next implementation layer depends on it.
 
 ---
 
@@ -41,150 +51,40 @@ Each slice should remain independently reviewable and green before the next impl
 
 ## Goal
 
-Turn the existing `TodayExecution` section from “one next Task per active Mission” into one global Manager priority projection across:
+Turn current `TodayExecution` from “one next Task per Mission” into one global Manager priority projection across:
 
 - ready human Tasks;
-- pending decision-changing questions;
+- pending Manager questions;
 - pending permissions;
-- important blockers;
+- blockers;
 - quiet watches.
 
 No OpenAI call on Home render.
 
-## Current code to reuse
+## Reuse
 
-### `src/features/desk/DeskHQ.tsx`
+- `src/features/desk/DeskHQ.tsx`
+- `src/features/missions/missionModel.ts`
+- workspace Realtime/live-sync
+- active Mission/Plan/Task/Question/Permission/Review state
 
-Already has:
+## Projection
 
-- Today before composer;
-- `TodayExecution`;
-- quiet `Desk is watching` state;
-- correct composer copy: `Tell Desk what changed, or ask something`;
-- Brief below execution.
+Add a typed `TodayExecutionViewModel` with:
 
-Keep this structure.
+- headline;
+- one primary item;
+- supporting items;
+- watches.
 
-### `src/features/missions/missionModel.ts`
+Possible item kinds:
 
-Already has:
+- question
+- permission
+- task
+- watch
 
-- `getNextArtistTask`;
-- task work-mode filtering;
-- checkpoint dependency logic;
-- humanized checkpoint/task helpers.
-
-Reuse its eligibility logic where appropriate, but move cross-Mission prioritization into a dedicated Today projection module.
-
-### workspace live sync / Activity refresh
-
-Today should refresh from the same runtime mutations/events rather than new polling.
-
-## New projection type
-
-Add a typed view model in `src/types/cleanProduction.ts` or a dedicated Today type module:
-
-```ts
-export type TodayManagerItem = {
-  id: string;
-  kind: "question" | "permission" | "task" | "watch";
-  missionId: string;
-  missionTitle: string;
-  priorityTier: 0 | 1 | 2 | 3 | 4;
-  priorityRank: number;
-  headline: string;
-  title: string;
-  whyNow: string;
-  cta: "answer" | "review" | "start" | "continue" | "fix" | "resolve" | "view";
-  taskId?: string;
-  contextRequestId?: string;
-  conversationId?: string;
-  permissionRequestId?: string;
-  checkpointId?: string;
-  estimatedMinutes?: number;
-  owner?: string;
-  costLabel?: string;
-  resourceSummary?: string;
-  availableFrom?: string;
-  deadline?: string;
-  sourcePlanVersionId?: string;
-};
-
-export type TodayExecutionViewModel = {
-  headline: string;
-  primary?: TodayManagerItem;
-  supporting: TodayManagerItem[];
-  watches: TodayManagerItem[];
-};
-```
-
-## Repository/data changes
-
-Prefer a deterministic repository projection instead of another persisted truth table.
-
-Add to Desk repository contract something equivalent to:
-
-```ts
-loadTodayExecution(): Promise<TodayExecutionViewModel>
-```
-
-Likely implementation location:
-
-- `src/services/productionSupabase.ts`
-- shared pure projection helper under `src/features/desk/todayProjection.ts` or `src/services/todayProjection.ts`
-
-Load bounded current rows:
-
-- active Missions + `active_plan_version_id`;
-- active-plan human Tasks;
-- current Checkpoints;
-- pending `manager_question_requests`;
-- pending `permission_requests`;
-- relevant due/running Reviews/watches;
-- Task execution state (`available_from`, deadline, status, priority, estimated minutes);
-- Mission priority/recommendation.
-
-Do not load all history.
-
-## Priority algorithm
-
-Pure deterministic function.
-
-Suggested tiers:
-
-0. human input blocking runtime continuation — question / permission / unresolved human blocker;
-1. fixed-time or consequence-sensitive ready human Task;
-2. in-progress important Task;
-3. other ready Task selected by active Plan;
-4. nonblocking support work.
-
-Tie breakers:
-
-1. blocks current route;
-2. real deadline/availability;
-3. downstream dependency impact;
-4. Mission priority;
-5. in-progress;
-6. Task priority;
-7. checkpoint order;
-8. stable creation/ID order.
-
-No random or model-generated ordering at render time.
-
-## UI changes
-
-`DeskHQ.tsx`
-
-Replace `TodayExecution({ missions })` with projection input.
-
-Primary card behavior:
-
-- question -> open exact Manager conversation/context request;
-- permission -> open permission review;
-- Task -> open Task Sheet directly if navigation architecture permits, otherwise Mission focused on Task;
-- watch -> view Mission only.
-
-CTA labels must match state:
+CTA states:
 
 - Answer
 - Review
@@ -193,49 +93,31 @@ CTA labels must match state:
 - Fix
 - Resolve
 
-Avoid generic `Open` for the primary action.
+## Priority
 
-## Required new navigation hooks
+Deterministic order:
 
-Home currently receives `onOpenMission` only for Today.
+1. human input blocking runtime continuation;
+2. real fixed-time/consequence-sensitive Task;
+3. in-progress Task;
+4. next ready active-plan Task;
+5. supporting work.
 
-Likely extend props with:
-
-- `onOpenTask(missionId, taskId)`
-- `onOpenConversation(conversationId)`
-- `onOpenPermission(permissionRequestId)`
-
-Reuse existing application navigation/Task sheet state rather than adding Home-specific modal state when possible.
+Use persisted Manager/runtime state. Do not hide a model call inside Home ranking.
 
 ## Tests
 
-Add a focused contract suite such as:
+Cover:
 
-`src/manager-today-execution.test.ts`
-
-Fixtures:
-
-1. question blocks Mission + ready unrelated Task -> question wins if Mission is current priority/blocking route;
-2. permission blocks next action -> Review projected;
-3. one in-progress Task vs lower priority ready Tasks -> continuity preserved;
-4. fixed deadline Task outranks nonblocking work;
-5. superseded-plan Task never appears;
-6. Manager-owned Task never appears;
-7. expired World Model fact cannot produce resource summary;
-8. watches remain secondary;
-9. no runtime question/permission -> current ready Task shown;
-10. no human need -> `Desk is watching` / calm state;
-11. projection is deterministic;
-12. no OpenAI function invocation from Today load/render path.
-
-## Acceptance
-
-Open Home and answer in under a few seconds:
-
-- What matters most?
-- What does Desk need from me?
-- Why now?
-- What do I press?
+- blocking question beats unrelated Task;
+- permission projects correctly;
+- in-progress continuity;
+- real deadline priority;
+- superseded-plan Task excluded;
+- Manager-owned work excluded;
+- watches secondary;
+- deterministic projection;
+- no OpenAI call in render/load path.
 
 ---
 
@@ -243,7 +125,7 @@ Open Home and answer in under a few seconds:
 
 ## Goal
 
-Make content Tasks structurally execution-ready instead of hiding creative production inside generic `steps[]`.
+Make content Tasks structurally executable rather than generic `steps[]` strategy restatements.
 
 ## Migration
 
@@ -254,256 +136,191 @@ task_kind text not null default 'general_action';
 execution_brief jsonb not null default '{}'::jsonb;
 ```
 
-Add constraints for supported task kinds.
+Supported first kinds:
 
-Recommended first task kinds:
-
-- `general_action`
-- `content_capture`
-- `content_edit`
-- `content_publish`
-- `content_response`
-- `approval`
-- `outreach`
-- `event`
-- `admin`
-- `result_report`
-
-Do not create a separate content campaign table.
+- general_action
+- content_capture
+- content_edit
+- content_publish
+- content_response
+- approval
+- outreach
+- event
+- admin
+- result_report
 
 ## Compiler changes
 
-### `supabase/functions/_shared/openaiAdaptivePlanCompiler.ts`
-
-Extend `AdaptivePlanTask`:
+Extend Adaptive Plan / Mission graph task contracts with:
 
 - `taskKind`
-- optional validated `executionBrief`
+- validated `executionBrief`
 
-For `content_*` kinds, require the correct structured content brief.
+For content Tasks require:
 
-The compiler must choose either:
+- objective/hypothesis;
+- concept;
+- setup/resources;
+- hook;
+- performance/talking points;
+- shot plan;
+- song cue;
+- edit direction;
+- CTA/desired response;
+- success signal;
+- lightweight completion proof;
+- fallback.
 
-1. complete content Task; or
-2. `needs_context` for one missing decision-changing fact.
+The compiler must either emit a complete content brief or return `needs_context` for one decision-changing missing fact.
 
-No vague content Task fallback.
-
-### Mission Genesis / Manager conversation creation path
-
-Content quality must also apply when Missions are created outside adaptive replan.
-
-Update shared task contract in the Manager conversation/Mission graph schema, then update:
-
-- `supabase/functions/_shared/openaiManagerConversationLegacy.ts` / exported contract as appropriate;
-- `supabase/functions/_shared/missionGraphPersistence.ts`;
-- Mission Genesis graph generation if it emits the same task object.
-
-Goal: one content Task contract across all plan-generation paths.
+No vague fallback such as “create engaging content.”
 
 ## Persistence
 
-### Adaptive finalizer
+Update:
 
-`supabase/migrations/20260829080000_adaptive_manager_replan.sql` currently writes Task fields inside `finalize_manager_replan_v1`.
-
-Because that migration is already part of the stack, add a **new forward migration** that replaces the function with a version that writes:
-
-- `task_kind`
-- `execution_brief`
-
-Do not edit an already-reviewed historical migration once it is merged.
-
-### `missionGraphPersistence.ts`
-
-Write the same fields for conversational/Mission creation.
-
-## View model
-
-Extend `MissionTaskViewModel` in `src/types/cleanProduction.ts`:
-
-```ts
-taskKind?: TaskKind;
-executionBrief?: ContentExecutionBrief;
-```
-
-Add strict normalization from Supabase JSON.
-
-Do not cast arbitrary JSON straight into the UI type.
-
-## Repository query changes
-
-`src/services/productionSupabase.ts`
-
-Every Task selection used by Mission list/detail should include:
-
-- `task_kind`
-- `execution_brief`
-- `estimated_minutes`
-- `available_from`
-
-Current Mission view mapping loses some execution fields; make the enriched shape consistent.
-
-## Task Sheet UI
-
-`src/features/missions/MissionTaskSheet.tsx`
-
-Keep generic Task UI for ordinary work.
-
-For content Task with valid execution brief, render structured sections:
-
-1. What you're making
-2. Why this now
-3. Setup — time/cost/people/location/gear
-4. Hook
-5. What to say/do
-6. Shot plan
-7. Song use
-8. Edit
-9. Post / CTA
-10. What to send back to Desk
-
-Keep Start / Done / Move / Blocked unchanged.
-
-Do not render internal fact IDs.
-
-## Today preview
-
-Projection should use brief fields for compact summary:
-
-- estimated time;
-- cost;
-- people/resource;
-- first creative instruction.
-
-Do not render full brief on Home.
-
-## Validation tests
-
-Add pure parser tests for content brief.
-
-Reject:
-
-- content Task without hypothesis;
-- no hook;
-- invented required resource without source/fact grounding marker if contract includes grounding;
-- empty shot plan for capture video;
-- generic `use the song` without cue;
-- generic edit direction;
-- no desired audience response;
-- no proof mode;
-- no fallback for fragile resource when required;
-- `manager_work` content Task emitted as human work.
-
-Add Odaeshi snapshot/contract fixture.
-
----
-
-# Slice C — Task-scoped Media Results + Automatic Content Review
-
-## Goal
-
-Allow the artist to submit raw video/image proof for a content Task and let Desk review it immediately without abusing canonical song `music_assets`.
-
-## Storage model
-
-Do not store campaign footage as song masters/assets.
-
-Recommended new table:
-
-```sql
-task_result_assets (
-  id uuid primary key,
-  account_id uuid,
-  artist_workspace_id uuid,
-  artist_id uuid,
-  mission_id uuid,
-  task_id uuid,
-  result_id uuid,
-  storage_bucket text,
-  storage_ref text,
-  media_type text,
-  file_name text,
-  file_type text,
-  file_size bigint,
-  status text,
-  metadata jsonb,
-  created_at timestamptz
-)
-```
-
-Private storage bucket / signed upload.
-
-Supported first result types:
-
-- raw video;
-- draft cut;
-- image/photo;
-- published URL;
-- note.
-
-## Upload function
-
-Create a dedicated Edge function similar to the secure task-document upload flow:
-
-`task-result-media`
-
-Actions:
-
-- prepare signed upload;
-- finalize metadata;
-- link to Task/result;
-- emit `task_result_media_uploaded` event.
-
-Apply size/type policy.
-
-## Review trigger
-
-When required proof is available:
-
-- complete/submit Task result;
-- invoke existing Manager task-result review path with media references;
-- add content-aware bounded context;
-- immediately classify result:
-  - approved;
-  - edit only;
-  - partial reshoot;
-  - full reshoot;
-  - blocked.
-
-Do not create another generic content-review agent unless the existing Manager review cannot support the media reasoning boundary cleanly.
-
-## Automatic continuation
-
-After review:
-
-- Manager actions execute immediately;
-- exact human revision Task persists if needed;
-- approval can release publish Task;
-- published URL starts response watch;
-- watch maturation wakes Manager.
+- adaptive finalizer through a new forward migration;
+- `missionGraphPersistence.ts`;
+- relevant Manager/Mission task schemas.
 
 ## UI
 
-Task Sheet shows media upload/proof state.
+`MissionTaskSheet.tsx` renders content sections when `task_kind` is content-related.
 
-Manager review should surface the **smallest useful change** prominently.
+No campaign-media upload control.
 
-Example:
+Completion evidence should be:
 
-> Cut the first 6 seconds and start on Tobi's answer. No reshoot needed.
+- connected platform post;
+- public post URL;
+- result note/attestation when no observable public post exists.
 
 ## Tests
 
-- unauthorized Task media upload rejected;
-- wrong workspace/task rejected;
-- media record is task-scoped;
-- retry idempotent;
-- Task cannot be marked accepted before required proof exists;
-- review automatically starts once proof is submitted;
-- edit-only review creates no reshoot Task;
-- Manager review failure preserves uploaded proof/result and queues recovery;
-- superseded Task media cannot reopen old Plan work.
+Reject:
+
+- missing hypothesis/hook/shot plan/song cue;
+- invented resources;
+- generic edit instruction;
+- no desired audience behavior;
+- no proof mode;
+- campaign media upload as required proof;
+- Manager-owned work emitted as a human content Task.
+
+Use Odaeshi as golden fixture.
+
+---
+
+# Slice C — Connected Post Evidence + Response Watch
+
+## Goal
+
+Let Desk know that content was posted and evaluate the response **without storing the artist's campaign media**.
+
+## Evidence sources
+
+Preferred order:
+
+1. connected TikTok creator-authorized API identifies the artist's public post and metrics;
+2. artist pastes the public TikTok/Reels/Shorts URL;
+3. artist supplies a lightweight result note/metrics when the platform is not connected.
+
+## Data model
+
+Do not create a media-asset table.
+
+Create a lightweight normalized post-evidence object/table only if existing `evidence_items` is not sufficient.
+
+Preferred first approach: reuse `evidence_items` + metadata, linked to Task/Mission.
+
+Useful fields:
+
+- task/mission;
+- platform;
+- external post ID;
+- public URL;
+- posted time;
+- source type (`connected_api | public_url | artist_report`);
+- views;
+- likes;
+- comments count;
+- shares;
+- captured time;
+- observation window.
+
+No raw campaign-video bytes.
+
+## TikTok integration
+
+Use existing source architecture:
+
+- `source_providers`
+- `source_connections`
+- `source_sync_jobs`
+- `source_snapshots`
+- `evidence_items`
+
+Add TikTok as official API provider when OAuth/app approval is ready.
+
+First useful capability:
+
+- artist's own public videos;
+- post identity/URL;
+- creation time;
+- description;
+- views;
+- likes;
+- comments count;
+- shares.
+
+Do not claim comment sentiment because normal creator API access does not provide arbitrary comment text.
+
+## Post association
+
+A content publish Task should be associable with the resulting post through:
+
+- expected platform;
+- posting time window;
+- artist account;
+- public URL/external ID;
+- optional user confirmation when matching is ambiguous.
+
+Never guess silently between multiple candidate posts.
+
+## Response watch
+
+When post evidence exists:
+
+1. start a `review`/watch for configured observation window;
+2. dispatcher wakes it when due;
+3. refresh available platform metrics;
+4. Manager compares response with hypothesis + artist baseline;
+5. Manager emits next Task/replan/no-change.
+
+No user “continue” message.
+
+## Manager output boundaries
+
+Valid:
+
+> Share rate is 2.1× the recent baseline; repeat the personal-story direction.
+
+Invalid without visual/comment evidence:
+
+> The opening shot is weak.
+
+> People are discussing resilience in the comments.
+
+## Tests
+
+- connected post evidence links to correct Task;
+- ambiguous match requires confirmation;
+- URL result stores metadata, not media;
+- watch starts automatically;
+- watch maturation wakes Manager;
+- stale/superseded Task cannot reopen old plan;
+- TikTok metric review does not claim unavailable comment text;
+- no Supabase campaign-media storage dependency.
 
 ---
 
@@ -511,78 +328,26 @@ Example:
 
 ## Goal
 
-Turn current `permission_requests` from durable approval records into exact effect-bound authorization that automatically executes after approval.
+Turn `permission_requests` into exact effect-bound authorization that automatically executes after approval.
 
-## Schema evolution
+Keep approval separate from actual execution success.
 
-Keep `permission_requests` as authorization object.
-
-Add effect/version fields if needed:
+Possible schema evolution:
 
 - `effect_hash`
-- `requested_by_run_id` already available through run/action refs;
-- optional `approved_by_user_id`
-- `decided_at`
-- `decision_note`
+- approver/decision timestamp
+- external execution run/receipt
 
-Add external execution record or formally extend `manager_run_actions`.
+Rules:
 
-Recommended dedicated table if provider execution becomes complex:
-
-`external_action_runs`
-
-Fields:
-
-- permission request;
-- action type;
-- effect hash;
-- idempotency key;
-- provider;
-- external ref;
-- status;
-- result/error;
-- timestamps.
-
-## API/functions
-
-Bounded commands:
-
-- load permission effect;
-- approve;
-- edit/supersede;
-- reject;
-- execute approved action.
-
-Approval must be transactional and stale-safe.
-
-## Today/UI
-
-Pending blocking permission appears as `needs_you`.
-
-Permission review displays exact effect, target, content, cost, risk and reversibility.
-
-## Execution adapters
-
-Do not implement every action type at once.
-
-Start with a narrow safe effect already supported by product infrastructure, then extend.
-
-Candidates:
-
-- existing release-plan change path as reference;
-- send an already-prepared share-link email/outreach through a controlled adapter;
-- later publishing/spend.
-
-## Tests
-
-- approve only pending/current effect;
-- effect hash mismatch rejects stale approval;
-- double approval -> one execution;
-- reject -> Manager continuation/fallback;
-- approved != succeeded;
-- provider failure retains approval if effect unchanged and safe retry allowed;
+- prepare before asking;
+- bind approval to exact target/content/amount/timing;
 - changed effect requires new permission;
-- unauthorized user cannot approve high-impact effect.
+- double-click/retry cannot duplicate external effect;
+- reject wakes Manager fallback;
+- repeated approvals never silently create permission.
+
+Start with one narrow controlled external action before spend/publishing expansion.
 
 ---
 
@@ -590,59 +355,23 @@ Candidates:
 
 ## Goal
 
-Use repeated Task execution outcomes to improve future planning fit.
+Use repeated Task outcomes to improve future task fit.
 
-## First implementation should be conservative
+Inputs can come from existing lightweight runtime state:
 
-Do not create a new ML subsystem.
-
-Start with a deterministic/Manager synthesis job over durable Task events.
-
-Input:
-
-- Task kind;
+- task kind;
 - estimated minutes;
-- start/completion times;
-- move count;
-- blocked count;
+- started/completed times;
+- move/block counts;
 - collaborator/resource context;
-- result/revision count;
-- reminder responses.
+- reminder response;
+- public post completion/result signal.
 
-Output candidates:
+No video upload required.
 
-- preferred task-duration band;
-- collaboration completion advantage;
-- useful action time window;
-- travel friction;
-- creative script mode;
-- resource fragility.
+Persist established patterns as `artist_operating_facts` with `domain = execution` and evidence metadata.
 
-## Persistence
-
-Use `artist_operating_facts` with `domain = execution` for established patterns.
-
-Metadata should contain:
-
-- observation count;
-- supporting Task IDs;
-- contradiction count;
-- first/last observed;
-- applicable Task kinds.
-
-## Confidence gate
-
-1–2 observations: hypothesis only.
-3+ consistent observations: emerging soft preference.
-Repeated cross-Mission pattern or artist confirmation: canonical fact.
-
-Never persist moral/personality labels.
-
-## Triggering
-
-Low-cost aggregation after terminal Task/result events, with rate limiting/dedupe.
-
-Do not create a user Task or fixed daily AI run for this.
+No one-event overfitting and no moral/personality labels.
 
 ---
 
@@ -652,61 +381,20 @@ Do not create a user Task or fixed daily AI run for this.
 
 Mirror real scheduled human work without making Calendar canonical.
 
-## Connection model
+Add:
 
-Add provider connection/credential abstraction if one does not already exist for user-level integrations.
+- provider/user connection;
+- secure credential reference;
+- Task ↔ Calendar event link.
 
-Store:
+Rules:
 
-- user;
-- provider;
-- external account/calendar ref;
-- connection status;
-- secure credential reference.
-
-Do not store OAuth secrets in normal readable rows.
-
-## Mapping table
-
-Add `calendar_task_links`:
-
-- user;
-- Task;
-- calendar ID;
-- provider event ID;
-- provider etag/revision;
-- Desk revision;
-- sync state.
-
-## First UX
-
-- Connect Google Calendar in Settings;
-- choose calendar;
-- **Add to Calendar** for flexible Task;
-- automatically mirror fixed sessions if preference enabled.
-
-Do not auto-create an event for every Task.
-
-## Reconciliation
-
-Desk -> Calendar:
-
-- create/update/delete/cancel mirror.
-
-Calendar -> Desk:
-
-- event time change -> treat as proposed human availability/schedule change; reuse Move impact path;
-- event delete -> remove mirror only, not Task completion/cancellation;
-- arbitrary title/description edit -> not Manager instruction.
-
-## Tests
-
-- one event per mapped Task;
-- retry no duplicate;
-- superseded Task removes/invalidates mirror;
-- Calendar move cannot rewrite fixed deadline;
-- provider failure does not change Task truth;
-- disconnected Calendar leaves runtime unaffected.
+- only human time goes to Calendar;
+- no event for Desk research/review/replan;
+- Calendar move becomes proposed human availability change and reuses Move impact path;
+- deleting event does not complete/cancel Task;
+- retry cannot create duplicate event;
+- provider failure does not alter Task truth.
 
 ---
 
@@ -714,29 +402,17 @@ Calendar -> Desk:
 
 ## Goal
 
-Deliver the same Manager accountability loop in the channel many artists already use, without creating a second chatbot.
+Deliver the same Manager accountability loop through WhatsApp without creating a second chatbot.
 
-## Provider adapter
+Outbound first:
 
-Consume `reminder_queue` with `channel = whatsapp`.
-
-Before send, revalidate current Task/Plan state.
-
-Persist provider message mapping + delivery receipts.
-
-## Initial outbound types
-
-- Task ready;
-- start/check-in;
-- due/overdue;
-- blocked/plan at risk;
+- Task ready/start/check-in/due;
+- blocker/plan-risk;
 - exact Manager question;
 - revision/follow-up;
 - permission attention.
 
-## Initial inbound commands
-
-Bounded only:
+Bounded inbound:
 
 - Start
 - Done
@@ -744,26 +420,9 @@ Bounded only:
 - Blocked
 - answer current Manager question
 
-Resolve using message context/stable mapping.
+Every inbound action resolves to one canonical Desk object.
 
-Do not guess ambiguous Task references.
-
-## Later inbound
-
-Approval actions only after permission object resolution and authority checks are proven.
-
-Broad conversational Manager can come later.
-
-## Tests
-
-- stale reminder cancelled before send;
-- quiet hours respected;
-- provider retry no duplicate;
-- delivery/read != Task complete;
-- inbound reply maps to exact Task/question;
-- ambiguous context fails safely;
-- Move reuses canonical Manager impact/replan path;
-- provider outage leaves in-app runtime intact.
+No broad free-form autonomous WhatsApp Manager until bounded object resolution is proven.
 
 ---
 
@@ -773,103 +432,69 @@ Broad conversational Manager can come later.
 
 Wake Manager on meaningful career changes without expensive constant research.
 
-## Existing primitives
-
 Reuse:
 
 - `source_connections.next_sync_at`
 - `freshness_target`
-- `source_sync_jobs`
-- `source_snapshots`
-- `evidence_items`
-- semantic `evidence_items.metadata`
+- source sync jobs/snapshots
+- `evidence_items.metadata`
 
-## Separate three research modes
+Research modes:
 
-### Artist Discovery
+- Artist Discovery — infrequent broad context;
+- Career Watch — lightweight material changes;
+- Mission Research — deeper decision-specific search.
 
-Infrequent broad identity/career understanding.
-
-### Career Watch
-
-Lightweight change detection.
-
-Examples:
-
-- material audience movement;
-- meaningful public press/career event;
-- chart/market move;
-- release status change;
-- important partnership/collaboration signal.
-
-### Mission Research
-
-Decision-specific deeper research only when a current Mission needs it.
-
-## Wake rule
-
-Only meaningful new evidence should create a Manager review/event.
-
-Do not run full web research on every inactive artist on a high-frequency fixed loop.
-
-## Semantic packing
-
-Manager packets should receive the most decision-relevant semantic fields directly rather than only metric labels.
-
-Bound packet size and preserve source/provenance.
+Only meaningful evidence creates a Manager trigger.
 
 ---
 
 # Cross-slice invariants
 
-Every PR must keep these green.
-
 ## Runtime
 
-- no Manager machine work on human calendar;
-- one source of truth;
-- no user “continue” prompt required;
-- stale Plan work cannot mutate current route;
-- retries/idempotency protect external effects;
-- user factual updates persist before model reasoning;
-- model failure preserves user state.
+- no Manager work on human calendar;
+- no user “continue” prompt;
+- stale plan cannot mutate current route;
+- retries/idempotency protect state/effects;
+- user factual updates persist before reasoning.
 
 ## Questions
 
 - one question by default;
-- current hypothesis;
+- hypothesis exists;
 - decision-changing;
 - fresh context checked first;
 - fallback exists.
 
 ## Human Tasks
 
-- only human/team/external work;
+- human/team/external work only;
 - executable without “how?”;
 - real resources;
 - realistic time/cost;
-- proof/result defined;
+- lightweight proof;
 - blocker path.
 
 ## Today
 
 - one clear priority;
-- no AI call to render;
+- no AI render call;
 - projection only;
 - no superseded work.
 
 ## Content
 
-- no generic strategy-restatement Tasks;
 - structured execution brief;
-- immediate Manager review;
-- smallest useful revision.
+- no media-upload dependency;
+- platform/link evidence after posting;
+- honest about what Desk can observe;
+- response watch + automatic continuation.
 
 ## Permissions
 
 - prepare before asking;
 - exact effect binding;
-- explicit user authority;
 - approval != success;
 - no learned external permission.
 
@@ -878,45 +503,25 @@ Every PR must keep these green.
 - provider delivery is not Task truth;
 - Calendar = human time only;
 - WhatsApp = delivery/interaction surface;
-- core runtime works when providers fail.
-
----
-
-# PR review lens
-
-For every implementation slice, reviewers should answer:
-
-1. **Utility:** What real management work is now done for the artist?
-2. **User effort:** What did the artist stop having to prompt/remember/coordinate?
-3. **Context:** Which durable facts/state make the behavior specific?
-4. **Reasoning:** What decision is Desk making and what would change it?
-5. **Harness:** What automatically wakes the next step?
-6. **Autonomy:** Is Desk doing everything safe before asking a human?
-7. **Time:** Are human, Manager and reality clocks separated?
-8. **Execution:** Can the user act without another “how?” prompt?
-9. **Coherence:** Is there still one source of truth?
-10. **Trust:** Can every material claim/action be traced and bounded?
-11. **11-star:** Does this feel more like having a manager?
-
-If a PR cannot answer those, it is not done even if the model response looks impressive.
+- core runtime survives provider failure.
 
 ---
 
 # End-state experience
 
-When these slices are complete, a normal artist should be able to:
+A normal artist should be able to:
 
 1. open Desk;
-2. see one clear current priority;
-3. execute an exact Task built around their real resources;
-4. get reminders where they prefer;
-5. report a blocker/change naturally;
-6. watch Desk adapt automatically;
-7. submit work and receive immediate concrete review;
-8. approve only the external effects that genuinely require them;
-9. let Desk monitor response/reality;
+2. see one clear priority;
+3. execute an exact content/operational Task around real resources;
+4. post through the tools/platforms they already use;
+5. let Desk identify/watch the public result through connected platforms or a link;
+6. get reminders where preferred;
+7. report blockers naturally;
+8. watch Desk adapt automatically;
+9. approve only external effects that genuinely require them;
 10. receive the next move without asking.
 
-The product should increasingly make the artist feel:
+The target is:
 
-> **“I can focus on being the artist. Desk is running everything around it.”**
+> **I can focus on being the artist. Desk is running everything around it.**
