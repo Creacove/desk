@@ -10,20 +10,14 @@ describe("Today runtime projection", () => {
     const projection = projectTodayExecution(packet({
       missions: [mission("odaeshi", "Odaeshi", 5), mission("catalog", "Catalog cleanup", 2)],
       tasks: [task("catalog-task", "catalog", { title: "Confirm catalog metadata" })],
-      questions: [{
-        id: "q1",
-        missionId: "odaeshi",
-        contextRequestId: "world-model:q1",
-        status: "pending",
-        question: "Can you get access to a parked car this week?",
-        reason: "The first Odaeshi concept changes depending on this access.",
-        expiresAt: "2026-09-01T10:00:00.000Z",
-      }],
+      questions: [question("q1", "odaeshi")],
     }));
 
     expect(projection.primary?.kind).toBe("question");
     expect(projection.primary?.missionId).toBe("odaeshi");
     expect(projection.primary?.cta).toBe("answer");
+    expect(projection.primary?.questionKey).toBe("car_access");
+    expect(projection.primary?.answerKind).toBe("single_select");
     expect(projection.headline).toContain("Desk needs one thing for Odaeshi");
   });
 
@@ -116,7 +110,7 @@ describe("Today runtime projection", () => {
 
   it("does not show a watch as competing work for a Mission that already needs the artist", () => {
     const projection = projectTodayExecution(packet({
-      missions: [mission("m1", "Odaeshi", 1)],
+      missions: [mission("m1", "Odaishi", 1)],
       tasks: [task("human", "m1")],
       checkpoints: [{ id: "watch", missionId: "m1", title: "Response", status: "watching_signal" }],
     }));
@@ -134,7 +128,7 @@ describe("Today runtime projection", () => {
     expect(projectTodayExecution(input)).toEqual(projectTodayExecution(input));
   });
 
-  it("loads Today through bounded Supabase reads and never invokes an AI function", () => {
+  it("loads Today through bounded Supabase reads and never invokes an AI function on render", () => {
     const source = read("src/services/todayExecutionSupabase.ts");
     expect(source).toContain('.from("missions")');
     expect(source).toContain('.from("tasks")');
@@ -142,6 +136,25 @@ describe("Today runtime projection", () => {
     expect(source).toContain('.from("permission_requests")');
     expect(source).not.toContain("functions.invoke");
     expect(source).not.toContain("openai");
+  });
+
+  it("answers the canonical Manager question only after a user action", () => {
+    const action = read("src/services/todayQuestionAction.ts");
+    const ui = read("src/features/desk/TodayRuntimeExecution.tsx");
+    expect(action).toContain('client.functions.invoke("manager-conversation"');
+    expect(action).toContain("contextRequestId: item.contextRequestId");
+    expect(action).toContain("contextAnswers: [{ questionKey: item.questionKey, answer: cleanAnswer }]");
+    expect(ui).toContain("GuidedContextQuestion");
+    expect(ui).toContain("answerTodayManagerQuestion");
+    expect(ui).toContain("await onResolved()");
+  });
+
+  it("wires Home to the runtime projection instead of the old per-Mission Today list", () => {
+    const home = read("src/features/desk/DeskHQ.tsx");
+    expect(home).toContain("<TodayRuntimeExecution");
+    expect(home).toContain("onManager={onManager}");
+    expect(home).not.toContain("function TodayExecution(");
+    expect(home).not.toContain("getNextArtistTask(tasks, checkpoints, [])");
   });
 });
 
@@ -184,6 +197,22 @@ function task(id: string, missionId: string, overrides: Record<string, unknown> 
     createdAt: "2026-08-20T00:00:00.000Z",
     ...overrides,
   } as TodayRuntimePacket["tasks"][number];
+}
+
+function question(id: string, missionId: string): TodayRuntimePacket["questions"][number] {
+  return {
+    id,
+    missionId,
+    conversationId: "conversation-1",
+    contextRequestId: `world-model:${id}`,
+    questionKey: "car_access",
+    status: "pending",
+    question: "Can you get access to a parked car this week?",
+    reason: "The first Odaeshi concept changes depending on this access.",
+    answerKind: "single_select",
+    options: ["Yes", "No"],
+    expiresAt: "2026-09-01T10:00:00.000Z",
+  };
 }
 
 function read(path: string) {
