@@ -58,12 +58,14 @@ export function classifyManagerConversationError(
 function compactOpeningPacket(packet: unknown) {
   const source = record(packet);
   const latestIntelligence = record(source.latestManagerIntelligencePacket);
-  const focusedMusicSubject = compactFocusedMusicSubject(source.focusedMusicSubject);
+  const canonicalReleaseProjection = findCanonicalReleaseProjection(source.memory, source.focusedMusicSubject);
+  const focusedMusicSubject = compactFocusedMusicSubject(source.focusedMusicSubject, canonicalReleaseProjection);
   const openingBrief = {
     version: "manager_opening_brief_v3",
     truthPriority: [
       "focusedMusicSubject structured state overrides old conversation/memory/Manager Read, except release timing has its own operational source of truth",
       "For release timing, an approved operational release plan is canonical. providerReleaseDate and provider/imported metadata are provenance only and must not be treated as the current approved decision",
+      "A canonical_release_plan projection mirrors the durable approved release plan into this bounded opening brief; treat its effectiveReleaseDate as current operational state, not as a suggestion",
       "If releaseTiming.canonicalOperationalStateLoaded is false and release timing matters, read the focused Release Success state before proposing a date, declaring a date problem, or asking the artist to reconfirm a date",
       "durableMemory is preference/history, not a replacement for current structured song state",
       "Manager Read is derived analysis and can be stale",
@@ -72,7 +74,7 @@ function compactOpeningPacket(packet: unknown) {
     focusedMusicSubject,
     taskContext: compactTask(source.taskContext),
     conversationHistory: compactConversationHistory(source.conversationHistory),
-    durableMemory: compactMemoryList(source.memory, 6),
+    durableMemory: compactMemoryList(array(source.memory).filter((item) => record(item).source_type !== "canonical_release_plan"), 6),
     evidence: compactEvidenceList(source.evidence, 8),
     music: compactMusic(source.music),
     activeMissions: compactMissionList(source.existingMissions, 6),
@@ -90,30 +92,56 @@ function compactOpeningPacket(packet: unknown) {
   return enforceByteBudget(openingBrief, MAX_OPENING_BRIEF_BYTES);
 }
 
-function compactFocusedMusicSubject(value: unknown) {
+function findCanonicalReleaseProjection(memoryValue: unknown, subjectValue: unknown) {
+  const subject = record(subjectValue);
+  if (subject.type !== "music_item") return null;
+  const musicItemId = compactText(subject.id, 120);
+  if (!musicItemId) return null;
+
+  for (const item of array(memoryValue)) {
+    const row = record(item);
+    if (row.source_type !== "canonical_release_plan") continue;
+    const content = compactText(row.content, 4_000);
+    if (!content) continue;
+    try {
+      const parsed = JSON.parse(content);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const projection = parsed as Record<string, unknown>;
+      if (projection.projectionVersion !== "canonical_release_plan_v1") continue;
+      if (compactText(projection.musicItemId, 120) !== musicItemId) continue;
+      if (!compactText(projection.effectiveReleaseDate, 120)) continue;
+      return projection;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function compactFocusedMusicSubject(value: unknown, releaseProjection: unknown = null) {
   const subject = record(value);
   const type = subject.type === "music_item" || subject.type === "music_project" ? subject.type : "";
   const id = compactText(subject.id, 120);
   if (!type || !id) return null;
 
   const metadata = record(subject.metadata);
-  const releasePlan = compactReleasePlan(subject.releasePlan ?? subject.release_plan);
+  const releasePlan = compactReleasePlan(subject.releasePlan ?? subject.release_plan ?? releaseProjection);
   const effectiveReleaseDate = compactText(
     releasePlan?.effectiveReleaseDate
-      ?? subject.effectiveReleaseDate
-      ?? subject.effective_release_date
-      ?? subject.approvedReleaseDate
-      ?? subject.approved_release_date
-      ?? subject.plannedReleaseDate
-      ?? subject.planned_release_date,
+      || subject.effectiveReleaseDate
+      || subject.effective_release_date
+      || subject.approvedReleaseDate
+      || subject.approved_release_date
+      || subject.plannedReleaseDate
+      || subject.planned_release_date,
     120,
   );
   const providerReleaseDate = compactText(
     releasePlan?.providerReleaseDate
-      ?? subject.providerReleaseDate
-      ?? subject.provider_release_date
-      ?? metadata.planned_release_date
-      ?? metadata.release_date,
+      || subject.providerReleaseDate
+      || subject.provider_release_date
+      || metadata.planned_release_date
+      || metadata.release_date,
     120,
   );
 
@@ -125,7 +153,7 @@ function compactFocusedMusicSubject(value: unknown) {
     lifecycleStage: compactText(subject.lifecycleStage ?? subject.lifecycle_stage, 120),
     plannedReleaseDate: effectiveReleaseDate,
     providerReleaseDate,
-    releaseTiming: releasePlan ?? {
+    releaseTiming: releasePlan ? { ...releasePlan, providerReleaseDate } : {
       effectiveReleaseDate,
       approvedReleaseDate: compactText(subject.approvedReleaseDate ?? subject.approved_release_date, 120),
       providerReleaseDate,
