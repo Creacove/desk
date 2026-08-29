@@ -3,8 +3,8 @@
 -- Provider/imported release dates remain historical/provider truth on music_items.
 -- The operational release plan is the source of truth once Desk has an approved
 -- release-date decision. This migration publishes that state explicitly, mirrors
--- the approved decision into the World Model, retires stale release-date questions,
--- and wakes adaptive replanning exactly once after approval.
+-- the approved decision into the World Model and bounded Manager read projection,
+-- retires stale release-date questions, and wakes adaptive replanning exactly once.
 
 create or replace function public.manager_effective_release_state_v1(
   target_music_item_id uuid
@@ -71,6 +71,13 @@ revoke all on function public.manager_effective_release_state_v1(uuid)
 grant execute on function public.manager_effective_release_state_v1(uuid)
   to service_role;
 
+-- One current read projection per release plan. This is not a competing source of
+-- truth: music_release_plans remains canonical. The projection exists because the
+-- Manager opening packet intentionally reads a bounded set of durable memories.
+create unique index if not exists memory_entries_canonical_release_plan_projection_uidx
+  on public.memory_entries (artist_workspace_id, source_type, source_id)
+  where source_type = 'canonical_release_plan' and source_id is not null;
+
 create or replace function public.apply_approved_release_decision_integrity_v1()
 returns trigger
 language plpgsql
@@ -82,6 +89,7 @@ declare
   existing_fact public.artist_operating_facts%rowtype;
   fact_scope_key_value text;
   review_key text;
+  projection_content text;
 begin
   -- Only a real transition into approved publishes a new canonical decision.
   -- Idempotent approval replays therefore cannot create duplicate facts/reviews.
@@ -154,6 +162,47 @@ begin
       )
     );
 
+    projection_content := jsonb_build_object(
+      'projectionVersion', 'canonical_release_plan_v1',
+      'musicItemId', plan_row.music_item_id,
+      'missionId', plan_row.mission_id,
+      'releasePlanId', plan_row.id,
+      'releasePlanStatus', plan_row.status,
+      'releasePlanRevision', plan_row.revision,
+      'approvedReleaseDate', new.proposed_date,
+      'effectiveReleaseDate', new.proposed_date,
+      'provenance', 'approved_release_plan',
+      'approvedAt', new.approved_at
+    )::text;
+
+    insert into public.memory_entries (
+      account_id, artist_workspace_id, artist_id,
+      mission_id, scope, kind, content,
+      source_type, source_id, confidence, reason, metadata
+    ) values (
+      new.account_id, new.artist_workspace_id, new.artist_id,
+      plan_row.mission_id, 'music_item', 'fact', projection_content,
+      'canonical_release_plan', plan_row.id, 'high',
+      'Bounded Manager read projection of the canonical approved operational release plan.',
+      jsonb_build_object(
+        'projection', true,
+        'musicItemId', plan_row.music_item_id,
+        'releaseDateChangeRequestId', new.id,
+        'approvedBy', new.approved_by
+      )
+    )
+    on conflict (artist_workspace_id, source_type, source_id)
+      where source_type = 'canonical_release_plan' and source_id is not null
+    do update set
+      mission_id = excluded.mission_id,
+      scope = excluded.scope,
+      kind = excluded.kind,
+      content = excluded.content,
+      confidence = excluded.confidence,
+      reason = excluded.reason,
+      metadata = excluded.metadata,
+      created_at = now();
+
     -- A durable approved decision answers any still-pending release-date question
     -- for this Mission. Do not retire unrelated time questions.
     update public.manager_question_requests q
@@ -221,6 +270,7 @@ with approved as (
     rp.mission_id,
     rp.music_item_id,
     rp.id as release_plan_id,
+    rp.status as release_plan_status,
     rp.approved_release_date,
     rp.revision,
     rp.approved_at,
@@ -275,3 +325,51 @@ where not exists (
     and f.scope_key = 'mission:' || a.mission_id::text
     and f.status = 'active'
 );
+
+-- Backfill the bounded Manager opening projection as well. The latest approved
+-- plan per Mission was already selected above conceptually; reselect here so this
+-- statement is independently restart-safe.
+insert into public.memory_entries (
+  account_id, artist_workspace_id, artist_id,
+  mission_id, scope, kind, content,
+  source_type, source_id, confidence, reason, metadata
+)
+select
+  rp.account_id,
+  rp.artist_workspace_id,
+  rp.artist_id,
+  rp.mission_id,
+  'music_item',
+  'fact',
+  jsonb_build_object(
+    'projectionVersion', 'canonical_release_plan_v1',
+    'musicItemId', rp.music_item_id,
+    'missionId', rp.mission_id,
+    'releasePlanId', rp.id,
+    'releasePlanStatus', rp.status,
+    'releasePlanRevision', rp.revision,
+    'approvedReleaseDate', rp.approved_release_date,
+    'effectiveReleaseDate', rp.approved_release_date,
+    'provenance', 'approved_release_plan',
+    'approvedAt', rp.approved_at
+  )::text,
+  'canonical_release_plan',
+  rp.id,
+  'high',
+  'Bounded Manager read projection of the canonical approved operational release plan.',
+  jsonb_build_object('projection', true, 'musicItemId', rp.music_item_id, 'backfilled', true)
+from public.music_release_plans rp
+where rp.mission_id is not null
+  and rp.approved_release_date is not null
+  and rp.status <> 'cancelled'
+on conflict (artist_workspace_id, source_type, source_id)
+  where source_type = 'canonical_release_plan' and source_id is not null
+do update set
+  mission_id = excluded.mission_id,
+  scope = excluded.scope,
+  kind = excluded.kind,
+  content = excluded.content,
+  confidence = excluded.confidence,
+  reason = excluded.reason,
+  metadata = excluded.metadata,
+  created_at = greatest(public.memory_entries.created_at, now());
