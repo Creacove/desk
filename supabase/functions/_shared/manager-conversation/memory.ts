@@ -1,7 +1,9 @@
+export type ManagerMemoryKind = "fact" | "preference" | "constraint" | "blocker" | "outcome_note" | "rejected_move";
+
 export type QualifiedManagerMemory = {
   content: string;
-  category: "durable_preference" | "durable_constraint";
-  kind: "preference" | "constraint";
+  category: "operational_fact" | "durable_preference" | "durable_constraint" | "current_blocker" | "execution_outcome" | "rejected_move";
+  kind: ManagerMemoryKind;
   scope: "artist" | "mission" | "task";
   mission_id: string | null;
   task_id: string | null;
@@ -28,7 +30,7 @@ export function qualifyManagerMemoryCandidates(
 
   for (const raw of strings.slice(0, 8)) {
     const content = raw.trim().replace(/\s+/g, " ").slice(0, 500);
-    const kind = classifyDurableMemory(content);
+    const kind = classifyManagerMemory(content);
     if (!kind) continue;
     const normalized = normalize(content);
     if (existing.some((item) => normalize(item.content ?? "") === normalized)) continue;
@@ -42,7 +44,7 @@ export function qualifyManagerMemoryCandidates(
     );
     accepted.push({
       content,
-      category: kind === "preference" ? "durable_preference" : "durable_constraint",
+      category: categoryForKind(kind),
       kind,
       scope,
       mission_id: context.missionId ?? null,
@@ -54,23 +56,47 @@ export function qualifyManagerMemoryCandidates(
   return accepted;
 }
 
-function classifyDurableMemory(value: string): "preference" | "constraint" | null {
+function classifyManagerMemory(value: string): ManagerMemoryKind | null {
   const normalized = normalize(value);
-  if (/\b(must not|never|cannot|can't|do not|won't|without approval|budget cap|budget is capped|capped at|spend limit|deadline|hard limit|constraint)\b/.test(normalized)) {
+
+  if (/\b(must not|never|cannot|can't|do not|won't|without approval|budget cap|budget is capped|capped at|spend limit|deadline|hard limit|constraint|max(?:imum)? budget|only has|only have)\b/.test(normalized)) {
     return "constraint";
   }
-  if (/\b(prefers?|wants?|likes?|prioriti[sz]es?|goal is|direction is|comfortable with|would rather)\b/.test(normalized)) {
+  if (/\b(blocked|waiting on|unavailable|cancelled|canceled|cannot proceed|can't proceed|holding up|dependency)\b/.test(normalized)) {
+    return "blocker";
+  }
+  if (/\b(prefers?|wants?|likes?|prioriti[sz]es?|goal is|direction is|comfortable with|would rather|doesn't like|does not like|hates?)\b/.test(normalized)) {
     return "preference";
+  }
+  if (/\b(rejected|do not pursue|don't pursue|not pursuing|decided against|avoid this move|stop doing|dropped this direction)\b/.test(normalized)) {
+    return "rejected_move";
+  }
+  if (/\b(outperformed|underperformed|performed better|performed worse|worked better|worked worse|resulted in|response was stronger|response was weaker|completed|missed repeatedly)\b/.test(normalized)) {
+    return "outcome_note";
+  }
+  if (/\b(has access to|have access to|owns?|uses?|lives? in|based in|available on|available after|can shoot|can film|can edit|speaks?|has an? iphone|has an? android|has friends?|has a team|works? (?:weekends?|evenings?|mornings?))\b/.test(normalized)) {
+    return "fact";
   }
   return null;
 }
 
+function categoryForKind(kind: ManagerMemoryKind): QualifiedManagerMemory["category"] {
+  switch (kind) {
+    case "fact": return "operational_fact";
+    case "preference": return "durable_preference";
+    case "constraint": return "durable_constraint";
+    case "blocker": return "current_blocker";
+    case "outcome_note": return "execution_outcome";
+    case "rejected_move": return "rejected_move";
+  }
+}
+
 function memoryTopic(value: string) {
   return normalize(value)
-    .replace(/\b(the|artist|team|manager|wants?|prefers?|must|never|cannot|do not|goal is|is|at|to|of|and|for|per)\b/g, " ")
+    .replace(/\b(the|artist|team|manager|wants?|prefers?|must|never|cannot|do not|goal is|is|at|to|of|and|for|per|has|have|access)\b/g, " ")
     .split(/\s+/)
     .filter((item) => Boolean(item) && !/^\d+(?:\.\d+)?$/.test(item))
-    .slice(0, 4)
+    .slice(0, 5)
     .sort()
     .join(" ");
 }
