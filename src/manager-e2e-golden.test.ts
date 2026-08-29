@@ -16,6 +16,8 @@ const productionSupabase = read('src/services/productionSupabase.ts');
 const workSurface = read('src/features/missions/MissionWorkSurface.tsx');
 const todayRuntime = read('src/features/desk/TodayRuntimeExecution.tsx');
 const worldModel = read('supabase/migrations/20260829080300_world_model_question_engine.sql');
+const contentSignals = read('supabase/migrations/20260829080500_content_post_result_signals.sql');
+const contentResponse = read('supabase/migrations/20260829080600_content_response_review_window.sql');
 const resultAdaptation = read('supabase/migrations/20260829080800_generic_task_result_adaptation.sql');
 const continuation = read('supabase/migrations/20260829080630_manager_result_adaptation_continuation.sql');
 const careerWatchMigration = read('supabase/migrations/20260829190000_manager_career_watch.sql');
@@ -75,7 +77,7 @@ describe('Gate 7 full Manager golden path', () => {
     expect(JSON.stringify(task)).toContain('available car');
   });
 
-  it('uses the production human execution, result review and adaptive continuation chain', () => {
+  it('uses the production human execution, bounded content review and adaptive continuation chain', () => {
     expect(workSurface).toContain('startMissionTask(task.id)');
     expect(workSurface).toContain('onCompleteTask(');
     expect(productionSupabase).toContain('client.functions.invoke("manager-review-task-result"');
@@ -83,6 +85,11 @@ describe('Gate 7 full Manager golden path', () => {
     expect(taskReview).toContain('task_results');
     expect(taskReview).toContain('manager_interpretation');
     expect(taskReview).toContain('reviewMustUpdateMissionState: true');
+    expect(contentSignals).toContain("'content_post_result'");
+    expect(contentResponse).toContain("'content-response:'");
+    expect(contentResponse).toContain("interval '24 hours'");
+    expect(contentResponse).toContain('Never invent views, engagement, comment sentiment, or visual critique.');
+    expect(resultAdaptation).toContain("if result_kind = 'content_post_result'");
     expect(resultAdaptation).toContain("'adaptive_replan'");
     expect(resultAdaptation).toContain('do not wait for the artist to ask what next');
     expect(adaptiveRuntime).toContain('freshMemory');
