@@ -22,11 +22,13 @@ revoke insert, update on public.artist_understandings from authenticated;
 grant select on public.artist_understandings to authenticated;
 grant select, insert, update on public.artist_understandings to service_role;
 
+-- PostgreSQL functions are executable by PUBLIC unless explicitly revoked. Revoke both PUBLIC
+-- and authenticated before granting the mutation path only to the service role.
 revoke execute on function public.upsert_artist_understanding_v1(
   uuid,uuid,uuid,public.artist_understanding_scope,uuid,text,text,text,jsonb,
   public.artist_understanding_source_kind,text,uuid,text,public.evidence_confidence,
   public.artist_understanding_authority,uuid,public.created_by_type
-) from authenticated;
+) from public, authenticated;
 grant execute on function public.upsert_artist_understanding_v1(
   uuid,uuid,uuid,public.artist_understanding_scope,uuid,text,text,text,jsonb,
   public.artist_understanding_source_kind,text,uuid,text,public.evidence_confidence,
@@ -93,6 +95,7 @@ begin
 end;
 $$;
 
+revoke execute on function public.manager_artist_understanding_snapshot_v1(uuid,uuid) from public;
 grant execute on function public.manager_artist_understanding_snapshot_v1(uuid,uuid) to authenticated, service_role;
 
 comment on table public.artist_understandings is
