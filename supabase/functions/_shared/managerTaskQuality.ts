@@ -75,7 +75,7 @@ export function assertExecutableHumanTask(task: ExecutableHumanTaskShape) {
 
 function assertContentExecutionCoverage(title: string, copy: string) {
   const categories = [
-    /\b(?:location|room|studio|car|street|park|home|bedroom|stage|phone|camera|tripod|lighting|outfit|friend|friends|team|person|people|creator|dancer|setup|setting)\b/i,
+    /\b(?:location|room|studio|car|street|park|home|bedroom|stage|phone|camera|tripod|lighting|outfit|friend|friends|collaborator|collaborators|creator|dancer|actor|setup|setting)\b/i,
     /\b(?:hook|open with|say|ask|show|tell|line|script|story|question|chorus|verse|lyric|moment|perform|performance)\b/i,
     /\b(?:seconds?|vertical|9:16|cut|edit|caption|subtitle|text on screen|overlay|reel|tiktok|instagram|youtube|short|frame|transition)\b/i,
     /\b(?:comment|save|share|reply|response|cta|link|url|screenshot|report|result|post|upload|send|publish|posted|performance data)\b/i,
