@@ -19,6 +19,7 @@ on:
       - "src/manager-permission-intent.test.ts"
       - "src/manager-state-integrity.test.ts"
       - "src/artist-understanding.test.ts"
+      - "supabase/functions/manager-artist-understanding/**"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-action-intent-runner/**"
@@ -119,6 +120,7 @@ jobs:
           supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/_shared/manager-conversation/context.ts
+          supabase/functions/manager-artist-understanding/index.ts
           supabase/functions/manager-task-execution/index.ts
           supabase/functions/manager-runtime-runner/index.ts
           supabase/functions/manager-action-intent-runner/index.ts
