@@ -1,8 +1,13 @@
 begin;
-select plan(10);
+select plan(15);
 
 select has_table('public','artist_understandings','canonical understanding table exists');
 select has_function('public','upsert_artist_understanding_v1',array['uuid','uuid','uuid','artist_understanding_scope','uuid','text','text','text','jsonb','artist_understanding_source_kind','text','uuid','text','evidence_confidence','artist_understanding_authority','uuid','created_by_type'],'understanding upsert exists');
+select ok(has_table_privilege('authenticated','public.artist_understandings','SELECT'),'authenticated members may read understanding through RLS');
+select ok(not has_table_privilege('authenticated','public.artist_understandings','INSERT'),'authenticated clients cannot forge understanding rows');
+select ok(not has_table_privilege('authenticated','public.artist_understandings','UPDATE'),'authenticated clients cannot forge understanding authority');
+select ok(not has_function_privilege('authenticated',to_regprocedure('public.upsert_artist_understanding_v1(uuid,uuid,uuid,public.artist_understanding_scope,uuid,text,text,text,jsonb,public.artist_understanding_source_kind,text,uuid,text,public.evidence_confidence,public.artist_understanding_authority,uuid,public.created_by_type)'),'EXECUTE'),'authenticated clients cannot call trusted understanding upsert');
+select ok(has_function_privilege('service_role',to_regprocedure('public.upsert_artist_understanding_v1(uuid,uuid,uuid,public.artist_understanding_scope,uuid,text,text,text,jsonb,public.artist_understanding_source_kind,text,uuid,text,public.evidence_confidence,public.artist_understanding_authority,uuid,public.created_by_type)'),'EXECUTE'),'service role owns trusted understanding mutation');
 
 insert into accounts(id,name) values('10000000-0000-0000-0000-000000000001','Gate5');
 insert into artists(id,account_id,display_name) values('10000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','Otmos');
