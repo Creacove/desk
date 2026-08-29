@@ -1,5 +1,5 @@
 begin;
-select plan(14);
+select plan(15);
 
 select has_table('public','artist_understanding_ingestion_queue','semantic ingestion queue exists');
 select has_function('public','manager_knowledge_context_v1',array['uuid','uuid','uuid','text','uuid'],'one Manager knowledge assembler exists');
