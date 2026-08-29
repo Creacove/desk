@@ -21,9 +21,11 @@ on:
       - "src/artist-understanding.test.ts"
       - "src/manager-career-watch.test.ts"
       - "src/manager-e2e-golden.test.ts"
+      - "src/manager-production-hardening.test.ts"
       - "supabase/functions/manager-artist-understanding/**"
       - "supabase/functions/manager-career-watch/**"
       - "supabase/functions/manager-career-watch-dispatcher/**"
+      - "supabase/functions/manager-runtime-health/**"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-action-intent-runner/**"
@@ -41,12 +43,16 @@ on:
       - "supabase/functions/_shared/openaiMusicManagerRead.ts"
       - "supabase/functions/_shared/todaysBriefOperatingContext.ts"
       - "supabase/functions/_shared/manager-intelligence/**"
+      - "supabase/functions/_shared/managerRuntimeGuardrails.ts"
       - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
       - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/functions/_shared/manager-conversation/context.ts"
       - "supabase/functions/_shared/artistUnderstanding.ts"
       - "supabase/migrations/*manager_runtime*"
+      - "supabase/migrations/*manager_production_hardening*"
+      - "supabase/migrations/*manager_runtime_limits*"
+      - "supabase/migrations/*manager_runtime_incidents*"
       - "supabase/migrations/*manager_state_integrity*"
       - "supabase/migrations/*manager_permission_execution*"
       - "supabase/migrations/*manager_split_permission_producer*"
@@ -76,6 +82,9 @@ on:
       - "supabase/tests/artist_understanding_runtime_smoke.sql"
       - "supabase/tests/manager_career_watch_smoke.sql"
       - "supabase/tests/manager_e2e_golden_smoke.sql"
+      - "supabase/tests/manager_production_hardening_smoke.sql"
+      - "supabase/tests/manager_production_concurrency_setup.sql"
+      - "supabase/tests/manager_production_concurrency_verify.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -114,6 +123,7 @@ jobs:
           src/artist-understanding.test.ts
           src/manager-career-watch.test.ts
           src/manager-e2e-golden.test.ts
+          src/manager-production-hardening.test.ts
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
@@ -123,6 +133,7 @@ jobs:
           deno check
           supabase/functions/_shared/artistUnderstanding.ts
           supabase/functions/_shared/manager-intelligence/careerWatch.ts
+          supabase/functions/_shared/managerRuntimeGuardrails.ts
           supabase/functions/_shared/managerHumanTaskGenerationContract.ts
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
           supabase/functions/_shared/openaiMissionGenesis.ts
@@ -137,6 +148,7 @@ jobs:
           supabase/functions/manager-artist-understanding/index.ts
           supabase/functions/manager-career-watch/index.ts
           supabase/functions/manager-career-watch-dispatcher/index.ts
+          supabase/functions/manager-runtime-health/index.ts
           supabase/functions/generate-music-summary/index.ts
           supabase/functions/generate-todays-brief/index.ts
           supabase/functions/manager-task-execution/index.ts
@@ -193,6 +205,20 @@ jobs:
           run_sql supabase/tests/artist_understanding_runtime_smoke.sql
           run_sql supabase/tests/manager_career_watch_smoke.sql
           run_sql supabase/tests/manager_e2e_golden_smoke.sql
+          run_sql supabase/tests/manager_production_hardening_smoke.sql
+      - name: Stress concurrent Manager admission
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_setup.sql
+          pids=""
+          for i in $(seq 1 12); do
+            docker exec "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres -Atqc "select public.claim_manager_runtime_admission_v1('80000000-0000-4000-8000-000000000001','80000000-0000-4000-8000-000000000003','80000000-0000-4000-8000-000000000002','concurrent-stress',1,180);" > "/tmp/manager-admission-$i.log" 2>&1 &
+            pids="$pids $!"
+          done
+          for pid in $pids; do wait "$pid"; done
+          docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_verify.sql
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true
