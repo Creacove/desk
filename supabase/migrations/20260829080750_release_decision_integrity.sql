@@ -80,7 +80,7 @@ as $$
 declare
   plan_row public.music_release_plans%rowtype;
   existing_fact public.artist_operating_facts%rowtype;
-  scope_key text;
+  fact_scope_key_value text;
   review_key text;
 begin
   -- Only a real transition into approved publishes a new canonical decision.
@@ -106,15 +106,15 @@ begin
   end if;
 
   if plan_row.mission_id is not null then
-    scope_key := 'mission:' || plan_row.mission_id::text;
+    fact_scope_key_value := 'mission:' || plan_row.mission_id::text;
 
     select * into existing_fact
-    from public.artist_operating_facts
-    where artist_workspace_id = new.artist_workspace_id
-      and fact_key = 'time.release_date'
-      and scope_type = 'mission'
-      and scope_key = scope_key
-      and status = 'active'
+    from public.artist_operating_facts f
+    where f.artist_workspace_id = new.artist_workspace_id
+      and f.fact_key = 'time.release_date'
+      and f.scope_type = 'mission'
+      and f.scope_key = fact_scope_key_value
+      and f.status = 'active'
     for update;
 
     if existing_fact.id is not null then
@@ -133,7 +133,7 @@ begin
       status, supersedes_fact_id, metadata
     ) values (
       new.account_id, new.artist_workspace_id, new.artist_id,
-      'time', 'time.release_date', 'mission', scope_key,
+      'time', 'time.release_date', 'mission', fact_scope_key_value,
       jsonb_build_object(
         'date', new.proposed_release_date,
         'musicItemId', plan_row.music_item_id,
@@ -156,23 +156,23 @@ begin
 
     -- A durable approved decision answers any still-pending release-date question
     -- for this Mission. Do not retire unrelated time questions.
-    update public.manager_question_requests
+    update public.manager_question_requests q
     set status = 'superseded',
-        metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
+        metadata = coalesce(q.metadata, '{}'::jsonb) || jsonb_build_object(
           'supersededReason', 'canonical_release_date_approved',
           'releaseDateChangeRequestId', new.id,
           'approvedReleaseDate', new.proposed_release_date,
           'releasePlanRevision', plan_row.revision
         ),
         updated_at = now()
-    where artist_workspace_id = new.artist_workspace_id
-      and artist_id = new.artist_id
-      and mission_id = plan_row.mission_id
-      and status = 'pending'
-      and fact_domain = 'time'
+    where q.artist_workspace_id = new.artist_workspace_id
+      and q.artist_id = new.artist_id
+      and q.mission_id = plan_row.mission_id
+      and q.status = 'pending'
+      and q.fact_domain = 'time'
       and (
-        fact_key ~* '(^|\.)release(_|\.)?date($|\.)'
-        or question_key ~* 'release.*date|date.*release'
+        q.fact_key ~* '(^|\.)release(_|\.)?date($|\.)'
+        or q.question_key ~* 'release.*date|date.*release'
       );
 
     review_key := 'release-date-change:' || new.id::text || ':approved';
