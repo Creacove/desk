@@ -22,6 +22,7 @@ on:
       - "supabase/functions/workflow-recovery/**"
       - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
+      - "supabase/functions/_shared/manager-conversation/context.ts"
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*manager_permission_execution*"
       - "supabase/migrations/*release_decision_integrity*"
@@ -81,6 +82,7 @@ jobs:
           deno check
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
           supabase/functions/_shared/missionGraphPersistence.ts
+          supabase/functions/_shared/manager-conversation/context.ts
           supabase/functions/manager-task-execution/index.ts
           supabase/functions/manager-runtime-runner/index.ts
           supabase/functions/manager-dispatcher/index.ts
