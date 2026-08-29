@@ -74,13 +74,7 @@ Core rule:
 
 - [`manager-today-execution-surface.md`](./manager-today-execution-surface.md)
 
-Defines:
-
-- one global current priority;
-- question / permission / human Task / quiet watch projection;
-- no OpenAI call on Home render;
-- Today = execution;
-- Today's Brief = intelligence.
+Defines one global current priority, question/permission/task/watch projection, no OpenAI call on Home render, and separation between Today execution and Today's Brief intelligence.
 
 Core rule:
 
@@ -182,7 +176,7 @@ There is deliberately **no campaign-media upload/storage slice**.
 | Review/watch | waiting for external reality/signal |
 | Checkpoint | meaningful management decision gate |
 | Result | evidence of what happened |
-| Post evidence | external platform post identity/URL/metrics; no campaign media bytes required |
+| Post evidence | platform post identity/URL/metrics; no campaign media bytes required |
 | Reminder intent | channel-neutral accountability request |
 | Channel delivery | provider delivery state; never Task truth |
 | Calendar link | mapping from human Task/time block to provider event |
@@ -278,8 +272,6 @@ Failure anywhere the artist has to ask **“what next?”** or reconcile competi
 ---
 
 # Remaining deeper contracts
-
-The next documents can be added when implementation reaches them:
 
 1. **TikTok / connected post evidence implementation** — OAuth, post matching, metric snapshots, response watches.
 2. **Career Watch** — material-change detection without expensive constant research.
