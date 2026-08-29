@@ -136,7 +136,7 @@ begin
     '\m(access|borrow|rent|bring|get|use|with)\M.{0,80}\m(car|venue|photographer|tripod|friend|friends|crew|dancer|dancers|stylist|studio|rooftop|equipment)\M';
 
   if has_special_resource_dependency
-     and execution_text !~* '(\mfallback\M|\motherwise\M|\minstead\M|\mif not\M|\mif unavailable\M|\mif .*cannot\M|\mif .*can''t\M)' then
+     and execution_text !~* '(\mfallback\M|\motherwise\M|\minstead\M|\mif not\M|\mif\M.{0,80}\munavailable\M|\mif\M.{0,80}\mcannot\M|\mif\M.{0,80}\mcan''t\M)' then
     raise exception using errcode = '22023', message = 'generated_human_task_contract:resource_dependent_content_requires_fallback';
   end if;
 end;
