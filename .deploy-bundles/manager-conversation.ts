@@ -1291,8 +1291,42 @@ var decisionGradeInstructions = [
   "Short headings, bullets, and one compact scenario table are allowed when they make the decision easier to understand. Professional legal, tax, accounting, or wellbeing review is a concise boundary after useful management judgment, never a substitute for it."
 ].join("\n");
 
+// supabase/functions/_shared/managerHumanTaskGenerationContract.ts
+var MANAGER_HUMAN_TASK_GENERATION_CONTRACT_VERSION = "manager-human-task-generation-v3";
+function buildManagerHumanTaskGenerationContract() {
+  return [
+    `HUMAN TASK GENERATION CONTRACT: ${MANAGER_HUMAN_TASK_GENERATION_CONTRACT_VERSION}. Apply this BEFORE writing any visible Task.`,
+    "Think like a senior artist manager delegating work to a real artist or team member. The human should receive the decision and executable brief, not the Manager's unfinished thinking.",
+    "First separate Manager work from human work. Desk owns research, diagnosis, comparison, strategy, creative-direction selection, target selection, sequencing, drafting, interpretation, monitoring, and deciding what happens next. Never turn those into a human Task merely because work needs to happen.",
+    "Before deciding the route, read the current Manager knowledge contract wherever this runtime supplies it. It may appear directly as managerKnowledge, inside the latest Manager Intelligence profile projection as managerKnowledge, or as the canonical manager_knowledge_v1 memory projection. Treat those representations as one projection of the same canonical stores, never as separate brains.",
+    "Use the Manager's supplied knowledge as one coherent context. semanticUnderstanding owns current artist identity, music meaning, themes, cultural context, creative intent, narrative and positioning; operatingReality owns resources, collaborators/access, constraints, preferences, goals and other practical facts. Historical memory and derived Manager Reads may add context but must not override fresher canonical knowledge.",
+    "When semanticUnderstanding is relevant, make it materially shape the work. A content, release, press, collaboration, live, market or positioning Task should reflect the actual meaning/identity/creative world instead of collapsing into a generic best-practice task. Never invent meaning that is not supported by the supplied context.",
+    "When the task concerns the focused song or project, prefer semanticUnderstanding scoped to that music asset plus artist-level understanding. Do not let understanding from a different song leak into the task merely because it belongs to the same artist.",
+    "Create a visible Task only when a human must physically perform something, provide a private fact Desk cannot obtain, make an artistic or business decision, approve an exact action, interact with the outside world where Desk lacks execution authority, or report an offline result Desk cannot observe.",
+    "Before generating a Task, resolve the route as far as the supplied context allows. Do not ask the artist to invent the concept, choose the angle, decide the target, design the experiment, reconstruct the sequence, interpret the result, or figure out the next move.",
+    "A Task must be directly executable on first read. State the concrete action, the practical sequence, the relevant known setup/resources/people, what finished looks like, what the human owns, what Desk owns, and what observable result or approval comes back to Desk.",
+    "Use only execution detail that is relevant to this exact task. Do not make every task artificially verbose and do not force a generic checklist. A simple approval can be short; a creative shoot, live action, outreach handoff, rights action, rehearsal, interview, or collaboration needs the domain-specific detail required to execute it without another planning meeting.",
+    "For creative or content work, Desk must decide the creative idea before delegating it. Where relevant, specify the scenario/setup, participants or resource assumptions already known, format/treatment, opening action or hook, what the artist should actually say/do, the song/asset moment, desired audience response, and what result should be reported. Do not emit 'make content', 'create a video', or equivalent advice-shaped work with the creative decisions left to the artist.",
+    "For non-content work, apply the equivalent manager-grade brief. A rights task names the exact unresolved fact or confirmation; an outreach handoff names the prepared target/action; a rehearsal or live task names the purpose and observable outcome; an approval task shows the exact effect being approved.",
+    "Never fabricate specificity to make a Task look complete. Do not invent a location, person, collaborator, budget, availability, deadline, audience fact, external commitment, permission, access, song meaning, cultural claim, influence, or artist preference that is not in current context.",
+    "If one genuinely unknown human fact materially changes which executable route is correct, do not hide that uncertainty inside a vague Task. Ask one concrete decision-changing context question that exposes the Manager's proposed idea and has a fallback when the answer is no or unavailable. Never ask a generic inventory question when a bounded question will do.",
+    "Reuse fresh operating facts, semantic understanding, completed work, and approved decisions. Do not ask again for known information and do not recreate accepted work unless changed reality invalidated that exact result.",
+    "Manager machine work happens now. Do not schedule future human Tasks for Desk research, analysis, synthesis, drafting, comparison, monitoring setup, or replanning.",
+    "Every Task must make continuation obvious: completion returns an observable result, approval, or artifact state to Desk; Desk then reviews reality and decides the next move. The artist must not need to ask 'what next?' after completing it.",
+    "Final pre-output test: could the named human execute this now without inventing strategy, making an unstated Manager decision, guessing a required fact, or asking Desk 'okay, but how?' If not, do the Manager work first or ask the one fact that truly changes the route."
+  ].join("\n");
+}
+
 // supabase/functions/_shared/openaiManagerConversation.ts
 var WORKSPACE_ACTION_KEY = /^workspace_action:(files|rights|details):([a-z0-9_-]+)$/i;
+var managerKnowledgeProtocol = [
+  "Manager knowledge protocol: Desk has one Manager brain. Current semantic artist/music understanding and current operating reality are canonical knowledge sources, not optional background decoration.",
+  "On an opening turn, use managerKnowledge when it is present in the opening brief or current Manager Intelligence projection. semanticUnderstanding contains meaning, identity, themes, cultural context, creative intent, narrative and positioning. operatingReality contains current resources, access, collaborators, constraints, preferences, goals and execution facts.",
+  "On a continued turn, when the user's request could depend on song meaning, artist identity/direction, positioning, culture, audience/community context, resources, access, constraints or preferences, retrieve durable Manager memory before deciding or asking. query_durable_memory can retrieve the canonical manager_knowledge_v1 projection. Use the focused song state as the scope pointer and do not substitute understanding from a different song.",
+  "Do not ask the artist for something already present in canonical Manager knowledge. Ask only when the missing human fact genuinely changes the route and cannot be obtained from the product, sources, tools or existing understanding.",
+  "Artist-confirmed semantic understanding outranks supported or inferred interpretation. A derived Song Manager Read, historical conversation, ordinary memory, or old Manager Intelligence packet never overrides fresher canonical knowledge.",
+  "When new artist language corrects or sharpens meaning, identity, direction, positioning or what a song is communicating, treat the new statement as the current artist-controlled truth for this turn. The ingestion runtime will persist it; do not keep reasoning from the old interpretation."
+].join("\n");
 var managerInterruptionProtocol = [
   "Manager interruption protocol: contextQuestions are only for human input that can be supplied entirely as a conversational answer.",
   "Before emitting any contextQuestion, decide whether the missing input is a human decision/fact or a workspace action. Never use a conversational question for a file upload, file replacement, rights/split resolution, or a metadata/details edit.",
@@ -1310,12 +1344,23 @@ var attachmentEvidenceProtocol = [
   "When relying on a file, name the source file and include its page or sheet label when attachedKnowledge.sourceMap or inline labels provide one.",
   "If extractionStatus is not completed or content is empty, say that the original was uploaded but could not be fully read; do not invent its contents."
 ].join("\n");
+var executableActionIntentProtocol = [
+  "Manager executable-action intent protocol: proposedActions is a machine-readable command boundary, not a place to describe vague future work.",
+  "For split-confirmation outreach, the only supported Manager command is preparation for approval. When the exact attached song has a complete current draft split, every active collaborator has an email, publishing and master totals each equal 100%, and sending confirmations is genuinely the next management move, emit exactly one proposedAction with actionType prepare_split_confirmations_for_approval, targetType focused_music_item, and approvalRequired false.",
+  "prepare_split_confirmations_for_approval NEVER sends email. It asks the server to resolve the trusted focused song, validate canonical split state, freeze the exact recipients/shares, deduplicate the effect, and create a separate approval-gated send_split_confirmations action for the artist to review.",
+  "Never put split IDs, collaborator IDs, emails, share percentages, or other executable target identifiers into this proposedAction. The server derives all executable targets from canonical workspace state.",
+  "If split readiness is missing, uncertain, disputed, or requires a human correction, do not emit the preparation command. Use the rights workspace action when the artist/team must edit splits or collaborator details.",
+  "Never tell the user split confirmations were sent merely because the preparation command was emitted or an approval was created. Sending is complete only after the execution receipt records a real provider outcome."
+].join("\n");
 function buildManagerConversationInstructions2(playbookInstructions = "", turnMode = "normal") {
   const turnInstructions = turnMode === "decision_grade" ? `
 ${decisionGradeInstructions}` : "";
   return `${buildManagerConversationInstructions(playbookInstructions)}
+${managerKnowledgeProtocol}
+${buildManagerHumanTaskGenerationContract()}
 ${managerInterruptionProtocol}
-${attachmentEvidenceProtocol}${turnInstructions}`;
+${attachmentEvidenceProtocol}
+${executableActionIntentProtocol}${turnInstructions}`;
 }
 function parseManagerConversationOutput2(raw) {
   const output = parseManagerConversationOutput(raw);
@@ -1364,6 +1409,9 @@ function clip(value, maxChars) {
 // supabase/functions/_shared/missionGraphPersistence.ts
 async function persistManagerMissionGraphDecisions(db, input, context, output) {
   const persisted = output.createdWork.filter((work) => work.type === "music_item");
+  if (context.sourceType === "manager_conversation" && await isWorldModelContinuationRun(db, context.runId)) {
+    return persisted;
+  }
   const scopedMissionId = context.scopedMissionId;
   const decisions = scopedMissionId ? output.missionGraphDecisions.slice(0, 1).map((decision) => ({
     ...decision,
@@ -1435,6 +1483,14 @@ async function persistManagerMissionGraphDecisions(db, input, context, output) {
     }
   }
   return persisted;
+}
+async function isWorldModelContinuationRun(db, runId) {
+  const { data, error } = await db.from("manager_synthesis_runs").select("context_payload").eq("id", runId).maybeSingle();
+  if (error) throw error;
+  const payload = data?.context_payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return false;
+  const contextRequestId = payload.contextRequestId;
+  return typeof contextRequestId === "string" && contextRequestId.startsWith("world-model:");
 }
 async function createMission(db, input, context, decision) {
   const { data, error } = await db.from("missions").insert({
@@ -9625,23 +9681,39 @@ function classifyManagerConversationError(error, fallback = "Manager could not c
 function compactOpeningPacket(packet) {
   const source = record2(packet);
   const latestIntelligence = record2(source.latestManagerIntelligencePacket);
-  const focusedMusicSubject = compactFocusedMusicSubject(source.focusedMusicSubject);
+  const canonicalState = findCanonicalStateSnapshot(source.memory);
+  const canonicalMissions = array(canonicalState.activeMissions);
+  const canonicalTasks = array(canonicalState.activeTasks);
+  const focusedPointer = compactMusicSubjectPointer(record2(source.focusedMusicSubject));
+  const managerKnowledge = compactManagerKnowledge(findManagerKnowledgeSnapshot(source.memory, latestIntelligence), focusedPointer);
   const openingBrief = {
-    version: "manager_opening_brief_v2",
+    version: "manager_opening_brief_v5",
     truthPriority: [
-      "focusedMusicSubject is current workspace truth and overrides old conversation/memory/Manager Read",
-      "durableMemory is preference/history, not a replacement for current structured song state",
-      "Manager Read is derived analysis and can be stale"
+      "canonicalState is the current durable product truth and overrides older conversation messages, durable memory, superseded plans, superseded Tasks, and derived Manager reads when they conflict",
+      "managerKnowledge is current canonical semantic understanding plus current operating reality; use it before deciding, planning, reviewing, or asking the artist for context",
+      "artist-confirmed semantic understanding in managerKnowledge outranks supported or inferred interpretations and derived Manager Reads",
+      "focusedMusicSubject is freshly loaded structured product state for the current song or project and overrides historical conversation claims about that subject",
+      "managerKnowledge is focus-scoped: artist-level understanding plus understanding for the focused song/project; never borrow semantic meaning from another music asset",
+      "activeMissions and activeTasks come from the current active Mission plan when canonicalState is available; never revive completed, rejected, archived, or superseded work from conversation history",
+      "resolved decisions in canonicalState remain resolved: approved, rejected, executed, failed, indeterminate, superseded, or revoked state must not be presented as a new pending decision unless canonical state has materially changed",
+      "fresh operatingFacts in canonicalState and operatingReality in managerKnowledge are already known; do not ask the artist to provide or reconfirm them while they remain valid",
+      "conversationHistory and durableMemory are historical context, not authority against newer canonical product state",
+      "Manager Read and intelligence summaries are derived analysis and can be stale"
     ],
+    canonicalState: compactCanonicalState(canonicalState),
+    managerKnowledge,
     artist: compactArtist(source.artist),
-    focusedMusicSubject,
+    focusedMusicSubject: compactFocusedMusicSubject(source.focusedMusicSubject),
     taskContext: compactTask(source.taskContext),
     conversationHistory: compactConversationHistory(source.conversationHistory),
-    durableMemory: compactMemoryList(source.memory, 6),
+    durableMemory: compactMemoryList(array(source.memory).filter((item) => {
+      const sourceType = compactText(record2(item).source_type, 120);
+      return sourceType !== "manager_canonical_state_v1" && sourceType !== "canonical_release_plan" && sourceType !== "manager_knowledge_v1";
+    }), 6),
     evidence: compactEvidenceList(source.evidence, 8),
     music: compactMusic(source.music),
-    activeMissions: compactMissionList(source.existingMissions, 6),
-    activeTasks: compactTaskList(source.existingTasks, 8),
+    activeMissions: compactMissionList(canonicalMissions.length ? canonicalMissions : activeMissionFallback(source.existingMissions), 8),
+    activeTasks: compactTaskList(canonicalTasks.length ? canonicalTasks : activeTaskFallback(source.existingTasks), 12),
     recentAgentReports: compactAgentReportList(source.recentAgentReports, 4),
     intelligenceSummary: {
       packetType: compactText(latestIntelligence.packet_type, 120),
@@ -9653,6 +9725,152 @@ function compactOpeningPacket(packet) {
     rules: compactRules(source.rules)
   };
   return enforceByteBudget(openingBrief, MAX_OPENING_BRIEF_BYTES);
+}
+function findCanonicalStateSnapshot(memoryValue) {
+  for (const item of array(memoryValue)) {
+    const row = record2(item);
+    if (row.source_type !== "manager_canonical_state_v1") continue;
+    const content = typeof row.content === "string" ? row.content.trim() : "";
+    if (!content) continue;
+    try {
+      const parsed = JSON.parse(content);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const snapshot = parsed;
+      if (snapshot.projectionVersion !== "manager_canonical_state_v1") continue;
+      return snapshot;
+    } catch {
+      continue;
+    }
+  }
+  return {};
+}
+function findManagerKnowledgeSnapshot(memoryValue, latestIntelligence) {
+  for (const item of array(memoryValue)) {
+    const row = record2(item);
+    if (row.source_type !== "manager_knowledge_v1") continue;
+    const content = typeof row.content === "string" ? row.content.trim() : "";
+    if (!content) continue;
+    try {
+      const parsed = JSON.parse(content);
+      if (record2(parsed).contractVersion === "manager-knowledge-v1") return parsed;
+    } catch {
+      continue;
+    }
+  }
+  const profileProjection = record2(latestIntelligence.profile_projection_json);
+  const fromPacket = record2(profileProjection.managerKnowledge);
+  return fromPacket.contractVersion === "manager-knowledge-v1" ? fromPacket : {};
+}
+function compactManagerKnowledge(value, focused) {
+  const knowledge = record2(value);
+  const semantic = array(knowledge.semanticUnderstanding).filter((item) => {
+    const row = record2(item);
+    const scopeType = compactText(row.scopeType ?? row.scope_type, 80);
+    const scopeId = compactText(row.scopeId ?? row.scope_id, 120);
+    if (scopeType === "artist") return true;
+    if (!focused) return false;
+    return scopeType === focused.type && scopeId === focused.id;
+  }).slice(0, 24).map((item) => {
+    const row = record2(item);
+    return {
+      id: compactText(row.id, 120),
+      scopeType: compactText(row.scopeType ?? row.scope_type, 80),
+      scopeId: compactText(row.scopeId ?? row.scope_id, 120),
+      key: compactText(row.key ?? row.understanding_key, 180),
+      category: compactText(row.category, 120),
+      statement: compactText(row.statement, 900),
+      confidence: compactText(row.confidence, 80),
+      authority: compactText(row.authority, 80),
+      sourceKind: compactText(row.sourceKind ?? row.source_kind, 120),
+      sourceRef: compactText(row.sourceRef ?? row.source_ref, 300),
+      updatedAt: compactText(row.updatedAt ?? row.updated_at, 120)
+    };
+  });
+  const operating = array(knowledge.operatingReality).slice(0, 30).map((item) => {
+    const row = record2(item);
+    return {
+      id: compactText(row.id, 120),
+      domain: compactText(row.domain, 80),
+      key: compactText(row.key ?? row.fact_key, 180),
+      scopeType: compactText(row.scopeType ?? row.scope_type, 80),
+      scopeKey: compactText(row.scopeKey ?? row.scope_key, 180),
+      displayValue: compactText(row.displayValue ?? row.display_value, 700),
+      value: compactStructured(row.value ?? row.value_json, 1500),
+      confidence: compactText(row.confidence, 80),
+      validUntil: compactText(row.validUntil ?? row.valid_until, 120)
+    };
+  });
+  return {
+    contractVersion: semantic.length || operating.length ? "manager-knowledge-v1" : "",
+    semanticUnderstanding: semantic,
+    operatingReality: operating,
+    rules: [
+      "Use relevant current semantic understanding and operating reality before asking the artist or choosing work.",
+      "Artist-confirmed semantic understanding outranks supported/inferred interpretation.",
+      "Do not let meaning from another song/project leak into the focused subject."
+    ]
+  };
+}
+function compactCanonicalState(value) {
+  const state = record2(value);
+  return {
+    projectionVersion: compactText(state.projectionVersion, 120),
+    generatedAt: compactText(state.generatedAt, 120),
+    operatingFacts: array(state.operatingFacts).slice(0, 30).map((item) => {
+      const row = record2(item);
+      return {
+        id: compactText(row.id, 120),
+        domain: compactText(row.domain, 80),
+        factKey: compactText(row.factKey, 180),
+        scopeType: compactText(row.scopeType, 80),
+        scopeKey: compactText(row.scopeKey, 180),
+        displayValue: compactText(row.displayValue, 700),
+        value: compactStructured(row.value, 1500),
+        confidence: compactText(row.confidence, 80),
+        validUntil: compactText(row.validUntil, 120)
+      };
+    }),
+    questionHistory: array(state.questionHistory).slice(0, 16).map((item) => {
+      const row = record2(item);
+      return {
+        id: compactText(row.id, 120),
+        missionId: compactText(row.missionId, 120),
+        taskId: compactText(row.taskId, 120),
+        questionKey: compactText(row.questionKey, 180),
+        status: compactText(row.status, 80),
+        factKey: compactText(row.factKey, 180),
+        scopeKey: compactText(row.factScopeKey, 180),
+        answer: compactText(row.answer, 700),
+        expiresAt: compactText(row.expiresAt, 120)
+      };
+    }),
+    decisions: array(state.decisions).slice(0, 16).map((item) => {
+      const row = record2(item);
+      return {
+        kind: compactText(row.kind, 80),
+        id: compactText(row.id, 120),
+        missionId: compactText(row.missionId, 120),
+        taskId: compactText(row.taskId, 120),
+        requestType: compactText(row.requestType, 120),
+        title: compactText(row.title, 300),
+        status: compactText(row.status, 100),
+        parameters: compactStructured(row.parameters, 2e3)
+      };
+    }),
+    managerActions: array(state.managerActions).slice(0, 16).map((item) => {
+      const row = record2(item);
+      return {
+        id: compactText(row.id, 120),
+        actionType: compactText(row.actionType, 180),
+        targetType: compactText(row.targetType, 120),
+        targetId: compactText(row.targetId, 120),
+        status: compactText(row.status, 100),
+        approvalRequired: Boolean(row.approvalRequired),
+        result: compactStructured(row.result, 1500),
+        error: compactText(row.error, 500)
+      };
+    })
+  };
 }
 function compactFocusedMusicSubject(value) {
   const subject = record2(value);
@@ -9666,7 +9884,6 @@ function compactFocusedMusicSubject(value) {
     title: compactText(subject.title, 240),
     kind: compactText(subject.kind, 120),
     lifecycleStage: compactText(subject.lifecycleStage ?? subject.lifecycle_stage, 120),
-    plannedReleaseDate: compactText(subject.plannedReleaseDate ?? subject.planned_release_date ?? metadata.planned_release_date ?? metadata.release_date, 120),
     releasedAt: compactText(subject.releasedAt ?? subject.released_at, 120),
     sourceKind: compactText(subject.sourceKind ?? subject.source_kind, 120),
     sourceLimit: compactText(subject.sourceLimit ?? subject.source_limit, 600),
@@ -9724,11 +9941,11 @@ function compactFocusedMusicSubject(value) {
       };
     }),
     recentActivity: array(subject.recentActivity).slice(0, 10).map((item) => {
-      const event = record2(item);
+      const row = record2(item);
       return {
-        eventType: compactText(event.eventType ?? event.event_type, 160),
-        summary: compactText(event.summary, 500),
-        createdAt: compactText(event.createdAt ?? event.created_at, 120)
+        eventType: compactText(row.eventType ?? row.event_type, 160),
+        summary: compactText(row.summary, 500),
+        createdAt: compactText(row.createdAt ?? row.created_at, 120)
       };
     }),
     managerRead: compactFocusedManagerRead(subject.managerRead)
@@ -9760,32 +9977,32 @@ function compactFocusedRights(value) {
   };
 }
 function compactFocusedManagerRead(value) {
-  const read = record2(value);
-  if (!Object.keys(read).length) return null;
+  const row = record2(value);
+  if (!Object.keys(row).length) return null;
   return {
-    id: compactText(read.id, 120),
-    summary: compactText(read.summary, 1500),
-    recommendation: compactText(read.recommendation, 2e3),
-    createdAt: compactText(read.createdAt ?? read.created_at, 120)
+    id: compactText(row.id, 120),
+    summary: compactText(row.summary, 1500),
+    recommendation: compactText(row.recommendation, 2e3),
+    createdAt: compactText(row.createdAt ?? row.created_at, 120)
   };
 }
 function compactArtist(value) {
-  const artist = record2(value);
+  const row = record2(value);
   return {
-    id: compactText(artist.id, 120),
-    name: compactText(artist.name, 200),
-    stage: compactText(artist.stage, 120),
-    goals: compactStringList(artist.goals, 6, 500),
-    genres: compactStringList(artist.genres, 8, 120),
-    homeMarket: compactText(artist.homeMarket, 200),
-    budgetContext: compactText(artist.budgetContext, 1e3)
+    id: compactText(row.id, 120),
+    name: compactText(row.name, 200),
+    stage: compactText(row.stage, 120),
+    goals: compactStringList(row.goals, 6, 500),
+    genres: compactStringList(row.genres, 8, 120),
+    homeMarket: compactText(row.homeMarket, 200),
+    budgetContext: compactText(row.budgetContext, 1e3)
   };
 }
 function compactMusic(value) {
-  const music = record2(value);
+  const row = record2(value);
   return {
-    items: compactCatalogList(music.items, 8),
-    projects: compactCatalogList(music.projects, 6)
+    items: compactCatalogList(row.items, 8),
+    projects: compactCatalogList(row.projects, 6)
   };
 }
 function compactCatalogList(value, limit) {
@@ -9796,7 +10013,6 @@ function compactCatalogList(value, limit) {
       title: compactText(row.title, 240),
       type: compactText(row.item_type ?? row.project_type ?? row.type, 120),
       lifecycleStage: compactText(row.lifecycle_stage ?? row.lifecycleStage, 120),
-      plannedReleaseDate: compactText(row.planned_release_date ?? row.plannedReleaseDate, 120),
       releasedAt: compactText(row.released_at ?? row.releasedAt, 120)
     };
   });
@@ -9831,6 +10047,23 @@ function compactMemoryList(value, limit) {
     };
   });
 }
+function activeMissionFallback(value) {
+  const terminal = /* @__PURE__ */ new Set([
+    "complete",
+    "archived",
+    "cancelled"
+  ]);
+  return array(value).filter((item) => !terminal.has(compactText(record2(item).status, 80).toLowerCase()));
+}
+function activeTaskFallback(value) {
+  const terminal = /* @__PURE__ */ new Set([
+    "completed",
+    "rejected",
+    "archived",
+    "superseded"
+  ]);
+  return array(value).filter((item) => !terminal.has(compactText(record2(item).status, 80).toLowerCase()));
+}
 function compactMissionList(value, limit) {
   return array(value).slice(0, limit).map(compactMission);
 }
@@ -9843,7 +10076,8 @@ function compactMission(value) {
     status: compactText(row.status, 120),
     progress: numberOrEmpty(row.progress),
     summary: compactText(row.summary, 800),
-    currentRecommendation: compactText(row.current_recommendation ?? row.currentRecommendation, 800)
+    currentRecommendation: compactText(row.current_recommendation ?? row.currentRecommendation, 800),
+    activePlanVersionId: compactText(row.activePlanVersionId ?? row.active_plan_version_id, 120)
   };
 }
 function compactTaskList(value, limit) {
@@ -9854,8 +10088,10 @@ function compactTask(value) {
   return {
     id: compactText(row.id, 120),
     missionId: compactText(row.mission_id ?? row.missionId, 120),
+    missionPlanVersionId: compactText(row.mission_plan_version_id ?? row.missionPlanVersionId, 120),
     title: compactText(row.title, 240),
     status: compactText(row.status, 120),
+    approvalState: compactText(row.approval_state ?? row.approvalState, 120),
     workMode: compactText(row.work_mode ?? row.workMode, 120),
     purpose: compactText(row.purpose, 700),
     managerResponsibility: compactText(row.manager_responsibility ?? row.managerResponsibility, 600),
@@ -9924,14 +10160,18 @@ function normalizeContextAnswers(value) {
 function enforceByteBudget(value, maxBytes) {
   if (encoder.encode(JSON.stringify(value)).byteLength <= maxBytes) return value;
   const compacted = {
-    version: "manager_opening_brief_v2_compact",
-    notice: "Secondary context was compacted; current focused-subject truth is preserved.",
+    version: "manager_opening_brief_v5_compact",
+    notice: "Secondary context was compacted. canonicalState, managerKnowledge and current focused-subject truth remain authoritative over historical conversation and memory.",
     truthPriority: value.truthPriority,
+    canonicalState: value.canonicalState,
+    managerKnowledge: value.managerKnowledge,
     artist: value.artist,
     focusedMusicSubject: value.focusedMusicSubject,
     taskContext: value.taskContext,
     conversationHistory: array(value.conversationHistory).slice(-3),
     durableMemory: array(value.durableMemory).slice(0, 3),
+    activeMissions: array(value.activeMissions).slice(0, 4),
+    activeTasks: array(value.activeTasks).slice(0, 6),
     activePlaybookKeys: value.activePlaybookKeys,
     rules: value.rules
   };
@@ -10050,7 +10290,7 @@ function qualifyManagerMemoryCandidates(values, existing, context = {}) {
   const accepted = [];
   for (const raw of strings.slice(0, 8)) {
     const content = raw.trim().replace(/\s+/g, " ").slice(0, 500);
-    const kind = classifyDurableMemory(content);
+    const kind = classifyManagerMemory(content);
     if (!kind) continue;
     const normalized = normalize2(content);
     if (existing.some((item) => normalize2(item.content ?? "") === normalized)) continue;
@@ -10059,7 +10299,7 @@ function qualifyManagerMemoryCandidates(values, existing, context = {}) {
     const superseded = existing.find((item) => item.kind === kind && Boolean(context.taskId ? item.task_id === context.taskId : context.missionId ? item.mission_id === context.missionId : !item.task_id && !item.mission_id) && memoryTopic(item.content ?? "") === memoryTopic(content));
     accepted.push({
       content,
-      category: kind === "preference" ? "durable_preference" : "durable_constraint",
+      category: categoryForKind(kind),
       kind,
       scope,
       mission_id: context.missionId ?? null,
@@ -10069,18 +10309,46 @@ function qualifyManagerMemoryCandidates(values, existing, context = {}) {
   }
   return accepted;
 }
-function classifyDurableMemory(value) {
+function classifyManagerMemory(value) {
   const normalized = normalize2(value);
-  if (/\b(must not|never|cannot|can't|do not|won't|without approval|budget cap|budget is capped|capped at|spend limit|deadline|hard limit|constraint)\b/.test(normalized)) {
+  if (/\b(must not|never|cannot|can't|do not|won't|without approval|budget cap|budget is capped|capped at|spend limit|deadline|hard limit|constraint|max(?:imum)? budget|only has|only have)\b/.test(normalized)) {
     return "constraint";
   }
-  if (/\b(prefers?|wants?|likes?|prioriti[sz]es?|goal is|direction is|comfortable with|would rather)\b/.test(normalized)) {
+  if (/\b(blocked|waiting on|unavailable|cancelled|canceled|cannot proceed|can't proceed|holding up|dependency)\b/.test(normalized)) {
+    return "blocker";
+  }
+  if (/\b(prefers?|wants?|likes?|prioriti[sz]es?|goal is|direction is|comfortable with|would rather|doesn't like|does not like|hates?)\b/.test(normalized)) {
     return "preference";
+  }
+  if (/\b(rejected|do not pursue|don't pursue|not pursuing|decided against|avoid this move|stop doing|dropped this direction)\b/.test(normalized)) {
+    return "rejected_move";
+  }
+  if (/\b(outperformed|underperformed|performed better|performed worse|worked better|worked worse|resulted in|response was stronger|response was weaker|completed|missed repeatedly)\b/.test(normalized)) {
+    return "outcome_note";
+  }
+  if (/\b(has access to|have access to|owns?|uses?|lives? in|based in|available on|available after|can shoot|can film|can edit|speaks?|has an? iphone|has an? android|has friends?|has a team|works? (?:weekends?|evenings?|mornings?))\b/.test(normalized)) {
+    return "fact";
   }
   return null;
 }
+function categoryForKind(kind) {
+  switch (kind) {
+    case "fact":
+      return "operational_fact";
+    case "preference":
+      return "durable_preference";
+    case "constraint":
+      return "durable_constraint";
+    case "blocker":
+      return "current_blocker";
+    case "outcome_note":
+      return "execution_outcome";
+    case "rejected_move":
+      return "rejected_move";
+  }
+}
 function memoryTopic(value) {
-  return normalize2(value).replace(/\b(the|artist|team|manager|wants?|prefers?|must|never|cannot|do not|goal is|is|at|to|of|and|for|per)\b/g, " ").split(/\s+/).filter((item) => Boolean(item) && !/^\d+(?:\.\d+)?$/.test(item)).slice(0, 4).sort().join(" ");
+  return normalize2(value).replace(/\b(the|artist|team|manager|wants?|prefers?|must|never|cannot|do not|goal is|is|at|to|of|and|for|per|has|have|access)\b/g, " ").split(/\s+/).filter((item) => Boolean(item) && !/^\d+(?:\.\d+)?$/.test(item)).slice(0, 5).sort().join(" ");
 }
 function normalize2(value) {
   return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
