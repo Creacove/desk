@@ -58,8 +58,10 @@ describe("Adaptive Manager replan runtime", () => {
     expect(dispatchHardening).toContain("/functions/v1/workflow-recovery");
     expect(dispatchHardening).toContain("'mode', 'adaptive_replan'");
     expect(dispatchHardening).toContain("'mode', 'dispatch_reminders'");
-    expect(recovery).toContain('value === "adaptive_replan" || value === "dispatch_reminders"');
+    expect(recovery).toContain('type DirectManagerMode = "adaptive_replan" | "external_action_decision" | "dispatch_reminders"');
+    expect(recovery).toContain('value === "adaptive_replan" || value === "external_action_decision" || value === "dispatch_reminders"');
     expect(recovery).toContain('"manager-runtime-runner"');
+    expect(recovery).toContain('"manager-action-intent-runner"');
     expect(recovery).toContain('"manager-dispatcher"');
     expect(runner).toContain('constantTimeEqual(authHeader, `Bearer ${serviceRoleKey}`)');
   });
