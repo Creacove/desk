@@ -10,7 +10,7 @@ create table if not exists public.manager_runtime_limits (
   max_tokens_hour bigint not null default 1000000 check(max_tokens_hour between 10000 and 100000000),
   max_tokens_day bigint not null default 5000000 check(max_tokens_day between 50000 and 500000000),
   max_cost_usd_day numeric not null default 50 check(max_cost_usd_day between 1 and 10000),
-  operation_burst_slots_10m integer not null default 8 check(operation_burst_slots_10m between 1 and 100),
+  operation_burst_slots_10m integer not null default 12 check(operation_burst_slots_10m between 1 and 100),
   updated_at timestamptz not null default now(),
   primary key(account_id,artist_workspace_id,artist_id)
 );
