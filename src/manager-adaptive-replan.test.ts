@@ -11,7 +11,7 @@ const recovery = read("supabase/functions/workflow-recovery/index.ts");
 
 describe("Adaptive Manager replan runtime", () => {
   it("keeps Manager machine work off the human calendar", () => {
-    expect(compiler).toContain("Manager/Desk machine work does not consume calendar time");
+    expect(compiler).toContain("Manager machine work happens now");
     expect(compiler).toContain('workMode: "artist_action" | "collaborative"');
     expect(compiler).not.toContain('workMode: "artist_action" | "collaborative" | "manager_work"');
     expect(finalizer).toContain("Replacement plan attempted to schedule Manager-owned work as a task");
