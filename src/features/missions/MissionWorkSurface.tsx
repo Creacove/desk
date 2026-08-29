@@ -116,7 +116,6 @@ export function WorkSurface({
         ...current,
         [task.id]: { kind: "start", status: "error", message: errorMessage(error, "Desk could not start this task.") },
       }));
-      throw error;
     }
   }
 
@@ -131,7 +130,6 @@ export function WorkSurface({
         ...current,
         [task.id]: { kind: "move", status: "error", message: errorMessage(error, "Desk could not move this task.") },
       }));
-      throw error;
     }
   }
 
