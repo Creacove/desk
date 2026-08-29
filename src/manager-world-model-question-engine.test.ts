@@ -43,9 +43,11 @@ describe("Artist World Model + Question Engine", () => {
     expect(migration).toContain("context_request_id text not null unique");
     expect(migration).toContain("hypothesis text not null");
     expect(migration).toContain("fallback_if_no text not null");
-    expect(migration).toContain("resolve_manager_question_answer_v1");
+    expect(migration).toContain("create or replace function public.capture_world_model_answer_v1()");
     expect(migration).toContain("manager_context_answered");
-    expect(migration).toContain("trigger_manager_question_answer_from_message_v1");
+    expect(migration).toContain("create trigger capture_world_model_answer");
+    expect(migration).toContain("/functions/v1/workflow-recovery");
+    expect(migration).toContain("'source', 'world-model-answer'");
   });
 
   it("packs fresh World Model facts before deciding whether to ask", () => {
