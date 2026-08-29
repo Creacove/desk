@@ -43,8 +43,8 @@ describe("Manager execution loop", () => {
   });
 
   it("gives human work the four operating actions without creating another task system", () => {
-    for (const label of [">Start<", ">Done<", ">Move it<", ">I’m blocked<"]) {
-      expect(taskSheet).toContain(label);
+    for (const label of ["Start", "Done", "Move it", "I’m blocked"]) {
+      expect(taskSheet).toMatch(new RegExp(`>\\s*${label.replace(/[.*+?^${}()|[\\]\\]/g, "\\$&")}\\s*<`));
     }
     expect(workSurface).toContain("startMissionTask");
     expect(workSurface).toContain("moveMissionTask");
