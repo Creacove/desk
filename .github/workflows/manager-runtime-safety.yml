@@ -8,14 +8,18 @@ on:
       - "src/services/taskExecutionClient.ts"
       - "src/manager-execution-loop.test.ts"
       - "src/manager-adaptive-replan.test.ts"
+      - "src/manager-world-model-question-engine.test.ts"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-dispatcher/**"
       - "supabase/functions/workflow-recovery/**"
       - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
+      - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*adaptive*replan*"
+      - "supabase/migrations/*world_model*question_engine*"
       - "supabase/tests/manager_runtime_replan_smoke.sql"
+      - "supabase/tests/manager_world_model_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -49,6 +53,7 @@ jobs:
           npx vitest run --environment jsdom --pool=vmThreads
           src/manager-execution-loop.test.ts
           src/manager-adaptive-replan.test.ts
+          src/manager-world-model-question-engine.test.ts
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -59,6 +64,7 @@ jobs:
         run: >-
           deno check
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
+          supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/manager-task-execution/index.ts
           supabase/functions/manager-runtime-runner/index.ts
           supabase/functions/manager-dispatcher/index.ts
@@ -100,6 +106,7 @@ jobs:
             exit 1
           fi
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_runtime_replan_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_world_model_smoke.sql
 
       - name: Stop local Supabase
         if: always()
