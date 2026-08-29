@@ -12,6 +12,15 @@ import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGener
 
 const WORKSPACE_ACTION_KEY = /^workspace_action:(files|rights|details):([a-z0-9_-]+)$/i;
 
+const managerKnowledgeProtocol = [
+  "Manager knowledge protocol: Desk has one Manager brain. Current semantic artist/music understanding and current operating reality are canonical knowledge sources, not optional background decoration.",
+  "On an opening turn, use managerKnowledge when it is present in the opening brief or current Manager Intelligence projection. semanticUnderstanding contains meaning, identity, themes, cultural context, creative intent, narrative and positioning. operatingReality contains current resources, access, collaborators, constraints, preferences, goals and execution facts.",
+  "On a continued turn, when the user's request could depend on song meaning, artist identity/direction, positioning, culture, audience/community context, resources, access, constraints or preferences, retrieve durable Manager memory before deciding or asking. query_durable_memory can retrieve the canonical manager_knowledge_v1 projection. Use the focused song state as the scope pointer and do not substitute understanding from a different song.",
+  "Do not ask the artist for something already present in canonical Manager knowledge. Ask only when the missing human fact genuinely changes the route and cannot be obtained from the product, sources, tools or existing understanding.",
+  "Artist-confirmed semantic understanding outranks supported or inferred interpretation. A derived Song Manager Read, historical conversation, ordinary memory, or old Manager Intelligence packet never overrides fresher canonical knowledge.",
+  "When new artist language corrects or sharpens meaning, identity, direction, positioning or what a song is communicating, treat the new statement as the current artist-controlled truth for this turn. The ingestion runtime will persist it; do not keep reasoning from the old interpretation.",
+].join("\n");
+
 const managerInterruptionProtocol = [
   "Manager interruption protocol: contextQuestions are only for human input that can be supplied entirely as a conversational answer.",
   "Before emitting any contextQuestion, decide whether the missing input is a human decision/fact or a workspace action. Never use a conversational question for a file upload, file replacement, rights/split resolution, or a metadata/details edit.",
@@ -45,7 +54,7 @@ export function buildManagerConversationInstructions(
   turnMode: ManagerTurnMode = "normal",
 ) {
   const turnInstructions = turnMode === "decision_grade" ? `\n${decisionGradeInstructions}` : "";
-  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}\n${executableActionIntentProtocol}${turnInstructions}`;
+  return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerKnowledgeProtocol}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}\n${executableActionIntentProtocol}${turnInstructions}`;
 }
 
 export function parseManagerConversationOutput(raw: string) {

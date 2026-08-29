@@ -44,10 +44,7 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
   try {
     const response = await fetch(`${args.supabaseUrl}/functions/v1/chartmetric-artist-enrichment`, {
       method: "POST",
-      headers: {
-        Authorization: args.authHeader,
-        "Content-Type": "application/json",
-      },
+      headers: { Authorization: args.authHeader, "Content-Type": "application/json" },
       body: JSON.stringify({
         ...args.input,
         ...(sourceConnectionId ? { sourceConnectionId } : {}),
@@ -57,10 +54,7 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      console.warn("Today's Brief Chartmetric refresh failed; using last saved evidence.", {
-        status: response.status,
-        body: body.slice(0, 240),
-      });
+      console.warn("Today's Brief Chartmetric refresh failed; using last saved evidence.", { status: response.status, body: body.slice(0, 240) });
       return { attempted: true, refreshed: false, reason: "failed" as const };
     }
     return { attempted: true, refreshed: true, reason: "refreshed" as const };
@@ -70,11 +64,7 @@ export async function maybeRefreshChartmetricArtistForTodaysBrief(args: {
   }
 }
 
-async function loadStoredChartmetricArtistId(
-  db: any,
-  input: OperatingBriefContextInput,
-  sourceConnectionId: string,
-) {
+async function loadStoredChartmetricArtistId(db: any, input: OperatingBriefContextInput, sourceConnectionId: string) {
   const { data, error } = await db
     .from("source_connections")
     .select("metadata")
@@ -96,6 +86,7 @@ export async function loadTodaysBriefOperatingContext(db: any, input: OperatingB
     tasks,
     conversations,
     memory,
+    managerKnowledge,
     agentReports,
     events,
     currentMusicReads,
@@ -109,6 +100,7 @@ export async function loadTodaysBriefOperatingContext(db: any, input: OperatingB
     selectMany(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,manager_responsibility,user_responsibility,risk_if_late,created_at", input, 16),
     selectMany(db, "conversations", "id,topic,status,summary,last_update_at,created_at", input, 8),
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,reason,mission_id,conversation_id,created_at", input, 8),
+    selectManagerKnowledge(db, input),
     selectMany(db, "agent_reports", "id,agent_key,mission_id,summary,confidence,limitations,finding,risk_or_opportunity,recommended_internal_action,created_at", input, 6),
     selectMeaningfulEvents(db, input, 16),
     selectCurrentMusicReads(db, input, 8),
@@ -128,33 +120,51 @@ export async function loadTodaysBriefOperatingContext(db: any, input: OperatingB
   const recentConversations = await attachConversationMessages(db, input, conversations.slice(0, 6));
   const rightsState = musicSplits.slice(0, 12).map((split: any) => ({
     ...split,
-    contributors: splitContributors
-      .filter((contributor: any) => contributor.music_split_id === split.id)
-      .slice(0, 16),
+    contributors: splitContributors.filter((contributor: any) => contributor.music_split_id === split.id).slice(0, 16),
   }));
 
   return {
-    version: "todays_brief_operating_context_v1",
+    version: "todays_brief_operating_context_v2",
     truthPriority: [
-      "Current structured workspace state overrides older conversation prose, memory, and Manager Reads.",
+      "Current structured workspace state and managerKnowledge override older conversation prose, ordinary memory, and Manager Reads.",
+      "managerKnowledge is the current semantic artist/music understanding plus operating reality. Use it before deciding priorities or inventing a generic recommendation.",
+      "Artist-confirmed semantic understanding outranks supported/inferred interpretation. Song-scoped meaning applies only to that song/project.",
       "Current song/project metadata, release dates, task status, mission state, and rights/split state are authoritative when newer than derived analysis.",
       "Manager Reads and the previous Today's Brief are derived analysis and may be stale.",
-      "Recent activity matters only when it changed a decision, deliverable, deadline, approval, blocker, mission, or music state.",
     ],
+    managerKnowledge: compactContextValue(managerKnowledge),
     activeMissions: compactContextRows(activeMissions),
     priorityTasks: compactContextRows(priorityTasks),
-    currentMusic: {
-      songs: compactContextRows(currentSongs),
-      projects: compactContextRows(currentProjects),
-    },
+    currentMusic: { songs: compactContextRows(currentSongs), projects: compactContextRows(currentProjects) },
     rightsState: compactContextRows(rightsState),
     currentMusicReads: compactContextRows(currentMusicReads),
     recentConversations: compactContextRows(recentConversations),
-    durableMemory: compactContextRows(memory.slice(0, 6)),
+    durableMemory: compactContextRows(memory.filter((row: any) => row.source_type !== "manager_knowledge_v1").slice(0, 6)),
     recentAgentReports: compactContextRows(agentReports.slice(0, 4)),
     meaningfulEvents: compactContextRows(events.slice(0, 12)),
     previousBrief: previousBrief ? compactContextValue(previousBrief) as Record<string, any> : null,
   };
+}
+
+async function selectManagerKnowledge(db: any, input: OperatingBriefContextInput) {
+  const { data, error } = await db
+    .from("memory_entries")
+    .select("content,created_at")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("source_type", "manager_knowledge_v1")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data?.content || typeof data.content !== "string") return null;
+  try {
+    const parsed = JSON.parse(data.content);
+    return record(parsed).contractVersion === "manager-knowledge-v1" ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 function compactContextRows(rows: any[]): Array<Record<string, any>> {
@@ -169,9 +179,7 @@ function compactContextValue(value: unknown, depth = 0): unknown {
   }
   if (value === null || typeof value !== "object") return value;
   if (depth >= MAX_CONTEXT_DEPTH) return "[context depth limit]";
-  if (Array.isArray(value)) {
-    return value.slice(0, MAX_CONTEXT_ARRAY_ITEMS).map((item) => compactContextValue(item, depth + 1));
-  }
+  if (Array.isArray(value)) return value.slice(0, MAX_CONTEXT_ARRAY_ITEMS).map((item) => compactContextValue(item, depth + 1));
   return Object.fromEntries(
     Object.entries(value).slice(0, MAX_CONTEXT_OBJECT_KEYS).map(([key, item]) => [key, compactContextValue(item, depth + 1)]),
   );
@@ -180,6 +188,7 @@ function compactContextValue(value: unknown, depth = 0): unknown {
 export function compactTodaysBriefOperatingContext(value: unknown) {
   return compactContextValue(value);
 }
+
 async function selectMany(db: any, table: string, columns: string, input: OperatingBriefContextInput, limit: number) {
   const { data, error } = await db
     .from(table)

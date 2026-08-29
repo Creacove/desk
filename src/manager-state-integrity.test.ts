@@ -7,10 +7,10 @@ const migration = read("supabase/migrations/20260829081300_manager_state_integri
 
 describe("Manager canonical state integrity", () => {
   it("uses one generic canonical truth hierarchy for conversation turns", () => {
-    expect(context).toContain('version: "manager_opening_brief_v4"');
+    expect(context).toContain('version: "manager_opening_brief_v5"');
     expect(context).toContain("canonicalState is the current durable product truth");
     expect(context).toContain("resolved decisions in canonicalState remain resolved");
-    expect(context).toContain("fresh operatingFacts in canonicalState are already known");
+    expect(context).toContain("fresh operatingFacts in canonicalState and operatingReality in managerKnowledge are already known");
     expect(context).toContain("conversationHistory and durableMemory are historical context");
     expect(context).toContain('sourceType !== "manager_canonical_state_v1"');
   });

@@ -18,6 +18,8 @@ on:
       - "src/manager-task-quality.test.ts"
       - "src/manager-permission-intent.test.ts"
       - "src/manager-state-integrity.test.ts"
+      - "src/artist-understanding.test.ts"
+      - "supabase/functions/manager-artist-understanding/**"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-action-intent-runner/**"
@@ -25,15 +27,21 @@ on:
       - "supabase/functions/manager-permission-action/**"
       - "supabase/functions/send-split-confirmations/**"
       - "supabase/functions/workflow-recovery/**"
+      - "supabase/functions/generate-music-summary/**"
+      - "supabase/functions/generate-todays-brief/**"
       - "supabase/functions/_shared/openaiAdaptivePlanCompiler.ts"
       - "supabase/functions/_shared/openaiMissionGenesis.ts"
       - "supabase/functions/_shared/openaiManagerConversation.ts"
       - "supabase/functions/_shared/openaiManagerConversationLegacy.ts"
       - "supabase/functions/_shared/openaiManagerTaskQuality.ts"
+      - "supabase/functions/_shared/openaiMusicManagerRead.ts"
+      - "supabase/functions/_shared/todaysBriefOperatingContext.ts"
+      - "supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts"
       - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
       - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/functions/_shared/manager-conversation/context.ts"
+      - "supabase/functions/_shared/artistUnderstanding.ts"
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*manager_state_integrity*"
       - "supabase/migrations/*manager_permission_execution*"
@@ -47,6 +55,7 @@ on:
       - "supabase/migrations/*content_post_result_signals*"
       - "supabase/migrations/*task_result_adaptation*"
       - "supabase/migrations/*manager_result_adaptation_continuation*"
+      - "supabase/migrations/*artist_understanding*"
       - "supabase/tests/manager_runtime_replan_smoke.sql"
       - "supabase/tests/manager_world_model_smoke.sql"
       - "supabase/tests/manager_content_execution_contract_smoke.sql"
@@ -58,6 +67,8 @@ on:
       - "supabase/tests/manager_action_producer_smoke.sql"
       - "supabase/tests/manager_permission_outcome_nudge_smoke.sql"
       - "supabase/tests/manager_state_integrity_smoke.sql"
+      - "supabase/tests/artist_understanding_smoke.sql"
+      - "supabase/tests/artist_understanding_runtime_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -96,6 +107,7 @@ jobs:
           src/manager-task-quality.test.ts
           src/manager-permission-intent.test.ts
           src/manager-state-integrity.test.ts
+          src/artist-understanding.test.ts
 
       - name: Setup Deno
         uses: denoland/setup-deno@v2
@@ -105,14 +117,21 @@ jobs:
       - name: Check Manager runtime Edge boundaries
         run: >-
           deno check
+          supabase/functions/_shared/artistUnderstanding.ts
           supabase/functions/_shared/managerHumanTaskGenerationContract.ts
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
           supabase/functions/_shared/openaiMissionGenesis.ts
           supabase/functions/_shared/openaiManagerConversation.ts
           supabase/functions/_shared/openaiManagerTaskQuality.ts
+          supabase/functions/_shared/openaiMusicManagerRead.ts
+          supabase/functions/_shared/todaysBriefOperatingContext.ts
+          supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts
           supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/_shared/manager-conversation/context.ts
+          supabase/functions/manager-artist-understanding/index.ts
+          supabase/functions/generate-music-summary/index.ts
+          supabase/functions/generate-todays-brief/index.ts
           supabase/functions/manager-task-execution/index.ts
           supabase/functions/manager-runtime-runner/index.ts
           supabase/functions/manager-action-intent-runner/index.ts
@@ -167,6 +186,8 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_action_producer_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_permission_outcome_nudge_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_state_integrity_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_smoke.sql
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_runtime_smoke.sql
 
       - name: Stop local Supabase
         if: always()
