@@ -19,7 +19,10 @@ on:
       - "src/manager-permission-intent.test.ts"
       - "src/manager-state-integrity.test.ts"
       - "src/artist-understanding.test.ts"
+      - "src/manager-career-watch.test.ts"
       - "supabase/functions/manager-artist-understanding/**"
+      - "supabase/functions/manager-career-watch/**"
+      - "supabase/functions/manager-career-watch-dispatcher/**"
       - "supabase/functions/manager-task-execution/**"
       - "supabase/functions/manager-runtime-runner/**"
       - "supabase/functions/manager-action-intent-runner/**"
@@ -36,7 +39,7 @@ on:
       - "supabase/functions/_shared/openaiManagerTaskQuality.ts"
       - "supabase/functions/_shared/openaiMusicManagerRead.ts"
       - "supabase/functions/_shared/todaysBriefOperatingContext.ts"
-      - "supabase/functions/_shared/manager-intelligence/brief/briefPacketProjection.ts"
+      - "supabase/functions/_shared/manager-intelligence/**"
       - "supabase/functions/_shared/managerHumanTaskGenerationContract.ts"
       - "supabase/functions/_shared/managerTaskQuality.ts"
       - "supabase/functions/_shared/missionGraphPersistence.ts"
@@ -56,6 +59,7 @@ on:
       - "supabase/migrations/*task_result_adaptation*"
       - "supabase/migrations/*manager_result_adaptation_continuation*"
       - "supabase/migrations/*artist_understanding*"
+      - "supabase/migrations/*manager_career_watch*"
       - "supabase/tests/manager_runtime_replan_smoke.sql"
       - "supabase/tests/manager_world_model_smoke.sql"
       - "supabase/tests/manager_content_execution_contract_smoke.sql"
@@ -69,6 +73,7 @@ on:
       - "supabase/tests/manager_state_integrity_smoke.sql"
       - "supabase/tests/artist_understanding_smoke.sql"
       - "supabase/tests/artist_understanding_runtime_smoke.sql"
+      - "supabase/tests/manager_career_watch_smoke.sql"
       - ".github/workflows/manager-runtime-safety.yml"
   workflow_dispatch:
 
@@ -87,16 +92,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Node
         uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: Run Manager runtime regression contracts
         run: >-
           npx vitest run --environment jsdom --pool=vmThreads
@@ -108,16 +110,16 @@ jobs:
           src/manager-permission-intent.test.ts
           src/manager-state-integrity.test.ts
           src/artist-understanding.test.ts
-
+          src/manager-career-watch.test.ts
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
-
       - name: Check Manager runtime Edge boundaries
         run: >-
           deno check
           supabase/functions/_shared/artistUnderstanding.ts
+          supabase/functions/_shared/manager-intelligence/careerWatch.ts
           supabase/functions/_shared/managerHumanTaskGenerationContract.ts
           supabase/functions/_shared/openaiAdaptivePlanCompiler.ts
           supabase/functions/_shared/openaiMissionGenesis.ts
@@ -130,6 +132,8 @@ jobs:
           supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/_shared/manager-conversation/context.ts
           supabase/functions/manager-artist-understanding/index.ts
+          supabase/functions/manager-career-watch/index.ts
+          supabase/functions/manager-career-watch-dispatcher/index.ts
           supabase/functions/generate-music-summary/index.ts
           supabase/functions/generate-todays-brief/index.ts
           supabase/functions/manager-task-execution/index.ts
@@ -147,12 +151,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-
       - name: Setup Supabase CLI
         uses: supabase/setup-cli@v3
         with:
           version: 2.84.2
-
       - name: Add disposable local-only Vault prerequisites
         shell: bash
         run: |
@@ -162,19 +164,14 @@ jobs:
           select vault.create_secret('ci-billing-worker-secret', 'billing_worker_secret');
           select vault.create_secret('ci-workflow-worker-secret', 'workflow_worker_secret');
           SQL
-
       - name: Start fresh database and apply all migrations
         run: supabase db start
-
       - name: Verify Manager runtime functions, guards and cron routes
         shell: bash
         run: |
           set -euo pipefail
           DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
-          if [ -z "$DB_CONTAINER" ]; then
-            echo 'Supabase database container was not found.' >&2
-            exit 1
-          fi
+          if [ -z "$DB_CONTAINER" ]; then echo 'Supabase database container was not found.' >&2; exit 1; fi
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_runtime_replan_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_world_model_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_content_execution_contract_smoke.sql
@@ -188,7 +185,7 @@ jobs:
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_state_integrity_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_smoke.sql
           docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/artist_understanding_runtime_smoke.sql
-
+          docker exec -i "$DB_CONTAINER" psql -U postgres -d postgres < supabase/tests/manager_career_watch_smoke.sql
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true
