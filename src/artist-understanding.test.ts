@@ -98,13 +98,22 @@ describe('Gate 5 artist understanding contract', () => {
   });
 
   it('keeps managerKnowledge even when the opening brief hits the byte budget', () => {
+    const largeTasks=Array.from({length:20},(_,index)=>({
+      id:`task-${index}`,mission_id:'mission',title:`Task ${index}`,status:'open',work_mode:'artist_action',
+      purpose:`purpose-${index}-`+'p'.repeat(1000),
+      manager_responsibility:`manager-${index}-`+'m'.repeat(900),
+      user_responsibility:`user-${index}-`+'u'.repeat(900),
+    }));
+    const largeDocuments=Array.from({length:30},(_,index)=>({
+      id:`document-${index}`,title:`Document ${index}`,document_type:'notes',status:'accepted',summary:'d'.repeat(1000),
+    }));
     const context:any=buildManagerConversationModelContext({
       accountId:'account',artistWorkspaceId:'workspace',artistId:'artist',body:'Decide the next move',musicSubject:{type:'music_item',id:'odaeshi'},
     },{
       artist:{id:'artist',name:'Otmos'},
-      focusedMusicSubject:{type:'music_item',id:'odaeshi',title:'Odaeshi',metadata:{noise:'x'.repeat(60000)}},
+      focusedMusicSubject:{type:'music_item',id:'odaeshi',title:'Odaeshi',metadata:{noise:'x'.repeat(60000)},documents:largeDocuments},
       memory:[{source_type:'manager_knowledge_v1',content:JSON.stringify({contractVersion:'manager-knowledge-v1',semanticUnderstanding:[{scopeType:'music_item',scopeId:'odaeshi',key:'music.meaning',category:'song_meaning',statement:'remaining standing',authority:'artist_confirmed'}],operatingReality:[]})}],
-      conversationHistory:[],evidence:[],music:{items:[],projects:[]},existingMissions:[],existingTasks:[],recentAgentReports:[],activePlaybookKeys:[],recommendedMissionPatterns:[],rules:{},
+      conversationHistory:[],evidence:[],music:{items:[],projects:[]},existingMissions:[],existingTasks:largeTasks,recentAgentReports:[],activePlaybookKeys:[],recommendedMissionPatterns:[],rules:{},
     },'conversation');
     expect(context.openingBrief.version).toBe('manager_opening_brief_v5_compact');
     expect(JSON.stringify(context.openingBrief.managerKnowledge)).toContain('remaining standing');
