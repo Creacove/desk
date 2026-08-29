@@ -43,15 +43,14 @@ begin
   perform public.claim_manager_runtime_admission_v1(v_account,v_workspace,v_artist,'after-expiry',1,180);
   if exists(select 1 from public.manager_runtime_admissions where artist_workspace_id=v_workspace and operation_key='gate8-test' and status='active' and expires_at<=now()) then raise exception 'expired admission remained active'; end if;
 
-  -- Emergency kill switch fails closed without touching current Manager state.
   update public.manager_runtime_admissions set status='failed',completed_at=now(),failure_reason='test cleanup' where artist_workspace_id=v_workspace and status='active';
   update public.manager_runtime_limits set background_ai_enabled=false where artist_workspace_id=v_workspace;
   blocked:=public.claim_manager_runtime_admission_v1(v_account,v_workspace,v_artist,'disabled-test',1,180);
   if coalesce((blocked->>'allowed')::boolean,false) is true or blocked->>'reason'<>'background_ai_disabled' then raise exception 'background AI kill switch did not fail closed: %',blocked; end if;
   update public.manager_runtime_limits set background_ai_enabled=true,max_tokens_day=50000 where artist_workspace_id=v_workspace;
 
-  insert into public.ai_run_usage_events(account_id,artist_workspace_id,artist_id,workflow_key,run_type,status,input_tokens,output_tokens,reasoning_tokens,provider_request_count,provider_cost_estimate)
-  values(v_account,v_workspace,v_artist,'review_run','manager_synthesis','succeeded',30000,15000,6000,1,1);
+  insert into public.ai_run_usage_events(account_id,artist_workspace_id,artist_id,workflow_key,run_type,operation_key,status,input_tokens,output_tokens,reasoning_tokens,provider_request_count,provider_cost_estimate)
+  values(v_account,v_workspace,v_artist,'review_run','manager_synthesis','gate8-token-budget','succeeded',30000,15000,6000,1,1);
   blocked:=public.claim_manager_runtime_admission_v1(v_account,v_workspace,v_artist,'token-limit-test',1,180);
   if coalesce((blocked->>'allowed')::boolean,false) is true or blocked->>'reason'<>'daily_token_limit' then raise exception 'daily token budget did not block background AI: %',blocked; end if;
   update public.manager_runtime_limits set max_tokens_day=5000000 where artist_workspace_id=v_workspace;
