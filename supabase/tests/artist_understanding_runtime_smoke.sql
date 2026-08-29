@@ -59,7 +59,7 @@ insert into document_versions(id,account_id,artist_workspace_id,artist_id,docume
 values('20000000-0000-0000-0000-000000000009','20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000008',1,'completed','{"body":"lyrics source text"}'::jsonb);
 update documents set current_version_id='20000000-0000-0000-0000-000000000009' where id='20000000-0000-0000-0000-000000000008';
 insert into artifact_links(account_id,artist_workspace_id,artist_id,source_type,source_id,target_type,target_id,relationship)
-values('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000002','document','20000000-0000-0000-0000-000000000008','music_item','20000000-0000-0000-0000-000000000004','describes');
+values('20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000002','document','20000000-0000-0000-0000-000000000008','music_item','20000000-0000-0000-0000-000000000004','references');
 select is((select count(*)::int from artist_understanding_ingestion_queue where source_kind='document' and source_id='20000000-0000-0000-0000-000000000008' and source_version_id='20000000-0000-0000-0000-000000000009'),1,'real existing song documents automatically enter semantic ingestion');
 
 select ok((select count(*) > 0 from cron.job where jobname='artist-understanding-ingestion'),'semantic ingestion worker is scheduled durably');
