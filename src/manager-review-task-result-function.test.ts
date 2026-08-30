@@ -90,6 +90,15 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain('failureStage = "validate_review_continuation"');
   });
 
+  it("reviews the canonical Song Room package instead of requiring the upload to be reattached to the task", () => {
+    expect(functionSource).toContain("loadTaskMusicPackage");
+    expect(functionSource).toContain('from("music_assets")');
+    expect(functionSource).toContain('from("uploaded_files")');
+    expect(functionSource).toContain("canonicalMusicPackage");
+    expect(functionSource).toContain("An uploaded or processed canonical Song Room asset is valid evidence");
+    expect(functionSource).toContain("Do not require the artist to reattach");
+  });
+
   it("rejects terminal plan tasks before spending a Manager review run", () => {
     expect(functionSource).toContain("assertTaskCanBeReviewed(task)");
     expect(functionSource).toContain('task.status === "superseded"');

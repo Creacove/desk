@@ -152,7 +152,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
   if (!task?.mission_id) throw new Error("Manager task review task was not found.");
   assertTaskCanBeReviewed(task);
 
-  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments, submittedManagerDraft] = await Promise.all([
+  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments, submittedManagerDraft, canonicalMusicPackage] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
@@ -164,6 +164,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,created_at", input, 1),
     loadSubmittedDocuments(db, input),
     loadSubmittedManagerDraft(db, input),
+    loadTaskMusicPackage(db, input, task.mission_id),
   ]);
 
   if (input.status === "completed" && task.completion_mode === "manager_draft" && !submittedManagerDraft) {
@@ -190,6 +191,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     latestManagerIntelligencePacket: managerPackets[0] ?? null,
     submittedDocuments,
     submittedManagerDraft,
+    canonicalMusicPackage,
     policy: {
       internalWorkspaceUpdatesAllowed: true,
       externalExpensiveLegalFinancialPublicActionsRequirePermission: true,
@@ -218,6 +220,7 @@ async function callOpenAIManagerReview(context: unknown) {
         "Decide what the task result means for the checkpoint and mission. Update internal workspace state only; permission-required external actions must be returned as permissionRequests.",
         "Optional documents can raise confidence when present. Their absence must not prevent task completion; state the evidence limit and choose a safe recommendation from the available packet.",
         "When submittedManagerDraft is present, review that exact immutable version against every deliverableRequirement and completionExpectation.",
+        "canonicalMusicPackage is the current persisted Song Room state for this task's Mission. An uploaded or processed canonical Song Room asset is valid evidence even when documentIds is empty. Do not require the artist to reattach, rename, or restate a file that canonicalMusicPackage already proves exists.",
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
@@ -706,6 +709,74 @@ async function loadSubmittedDocuments(db: any, input: ReviewInput) {
       latestValidation,
     };
   });
+}
+
+async function loadTaskMusicPackage(db: any, input: ReviewInput, missionId: string) {
+  const { data: linkRows, error: linkError } = await db.from("artifact_links")
+    .select("target_type,target_id,relationship")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("source_type", "mission")
+    .eq("source_id", missionId)
+    .in("target_type", ["music_item", "music_project"])
+    .eq("relationship", "references")
+    .order("created_at", { ascending: true })
+    .limit(8);
+  if (linkError) throw linkError;
+
+  const links = ((linkRows ?? []) as Array<Record<string, unknown>>)
+    .map((row) => ({ targetType: readString(row.target_type, ""), targetId: readString(row.target_id, "") }))
+    .filter((row) => row.targetId && (row.targetType === "music_item" || row.targetType === "music_project"));
+  if (!links.length) return { subjects: [], assets: [] };
+
+  const itemIds = links.filter((row) => row.targetType === "music_item").map((row) => row.targetId);
+  const projectIds = links.filter((row) => row.targetType === "music_project").map((row) => row.targetId);
+  const [itemResult, projectResult, itemAssetResult, projectAssetResult] = await Promise.all([
+    itemIds.length
+      ? db.from("music_items").select("id,title,item_type,lifecycle_stage,released_at").eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).in("id", itemIds)
+      : Promise.resolve({ data: [], error: null }),
+    projectIds.length
+      ? db.from("music_projects").select("id,title,project_type,lifecycle_stage,released_at").eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).in("id", projectIds)
+      : Promise.resolve({ data: [], error: null }),
+    itemIds.length
+      ? db.from("music_assets").select("id,music_item_id,asset_type,title,status,uploaded_file_id,version_label,created_at,updated_at").eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).in("music_item_id", itemIds).in("status", ["uploaded", "confirmed"])
+      : Promise.resolve({ data: [], error: null }),
+    projectIds.length
+      ? db.from("music_assets").select("id,music_project_id,asset_type,title,status,uploaded_file_id,version_label,created_at,updated_at").eq("account_id", input.accountId).eq("artist_workspace_id", input.artistWorkspaceId).eq("artist_id", input.artistId).in("music_project_id", projectIds).in("status", ["uploaded", "confirmed"])
+      : Promise.resolve({ data: [], error: null }),
+  ]);
+  for (const result of [itemResult, projectResult, itemAssetResult, projectAssetResult]) {
+    if (result.error) throw result.error;
+  }
+
+  const assets = [
+    ...((itemAssetResult.data ?? []) as Array<Record<string, unknown>>),
+    ...((projectAssetResult.data ?? []) as Array<Record<string, unknown>>),
+  ];
+  const uploadedFileIds = [...new Set(assets.map((asset) => readString(asset.uploaded_file_id, "")).filter(Boolean))];
+  const fileResult = uploadedFileIds.length
+    ? await db.from("uploaded_files")
+      .select("id,file_name,file_type,classification,status,created_at,updated_at")
+      .eq("account_id", input.accountId)
+      .eq("artist_workspace_id", input.artistWorkspaceId)
+      .eq("artist_id", input.artistId)
+      .in("id", uploadedFileIds)
+      .in("status", ["uploaded", "processed"])
+    : { data: [], error: null };
+  if (fileResult.error) throw fileResult.error;
+  const fileById = new Map(((fileResult.data ?? []) as Array<Record<string, unknown>>).map((file) => [readString(file.id, ""), file]));
+
+  return {
+    subjects: [
+      ...((itemResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({ ...row, subjectType: "music_item" })),
+      ...((projectResult.data ?? []) as Array<Record<string, unknown>>).map((row) => ({ ...row, subjectType: "music_project" })),
+    ],
+    assets: assets.map((asset) => ({
+      ...asset,
+      uploadedFile: fileById.get(readString(asset.uploaded_file_id, "")) ?? null,
+    })),
+  };
 }
 
 function isBlockingMissionTask(task: Record<string, unknown>) {
