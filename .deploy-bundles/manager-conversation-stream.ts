@@ -261,13 +261,13 @@ function truncateUtf8(value, maxBytes) {
   return new TextDecoder().decode(encoded.slice(0, maxBytes));
 }
 function nullableText(value, maxBytes) {
-  const text = readText(value);
-  return text ? truncateUtf8(text, maxBytes) : null;
+  const text2 = readText(value);
+  return text2 ? truncateUtf8(text2, maxBytes) : null;
 }
 function firstText(...values) {
   for (const value of values) {
-    const text = readText(value);
-    if (text) return text;
+    const text2 = readText(value);
+    if (text2) return text2;
   }
   return void 0;
 }
@@ -398,8 +398,8 @@ async function readPublicMessage(response) {
       const message = typeof body.error === "string" ? body.error : typeof body.message === "string" ? body.message : "";
       if (message.trim()) return message.trim().slice(0, 8192);
     } else {
-      const text = (await response.text()).trim();
-      if (text) return text.slice(0, 8192);
+      const text2 = (await response.text()).trim();
+      if (text2) return text2.slice(0, 8192);
     }
   } catch {
   }
@@ -557,7 +557,10 @@ var taskSchema = {
     purpose: {
       type: "string"
     },
-    steps: stringArraySchema,
+    steps: {
+      ...stringArraySchema,
+      minItems: 2
+    },
     evidenceNeeded: stringArraySchema,
     completionExpectation: {
       type: "string"
@@ -1010,7 +1013,11 @@ function normalizeMissionGraphDecision(value) {
   if (decision.outcome !== "activate_mission" && decision.outcome !== "update_existing_mission") return null;
   const mission = normalizeMission(decision.mission);
   const checkpoints = Array.isArray(decision.checkpoints) ? decision.checkpoints.map(normalizeCheckpoint).filter(Boolean) : [];
-  const tasks = normalizeReleaseTaskScheduleKeys(Array.isArray(decision.tasks) ? decision.tasks.map(normalizeTask).filter(Boolean) : []);
+  const rawTasks = Array.isArray(decision.tasks) ? decision.tasks : [];
+  const tasks = normalizeReleaseTaskScheduleKeys(rawTasks.map(normalizeTask).filter(Boolean));
+  if (tasks.length !== rawTasks.length) {
+    throw new Error("Every generated human task requires at least two distinct execution steps and a complete task contract.");
+  }
   if (!mission || !checkpoints.length) return null;
   const checkpointKeys = new Set(checkpoints.map((checkpoint) => checkpoint.key));
   if (tasks.some((task) => !checkpointKeys.has(task.primaryCheckpointKey))) return null;
@@ -1081,7 +1088,7 @@ function normalizeTask(value) {
     ].includes(String(task.workMode)) ? task.workMode : task.completionMode === "manager_draft" ? "collaborative" : cleanString(task.ownerRole, "Manager").trim().toLowerCase() === "manager" ? "manager_work" : "artist_action",
     primaryCheckpointKey: cleanString(task.primaryCheckpointKey, ""),
     purpose: cleanString(task.purpose, ""),
-    steps: cleanStringArray(task.steps).slice(0, 6),
+    steps: distinctStrings(task.steps).slice(0, 6),
     evidenceNeeded: cleanStringArray(task.evidenceNeeded).slice(0, 12),
     completionExpectation: cleanString(task.completionExpectation, ""),
     completionMode: [
@@ -1097,7 +1104,7 @@ function normalizeTask(value) {
     deadline: normalizeTaskDeadline(task.deadline),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24)
   };
-  return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length && normalized.completionExpectation && normalized.riskIfLate ? normalized : null;
+  return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length >= 2 && normalized.completionExpectation && normalized.riskIfLate ? normalized : null;
 }
 var releaseTaskScheduleKeys = /* @__PURE__ */ new Set([
   "distributor_delivery",
@@ -1157,9 +1164,9 @@ function deriveReleaseDateProposalFromContextQuestions(questions) {
   };
 }
 function normalizeTaskDeadline(value) {
-  const text = cleanString(value, "");
-  if (!text) return "";
-  const timestamp = Date.parse(text);
+  const text2 = cleanString(value, "");
+  if (!text2) return "";
+  const timestamp = Date.parse(text2);
   return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : "";
 }
 function normalizePermission(value) {
@@ -1233,6 +1240,15 @@ function cleanString(value, fallback) {
 function cleanStringArray(value) {
   return Array.isArray(value) ? value.filter((item) => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim()) : [];
 }
+function distinctStrings(value) {
+  const seen = /* @__PURE__ */ new Set();
+  return cleanStringArray(value).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 // supabase/functions/_shared/manager-conversation/decisionGrade.ts
 var decisionIntentPattern = /\bshould\s+(?:we|i)\b|\bdo\s+(?:we|i)\s+(?:accept|reject|take|decline|turn down|sign|spend|invest|delay|postpone|keep|choose|negotiate|counter|licen[cs]e|sell|commit|approve|pause|give|buy|fund|borrow|raise)\b|\bwould\s+you\s+recommend\b|\bwhat\s+(?:do|would)\s+you\s+(?:recommend|do|think)\b|\bis\s+(?:this|that|it)\b[\s\S]{0,80}\b(?:worth|fair|good|bad|smart|reasonable)\b|\bwhich\s+(?:option|path|offer|deal|choice)\b|\b(?:better|cheaper|stronger|safer)\s+(?:to|than)\b/i;
@@ -1241,22 +1257,22 @@ var materialStakePattern = /(?:[$€£₦]\s?\d|\b\d[\d,.]*\s*(?:dollars?|usd|eu
 var artifactRequestPattern = /\b(?:draft|write|prepare|create|make|build|revise|refresh|update|finish|complete)\b[\s\S]{0,80}\b(?:epk|press kit|press release|pitch|content plan|release calendar|one[- ]sheet|bio(?:graphy)?|lyrics|credits|distributor notes|document)\b/i;
 function classifyManagerTurn(input) {
   const context = (input.contextAnswers ?? []).map((item) => `${item.questionKey} ${item.answer}`).join(" ");
-  const text = `${input.body ?? ""} ${context}`.replace(/[_-]+/g, " ").trim();
-  if (!text) {
+  const text2 = `${input.body ?? ""} ${context}`.replace(/[_-]+/g, " ").trim();
+  if (!text2) {
     return {
       mode: "normal",
       reason: "empty_turn"
     };
   }
-  const hasDecisionIntent = decisionIntentPattern.test(text) || comparisonPattern.test(text);
-  const hasMaterialStake = materialStakePattern.test(text);
+  const hasDecisionIntent = decisionIntentPattern.test(text2) || comparisonPattern.test(text2);
+  const hasMaterialStake = materialStakePattern.test(text2);
   if (hasDecisionIntent && hasMaterialStake) {
     return {
       mode: "decision_grade",
       reason: "material_choice_with_long_term_tradeoffs"
     };
   }
-  if (artifactRequestPattern.test(text)) {
+  if (artifactRequestPattern.test(text2)) {
     return {
       mode: "normal",
       reason: "artifact_or_workflow_request"
@@ -1298,6 +1314,7 @@ function buildManagerHumanTaskGenerationContract() {
     "Create a visible Task only when a human must physically perform something, provide a private fact Desk cannot obtain, make an artistic or business decision, approve an exact action, interact with the outside world where Desk lacks execution authority, or report an offline result Desk cannot observe.",
     "Before generating a Task, resolve the route as far as the supplied context allows. Do not ask the artist to invent the concept, choose the angle, decide the target, design the experiment, reconstruct the sequence, interpret the result, or figure out the next move.",
     "A Task must be directly executable on first read. State the concrete action, the practical sequence, the relevant known setup/resources/people, what finished looks like, what the human owns, what Desk owns, and what observable result or approval comes back to Desk.",
+    "Every visible human Task MUST contain at least two distinct, ordered execution steps. Never emit a one-step Task, duplicate the same step in different words, or rely on the title/purpose as an implicit second step.",
     "Use only execution detail that is relevant to this exact task. Do not make every task artificially verbose and do not force a generic checklist. A simple approval can be short; a creative shoot, live action, outreach handoff, rights action, rehearsal, interview, or collaboration needs the domain-specific detail required to execute it without another planning meeting.",
     "For creative or content work, Desk must decide the creative idea before delegating it. Where relevant, specify the scenario/setup, participants or resource assumptions already known, format/treatment, opening action or hook, what the artist should actually say/do, the song/asset moment, desired audience response, and what result should be reported. Do not emit 'make content', 'create a video', or equivalent advice-shaped work with the creative decisions left to the artist.",
     "For non-content work, apply the equivalent manager-grade brief. A rights task names the exact unresolved fact or confirmation; an outreach handoff names the prepared target/action; a rehearsal or live task names the purpose and observable outcome; an approval task shows the exact effect being approved.",
@@ -1328,7 +1345,8 @@ var managerInterruptionProtocol = [
   "Never ask the user to type 'done', confirm that a file was uploaded, or repeat a workspace change that the application can verify. After the user returns or continues, reread the focused song state and verify the change directly before asking again.",
   "Human questions must be concise. Ask one question by default. Keep the question at or below 140 characters. For single- or multi-choice questions use 2-4 options when possible and never more than 5; each option must be at or below 90 characters. Make the option labels decision-shaped rather than explanatory prose.",
   "For a choice question, recommendedAnswer should exactly equal the recommended option so the UI can mark that option Recommended. Do not duplicate the rationale in recommendationReason; keep recommendationReason empty or one terse sentence only when it materially changes the decision.",
-  "Do not include a normal contextQuestion and a workspace-action item for the same missing input. If the blocker is an upload or workspace edit, the workspace action is sufficient."
+  "Do not include a normal contextQuestion and a workspace-action item for the same missing input. If the blocker is an upload or workspace edit, the workspace action is sufficient.",
+  "RELEASED/CATALOG OVERRIDE: when focusedMusicSubject has a release date or lifecycle released, catalog, catalogued, or archived, provider-observed release identity, public artwork, public link, and release date count as existing release evidence. Never emit a generic Files/Rights/Details workspace action or Task asking for audio, artwork, credits, splits, rights material, metadata, or a release package merely because Desk lacks a duplicate upload. Ask for one only when the artist explicitly requested a correction/replacement or a named post-release licensing, sync, clearance, dispute, takedown, or delivery-correction action requires it, and state that exact dependency. Default to metrics, audience conversion, campaign optimization, catalog growth, targeted playlist/press materials, and the next strategic move."
 ].join("\n");
 var attachmentEvidenceProtocol = [
   "Attachment evidence protocol: attachedKnowledge contains private files supplied by the user for analysis.",
@@ -1391,9 +1409,9 @@ function workspaceActionFallbackLabel(target) {
   return "Edit details";
 }
 function clip(value, maxChars) {
-  const text = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
-  if (text.length <= maxChars) return text;
-  const candidate = text.slice(0, Math.max(1, maxChars - 1)).trimEnd();
+  const text2 = typeof value === "string" ? value.trim().replace(/\s+/g, " ") : "";
+  if (text2.length <= maxChars) return text2;
+  const candidate = text2.slice(0, Math.max(1, maxChars - 1)).trimEnd();
   const wordBoundary = candidate.lastIndexOf(" ");
   const trimmed = wordBoundary > Math.floor(maxChars * 0.55) ? candidate.slice(0, wordBoundary) : candidate;
   return `${trimmed}\u2026`;
@@ -2425,15 +2443,15 @@ function selectMissionPatternsForPacket(packet) {
     goals: packet.artist && typeof packet.artist === "object" ? packet.artist.goals : [],
     homeMarket: packet.artist && typeof packet.artist === "object" ? packet.artist.homeMarket : ""
   });
-  const text = [
+  const text2 = [
     candidateText,
     evidenceText,
     artistText
   ].filter(Boolean).join(" ");
-  if (!text) return [];
+  if (!text2) return [];
   const scores = /* @__PURE__ */ new Map();
   const score = (key, needles, weight = 1) => {
-    const hits = needles.filter((needle) => text.includes(needle)).length;
+    const hits = needles.filter((needle) => text2.includes(needle)).length;
     if (hits) scores.set(key, (scores.get(key) ?? 0) + hits * weight);
   };
   score("creator_content_validation", [
@@ -7082,14 +7100,14 @@ function normalizeStructuredSongDocument(value) {
   }) : [];
   const claims = Array.isArray(value.claims) ? value.claims.flatMap((claim) => {
     if (!isRecord7(claim)) return [];
-    const text = cleanText3(claim.text, 1600);
+    const text2 = cleanText3(claim.text, 1600);
     const basis = claim.basis === "workspace" || claim.basis === "public_source" || claim.basis === "artist_input" || claim.basis === "inference" ? claim.basis : null;
     const sourceRef = cleanText3(claim.sourceRef, 1200);
     const confidence = claim.confidence === "high" || claim.confidence === "medium" || claim.confidence === "low" ? claim.confidence : null;
-    if (!text || !basis || !confidence) return [];
+    if (!text2 || !basis || !confidence) return [];
     return [
       {
-        text,
+        text: text2,
         basis,
         sourceRef,
         confidence
@@ -9183,10 +9201,10 @@ function manualDetails(value) {
   }));
 }
 function requiredText(value, label, maxLength) {
-  const text = stringArg(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
-  if (!text) throw new Error(`${label} is required.`);
-  if (text.length > maxLength) throw new Error(`${label} is too long.`);
-  return text;
+  const text2 = stringArg(value).replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
+  if (!text2) throw new Error(`${label} is required.`);
+  if (text2.length > maxLength) throw new Error(`${label} is too long.`);
+  return text2;
 }
 var SAFE_MANAGER_LIFECYCLE_STAGES = /* @__PURE__ */ new Set([
   "idea",
@@ -9527,11 +9545,11 @@ function selectOutputSection(content, query) {
 // supabase/functions/_shared/manager-conversation/turnContract.ts
 var explicitDecisionPackagePattern = /\b(?:decision package|decision memo|decision brief|strategy memo|strategy brief|management memo|management brief|recommendation package|recommendation memo|recommendation brief)\b/i;
 function explicitlyRequestsDecisionPackage(input) {
-  const text = [
+  const text2 = [
     input.body ?? "",
     ...(input.contextAnswers ?? []).map((item) => item.answer ?? "")
   ].join(" ");
-  return explicitDecisionPackagePattern.test(text);
+  return explicitDecisionPackagePattern.test(text2);
 }
 function enforceExplicitDecisionPackagePolicy(output, input) {
   if (output.actionPolicy === "create_decision_package" && !explicitlyRequestsDecisionPackage(input)) {
@@ -10195,8 +10213,8 @@ function compactStringList(value, limit, maxChars) {
   return array(value).slice(0, limit).map((item) => compactText(item, maxChars)).filter(Boolean);
 }
 function compactText(value, maxChars) {
-  const text = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
-  return text.length > maxChars ? `${text.slice(0, Math.max(0, maxChars - 1))}\u2026` : text;
+  const text2 = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+  return text2.length > maxChars ? `${text2.slice(0, Math.max(0, maxChars - 1))}\u2026` : text2;
 }
 function numberOrText(value, maxLength) {
   return typeof value === "number" && Number.isFinite(value) ? value : compactText(value, maxLength);
@@ -10238,9 +10256,9 @@ function readErrorMessage4(error, fallback) {
       ]
     ].flatMap(([label, item]) => {
       if (typeof item !== "string" && typeof item !== "number") return [];
-      const text = String(item).trim();
-      return text ? [
-        `${label}=${text}`
+      const text2 = String(item).trim();
+      return text2 ? [
+        `${label}=${text2}`
       ] : [];
     });
     if (parts.length) return parts.join(" | ");
@@ -10477,6 +10495,68 @@ function normalizeAttachmentIds(value) {
   ].slice(0, 12);
 }
 
+// supabase/functions/_shared/managerReleasedCatalogPolicy.ts
+var RELEASED_STAGES = /* @__PURE__ */ new Set([
+  "released",
+  "catalog",
+  "catalogued",
+  "archived"
+]);
+var ASSET_TERMS = /\b(audio|master|artwork|cover art|credits?|rights?|splits?|release assets?|release package|metadata)\b/i;
+var REQUEST_TERMS = /\b(upload|provide|add|attach|supply|collect|complete|submit|gather|need|needs|needed|required|requires|missing|open files|open rights)\b/i;
+var NEGATED_REQUIREMENT = /\b(no need|do not need|does not need|not required|without requiring|already (?:has|exists|available))\b/i;
+var EXPLICIT_CORRECTION = /\b(replace|correct|fix|amend|update|change|wrong|incorrect|takedown)\b/i;
+var SPECIFIC_POST_RELEASE_DEPENDENCY = /\b(sync|licen[cs](?:e|ing)|clearance|rights dispute|ownership dispute|metadata correction|delivery correction|takedown|replacement master)\b/i;
+function isReleasedCatalogSubject(subject) {
+  if (!subject) return false;
+  const lifecycle = text(subject.lifecycleStage ?? subject.lifecycle_stage).toLowerCase();
+  return RELEASED_STAGES.has(lifecycle) || Boolean(text(subject.releasedAt ?? subject.released_at));
+}
+function assertReleasedCatalogManagerPolicy(output, subject, userRequest) {
+  if (!isReleasedCatalogSubject(subject)) return;
+  const userAskedForCorrection = ASSET_TERMS.test(userRequest) && EXPLICIT_CORRECTION.test(userRequest);
+  const userNamedExactDependency = SPECIFIC_POST_RELEASE_DEPENDENCY.test(userRequest);
+  if (userAskedForCorrection || userNamedExactDependency) return;
+  const violations = [];
+  if (isGenericAssetRequirement(output.responseBody)) violations.push("response");
+  for (const decision of output.missionGraphDecisions) {
+    for (const task of decision.tasks) {
+      const taskText = [
+        task.title,
+        task.purpose,
+        ...task.steps,
+        ...task.evidenceNeeded,
+        task.completionExpectation
+      ].join(" ");
+      if (isGenericAssetRequirement(taskText) && !SPECIFIC_POST_RELEASE_DEPENDENCY.test(taskText)) {
+        violations.push(`task:${task.title}`);
+      }
+    }
+  }
+  for (const question of output.contextQuestions) {
+    const questionText = [
+      question.key,
+      question.question,
+      question.reason,
+      question.recommendedAnswer
+    ].join(" ");
+    const isAssetWorkspaceAction = /^workspace_action:(files|rights|details):/i.test(question.key) && ASSET_TERMS.test(questionText);
+    if ((isAssetWorkspaceAction || isGenericAssetRequirement(questionText)) && !SPECIFIC_POST_RELEASE_DEPENDENCY.test(questionText)) {
+      violations.push(`question:${question.key}`);
+    }
+  }
+  if (violations.length) {
+    throw new Error(`Manager output violated the released/catalog policy (${violations.join(", ")}). Released music cannot be blocked by generic pre-release asset collection.`);
+  }
+}
+function isGenericAssetRequirement(value) {
+  const valueText = text(value);
+  return Boolean(valueText) && ASSET_TERMS.test(valueText) && REQUEST_TERMS.test(valueText) && !NEGATED_REQUIREMENT.test(valueText);
+}
+function text(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 // supabase/functions/manager-conversation-stream/index.ts
 var corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10587,6 +10667,7 @@ data: ${JSON.stringify(event)}
           label: "Reading workspace packet",
           status: "completed"
         });
+        failureStage = "run_creation";
         runId = await createManagerRun(db, input, conversationId, packet);
         usageId = await createUsageEvent(db, input, runId);
         const turn = classifyManagerTurn({
@@ -10600,6 +10681,7 @@ data: ${JSON.stringify(event)}
           status: "running"
         });
         const previousResponseId = "";
+        failureStage = "model_generation";
         const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(db, input, buildManagerConversationModelContext(input, packet, conversationId, previousResponseId), previousResponseId, managerConversationPlaybookKeys(packet), conversationId, runId, turn.mode, (event) => {
           if (event.status === "started" && isReleaseSuccessTool(event.tool) && input?.musicSubject?.type === "music_item") {
             emit({
@@ -10618,8 +10700,11 @@ data: ${JSON.stringify(event)}
             detail: event.summary
           });
         });
+        failureStage = "model_contract";
         enforceExplicitDecisionPackagePolicy(output, input);
         const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+        failureStage = "released_catalog_policy";
+        assertReleasedCatalogManagerPolicy(output, finalMusicSubject, input.body);
         const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
         if (toolCreatedWork.length) output.missionGraphDecisions = [];
         const workspaceCreatedWork = reconcileManagerCreatedWork(toolCreatedWork).filter((work) => work.artifactKind !== "song_document");
@@ -10648,22 +10733,7 @@ data: ${JSON.stringify(event)}
           label: "Preparing Manager answer",
           status: "running"
         });
-        for (const delta of chunkText(output.responseBody)) {
-          emit({
-            type: "assistant.delta",
-            conversationId,
-            runId,
-            delta
-          });
-          await delay(8);
-        }
-        emit({
-          type: "tool.completed",
-          runId,
-          tool: "manager-router",
-          label: "Preparing Manager answer",
-          status: "completed"
-        });
+        failureStage = "mission_graph_persistence";
         const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {
           conversationId,
           runId,
@@ -10698,6 +10768,7 @@ data: ${JSON.stringify(event)}
           ...toolCreatedWork,
           ...persistedWork
         ]);
+        failureStage = "turn_artifact_persistence";
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
         const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
@@ -10709,6 +10780,7 @@ data: ${JSON.stringify(event)}
           ],
           decisionPackageId: decisionPackage?.id
         });
+        failureStage = "manager_message_persistence";
         const managerMessage = await insertConversationMessage(db, input, conversationId, {
           speaker: "manager",
           label: "Manager",
@@ -10738,10 +10810,27 @@ data: ${JSON.stringify(event)}
             refresh: refreshHintForCreatedWork(work)
           });
         }
+        failureStage = "run_finalization";
         await updateConversation(db, input, conversationId, output, preserveWorkspaceTopic);
         await completeManagerRun(db, runId, output);
         await completeUsageEvent(db, usageId, usage);
         const messages = await selectConversationMessages(db, input, conversationId);
+        for (const delta of chunkText(output.responseBody)) {
+          emit({
+            type: "assistant.delta",
+            conversationId,
+            runId,
+            delta
+          });
+          await delay(8);
+        }
+        emit({
+          type: "tool.completed",
+          runId,
+          tool: "manager-router",
+          label: "Preparing Manager answer",
+          status: "completed"
+        });
         emit({
           type: "conversation.completed",
           conversation: toConversationViewModel({
