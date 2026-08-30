@@ -80,6 +80,14 @@ describe("Manager external-action intent boundary", () => {
     expect(permissionAction).toContain("fetchProviderWithTimeout");
   });
 
+  it("routes planning decisions separately from executable approvals and preserves diagnostics", () => {
+    expect(permissionAction).toContain("resolve_manager_decision_permission_v1");
+    expect(permissionAction).toContain("permission.created_from_action_id");
+    expect(permissionAction).toContain("resolve_manager_permission_v1");
+    expect(permissionAction).toContain("captureAppError");
+    expect(permissionAction).toContain("errorEventId");
+  });
+
   it("re-reads durable action state after the AFTER trigger settles", () => {
     expect(actionRunner).toContain("RETURNING does not promise visibility");
     expect(actionRunner).toContain('.select("id").single()');

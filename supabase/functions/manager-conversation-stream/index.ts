@@ -43,6 +43,7 @@ import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_shared/songDocumentDraft.ts";
 import { attachedKnowledge, attachmentMetadata, resolveManagerConversationAttachments, type ManagerConversationAttachment } from "../_shared/manager-conversation/attachments.ts";
+import { assertReleasedCatalogManagerPolicy } from "../_shared/managerReleasedCatalogPolicy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -153,6 +154,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         const packet = await buildManagerConversationPacket(db, input, conversationId, artistMessage.id, focusedMusicSubject, attachments);
         emit({ type: "run.step", label: "Reading workspace packet", status: "completed" });
 
+        failureStage = "run_creation";
         runId = await createManagerRun(db, input, conversationId, packet);
         usageId = await createUsageEvent(db, input, runId);
         const turn = classifyManagerTurn({ body: input.body, contextAnswers: input.contextAnswers });
@@ -162,6 +164,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
     // brief. Do not chain opaque provider history on top of that packet: it duplicates
     // context, grows token usage across turns and caused production TPM failures.
     const previousResponseId = "";
+        failureStage = "model_generation";
         const { output, usage, responseId, toolTrace, toolCreatedWork, releaseSuccessToolResults } = await callOpenAIManagerConversation(
           db,
           input,
@@ -190,8 +193,11 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
             });
           },
         );
+        failureStage = "model_contract";
         enforceExplicitDecisionPackagePolicy(output, input);
         const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+        failureStage = "released_catalog_policy";
+        assertReleasedCatalogManagerPolicy(output, finalMusicSubject, input.body);
         const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
         if (toolCreatedWork.length) output.missionGraphDecisions = [];
         const workspaceCreatedWork = reconcileManagerCreatedWork(toolCreatedWork)
@@ -212,12 +218,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
         emit({ type: "run.step", runId, label: managerAnalysisPhaseLabel(turn.mode), status: "completed" });
         emit({ type: "tool.started", runId, tool: "manager-router", label: "Preparing Manager answer", status: "running" });
 
-        for (const delta of chunkText(output.responseBody)) {
-          emit({ type: "assistant.delta", conversationId, runId, delta });
-          await delay(8);
-        }
-        emit({ type: "tool.completed", runId, tool: "manager-router", label: "Preparing Manager answer", status: "completed" });
-
+        failureStage = "mission_graph_persistence";
         const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {
           conversationId,
           runId,
@@ -246,6 +247,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           ? [...toolCreatedWork, ...persistedWork, taskDraftWork]
           : [...toolCreatedWork, ...persistedWork]);
 
+        failureStage = "turn_artifact_persistence";
         await persistActions(db, input, runId, output);
         await persistMemory(db, input, conversationId, runId, output);
         const decisionPackage = await persistDecisionPackageOutput(db, input, conversationId, runId, output);
@@ -257,6 +259,7 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           ],
           decisionPackageId: decisionPackage?.id,
         });
+        failureStage = "manager_message_persistence";
         const managerMessage = await insertConversationMessage(db, input, conversationId, {
           speaker: "manager",
           label: "Manager",
@@ -282,10 +285,20 @@ Deno.serve(withAppErrorCapture("manager-conversation-stream", async (request) =>
           emit({ type: "artifact.changed", runId, artifact: normalizeCreatedWorkItem(work), refresh: refreshHintForCreatedWork(work) });
         }
 
+        failureStage = "run_finalization";
         await updateConversation(db, input, conversationId, output, preserveWorkspaceTopic);
         await completeManagerRun(db, runId, output);
         await completeUsageEvent(db, usageId, usage);
         const messages = await selectConversationMessages(db, input, conversationId);
+
+        // Do not present an authoritative Manager answer until every durable
+        // work/result write has succeeded. A failed commit must never leave the
+        // artist watching prose that claims nonexistent Tasks or approvals.
+        for (const delta of chunkText(output.responseBody)) {
+          emit({ type: "assistant.delta", conversationId, runId, delta });
+          await delay(8);
+        }
+        emit({ type: "tool.completed", runId, tool: "manager-router", label: "Preparing Manager answer", status: "completed" });
 
         emit({
           type: "conversation.completed",

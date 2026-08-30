@@ -41,6 +41,7 @@ import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_shared/songDocumentDraft.ts";
 import { attachedKnowledge, attachmentMetadata, resolveManagerConversationAttachments, type ManagerConversationAttachment } from "../_shared/manager-conversation/attachments.ts";
+import { assertReleasedCatalogManagerPolicy } from "../_shared/managerReleasedCatalogPolicy.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -125,6 +126,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     enforceExplicitDecisionPackagePolicy(output, input);
     const turnToolNames = safeToolTraceSummary(toolTrace).map((item) => item.tool);
     const finalMusicSubject = await ensureMusicConversationSubjectLink(db, input, conversationId);
+    assertReleasedCatalogManagerPolicy(output, finalMusicSubject, input.body);
     const finalScopedMissionId = await resolveConversationMissionScope(db, input, conversationId, finalMusicSubject);
     if (toolCreatedWork.length) output.missionGraphDecisions = [];
     const persistedWork = input.taskId ? [] : await persistManagerMissionGraphDecisions(db, input, {

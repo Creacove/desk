@@ -254,6 +254,8 @@ describe("OpenAI Manager Conversation Router", () => {
     expect(instructions).toContain("read_focused_music_subject");
     expect(instructions).toContain("ISO-8601 timestamp derived from a confirmed release date");
     expect(instructions).toContain("Never reopen pre-release gates for released/catalog music");
+    expect(instructions).toContain("RELEASED/CATALOG OVERRIDE");
+    expect(instructions).toContain("provider-observed release identity");
     expect(instructions).toContain("Never invent a contact name, email address, outlet, playlist, or result");
     expect(instructions).toContain("For an attached unreleased-song readiness question, read the exact release-success packet and linked mission before answering.");
     expect(instructions).toContain("Never claim the change was applied; application requires the user's explicit approval through the release-plan command.");
@@ -465,6 +467,101 @@ describe("OpenAI Manager Conversation Router", () => {
     });
     expect(output.missionGraphDecisions[0].tasks[0].workMode).toBe("collaborative");
     expect(output.missionGraphDecisions[0].tasks[0].scheduleKey).toBe("content_rollout_start");
+  });
+
+  it("applies released/catalog semantic admission before graph persistence in both chat functions", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      const policyAt = source.indexOf("assertReleasedCatalogManagerPolicy(output");
+      const persistAt = source.indexOf("persistManagerMissionGraphDecisions(db", policyAt);
+      expect(policyAt).toBeGreaterThan(-1);
+      expect(persistAt).toBeGreaterThan(policyAt);
+    }
+  });
+
+  it("rejects a generated human task with fewer than two execution steps before persistence", () => {
+    const schemaText = JSON.stringify(managerConversationJsonSchema.schema);
+    expect(schemaText).toContain('"steps":{"type":"array"');
+    expect(schemaText).toContain('"minItems":2');
+    expect(() => parseManagerConversationOutput(JSON.stringify({
+      actionPolicy: "create_mission",
+      topic: "Audience mission",
+      summary: "Manager proposed work.",
+      status: "Manager responded",
+      confidence: "high",
+      classification: "mission_creation",
+      responseBody: "I prepared the route.",
+      evidenceIds: ["evidence-1"],
+      limitations: [],
+      createdWork: [],
+      missionGraphDecisions: [{
+        outcome: "activate_mission",
+        confidence: "high",
+        decisionSummary: "Test the response.",
+        existingMissionId: "",
+        reasons: ["Response needs proof."],
+        evidenceNeeded: [],
+        mission: {
+          title: "Test audience response",
+          objective: "Measure response before scale.",
+          reason: "Current response is unknown.",
+          summary: "One bounded response test.",
+          patternName: "audience_test",
+          currentRecommendation: "Run the test.",
+          changeConditions: ["Response changes."],
+          timeline: "7 days",
+          sourceRefs: ["evidence-1"],
+        },
+        checkpoints: [{
+          key: "response",
+          title: "Response",
+          question: "Did response improve?",
+          decisionRule: "Continue only with measured improvement.",
+          managerRead: "Response is unproven.",
+          nextAction: "Review the result.",
+          requiredEvidence: ["Result"],
+          missingEvidence: [],
+          sourceRefs: ["evidence-1"],
+        }],
+        tasks: [{
+          title: "Run the test",
+          scheduleKey: "content_rollout_start",
+          ownerRole: "Artist",
+          workMode: "artist_action",
+          primaryCheckpointKey: "response",
+          purpose: "Produce one observable result.",
+          steps: ["Publish the prepared test."],
+          evidenceNeeded: ["Result"],
+          completionExpectation: "The result is recorded.",
+          completionMode: "result_note",
+          deliverableTitle: "",
+          deliverableRequirements: [],
+          managerResponsibility: "Review the result.",
+          userResponsibility: "Publish the test.",
+          riskIfLate: "The learning window slips.",
+          deadline: "",
+          sourceRefs: ["evidence-1"],
+        }],
+        permissionRequests: [],
+      }],
+      contextQuestions: [],
+      proposedActions: [],
+      durableMemory: [],
+    }))).toThrow(/at least two distinct execution steps/i);
+  });
+
+  it("does not stream the authoritative answer before its work graph is durable", () => {
+    const runtime = streamFunctionSource.slice(
+      streamFunctionSource.indexOf("enforceExplicitDecisionPackagePolicy(output, input)"),
+      streamFunctionSource.indexOf('type: "conversation.completed"'),
+    );
+    const persistAt = runtime.indexOf("persistManagerMissionGraphDecisions");
+    const managerMessageAt = runtime.indexOf("insertConversationMessage(db, input, conversationId");
+    const completeRunAt = runtime.indexOf("completeManagerRun(db, runId, output)");
+    const deltaAt = runtime.indexOf('type: "assistant.delta"');
+    expect(persistAt).toBeGreaterThan(-1);
+    expect(managerMessageAt).toBeGreaterThan(persistAt);
+    expect(completeRunAt).toBeGreaterThan(managerMessageAt);
+    expect(deltaAt).toBeGreaterThan(completeRunAt);
   });
 
   it("derives a deterministic proposal from a release-date approval question", () => {

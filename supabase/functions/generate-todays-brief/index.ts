@@ -133,6 +133,10 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
     const authClient = createClient(supabaseUrl, isServiceRoleInvocation ? serviceRoleKey : anonKey, {
       global: { headers: { Authorization: scopedAuthHeader } },
     });
+    // Keep the user-scoped client at the identity, membership, entitlement and
+    // packet-read boundary. Manager workflow rows are service-owned and must be
+    // mutated only after those checks through a separate service client.
+    const serviceClient = createClient(supabaseUrl, serviceRoleKey);
 
     if (!isServiceRoleInvocation) {
       const {
@@ -176,7 +180,6 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
         generationMode: frozen.generationMode,
         setupRunId: frozen.setupRunId ?? undefined,
       };
-      const serviceClient = createClient(supabaseUrl, serviceRoleKey);
       scheduleBackgroundTask(executeTodaysBriefRun({
         db: serviceClient,
         supabaseUrl,
@@ -207,7 +210,7 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
       { subjectType: "artist", subjectId: input.artistId },
       ...setupMusicReadTargets,
     ];
-    const run = await createManagerSynthesisRun(authClient, input, packet, managerIntelligencePacket, setupMusicReadTargets, generationMode, {
+    const run = await createManagerSynthesisRun(serviceClient, input, packet, managerIntelligencePacket, setupMusicReadTargets, generationMode, {
       evidenceCutoff,
       packetRefs,
       targetRefs,
@@ -220,7 +223,6 @@ Deno.serve(withAppErrorCapture("generate-todays-brief", async (request) => {
     if (run.status === "failed" || run.status === "cancelled") {
       return json({ error: run.error || "Today's Brief generation did not complete." }, 409);
     }
-    const serviceClient = createClient(supabaseUrl, serviceRoleKey);
     scheduleBackgroundTask(executeTodaysBriefRun({
       db: serviceClient,
       supabaseUrl,

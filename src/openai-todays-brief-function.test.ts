@@ -97,6 +97,12 @@ describe("OpenAI Today's Brief generation function", () => {
     expect(functionSource).not.toContain("input.brief");
   });
 
+  it("keeps user authorization on the scoped client and writes service-owned runs with the service client", () => {
+    expect(functionSource).toContain("buildArtistBriefPacket(authClient");
+    expect(functionSource).toContain("createManagerSynthesisRun(serviceClient");
+    expect(functionSource).not.toContain("createManagerSynthesisRun(authClient");
+  });
+
   it("uses structured output, stores provenance, and validates visible Manager language", () => {
     expect(functionSource).toContain("/v1/responses");
     expect(functionSource).toContain("json_schema");

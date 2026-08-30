@@ -101,13 +101,37 @@ export async function resolveTodayManagerPermission(
       ...(note?.trim() ? { note: note.trim() } : {}),
     },
   });
-  if (error) throw new Error(error.message || "Desk could not resolve this approval.");
+  if (error) {
+    const body = await readFunctionErrorBody(error);
+    const message = text(body.error) || text(body.message) || error.message || "Desk could not resolve this approval.";
+    const reference = text(body.errorEventId) || text(body.error_event_id);
+    throw new Error(reference ? `${message} (Reference: ${reference})` : message);
+  }
 
   const result = record(data);
   if (typeof result.error === "string" && result.error.trim()) {
     throw new Error(result.error.trim());
   }
   return result;
+}
+
+async function readFunctionErrorBody(error: { context?: unknown }) {
+  const context = error?.context;
+  if (!context || typeof context !== "object") return {} as Record<string, unknown>;
+  const response = typeof (context as { clone?: unknown }).clone === "function"
+    ? (context as { clone: () => Response }).clone()
+    : context as Response;
+  try {
+    const body = await response.json();
+    return record(body);
+  } catch {
+    try {
+      const body = await response.text();
+      return body.trim() ? { error: body.trim() } : {};
+    } catch {
+      return {};
+    }
+  }
 }
 
 export function describeTodayPermissionEffect(detail: TodayPermissionDetail): TodayPermissionEffect {

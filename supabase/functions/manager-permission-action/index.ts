@@ -1,4 +1,5 @@
-import { withAppErrorCapture } from "../_shared/appFunction.ts";
+import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
+import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { fetchProviderWithTimeout } from "../_shared/managerRuntimeGuardrails.ts";
@@ -25,8 +26,10 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
   const authHeader = request.headers.get("Authorization");
   if (!authHeader) return json({ error: "Missing Authorization header." }, 401);
 
+  let input: PermissionDecisionInput | null = null;
+  let permissionContext: Record<string, any> | null = null;
   try {
-    const input = (await request.json()) as PermissionDecisionInput;
+    input = (await request.json()) as PermissionDecisionInput;
     validateInput(input);
 
     const userClient = createClient(supabaseUrl, anonKey, {
@@ -44,6 +47,7 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
       .maybeSingle();
     if (permissionError) throw permissionError;
     if (!permission) return json({ error: "Permission request not found." }, 404);
+    permissionContext = permission;
 
     const { data: membership, error: membershipError } = await userClient.rpc("is_account_member", {
       target_account_id: permission.account_id,
@@ -57,7 +61,10 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
       artistId: permission.artist_id,
     });
 
-    const { data: resolution, error: resolutionError } = await workflowDb.rpc("resolve_manager_permission_v1", {
+    const resolver = permission.created_from_action_id
+      ? "resolve_manager_permission_v1"
+      : "resolve_manager_decision_permission_v1";
+    const { data: resolution, error: resolutionError } = await workflowDb.rpc(resolver, {
       target_permission_id: input.permissionId,
       actor_user_id: authData.user.id,
       decision: input.decision,
@@ -176,7 +183,24 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
       result: sendResult,
     });
   } catch (error) {
-    return json({ error: errorMessage(error, "Manager permission could not be resolved.") }, 500);
+    const publicMessage = permissionPublicMessage(error);
+    const errorEventId = await captureAppError(error, {
+      functionName: "manager-permission-action",
+      operation: "resolve_manager_permission",
+      source: "edge",
+      publicMessage,
+      requestId: request.headers.get("x-request-id") ?? undefined,
+      accountId: permissionContext?.account_id,
+      artistWorkspaceId: permissionContext?.artist_workspace_id,
+      artistId: permissionContext?.artist_id,
+      refs: {
+        mission_id: permissionContext?.mission_id,
+        stage: permissionContext?.created_from_action_id ? "execution_permission" : "decision_permission",
+      },
+      context: { permissionId: input?.permissionId, decision: input?.decision },
+    });
+    const status = /already has a conflicting|no longer|superseded|terminal/i.test(publicMessage) ? 409 : 500;
+    return markErrorCaptured(json({ error: publicMessage, errorEventId }, status), errorEventId);
   }
 }));
 
@@ -226,7 +250,27 @@ function requireEnv(key: string) {
 }
 
 function errorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === "object" && typeof (error as { message?: unknown }).message === "string") {
+    return String((error as { message: string }).message);
+  }
+  return fallback;
+}
+
+function permissionPublicMessage(error: unknown) {
+  const message = errorMessage(error, "Manager permission could not be resolved.");
+  if (/not bound to|action-bound|executable permission/i.test(message)) {
+    return "This approval is no longer safely connected to the exact Manager action. Desk did not perform anything.";
+  }
+  if (/already has a conflicting or terminal decision/i.test(message)) {
+    return "This approval was already resolved or superseded. Refresh Today to see the current decision.";
+  }
+  if (/permission request was not found/i.test(message)) {
+    return "This approval is no longer available. Refresh Today to load current work.";
+  }
+  return message === "Manager permission could not be resolved."
+    ? message
+    : `Desk could not record this decision: ${message}`;
 }
 
 function json(body: unknown, status = 200) {

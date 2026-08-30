@@ -115,7 +115,7 @@ const taskSchema = {
     workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
     primaryCheckpointKey: { type: "string" },
     purpose: { type: "string" },
-    steps: stringArraySchema,
+    steps: { ...stringArraySchema, minItems: 2 },
     evidenceNeeded: stringArraySchema,
     completionExpectation: { type: "string" },
     completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
@@ -404,9 +404,13 @@ function normalizeMissionGraphDecision(value: unknown): ManagerMissionGraphDecis
   if (decision.outcome !== "activate_mission" && decision.outcome !== "update_existing_mission") return null;
   const mission = normalizeMission(decision.mission);
   const checkpoints = Array.isArray(decision.checkpoints) ? decision.checkpoints.map(normalizeCheckpoint).filter(Boolean) as MissionGenesisCheckpoint[] : [];
+  const rawTasks = Array.isArray(decision.tasks) ? decision.tasks : [];
   const tasks = normalizeReleaseTaskScheduleKeys(
-    Array.isArray(decision.tasks) ? decision.tasks.map(normalizeTask).filter(Boolean) as MissionGenesisTask[] : [],
+    rawTasks.map(normalizeTask).filter(Boolean) as MissionGenesisTask[],
   );
+  if (tasks.length !== rawTasks.length) {
+    throw new Error("Every generated human task requires at least two distinct execution steps and a complete task contract.");
+  }
   if (!mission || !checkpoints.length) return null;
   const checkpointKeys = new Set(checkpoints.map((checkpoint) => checkpoint.key));
   if (tasks.some((task) => !checkpointKeys.has(task.primaryCheckpointKey))) return null;
@@ -479,7 +483,7 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
           : "artist_action",
     primaryCheckpointKey: cleanString(task.primaryCheckpointKey, ""),
     purpose: cleanString(task.purpose, ""),
-    steps: cleanStringArray(task.steps).slice(0, 6),
+    steps: distinctStrings(task.steps).slice(0, 6),
     evidenceNeeded: cleanStringArray(task.evidenceNeeded).slice(0, 12),
     completionExpectation: cleanString(task.completionExpectation, ""),
     completionMode: ["result_note", "manager_draft", "evidence"].includes(String(task.completionMode))
@@ -493,7 +497,7 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
     deadline: normalizeTaskDeadline(task.deadline),
     sourceRefs: cleanStringArray(task.sourceRefs).slice(0, 24),
   };
-  return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length && normalized.completionExpectation && normalized.riskIfLate
+  return normalized.title && normalized.primaryCheckpointKey && normalized.purpose && normalized.steps.length >= 2 && normalized.completionExpectation && normalized.riskIfLate
     ? normalized
     : null;
 }
@@ -610,4 +614,14 @@ function cleanStringArray(value: unknown) {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())).map((item) => item.trim())
     : [];
+}
+
+function distinctStrings(value: unknown) {
+  const seen = new Set<string>();
+  return cleanStringArray(value).filter((item) => {
+    const key = item.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
