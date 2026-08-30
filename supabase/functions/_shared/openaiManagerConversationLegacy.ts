@@ -71,7 +71,7 @@ export type ManagerConversationOutput = {
   durableMemory: string[];
 };
 
-const stringArraySchema = { type: "array", items: { type: "string" } };
+const stringArraySchema = { type: "array", maxItems: 24, items: { type: "string" } };
 const missionSchema = {
   type: "object",
   additionalProperties: false,
@@ -245,9 +245,12 @@ export const managerConversationJsonSchema = {
             existingMissionId: { type: "string" },
             reasons: stringArraySchema,
             mission: missionSchema,
-            checkpoints: { type: "array", items: checkpointSchema },
-            tasks: { type: "array", items: taskSchema },
-            permissionRequests: { type: "array", items: permissionSchema },
+            checkpoints: { type: "array", maxItems: 8, items: checkpointSchema },
+            // A detailed day-by-day route is still one bounded Mission. Keep
+            // the graph small enough to finish as valid JSON; put depth in
+            // each executable Task rather than creating an unbounded dump.
+            tasks: { type: "array", maxItems: 14, items: taskSchema },
+            permissionRequests: { type: "array", maxItems: 8, items: permissionSchema },
           },
         },
       },
@@ -316,6 +319,7 @@ export function buildManagerConversationInstructions(playbookInstructions = "") 
     "Decision packages are optional user-facing decision memos, not the default container for a strong recommendation. Never create one automatically from an EPK, press, playlist, release-readiness, post-release, research, or troubleshooting request. If the artist did not explicitly ask for that durable decision surface, keep the recommendation in chat and use the native artifact/workflow surface instead.",
     "When the user asks a conversational question, set actionPolicy to answer_only and do not generate missionGraphDecisions, createdWork, or proposedActions unless a concrete operational action is genuinely needed.",
     "Use missionGraphDecisions only when the user is actually creating or changing mission work. Create or update at most one mission per user request: one durable objective, checkpoints as decision questions with rules, and tasks as concrete work that answers those questions. When a song or project conversation already has a linked mission, use that mission only; never create or select a different artist-wide mission from that conversation.",
+    "For an explicitly detailed or day-to-day mission request, keep one bounded route (normally no more than 14 human Tasks), keep responseBody concise, and put the detail into ordered executable Task steps. Never let the response become so large that the structured JSON is cut off.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan. In an attached song conversation, existingMissionId must equal the attached linked mission ID.",
     "Every new task must declare workMode: artist_action for work the artist/team performs or reports, or collaborative for work the artist/team and Manager build or approve together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put Manager-only analysis in checkpoint.managerRead. Tasks may be empty when nothing is needed from the artist.",
@@ -337,6 +341,14 @@ export function parseManagerConversationOutput(raw: string): ManagerConversation
   if (!actionPolicy) {
     throw new Error("Manager conversation output is missing required actionPolicy.");
   }
+  const rawMissionGraphDecisions = Array.isArray(parsed.missionGraphDecisions) ? parsed.missionGraphDecisions : [];
+  const missionGraphDecisions = rawMissionGraphDecisions
+    .map(normalizeMissionGraphDecision)
+    .filter(Boolean) as ManagerMissionGraphDecision[];
+  if (missionGraphDecisions.length !== rawMissionGraphDecisions.length) {
+    throw new Error("Manager conversation mission graph contains an invalid mission, checkpoint, task, or permission contract.");
+  }
+
   const output: ManagerConversationOutput = {
     topic: cleanString(parsed.topic, "Manager conversation").slice(0, 120),
     summary: cleanString(parsed.summary, "Manager answered the directive.").slice(0, 240),
@@ -348,9 +360,7 @@ export function parseManagerConversationOutput(raw: string): ManagerConversation
     evidenceIds: cleanStringArray(parsed.evidenceIds).slice(0, 24),
     limitations: cleanStringArray(parsed.limitations).slice(0, 12),
     createdWork: Array.isArray(parsed.createdWork) ? parsed.createdWork.map(normalizeCreatedWork).filter(Boolean).slice(0, 8) as ManagerConversationCreatedWork[] : [],
-    missionGraphDecisions: Array.isArray(parsed.missionGraphDecisions)
-      ? parsed.missionGraphDecisions.map(normalizeMissionGraphDecision).filter(Boolean).slice(0, 4) as ManagerMissionGraphDecision[]
-      : [],
+    missionGraphDecisions: missionGraphDecisions.slice(0, 4),
     contextQuestions: Array.isArray(parsed.contextQuestions)
       ? parsed.contextQuestions.map(normalizeContextQuestion).filter(Boolean).slice(0, 3) as MissionGenesisQuestion[]
       : [],

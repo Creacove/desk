@@ -58,6 +58,22 @@ export function buildManagerConversationInstructions(
   return `${buildLegacyManagerConversationInstructions(playbookInstructions)}\n${managerKnowledgeProtocol}\n${buildManagerHumanTaskGenerationContract()}\n${managerInterruptionProtocol}\n${attachmentEvidenceProtocol}\n${executableActionIntentProtocol}${turnInstructions}`;
 }
 
+/**
+ * Keep ordinary conversation cheap while giving explicitly detailed mission
+ * requests enough room to finish their structured graph. The larger budget is
+ * still bounded; the prompt/schema cap the graph so a request cannot turn into
+ * an unbounded planning dump that gets truncated again.
+ */
+export function managerConversationOutputTokenBudget(body: string): number {
+  const text = typeof body === "string" ? body.trim().toLowerCase() : "";
+  const planningIntent = /\b(?:create|build|plan|design|map|outline|develop|activate|update)\b/.test(text)
+    && /\b(?:mission|campaign|content|day[ -]to[ -]day|daily|tasks?|rollout|schedule|everything)\b/.test(text);
+  if (!planningIntent) return 6000;
+  return /\b(?:very|highly|extremely|full|detailed|day[ -]to[ -]day|daily|everything)\b/.test(text)
+    ? 12000
+    : 9000;
+}
+
 export function parseManagerConversationOutput(raw: string) {
   const output = parseLegacyManagerConversationOutput(raw);
   output.contextQuestions = output.contextQuestions.map((question) => {

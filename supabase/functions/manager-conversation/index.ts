@@ -4,11 +4,15 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
   buildManagerConversationInstructions,
   deriveReleaseDateProposalFromContextQuestions,
+  managerConversationOutputTokenBudget,
   managerConversationJsonSchema,
   parseManagerConversationOutput,
   type ManagerConversationOutput,
 } from "../_shared/openaiManagerConversation.ts";
-import { persistManagerMissionGraphDecisions } from "../_shared/missionGraphPersistence.ts";
+import {
+  persistManagerMissionGraphDecisions,
+  preflightManagerMissionGraphTasks,
+} from "../_shared/missionGraphPersistence.ts";
 import {
   getMissionPatternRegistry,
   selectMissionPatternsForPacket,
@@ -17,6 +21,7 @@ import { getPlaybooksInstructions } from "../_shared/manager-intelligence/playbo
 import type { PlaybookKey } from "../_shared/manager-intelligence/types.ts";
 import {
   managerConversationRequiresCanonicalDocumentTool,
+  isRecoverableManagerOutputError,
   runManagerAgentLoop,
   selectManagerConversationToolsForTurn,
   type ManagerAgentToolTrace,
@@ -723,7 +728,13 @@ async function callOpenAIManagerConversation(
     }) ? 24 : 8,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: managerReasoningEffort(turn.mode),
-    maxOutputTokens: 6000,
+    maxOutputTokens: managerConversationOutputTokenBudget(input.body),
+    validateOutputText: async (outputText) => {
+      const output = parseManagerConversationOutput(outputText);
+      await preflightManagerMissionGraphTasks(db, runId ?? "", output);
+    },
+    outputRepairAttempts: 2,
+    shouldRepairOutputError: isRecoverableManagerOutputError,
     contextManagement: [{ type: "compaction", compact_threshold: 64000 }],
     promptCacheKey: `manager:${input.artistWorkspaceId}:v1`,
     promptCacheMode: "explicit",

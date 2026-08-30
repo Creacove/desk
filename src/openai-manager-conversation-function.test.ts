@@ -293,7 +293,10 @@ describe("OpenAI Manager Conversation Router", () => {
       expect(source).toContain("executeManagerConversationTool");
       expect(source).toContain("buildManagerConversationModelContext");
       expect(source).toContain("classifyManagerConversationError");
-      expect(source).toContain('maxOutputTokens: 6000');
+      expect(source).toContain("managerConversationOutputTokenBudget(input.body)");
+      expect(source).toContain("preflightManagerMissionGraphTasks");
+      expect(source).toContain("validateOutputText");
+      expect(source).toContain("outputRepairAttempts: 2");
       expect(source).toContain('compact_threshold: 64000');
       expect(source).toContain('promptCacheMode: "explicit"');
       expect(source).toContain("loadPreviousOpenAIResponseId");

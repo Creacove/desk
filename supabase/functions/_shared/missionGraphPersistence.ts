@@ -113,6 +113,24 @@ export async function persistManagerMissionGraphDecisions(
   return persisted;
 }
 
+/**
+ * Validate a model-produced graph against the same database contract used by
+ * mission persistence, without writing any rows. This is deliberately shared
+ * by the conversation generation and persistence paths so a malformed human
+ * handoff can be repaired before the first mission/plan row is created.
+ */
+export async function preflightManagerMissionGraphTasks(
+  db: any,
+  runId: string,
+  output: Pick<ManagerConversationOutput, "missionGraphDecisions">,
+) {
+  const decisions = Array.isArray(output?.missionGraphDecisions) ? output.missionGraphDecisions : [];
+  if (!decisions.some((decision) => decision.tasks.some((task) => task.workMode !== "manager_work"))) return;
+  const normalizedRunId = typeof runId === "string" ? runId.trim() : "";
+  if (!normalizedRunId) throw new Error("Manager mission graph preflight requires a synthesis run ID.");
+  await preflightMissionTasks(db, { runId: normalizedRunId }, decisions);
+}
+
 async function isWorldModelContinuationRun(db: any, runId: string) {
   const { data, error } = await db.from("manager_synthesis_runs")
     .select("context_payload")
@@ -380,7 +398,7 @@ function unique(values: string[]) {
 
 async function preflightMissionTasks(
   db: any,
-  context: ManagerGraphContext,
+  context: Pick<ManagerGraphContext, "runId">,
   decisions: ManagerMissionGraphDecision[],
 ) {
   for (const task of decisions.flatMap((decision) => decision.tasks)) {

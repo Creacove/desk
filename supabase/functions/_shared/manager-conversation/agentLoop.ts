@@ -25,6 +25,12 @@ type ManagerAgentLoopInput = ManagerAgentRequestInput & {
   apiKey: string;
   fetchImpl?: typeof fetch;
   maxToolCalls?: number;
+  /** Validate the final structured response before it can be persisted or shown. */
+  validateOutputText?: (outputText: string) => void | Promise<void>;
+  /** Number of bounded model repair turns allowed after a malformed response. */
+  outputRepairAttempts?: number;
+  /** Keep infrastructure failures from being mistaken for model-output failures. */
+  shouldRepairOutputError?: (error: unknown) => boolean;
   executeTool: (name: string, args: Record<string, unknown>, call: { callId: string }) => Promise<unknown>;
   onToolEvent?: (event: ManagerAgentToolTrace) => void | Promise<void>;
   beforeModelRequest?: () => void | Promise<void>;
@@ -37,6 +43,18 @@ type ManagerAgentLoopResult = {
   usage: Record<string, unknown>;
   toolTrace: ManagerAgentToolTrace[];
 };
+
+/**
+ * Output validation must be allowed to repair model-contract failures without
+ * turning a database/provider outage into an unbounded second request. Keep
+ * this classifier narrow and based on the stable contract messages emitted by
+ * the parser and Postgres validator.
+ */
+export function isRecoverableManagerOutputError(error: unknown) {
+  const message = readErrorMessage(error).toLowerCase();
+  if (error instanceof SyntaxError) return true;
+  return /manager conversation output|mission graph|generated_human_task_contract|at least .*execution steps?|execution contract|workoperations|incomplete structured|missing responsebody|unexpected end of json|unterminated string in json/.test(message);
+}
 
 export type ManagerAgentToolTrace = {
   tool: string;
@@ -487,6 +505,7 @@ function buildManagerAgentRequestBody(
   requestInput: unknown,
   previousResponseId?: string,
   initialRequest = false,
+  toolsOverride?: ManagerAgentToolDefinition[],
 ) {
   return {
     model: input.model,
@@ -494,7 +513,9 @@ function buildManagerAgentRequestBody(
     input: requestInput,
     ...(previousResponseId ? { previous_response_id: previousResponseId } : {}),
     store: true,
-    tools: input.tools,
+    // A repair turn only fixes the already-produced structured object. It
+    // cannot execute a second mutation or discovery tool while recovering.
+    tools: toolsOverride ?? input.tools,
     tool_choice: initialRequest && input.initialToolChoice ? { type: "function", name: input.initialToolChoice } : "auto",
     parallel_tool_calls: input.parallelToolCalls ?? false,
     ...(input.reasoningEffort ? { reasoning: { effort: input.reasoningEffort } } : {}),
@@ -513,9 +534,16 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
   let requestBody: Record<string, unknown> = buildManagerAgentRequest(input);
   let responseId = "";
   let toolCallsUsed = 0;
+  let outputRepairAttemptsUsed = 0;
+  const outputRepairAttempts = Math.max(0, Math.floor(input.outputRepairAttempts ?? 0));
+  const maxToolCalls = Math.max(0, Math.floor(input.maxToolCalls ?? 8));
+  // Repair turns are model requests too, but they must not consume the tool
+  // iteration budget. Otherwise a response that used the final allowed tool
+  // call could never be repaired before the loop exits.
+  const maxIterations = maxToolCalls + outputRepairAttempts + 1;
   const attemptedMutationSignatures = new Set<string>();
 
-  for (let iteration = 0; iteration <= (input.maxToolCalls ?? 8); iteration += 1) {
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     await input.beforeModelRequest?.();
     const payload = await postResponses(fetchImpl, input.endpoint, input.apiKey, requestBody);
     await input.afterModelRequest?.();
@@ -524,15 +552,35 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
 
     const outputText = readOutputText(payload);
     if (outputText) {
-      return { outputText, responseId, usage: usageTotals, toolTrace };
+      try {
+        await input.validateOutputText?.(outputText);
+        return { outputText, responseId, usage: usageTotals, toolTrace };
+      } catch (error) {
+        const shouldRepair = input.shouldRepairOutputError?.(error) ?? true;
+        if (!input.validateOutputText || !shouldRepair || outputRepairAttemptsUsed >= outputRepairAttempts) throw error;
+        outputRepairAttemptsUsed += 1;
+        requestBody = buildManagerAgentRequestBody(input, buildOutputRepairInstruction(error), responseId, false, []);
+        continue;
+      }
     }
 
     const calls = extractFunctionCalls(payload);
     if (!calls.length) {
+      if (input.validateOutputText && outputRepairAttemptsUsed < outputRepairAttempts) {
+        outputRepairAttemptsUsed += 1;
+        requestBody = buildManagerAgentRequestBody(
+          input,
+          "The previous Manager response was incomplete and did not contain a complete structured JSON object. Return one complete valid JSON object for the original request now. Keep the response concise, include only the highest-value bounded work, and satisfy every required schema and execution-contract field before stopping.",
+          responseId,
+          false,
+          [],
+        );
+        continue;
+      }
       throw new Error("Manager agent response did not include final output text or executable tool calls.");
     }
 
-    if (toolCallsUsed + calls.length > (input.maxToolCalls ?? 8)) {
+    if (toolCallsUsed + calls.length > maxToolCalls) {
       throw new Error("Manager agent exceeded the local tool-call limit.");
     }
     toolCallsUsed += calls.length;
@@ -599,6 +647,18 @@ export async function runManagerAgentLoop(input: ManagerAgentLoopInput): Promise
   }
 
   throw new Error("Manager agent did not finish within the configured loop limit.");
+}
+
+function buildOutputRepairInstruction(error: unknown) {
+  const detail = readErrorMessage(error).replace(/\s+/g, " ").slice(0, 240);
+  return [
+    "Your previous Manager response was incomplete or failed the structured-output contract.",
+    detail ? `Validation signal: ${detail}` : "Validation signal: the response was not complete.",
+    "Return one complete valid JSON object for the original request now; do not return commentary, markdown, or a partial object.",
+    "Keep the work bounded and put detail into executable fields rather than a long response paragraph.",
+    "Every visible human Task must contain at least two distinct ordered execution steps; content-execution Tasks need at least four concrete steps and must include the setup/format, hook/message, creator action, and finish/distribution direction.",
+    "Do not omit required fields, drop a Task, or create a vague placeholder just to fit the response.",
+  ].join(" ");
 }
 
 const MAX_TOOL_OUTPUT_CHARS = 12_000;
