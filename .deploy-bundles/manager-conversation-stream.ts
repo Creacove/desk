@@ -429,6 +429,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // supabase/functions/_shared/openaiManagerConversationLegacy.ts
 var stringArraySchema = {
   type: "array",
+  maxItems: 24,
   items: {
     type: "string"
   }
@@ -825,14 +826,20 @@ var managerConversationJsonSchema = {
             mission: missionSchema,
             checkpoints: {
               type: "array",
+              maxItems: 8,
               items: checkpointSchema
             },
+            // A detailed day-by-day route is still one bounded Mission. Keep
+            // the graph small enough to finish as valid JSON; put depth in
+            // each executable Task rather than creating an unbounded dump.
             tasks: {
               type: "array",
+              maxItems: 14,
               items: taskSchema
             },
             permissionRequests: {
               type: "array",
+              maxItems: 8,
               items: permissionSchema
             }
           }
@@ -922,6 +929,7 @@ function buildManagerConversationInstructions(playbookInstructions = "") {
     "Decision packages are optional user-facing decision memos, not the default container for a strong recommendation. Never create one automatically from an EPK, press, playlist, release-readiness, post-release, research, or troubleshooting request. If the artist did not explicitly ask for that durable decision surface, keep the recommendation in chat and use the native artifact/workflow surface instead.",
     "When the user asks a conversational question, set actionPolicy to answer_only and do not generate missionGraphDecisions, createdWork, or proposedActions unless a concrete operational action is genuinely needed.",
     "Use missionGraphDecisions only when the user is actually creating or changing mission work. Create or update at most one mission per user request: one durable objective, checkpoints as decision questions with rules, and tasks as concrete work that answers those questions. When a song or project conversation already has a linked mission, use that mission only; never create or select a different artist-wide mission from that conversation.",
+    "For an explicitly detailed or day-to-day mission request, keep one bounded route (normally no more than 14 human Tasks), keep responseBody concise, and put the detail into ordered executable Task steps. Never let the response become so large that the structured JSON is cut off.",
     "Never create lightweight mission/task work. Do not emit one task with a duplicate checkpoint. If any mission work is created or updated, provide mission identity, checkpoint decision rules, task steps, completion expectations, riskIfLate, sourceRefs, and permission requests.",
     "Use outcome activate_mission for new missions. Use outcome update_existing_mission for changes to existing missions, including adding tasks or checkpoints to existing work; provide existingMissionId and a complete revised plan. In an attached song conversation, existingMissionId must equal the attached linked mission ID.",
     "Every new task must declare workMode: artist_action for work the artist/team performs or reports, or collaborative for work the artist/team and Manager build or approve together. A manager_draft task must be collaborative. Do not generate manager_work tasks; put Manager-only analysis in checkpoint.managerRead. Tasks may be empty when nothing is needed from the artist.",
@@ -942,6 +950,11 @@ function parseManagerConversationOutput(raw) {
   if (!actionPolicy) {
     throw new Error("Manager conversation output is missing required actionPolicy.");
   }
+  const rawMissionGraphDecisions = Array.isArray(parsed.missionGraphDecisions) ? parsed.missionGraphDecisions : [];
+  const missionGraphDecisions = rawMissionGraphDecisions.map(normalizeMissionGraphDecision).filter(Boolean);
+  if (missionGraphDecisions.length !== rawMissionGraphDecisions.length) {
+    throw new Error("Manager conversation mission graph contains an invalid mission, checkpoint, task, or permission contract.");
+  }
   const output = {
     topic: cleanString(parsed.topic, "Manager conversation").slice(0, 120),
     summary: cleanString(parsed.summary, "Manager answered the directive.").slice(0, 240),
@@ -958,7 +971,7 @@ function parseManagerConversationOutput(raw) {
     evidenceIds: cleanStringArray(parsed.evidenceIds).slice(0, 24),
     limitations: cleanStringArray(parsed.limitations).slice(0, 12),
     createdWork: Array.isArray(parsed.createdWork) ? parsed.createdWork.map(normalizeCreatedWork).filter(Boolean).slice(0, 8) : [],
-    missionGraphDecisions: Array.isArray(parsed.missionGraphDecisions) ? parsed.missionGraphDecisions.map(normalizeMissionGraphDecision).filter(Boolean).slice(0, 4) : [],
+    missionGraphDecisions: missionGraphDecisions.slice(0, 4),
     contextQuestions: Array.isArray(parsed.contextQuestions) ? parsed.contextQuestions.map(normalizeContextQuestion).filter(Boolean).slice(0, 3) : [],
     proposedActions: Array.isArray(parsed.proposedActions) ? parsed.proposedActions.map(normalizeAction).filter(Boolean).slice(0, 12) : [],
     durableMemory: cleanStringArray(parsed.durableMemory).slice(0, 8)
@@ -1373,6 +1386,12 @@ ${managerInterruptionProtocol}
 ${attachmentEvidenceProtocol}
 ${executableActionIntentProtocol}${turnInstructions}`;
 }
+function managerConversationOutputTokenBudget(body) {
+  const text2 = typeof body === "string" ? body.trim().toLowerCase() : "";
+  const planningIntent = /\b(?:create|build|plan|design|map|outline|develop|activate|update)\b/.test(text2) && /\b(?:mission|campaign|content|day[ -]to[ -]day|daily|tasks?|rollout|schedule|everything)\b/.test(text2);
+  if (!planningIntent) return 6e3;
+  return /\b(?:very|highly|extremely|full|detailed|day[ -]to[ -]day|daily|everything)\b/.test(text2) ? 12e3 : 9e3;
+}
 function parseManagerConversationOutput2(raw) {
   const output = parseManagerConversationOutput(raw);
   output.contextQuestions = output.contextQuestions.map((question) => {
@@ -1495,6 +1514,15 @@ async function persistManagerMissionGraphDecisions(db, input, context, output) {
     }
   }
   return persisted;
+}
+async function preflightManagerMissionGraphTasks(db, runId, output) {
+  const decisions = Array.isArray(output?.missionGraphDecisions) ? output.missionGraphDecisions : [];
+  if (!decisions.some((decision) => decision.tasks.some((task) => task.workMode !== "manager_work"))) return;
+  const normalizedRunId = typeof runId === "string" ? runId.trim() : "";
+  if (!normalizedRunId) throw new Error("Manager mission graph preflight requires a synthesis run ID.");
+  await preflightMissionTasks(db, {
+    runId: normalizedRunId
+  }, decisions);
 }
 async function isWorldModelContinuationRun(db, runId) {
   const { data, error } = await db.from("manager_synthesis_runs").select("context_payload").eq("id", runId).maybeSingle();
@@ -2897,6 +2925,11 @@ ${sections.join("\n\n")}
 }
 
 // supabase/functions/_shared/manager-conversation/agentLoop.ts
+function isRecoverableManagerOutputError(error) {
+  const message = readErrorMessage2(error).toLowerCase();
+  if (error instanceof SyntaxError) return true;
+  return /manager conversation output|mission graph|generated_human_task_contract|at least .*execution steps?|execution contract|workoperations|incomplete structured|missing responsebody|unexpected end of json|unterminated string in json/.test(message);
+}
 var textProperties = {
   type: "object",
   additionalProperties: false,
@@ -3561,7 +3594,7 @@ function selectManagerConversationToolsForTurn(input) {
 function buildManagerAgentRequest(input) {
   return buildManagerAgentRequestBody(input, JSON.stringify(input.context), input.previousResponseId, true);
 }
-function buildManagerAgentRequestBody(input, requestInput, previousResponseId, initialRequest = false) {
+function buildManagerAgentRequestBody(input, requestInput, previousResponseId, initialRequest = false, toolsOverride) {
   return {
     model: input.model,
     instructions: input.instructions,
@@ -3570,7 +3603,9 @@ function buildManagerAgentRequestBody(input, requestInput, previousResponseId, i
       previous_response_id: previousResponseId
     } : {},
     store: true,
-    tools: input.tools,
+    // A repair turn only fixes the already-produced structured object. It
+    // cannot execute a second mutation or discovery tool while recovering.
+    tools: toolsOverride ?? input.tools,
     tool_choice: initialRequest && input.initialToolChoice ? {
       type: "function",
       name: input.initialToolChoice
@@ -3610,8 +3645,12 @@ async function runManagerAgentLoop(input) {
   let requestBody = buildManagerAgentRequest(input);
   let responseId = "";
   let toolCallsUsed = 0;
+  let outputRepairAttemptsUsed = 0;
+  const outputRepairAttempts = Math.max(0, Math.floor(input.outputRepairAttempts ?? 0));
+  const maxToolCalls = Math.max(0, Math.floor(input.maxToolCalls ?? 8));
+  const maxIterations = maxToolCalls + outputRepairAttempts + 1;
   const attemptedMutationSignatures = /* @__PURE__ */ new Set();
-  for (let iteration = 0; iteration <= (input.maxToolCalls ?? 8); iteration += 1) {
+  for (let iteration = 0; iteration < maxIterations; iteration += 1) {
     await input.beforeModelRequest?.();
     const payload = await postResponses(fetchImpl, input.endpoint, input.apiKey, requestBody);
     await input.afterModelRequest?.();
@@ -3619,18 +3658,32 @@ async function runManagerAgentLoop(input) {
     addUsage(usageTotals, payload.usage);
     const outputText = readOutputText(payload);
     if (outputText) {
-      return {
-        outputText,
-        responseId,
-        usage: usageTotals,
-        toolTrace
-      };
+      try {
+        await input.validateOutputText?.(outputText);
+        return {
+          outputText,
+          responseId,
+          usage: usageTotals,
+          toolTrace
+        };
+      } catch (error) {
+        const shouldRepair = input.shouldRepairOutputError?.(error) ?? true;
+        if (!input.validateOutputText || !shouldRepair || outputRepairAttemptsUsed >= outputRepairAttempts) throw error;
+        outputRepairAttemptsUsed += 1;
+        requestBody = buildManagerAgentRequestBody(input, buildOutputRepairInstruction(error), responseId, false, []);
+        continue;
+      }
     }
     const calls = extractFunctionCalls(payload);
     if (!calls.length) {
+      if (input.validateOutputText && outputRepairAttemptsUsed < outputRepairAttempts) {
+        outputRepairAttemptsUsed += 1;
+        requestBody = buildManagerAgentRequestBody(input, "The previous Manager response was incomplete and did not contain a complete structured JSON object. Return one complete valid JSON object for the original request now. Keep the response concise, include only the highest-value bounded work, and satisfy every required schema and execution-contract field before stopping.", responseId, false, []);
+        continue;
+      }
       throw new Error("Manager agent response did not include final output text or executable tool calls.");
     }
-    if (toolCallsUsed + calls.length > (input.maxToolCalls ?? 8)) {
+    if (toolCallsUsed + calls.length > maxToolCalls) {
       throw new Error("Manager agent exceeded the local tool-call limit.");
     }
     toolCallsUsed += calls.length;
@@ -3702,6 +3755,17 @@ async function runManagerAgentLoop(input) {
     requestBody = buildManagerAgentRequestBody(input, outputs, responseId);
   }
   throw new Error("Manager agent did not finish within the configured loop limit.");
+}
+function buildOutputRepairInstruction(error) {
+  const detail = readErrorMessage2(error).replace(/\s+/g, " ").slice(0, 240);
+  return [
+    "Your previous Manager response was incomplete or failed the structured-output contract.",
+    detail ? `Validation signal: ${detail}` : "Validation signal: the response was not complete.",
+    "Return one complete valid JSON object for the original request now; do not return commentary, markdown, or a partial object.",
+    "Keep the work bounded and put detail into executable fields rather than a long response paragraph.",
+    "Every visible human Task must contain at least two distinct ordered execution steps; content-execution Tasks need at least four concrete steps and must include the setup/format, hook/message, creator action, and finish/distribution direction.",
+    "Do not omit required fields, drop a Task, or create a vague placeholder just to fit the response."
+  ].join(" ");
 }
 var MAX_TOOL_OUTPUT_CHARS = 12e3;
 function serializeToolOutput(value) {
@@ -11330,7 +11394,13 @@ async function callOpenAIManagerConversation(db, input, context, previousRespons
     }) ? 24 : 8,
     jsonSchema: managerConversationJsonSchema,
     reasoningEffort: managerReasoningEffort(turn.mode),
-    maxOutputTokens: 6e3,
+    maxOutputTokens: managerConversationOutputTokenBudget(input.body),
+    validateOutputText: async (outputText) => {
+      const output = parseManagerConversationOutput2(outputText);
+      await preflightManagerMissionGraphTasks(db, runId ?? "", output);
+    },
+    outputRepairAttempts: 2,
+    shouldRepairOutputError: isRecoverableManagerOutputError,
     contextManagement: [
       {
         type: "compaction",
