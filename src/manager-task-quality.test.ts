@@ -175,6 +175,18 @@ describe("Manager human Task quality", () => {
 
     expect(() => parseAdaptivePlanOutput(output, validation)).toThrow(/duplicates/i);
   });
+
+  it("rejects internal runtime instructions even when the rest of the Task is structurally valid", () => {
+    const output = replanWithTask({
+      steps: [
+        "Retrieve the artist operating packet and copy its evidence ids into mission.sourceRefs.",
+        "Populate the permissionRequests queue for the proposed external action.",
+        "Return the generated database records to Desk so the Manager can continue.",
+      ],
+    });
+
+    expect(() => parseAdaptivePlanOutput(output, validation)).toThrow(/system support/i);
+  });
 });
 
 function replanWithTask(task: Partial<Record<string, unknown>>) {

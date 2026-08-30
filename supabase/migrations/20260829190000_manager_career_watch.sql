@@ -14,4 +14,30 @@ create or replace function public.claim_due_manager_career_watch_v1(batch_size i
 insert into public.manager_career_watch_state(account_id,artist_workspace_id,artist_id,next_run_at) select account_id,id,artist_id,now() from public.artist_workspaces on conflict do nothing;
 create or replace function public.enable_manager_career_watch_for_workspace_v1() returns trigger language plpgsql security definer set search_path=public as $$begin insert into public.manager_career_watch_state(account_id,artist_workspace_id,artist_id,next_run_at) values(new.account_id,new.id,new.artist_id,now()) on conflict do nothing;return new;end$$;drop trigger if exists enable_manager_career_watch_for_workspace on public.artist_workspaces;create trigger enable_manager_career_watch_for_workspace after insert on public.artist_workspaces for each row execute function public.enable_manager_career_watch_for_workspace_v1();
 
-do $$declare command text;begin if exists(select 1 from pg_extension where extname='pg_cron') then perform cron.unschedule(jobid) from cron.job where jobname='manager-career-watch-dispatcher';perform cron.schedule('manager-career-watch-dispatcher','17 * * * *',$cron$select net.http_post(url:=current_setting('app.settings.supabase_url')||'/functions/v1/manager-career-watch-dispatcher',headers:=jsonb_build_object('Content-Type','application/json','x-workflow-worker-secret',current_setting('app.settings.workflow_worker_secret')),body:='{}'::jsonb);$cron$);end if;end$$;
+do $$
+begin
+  if exists(select 1 from pg_extension where extname='pg_cron') then
+    if not exists(select 1 from vault.decrypted_secrets where name='workflow_worker_secret') then
+      raise exception 'Vault secret workflow_worker_secret must exist before scheduling Career Watch';
+    end if;
+    if not exists(select 1 from vault.decrypted_secrets where name='project_url') then
+      raise exception 'Vault secret project_url must exist before scheduling Career Watch';
+    end if;
+    perform cron.unschedule(jobid) from cron.job where jobname='manager-career-watch-dispatcher';
+    perform cron.schedule(
+      'manager-career-watch-dispatcher',
+      '17 * * * *',
+      $cron$
+        select net.http_post(
+          url:=regexp_replace(endpoint.decrypted_secret,'/$','')||'/functions/v1/manager-career-watch-dispatcher',
+          headers:=jsonb_build_object('Content-Type','application/json','x-workflow-worker-secret',secret.decrypted_secret),
+          body:='{}'::jsonb
+        )
+        from vault.decrypted_secrets secret
+        cross join vault.decrypted_secrets endpoint
+        where secret.name='workflow_worker_secret'
+          and endpoint.name='project_url';
+      $cron$
+    );
+  end if;
+end$$;

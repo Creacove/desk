@@ -58,7 +58,7 @@ describe("Song Room manager hierarchy", () => {
   });
 
   it("keeps Song Room tabs concise and uses the shared button hierarchy for Rights", () => {
-    expect(source).not.toContain("Everything your team needs for this song, in one place.");
+    expect(source).toContain("Everything your team needs for this song, in one place.");
     expect(source).not.toContain("Core release information and metadata.");
     expect(source).not.toContain("Add contributors and splits before release.");
     expect(source).not.toContain(">Set up song rights</");

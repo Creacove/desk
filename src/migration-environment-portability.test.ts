@@ -15,4 +15,17 @@ describe("migration environment portability", () => {
 
     expect(hardcodedFunctionUrls).toEqual([]);
   });
+
+  it("loads scheduled Edge Function endpoints and capabilities from Vault", () => {
+    const migrationsRoot = join(process.cwd(), "supabase", "migrations");
+    const legacySettings = readdirSync(migrationsRoot)
+      .filter((file) => file.endsWith(".sql"))
+      .flatMap((file) => {
+        const sql = readFileSync(join(migrationsRoot, file), "utf8");
+        return [...sql.matchAll(/current_setting\('app\.settings\.(?:supabase_url|workflow_worker_secret)'\)/gi)]
+          .map((match) => `${file}: ${match[0]}`);
+      });
+
+    expect(legacySettings).toEqual([]);
+  });
 });

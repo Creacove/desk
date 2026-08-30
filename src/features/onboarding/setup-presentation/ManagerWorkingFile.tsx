@@ -194,7 +194,7 @@ function WorkingFileSheet({
   settled: SetupPresentationFinding[];
   collapsedSettledCount: number;
 }) {
-  const visibleSettled = settled.slice(-MAX_RENDERED_EVIDENCE);
+  const visibleSettled = selectVisibleSettled(settled);
   const hiddenSettledCount = collapsedSettledCount + Math.max(0, settled.length - visibleSettled.length);
 
   return (
@@ -231,6 +231,13 @@ function WorkingFileSheet({
         ) : null}
     </article>
   );
+}
+
+function selectVisibleSettled(settled: SetupPresentationFinding[]) {
+  const recent = settled.slice(-MAX_RENDERED_EVIDENCE);
+  const managerRead = [...settled].reverse().find((finding) => finding.destination === "manager_read");
+  if (!managerRead || recent.some((finding) => finding.id === managerRead.id)) return recent;
+  return [managerRead, ...recent.slice(-(MAX_RENDERED_EVIDENCE - 1))];
 }
 
 function EvidenceModule({ finding }: { finding: SetupPresentationFinding }) {

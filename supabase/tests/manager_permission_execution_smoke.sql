@@ -46,6 +46,9 @@ begin
   if to_regprocedure('public.fail_manager_action_execution_v1(uuid,text,jsonb,boolean)') is null then
     raise exception 'fail_manager_action_execution_v1 is missing';
   end if;
+  if to_regprocedure('public.recover_stale_manager_action_executions_v1(integer)') is null then
+    raise exception 'stale external-action claim recovery is missing';
+  end if;
 
   if not exists (
     select 1 from pg_trigger
@@ -146,6 +149,12 @@ begin
     where jobname = 'manager-runtime-review-recovery' and active
   ) then
     raise exception 'permission continuation cannot reuse the Manager runtime review dispatcher';
+  end if;
+  if not exists (
+    select 1 from cron.job
+    where jobname = 'manager-external-action-recovery' and active
+  ) then
+    raise exception 'abandoned external-action claims can remain permanently running';
   end if;
 end;
 $$;

@@ -1,6 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { boundedProviderTimeoutMs, claimRuntimeAdmission, fetchProviderWithTimeout, finishRuntimeAdmission } from "../_shared/managerRuntimeGuardrails.ts";
 
 const MODEL = () => Deno.env.get("OPENAI_MANAGER_REASONING_MODEL")
   || Deno.env.get("OPENAI_SUMMARY_MODEL")
@@ -23,6 +24,7 @@ type ClaimedCandidate = {
   effect_fingerprint: string;
   attempt_count: number;
   context_payload: Record<string, unknown>;
+  lease_token: string;
 };
 
 type ManagerActionDecision = {
@@ -62,6 +64,7 @@ Deno.serve(withAppErrorCapture("manager-action-intent-runner", async (request) =
   let candidate: ClaimedCandidate | null = null;
   let runId: string | null = null;
   let usageId: string | null = null;
+  let admissionId: string | null = null;
   let db: any = null;
   let failureStage = "validate_request";
 
@@ -84,6 +87,21 @@ Deno.serve(withAppErrorCapture("manager-action-intent-runner", async (request) =
       return json({ status: "not_claimed", candidateId: input.candidateId });
     }
 
+    failureStage = "runtime_admission";
+    const admission = await claimRuntimeAdmission(db, {
+      accountId: candidate.account_id,
+      artistWorkspaceId: candidate.artist_workspace_id,
+      artistId: candidate.artist_id,
+      operationKey: "external_action_decision",
+      requestSlots: 1,
+      ttlSeconds: 180,
+    });
+    if (!admission.allowed) {
+      await deferCandidate(db, candidate, `Manager runtime admission deferred: ${admission.reason ?? "capacity_limit"}`);
+      return json({ status: "deferred", candidateId: candidate.id, reason: admission.reason ?? "capacity_limit" }, 202);
+    }
+    admissionId = typeof admission.admissionId === "string" ? admission.admissionId : null;
+
     failureStage = "load_context";
     const context = await loadDecisionContext(db, candidate);
 
@@ -102,8 +120,13 @@ Deno.serve(withAppErrorCapture("manager-action-intent-runner", async (request) =
     }
 
     failureStage = "complete_candidate";
-    const completed = await completeCandidate(db, candidate.id, runId, decision);
+    const completed = await completeCandidate(db, candidate, runId, decision);
     await completeUsageEventSafe(db, usageId, usage);
+    try {
+      await finishRuntimeAdmission(db, admissionId, "completed");
+    } catch (error) {
+      console.warn("manager-action-intent-runner: admission finalization failed after durable completion", describeError(error, "admission finalization failed"));
+    }
 
     return json({
       status: "completed",
@@ -114,7 +137,10 @@ Deno.serve(withAppErrorCapture("manager-action-intent-runner", async (request) =
     const message = describeError(error, "Manager could not safely decide the external action.");
     if (runId && db) await failRunSafe(db, runId, message);
     if (usageId && db) await failUsageSafe(db, usageId, message);
-    if (candidate?.id && db) await requeueCandidateSafe(db, candidate.id, message);
+    if (admissionId && db) {
+      try { await finishRuntimeAdmission(db, admissionId, "failed", message); } catch { /* Lease expiry is the fallback. */ }
+    }
+    if (candidate?.id && db) await requeueCandidateSafe(db, candidate, message);
 
     const errorEventId = await captureAppError(error, {
       functionName: "manager-action-intent-runner",
@@ -160,7 +186,9 @@ async function claimCandidate(db: any, candidateId: string): Promise<ClaimedCand
   const { data, error } = await db.rpc("claim_manager_action_candidate_v1", { p_candidate_id: candidateId });
   if (error) throw error;
   const row = Array.isArray(data) ? data[0] : data;
-  return row?.id ? row as ClaimedCandidate : null;
+  if (!row?.id) return null;
+  if (typeof row.lease_token !== "string" || !row.lease_token) throw new Error("Manager action candidate claim did not return an ownership token.");
+  return row as ClaimedCandidate;
 }
 
 async function loadDecisionContext(db: any, candidate: ClaimedCandidate) {
@@ -281,7 +309,7 @@ async function createUsageEvent(db: any, candidate: ClaimedCandidate, runId: str
 }
 
 async function requestDecision(context: Record<string, unknown>) {
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetchProviderWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`,
@@ -294,7 +322,7 @@ async function requestDecision(context: Record<string, unknown>) {
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...decisionSchema } },
     }),
-  });
+  }, boundedProviderTimeoutMs(Deno.env.get("OPENAI_PROVIDER_TIMEOUT_MS"), 90_000));
 
   if (!response.ok) {
     const body = await response.text();
@@ -329,32 +357,19 @@ async function persistPreparationIntent(
   runId: string,
   decision: ManagerActionDecision,
 ) {
-  const { data: inserted, error: insertError } = await db.from("manager_run_actions").insert({
-    account_id: candidate.account_id,
-    artist_workspace_id: candidate.artist_workspace_id,
-    artist_id: candidate.artist_id,
-    manager_synthesis_run_id: runId,
-    order_index: 0,
-    action_type: "prepare_split_confirmations_for_approval",
-    target_type: "focused_music_item",
-    status: "pending",
-    approval_required: false,
-    payload: {
-      actionType: "prepare_split_confirmations_for_approval",
-      targetType: "focused_music_item",
-      title: "Prepare split confirmations",
-      body: decision.reason,
-      approvalRequired: false,
-    },
-    result_payload: {},
-  }).select("id").single();
+  const { data: inserted, error: insertError } = await db.rpc("persist_manager_action_candidate_intent_v1", {
+    p_candidate_id: candidate.id,
+    p_lease_token: candidate.lease_token,
+    p_run_id: runId,
+    p_reason: decision.reason,
+  });
   if (insertError) throw insertError;
 
   // PostgreSQL RETURNING does not promise visibility of a separate UPDATE issued
   // by an AFTER trigger. Re-read after the insert transaction settles so the
   // runner verifies the actual durable trigger result instead of stale pending
   // state and accidentally requeuing a successfully prepared permission.
-  const actionId = String(inserted?.id ?? "");
+  const actionId = String(inserted ?? "");
   if (!actionId) throw new Error("Typed split-confirmation preparation action was not persisted.");
 
   const { data, error } = await db.from("manager_run_actions")
@@ -376,12 +391,13 @@ async function persistPreparationIntent(
 
 async function completeCandidate(
   db: any,
-  candidateId: string,
+  candidate: ClaimedCandidate,
   runId: string,
   decision: ManagerActionDecision,
 ) {
-  const { data, error } = await db.rpc("complete_manager_action_candidate_v1", {
-    p_candidate_id: candidateId,
+  const { data, error } = await db.rpc("complete_manager_action_candidate_v2", {
+    p_candidate_id: candidate.id,
+    p_lease_token: candidate.lease_token,
     p_run_id: runId,
     p_decision: decision.decision,
     p_reason: decision.reason,
@@ -433,15 +449,25 @@ async function failUsageSafe(db: any, usageId: string, message: string) {
   }
 }
 
-async function requeueCandidateSafe(db: any, candidateId: string, message: string) {
+async function requeueCandidateSafe(db: any, candidate: ClaimedCandidate, message: string) {
   try {
-    await db.rpc("requeue_manager_action_candidate_v1", {
-      p_candidate_id: candidateId,
+    await db.rpc("requeue_manager_action_candidate_v2", {
+      p_candidate_id: candidate.id,
+      p_lease_token: candidate.lease_token,
       p_error: message,
     });
   } catch {
     // The stale-claim reaper is the final recovery path.
   }
+}
+
+async function deferCandidate(db: any, candidate: ClaimedCandidate, message: string) {
+  const { error } = await db.rpc("defer_manager_action_candidate_v1", {
+    p_candidate_id: candidate.id,
+    p_lease_token: candidate.lease_token,
+    p_reason: message,
+  });
+  if (error) throw error;
 }
 
 function readOutputText(payload: Record<string, unknown>) {

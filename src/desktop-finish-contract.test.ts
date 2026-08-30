@@ -28,7 +28,7 @@ describe("OrderSounds desktop finish contract", () => {
   });
 
   it("positions Manager as a working partner across its entry surfaces", () => {
-    expect(home).toContain('placeholder="What do you want to work on?"');
+    expect(home).toContain('placeholder="Tell Desk what changed, or ask something"');
     expect(managerComposer).toContain('placeholder = "What do you want to work on?"');
     expect(manager).toContain('placeholder="What do you want to work on?"');
     expect(taskSheet).toContain("Work with Manager");

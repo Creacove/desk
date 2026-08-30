@@ -388,6 +388,15 @@ verify_jwt = false
 [functions.music-audio-analysis-worker]
 verify_jwt = false
 
+[functions.manager-dispatcher]
+verify_jwt = false
+
+[functions.manager-artist-understanding]
+verify_jwt = false
+
+[functions.manager-career-watch-dispatcher]
+verify_jwt = false
+
 [functions.load-split-confirmation]
 verify_jwt = false
 

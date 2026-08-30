@@ -47,6 +47,13 @@ export function assertExecutableHumanTask(task: ExecutableHumanTaskShape) {
     issues.push("Execution steps contain exact or punctuation-only duplicates.");
   }
 
+  const systemFacingStep = steps.find((step) =>
+    /\b(packet|mission\.sourcerefs|source refs|sourcerefs|reference evidence ids|evidence ids into|populate permissionrequests|permissionrequests queue|retrieve artist packet|artist operating packet|attach evidence refs)\b/i.test(step)
+  );
+  if (systemFacingStep) {
+    issues.push(`System support must not appear inside visible human Tasks: ${systemFacingStep}`);
+  }
+
   if (issues.length) throw new HumanTaskContractError(title, issues);
 }
 

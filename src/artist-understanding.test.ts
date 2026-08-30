@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   artistUnderstandingInstructions,
   buildManagerArtistKnowledgeContext,
@@ -9,6 +11,27 @@ import { buildManagerHumanTaskGenerationContract } from '../supabase/functions/_
 import { buildManagerConversationModelContext } from '../supabase/functions/_shared/manager-conversation/context';
 
 describe('Gate 5 artist understanding contract', () => {
+  const worker = readFileSync(join(process.cwd(), 'supabase/functions/manager-artist-understanding/index.ts'), 'utf8');
+  const reliability = readFileSync(join(process.cwd(), 'supabase/migrations/20260829200500_artist_understanding_worker_reliability.sql'), 'utf8');
+
+  it('gates background extraction, bounds provider calls, and records usage', () => {
+    expect(worker).toContain('claimRuntimeAdmission');
+    expect(worker).toContain('operationKey: "artist_understanding"');
+    expect(worker).toContain('fetchProviderWithTimeout');
+    expect(worker).toContain('remainingProviderBudgetMs');
+    expect(worker).toContain('ai_run_usage_events');
+    expect(worker).toContain('provider_request_count: 1');
+  });
+
+  it('uses lease-owned atomic finalization so a stale worker cannot win after reclaim', () => {
+    expect(reliability).toContain('lease_token uuid');
+    expect(reliability).toContain('q.lease_token=p_lease_token');
+    expect(reliability).toContain('finalize_artist_understanding_ingestion_v1');
+    expect(reliability).toContain("q.status='processing'");
+    expect(reliability).toContain('for update');
+    expect(worker).toContain('p_lease_token: row.lease_token');
+    expect(worker).not.toContain('complete_artist_understanding_ingestion_v1');
+  });
   it('keeps artist-confirmed semantic meaning ahead of inference and scopes song context', () => {
     const rows:any[]=[
       {id:'1',scope_type:'music_item',scope_id:'odaeshi',understanding_key:'meaning',category:'meaning',statement:'generic toughness',source_kind:'manager_inference',confidence:'medium',authority:'inferred'},

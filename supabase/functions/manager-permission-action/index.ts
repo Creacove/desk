@@ -1,6 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { fetchProviderWithTimeout } from "../_shared/managerRuntimeGuardrails.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -100,7 +101,7 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
     let sendResponse: Response;
     let sendResult: Record<string, unknown> | null = null;
     try {
-      sendResponse = await fetch(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/send-split-confirmations`, {
+      sendResponse = await fetchProviderWithTimeout(`${supabaseUrl.replace(/\/$/, "")}/functions/v1/send-split-confirmations`, {
         method: "POST",
         headers: {
           Authorization: authHeader,
@@ -108,7 +109,7 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify(sendBody),
-      });
+      }, 120_000);
       sendResult = await readJsonSafe(sendResponse);
     } catch (error) {
       const failure = errorMessage(error, "Approved split confirmation send returned an unknown network result.");

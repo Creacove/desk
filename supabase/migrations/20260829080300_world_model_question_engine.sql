@@ -130,6 +130,7 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+#variable_conflict use_variable
 declare
   review_row public.reviews%rowtype;
   mission_row public.missions%rowtype;

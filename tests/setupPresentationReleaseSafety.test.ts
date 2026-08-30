@@ -25,15 +25,15 @@ describe("setup presentation release safety", () => {
   });
 
   it("always preserves the Manager read section when the settled tail is full", () => {
-    expect(workingFile).toContain('destination: "manager_read"');
-    expect(workingFile).toContain('label: "Manager read"');
+    expect(workingFile).toContain("function selectVisibleSettled");
+    expect(workingFile).toContain('finding.destination === "manager_read"');
     expect(workingFile).toContain("collapsedSettledCount");
   });
 
   it("marks only settled findings as filed", () => {
-    expect(workingFile).toContain("function SettledFinding");
-    expect(workingFile).toContain('aria-label="Filed"');
-    expect(workingFile).toContain("activeDestination");
+    expect(workingFile).toContain("settled={queue.settled}");
+    expect(workingFile).toContain("activeFinding={queue.active}");
+    expect(workingFile).toContain("visibleSettled.map");
   });
 
   it("does not regress into a staged progress wizard", () => {

@@ -135,6 +135,30 @@ describe("ManagerWorkingFile", () => {
     expect(screen.getByText("+1 earlier finding")).toBeTruthy();
   });
 
+  it("keeps the Manager read visible when newer settled evidence fills the board", () => {
+    vi.useFakeTimers();
+    const current = feed([
+      finding({ id: "manager-read", dedupeKey: "manager-read:first", kind: "manager_read", destination: "manager_read", title: "First Manager read", value: "Protect the release narrative." }),
+      ...Array.from({ length: 5 }, (_, index) => finding({
+        id: `finding-${index + 2}`,
+        dedupeKey: `fact:${index + 2}`,
+        persistedAt: `2026-08-23T10:00:0${index + 2}.000Z`,
+        title: `Signal ${index + 2}`,
+        value: String(index + 2),
+      })),
+    ]);
+
+    render(<ManagerWorkingFile snapshot={snapshot(current)} />);
+    for (let index = 0; index < 5; index += 1) {
+      act(() => vi.advanceTimersByTime(600));
+      act(() => vi.advanceTimersByTime(220));
+    }
+
+    const board = screen.getByTestId("manager-file-evidence-board");
+    expect(board.querySelectorAll("[data-evidence-variant]")).toHaveLength(4);
+    expect(board.textContent).toContain("Protect the release narrative.");
+  });
+
   it("keeps platform wording user-facing and never renders an internal vendor", () => {
     const current = feed([finding({ detail: "Spotify catalogue" })]);
     render(<ManagerWorkingFile snapshot={snapshot(current)} />);

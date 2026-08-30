@@ -1,6 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { fetchProviderWithTimeout } from "../_shared/managerRuntimeGuardrails.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,6 +98,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
 
     const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
     const resendApiKey = requireEnv("RESEND_API_KEY");
+    const appOrigin = canonicalAppOrigin(input.appOrigin);
     const from = Deno.env.get("SPLIT_CONFIRMATION_FROM_EMAIL") ?? "Ordersounds <splits@ordersounds.com>";
     const songTitle = readNestedTitle(split) ?? "Split proposal";
     const sent: string[] = [];
@@ -119,7 +121,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
 
       const token = crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
       const confirmationTokenHash = await hashToken(token);
-      const confirmationUrl = `${input.appOrigin.replace(/\/$/, "")}/split-confirmation?token=${encodeURIComponent(token)}`;
+      const confirmationUrl = `${appOrigin}/split-confirmation?token=${encodeURIComponent(token)}`;
 
       const { data: confirmation, error: insertError } = await client.from("music_split_confirmations").insert({
         account_id: input.accountId,
@@ -139,7 +141,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
       const resendIdempotencyKey = managerContext
         ? `${managerContext.executionKey}:contributor:${contributor.id}`
         : null;
-      const emailResponse = await fetch("https://api.resend.com/emails", {
+      const emailResponse = await fetchProviderWithTimeout("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${resendApiKey}`,
@@ -160,7 +162,7 @@ Deno.serve(withAppErrorCapture("send-split-confirmations", async (request) => {
             confirmationUrl,
           }),
         }),
-      });
+      }, 30_000);
       const providerPayload = await readJsonSafe(emailResponse);
       const providerMessageId = typeof providerPayload?.id === "string" ? providerPayload.id : null;
 
@@ -268,6 +270,21 @@ function validateInput(input: SendInput) {
       throw new Error("Manager execution identity is incomplete.");
     }
   }
+}
+
+function canonicalAppOrigin(requestedOrigin: string) {
+  let configured: URL;
+  let requested: URL;
+  try {
+    configured = new URL(requireEnv("DESK_APP_ORIGIN"));
+    requested = new URL(requestedOrigin);
+  } catch {
+    throw new Error("Split confirmation app origin is invalid or not configured.");
+  }
+  if (requested.origin !== configured.origin) {
+    throw new Error("Split confirmation app origin does not match the configured Desk origin.");
+  }
+  return configured.origin;
 }
 
 async function loadManagerExecutionContext(db: any, input: SendInput): Promise<ManagerExecutionContext> {

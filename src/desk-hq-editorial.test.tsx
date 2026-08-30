@@ -73,7 +73,7 @@ describe("Home premium briefing", () => {
     renderHome();
 
     expect(screen.getAllByRole("heading", { name: "Home" })).toHaveLength(1);
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
     expect(screen.queryByText("Desk HQ")).not.toBeInTheDocument();
     expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
   });

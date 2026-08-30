@@ -52,6 +52,7 @@ $projectRef = Get-EnvValue -Name "SUPABASE_PROJECT_REF"
 $resendApiKey = Get-EnvValue -Name "RESEND_API_KEY"
 $serviceRoleKey = Get-EnvValue -Name "SUPABASE_SERVICE_ROLE_KEY"
 $fromEmail = Get-EnvValue -Name "SPLIT_CONFIRMATION_FROM_EMAIL"
+$deskAppOrigin = Get-EnvValue -Name "DESK_APP_ORIGIN"
 
 if (-not $projectRef) {
   throw "SUPABASE_PROJECT_REF is required in environment, $EnvFile, or $FallbackEnvFile."
@@ -69,8 +70,13 @@ if (-not $fromEmail) {
   $fromEmail = "Ordersounds <splits@ordersounds.com>"
 }
 
+if (-not $deskAppOrigin) {
+  throw "DESK_APP_ORIGIN is required in environment, $EnvFile, or $FallbackEnvFile."
+}
+
 supabase secrets set `
   "RESEND_API_KEY=$resendApiKey" `
   "SUPABASE_SERVICE_ROLE_KEY=$serviceRoleKey" `
   "SPLIT_CONFIRMATION_FROM_EMAIL=$fromEmail" `
+  "DESK_APP_ORIGIN=$deskAppOrigin" `
   --project-ref "$projectRef"

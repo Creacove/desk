@@ -1,6 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { captureAppError } from "../_shared/appError.ts";
+import { boundedProviderTimeoutMs, claimRuntimeAdmission, fetchProviderWithTimeout, finishRuntimeAdmission } from "../_shared/managerRuntimeGuardrails.ts";
 
 type QueueRow = {
   id: string;
@@ -12,6 +13,7 @@ type QueueRow = {
   source_version_id: string | null;
   attempt_count: number;
   max_attempts: number;
+  lease_token: string;
 };
 
 type AllowedScope = {
@@ -125,30 +127,66 @@ Deno.serve(withAppErrorCapture("manager-artist-understanding", async (request) =
   const body = await request.json().catch(() => ({}));
   const batchSize = Math.max(1, Math.min(20, integer(body?.batchSize, 6)));
   const db = createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
-  const { data: claimed, error: claimError } = await db.rpc("claim_artist_understanding_ingestion_v1", { batch_size: batchSize });
-  if (claimError) throw claimError;
-
-  const rows = Array.isArray(claimed) ? claimed.filter(isQueueRow) : [];
   const results: Array<Record<string, unknown>> = [];
+  const startedAt = Date.now();
 
-  for (const row of rows) {
+  for (let index = 0; index < batchSize && Date.now() - startedAt < 100_000; index += 1) {
+    const { data: claimed, error: claimError } = await db.rpc("claim_artist_understanding_ingestion_v1", { batch_size: 1 });
+    if (claimError) throw claimError;
+    const row = Array.isArray(claimed) ? claimed.find(isQueueRow) : null;
+    if (!row) break;
+    let admissionId: string | null = null;
+    let usageId: string | null = null;
     try {
       const material = await loadSourceMaterial(db, row);
       if (!material || !material.text.trim()) {
-        await completeQueue(db, row.id);
+        await completeEmptyQueue(db, row);
         results.push({ id: row.id, status: "completed_no_current_text", claims: 0 });
         continue;
       }
 
-      const claims = await extractSemanticClaims(material, row.source_kind);
-      const acceptedClaims = validateClaims(claims, material, row.source_kind);
-      await persistClaims(db, row, material, acceptedClaims);
-      await completeQueue(db, row.id);
+      const remainingProviderBudgetMs = 100_000 - (Date.now() - startedAt) - 5_000;
+      if (remainingProviderBudgetMs < 10_000) {
+        await deferQueue(db, row, "Artist Understanding worker reached its safe invocation budget.");
+        results.push({ id: row.id, status: "deferred", reason: "invocation_budget" });
+        break;
+      }
+
+      const admission = await claimRuntimeAdmission(db, {
+        accountId: row.account_id,
+        artistWorkspaceId: row.artist_workspace_id,
+        artistId: row.artist_id,
+        operationKey: "artist_understanding",
+        requestSlots: 1,
+        ttlSeconds: 180,
+      });
+      if (!admission.allowed) {
+        await deferQueue(db, row, `Manager runtime admission deferred: ${admission.reason ?? "capacity_limit"}`);
+        results.push({ id: row.id, status: "deferred", reason: admission.reason ?? "capacity_limit" });
+        continue;
+      }
+      admissionId = typeof admission.admissionId === "string" ? admission.admissionId : null;
+      usageId = await createUsageEvent(db, row);
+      const extraction = await extractSemanticClaims(material, row.source_kind, remainingProviderBudgetMs);
+      const acceptedClaims = validateClaims(extraction.claims, material, row.source_kind);
+      await completeUsageEvent(db, usageId, extraction.usage);
+      await finalizeQueue(db, row, material, acceptedClaims);
+      try {
+        await finishRuntimeAdmission(db, admissionId, "completed");
+      } catch (error) {
+        console.warn("manager-artist-understanding: admission finalization failed after durable completion", describeError(error));
+      }
       results.push({ id: row.id, status: "completed", claims: acceptedClaims.length });
     } catch (error) {
       const message = describeError(error);
+      await failUsageSafe(db, usageId, message);
       try {
-        await db.rpc("fail_artist_understanding_ingestion_v1", { p_queue_id: row.id, p_error: message });
+        await finishRuntimeAdmission(db, admissionId, "failed", message);
+      } catch {
+        // The admission lease expires automatically; preserve the original failure.
+      }
+      try {
+        await db.rpc("fail_artist_understanding_ingestion_v2", { p_queue_id: row.id, p_lease_token: row.lease_token, p_error: message });
       } catch {
         // Best effort only; capture the original ingestion error below.
       }
@@ -168,7 +206,7 @@ Deno.serve(withAppErrorCapture("manager-artist-understanding", async (request) =
     }
   }
 
-  return json({ processed: rows.length, results });
+  return json({ processed: results.length, results });
 }));
 
 async function loadSourceMaterial(db: any, row: QueueRow): Promise<SourceMaterial | null> {
@@ -308,7 +346,7 @@ async function loadDocumentScopes(db: any, row: QueueRow, documentId: string, fa
   return linked.length > 1 ? linked : fallback;
 }
 
-async function extractSemanticClaims(material: SourceMaterial, sourceKind: QueueRow["source_kind"]): Promise<ExtractedClaim[]> {
+async function extractSemanticClaims(material: SourceMaterial, sourceKind: QueueRow["source_kind"], remainingProviderBudgetMs: number): Promise<{ claims: ExtractedClaim[]; usage: Record<string, unknown> }> {
   const apiKey = requireEnv("OPENAI_API_KEY");
   const artistControlled = sourceKind === "conversation_message" || sourceKind === "context_answer";
   const allowedScopeText = material.allowedScopes.map((scope) => `${scope.scopeType}:${scope.scopeId || "artist"} = ${scope.label}`).join("\n");
@@ -327,24 +365,28 @@ async function extractSemanticClaims(material: SourceMaterial, sourceKind: Queue
     `Source label: ${material.sourceLabel}`,
   ].join("\n");
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
+  const response = await fetchProviderWithTimeout("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       model: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
       reasoning: { effort: "low" },
+      max_output_tokens: 3000,
       instructions,
       input: material.text.slice(0, 24000),
       text: { format: { type: "json_schema", ...extractionSchema } },
     }),
-  });
+  }, Math.min(boundedProviderTimeoutMs(Deno.env.get("OPENAI_PROVIDER_TIMEOUT_MS"), 90_000), remainingProviderBudgetMs));
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`OpenAI Artist Understanding extraction failed with status ${response.status}: ${body.slice(0, 500)}`);
   }
   const payload = await response.json();
   const parsed = JSON.parse(readOutputText(payload));
-  return Array.isArray(parsed?.claims) ? parsed.claims as ExtractedClaim[] : [];
+  return {
+    claims: Array.isArray(parsed?.claims) ? parsed.claims as ExtractedClaim[] : [],
+    usage: isRecord(payload?.usage) ? payload.usage : {},
+  };
 }
 
 function validateClaims(claims: ExtractedClaim[], material: SourceMaterial, sourceKind: QueueRow["source_kind"]) {
@@ -372,57 +414,82 @@ function validateClaims(claims: ExtractedClaim[], material: SourceMaterial, sour
   return valid;
 }
 
-async function persistClaims(db: any, row: QueueRow, material: SourceMaterial, claims: ExtractedClaim[]) {
-  if (row.source_kind === "document") {
-    const { error } = await db.from("artist_understandings")
-      .update({ status: "superseded" })
-      .eq("account_id", row.account_id)
-      .eq("artist_workspace_id", row.artist_workspace_id)
-      .eq("artist_id", row.artist_id)
-      .eq("status", "current")
-      .eq("source_type", "document_semantic_extraction")
-      .eq("source_id", row.source_id)
-      .neq("source_ref", material.sourceRef);
-    if (error) throw error;
-  }
+async function finalizeQueue(db: any, row: QueueRow, material: SourceMaterial, claims: ExtractedClaim[]) {
+  const { data, error } = await db.rpc("finalize_artist_understanding_ingestion_v1", {
+    p_queue_id: row.id,
+    p_lease_token: row.lease_token,
+    p_claims: claims,
+    p_source_label: material.sourceLabel,
+    p_source_kind: material.sourceKind,
+    p_source_ref: material.sourceRef,
+  });
+  if (error) throw error;
+  if (data !== true) throw new Error("Artist Understanding lease expired before finalization.");
+}
 
-  for (const claim of claims) {
-    const confidence = claim.confidence === "high" ? "high" : claim.confidence === "low" ? "low" : "medium";
-    const { error } = await db.rpc("upsert_artist_understanding_v1", {
-      p_account_id: row.account_id,
-      p_artist_workspace_id: row.artist_workspace_id,
-      p_artist_id: row.artist_id,
-      p_scope_type: claim.scopeType,
-      p_scope_id: claim.scopeType === "artist" ? null : claim.scopeId,
-      p_understanding_key: claim.key,
-      p_category: claim.category,
-      p_statement: claim.statement,
-      p_structured_value: { extractedFrom: material.sourceLabel, directlyAsserted: claim.directlyAsserted },
-      p_source_kind: material.sourceKind,
-      p_source_type: material.sourceType,
-      p_source_id: row.source_id,
-      p_source_ref: material.sourceRef,
-      p_confidence: confidence,
-      p_authority: material.authority,
-      p_created_from_run_id: null,
-      p_created_by_type: material.authority === "artist_confirmed" ? "user" : "manager",
-    });
-    if (error) throw error;
-  }
+async function completeEmptyQueue(db: any, row: QueueRow) {
+  const { data, error } = await db.rpc("complete_artist_understanding_ingestion_v2", { p_queue_id: row.id, p_lease_token: row.lease_token });
+  if (error) throw error;
+  if (data !== true) throw new Error("Artist Understanding lease expired before completion.");
+}
 
-  if (!claims.length && row.source_kind === "document") {
-    const { error } = await db.rpc("sync_manager_knowledge_projection_v1", {
-      p_account_id: row.account_id,
-      p_artist_workspace_id: row.artist_workspace_id,
-      p_artist_id: row.artist_id,
-    });
-    if (error) throw error;
+async function deferQueue(db: any, row: QueueRow, reason: string) {
+  const { data, error } = await db.rpc("defer_artist_understanding_ingestion_v1", { p_queue_id: row.id, p_lease_token: row.lease_token, p_reason: reason });
+  if (error) throw error;
+  if (data !== true) throw new Error("Artist Understanding lease expired before deferral.");
+}
+
+async function createUsageEvent(db: any, row: QueueRow) {
+  const { data, error } = await db.from("ai_run_usage_events").insert({
+    account_id: row.account_id,
+    artist_workspace_id: row.artist_workspace_id,
+    artist_id: row.artist_id,
+    workflow_key: "evidence_extraction",
+    run_type: "evidence_extraction",
+    subject_type: row.source_kind,
+    subject_id: row.source_id,
+    provider: "openai",
+    model_or_tool: Deno.env.get("OPENAI_MANAGER_REASONING_MODEL") || Deno.env.get("OPENAI_SUMMARY_MODEL") || "gpt-5-mini",
+    operation_key: "artist_understanding",
+    status: "started",
+    provider_request_count: 1,
+    metadata: { queueId: row.id, attempt: row.attempt_count },
+  }).select("id").single();
+  if (error) throw error;
+  return String(data.id);
+}
+
+async function completeUsageEvent(db: any, usageId: string, usage: Record<string, unknown>) {
+  const inputDetails = isRecord(usage.input_tokens_details) ? usage.input_tokens_details : {};
+  const outputDetails = isRecord(usage.output_tokens_details) ? usage.output_tokens_details : {};
+  const { error } = await db.from("ai_run_usage_events").update({
+    status: "succeeded",
+    input_tokens: nonNegativeInteger(usage.input_tokens),
+    cached_input_tokens: nonNegativeInteger(inputDetails.cached_tokens),
+    output_tokens: nonNegativeInteger(usage.output_tokens),
+    reasoning_tokens: nonNegativeInteger(outputDetails.reasoning_tokens),
+    provider_request_count: 1,
+    completed_at: new Date().toISOString(),
+    metadata: usage,
+  }).eq("id", usageId).eq("status", "started");
+  if (error) throw error;
+}
+
+async function failUsageSafe(db: any, usageId: string | null, message: string) {
+  if (!usageId) return;
+  try {
+    await db.from("ai_run_usage_events").update({
+      status: "failed",
+      failure_reason: message.slice(0, 1000),
+      completed_at: new Date().toISOString(),
+    }).eq("id", usageId).eq("status", "started");
+  } catch {
+    // The started event still accounts for the provider request if finalization fails.
   }
 }
 
-async function completeQueue(db: any, id: string) {
-  const { error } = await db.rpc("complete_artist_understanding_ingestion_v1", { p_queue_id: id });
-  if (error) throw error;
+function nonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : null;
 }
 
 function compactSourceText(values: unknown[]) {
@@ -466,7 +533,7 @@ function readOutputText(payload: unknown) {
 function isQueueRow(value: unknown): value is QueueRow {
   if (!isRecord(value)) return false;
   return typeof value.id === "string" && typeof value.account_id === "string" && typeof value.artist_workspace_id === "string" && typeof value.artist_id === "string" &&
-    (value.source_kind === "conversation_message" || value.source_kind === "context_answer" || value.source_kind === "document") && typeof value.source_id === "string";
+    (value.source_kind === "conversation_message" || value.source_kind === "context_answer" || value.source_kind === "document") && typeof value.source_id === "string" && typeof value.lease_token === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, any> {

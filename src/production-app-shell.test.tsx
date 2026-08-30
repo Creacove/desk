@@ -1476,9 +1476,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Ordersounds Desk navigation" })).toBeInTheDocument();
     expect(screen.getByTestId("desk-editorial-brief")).toBeInTheDocument();
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
     expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("What do you want to work on?")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Tell Desk what changed, or ask something")).toBeInTheDocument();
     const metrics = screen.getAllByTestId("desk-signal-metric");
     expect(metrics.length).toBeGreaterThan(0);
     expect(metrics.length).toBeLessThanOrEqual(4);
@@ -1616,7 +1616,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText("Evidence read")).not.toBeInTheDocument();
     expect(screen.queryByText("Artist Score is a broad strength input for the Manager read, not a separate visible section.")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "View evidence" })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Generate setup map" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Refresh public context" })).not.toBeInTheDocument();
     expect(screen.queryByText(initialBrief.sourceLine)).not.toBeInTheDocument();
@@ -1631,7 +1631,7 @@ describe("Clean production prototype-match shell", () => {
     await waitFor(() => expect(generationModes).toEqual(["operating"]));
     expect(await screen.findByText(refreshedBrief.headlineRead)).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("What do you want to work on?"), {
+    fireEvent.change(screen.getByPlaceholderText("Tell Desk what changed, or ask something"), {
       target: { value: "What should I do with the UK signal today?" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send to Manager" }));
@@ -1759,9 +1759,9 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByRole("button", { name: /Music Focus.*Jam.*Open record read/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Mission Path.*1 active.*Turn read into work/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Team Agents.*5 specialist desks.*Open operating team/i })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
 
-    fireEvent.change(screen.getByPlaceholderText("What do you want to work on?"), {
+    fireEvent.change(screen.getByPlaceholderText("Tell Desk what changed, or ask something"), {
       target: { value: "Turn this into a manager conversation" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send to Manager" }));
@@ -1801,7 +1801,7 @@ describe("Clean production prototype-match shell", () => {
     expect(screen.queryByText(/This long mission description/)).not.toBeInTheDocument();
     expect(screen.queryByText("Open mission")).not.toBeInTheDocument();
     expect(screen.queryAllByTestId("desk-signal-metric").length).toBeLessThanOrEqual(4);
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
   }, 20000);
   it("keeps mobile Activity access in global chrome without duplicating Home", async () => {
     render(
@@ -1816,9 +1816,9 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-home")).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-generate-brief")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
     expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
-    expect(screen.getByPlaceholderText("What do you want to work on?")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Tell Desk what changed, or ask something")).toBeInTheDocument();
     expect(screen.queryByTestId("desk-mobile-command-row")).not.toBeInTheDocument();
     expect(screen.queryByTestId("desk-desktop-attention-rail")).not.toBeInTheDocument();
     expect(screen.getByTestId("mobile-app-topbar")).toHaveClass("backdrop-blur-xl");
@@ -1980,7 +1980,7 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
     expect(screen.queryByRole("form", { name: "Work with Manager on mobile" })).not.toBeInTheDocument();
     expect(screen.queryByText(richBrief.snapshotSummary)).not.toBeInTheDocument();
     expect(screen.queryByText(/confidence/i)).not.toBeInTheDocument();
@@ -2046,7 +2046,7 @@ describe("Clean production prototype-match shell", () => {
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
     expect(screen.getByText(savedBrief.headlineRead)).toBeInTheDocument();
     expect(screen.getByTestId("desk-manager-read")).toHaveTextContent("London");
-    expect(screen.getAllByRole("form", { name: "Work with Manager" })).toHaveLength(1);
+    expect(screen.getAllByRole("form", { name: "Update or ask Desk" })).toHaveLength(1);
     expect(screen.queryByText(/generation failed/i)).not.toBeInTheDocument();
   }, 20000);
   it("expands a long Manager's Read at paragraph boundaries without losing the full read", async () => {
@@ -4675,9 +4675,9 @@ describe("Clean production prototype-match shell", () => {
     fireEvent.click(screen.getAllByRole("heading", { name: mission.title })[0]);
     fireEvent.click(screen.getByRole("button", { name: /Complete evidence task/i }));
     const taskDialog = screen.getByRole("dialog", { name: "Complete evidence task" });
-    fireEvent.click(within(taskDialog).getByRole("button", { name: "Add result" }));
+    fireEvent.click(within(taskDialog).getByRole("button", { name: "Already done" }));
     fireEvent.change(within(taskDialog).getByLabelText("What changed?"), { target: { value: "Outcome captured without private content." } });
-    fireEvent.click(within(taskDialog).getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(within(taskDialog).getByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(repositories.missions.completeTask).toHaveBeenCalled());
     expect(analyticsMock.trackEventOnce).toHaveBeenCalledWith(

@@ -1,4 +1,5 @@
 import { buildManagerHumanTaskGenerationContract } from "./managerHumanTaskGenerationContract.ts";
+import { assertExecutableHumanTask } from "./managerTaskQuality.ts";
 
 export type MissionGenesisMode = "initial" | "continuation";
 
@@ -747,6 +748,7 @@ function validateHumanTaskContract(tasks: MissionGenesisTask[], label: string) {
     if (task.completionMode === "evidence") {
       throw new Error(`${label} returned a required upload even though uploads must remain optional context.`);
     }
+    assertExecutableHumanTask(task);
   }
 }
 

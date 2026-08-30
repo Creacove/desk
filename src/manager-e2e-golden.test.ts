@@ -21,6 +21,7 @@ const contentResponse = read('supabase/migrations/20260829080600_content_respons
 const resultAdaptation = read('supabase/migrations/20260829080800_generic_task_result_adaptation.sql');
 const continuation = read('supabase/migrations/20260829080630_manager_result_adaptation_continuation.sql');
 const careerWatchMigration = read('supabase/migrations/20260829190000_manager_career_watch.sql');
+const careerWatchReliability = read('supabase/migrations/20260829200700_manager_career_watch_reliability.sql');
 
 const knowledge = {
   contractVersion: 'manager-knowledge-v1',
@@ -118,9 +119,10 @@ describe('Gate 7 full Manager golden path', () => {
     expect(careerWatchMigration).toContain("'adaptive_replan'");
     expect(careerWatchMigration).toContain("'due'");
     expect(careerWatchMigration).toContain("review_key:='career-watch:'");
-    expect(careerWatchWorker).toContain('.eq("evidence_type","manager_career_watch")');
-    expect(careerWatchWorker).toContain('mode:"adaptive_replan"');
-    expect(careerWatchWorker).toContain('source:"manager-career-watch"');
+    expect(careerWatchReliability).toContain('persist_manager_career_watch_evidence_v1');
+    expect(careerWatchReliability).toContain("evidence_type = 'manager_career_watch'");
+    expect(careerWatchWorker).toContain('mode: "adaptive_replan"');
+    expect(careerWatchWorker).toContain('source: "manager-career-watch"');
   });
 
   it('keeps external action behind Manager intent and artist approval, then wakes continuation', () => {

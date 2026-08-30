@@ -23,6 +23,9 @@ describe("split confirmation edge functions", () => {
     expect(source).toContain("expiresAt");
     expect(source).toContain("Review split");
     expect(source).toContain("failed:");
+    expect(source).toContain('requireEnv("DESK_APP_ORIGIN")');
+    expect(source).toContain("fetchProviderWithTimeout");
+    expect(source).not.toContain('`${input.appOrigin.replace');
     expect(source).not.toContain("confirmation_token text");
   });
 

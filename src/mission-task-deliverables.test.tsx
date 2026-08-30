@@ -19,8 +19,8 @@ describe("mission task execution", () => {
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
     expect(within(dialog).getByText("90-day thesis")).toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
   });
@@ -39,8 +39,8 @@ describe("mission task execution", () => {
     expect(within(dialog).getByText("thesis.pdf")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "Upload" })).toBeEnabled();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], undefined));
   });
 
@@ -69,8 +69,8 @@ describe("mission task execution", () => {
     })));
     expect(await screen.findByText("thesis.pdf")).toBeInTheDocument();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", ["doc-thesis-1"], undefined));
   });
@@ -87,7 +87,7 @@ describe("mission task execution", () => {
     renderMission(mission, { openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Review discovery and artist-attachment evidence" });
-    expect(within(dialog).getByText("In progress")).toBeInTheDocument();
+    expect(within(dialog).getByText("Desk is handling this")).toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Mark complete" })).not.toBeInTheDocument();
     expect(within(dialog).queryByRole("button", { name: "Work with Manager" })).not.toBeInTheDocument();
   });
@@ -125,7 +125,7 @@ describe("mission task execution", () => {
     expect(within(dialog).getByRole("heading", { name: "Position" })).toBeInTheDocument();
     expect(within(dialog).getByText("Lagos")).toHaveClass("font-semibold");
     expect(within(dialog).queryByText(/## Position/)).not.toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "Submit for review" })).toBeEnabled();
+    expect(within(dialog).getByRole("button", { name: "Already done" })).toBeEnabled();
   });
 
   it("keeps Manager review pending until persisted checkpoint state clears it", async () => {
@@ -136,7 +136,7 @@ describe("mission task execution", () => {
     renderMission(mission, { onCompleteTask, openTaskId: "task-thesis" });
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
 
     await waitFor(() => expect(onCompleteTask).toHaveBeenCalledWith("task-thesis", "completed", "", [], "draft-thesis-1"));
@@ -157,13 +157,13 @@ describe("mission task execution", () => {
     });
 
     const dialog = screen.getByRole("dialog", { name: "Provide 90-day thesis" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Already done" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "Submit for review" }));
 
     expect(await screen.findByText("Couldn’t save. Tap to retry.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Provide 90-day thesis/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Manager is unavailable");
-    expect(screen.getByRole("button", { name: "Submit for review" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Already done" })).toBeEnabled();
   });
 
   it("returns revised Manager work to the Manager instead of submitting a stale draft", () => {

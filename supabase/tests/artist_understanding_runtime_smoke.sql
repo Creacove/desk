@@ -6,6 +6,10 @@ declare
   v_context jsonb;
   v_memory text;
   v_claimed_count integer;
+  v_queue_id uuid;
+  v_old_lease uuid;
+  v_new_lease uuid;
+  v_finalized boolean;
 begin
   if to_regclass('public.artist_understanding_ingestion_queue') is null then
     raise exception 'semantic ingestion queue is missing';
@@ -93,12 +97,74 @@ begin
     raise exception 'song document did not enter semantic ingestion';
   end if;
 
+  -- Hosted smoke tests share the queue with real work. Make only these
+  -- transaction-scoped fixtures oldest so the global claim contract selects
+  -- them deterministically; rollback restores every timestamp.
+  update artist_understanding_ingestion_queue
+  set created_at='2000-01-02 00:00:00+00'::timestamptz
+  where artist_workspace_id='20000000-0000-0000-0000-000000000003';
+  update artist_understanding_ingestion_queue
+  set created_at='2000-01-01 00:00:00+00'::timestamptz
+  where source_kind='conversation_message'
+    and source_id='20000000-0000-0000-0000-000000000007';
+
   if not exists(select 1 from cron.job where jobname='artist-understanding-ingestion') then
     raise exception 'semantic ingestion worker is not scheduled';
   end if;
   select count(*) into v_claimed_count from claim_artist_understanding_ingestion_v1(6);
   if v_claimed_count <= 0 then
     raise exception 'queued semantic sources could not be claimed safely';
+  end if;
+
+  select id,lease_token into v_queue_id,v_old_lease
+  from artist_understanding_ingestion_queue
+  where source_kind='conversation_message' and source_id='20000000-0000-0000-0000-000000000007';
+  if v_old_lease is null then
+    raise exception 'target semantic ingestion fixture was not included in the initial claim';
+  end if;
+  -- Isolate the reclaim candidate. claim(1) is intentionally global/oldest-first,
+  -- so another fixture row must not be allowed to consume the one-row batch.
+  update artist_understanding_ingestion_queue
+  set status='completed',completed_at=now(),locked_at=null,lease_token=null
+  where artist_workspace_id='20000000-0000-0000-0000-000000000003'
+    and id<>v_queue_id;
+  update artist_understanding_ingestion_queue set locked_at=now()-interval '6 minutes' where id=v_queue_id;
+  select lease_token into v_new_lease from claim_artist_understanding_ingestion_v1(1) where id=v_queue_id;
+  if v_new_lease is null or v_new_lease=v_old_lease then
+    raise exception 'expired semantic ingestion did not receive a new ownership token';
+  end if;
+
+  v_finalized:=finalize_artist_understanding_ingestion_v1(
+    v_queue_id,v_old_lease,
+    '[{"scopeType":"artist","scopeId":"","key":"artist.identity.stale","category":"artist_identity","statement":"stale worker must not persist","confidence":"high","directlyAsserted":true}]'::jsonb,
+    'Artist conversation statement','artist_statement','conversation_message:20000000-0000-0000-0000-000000000007'
+  );
+  if v_finalized or exists(select 1 from artist_understandings where understanding_key='artist.identity.stale') then
+    raise exception 'stale semantic worker persisted after lease reclaim';
+  end if;
+
+  v_finalized:=finalize_artist_understanding_ingestion_v1(
+    v_queue_id,v_new_lease,
+    '[{"scopeType":"artist","scopeId":"","key":"artist.identity.current","category":"artist_identity","statement":"The artist explicitly centers resilience.","confidence":"high","directlyAsserted":true}]'::jsonb,
+    'Artist conversation statement','artist_statement','conversation_message:20000000-0000-0000-0000-000000000007'
+  );
+  if not v_finalized or not exists(select 1 from artist_understandings where understanding_key='artist.identity.current' and authority='artist_confirmed') then
+    raise exception 'current semantic worker could not atomically finalize its claim';
+  end if;
+
+  update manager_runtime_limits set background_ai_enabled=false
+  where artist_workspace_id='20000000-0000-0000-0000-000000000003';
+  insert into conversation_messages(id,account_id,artist_workspace_id,artist_id,conversation_id,speaker,body)
+  values('20000000-0000-0000-0000-00000000000a','20000000-0000-0000-0000-000000000001','20000000-0000-0000-0000-000000000003','20000000-0000-0000-0000-000000000002','20000000-0000-0000-0000-000000000006','artist','This statement must wait while background AI is disabled.');
+  perform claim_artist_understanding_ingestion_v1(6);
+  if not exists(
+    select 1 from artist_understanding_ingestion_queue
+    where source_kind='conversation_message'
+      and source_id='20000000-0000-0000-0000-00000000000a'
+      and status='queued'
+      and lease_token is null
+  ) then
+    raise exception 'semantic ingestion ignored the background AI kill switch';
   end if;
 end;
 $$;
