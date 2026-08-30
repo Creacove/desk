@@ -115,7 +115,7 @@ const taskSchema = {
     workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
     primaryCheckpointKey: { type: "string" },
     purpose: { type: "string" },
-    steps: { ...stringArraySchema, minItems: 2 },
+    steps: { ...stringArraySchema, minItems: 2, maxItems: 6 },
     evidenceNeeded: stringArraySchema,
     completionExpectation: { type: "string" },
     completionMode: { type: "string", enum: ["result_note", "manager_draft", "evidence"] },
