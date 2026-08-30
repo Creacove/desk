@@ -1429,6 +1429,7 @@ async function persistManagerMissionGraphDecisions(db, input, context, output) {
     outcome: "update_existing_mission",
     existingMissionId: scopedMissionId
   })) : output.missionGraphDecisions;
+  await preflightMissionTasks(db, context, decisions);
   for (const decision of decisions) {
     if (decision.outcome === "activate_mission") {
       const mission = await createMission(db, input, context, decision);
@@ -1666,7 +1667,7 @@ async function writeMissionPlan(db, input, context, missionId, decision) {
       title: task.title,
       schedule_key: task.scheduleKey || null,
       owner_role: task.ownerRole || "Manager",
-      work_mode: task.workMode,
+      work_mode: "manager_work",
       priority: 1,
       status: "proposed",
       approval_state: "not_required",
@@ -1703,6 +1704,7 @@ async function writeMissionPlan(db, input, context, missionId, decision) {
       })));
       if (stepError) throw stepError;
     }
+    await activateHumanTask(db, taskRow.id, task.workMode);
   }
   for (const permission of decision.permissionRequests) {
     const { error } = await db.from("permission_requests").insert({
@@ -1747,6 +1749,36 @@ function unique(values) {
   return [
     ...new Set(values.filter((value) => value && value.trim()).map((value) => value.trim()))
   ];
+}
+async function preflightMissionTasks(db, context, decisions) {
+  for (const task of decisions.flatMap((decision) => decision.tasks)) {
+    if (task.workMode === "manager_work") continue;
+    const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
+      p_task: {
+        scope: "mission",
+        missionPlanVersionId: context.runId,
+        createdFromRunId: context.runId,
+        title: task.title,
+        ownerRole: task.ownerRole,
+        workMode: task.workMode,
+        purpose: task.purpose,
+        completionExpectation: task.completionExpectation,
+        completionMode: task.completionMode,
+        managerResponsibility: task.managerResponsibility,
+        userResponsibility: task.userResponsibility,
+        riskIfLate: task.riskIfLate
+      },
+      p_steps: task.steps
+    });
+    if (error) throw error;
+  }
+}
+async function activateHumanTask(db, taskId, workMode) {
+  if (workMode === "manager_work") return;
+  const { error } = await db.from("tasks").update({
+    work_mode: workMode
+  }).eq("id", taskId).eq("work_mode", "manager_work");
+  if (error) throw error;
 }
 
 // supabase/functions/_shared/mission-patterns/missionPatternRegistry.ts
