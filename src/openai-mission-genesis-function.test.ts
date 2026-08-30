@@ -352,7 +352,8 @@ describe("OpenAI Mission Genesis", () => {
   });
 
   it("persists task participation modes and derives checkpoint waiting state from blocking work", () => {
-    expect(graphPersistenceSource).toContain("work_mode: task.workMode");
+    expect(graphPersistenceSource).toContain('work_mode: "manager_work"');
+    expect(graphPersistenceSource).toContain("await activateHumanTask");
     expect(graphPersistenceSource).toContain("deadline: normalizedDeadline(task.deadline)");
     expect(graphPersistenceSource).toContain('task.workMode !== "manager_work"');
     expect(graphPersistenceSource).not.toContain('task.ownerRole.trim().toLowerCase() !== "manager"');
