@@ -99,10 +99,26 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain("Do not require the artist to reattach");
   });
 
+  it("treats an existing canonical audio asset as completion evidence and suppresses repeat confirmation work", () => {
+    expect(functionSource).toContain("canonicalEvidenceAlreadySatisfiesTask");
+    expect(functionSource).toContain("removeRedundantCanonicalFollowUps");
+    expect(functionSource).toContain("canonical task evidence already satisfies this task");
+    expect(functionSource).toContain("Do not ask the artist to upload, attach, rename, or re-verify the same evidence again");
+  });
+
   it("rejects terminal plan tasks before spending a Manager review run", () => {
-    expect(functionSource).toContain("assertTaskCanBeReviewed(task)");
+    expect(functionSource).toContain("assertTaskCanBeReviewed(task,");
     expect(functionSource).toContain('task.status === "superseded"');
     expect(functionSource).toContain("This task belongs to an earlier mission plan");
+    expect(functionSource).toContain("task.status === \"completed\"");
+    expect(functionSource).toContain("no durable result");
+  });
+
+  it("makes duplicate clicks and concurrent retries idempotent instead of starting another model run", () => {
+    expect(functionSource).toContain("TaskReviewAlreadyRunningError");
+    expect(functionSource).toContain("manager_task_result_one_running_review_idx");
+    expect(functionSource).toContain("alreadyProcessing: true");
+    expect(functionSource).toContain("findCompletedTaskResult");
   });
 
   it("captures the original review failure with task and run correlation", () => {

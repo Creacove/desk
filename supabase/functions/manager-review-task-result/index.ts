@@ -1,5 +1,9 @@
 import { markErrorCaptured, withAppErrorCapture } from "../_shared/appFunction.ts";
 import { captureAppError } from "../_shared/appError.ts";
+import {
+  canonicalEvidenceAlreadySatisfiesTask,
+  removeRedundantCanonicalFollowUps,
+} from "../_shared/managerReviewEvidence.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 
@@ -50,6 +54,13 @@ type ManagerTaskReview = {
   permissionRequests: Array<{ title: string; requestType: string; body: string; risk: string }>;
 };
 
+class TaskReviewAlreadyRunningError extends Error {
+  constructor() {
+    super("Desk is already reviewing this task result.");
+    this.name = "TaskReviewAlreadyRunningError";
+  }
+}
+
 Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => {
   if (request.method === "OPTIONS") return json({ ok: true });
   if (request.method !== "POST") return json({ error: "Method not allowed." }, 405);
@@ -57,6 +68,7 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
   let runId: string | null = null;
   let usageId: string | null = null;
   let input: ReviewInput | undefined;
+  let db: any = null;
   let failureStage = "validate_request";
 
   try {
@@ -78,9 +90,14 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     if (!membership) return json({ error: "Forbidden." }, 403);
     await assertActiveWorkspaceEntitlement(authClient, input);
 
-    const db = createClient(supabaseUrl, serviceRoleKey);
+    db = createClient(supabaseUrl, serviceRoleKey);
     failureStage = "load_review_context";
     const context = await loadReviewContext(db, input, user.id);
+    if (context.existingCompletedResult) {
+      await repairCompletedTaskState(db, input, context.task);
+      const mission = await selectMission(db, input, context.task.mission_id);
+      return json({ mission, review: null, alreadyProcessed: true });
+    }
     failureStage = "create_manager_run";
     runId = await createManagerRun(db, input, context);
     failureStage = "create_usage_event";
@@ -90,8 +107,38 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     const { review, usage } = await callOpenAIManagerReview(context);
     failureStage = "validate_review_continuation";
     await preflightReviewContinuation(db, context, runId, review);
+
+    // A second request can finish model work after the first request has
+    // already persisted the terminal result. Re-read the durable result before
+    // writing any side effects of this run.
+    const completedBeforePersist = await findCompletedTaskResult(db, input);
+    if (completedBeforePersist) {
+      await repairCompletedTaskState(db, input, context.task);
+      await completeManagerRun(db, runId, review);
+      await completeUsageEvent(db, usageId, usage);
+      const mission = await selectMission(db, input, context.task.mission_id);
+      return json({ mission, review: null, alreadyProcessed: true });
+    }
+
     failureStage = "persist_review";
-    await applyManagerReview(db, input, context, runId, review);
+    try {
+      await applyManagerReview(db, input, context, runId, review);
+    } catch (error) {
+      // The database uniqueness boundary wins races where both requests passed
+      // the read above. The winner owns the durable result; the loser becomes a
+      // successful idempotent replay instead of a user-visible 500.
+      if (isTaskReviewCompletionConflict(error)) {
+        const completedResult = await findCompletedTaskResult(db, input);
+        if (completedResult) {
+          await repairCompletedTaskState(db, input, context.task);
+          await completeManagerRun(db, runId, review);
+          await completeUsageEvent(db, usageId, usage);
+          const mission = await selectMission(db, input, context.task.mission_id);
+          return json({ mission, review: null, alreadyProcessed: true });
+        }
+      }
+      throw error;
+    }
     failureStage = "complete_run";
     await completeManagerRun(db, runId, review);
     await completeUsageEvent(db, usageId, usage);
@@ -99,6 +146,22 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     const mission = await selectMission(db, input, context.task.mission_id);
     return json({ mission, review });
   } catch (error) {
+    if (error instanceof TaskReviewAlreadyRunningError && input) {
+      try {
+        const retryDb = db ?? createClient(requireEnv("SUPABASE_URL"), requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
+        const task = await loadTaskIdentity(retryDb, input);
+        const mission = task?.mission_id ? await selectMission(retryDb, input, task.mission_id) : null;
+        return json({
+          mission,
+          review: null,
+          alreadyProcessing: true,
+          message: "Desk is already reviewing this result. Your submission is safe; refresh Missions in a moment.",
+        });
+      } catch {
+        // Fall through to the normal diagnostic path if the status lookup
+        // itself fails. Never hide an infrastructure error behind a success.
+      }
+    }
     const message = describeError(error, "Manager task review failed.");
     const errorEventId = await captureAppError(error, {
       functionName: "manager-review-task-result",
@@ -143,22 +206,22 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
 
   const { data: task, error: taskError } = await db
     .from("tasks")
-    .select("id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+    .select("id,mission_id,primary_checkpoint_id,title,status,approval_state,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
     .eq("id", input.taskId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
     .maybeSingle();
   if (taskError) throw taskError;
   if (!task?.mission_id) throw new Error("Manager task review task was not found.");
-  assertTaskCanBeReviewed(task);
 
-  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, memory, events, managerPackets, submittedDocuments, submittedManagerDraft, canonicalMusicPackage] = await Promise.all([
+  const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, existingCompletedResult, memory, events, managerPackets, submittedDocuments, submittedManagerDraft, canonicalMusicPackage] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
     task.primary_checkpoint_id ? selectCheckpoint(db, input, task.primary_checkpoint_id) : null,
     selectByMission(db, "tasks", "id,mission_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late", input, task.mission_id, 80),
     selectMany(db, "task_steps", "id,task_id,order_index,body", input, 160),
     selectMany(db, "task_results", "id,task_id,mission_id,checkpoint_id,status,summary,user_note,manager_interpretation,mission_effect,recommended_follow_up,created_at", input, 80),
+    findCompletedTaskResult(db, input),
     selectMany(db, "memory_entries", "id,scope,kind,content,source_type,confidence,mission_id,task_id,checkpoint_id,created_at", input, 120),
     selectMany(db, "operating_events", "id,event_type,target_type,target_id,mission_id,checkpoint_id,task_id,summary,payload,created_at", input, 80),
     selectMany(db, "manager_intelligence_packets", "id,packet_type,profile_projection_json,strategic_diagnosis_json,mission_seed_json,conversation_memory_seed_json,supporting_evidence_json,created_at", input, 1),
@@ -166,6 +229,11 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     loadSubmittedManagerDraft(db, input),
     loadTaskMusicPackage(db, input, task.mission_id),
   ]);
+
+  assertTaskCanBeReviewed(task, Boolean(existingCompletedResult));
+  if (input.status === "completed" && ["needs_approval", "blocked", "rejected"].includes(String(task.approval_state ?? ""))) {
+    throw new Error("This task requires approval before it can be completed.");
+  }
 
   if (input.status === "completed" && task.completion_mode === "manager_draft" && !submittedManagerDraft) {
     throw new Error("This task needs a Manager draft before it can be submitted for review.");
@@ -186,6 +254,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     missionTasks,
     taskSteps,
     previousResults,
+    existingCompletedResult,
     memory,
     recentOperatingEvents: events,
     latestManagerIntelligencePacket: managerPackets[0] ?? null,
@@ -202,10 +271,67 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
   };
 }
 
-function assertTaskCanBeReviewed(task: { status?: unknown }) {
+function assertTaskCanBeReviewed(task: { status?: unknown }, hasCompletedResult: boolean) {
   if (task.status === "superseded") {
     throw new Error("This task belongs to an earlier mission plan. Refresh Missions and use the current task instead.");
   }
+  if (task.status === "completed" && !hasCompletedResult) {
+    throw new Error("This task is already complete but has no durable result. Desk stopped before it could finish the review; contact support with the task ID.");
+  }
+  if (["rejected", "archived", "missed"].includes(String(task.status ?? ""))) {
+    throw new Error("This task is already terminal and cannot be submitted again.");
+  }
+}
+
+async function loadTaskIdentity(db: any, input: ReviewInput) {
+  const { data, error } = await db
+    .from("tasks")
+    .select("id,mission_id,status")
+    .eq("id", input.taskId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+async function findCompletedTaskResult(db: any, input: ReviewInput) {
+  const { data, error } = await db
+    .from("task_results")
+    .select("id,task_id,mission_id,checkpoint_id,status,summary,created_at")
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .eq("task_id", input.taskId)
+    .eq("status", "completed")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return data ?? null;
+}
+
+async function repairCompletedTaskState(db: any, input: ReviewInput, task: { status?: unknown }) {
+  if (task.status === "completed") return;
+  const { error } = await db
+    .from("tasks")
+    .update({ status: "completed", updated_at: new Date().toISOString() })
+    .eq("id", input.taskId)
+    .eq("account_id", input.accountId)
+    .eq("artist_workspace_id", input.artistWorkspaceId)
+    .eq("artist_id", input.artistId)
+    .in("status", ["proposed", "open", "in_progress"]);
+  if (error) throw error;
+}
+
+function isTaskReviewCompletionConflict(error: unknown) {
+  if (!isRecord(error)) return false;
+  const code = typeof error.code === "string" ? error.code : "";
+  const message = typeof error.message === "string" ? error.message : "";
+  const detail = typeof error.details === "string" ? error.details : "";
+  if (code !== "23505" && !/duplicate key|unique constraint/i.test(`${message} ${detail}`)) return false;
+  return /task_results_one_completed_per_task_idx|operating_events_one_task_completion_idx|task_state_events_one_task_completion_idx/.test(`${message} ${detail}`);
 }
 
 async function callOpenAIManagerReview(context: unknown) {
@@ -221,6 +347,7 @@ async function callOpenAIManagerReview(context: unknown) {
         "Optional documents can raise confidence when present. Their absence must not prevent task completion; state the evidence limit and choose a safe recommendation from the available packet.",
         "When submittedManagerDraft is present, review that exact immutable version against every deliverableRequirement and completionExpectation.",
         "canonicalMusicPackage is the current persisted Song Room state for this task's Mission. An uploaded or processed canonical Song Room asset is valid evidence even when documentIds is empty. Do not require the artist to reattach, rename, or restate a file that canonicalMusicPackage already proves exists.",
+        "When the packet contains live canonical evidence matching the task contract (an uploaded asset, submitted document, Manager draft, or accepted result), canonical task evidence already satisfies this task. Do not ask the artist to upload, attach, rename, or re-verify the same evidence again. Continue to the next distinct mission step.",
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
@@ -235,8 +362,9 @@ async function callOpenAIManagerReview(context: unknown) {
     throw new Error(`Manager task review request failed with status ${response.status}: ${body.slice(0, 500)}`);
   }
   const payload = await response.json();
+  const normalizedReview = normalizeReview(readOutputText(payload));
   return {
-    review: normalizeReview(readOutputText(payload)),
+    review: applyCanonicalEvidence(normalizedReview, context),
     usage: isRecord(payload.usage) ? payload.usage : {},
   };
 }
@@ -506,6 +634,40 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
   if (outputError) throw outputError;
 }
 
+function applyCanonicalEvidence(review: ManagerTaskReview, context: any): ManagerTaskReview {
+  if (!canonicalEvidenceAlreadySatisfiesTask(context)) return review;
+
+  // A canonical Song Room file is durable evidence. The model can still write
+  // the management read, but it cannot turn the same upload into another
+  // artist-facing confirmation loop.
+  const followUpTasks = removeRedundantCanonicalFollowUps(review.followUpTasks, true, {
+    ...context.task,
+    steps: Array.isArray(context.taskSteps) ? context.taskSteps.map((step: any) => step.body) : [],
+  });
+  const canonicalMessage = "The canonical task evidence already satisfies this task. The persisted workspace state is recorded, so no additional upload, attachment, rename, or re-verification is needed.";
+  const hasDistinctFollowUp = followUpTasks.some((task) => {
+    const owner = task.ownerRole.trim().toLowerCase();
+    return !["manager", "desk", "ai", "ai manager"].includes(owner);
+  });
+
+  return {
+    ...review,
+    outcome: "accepted",
+    summary: canonicalMessage,
+    managerInterpretation: canonicalMessage,
+    missionEffect: "The persisted workspace evidence is now durable mission evidence. Desk can continue with the next distinct operating decision.",
+    checkpointEffect: "The task evidence is satisfied by canonical workspace state; the artist is not asked to repeat the same confirmation.",
+    recommendedFollowUp: hasDistinctFollowUp
+      ? review.recommendedFollowUp
+      : "Continue with the next distinct mission step; no additional confirmation of this evidence is needed.",
+    checkpointStatus: review.checkpointStatus === "met" || review.checkpointStatus === "watching_signal"
+      ? review.checkpointStatus
+      : "ready_for_manager_check",
+    checkpointRecommendation: "Canonical workspace evidence already satisfies this task. Do not ask the artist to upload, attach, rename, or re-verify the same evidence again.",
+    followUpTasks,
+  };
+}
+
 async function preflightReviewContinuation(db: any, context: any, runId: string, review: ManagerTaskReview) {
   const planVersionId = typeof context.mission?.active_plan_version_id === "string"
     ? context.mission.active_plan_version_id
@@ -573,7 +735,15 @@ async function createManagerRun(db: any, input: ReviewInput, context: unknown) {
     limitations: [],
     started_at: new Date().toISOString(),
   }).select("id").single();
-  if (error) throw error;
+  if (error) {
+    const code = typeof error.code === "string" ? error.code : "";
+    const message = typeof error.message === "string" ? error.message : "";
+    const detail = typeof error.details === "string" ? error.details : "";
+    if (code === "23505" && /manager_task_result_one_running_review_idx/.test(`${message} ${detail}`)) {
+      throw new TaskReviewAlreadyRunningError();
+    }
+    throw error;
+  }
   return data.id as string;
 }
 

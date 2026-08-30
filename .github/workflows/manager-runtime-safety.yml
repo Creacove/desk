@@ -134,6 +134,9 @@ jobs:
           src/manager-career-watch.test.ts
           src/manager-e2e-golden.test.ts
           src/manager-production-hardening.test.ts
+          src/manager-review-evidence.test.ts
+          src/manager-review-evidence-migration.test.ts
+          src/manager-review-task-result-function.test.ts
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
@@ -155,6 +158,8 @@ jobs:
           supabase/functions/_shared/managerTaskQuality.ts
           supabase/functions/_shared/missionGraphPersistence.ts
           supabase/functions/_shared/manager-conversation/context.ts
+          supabase/functions/_shared/managerReviewEvidence.ts
+          supabase/functions/manager-review-task-result/index.ts
           supabase/functions/manager-artist-understanding/index.ts
           supabase/functions/manager-career-watch/index.ts
           supabase/functions/manager-career-watch-dispatcher/index.ts
