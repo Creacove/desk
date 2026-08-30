@@ -33,7 +33,20 @@ type ManagerTaskReview = {
   missionProgress: number;
   missionRecommendation: string;
   memoryEntries: string[];
-  followUpTasks: Array<{ title: string; purpose: string; ownerRole: string; steps: string[]; evidenceNeeded: string[] }>;
+  followUpTasks: Array<{
+    title: string;
+    purpose: string;
+    ownerRole: string;
+    workMode: "artist_action" | "collaborative";
+    steps: string[];
+    evidenceNeeded: string[];
+    completionExpectation: string;
+    completionMode: "result_note" | "manager_draft";
+    managerResponsibility: string;
+    userResponsibility: string;
+    riskIfLate: string;
+    estimatedMinutes: number;
+  }>;
   permissionRequests: Array<{ title: string; requestType: string; body: string; risk: string }>;
 };
 
@@ -206,6 +219,7 @@ async function callOpenAIManagerReview(context: unknown) {
         "Return outcome accepted only when the completion contract is met, needs_revision when the same task should continue with concrete edits, or blocked when an external dependency prevents progress.",
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
+        "Every human follow-up must be immediately executable: provide at least two distinct ordered steps (at least four for content/video execution), a concrete completion expectation, the exact work Desk will do, the exact work the artist/team must do, and the risk of delay. Desk must complete the Manager responsibility itself; never assign research, analysis, drafting, interpretation, or planning back to the artist.",
       ].join("\n"),
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...reviewJsonSchema } },
@@ -263,13 +277,20 @@ const reviewJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "purpose", "ownerRole", "steps", "evidenceNeeded"],
+          required: ["title", "purpose", "ownerRole", "workMode", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "managerResponsibility", "userResponsibility", "riskIfLate", "estimatedMinutes"],
           properties: {
             title: { type: "string" },
             purpose: { type: "string" },
             ownerRole: { type: "string" },
-            steps: { type: "array", items: { type: "string" } },
+            workMode: { type: "string", enum: ["artist_action", "collaborative"] },
+            steps: { type: "array", minItems: 2, maxItems: 8, items: { type: "string" } },
             evidenceNeeded: { type: "array", items: { type: "string" } },
+            completionExpectation: { type: "string" },
+            completionMode: { type: "string", enum: ["result_note", "manager_draft"] },
+            managerResponsibility: { type: "string" },
+            userResponsibility: { type: "string" },
+            riskIfLate: { type: "string" },
+            estimatedMinutes: { type: "integer", minimum: 5, maximum: 240 },
           },
         },
       },
@@ -735,9 +756,19 @@ function normalizeReview(raw: string): ManagerTaskReview {
       title: readString(item.title, ""),
       purpose: readString(item.purpose, ""),
       ownerRole: readString(item.ownerRole, "Manager"),
-      steps: readStringArray(item.steps).slice(0, 6),
+      workMode: readEnum(item.workMode, ["artist_action", "collaborative"], "collaborative"),
+      steps: readStringArray(item.steps).slice(0, 8),
       evidenceNeeded: readStringArray(item.evidenceNeeded).slice(0, 8),
-    })).filter((item) => item.title && item.purpose) : [],
+      completionExpectation: readString(item.completionExpectation, ""),
+      completionMode: readEnum(item.completionMode, ["result_note", "manager_draft"], "result_note"),
+      managerResponsibility: readString(item.managerResponsibility, ""),
+      userResponsibility: readString(item.userResponsibility, ""),
+      riskIfLate: readString(item.riskIfLate, ""),
+      estimatedMinutes: Math.max(5, Math.min(240, Number.isFinite(item.estimatedMinutes) ? Math.round(Number(item.estimatedMinutes)) : 30)),
+    })).filter((item) =>
+      item.title && item.purpose && item.steps.length >= 2 && item.completionExpectation &&
+      item.managerResponsibility && item.userResponsibility && item.riskIfLate
+    ) : [],
     permissionRequests: Array.isArray(value.permissionRequests) ? value.permissionRequests.filter(isRecord).map((item) => ({
       title: readString(item.title, ""),
       requestType: readString(item.requestType, "sensitive_commitment"),

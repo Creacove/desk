@@ -71,6 +71,22 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain("After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.");
   });
 
+  it("requires every generated human follow-up to carry the full execution contract before persistence", () => {
+    for (const field of [
+      "workMode",
+      "completionExpectation",
+      "completionMode",
+      "managerResponsibility",
+      "userResponsibility",
+      "riskIfLate",
+      "estimatedMinutes",
+    ]) {
+      expect(functionSource).toContain(`\"${field}\"`);
+    }
+    expect(functionSource).toContain('steps: { type: "array", minItems: 2');
+    expect(functionSource).toContain("Desk must complete the Manager responsibility itself");
+  });
+
   it("rejects terminal plan tasks before spending a Manager review run", () => {
     expect(functionSource).toContain("assertTaskCanBeReviewed(task)");
     expect(functionSource).toContain('task.status === "superseded"');
