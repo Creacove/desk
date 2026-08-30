@@ -102,6 +102,44 @@ describe("Artist World Model + Question Engine", () => {
       permissionRequests: [],
     }, validation())).toThrow("outside the allowed operating scope");
   });
+
+  it("normalizes a contradictory no-change response into the branch its payload actually describes", () => {
+    const withQuestion = parseAdaptivePlanOutput({
+      decision: "no_change",
+      reason: "One fact changes the route.",
+      whatChanged: "Availability changed.",
+      missionRecommendation: "Ask the bounded question before choosing the route.",
+      planSummary: "Keep the current route while asking.",
+      strategyState: strategyState(),
+      questions: [question()],
+      checkpoints: [],
+      tasks: [],
+      permissionRequests: [],
+    }, validation());
+    expect(withQuestion.decision).toBe("needs_context");
+
+    const withReplacement = parseAdaptivePlanOutput({
+      decision: "no_change",
+      reason: "The route needs a concrete replacement graph.",
+      whatChanged: "The current route no longer fits.",
+      missionRecommendation: "Use the replacement checkpoint.",
+      planSummary: "A coherent replacement route.",
+      strategyState: strategyState(),
+      questions: [],
+      checkpoints: [{
+        key: "replacement_gate",
+        title: "Choose the next route",
+        question: "Does the replacement route fit the current evidence?",
+        decisionRule: "Proceed when the route is grounded in current evidence.",
+        managerRead: "The replacement route is ready for execution.",
+        nextAction: "Start the next route.",
+        watchedSignals: [],
+      }],
+      tasks: [],
+      permissionRequests: [],
+    }, validation());
+    expect(withReplacement.decision).toBe("replan");
+  });
 });
 
 function question() {

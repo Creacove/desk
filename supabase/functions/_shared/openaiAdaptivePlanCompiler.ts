@@ -259,6 +259,7 @@ export function buildAdaptivePlanCompilerInstructions() {
     "Your job is not to brainstorm a fresh campaign. Preserve the Mission's durable objective and strategic intent unless the supplied changed reality directly invalidates them.",
     "First decide whether the current route still works, whether one decision-changing human fact is genuinely required, or whether the route needs a new plan version.",
     "Return no_change when the current route still works. Return needs_context ONLY when one missing fact changes which concrete route you would choose. Return replan when the supplied context is already enough to choose the route.",
+    "DECISION/ARRAY INVARIANT: no_change means questions, checkpoints, tasks, and permissionRequests are all empty; needs_context means exactly one question and all replacement work is empty; replan means a complete checkpoint graph and no pending question. If your reasoning changes branches, change the decision value before returning the payload.",
     buildManagerHumanTaskGenerationContract(),
     "QUESTION DECISION CONTRACT: before needs_context, verify all of these: (1) Desk cannot safely infer/research the fact, (2) context.operatingFacts does not already contain a fresh answer, (3) the answer materially changes the current plan, (4) you know the exact decision it changes, (5) the question reveals the idea/hypothesis behind why you need it, (6) you have a fallback if the answer is no/unavailable, (7) context.questionHistory does not show the same question already answered or expired.",
     "Ask ONE question by default and this schema allows at most one. Never ask a generic inventory question such as 'what resources do you have?', 'what is your budget?', 'where are you located?', or 'what equipment do you have?'. Start from a concrete Manager idea and ask only for the missing fact that determines whether that idea is usable.",
@@ -301,10 +302,23 @@ export function parseAdaptivePlanOutput(raw: unknown, context: AdaptivePlanValid
   };
 
   if (output.decision === "no_change") {
-    if (output.questions.length || output.checkpoints.length || output.tasks.length || output.permissionRequests.length) {
-      throw new Error("A no-change adaptive plan cannot create questions or replacement work.");
+    const hasQuestion = output.questions.length > 0;
+    const hasReplacementWork = output.checkpoints.length > 0 || output.tasks.length > 0 || output.permissionRequests.length > 0;
+
+    // The cross-field rule cannot be expressed by the provider's strict JSON
+    // schema. Repair the common model contradiction deterministically at the
+    // boundary instead of burning a retry and abandoning the review: a
+    // question means needs_context; a replacement graph or permission request
+    // means replan. Mixed payloads remain ambiguous and fail closed with a
+    // diagnostic message rather than silently dropping artist-facing work.
+    if (hasQuestion && hasReplacementWork) {
+      throw new Error("Adaptive plan mixed a context question with replacement work; return either needs_context or replan.");
     }
-    return output;
+    if (hasQuestion) output.decision = "needs_context";
+    if (hasReplacementWork) output.decision = "replan";
+    if (output.decision === "no_change") {
+      return output;
+    }
   }
 
   if (output.decision === "needs_context") {
