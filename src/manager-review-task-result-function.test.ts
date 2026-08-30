@@ -85,6 +85,9 @@ describe("Manager task-result review function", () => {
     }
     expect(functionSource).toContain('steps: { type: "array", minItems: 2');
     expect(functionSource).toContain("Desk must complete the Manager responsibility itself");
+    expect(functionSource).toContain("preflightReviewContinuation");
+    expect(functionSource).toContain('rpc("assert_generated_human_task_execution_contract_v1"');
+    expect(functionSource).toContain('failureStage = "validate_review_continuation"');
   });
 
   it("rejects terminal plan tasks before spending a Manager review run", () => {

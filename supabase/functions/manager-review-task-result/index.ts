@@ -88,6 +88,8 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
 
     failureStage = "openai_review";
     const { review, usage } = await callOpenAIManagerReview(context);
+    failureStage = "validate_review_continuation";
+    await preflightReviewContinuation(db, context, runId, review);
     failureStage = "persist_review";
     await applyManagerReview(db, input, context, runId, review);
     failureStage = "complete_run";
@@ -501,6 +503,36 @@ async function applyManagerReview(db: any, input: ReviewInput, context: any, run
   if (outputError) throw outputError;
 }
 
+async function preflightReviewContinuation(db: any, context: any, runId: string, review: ManagerTaskReview) {
+  const planVersionId = typeof context.mission?.active_plan_version_id === "string"
+    ? context.mission.active_plan_version_id
+    : "";
+  if (!planVersionId || !context.checkpoint?.id) return;
+
+  for (const task of review.followUpTasks) {
+    const owner = task.ownerRole.trim().toLowerCase();
+    if (["manager", "desk", "ai", "ai manager"].includes(owner)) continue;
+    const { error } = await db.rpc("assert_generated_human_task_execution_contract_v1", {
+      p_task: {
+        scope: "mission",
+        missionPlanVersionId: planVersionId,
+        createdFromRunId: runId,
+        title: task.title,
+        ownerRole: task.ownerRole,
+        workMode: task.workMode,
+        purpose: task.purpose,
+        completionExpectation: task.completionExpectation,
+        completionMode: task.completionMode,
+        managerResponsibility: task.managerResponsibility,
+        userResponsibility: task.userResponsibility,
+        riskIfLate: task.riskIfLate,
+      },
+      p_steps: task.steps,
+    });
+    if (error) throw error;
+  }
+}
+
 function resolveCheckpointStatus(
   context: any,
   checkpointId: string | null,
@@ -713,7 +745,7 @@ async function selectByMission(db: any, table: string, columns: string, input: R
 
 async function selectMission(db: any, input: ReviewInput, missionId: string) {
   const { data, error } = await db.from("missions")
-    .select("id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,created_at")
+    .select("id,title,objective,reason,status,priority,progress,summary,pattern_name,current_recommendation,required_evidence,missing_evidence,change_conditions,review_point,active_plan_version_id,created_at")
     .eq("id", missionId)
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
