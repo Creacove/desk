@@ -570,7 +570,8 @@ var taskSchema = {
     },
     steps: {
       ...stringArraySchema,
-      minItems: 2
+      minItems: 2,
+      maxItems: 6
     },
     evidenceNeeded: stringArraySchema,
     completionExpectation: {
