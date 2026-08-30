@@ -232,6 +232,23 @@ describe("production Supabase services", () => {
     });
   });
 
+  it("qualifies workspace embeds so additional foreign keys cannot make startup ambiguous", async () => {
+    const { client, calls } = createObservedSupabaseClient({
+      account_memberships: [{ account_id: "account-1", status: "active" }],
+      artist_workspaces: [],
+    });
+
+    await createSupabaseWorkspaceLoader(client).loadActiveWorkspace({ id: "user-1" });
+
+    const workspaceQuery = calls.find((call) => call.table === "artist_workspaces");
+    expect(workspaceQuery?.select).toContain("artists!artist_workspaces_artist_id_fkey(");
+    expect(workspaceQuery?.select).toContain("artist_profiles!artist_profiles_artist_workspace_id_fkey(");
+    expect(workspaceQuery?.select).toContain("source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(");
+    expect(workspaceQuery?.select).toContain("billing_subscriptions!billing_subscriptions_artist_workspace_id_fkey(");
+    expect(workspaceQuery?.select).toContain("workspace_access_grants!workspace_access_grants_artist_workspace_id_fkey(");
+    expect(workspaceQuery?.select).toContain("workspace_setup_runs!workspace_setup_runs_artist_workspace_id_fkey(");
+  });
+
   it("projects artist-level Chartmetric evidence into the artist profile intelligence read", async () => {
     const client = fakeSupabaseClient({
       artist_profiles: [
