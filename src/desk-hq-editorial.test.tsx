@@ -84,24 +84,67 @@ describe("Home premium briefing", () => {
     expect(screen.getByRole("button", { name: "Open Activity Center, 3 unread" })).toHaveClass("min-h-11");
   });
 
-  it("renders only meaningful Right Now work and preserves the existing destinations", () => {
+  it("uses one gap-based primary flow so Today can disappear without leaving a spacer", () => {
+    renderHome({ missions: [], attention: [] });
+
+    expect(screen.queryByTestId("desk-today-execution")).not.toBeInTheDocument();
+    const flow = screen.getByTestId("desk-home-primary-flow");
+    const composer = screen.getByTestId("desk-home-composer");
+    expect(flow).toHaveClass("home-primary-flow");
+    expect(flow.firstElementChild).toBe(composer);
+  });
+
+  it("keeps execution, composer, brief, metrics, and Manager read in one deliberate order", () => {
+    renderHome();
+
+    const page = screen.getByTestId("desk-home-page");
+    const ordered = [
+      screen.getByTestId("desk-today-execution"),
+      screen.getByTestId("desk-home-composer"),
+      screen.getByTestId("desk-editorial-brief"),
+      screen.getByTestId("desk-signal-metric-strip"),
+      screen.getByTestId("desk-manager-read"),
+    ];
+
+    expect(ordered.every((node, index) => (
+      index === 0 || Boolean(ordered[index - 1].compareDocumentPosition(node) & Node.DOCUMENT_POSITION_FOLLOWING)
+    ))).toBe(true);
+    expect(page).toHaveClass("desk-home-page");
+  });
+
+  it("keeps Today to the compact two-up action pattern", () => {
+    renderHome();
+
+    const today = screen.getByTestId("desk-today-execution");
+    const actionRows = within(today).getAllByRole("button").filter((button) => button.hasAttribute("data-today-kind"));
+
+    expect(today).toHaveClass("home-today-band");
+    expect(actionRows[0]).toHaveAttribute("data-today-primary", "true");
+    expect(actionRows[0]).toHaveClass("home-today-row-primary");
+    expect(actionRows.slice(1).every((row) => row.classList.contains("home-today-row-supporting"))).toBe(true);
+    expect(actionRows).toHaveLength(2);
+    expect(within(today).queryByText("Right now")).not.toBeInTheDocument();
+    expect(within(today).queryByTestId("desk-today-index")).not.toBeInTheDocument();
+  });
+
+  it("moves the existing urgent work into Today and preserves its destinations", () => {
     const onNavigate = vi.fn();
     const onDrawer = vi.fn();
     renderHome({ onNavigate, onDrawer });
 
-    const rightNow = screen.getByTestId("desk-right-now");
-    expect(within(rightNow).getAllByRole("button")).toHaveLength(2);
+    const today = screen.getByTestId("desk-today-execution");
+    expect(within(today).getAllByRole("button")).toHaveLength(2);
 
-    fireEvent.click(within(rightNow).getByRole("button", { name: "Open Split approval" }));
+    fireEvent.click(within(today).getByRole("button", { name: "Open Split approval" }));
     expect(onNavigate).toHaveBeenCalledWith("missionsWorkspace");
 
-    fireEvent.click(within(rightNow).getByRole("button", { name: "Open Distributor package" }));
+    fireEvent.click(within(today).getByRole("button", { name: "Open Distributor package" }));
     expect(onDrawer).toHaveBeenCalledWith("evidence");
   });
 
-  it("removes Right Now entirely when there is nothing actionable", () => {
-    renderHome({ attention: [] });
-    expect(screen.queryByTestId("desk-right-now")).not.toBeInTheDocument();
+  it("removes Today entirely when there is nothing actionable", () => {
+    renderHome({ attention: [], missions: [] });
+    expect(screen.queryByTestId("desk-today-execution")).not.toBeInTheDocument();
   });
 
   it("prioritizes strong metrics while using platform diversity as the tie-breaker", () => {
@@ -153,16 +196,16 @@ describe("Home premium briefing", () => {
     expect(within(managerRead).queryByRole("button", { name: "Evidence" })).not.toBeInTheDocument();
   });
 
-  it("stacks Right now below the headline and gives every item interior padding", () => {
+  it("uses one two-up Today grid instead of a second Right now block", () => {
     renderHome();
 
-    const composition = screen.getByTestId("desk-brief-composition");
-    const rightNow = screen.getByTestId("desk-right-now");
-    const items = within(rightNow).getAllByRole("button");
+    const today = screen.getByTestId("desk-today-execution");
+    const grid = today.querySelector(".home-today-list");
+    const items = within(today).getAllByRole("button");
 
-    expect(composition).not.toHaveClass("lg:grid-cols-[minmax(0,1fr)_18rem]");
-    expect(rightNow).toHaveClass("mt-7");
-    expect(items.every((item) => item.classList.contains("px-4") && item.classList.contains("py-4"))).toBe(true);
+    expect(grid).toBeInTheDocument();
+    expect(items).toHaveLength(2);
+    expect(screen.queryByTestId("desk-right-now")).not.toBeInTheDocument();
   });
 
   it("keeps Manager's Read metadata separate from readable body copy", () => {

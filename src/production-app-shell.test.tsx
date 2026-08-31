@@ -1866,9 +1866,10 @@ describe("Clean production prototype-match shell", () => {
     );
 
     expect(await screen.findAllByRole("heading", { name: "Home" }).then(([heading]) => heading)).toBeInTheDocument();
-    const rightNow = screen.getByTestId("desk-right-now");
-    expect(rightNow).toHaveTextContent("Right now");
-    expect(rightNow).toHaveTextContent("Commission Data Lead power check");
+    const today = screen.getByTestId("desk-today-execution");
+    expect(today).toHaveTextContent("Today");
+    expect(today).toHaveTextContent("Commission Data Lead power check");
+    expect(screen.queryByTestId("desk-right-now")).not.toBeInTheDocument();
     expect(screen.queryByText(longMovement)).not.toBeInTheDocument();
     expect(screen.queryByText("Started Chartmetric enrichment for GBESUNMO.")).not.toBeInTheDocument();
 
@@ -2201,11 +2202,12 @@ describe("Clean production prototype-match shell", () => {
 
   it("keeps Desk HQ icon hover states high contrast instead of purple-on-purple", () => {
     const source = readFileSync(join(process.cwd(), "src", "features", "desk", "DeskHQ.tsx"), "utf8");
+    const homeCss = readFileSync(join(process.cwd(), "src", "features", "desk", "deskHome.css"), "utf8");
 
     expect(source).not.toContain("group-hover:bg-brand-accent");
     expect(source).not.toContain("group-hover:bg-brand-accent/10 group-hover:text-brand-accent");
-    expect(source).toContain("hover:bg-foreground/[0.035]");
-    expect(source).toContain("focus-visible:ring-2 focus-visible:ring-inset");
+    expect(homeCss).toContain(".home-today-row:hover");
+    expect(homeCss).toContain(".home-today-row:focus-visible");
   });
 
   it("keeps a paid workspace in setup until its contextual brief phase completes", async () => {

@@ -1,4 +1,4 @@
-import { Bell, ChevronRight, RefreshCw } from "lucide-react";
+import { Bell, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { WorkspaceHeader } from "../../design-system/components";
 import { Button, ManagerComposer as ManagerWorkComposer } from "../../design-system/desktopPrimitives";
@@ -19,6 +19,7 @@ import type {
 import { splitAttentionItems } from "./deskAttention";
 import { TodayRuntimeExecution } from "./TodayRuntimeExecution";
 import { ManagerKnowledgeAttachmentTray, ManagerKnowledgeUploadButton, useManagerKnowledgeUploads } from "../manager/ManagerKnowledgeUpload";
+import "./deskHome.css";
 
 type DeskHQProps = {
   profile: ArtistProfileViewModel;
@@ -82,7 +83,10 @@ export function DeskHQScreen({
   const updatedAt = formatBriefGeneratedAt(brief.generatedAt);
 
   return (
-    <section className="app-workspace app-workspace-reveal home-workspace relative isolate min-w-0 pb-12">
+    <section
+      data-testid="desk-home-page"
+      className="app-workspace app-workspace-reveal home-workspace desk-home-page relative isolate min-w-0 pb-12"
+    >
       <div className="os-room-rail">
         <WorkspaceHeader
           title="Home"
@@ -94,18 +98,22 @@ export function DeskHQScreen({
           )}
         />
 
-        <TodayRuntimeExecution
-          missions={missions}
-          onOpenMission={onOpenMission}
-          onManager={onManager}
-          refreshKey={visibleActivityCount}
-        />
+        <div data-testid="desk-home-primary-flow" className="home-primary-flow">
+          <TodayRuntimeExecution
+            missions={missions}
+            fallbackItems={rightNowItems}
+            onOpenMission={onOpenMission}
+            onManager={onManager}
+            onOpenFallbackItem={(item) => openAttentionItem(item, onNavigate, onDrawer)}
+            refreshKey={visibleActivityCount}
+          />
 
-        <div className="mt-6 sm:mt-7">
-          <HomeManagerComposer onAskManager={onAskManager} managerRepository={managerRepository} />
+          <div data-testid="desk-home-composer" className="home-composer-wrap">
+            <HomeManagerComposer onAskManager={onAskManager} managerRepository={managerRepository} />
+          </div>
         </div>
 
-        <section data-testid="desk-editorial-brief" className="mt-8 sm:mt-10">
+        <section data-testid="desk-editorial-brief" className="home-brief-section">
           <BriefSectionHeader
             updatedAt={updatedAt}
             pending={briefPending}
@@ -118,20 +126,12 @@ export function DeskHQScreen({
             <div className="min-w-0">
               <p
                 data-testid="desk-brief-headline"
-                className="max-w-[62rem] break-words font-display font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]"
-                style={{ fontSize: "clamp(28px, 2.35vw, 36px)" }}
+                className="home-brief-headline max-w-[62rem] break-words font-display font-semibold leading-[1.08] tracking-[-0.035em] text-foreground [overflow-wrap:anywhere]"
               >
                 {brief.headlineRead}
               </p>
             </div>
 
-            {rightNowItems.length ? (
-              <RightNow
-                items={rightNowItems}
-                onNavigate={onNavigate}
-                onDrawer={onDrawer}
-              />
-            ) : null}
           </div>
         </section>
 
@@ -209,9 +209,9 @@ function BriefSectionHeader({
   onRefresh?: () => void;
 }) {
   return (
-    <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-foreground/8 pt-4">
-      <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Today&apos;s Brief</p>
-      <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
+    <div className="home-brief-header flex min-w-0 flex-wrap items-center justify-between gap-x-5 gap-y-2 border-t border-foreground/8 pt-4">
+      <p className="home-section-label font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Today&apos;s Brief</p>
+      <div className="home-brief-controls flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1.5">
         {updatedAt ? <span className="text-[12px] font-medium text-muted-foreground/62">Updated {updatedAt}</span> : null}
         {canRefresh ? (
           <Button
@@ -240,42 +240,6 @@ function BriefSectionHeader({
   );
 }
 
-function RightNow({
-  items,
-  onNavigate,
-  onDrawer,
-}: {
-  items: AttentionItem[];
-  onNavigate: (view: CleanProductionView) => void;
-  onDrawer: (drawer: DrawerKind) => void;
-}) {
-  return (
-    <aside
-      data-testid="desk-right-now"
-      className="mt-7 min-w-0"
-    >
-      <p className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Right now</p>
-      <div className="mt-3 grid overflow-hidden rounded-[14px] border border-foreground/8 bg-foreground/[0.025] sm:grid-cols-2 sm:divide-x sm:divide-foreground/8">
-        {items.map((item, index) => (
-          <button
-            key={`${item.title}-${index}`}
-            type="button"
-            aria-label={`Open ${item.title}`}
-            onClick={() => openAttentionItem(item, onNavigate, onDrawer)}
-            className="group flex w-full items-start justify-between gap-3 border-b border-foreground/8 px-4 py-4 text-left outline-none transition-colors duration-150 last:border-b-0 hover:bg-foreground/[0.035] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand-accent/20 sm:border-b-0 sm:px-5"
-          >
-            <span className="min-w-0">
-              <span className="block text-[14px] font-semibold leading-snug text-foreground">{item.title}</span>
-              <span className="mt-1.5 block text-[12px] font-medium leading-[1.55] text-muted-foreground">{item.body}</span>
-            </span>
-            <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/50 transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" aria-hidden="true" />
-          </button>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
 function openAttentionItem(
   item: AttentionItem,
   onNavigate: (view: CleanProductionView) => void,
@@ -294,16 +258,16 @@ function openAttentionItem(
 
 function SignalMetricStrip({ metrics }: { metrics: DeskSignalMetric[] }) {
   return (
-    <section data-testid="desk-signal-metric-strip" className="mt-8 sm:mt-9">
-      <div className={`grid border-y border-foreground/8 ${metricGridClass(metrics.length)}`}>
+    <section data-testid="desk-signal-metric-strip" className="home-metrics-section mt-8 sm:mt-9">
+      <div className={`home-metric-grid grid border-y border-foreground/8 ${metricGridClass(metrics.length)}`}>
         {metrics.map((metric, index) => (
           <article
             key={`${metric.label}-${metric.value}-${index}`}
             data-testid="desk-signal-metric"
-            className={`min-w-0 bg-transparent px-4 py-5 first:pl-0 lg:min-h-[98px] lg:px-6 lg:py-6 ${metricCellBorderClass(index, metrics.length)}`}
+            className={`home-metric min-w-0 bg-transparent px-4 py-5 first:pl-0 lg:min-h-[98px] lg:px-6 lg:py-6 ${metricCellBorderClass(index, metrics.length)}`}
           >
-            <p className="break-words text-[12px] font-medium leading-[1.35] text-muted-foreground [overflow-wrap:anywhere]">{metric.label}</p>
-            <p className="mt-2 break-words text-[22px] font-semibold leading-none tracking-[-0.018em] text-foreground sm:text-[24px] [overflow-wrap:anywhere]">{metric.value}</p>
+            <p className="home-metric-label break-words text-[12px] font-medium leading-[1.35] text-muted-foreground [overflow-wrap:anywhere]">{metric.label}</p>
+            <p className="home-metric-value mt-2 break-words text-[22px] font-semibold leading-none tracking-[-0.018em] text-foreground sm:text-[24px] [overflow-wrap:anywhere]">{metric.value}</p>
           </article>
         ))}
       </div>
@@ -336,26 +300,26 @@ function ManagerRead({ segments }: { segments: ManagerReadSegment[] }) {
   if (!segments.length) return null;
 
   return (
-    <section data-testid="desk-manager-read" aria-labelledby="desk-manager-read-title" className="os-room-rail mt-9 sm:mt-11">
+    <section data-testid="desk-manager-read" aria-labelledby="desk-manager-read-title" className="home-manager-read os-room-rail mt-9 sm:mt-11">
       <div>
-        <h2 id="desk-manager-read-title" className="font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</h2>
+        <h2 id="desk-manager-read-title" className="home-section-label font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">Manager&apos;s Read</h2>
       </div>
 
-      <div data-testid="desk-manager-read-grid" className="mt-3 grid grid-cols-1 divide-y divide-foreground/8 border-y border-foreground/8">
+      <div data-testid="desk-manager-read-grid" className="home-manager-read-grid mt-3 grid grid-cols-1 divide-y divide-foreground/8 border-y border-foreground/8">
         {segments.map((segment, index) => (
           <article
             key={`${segment.label}-${index}`}
             data-testid="desk-manager-read-segment"
-            className="grid min-w-0 grid-cols-1 gap-2 px-5 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-6 sm:px-7 sm:py-7"
+            className="home-manager-read-row grid min-w-0 grid-cols-1 gap-2 px-5 py-5 sm:grid-cols-[9rem_minmax(0,1fr)] sm:gap-6 sm:px-7 sm:py-7"
           >
             <div
               data-testid="desk-manager-read-metadata"
-              className="grid min-w-0 grid-cols-1 items-baseline gap-1 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
+              className="home-manager-read-metadata grid min-w-0 grid-cols-1 items-baseline gap-1 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-4"
             >
               <span data-testid="desk-manager-read-number" className="font-mono text-[11px] font-semibold leading-5 text-muted-foreground/48">{String(index + 1).padStart(2, "0")}</span>
               <p data-testid="desk-manager-read-label" className="font-ui text-[11px] font-semibold uppercase tracking-[0.09em] text-muted-foreground/68">{segment.label}</p>
             </div>
-            <p data-testid="desk-manager-read-body" className="os-body-copy min-w-0 w-full break-words font-medium text-foreground/84 [overflow-wrap:anywhere]">{segment.body}</p>
+            <p data-testid="desk-manager-read-body" className="home-manager-read-body os-body-copy min-w-0 w-full break-words font-medium text-foreground/84 [overflow-wrap:anywhere]">{segment.body}</p>
           </article>
         ))}
       </div>
