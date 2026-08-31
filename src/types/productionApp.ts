@@ -41,6 +41,7 @@ export type ProductionWorkspace = {
   entitlementActive?: boolean;
   subscriptionStatus?: "none" | "open" | "active" | "trialing" | "non-renewing" | "attention" | "completed" | "cancelled" | "canceled" | "paused" | "past_due" | "inactive";
   billingProvider?: "paddle" | "paystack";
+  billingInterval?: "monthly" | "yearly";
   setupStatus?: "not_started" | "queued" | "running" | "completed" | "failed";
   setupStage?: ProductionSetupStage;
   setupStageStatus?: ProductionSetupStageStatus;

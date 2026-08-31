@@ -245,8 +245,72 @@ describe("production Supabase services", () => {
     expect(workspaceQuery?.select).toContain("artist_profiles!artist_profiles_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("billing_subscriptions!billing_subscriptions_artist_workspace_id_fkey(");
+    expect(workspaceQuery?.select).toContain("billing_checkout_sessions!billing_subscriptions_checkout_session_id_fkey(plan_interval)");
     expect(workspaceQuery?.select).toContain("workspace_access_grants!workspace_access_grants_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("workspace_setup_runs!workspace_setup_runs_artist_workspace_id_fkey(");
+  });
+
+  it("preserves the previous provider and interval after a paid subscription expires", async () => {
+    const client = fakeSupabaseClient({
+      account_memberships: [{ account_id: "account-1" }],
+      artist_workspaces: [{
+        id: "workspace-1",
+        account_id: "account-1",
+        artist_id: "artist-1",
+        name: "Nova Vale Desk",
+        status: "active",
+        artists: { display_name: "Nova Vale", canonical_spotify_artist_id: "spotify-1" },
+        artist_profiles: [{ artist_direction: "Keep building." }],
+        billing_subscriptions: [{
+          provider: "paddle",
+          status: "canceled",
+          current_period_end: "2026-08-01T00:00:00.000Z",
+          provider_customer_code: "ctm_customer",
+          billing_checkout_sessions: { plan_interval: "yearly" },
+        }],
+      }],
+    });
+
+    const result = await createSupabaseWorkspaceLoader(client).loadActiveWorkspace({ id: "user-1" });
+
+    expect(result).toMatchObject({
+      entitlementActive: false,
+      accessType: "paid_subscription",
+      accessStatus: "expired",
+      billingProvider: "paddle",
+      billingInterval: "yearly",
+      paddleCustomerId: "ctm_customer",
+    });
+  });
+
+  it("remembers that an ended grant was beta access", async () => {
+    const client = fakeSupabaseClient({
+      account_memberships: [{ account_id: "account-1" }],
+      artist_workspaces: [{
+        id: "workspace-1",
+        account_id: "account-1",
+        artist_id: "artist-1",
+        name: "Nova Vale Desk",
+        status: "active",
+        artists: { display_name: "Nova Vale", canonical_spotify_artist_id: "spotify-1" },
+        artist_profiles: [{ artist_direction: "Keep building." }],
+        workspace_access_grants: [{
+          access_type: "private_beta",
+          status: "active",
+          starts_at: "2026-07-01T00:00:00.000Z",
+          ends_at: "2026-08-01T00:00:00.000Z",
+        }],
+      }],
+    });
+
+    const result = await createSupabaseWorkspaceLoader(client).loadActiveWorkspace({ id: "user-1" });
+
+    expect(result).toMatchObject({
+      entitlementActive: false,
+      accessType: "private_beta",
+      accessStatus: "expired",
+      accessEndsAt: "2026-08-01T00:00:00.000Z",
+    });
   });
 
   it("projects artist-level Chartmetric evidence into the artist profile intelligence read", async () => {
