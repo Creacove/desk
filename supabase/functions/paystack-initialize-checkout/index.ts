@@ -82,7 +82,7 @@ Deno.serve(withAppErrorCapture("paystack-initialize-checkout", async (request) =
     if (input.existingArtistWorkspaceId) {
       const { data, error } = await serviceClient
         .from("artist_workspaces")
-        .select("id,account_id,artist_id,artists(canonical_spotify_artist_id)")
+        .select("id,account_id,artist_id,artists!artist_workspaces_artist_id_fkey(canonical_spotify_artist_id)")
         .eq("id", input.existingArtistWorkspaceId)
         .maybeSingle();
       if (error) throw error;

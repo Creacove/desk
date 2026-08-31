@@ -69,7 +69,7 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
     if (input.existingArtistWorkspaceId) {
       const { data: workspace, error: workspaceError } = await db
         .from("artist_workspaces")
-        .select("id,account_id,artists(canonical_spotify_artist_id)")
+        .select("id,account_id,artists!artist_workspaces_artist_id_fkey(canonical_spotify_artist_id)")
         .eq("id", input.existingArtistWorkspaceId)
         .maybeSingle();
       if (workspaceError) throw workspaceError;

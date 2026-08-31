@@ -89,6 +89,16 @@ describe("Paddle server integration contract", () => {
     expect(worker).toContain("processingErrorMessage(error)");
   });
 
+  it("uses the canonical workspace artist relationship when converting existing access", () => {
+    const paddleCheckout = source("supabase", "functions", "paddle-create-checkout", "index.ts");
+    const paystackCheckout = source("supabase", "functions", "paystack-initialize-checkout", "index.ts");
+
+    expect(paddleCheckout).toContain("artists!artist_workspaces_artist_id_fkey(canonical_spotify_artist_id)");
+    expect(paystackCheckout).toContain("artists!artist_workspaces_artist_id_fkey(canonical_spotify_artist_id)");
+    expect(paddleCheckout).not.toContain("artists(canonical_spotify_artist_id)");
+    expect(paystackCheckout).not.toContain("artists(canonical_spotify_artist_id)");
+  });
+
   it("records recurring Paddle transactions without replaying setup", () => {
     const worker = source("supabase", "functions", "paddle-process-webhooks", "index.ts");
 
