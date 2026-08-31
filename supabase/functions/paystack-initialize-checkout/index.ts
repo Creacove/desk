@@ -145,7 +145,6 @@ Deno.serve(withAppErrorCapture("paystack-initialize-checkout", async (request) =
         email: user.email,
         amount: amountMinor,
         currency,
-        plan: planCode,
         channels: ["card"],
         reference,
         callback_url: callbackUrl,

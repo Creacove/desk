@@ -1,7 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
-import { fulfillVerifiedPaystackCheckout, validatePaystackTransaction } from "../_shared/paystackFulfillment.ts";
+import { ensurePaystackCardSubscription, fulfillVerifiedPaystackCheckout, validatePaystackTransaction } from "../_shared/paystackFulfillment.ts";
 
 type PaystackEvent = {
   event: string;
@@ -70,7 +70,7 @@ Deno.serve(withAppErrorCapture("paystack-webhook", async (request) => {
   const processNewDelivery = Boolean(storedEvent?.id);
   if (eventToProcess?.id && (processNewDelivery || retryStoredFailure || retryStoredReceived)) {
     try {
-      await processPaystackEvent(db, event, eventToProcess.id);
+      await processPaystackEvent(db, event, eventToProcess.id, secretKey);
     } catch (error) {
       await recordWebhookFailure(db, eventToProcess.id, error);
       return json({ error: error instanceof Error ? error.message : "Webhook processing failed." }, 500);
@@ -80,10 +80,10 @@ Deno.serve(withAppErrorCapture("paystack-webhook", async (request) => {
   return json({ ok: true });
 }));
 
-async function processPaystackEvent(db: any, event: PaystackEvent, webhookEventId: string) {
+async function processPaystackEvent(db: any, event: PaystackEvent, webhookEventId: string, secretKey: string) {
   switch (event.event) {
     case "charge.success":
-      await activateSubscription(db, event);
+      await activateSubscription(db, event, secretKey);
       break;
     case "subscription.create":
       await mirrorSuccessfulInvoice(db, event);
@@ -114,7 +114,7 @@ async function processPaystackEvent(db: any, event: PaystackEvent, webhookEventI
   }).eq("id", webhookEventId);
 }
 
-async function activateSubscription(db: any, event: PaystackEvent) {
+async function activateSubscription(db: any, event: PaystackEvent, secretKey: string) {
   const data = event.data ?? {};
   const reference = String(data.reference ?? data.transaction_reference ?? "");
   const metadata = data.metadata ?? {};
@@ -131,7 +131,8 @@ async function activateSubscription(db: any, event: PaystackEvent) {
     throw new Error("Checkout session or subscription not found for Paystack event.");
   }
 
-  const fulfilled = await fulfillVerifiedPaystackCheckout({ db, checkout, transaction: data });
+  const transaction = await ensurePaystackCardSubscription({ db, checkout, transaction: data, secretKey });
+  const fulfilled = await fulfillVerifiedPaystackCheckout({ db, checkout, transaction });
   const workspace = {
     account_id: fulfilled.fulfillment.account_id,
     artist_workspace_id: fulfilled.fulfillment.artist_workspace_id,
