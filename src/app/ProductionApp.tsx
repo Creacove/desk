@@ -5,6 +5,9 @@ import { AppThinkingOrb } from "../design-system/AppThinkingOrb";
 import { BrandMark, DeskRail, Field, MobileChrome, ProductButton, sectionForView } from "../design-system/components";
 import { splitAttentionItems } from "../features/desk/deskAttention";
 import { DeskHQScreen } from "../features/desk/DeskHQ";
+import { SubscriptionRecoveryGate } from "../features/billing/SubscriptionRecoveryGate";
+import { BetaAccessEndingNotice } from "../features/billing/BetaAccessEndingNotice";
+import { openWorkspaceSubscriptionCheckout } from "../features/billing/workspaceCheckout";
 import { ProductionDrawers } from "../features/drawers/ProductionDrawers";
 import {
   activityCursorKey,
@@ -472,6 +475,34 @@ export function ProductionApp({
     };
   }, [runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.billingCheckoutSessionId, workspace?.contextComplete, workspace?.setupStatus]);
 
+  useEffect(() => {
+    if (!sessionUser || !workspace?.artistWorkspaceId || !runtime.billingService?.subscribeWorkspaceAccess) return;
+    let disposed = false;
+    const refreshAccess = async () => {
+      const refreshed = await runtime.workspaceLoader.loadActiveWorkspace(sessionUser).catch(() => null);
+      if (!disposed && refreshed?.artistWorkspaceId === workspace.artistWorkspaceId) setWorkspace(refreshed);
+    };
+    const unsubscribe = runtime.billingService.subscribeWorkspaceAccess(workspace, () => void refreshAccess());
+    const accessBoundary = workspace.accessType === "private_beta" ? workspace.accessEndsAt : workspace.renewalAt;
+    const boundaryTime = accessBoundary ? Date.parse(accessBoundary) : Number.NaN;
+    let timeout: number | undefined;
+    const scheduleBoundaryRefresh = () => {
+      if (!Number.isFinite(boundaryTime)) return;
+      const remaining = Math.max(0, boundaryTime - Date.now() + 30_000);
+      const delay = Math.min(remaining, 2_147_000_000);
+      timeout = window.setTimeout(() => {
+        if (remaining > delay) scheduleBoundaryRefresh();
+        else void refreshAccess();
+      }, delay);
+    };
+    scheduleBoundaryRefresh();
+    return () => {
+      disposed = true;
+      unsubscribe();
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
+  }, [runtime.billingService, runtime.workspaceLoader, sessionUser, workspace?.artistWorkspaceId, workspace?.accessType, workspace?.accessEndsAt, workspace?.renewalAt]);
+
   if (typeof window !== "undefined" && window.location.pathname === "/update-password") {
     return <UpdatePasswordScreen authAdapter={runtime.authAdapter} onComplete={() => { window.history.replaceState({}, "", "/"); void loadProductionState(); }} />;
   }
@@ -526,7 +557,32 @@ export function ProductionApp({
     );
   }
 
-  if (workspace && (!workspace.spotifyConnected || workspace.entitlementActive !== true)) {
+  if (workspace?.spotifyConnected && workspace.entitlementActive !== true && session?.user && runtime.billingService) {
+    return (
+      <SubscriptionRecoveryGate
+        user={session.user}
+        workspace={workspace}
+        billingService={runtime.billingService}
+        onSignOut={handleSignOut}
+        onRecovered={(nextWorkspace) => {
+          setWorkspace(nextWorkspace);
+          setStatus("ready");
+        }}
+      />
+    );
+  }
+
+  if (workspace?.spotifyConnected && workspace.entitlementActive !== true) {
+    return (
+      <FrontDoorMessageScreen
+        title="Billing is temporarily unavailable"
+        body="Your workspace is saved. Try again to restore access."
+        action={<ProductButton onClick={loadProductionState}>Try again</ProductButton>}
+      />
+    );
+  }
+
+  if (workspace && !workspace.spotifyConnected) {
     return (
       <SpotifyIdentityGate
         user={session?.user ?? null}
@@ -548,6 +604,7 @@ export function ProductionApp({
   return (
     <>
     {successNotice ? <SuccessToast message={successNotice} onClose={() => setSuccessNotice(null)} /> : null}
+    {workspace ? <BetaAccessEndingNotice user={sessionUser as ProductionUser} workspace={workspace} billingService={runtime.billingService} /> : null}
     <CleanProductionWorkspace
       analyticsUser={sessionUser as ProductionUser}
       authAdapter={runtime.authAdapter}
@@ -2373,6 +2430,11 @@ function CleanProductionWorkspace({
                   ? () => billingService.openCustomerPortal!(workspace)
                   : undefined
               }
+              onChoosePlan={
+                workspace && billingService
+                  ? () => openWorkspaceSubscriptionCheckout({ user: analyticsUser, workspace, billingService })
+                  : undefined
+              }
               themeMode={themeMode}
               resolvedThemeMode={resolvedThemeMode}
               onThemeModeChange={setThemeMode}
@@ -2865,26 +2927,6 @@ function SpotifyIdentityGate({
     }
   }
 
-  async function redeemPrivateBetaCode(code: string) {
-    if (!checkoutPreview || !billingService?.redeemPrivateBetaCode) return;
-    try {
-      setSelectPending(true);
-      setMessage(null);
-      trackEvent("beta code submitted", { is_test_user: isTestUserEmail(user?.email) });
-      const result = await billingService.redeemPrivateBetaCode({ checkoutSessionId: checkoutPreview.checkoutSessionId, code });
-      trackEvent("beta invitation activated", {
-        artist_workspace_id: result.workspace.artistWorkspaceId,
-        access_source: "private_beta",
-        is_test_user: isTestUserEmail(user?.email),
-      });
-      onWorkspaceReady(result.workspace);
-    } catch (redemptionError) {
-      setMessage(readErrorMessage(redemptionError, "Private-beta access could not be activated."));
-    } finally {
-      setSelectPending(false);
-    }
-  }
-
   if (checkoutPreview) {
     return (
       <PaywallPreviewScreen
@@ -2906,8 +2948,6 @@ function SpotifyIdentityGate({
         onSubscribe={subscribeToPreview}
         onIntervalChange={changeBillingInterval}
         onProviderChange={changeBillingProvider}
-        privateBetaEnabled={import.meta.env.VITE_PRIVATE_BETA_ENABLED === "true"}
-        onRedeemPrivateBeta={redeemPrivateBetaCode}
         onSignOut={onSignOut}
       />
     );

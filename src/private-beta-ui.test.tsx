@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -25,70 +25,20 @@ const preview = {
 afterEach(cleanup);
 
 describe("private-beta product flow", () => {
-  it("keeps paid checkout primary and reveals a separate invite-code form", async () => {
+  it("phases beta-code entry out of the paywall while keeping paid checkout primary", () => {
     const onSubscribe = vi.fn();
-    const onRedeemPrivateBeta = vi.fn().mockResolvedValue(undefined);
     render(
       <PaywallPreviewScreen
         preview={preview}
         onSubscribe={onSubscribe}
-        onRedeemPrivateBeta={onRedeemPrivateBeta}
-        privateBetaEnabled
         onBack={() => undefined}
       />,
     );
 
     expect(screen.getByRole("button", { name: /subscribe \$20\/month/i })).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: /view artist source/i })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Private-beta access code")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /use beta code/i }));
-    fireEvent.change(screen.getByLabelText("Beta code"), { target: { value: "beta-abcd-1234" } });
-    fireEvent.click(screen.getByRole("button", { name: /activate access/i }));
-
-    await waitFor(() => expect(onRedeemPrivateBeta).toHaveBeenCalledWith("BETA-ABCD-1234"));
-    expect(onSubscribe).not.toHaveBeenCalled();
-    expect(screen.queryByText("Private-beta access")).not.toBeInTheDocument();
-    expect(screen.queryByText(/included in your invitation|complimentary access|no card is required/i)).not.toBeInTheDocument();
-  });
-
-  it("shows beta-specific progress inside the activation button", async () => {
-    let finishRedemption: (() => void) | undefined;
-    const onRedeemPrivateBeta = vi.fn(() => new Promise<void>((resolve) => { finishRedemption = resolve; }));
-    render(
-      <PaywallPreviewScreen
-        preview={preview}
-        onSubscribe={() => undefined}
-        onRedeemPrivateBeta={onRedeemPrivateBeta}
-        privateBetaEnabled
-        onBack={() => undefined}
-      />,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /use beta code/i }));
-    fireEvent.change(screen.getByLabelText("Beta code"), { target: { value: "beta-abcd-1234" } });
-    fireEvent.click(screen.getByRole("button", { name: /activate access/i }));
-
-    const activatingButton = await screen.findByRole("button", { name: /activating/i });
-    expect(activatingButton).toBeDisabled();
-    expect(activatingButton).toHaveAttribute("aria-busy", "true");
-    expect(within(activatingButton).getByRole("status")).toHaveTextContent("Activating");
-    expect(within(activatingButton).getByTestId("beta-activation-spinner")).toHaveClass("animate-spin");
-
-    finishRedemption?.();
-    await waitFor(() => expect(screen.getByRole("button", { name: /activate access/i })).toBeEnabled());
-  });
-
-  it("uses the secondary paywall slot for the artist source only when private beta is disabled", () => {
-    render(
-      <PaywallPreviewScreen
-        preview={preview}
-        onSubscribe={() => undefined}
-        onBack={() => undefined}
-      />,
-    );
-
     expect(screen.getByRole("link", { name: /view artist source/i })).toHaveAttribute("href", preview.artist.spotifyUrl);
     expect(screen.queryByRole("button", { name: /use beta code/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/beta code|access code/i)).not.toBeInTheDocument();
   });
 
   it("invokes the isolated beta endpoint without changing paid service methods", async () => {

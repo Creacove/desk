@@ -20,6 +20,7 @@ export function SettingsScreen({
   workspace,
   onUpdatePassword,
   onManageBilling,
+  onChoosePlan,
 }: {
   profile: ArtistProfileViewModel;
   onChange: (profile: ArtistProfileViewModel) => void;
@@ -33,11 +34,12 @@ export function SettingsScreen({
   workspace?: ProductionWorkspace;
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
   onManageBilling?: () => Promise<void> | void;
+  onChoosePlan?: () => Promise<void> | void;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "profile", label: "Profile" },
-    { id: "workspace", label: "Workspace" },
+    { id: "billing", label: "Billing" },
     { id: "preferences", label: "Preferences" },
     { id: "account", label: "Account" },
   ];
@@ -66,7 +68,7 @@ export function SettingsScreen({
           className="os-room-rail min-w-0"
         >
           {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
-          {activeTab === "workspace" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} /> : <AccessEmptyState />) : null}
+          {activeTab === "billing" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} onChoosePlan={onChoosePlan} /> : <AccessEmptyState />) : null}
           {activeTab === "preferences" ? (
             <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
           ) : null}
@@ -83,7 +85,7 @@ export function SettingsScreen({
   );
 }
 
-type SettingsTab = "profile" | "workspace" | "preferences" | "account";
+type SettingsTab = "profile" | "billing" | "preferences" | "account";
 
 function ProfileSettings({
   profile,
@@ -206,7 +208,15 @@ function SettingsGroup({ title, children }: { title: string; children: ReactNode
   );
 }
 
-function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWorkspace; onManageBilling?: () => Promise<void> | void }) {
+function AccessSummary({
+  workspace,
+  onManageBilling,
+  onChoosePlan,
+}: {
+  workspace: ProductionWorkspace;
+  onManageBilling?: () => Promise<void> | void;
+  onChoosePlan?: () => Promise<void> | void;
+}) {
   const [portalPending, setPortalPending] = useState(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const paid = workspace.accessType === "paid_subscription" || (workspace.accessType == null && workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
@@ -220,7 +230,7 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
 
   return (
     <div className="w-full">
-      <SettingsSectionHeading title="Workspace" />
+      <SettingsSectionHeading title="Billing" />
       <dl className="border-t border-foreground/8 text-[13px]">
         <AccessRow label="Access" value={accessLabel} />
         <AccessRow label="Status" value={workspace.accessStatus ?? (workspace.entitlementActive ? "Active" : "Inactive")} />
@@ -228,7 +238,7 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
         {paid && workspace.renewalAt ? <AccessRow label="Renews" value={formatDate(workspace.renewalAt)} /> : null}
         {!paid && workspace.accessEndsAt ? <AccessRow label="Expires" value={formatDate(workspace.accessEndsAt)} /> : null}
       </dl>
-      {paid && workspace.billingProvider === "paddle" && onManageBilling ? (
+      {(paid && onManageBilling) || (!paid && workspace.accessType === "private_beta" && onChoosePlan) ? (
         <div className="pt-5">
           <Button
             variant="secondary"
@@ -237,7 +247,8 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
               try {
                 setPortalPending(true);
                 setPortalError(null);
-                await onManageBilling();
+                if (paid) await onManageBilling?.();
+                else await onChoosePlan?.();
               } catch (error) {
                 setPortalError(error instanceof Error ? error.message : "Billing portal could not be opened.");
               } finally {
@@ -245,7 +256,7 @@ function AccessSummary({ workspace, onManageBilling }: { workspace: ProductionWo
               }
             }}
           >
-            Manage billing
+            {paid ? "Manage billing" : "Choose a plan"}
           </Button>
           {portalError ? <p role="alert" className="mt-3 text-[12px] font-medium text-destructive">{portalError}</p> : null}
         </div>
@@ -266,7 +277,7 @@ function AccessRow({ label, value }: { label: string; value: string }) {
 function AccessEmptyState() {
   return (
     <div className="w-full">
-      <SettingsSectionHeading title="Workspace" />
+      <SettingsSectionHeading title="Billing" />
       <div className="border-t border-foreground/8 py-5">
         <p className="text-[13px] font-medium text-muted-foreground">Access details are unavailable while this workspace is loading.</p>
       </div>

@@ -644,6 +644,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       window.location.assign(destination.href);
     },
     subscribeWorkspaceAccess(workspace, onChange) {
+      if (typeof client.channel !== "function" || typeof client.removeChannel !== "function") return () => undefined;
       const channel = client
         .channel(`workspace-access:${workspace.artistWorkspaceId}:${createClientRequestId()}`)
         .on("postgres_changes", {

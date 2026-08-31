@@ -23,9 +23,9 @@ describe("SettingsScreen", () => {
 
     expect(screen.getByRole("heading", { name: "Settings" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Artist profile." })).not.toBeInTheDocument();
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Profile", "Workspace", "Preferences", "Account"]);
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Profile", "Billing", "Preferences", "Account"]);
     expect(screen.getByRole("tab", { name: "Profile" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Workspace" })).toHaveAttribute("aria-selected", "false");
+    expect(screen.getByRole("tab", { name: "Billing" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "Preferences" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tab", { name: "Account" })).toHaveAttribute("aria-selected", "false");
     expect(screen.getByRole("tablist", { name: "Settings sections" })).toHaveClass("workspace-tab-rail");
@@ -171,7 +171,7 @@ describe("SettingsScreen", () => {
     );
 
     expect(screen.queryByText("Private beta")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
     expect(screen.getByText("Private beta")).toBeTruthy();
     expect(screen.getByText("Aug 12, 2026")).toBeTruthy();
     expect(screen.queryByLabelText("New password")).not.toBeInTheDocument();
@@ -207,12 +207,12 @@ describe("SettingsScreen", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
     expect(screen.getByText("Active access")).toBeInTheDocument();
     expect(screen.queryByText("No active access")).not.toBeInTheDocument();
   });
 
-  it("offers Paddle self-service billing from the workspace tab", () => {
+  it.each(["paddle", "paystack"] as const)("offers %s self-service from the Billing tab", (billingProvider) => {
     const onManageBilling = vi.fn();
     render(<SettingsScreen
       profile={profileWithArtistIntelligence()} onChange={vi.fn()} onBack={vi.fn()}
@@ -220,13 +220,30 @@ describe("SettingsScreen", () => {
         accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1",
         artistName: "Burna Boy", workspaceName: "Burna Boy Desk", status: "active",
         spotifyConnected: true, contextComplete: true, entitlementActive: true,
-        subscriptionStatus: "active", billingProvider: "paddle",
+        subscriptionStatus: "active", billingProvider,
       }}
       onManageBilling={onManageBilling}
     />);
-    fireEvent.click(screen.getByRole("tab", { name: "Workspace" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
     fireEvent.click(screen.getByRole("button", { name: "Manage billing" }));
     expect(onManageBilling).toHaveBeenCalledTimes(1);
+  });
+
+  it("lets an active beta workspace choose a paid plan from Billing", () => {
+    const onChoosePlan = vi.fn();
+    render(<SettingsScreen
+      profile={profileWithArtistIntelligence()} onChange={vi.fn()} onBack={vi.fn()}
+      workspace={{
+        accountId: "account-1", artistWorkspaceId: "workspace-1", artistId: "artist-1",
+        artistName: "Burna Boy", workspaceName: "Burna Boy Desk", status: "active",
+        spotifyConnected: true, contextComplete: true, entitlementActive: true,
+        accessType: "private_beta", accessStatus: "active", accessEndsAt: "2026-09-05T00:00:00.000Z",
+      }}
+      onChoosePlan={onChoosePlan}
+    />);
+    fireEvent.click(screen.getByRole("tab", { name: "Billing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose a plan" }));
+    expect(onChoosePlan).toHaveBeenCalledTimes(1);
   });
 });
 

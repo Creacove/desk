@@ -1,5 +1,5 @@
 import { ArrowLeft, ArrowRight, LoaderCircle, Lock, LogOut, Search } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { BrandMark } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
@@ -257,8 +257,6 @@ export function PaywallPreviewScreen({
   onSubscribe,
   onIntervalChange,
   onProviderChange,
-  onRedeemPrivateBeta,
-  privateBetaEnabled = false,
   onBack,
   onSignOut,
 }: {
@@ -269,14 +267,9 @@ export function PaywallPreviewScreen({
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
   onProviderChange?: (provider: "paddle" | "paystack", interval: "monthly" | "yearly") => void | Promise<void>;
-  onRedeemPrivateBeta?: (code: string) => void | Promise<void>;
-  privateBetaEnabled?: boolean;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
-  const [showBetaCode, setShowBetaCode] = useState(false);
-  const [betaCode, setBetaCode] = useState("");
-  const [betaSubmitting, setBetaSubmitting] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview.interval);
   const artist = preview.artist;
   const intervalOption = preview.intervalOptions?.[selectedInterval];
@@ -444,55 +437,6 @@ export function PaywallPreviewScreen({
               </button>
             ) : null}
 
-            {privateBetaEnabled && onRedeemPrivateBeta ? (
-              <div className="mt-4 border-t border-foreground/8 pt-4">
-                {!showBetaCode ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowBetaCode(true)}
-                    className="w-full text-center text-[11px] font-semibold text-muted-foreground underline decoration-foreground/20 underline-offset-4 hover:text-foreground"
-                  >
-                    Have an access code?
-                  </button>
-                ) : (
-                  <form
-                    className="space-y-2"
-                    onSubmit={async (event: FormEvent<HTMLFormElement>) => {
-                      event.preventDefault();
-                      const normalized = betaCode.trim().toUpperCase();
-                      if (!normalized || betaSubmitting) return;
-                      try {
-                        setBetaSubmitting(true);
-                        await onRedeemPrivateBeta(normalized);
-                      } finally {
-                        setBetaSubmitting(false);
-                      }
-                    }}
-                  >
-                    <label htmlFor="access-code" className="sr-only">Access code</label>
-                    <input
-                      id="access-code"
-                      value={betaCode}
-                      onChange={(event: { target: { value: string } }) => setBetaCode(event.target.value)}
-                      disabled={pending || betaSubmitting}
-                      autoComplete="off"
-                      spellCheck={false}
-                      placeholder="Access code"
-                      className="h-11 w-full rounded-[9px] border border-foreground/12 bg-transparent px-3 text-[16px] font-semibold uppercase text-foreground outline-none focus:border-brand-accent/45"
-                    />
-                    <Button
-                      type="submit"
-                      variant="secondary"
-                      pending={betaSubmitting}
-                      disabled={pending || !betaCode.trim()}
-                      className="w-full"
-                    >
-                      Activate access
-                    </Button>
-                  </form>
-                )}
-              </div>
-            ) : null}
           </aside>
         </section>
       </div>

@@ -1,5 +1,5 @@
-import { ArrowLeft, ArrowRight, Check, CreditCard, LoaderCircle, Lock, LogOut, Search } from "lucide-react";
-import { useState, type FormEvent } from "react";
+import { ArrowLeft, ArrowRight, Check, CreditCard, Lock, LogOut, Search } from "lucide-react";
+import { useState } from "react";
 import { BrandMark } from "../../design-system/components";
 import { cn } from "../../lib/utils";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
@@ -247,8 +247,6 @@ export function PaywallPreviewScreen({
   onSubscribe,
   onIntervalChange,
   onProviderChange,
-  onRedeemPrivateBeta,
-  privateBetaEnabled = false,
   onBack,
   onSignOut,
 }: {
@@ -259,14 +257,9 @@ export function PaywallPreviewScreen({
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
   onProviderChange?: (provider: "paddle" | "paystack", interval: "monthly" | "yearly") => void | Promise<void>;
-  onRedeemPrivateBeta?: (code: string) => void | Promise<void>;
-  privateBetaEnabled?: boolean;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
-  const [showBetaCode, setShowBetaCode] = useState(false);
-  const [betaCode, setBetaCode] = useState("");
-  const [betaSubmitting, setBetaSubmitting] = useState(false);
   const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview.interval);
   const artist = preview.artist;
   const intervalOption = preview.intervalOptions?.[selectedInterval];
@@ -405,65 +398,14 @@ export function PaywallPreviewScreen({
                   </button>
                 ) : null}
 
-                {privateBetaEnabled && onRedeemPrivateBeta ? (
-                  <div className="mt-3 border-t border-foreground/8 pt-3">
-                    {!showBetaCode ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowBetaCode(true)}
-                        className="w-full text-center text-[10px] font-bold text-muted-foreground underline decoration-foreground/20 underline-offset-4 transition-colors hover:text-foreground lg:text-[11px]"
-                      >
-                        Use beta code
-                      </button>
-                    ) : (
-                      <form
-                        className="rounded-[12px] border border-foreground/10 bg-foreground/[0.025] p-3"
-                        onSubmit={async (event: FormEvent<HTMLFormElement>) => {
-                          event.preventDefault();
-                          const normalized = betaCode.trim().toUpperCase();
-                          if (!normalized || betaSubmitting) return;
-                          try {
-                            setBetaSubmitting(true);
-                            await onRedeemPrivateBeta(normalized);
-                          } finally {
-                            setBetaSubmitting(false);
-                          }
-                        }}
-                      >
-                        <label className="block text-[9px] font-bold uppercase tracking-[0.1em] text-muted-foreground" htmlFor="private-beta-code">Beta code</label>
-                        <input
-                          id="private-beta-code"
-                          value={betaCode}
-                          onChange={(event) => setBetaCode(event.target.value)}
-                          disabled={pending || betaSubmitting}
-                          autoComplete="off"
-                          spellCheck={false}
-                          className="mt-1.5 h-9 w-full rounded-[9px] border border-foreground/12 bg-background px-3 font-mono text-[11px] font-bold uppercase text-foreground outline-none ring-brand-accent/30 focus:ring-2"
-                        />
-                        <button
-                          type="submit"
-                          disabled={pending || betaSubmitting || !betaCode.trim()}
-                          aria-busy={betaSubmitting}
-                          className="mt-2 inline-flex h-9 w-full items-center justify-center gap-2 rounded-[9px] border border-foreground/12 bg-background text-[10px] font-bold text-foreground transition-colors hover:bg-foreground/5 disabled:opacity-50"
-                        >
-                          {betaSubmitting ? <LoaderCircle data-testid="beta-activation-spinner" className="h-3.5 w-3.5 animate-spin motion-reduce:animate-none" aria-hidden="true" /> : null}
-                          <span role={betaSubmitting ? "status" : undefined}>{betaSubmitting ? "Activating" : "Activate access"}</span>
-                        </button>
-                      </form>
-                    )}
-                  </div>
-                ) : null}
-
-                {!privateBetaEnabled || !onRedeemPrivateBeta ? (
-                  <a
-                    href={artist.spotifyUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1.5 block truncate text-center text-[9px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline lg:mt-4 lg:text-[11px]"
-                  >
-                    View artist source
-                  </a>
-                ) : null}
+                <a
+                  href={artist.spotifyUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-1.5 block truncate text-center text-[9px] font-bold text-muted-foreground underline-offset-4 hover:text-foreground hover:underline lg:mt-4 lg:text-[11px]"
+                >
+                  View artist source
+                </a>
                 </div>
               </section>
 
