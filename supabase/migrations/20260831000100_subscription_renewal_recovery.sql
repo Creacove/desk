@@ -73,7 +73,8 @@ begin
   if upper(subscription.currency) is distinct from upper(p_currency) then
     raise exception 'renewal currency does not match subscription';
   end if;
-  if subscription.amount_minor is distinct from p_total_minor then
+  if subscription.amount_minor is distinct from
+     (case when p_provider = 'paddle' then p_subtotal_minor else p_total_minor end) then
     raise exception 'renewal amount does not match subscription';
   end if;
 

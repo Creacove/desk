@@ -13,7 +13,8 @@ type QueueEvent = {
 };
 
 const SUPPORTED_EVENTS = new Set([
-  "subscription.created", "subscription.updated", "subscription.canceled",
+  "subscription.created", "subscription.updated", "subscription.activated",
+  "subscription.past_due", "subscription.paused", "subscription.resumed", "subscription.canceled",
   "customer.created", "customer.updated", "transaction.completed",
 ]);
 
@@ -63,6 +64,10 @@ async function processEvent(db: any, event: QueueEvent, supabaseUrl: string, ser
       return mirrorCustomer(db, event.payload.data ?? {}, event.occurred_at);
     case "subscription.created":
     case "subscription.updated":
+    case "subscription.activated":
+    case "subscription.past_due":
+    case "subscription.paused":
+    case "subscription.resumed":
     case "subscription.canceled":
       return mirrorSubscription(db, event.payload.data ?? {}, event.occurred_at);
     case "transaction.completed":
@@ -158,6 +163,35 @@ async function fulfillCompletedTransaction(
   if (!totals) throw new Error("Paddle transaction totals are missing.");
   const scheduled = subscription.scheduledChange;
   const period = subscription.currentBillingPeriod;
+
+  const { data: checkout, error: checkoutError } = await db.from("billing_checkout_sessions")
+    .select("*").eq("id", customData.checkoutSessionId).maybeSingle();
+  if (checkoutError) throw checkoutError;
+  if (!checkout) throw new Error("Paddle checkout could not be loaded.");
+
+  if (checkout.status === "paid") {
+    const { error: renewalError } = await db.rpc("record_verified_subscription_renewal", {
+      p_provider: "paddle",
+      p_provider_transaction_id: transaction.id,
+      p_provider_customer_id: transaction.customerId,
+      p_provider_subscription_id: transaction.subscriptionId,
+      p_provider_product_id: item.price.productId,
+      p_provider_price_id: item.price.id,
+      p_subscription_status: subscription.status,
+      p_currency: transaction.currencyCode,
+      p_subtotal_minor: toMinor(totals.subtotal),
+      p_tax_minor: toMinor(totals.tax),
+      p_total_minor: toMinor(totals.total),
+      p_current_period_start: period?.startsAt ?? null,
+      p_current_period_end: period?.endsAt ?? null,
+      p_provider_occurred_at: occurredAt,
+      p_scheduled_change_action: scheduled?.action ?? null,
+      p_scheduled_change_at: scheduled?.effectiveAt ?? null,
+    });
+    if (renewalError) throw renewalError;
+    return;
+  }
+
   const { data: fulfilled, error: fulfillmentError } = await db.rpc("fulfill_verified_checkout", {
     p_checkout_session_id: customData.checkoutSessionId,
     p_provider: "paddle",
@@ -183,10 +217,6 @@ async function fulfillCompletedTransaction(
   const fulfillment = Array.isArray(fulfilled) ? fulfilled[0] : fulfilled;
   if (!fulfillment?.artist_workspace_id) throw new Error("Verified Paddle checkout was not fulfilled.");
 
-  const { data: checkout, error: checkoutError } = await db.from("billing_checkout_sessions")
-    .select("*").eq("id", customData.checkoutSessionId).maybeSingle();
-  if (checkoutError) throw checkoutError;
-  if (!checkout) throw new Error("Fulfilled Paddle checkout could not be reloaded.");
   await sendPaidSubscriptionActivatedEmail({
     db,
     checkout,
@@ -199,7 +229,8 @@ async function fulfillCompletedTransaction(
     periodEnd: period?.endsAt ?? null,
   });
 
-  const setupResponse = await fetch(`${supabaseUrl}/functions/v1/paid-workspace-setup`, {
+  if (await shouldDispatchSetup(db, customData.checkoutSessionId)) {
+    const setupResponse = await fetch(`${supabaseUrl}/functions/v1/paid-workspace-setup`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${serviceRoleKey}`,
@@ -207,11 +238,21 @@ async function fulfillCompletedTransaction(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ checkoutSessionId: customData.checkoutSessionId, phase: "discovery" }),
-  });
-  if (!setupResponse.ok) {
-    const message = await setupResponse.text().catch(() => "");
-    throw new Error(`Discovery dispatch failed (${setupResponse.status}): ${message.slice(0, 300)}`);
+    });
+    if (!setupResponse.ok) {
+      const message = await setupResponse.text().catch(() => "");
+      throw new Error(`Discovery dispatch failed (${setupResponse.status}): ${message.slice(0, 300)}`);
+    }
   }
+}
+
+async function shouldDispatchSetup(db: any, checkoutSessionId: string) {
+  const { data: setup, error } = await db.from("workspace_setup_runs")
+    .select("status")
+    .eq("checkout_session_id", checkoutSessionId)
+    .maybeSingle();
+  if (error) throw error;
+  return !setup || setup.status !== "completed";
 }
 
 function readRecurringItems(items: any) {

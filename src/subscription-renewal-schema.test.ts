@@ -23,7 +23,7 @@ describe("subscription renewal schema", () => {
     expect(migration).toContain("provider_customer_code is distinct from p_provider_customer_id");
     expect(migration).toContain("provider_price_id is distinct from p_provider_price_id");
     expect(migration).toContain("upper(subscription.currency) is distinct from upper(p_currency)");
-    expect(migration).toContain("amount_minor is distinct from p_total_minor");
+    expect(migration).toContain("case when p_provider = 'paddle' then p_subtotal_minor else p_total_minor end");
     expect(migration).toContain("on conflict (provider, provider_transaction_id) do update");
     expect(migration).toContain("current_period_start = p_current_period_start");
     expect(migration).toContain("current_period_end = p_current_period_end");

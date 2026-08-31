@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { validatePaystackTransaction } from "../supabase/functions/_shared/paystackFulfillment";
 
@@ -41,5 +43,15 @@ describe("Paystack verified transaction boundary", () => {
   it("rejects currency and returned plan mismatches", () => {
     expect(() => validatePaystackTransaction(checkout, transaction({ currency: "USD" }))).toThrow(/currency/i);
     expect(() => validatePaystackTransaction(checkout, transaction({ plan: { plan_code: "PLN_other" } }))).toThrow(/plan/i);
+  });
+
+  it("routes recurring charges through the renewal ledger without setup", () => {
+    const webhook = readFileSync(join(process.cwd(), "supabase", "functions", "paystack-webhook", "index.ts"), "utf8");
+
+    expect(webhook).toContain("recordPaystackRenewal");
+    expect(webhook).toContain('rpc("record_verified_subscription_renewal"');
+    expect(webhook).toContain("mirrorSuccessfulInvoice");
+    expect(webhook).toContain("shouldDispatchSetup");
+    expect(webhook).toContain('setup.status !== "completed"');
   });
 });

@@ -89,6 +89,19 @@ describe("Paddle server integration contract", () => {
     expect(worker).toContain("processingErrorMessage(error)");
   });
 
+  it("records recurring Paddle transactions without replaying setup", () => {
+    const worker = source("supabase", "functions", "paddle-process-webhooks", "index.ts");
+
+    expect(worker).toContain('"subscription.activated"');
+    expect(worker).toContain('"subscription.past_due"');
+    expect(worker).toContain('"subscription.paused"');
+    expect(worker).toContain('"subscription.resumed"');
+    expect(worker).toContain('checkout.status === "paid"');
+    expect(worker).toContain('rpc("record_verified_subscription_renewal"');
+    expect(worker).toContain("shouldDispatchSetup");
+    expect(worker).toContain('setup.status !== "completed"');
+  });
+
   it("derives the required subscription amount from verified provider minor units", () => {
     const migration = source("supabase", "migrations", "20260716000100_fix_paddle_subscription_amount.sql");
     const cancellationMigration = source("supabase", "migrations", "20260716000200_fix_paddle_cancel_flag.sql");
