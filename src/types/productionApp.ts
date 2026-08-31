@@ -337,6 +337,7 @@ export type ProductionBillingService = {
     preview: ProductionBillingCheckoutPreview;
   }): Promise<void>;
   openCustomerPortal?(workspace: ProductionWorkspace): Promise<void>;
+  subscribeWorkspaceAccess?(workspace: ProductionWorkspace, onChange: () => void): () => void;
   createCheckoutPreview(input: {
     user: ProductionUser;
     candidate: ProductionSpotifyArtistCandidate;

@@ -622,17 +622,46 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       });
     },
     async openCustomerPortal(workspace) {
-      const { data, error } = await client.functions.invoke("paddle-customer-portal", {
+      if (!workspace.billingProvider) throw new Error("No billing provider was found for this workspace.");
+      const functionName = workspace.billingProvider === "paddle"
+        ? "paddle-customer-portal"
+        : "paystack-customer-portal";
+      const { data, error } = await client.functions.invoke(functionName, {
         body: { artistWorkspaceId: workspace.artistWorkspaceId },
       });
       if (error) await throwFunctionInvokeError(error, "Customer portal could not be opened.");
       const value = (data as { url?: unknown } | null)?.url;
       if (typeof value !== "string") throw new Error("Customer portal response was incomplete.");
       const destination = new URL(value);
-      if (destination.protocol !== "https:" || destination.hostname !== "customer-portal.paddle.com") {
-        throw new Error("Paddle returned an unexpected customer portal destination.");
+      const hostname = destination.hostname.toLowerCase();
+      const trustedHost = workspace.billingProvider === "paddle"
+        ? hostname === "customer-portal.paddle.com"
+        : hostname === "paystack.com" || hostname.endsWith(".paystack.com");
+      if (destination.protocol !== "https:" || !trustedHost) {
+        throw new Error(`${workspace.billingProvider === "paddle" ? "Paddle" : "Paystack"} returned an unexpected customer portal destination.`);
       }
       window.location.assign(destination.href);
+    },
+    subscribeWorkspaceAccess(workspace, onChange) {
+      const channel = client
+        .channel(`workspace-access:${workspace.artistWorkspaceId}:${createClientRequestId()}`)
+        .on("postgres_changes", {
+          event: "*",
+          schema: "public",
+          table: "billing_subscriptions",
+          filter: `artist_workspace_id=eq.${workspace.artistWorkspaceId}`,
+        }, onChange)
+        .on("postgres_changes", {
+          event: "*",
+          schema: "public",
+          table: "workspace_access_grants",
+          filter: `artist_workspace_id=eq.${workspace.artistWorkspaceId}`,
+        }, onChange)
+        .subscribe();
+
+      return () => {
+        void client.removeChannel(channel);
+      };
     },
     async createCheckoutPreview({ candidate, existingWorkspace }) {
       const { data, error } = await client.functions.invoke("paystack-initialize-checkout", {

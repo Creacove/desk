@@ -1,4 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const { paddle, getPaddle } = vi.hoisted(() => {
@@ -193,7 +195,43 @@ describe("provider-aware billing service", () => {
 
   it("rejects an unexpected customer portal origin", async () => {
     const client = { functions: { invoke: async () => ({ data: { url: "https://evil.example/session" }, error: null }) } } as unknown as SupabaseClient;
-    await expect(createSupabaseBillingService(client).openCustomerPortal!({ artistWorkspaceId: "workspace-1" } as any))
+    await expect(createSupabaseBillingService(client).openCustomerPortal!({ artistWorkspaceId: "workspace-1", billingProvider: "paddle" } as any))
       .rejects.toThrow(/unexpected/i);
+  });
+
+  it("routes billing management through the workspace provider", () => {
+    const service = readFileSync(join(process.cwd(), "src", "services", "productionSupabase.ts"), "utf8");
+
+    expect(service).toContain('workspace.billingProvider === "paddle"');
+    expect(service).toContain('"paddle-customer-portal"');
+    expect(service).toContain('"paystack-customer-portal"');
+    expect(service).toContain('hostname === "paystack.com" || hostname.endsWith(".paystack.com")');
+  });
+
+  it("subscribes to subscription and beta-grant changes for the workspace", () => {
+    const on = vi.fn().mockReturnThis();
+    const subscribe = vi.fn().mockReturnThis();
+    const removeChannel = vi.fn();
+    const client = {
+      channel: vi.fn(() => ({ on, subscribe })),
+      removeChannel,
+    } as unknown as SupabaseClient;
+    const onChange = vi.fn();
+
+    const unsubscribe = createSupabaseBillingService(client).subscribeWorkspaceAccess!({
+      artistWorkspaceId: "workspace-1",
+    } as any, onChange);
+
+    expect(on).toHaveBeenCalledTimes(2);
+    expect(on).toHaveBeenCalledWith("postgres_changes", expect.objectContaining({
+      table: "billing_subscriptions",
+      filter: "artist_workspace_id=eq.workspace-1",
+    }), onChange);
+    expect(on).toHaveBeenCalledWith("postgres_changes", expect.objectContaining({
+      table: "workspace_access_grants",
+      filter: "artist_workspace_id=eq.workspace-1",
+    }), onChange);
+    unsubscribe();
+    expect(removeChannel).toHaveBeenCalledTimes(1);
   });
 });
