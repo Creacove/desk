@@ -56,17 +56,25 @@ describe("subscription recovery gate", () => {
     }));
   });
 
-  it("converts expired beta access to a paid plan without another code", () => {
+  it("opens plan selection for expired beta access without another code", async () => {
+    const prepareProviderCheckout = vi.fn().mockResolvedValue({
+      checkoutSessionId: "checkout-beta", reference: "checkout-beta", provider: "paystack", status: "initialized",
+      artist: { spotifyArtistId: "spotify-1", name: "Sable Day", spotifyUrl: "https://open.spotify.com/artist/spotify-1", genres: [] },
+      interval: "monthly", amount: 32_000, currency: "NGN", authorizationUrl: "https://checkout.paystack.com/test",
+    });
+    const openProviderCheckout = vi.fn();
     render(<SubscriptionRecoveryGate
       user={user}
       workspace={workspace({ accessType: "private_beta", billingProvider: undefined, billingInterval: undefined })}
-      billingService={{} as ProductionBillingService}
+      billingService={{ prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService}
       onRecovered={vi.fn()}
       onSignOut={vi.fn()}
     />);
 
     expect(screen.getByRole("dialog", { name: "Your beta access has ended" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Choose a plan" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Choose a plan" }));
+    expect(await screen.findByRole("dialog", { name: "Choose a plan" })).toBeTruthy();
+    expect(openProviderCheckout).not.toHaveBeenCalled();
     expect(screen.queryByText(/access code/i)).toBeNull();
   });
 });

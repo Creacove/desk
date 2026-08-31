@@ -7,7 +7,7 @@ import { splitAttentionItems } from "../features/desk/deskAttention";
 import { DeskHQScreen } from "../features/desk/DeskHQ";
 import { SubscriptionRecoveryGate } from "../features/billing/SubscriptionRecoveryGate";
 import { BetaAccessEndingNotice } from "../features/billing/BetaAccessEndingNotice";
-import { openWorkspaceSubscriptionCheckout } from "../features/billing/workspaceCheckout";
+import { SubscriptionPlanDialog } from "../features/billing/SubscriptionPlanDialog";
 import { ProductionDrawers } from "../features/drawers/ProductionDrawers";
 import {
   activityCursorKey,
@@ -203,6 +203,7 @@ export function ProductionApp({
   const [workspace, setWorkspace] = useState<ProductionWorkspace | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [paymentReturn, setPaymentReturn] = useState<PaymentReturnState | null>(
     paymentReturnReference ? { reference: paymentReturnReference, status: "checking" } : null,
   );
@@ -604,7 +605,7 @@ export function ProductionApp({
   return (
     <>
     {successNotice ? <SuccessToast message={successNotice} onClose={() => setSuccessNotice(null)} /> : null}
-    {workspace ? <BetaAccessEndingNotice user={sessionUser as ProductionUser} workspace={workspace} billingService={runtime.billingService} /> : null}
+    {workspace ? <BetaAccessEndingNotice workspace={workspace} onChoosePlan={() => setPlanDialogOpen(true)} /> : null}
     <CleanProductionWorkspace
       analyticsUser={sessionUser as ProductionUser}
       authAdapter={runtime.authAdapter}
@@ -620,7 +621,17 @@ export function ProductionApp({
       initialView={shouldUseFixtureRuntime ? initialView : resolveWorkspaceInitialView(workspace as ProductionWorkspace, initialView)}
       onWorkspaceChange={setWorkspace}
       onSignOut={handleSignOut}
+      onChoosePlan={() => setPlanDialogOpen(true)}
     />
+    {workspace && runtime.billingService ? (
+      <SubscriptionPlanDialog
+        open={planDialogOpen}
+        onClose={() => setPlanDialogOpen(false)}
+        user={sessionUser as ProductionUser}
+        workspace={workspace}
+        billingService={runtime.billingService}
+      />
+    ) : null}
     </>
   );
 }
@@ -640,6 +651,7 @@ function CleanProductionWorkspace({
   initialView,
   onWorkspaceChange,
   onSignOut,
+  onChoosePlan,
 }: {
   analyticsUser: ProductionUser;
   authAdapter: ProductionAuthAdapter;
@@ -655,6 +667,7 @@ function CleanProductionWorkspace({
   initialView: CleanProductionView;
   onWorkspaceChange?: (workspace: ProductionWorkspace) => void;
   onSignOut?: () => void;
+  onChoosePlan?: () => void;
 }) {
   const isTestUser = isTestUserEmail(analyticsUser.email);
   const { mode: themeMode, resolvedMode: resolvedThemeMode, setMode: setThemeMode } = useTheme();
@@ -2430,11 +2443,7 @@ function CleanProductionWorkspace({
                   ? () => billingService.openCustomerPortal!(workspace)
                   : undefined
               }
-              onChoosePlan={
-                workspace && billingService
-                  ? () => openWorkspaceSubscriptionCheckout({ user: analyticsUser, workspace, billingService })
-                  : undefined
-              }
+              onChoosePlan={onChoosePlan}
               themeMode={themeMode}
               resolvedThemeMode={resolvedThemeMode}
               onThemeModeChange={setThemeMode}

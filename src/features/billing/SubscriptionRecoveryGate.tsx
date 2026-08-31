@@ -7,6 +7,7 @@ import type {
   ProductionUser,
   ProductionWorkspace,
 } from "../../types/productionApp";
+import { SubscriptionPlanDialog } from "./SubscriptionPlanDialog";
 import { openWorkspaceSubscriptionCheckout } from "./workspaceCheckout";
 
 export function SubscriptionRecoveryGate({
@@ -24,6 +25,7 @@ export function SubscriptionRecoveryGate({
 }) {
   const [pending, setPending] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [planDialogOpen, setPlanDialogOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const stopConfirmationRef = useRef<(() => void) | null>(null);
   const betaEnded = workspace.accessType === "private_beta";
@@ -71,7 +73,7 @@ export function SubscriptionRecoveryGate({
         </p>
         {error ? <p role="alert" className="mt-4 text-[13px] font-medium text-destructive">{error}</p> : null}
         <div className="mt-7 grid gap-3">
-          <ProductButton onClick={() => void restoreAccess()} disabled={pending || confirming}>
+          <ProductButton onClick={() => betaEnded ? setPlanDialogOpen(true) : void restoreAccess()} disabled={pending || confirming}>
             {pending ? "Opening payment…" : betaEnded ? "Choose a plan" : "Restore access"}
           </ProductButton>
           <button type="button" onClick={onSignOut} className="inline-flex items-center justify-center gap-2 py-2 text-[12px] font-semibold text-muted-foreground hover:text-foreground">
@@ -79,6 +81,13 @@ export function SubscriptionRecoveryGate({
           </button>
         </div>
       </section>
+      <SubscriptionPlanDialog
+        open={planDialogOpen}
+        onClose={() => setPlanDialogOpen(false)}
+        user={user}
+        workspace={workspace}
+        billingService={billingService}
+      />
     </main>
   );
 }

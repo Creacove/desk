@@ -15,18 +15,33 @@ export async function openWorkspaceSubscriptionCheckout({
   workspace: ProductionWorkspace;
   billingService: ProductionBillingService;
 }): Promise<ProductionBillingCheckoutPreview> {
-  if (!billingService.prepareProviderCheckout || !billingService.openProviderCheckout) {
-    throw new Error("Billing is temporarily unavailable. Please try again.");
-  }
-  const preview = await billingService.prepareProviderCheckout({
+  const preview = await prepareWorkspaceSubscriptionCheckout({ user, workspace, billingService });
+  if (!billingService.openProviderCheckout) throw new Error("Billing is temporarily unavailable. Please try again.");
+  await billingService.openProviderCheckout({ user, preview });
+  return preview;
+}
+
+export async function prepareWorkspaceSubscriptionCheckout({
+  user,
+  workspace,
+  billingService,
+  interval = workspace.billingInterval ?? "monthly",
+  providerPreference = workspace.billingProvider ?? "auto",
+}: {
+  user: ProductionUser;
+  workspace: ProductionWorkspace;
+  billingService: ProductionBillingService;
+  interval?: "monthly" | "yearly";
+  providerPreference?: "auto" | "paddle" | "paystack";
+}): Promise<ProductionBillingCheckoutPreview> {
+  if (!billingService.prepareProviderCheckout) throw new Error("Billing is temporarily unavailable. Please try again.");
+  return billingService.prepareProviderCheckout({
     user,
     candidate: workspaceCandidate(workspace),
     existingWorkspace: workspace,
-    interval: workspace.billingInterval ?? "monthly",
-    providerPreference: workspace.billingProvider ?? "auto",
+    interval,
+    providerPreference,
   });
-  await billingService.openProviderCheckout({ user, preview });
-  return preview;
 }
 
 export function workspaceCandidate(workspace: ProductionWorkspace): ProductionSpotifyArtistCandidate {

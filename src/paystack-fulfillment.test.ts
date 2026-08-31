@@ -54,4 +54,10 @@ describe("Paystack verified transaction boundary", () => {
     expect(webhook).toContain("shouldDispatchSetup");
     expect(webhook).toContain('setup.status !== "completed"');
   });
+
+  it("collects a reusable card for recurring subscription checkout", () => {
+    const initialize = readFileSync(join(process.cwd(), "supabase", "functions", "paystack-initialize-checkout", "index.ts"), "utf8");
+
+    expect(initialize).toContain('channels: ["card"]');
+  });
 });

@@ -1,21 +1,16 @@
 import { useEffect, useState } from "react";
 import { Button } from "../../design-system/desktopPrimitives";
-import type { ProductionBillingService, ProductionUser, ProductionWorkspace } from "../../types/productionApp";
-import { openWorkspaceSubscriptionCheckout } from "./workspaceCheckout";
+import type { ProductionWorkspace } from "../../types/productionApp";
 
 const NOTICE_WINDOW_MS = 7 * 24 * 60 * 60 * 1_000;
 
 export function BetaAccessEndingNotice({
-  user,
   workspace,
-  billingService,
+  onChoosePlan,
 }: {
-  user: ProductionUser;
   workspace: ProductionWorkspace;
-  billingService?: ProductionBillingService;
+  onChoosePlan: () => void;
 }) {
-  const [pending, setPending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (!workspace.accessEndsAt) return;
@@ -28,7 +23,7 @@ export function BetaAccessEndingNotice({
     const timeout = window.setTimeout(() => setNow(Date.now()), delay + 100);
     return () => window.clearTimeout(timeout);
   }, [now, workspace.accessEndsAt]);
-  if (!shouldShowBetaAccessEndingNotice(workspace, now) || !billingService) return null;
+  if (!shouldShowBetaAccessEndingNotice(workspace, now)) return null;
 
   const endDate = new Date(workspace.accessEndsAt!).toLocaleDateString("en-US", { month: "short", day: "numeric" });
   return (
@@ -36,24 +31,8 @@ export function BetaAccessEndingNotice({
       <div className="min-w-0">
         <p className="text-[12px] font-semibold text-foreground">Beta access ends {endDate}</p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">Choose a plan to keep your Desk open.</p>
-        {error ? <p role="alert" className="mt-1 text-[11px] font-medium text-destructive">{error}</p> : null}
       </div>
-      <Button
-        size="sm"
-        pending={pending}
-        className="shrink-0"
-        onClick={async () => {
-          try {
-            setPending(true);
-            setError(null);
-            await openWorkspaceSubscriptionCheckout({ user, workspace, billingService });
-          } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Payment could not be opened.");
-          } finally {
-            setPending(false);
-          }
-        }}
-      >
+      <Button size="sm" className="shrink-0" onClick={onChoosePlan}>
         Choose a plan
       </Button>
     </aside>
