@@ -196,7 +196,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "artists!artist_workspaces_artist_id_fkey(display_name, canonical_spotify_artist_id, canonical_spotify_url)",
             "artist_profiles!artist_profiles_artist_workspace_id_fkey(display_name, spotify_identity, genres, home_market, stage, artist_direction, current_goal, budget_context)",
             "source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(status,created_at)",
-            "billing_subscriptions!billing_subscriptions_artist_workspace_id_fkey(provider,status,current_period_end,provider_customer_code,billing_checkout_sessions!billing_subscriptions_checkout_session_id_fkey(plan_interval))",
+            "billing_subscriptions!billing_subscriptions_artist_workspace_id_fkey(provider,status,current_period_end,provider_customer_code,billing_checkout_sessions!billing_subscriptions_checkout_session_id_fkey(interval))",
             "workspace_access_grants!workspace_access_grants_artist_workspace_id_fkey(access_type,status,starts_at,ends_at)",
             "workspace_setup_runs!workspace_setup_runs_artist_workspace_id_fkey(id,status,current_stage,stage_status,last_error,checkout_session_id,updated_at)",
           ].join(", "),
@@ -241,7 +241,7 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
         accessStartsAt: latestBetaGrant(workspace.workspace_access_grants)?.starts_at ?? undefined,
         accessEndsAt: latestBetaGrant(workspace.workspace_access_grants)?.ends_at ?? undefined,
         renewalAt: latestPaidSubscription(workspace.billing_subscriptions)?.current_period_end ?? undefined,
-        billingInterval: latestPaidSubscription(workspace.billing_subscriptions)?.billing_checkout_sessions?.plan_interval ?? undefined,
+        billingInterval: latestPaidSubscription(workspace.billing_subscriptions)?.billing_checkout_sessions?.interval ?? undefined,
         paddleCustomerId: latestPaidSubscription(workspace.billing_subscriptions)?.provider === "paddle"
           ? latestPaidSubscription(workspace.billing_subscriptions)?.provider_customer_code ?? undefined
           : undefined,
@@ -2954,7 +2954,7 @@ type WorkspaceRow = {
     status?: ProductionWorkspace["subscriptionStatus"] | null;
     current_period_end?: string | null;
     provider_customer_code?: string | null;
-    billing_checkout_sessions?: { plan_interval?: "monthly" | "yearly" | null } | null;
+    billing_checkout_sessions?: { interval?: "monthly" | "yearly" | null } | null;
   }> | null;
   workspace_access_grants?: Array<{ access_type?: string | null; status?: string | null; starts_at?: string | null; ends_at?: string | null }> | null;
   workspace_setup_runs?: Array<{

@@ -245,7 +245,8 @@ describe("production Supabase services", () => {
     expect(workspaceQuery?.select).toContain("artist_profiles!artist_profiles_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("billing_subscriptions!billing_subscriptions_artist_workspace_id_fkey(");
-    expect(workspaceQuery?.select).toContain("billing_checkout_sessions!billing_subscriptions_checkout_session_id_fkey(plan_interval)");
+    expect(workspaceQuery?.select).toContain("billing_checkout_sessions!billing_subscriptions_checkout_session_id_fkey(interval)");
+    expect(workspaceQuery?.select).not.toContain("plan_interval");
     expect(workspaceQuery?.select).toContain("workspace_access_grants!workspace_access_grants_artist_workspace_id_fkey(");
     expect(workspaceQuery?.select).toContain("workspace_setup_runs!workspace_setup_runs_artist_workspace_id_fkey(");
   });
@@ -266,7 +267,7 @@ describe("production Supabase services", () => {
           status: "canceled",
           current_period_end: "2026-08-01T00:00:00.000Z",
           provider_customer_code: "ctm_customer",
-          billing_checkout_sessions: { plan_interval: "yearly" },
+          billing_checkout_sessions: { interval: "yearly" },
         }],
       }],
     });
