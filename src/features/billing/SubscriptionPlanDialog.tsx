@@ -49,7 +49,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
 
   if (!open) return null;
   const price = preview ? formatCheckoutPrice(preview) : "Loading price…";
-  const payLabel = preview?.provider === "paystack" ? `Pay ${price} with card` : `Pay ${price}`;
+  const payLabel = `Pay ${price}`;
 
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-background/70 p-4 backdrop-blur-md" role="presentation">
@@ -101,7 +101,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
             {preview.provider === "paystack" ? "Pay in USD" : "Pay in NGN"}
           </button>
         ) : null}
-        <p className="mt-5 text-center text-[10px] font-medium text-muted-foreground">Secure recurring card payment. Cancel from Billing.</p>
+        <p className="mt-5 text-center text-[10px] font-medium text-muted-foreground">Secure recurring payment. Cancel from Billing.</p>
       </section>
     </div>
   );

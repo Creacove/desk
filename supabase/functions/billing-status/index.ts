@@ -2,7 +2,7 @@ import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { publicWorkflowFailure, workflowFailureBody } from "../_shared/workflowErrors.ts";
 import { sendPaidSubscriptionActivatedEmail } from "../_shared/accessEmails.ts";
-import { ensurePaystackCardSubscription, fulfillVerifiedPaystackCheckout } from "../_shared/paystackFulfillment.ts";
+import { fulfillVerifiedPaystackCheckout } from "../_shared/paystackFulfillment.ts";
 
 type BillingStatusInput = {
   reference?: string;
@@ -56,7 +56,6 @@ Deno.serve(withAppErrorCapture("billing-status", async (request) => {
           supabaseUrl,
           serviceRoleKey,
           source: "billing_status_verify",
-          secretKey: requireEnv("PAYSTACK_SECRET_KEY"),
         });
         checkout = activated.checkout;
         setupDispatched = setupDispatched || activated.setupDispatched;
@@ -228,17 +227,15 @@ async function verifyPaystackTransaction(reference: string, secretKey: string) {
   return data;
 }
 
-async function activateVerifiedPaystackCheckout({ serviceClient, checkout, transaction, supabaseUrl, serviceRoleKey, source, secretKey }: {
+async function activateVerifiedPaystackCheckout({ serviceClient, checkout, transaction, supabaseUrl, serviceRoleKey, source }: {
   serviceClient: any;
   checkout: any;
   transaction: Record<string, any>;
   supabaseUrl: string;
   serviceRoleKey: string;
   source: string;
-  secretKey: string;
 }) {
-  const subscribedTransaction = await ensurePaystackCardSubscription({ db: serviceClient, checkout, transaction, secretKey });
-  const fulfilled = await fulfillVerifiedPaystackCheckout({ db: serviceClient, checkout, transaction: subscribedTransaction });
+  const fulfilled = await fulfillVerifiedPaystackCheckout({ db: serviceClient, checkout, transaction });
   const workspace = {
     account_id: fulfilled.fulfillment.account_id,
     artist_workspace_id: fulfilled.fulfillment.artist_workspace_id,

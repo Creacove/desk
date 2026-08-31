@@ -42,49 +42,6 @@ export async function fulfillVerifiedPaystackCheckout(input: {
   return { fulfillment, checkout: checkout ?? input.checkout, ...normalized };
 }
 
-export async function ensurePaystackCardSubscription(input: {
-  db: any;
-  checkout: any;
-  transaction: Record<string, any>;
-  secretKey: string;
-}) {
-  const normalized = validatePaystackTransaction(input.checkout, input.transaction);
-  const existingCode = String(input.checkout.provider_subscription_code ?? "").trim();
-  const periodStart = normalized.occurredAt;
-  const periodEnd = addCheckoutInterval(periodStart, input.checkout.interval);
-  if (existingCode && !existingCode.startsWith("paystack_charge_")) {
-    return { ...input.transaction, subscription_code: existingCode, period_start: periodStart, period_end: periodEnd };
-  }
-
-  const authorization = input.transaction.authorization ?? {};
-  const authorizationCode = String(authorization.authorization_code ?? "").trim();
-  if (String(authorization.channel ?? "").toLowerCase() !== "card" || authorization.reusable !== true || !authorizationCode) {
-    throw new Error("Paystack did not return a reusable card authorization for this subscription.");
-  }
-
-  const response = await fetch("https://api.paystack.co/subscription", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${input.secretKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      customer: normalized.customerId,
-      plan: input.checkout.provider_plan_code ?? input.checkout.provider_price_id,
-      authorization: authorizationCode,
-      start_date: periodEnd,
-    }),
-  });
-  const payload = await response.json().catch(() => null);
-  const subscriptionCode = String(payload?.data?.subscription_code ?? "").trim();
-  if (!response.ok || payload?.status !== true || !subscriptionCode) {
-    throw new Error(payload?.message ?? `Paystack subscription creation failed with ${response.status}.`);
-  }
-
-  const { error } = await input.db.from("billing_checkout_sessions")
-    .update({ provider_subscription_code: subscriptionCode })
-    .eq("id", input.checkout.id);
-  if (error) throw error;
-  return { ...input.transaction, subscription_code: subscriptionCode, period_start: periodStart, period_end: periodEnd };
-}
-
 export function validatePaystackTransaction(checkout: any, transaction: Record<string, any>) {
   const status = String(transaction.status ?? "").toLowerCase();
   if (!["success", "successful"].includes(status)) {
@@ -130,16 +87,4 @@ export function validatePaystackTransaction(checkout: any, transaction: Record<s
     periodEnd: transaction.period_end ?? transaction.subscription?.current_period_end ?? transaction.subscription?.next_payment_date ?? null,
     occurredAt: transaction.paid_at ?? transaction.paidAt ?? transaction.created_at ?? new Date().toISOString(),
   };
-}
-
-function addCheckoutInterval(value: string, interval: unknown) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) throw new Error("Paystack payment date was invalid.");
-  const day = date.getUTCDate();
-  date.setUTCDate(1);
-  if (interval === "yearly") date.setUTCFullYear(date.getUTCFullYear() + 1);
-  else date.setUTCMonth(date.getUTCMonth() + 1);
-  const lastDay = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
-  date.setUTCDate(Math.min(day, lastDay));
-  return date.toISOString();
 }

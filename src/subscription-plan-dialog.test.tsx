@@ -30,11 +30,12 @@ describe("SubscriptionPlanDialog", () => {
       providerPreference: "auto",
     })));
     expect(openProviderCheckout).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Pay ₦32,000 with card" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Pay ₦32,000" })).toBeEnabled();
+    expect(screen.getByText("Secure recurring payment. Cancel from Billing.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Yearly" }));
     await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({ interval: "yearly" })));
-    expect(await screen.findByRole("button", { name: "Pay ₦320,000 with card" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "Pay ₦320,000" })).toBeEnabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Pay in USD" }));
     await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
