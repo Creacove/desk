@@ -212,3 +212,38 @@ Expected: PASS.
 Run: `git diff --check` and `git status --short`.
 
 Expected: no whitespace errors and only subscription-renewal/recovery files are modified.
+
+### Task 8: Delegate Paystack subscription collection to Paystack
+
+**Files:**
+- Modify: `src/paystack-fulfillment.test.ts`
+- Modify: `supabase/functions/paystack-initialize-checkout/index.ts`
+- Modify: `supabase/functions/paystack-webhook/index.ts`
+- Modify: `supabase/functions/billing-status/index.ts`
+- Modify: `supabase/functions/_shared/paystackFulfillment.ts`
+
+- [ ] **Step 1: Write the failing provider contract test**
+
+Require Paystack initialization to send `plan: planCode` without a forced `channels` list, and require initial fulfillment to consume the subscription identifier returned by Paystack rather than creating a subscription after a separate card-only charge.
+
+- [ ] **Step 2: Run the focused test and verify failure**
+
+Run: `npm test -- src/paystack-fulfillment.test.ts`
+
+Expected: FAIL because checkout currently forces Card and omits the plan.
+
+- [ ] **Step 3: Restore provider-managed subscription checkout**
+
+Send the recurring plan code to Paystack, remove the forced channel list, and remove the post-charge card-subscription creation helper and its call sites. Preserve verified atomic fulfillment, recurring webhook routing, and setup suppression for workspace reactivation.
+
+- [ ] **Step 4: Run focused billing tests**
+
+Run: `npm test -- src/paystack-fulfillment.test.ts src/paystack-paywall-contract.test.tsx src/paddle-backend-contract.test.ts src/paddle-billing-service.test.ts`
+
+Expected: PASS.
+
+- [ ] **Step 5: Run build and deploy the changed Paystack functions**
+
+Run: `npm run build`, then deploy `paystack-initialize-checkout`, `paystack-webhook`, and `billing-status` to the linked Supabase project.
+
+Expected: the build exits successfully and each deployment reports success.

@@ -28,6 +28,8 @@ Backend entitlement checks remain authoritative. Blur and disabled controls are 
 
 Initial checkouts continue to use `fulfill_verified_checkout`. A completed workspace reactivation may create an audit setup row, but that row is atomically completed and no setup worker is dispatched.
 
+Paystack checkout sends the selected recurring plan code and does not force a payment channel. Paystack's hosted subscription checkout owns collection and may offer the subscription-compatible Card and Nigerian Direct Debit methods enabled for the merchant. Desk verifies the resulting provider subscription before granting access; it does not convert one-time transfer or USSD payments into subscriptions.
+
 Recurring provider transactions use a separate `record_verified_subscription_renewal` database function. It validates the existing provider subscription, customer, price, currency, and amount; inserts one idempotent transaction per provider transaction ID; and advances the existing subscription period. It never touches setup.
 
 Paddle subscription status events mirror active, past-due, paused, resumed, and canceled states. A recurring `transaction.completed` records a renewal when its correlated checkout was already paid. Paystack `charge.success` records a renewal when it belongs to an existing subscription rather than an open checkout; invoice updates mirror status and period without replaying initial fulfillment.
