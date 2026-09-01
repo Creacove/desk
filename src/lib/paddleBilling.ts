@@ -89,9 +89,7 @@ export function resolveBillingProvider(
     throw new Error("Billing provider preference is invalid.");
   }
   if (preference !== "auto") return preference;
-  const serverCountry = normalizeCountryCode(serverCountryCode);
-  const paddleCountry = normalizeCountryCode(paddleCountryCode);
-  return (serverCountry ?? paddleCountry) === "NG" ? "paystack" : "paddle";
+  return "paddle";
 }
 
 export function openPaddleCheckout(paddle: Pick<Paddle, "Checkout">, input: {

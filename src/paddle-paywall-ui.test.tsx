@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PaywallPreviewScreen } from "./features/onboarding/OnboardingScreens";
+import { PaywallPreviewScreen as FrontDoorPaywallPreviewScreen } from "./features/onboarding/FrontDoorScreens";
 
 const artist = {
   spotifyArtistId: "artist-1",
@@ -43,23 +44,32 @@ describe("provider-aware paywall", () => {
     expect(screen.queryByRole("button", { name: /opening secure checkout/i })).not.toBeInTheDocument();
   });
 
-  it("offers Nigerian Paystack customers an explicit USD Paddle choice", () => {
-    const onProviderChange = vi.fn();
+  it("does not expose a provider switch for a legacy Nigerian Paystack preview", () => {
     render(<PaywallPreviewScreen preview={{
       checkoutSessionId: "checkout-ng", reference: "ors_ng", provider: "paystack", status: "initialized",
       artist, interval: "monthly", amount: 32_000, amountMinor: 3_200_000, currency: "NGN",
-    }} onProviderChange={onProviderChange} onSubscribe={() => undefined} onBack={() => undefined} />);
+    }} onSubscribe={() => undefined} onBack={() => undefined} />);
 
-    const usdAction = screen.getByRole("button", { name: "Pay in USD with an international card" });
-    fireEvent.click(usdAction);
-    expect(onProviderChange).toHaveBeenCalledWith("paddle", "monthly");
+    expect(screen.queryByRole("button", { name: "Pay in USD with an international card" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay in USD" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay in NGN" })).not.toBeInTheDocument();
+  });
+
+  it("does not expose a provider switch in the production front-door paywall", () => {
+    render(<FrontDoorPaywallPreviewScreen preview={{
+      checkoutSessionId: "checkout-ng", reference: "ors_ng", provider: "paystack", status: "initialized",
+      artist, interval: "monthly", amount: 32_000, amountMinor: 3_200_000, currency: "NGN",
+    }} onSubscribe={() => undefined} onBack={() => undefined} />);
+
+    expect(screen.queryByRole("button", { name: "Pay in USD" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay in USD with an international card" })).not.toBeInTheDocument();
   });
 
   it("does not show the USD provider choice on Paddle previews", () => {
     render(<PaywallPreviewScreen preview={{
       checkoutSessionId: "checkout-usd", reference: "checkout-usd", provider: "paddle", status: "open",
       artist, interval: "monthly", formattedTotal: "$20.00", priceId: "pri_month",
-    }} onProviderChange={() => undefined} onSubscribe={() => undefined} onBack={() => undefined} />);
+    }} onSubscribe={() => undefined} onBack={() => undefined} />);
 
     expect(screen.queryByRole("button", { name: "Pay in USD with an international card" })).not.toBeInTheDocument();
   });

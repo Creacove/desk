@@ -246,7 +246,6 @@ export function PaywallPreviewScreen({
   error,
   onSubscribe,
   onIntervalChange,
-  onProviderChange,
   onBack,
   onSignOut,
 }: {
@@ -256,7 +255,6 @@ export function PaywallPreviewScreen({
   error?: string | null;
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
-  onProviderChange?: (provider: "paddle" | "paystack", interval: "monthly" | "yearly") => void | Promise<void>;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
@@ -386,17 +384,6 @@ export function PaywallPreviewScreen({
                   {pending ? "Opening secure checkout" : `Subscribe ${price}/${intervalLabel}`}
                   <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" aria-hidden="true" />
                 </button>
-
-                {preview.provider === "paystack" && preview.currency === "NGN" && onProviderChange ? (
-                  <button
-                    type="button"
-                    onClick={() => void onProviderChange("paddle", selectedInterval)}
-                    disabled={pending}
-                    className="mt-2 w-full text-center text-[10px] font-bold text-muted-foreground underline decoration-foreground/20 underline-offset-4 transition-colors hover:text-foreground disabled:opacity-50 lg:text-[11px]"
-                  >
-                    Pay in USD with an international card
-                  </button>
-                ) : null}
 
                 <a
                   href={artist.spotifyUrl}

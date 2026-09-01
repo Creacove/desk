@@ -47,14 +47,12 @@ describe("Paddle browser checkout", () => {
     });
   });
 
-  it("routes Nigeria to Paystack including when Paddle detects it", () => {
-    expect(resolveBillingProvider("NG")).toBe("paystack");
-    expect(resolveBillingProvider(undefined, "NG")).toBe("paystack");
+  it("defaults every automatic checkout to Paddle until Nigerian Paystack is explicitly enabled", () => {
+    expect(resolveBillingProvider("NG")).toBe("paddle");
+    expect(resolveBillingProvider(undefined, "NG")).toBe("paddle");
     expect(resolveBillingProvider("GB")).toBe("paddle");
-  });
-
-  it("lets an explicit Paddle choice override Nigerian auto-routing", () => {
-    expect(resolveBillingProvider("NG", undefined, "auto")).toBe("paystack");
+    expect(resolveBillingProvider("NG", undefined, "paystack")).toBe("paystack");
+    expect(resolveBillingProvider("GB", undefined, "paystack")).toBe("paystack");
     expect(resolveBillingProvider("NG", undefined, "paddle")).toBe("paddle");
     expect(() => resolveBillingProvider("NG", undefined, "invalid" as never)).toThrow(/provider/i);
   });

@@ -256,7 +256,6 @@ export function PaywallPreviewScreen({
   error,
   onSubscribe,
   onIntervalChange,
-  onProviderChange,
   onBack,
   onSignOut,
 }: {
@@ -266,7 +265,6 @@ export function PaywallPreviewScreen({
   error?: string | null;
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
-  onProviderChange?: (provider: "paddle" | "paystack", interval: "monthly" | "yearly") => void | Promise<void>;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
@@ -425,17 +423,6 @@ export function PaywallPreviewScreen({
               <Lock className="h-3 w-3" aria-hidden="true" />
               Secure checkout
             </div>
-
-            {preview.provider === "paystack" && preview.currency === "NGN" && onProviderChange ? (
-              <button
-                type="button"
-                onClick={() => void onProviderChange("paddle", selectedInterval)}
-                disabled={pending}
-                className="mt-4 w-full text-center text-[11px] font-semibold text-muted-foreground underline decoration-foreground/20 underline-offset-4 transition-colors hover:text-foreground disabled:opacity-45"
-              >
-                Pay in USD
-              </button>
-            ) : null}
 
           </aside>
         </section>

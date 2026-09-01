@@ -63,7 +63,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
 
         <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Billing interval">
           {(["monthly", "yearly"] as const).map((option) => (
-            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening} onClick={() => void loadPreview(option, preview?.provider ?? workspace.billingProvider ?? "auto")} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening} onClick={() => void loadPreview(option, workspace.billingProvider ?? "auto")} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               {option === "monthly" ? "Monthly" : "Yearly"}
             </button>
           ))}
@@ -96,11 +96,6 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
           {loading ? "Loading price…" : payLabel}
         </Button>
 
-        {preview ? (
-          <button type="button" disabled={loading || opening} onClick={() => void loadPreview(interval, preview.provider === "paystack" ? "paddle" : "paystack")} className="mt-4 w-full text-center text-[11px] font-semibold text-muted-foreground underline decoration-foreground/20 underline-offset-4 hover:text-foreground">
-            {preview.provider === "paystack" ? "Pay in USD" : "Pay in NGN"}
-          </button>
-        ) : null}
         <p className="mt-5 text-center text-[10px] font-medium text-muted-foreground">Secure recurring payment. Cancel from Billing.</p>
       </section>
     </div>

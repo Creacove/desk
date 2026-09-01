@@ -7,11 +7,11 @@ import type { ProductionBillingCheckoutPreview, ProductionBillingService, Produc
 afterEach(cleanup);
 
 describe("SubscriptionPlanDialog", () => {
-  it("previews plans before opening checkout and supports interval and currency switching", async () => {
+  it("previews Paddle plans before opening checkout without exposing provider switching", async () => {
     const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
     const prepareProviderCheckout = vi.fn(async ({ interval, providerPreference }: { interval: "monthly" | "yearly"; providerPreference: "auto" | "paddle" | "paystack" }) => {
-      if (providerPreference === "paddle") return preview("paddle", interval);
-      return preview("paystack", interval);
+      expect(providerPreference).toBe("auto");
+      return preview("paddle", interval);
     });
     const billingService = { prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService;
 
@@ -30,25 +30,35 @@ describe("SubscriptionPlanDialog", () => {
       providerPreference: "auto",
     })));
     expect(openProviderCheckout).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Pay ₦32,000" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Pay $24" })).toBeEnabled();
     expect(screen.getByText("Secure recurring payment. Cancel from Billing.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Yearly" }));
     await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({ interval: "yearly" })));
-    expect(await screen.findByRole("button", { name: "Pay ₦320,000" })).toBeEnabled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Pay in USD" }));
-    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
-      interval: "yearly",
-      providerPreference: "paddle",
-    })));
     expect(await screen.findByRole("button", { name: "Pay $240" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Pay in USD" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay in NGN" })).not.toBeInTheDocument();
     expect(openProviderCheckout).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Pay $240" }));
     await waitFor(() => expect(openProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
       preview: expect.objectContaining({ provider: "paddle", interval: "yearly" }),
     })));
+  });
+
+  it("does not expose a provider switch when an existing Paystack preview is returned", async () => {
+    const prepareProviderCheckout = vi.fn().mockResolvedValue(preview("paystack", "monthly"));
+    render(<SubscriptionPlanDialog
+      open
+      onClose={vi.fn()}
+      user={{ id: "user-1", email: "artist@example.com" }}
+      workspace={workspace()}
+      billingService={{ prepareProviderCheckout, openProviderCheckout: vi.fn() } as unknown as ProductionBillingService}
+    />);
+
+    expect(await screen.findByRole("button", { name: "Pay ₦32,000" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Pay in USD" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay in NGN" })).not.toBeInTheDocument();
   });
 });
 

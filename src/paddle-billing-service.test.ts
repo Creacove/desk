@@ -45,30 +45,25 @@ describe("provider-aware billing service", () => {
     await expect(createSupabaseBillingService(client).loadLatestCheckoutPreview!()).resolves.toBeNull();
   });
 
-  it("routes a server-detected Nigerian visitor to canonical Paystack yearly checkout", async () => {
+  it("uses Paddle as the default checkout for a server-detected Nigerian visitor", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "NG" }))));
     const calls: Array<{ name: string; body: any }> = [];
     const client = { functions: { invoke: async (name: string, options?: { body?: any }) => {
       calls.push({ name, body: options?.body });
       if (name === "billing-pricing-config") return { data: pricing, error: null };
-      return { data: { checkoutSessionId: "checkout-ng", reference: "ors_ng", status: "initialized", artist: candidate, amount: 300000, amountMinor: 30000000, currency: "NGN", interval: "yearly", authorizationUrl: "https://checkout.paystack.test/ng" }, error: null };
+      if (name === "paddle-create-checkout") return { data: {
+        checkoutSessionId: "checkout-ng-paddle", productId: "pro_1", priceId: "pri_year", interval: "yearly",
+        expiresAt: "2026-07-16T18:00:00Z",
+        customData: { version: 1, checkoutSessionId: "checkout-ng-paddle", correlationToken: "secret" },
+      }, error: null };
+      throw new Error(`Unexpected function: ${name}`);
     } } } as unknown as SupabaseClient;
 
     const preview = await createSupabaseBillingService(client).prepareProviderCheckout!({ user, candidate, interval: "yearly" });
-    expect(preview.provider).toBe("paystack");
-    expect(preview.intervalOptions).toEqual({
-      monthly: { amount: 30_000, amountMinor: 3_000_000, currency: "NGN" },
-      yearly: { amount: 300_000, amountMinor: 30_000_000, currency: "NGN" },
-    });
-    expect(calls.at(-1)).toEqual({
-      name: "paystack-initialize-checkout",
-      body: expect.objectContaining({
-        selectedArtist: candidate,
-        interval: "yearly",
-        clientRequestId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-      }),
-    });
-    expect(getPaddle).not.toHaveBeenCalled();
+    expect(preview).toMatchObject({ provider: "paddle", checkoutSessionId: "checkout-ng-paddle", priceId: "pri_year" });
+    expect(calls.map((call) => call.name)).toContain("paddle-create-checkout");
+    expect(calls.map((call) => call.name)).not.toContain("paystack-initialize-checkout");
+    expect(getPaddle).toHaveBeenCalled();
   });
 
   it("lets a Nigerian visitor explicitly prepare canonical Paddle checkout", async () => {

@@ -95,7 +95,6 @@ import type {
 import type {
   ProductionAuthAdapter,
   ProductionBillingCheckoutPreview,
-  ProductionBillingProviderPreference,
   ProductionBillingService,
   ProductionMusicLibraryLoader,
   ProductionProfileSetupService,
@@ -2709,8 +2708,6 @@ function SpotifyIdentityGate({
   const [selectPending, setSelectPending] = useState(false);
   const [selectedArtistName, setSelectedArtistName] = useState<string | null>(null);
   const [selectedArtistId, setSelectedArtistId] = useState<string | null>(null);
-  const [billingProviderPreference, setBillingProviderPreference] = useState<ProductionBillingProviderPreference>("auto");
-  const [selectedBillingInterval, setSelectedBillingInterval] = useState<"monthly" | "yearly">("monthly");
   const pricingRequestRef = useRef(0);
 
   useEffect(() => {
@@ -2724,7 +2721,6 @@ function SpotifyIdentityGate({
       .then(async (preview) => {
         if (!cancelled && preview) {
           setCheckoutPreview(preview);
-          setSelectedBillingInterval(preview.interval);
           if (spotifyArtistAdapter?.previewCatalog) {
             void spotifyArtistAdapter.previewCatalog(preview.artist).then((catalog) => {
               if (!cancelled) setCatalogPreview(catalog);
@@ -2744,7 +2740,6 @@ function SpotifyIdentityGate({
           ]);
           if (!cancelled) {
             setCheckoutPreview(renewalPreview);
-            setSelectedBillingInterval(renewalPreview.interval);
             setCatalogPreview(catalog);
           }
         }
@@ -2813,7 +2808,6 @@ function SpotifyIdentityGate({
       setSelectPending(true);
       setSelectedArtistName(candidate.name);
       setSelectedArtistId(candidate.spotifyArtistId);
-      setBillingProviderPreference("auto");
       setMessage(null);
       const catalog = spotifyArtistAdapter?.previewCatalog
         ? await spotifyArtistAdapter.previewCatalog(candidate).catch(() => ({
@@ -2839,7 +2833,6 @@ function SpotifyIdentityGate({
       runFrontDoorTransition(() => {
         setCatalogPreview(catalog);
         setCheckoutPreview(preview);
-        setSelectedBillingInterval(preview.interval);
       });
     } catch (connectError) {
       setMessage(readErrorMessage(connectError, "Checkout preview could not be prepared."));
@@ -2869,7 +2862,7 @@ function SpotifyIdentityGate({
             candidate: checkoutPreview.artist,
             existingWorkspace: workspace ?? undefined,
             interval,
-            providerPreference: billingProviderPreference,
+            providerPreference: workspace?.billingProvider ?? "auto",
           });
           setCheckoutPreview(payablePreview);
         }
@@ -2903,37 +2896,7 @@ function SpotifyIdentityGate({
   }
 
   function changeBillingInterval(interval: "monthly" | "yearly") {
-    setSelectedBillingInterval(interval);
     setMessage(null);
-  }
-
-  async function changeBillingProvider(
-    providerPreference: "paddle" | "paystack",
-    interval: "monthly" | "yearly" = selectedBillingInterval,
-  ) {
-    if (!checkoutPreview || !billingService?.prepareProviderCheckout || !user || checkoutPreview.provider === providerPreference) return;
-    const requestId = ++pricingRequestRef.current;
-    try {
-      setSelectPending(true);
-      setMessage(null);
-      const preview = await billingService.prepareProviderCheckout({
-        user,
-        candidate: checkoutPreview.artist,
-        existingWorkspace: workspace ?? undefined,
-        interval,
-        providerPreference,
-      });
-      if (requestId !== pricingRequestRef.current) return;
-      setBillingProviderPreference(providerPreference);
-      setSelectedBillingInterval(interval);
-      setCheckoutPreview(preview);
-    } catch (pricingError) {
-      if (requestId === pricingRequestRef.current) {
-        setMessage(readErrorMessage(pricingError, "Alternative checkout could not be prepared."));
-      }
-    } finally {
-      if (requestId === pricingRequestRef.current) setSelectPending(false);
-    }
   }
 
   if (checkoutPreview) {
@@ -2950,13 +2913,10 @@ function SpotifyIdentityGate({
             setMessage(null);
             setSelectedArtistName(null);
             setSelectedArtistId(null);
-            setBillingProviderPreference("auto");
-            setSelectedBillingInterval("monthly");
           });
         }}
         onSubscribe={subscribeToPreview}
         onIntervalChange={changeBillingInterval}
-        onProviderChange={changeBillingProvider}
         onSignOut={onSignOut}
       />
     );
