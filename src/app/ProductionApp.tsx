@@ -210,6 +210,21 @@ export function ProductionApp({
   const sessionUser = session?.user ?? null;
   const activeWorkspaceId = workspace?.artistWorkspaceId ?? null;
   const activeCatalogSyncStatus = workspace?.latestCatalogSyncStatus;
+  const handlePlanCheckoutOpened = useCallback((preview: ProductionBillingCheckoutPreview) => {
+    if (preview.provider !== "paddle" || !sessionUser) return;
+    const reference = `paddle:${preview.checkoutSessionId}`;
+    setPlanDialogOpen(false);
+    setPaymentReturn({ reference, status: "checking" });
+    setStatus("payment-return");
+    void refreshPaymentReturnStatus(
+      reference,
+      runtime.billingService,
+      setPaymentReturn,
+      setWorkspace,
+      setStatus,
+      setSuccessNotice,
+    );
+  }, [runtime.billingService, sessionUser]);
   const activeRepositories = useMemo(() => {
     if (!workspace) {
       return null;
@@ -629,6 +644,7 @@ export function ProductionApp({
         user={sessionUser as ProductionUser}
         workspace={workspace}
         billingService={runtime.billingService}
+        onCheckoutOpened={handlePlanCheckoutOpened}
       />
     ) : null}
     </>

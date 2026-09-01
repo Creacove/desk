@@ -467,6 +467,93 @@ describe("Clean production prototype-match shell", () => {
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
+  it("confirms a Paddle payment started from Settings before reopening Desk", async () => {
+    const betaWorkspace = {
+      ...workspace,
+      accessType: "private_beta" as const,
+      accessStatus: "active" as const,
+      entitlementActive: true,
+      billingProvider: undefined,
+      billingInterval: undefined,
+    } satisfies ProductionWorkspace;
+    const preview = {
+      checkoutSessionId: "checkout-settings-1",
+      reference: "checkout-settings-1",
+      provider: "paddle" as const,
+      status: "open" as const,
+      artist: { spotifyArtistId: "spotify-artist-1", name: "Nova Vale", spotifyUrl: "https://open.spotify.com/artist/spotify-artist-1", genres: [] },
+      interval: "monthly" as const,
+      formattedTotal: "$24",
+      priceId: "pri_monthly",
+      customData: { checkoutSessionId: "checkout-settings-1" },
+    };
+    const recoveredWorkspace = {
+      ...betaWorkspace,
+      accessType: "paid_subscription" as const,
+      accessStatus: "active" as const,
+      entitlementActive: true,
+      billingProvider: "paddle" as const,
+      billingInterval: "monthly" as const,
+      subscriptionStatus: "active" as const,
+      renewalAt: "2026-10-01T00:00:00.000Z",
+    } satisfies ProductionWorkspace;
+    const prepareProviderCheckout = vi.fn().mockResolvedValue(preview);
+    const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
+    const loadBillingStatus = vi.fn()
+      .mockResolvedValueOnce({
+        checkoutSessionId: preview.checkoutSessionId,
+        checkoutStatus: "open" as const,
+        subscriptionStatus: "open" as const,
+        entitlementActive: false,
+        setupStatus: "completed" as const,
+      })
+      .mockResolvedValueOnce({
+        checkoutSessionId: preview.checkoutSessionId,
+        checkoutStatus: "paid" as const,
+        subscriptionStatus: "active" as const,
+        entitlementActive: true,
+        setupStatus: "completed" as const,
+        workspace: recoveredWorkspace,
+      });
+    let notifyCheckoutChanged: (() => void) | undefined;
+    const billingService = {
+      async createCheckoutPreview() {
+        throw new Error("Legacy checkout should not be used from Settings.");
+      },
+      prepareProviderCheckout,
+      openProviderCheckout,
+      loadBillingStatus,
+      subscribeBillingStatus(input: { checkoutSessionId?: string }, onChange: () => void) {
+        expect(input).toEqual({ checkoutSessionId: preview.checkoutSessionId });
+        notifyCheckoutChanged = onChange;
+        return vi.fn();
+      },
+    } satisfies ProductionBillingService;
+
+    render(
+      <ProductionApp
+        authAdapter={authWithSession(session)}
+        workspaceLoader={workspaceLoaderWith(betaWorkspace)}
+        billingService={billingService}
+        repositories={repositoriesFor("Nova Vale")}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
+    fireEvent.click(await screen.findByRole("tab", { name: "Billing" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose a plan" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pay $24" }));
+    await waitFor(() => expect(openProviderCheckout).toHaveBeenCalledWith({ user: session.user, preview }));
+    await waitFor(() => expect(loadBillingStatus).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("heading", { name: "Still confirming" })).toBeInTheDocument();
+
+    await act(async () => {
+      notifyCheckoutChanged?.();
+    });
+    await waitFor(() => expect(screen.getByRole("heading", { name: "Home" })).toBeInTheDocument());
+    expect(loadBillingStatus).toHaveBeenLastCalledWith({ checkoutSessionId: preview.checkoutSessionId });
+  });
+
   it("uses the branded loader while preparing workspace view data", async () => {
     const repositories = repositoriesFor("Nova Vale");
     repositories.artistProfile.loadProfile = async () => new Promise(() => undefined);
