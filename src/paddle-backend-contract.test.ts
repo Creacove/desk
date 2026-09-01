@@ -154,6 +154,15 @@ describe("Paddle server integration contract", () => {
     expect(status).toContain('["active", "trialing"]');
   });
 
+  it("qualifies billing-status workspace embeds so paid confirmation cannot fail on ambiguous relationships", () => {
+    const status = source("supabase", "functions", "billing-status", "index.ts");
+
+    expect(status).toContain("artists!artist_workspaces_artist_id_fkey(");
+    expect(status).toContain("artist_profiles!artist_profiles_artist_workspace_id_fkey(");
+    expect(status).toContain("source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(");
+    expect(status).not.toContain("artists(display_name, canonical_spotify_artist_id");
+  });
+
   it("selects explicit monthly and yearly Nigerian Paystack plans without currency fallbacks", () => {
     const paystack = source("supabase", "functions", "paystack-initialize-checkout", "index.ts");
     expect(paystack).toContain('Deno.env.get("PAYSTACK_MONTHLY_PLAN_CODE")');

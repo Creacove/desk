@@ -360,9 +360,9 @@ async function loadWorkspace(serviceClient: any, artistWorkspaceId: string) {
       artist_id,
       name,
       status,
-      artists(display_name, canonical_spotify_artist_id, canonical_spotify_url),
-      artist_profiles(spotify_identity, artist_direction, current_goal, budget_context),
-      source_sync_jobs(status, created_at)
+      artists!artist_workspaces_artist_id_fkey(display_name, canonical_spotify_artist_id, canonical_spotify_url),
+      artist_profiles!artist_profiles_artist_workspace_id_fkey(spotify_identity, artist_direction, current_goal, budget_context),
+      source_sync_jobs!source_sync_jobs_artist_workspace_id_fkey(status, created_at)
     `)
     .eq("id", artistWorkspaceId)
     .maybeSingle();
