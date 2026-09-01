@@ -1,9 +1,12 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import "@testing-library/jest-dom/vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubscriptionRecoveryGate } from "./features/billing/SubscriptionRecoveryGate";
 import type { ProductionBillingService, ProductionWorkspace } from "./types/productionApp";
 
 const user = { id: "user-1", email: "artist@example.com" };
+
+afterEach(cleanup);
 
 function workspace(overrides: Partial<ProductionWorkspace> = {}): ProductionWorkspace {
   return {
@@ -76,5 +79,69 @@ describe("subscription recovery gate", () => {
     expect(await screen.findByRole("dialog", { name: "Choose a plan" })).toBeTruthy();
     expect(openProviderCheckout).not.toHaveBeenCalled();
     expect(screen.queryByText(/access code/i)).toBeNull();
+  });
+
+  it("confirms a Paddle payment from the expired beta plan dialog and restores access", async () => {
+    const preview = {
+      checkoutSessionId: "checkout-beta-paddle",
+      reference: "checkout-beta-paddle",
+      provider: "paddle" as const,
+      status: "open" as const,
+      artist: { spotifyArtistId: "spotify-1", name: "Sable Day", spotifyUrl: "https://open.spotify.com/artist/spotify-1", genres: [] },
+      interval: "monthly" as const,
+      formattedTotal: "$24",
+      priceId: "pri_monthly",
+      customData: { checkoutSessionId: "checkout-beta-paddle" },
+    };
+    const recoveredWorkspace = workspace({
+      accessType: "paid_subscription",
+      accessStatus: "active",
+      entitlementActive: true,
+      billingProvider: "paddle",
+      billingInterval: "monthly",
+    });
+    const prepareProviderCheckout = vi.fn().mockResolvedValue(preview);
+    const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
+    const loadBillingStatus = vi.fn()
+      .mockResolvedValueOnce({
+        checkoutSessionId: preview.checkoutSessionId,
+        checkoutStatus: "open",
+        subscriptionStatus: "open",
+        entitlementActive: false,
+        setupStatus: "completed",
+      })
+      .mockResolvedValueOnce({
+        checkoutSessionId: preview.checkoutSessionId,
+        checkoutStatus: "paid",
+        subscriptionStatus: "active",
+        entitlementActive: true,
+        setupStatus: "completed",
+        workspace: recoveredWorkspace,
+      });
+    let notifyBillingChange: (() => void) | undefined;
+    const subscribeBillingStatus = vi.fn((_input: { checkoutSessionId: string }, onChange: () => void) => {
+      notifyBillingChange = onChange;
+      return vi.fn();
+    });
+    const onRecovered = vi.fn();
+
+    render(<SubscriptionRecoveryGate
+      user={user}
+      workspace={workspace({ accessType: "private_beta", billingProvider: undefined, billingInterval: undefined })}
+      billingService={{ prepareProviderCheckout, openProviderCheckout, loadBillingStatus, subscribeBillingStatus } as unknown as ProductionBillingService}
+      onRecovered={onRecovered}
+      onSignOut={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Choose a plan" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pay $24" }));
+    await waitFor(() => expect(openProviderCheckout).toHaveBeenCalledWith({ user, preview }));
+    await waitFor(() => expect(loadBillingStatus).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("heading", { name: "Confirming payment…" })).toBeInTheDocument();
+
+    await act(async () => {
+      notifyBillingChange?.();
+    });
+    await waitFor(() => expect(onRecovered).toHaveBeenCalledWith(recoveredWorkspace));
   });
 });

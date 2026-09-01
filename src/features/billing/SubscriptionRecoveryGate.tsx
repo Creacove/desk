@@ -7,6 +7,7 @@ import type {
   ProductionUser,
   ProductionWorkspace,
 } from "../../types/productionApp";
+import { createActiveRunFallback } from "../../services/activeRunFallback";
 import { SubscriptionPlanDialog } from "./SubscriptionPlanDialog";
 import { openWorkspaceSubscriptionCheckout } from "./workspaceCheckout";
 
@@ -37,16 +38,27 @@ export function SubscriptionRecoveryGate({
       setPending(true);
       setError(null);
       const preview = await openWorkspaceSubscriptionCheckout({ user, workspace, billingService });
-      if (preview.provider === "paddle") {
-        setConfirming(true);
-        stopConfirmationRef.current?.();
-        stopConfirmationRef.current = watchConfirmation(preview, billingService, onRecovered, setError);
-      }
+      beginConfirmation(preview);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Payment could not be opened. Please try again.");
     } finally {
       setPending(false);
     }
+  }
+
+  function beginConfirmation(preview: ProductionBillingCheckoutPreview) {
+    if (preview.provider !== "paddle") return;
+    setPlanDialogOpen(false);
+    setConfirming(true);
+    setError(null);
+    stopConfirmationRef.current?.();
+    stopConfirmationRef.current = watchConfirmation(
+      preview,
+      billingService,
+      onRecovered,
+      setError,
+      () => setConfirming(false),
+    );
   }
 
   const title = betaEnded ? "Your beta access has ended" : "Subscription expired";
@@ -87,6 +99,7 @@ export function SubscriptionRecoveryGate({
         user={user}
         workspace={workspace}
         billingService={billingService}
+        onCheckoutOpened={beginConfirmation}
       />
     </main>
   );
@@ -119,36 +132,60 @@ function watchConfirmation(
   billingService: ProductionBillingService,
   onRecovered: (workspace: ProductionWorkspace) => void,
   setError: (message: string | null) => void,
+  onFinished: () => void,
 ) {
-  let stopped = false;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  const check = async () => {
-    if (stopped) return;
+  let settled = false;
+  const settle = () => {
+    if (settled) return;
+    settled = true;
+    onFinished();
+  };
+  const check = async (): Promise<"active" | "terminal"> => {
+    if (settled) return "terminal";
     try {
       const status = await billingService.loadBillingStatus({ checkoutSessionId: preview.checkoutSessionId });
       if (status.entitlementActive && status.workspace) {
-        stopped = true;
+        settle();
         onRecovered(status.workspace);
-        return;
+        return "terminal";
       }
       if (["failed", "expired", "abandoned"].includes(status.checkoutStatus)) {
         setError("Payment didn’t go through. Try again to restore access.");
-        stopped = true;
-        return;
+        settle();
+        return "terminal";
       }
     } catch {
       // Webhook confirmation can lag; keep the overlay locked and retry.
     }
-    timeout = setTimeout(check, 2_000);
+    return settled ? "terminal" : "active";
   };
+  const fallback = createActiveRunFallback({
+    delaysMs: [500, 1_000, 2_000, 3_000, 5_000, 10_000, 30_000],
+    deadlineMs: 5 * 60_000,
+    isVisible: () => document.visibilityState !== "hidden",
+    isOnline: () => navigator.onLine !== false,
+    check,
+    onTerminal: () => undefined,
+    onError: () => undefined,
+    onDeadline: () => {
+      setError("Confirmation is taking longer than expected. You can safely try again.");
+      settle();
+    },
+  });
+  const resume = () => fallback.resume();
+  document.addEventListener("visibilitychange", resume);
+  window.addEventListener("online", resume);
+  fallback.start();
+  fallback.resume();
   const unsubscribe = billingService.subscribeBillingStatus?.(
     { checkoutSessionId: preview.checkoutSessionId },
-    () => void check(),
+    resume,
   );
-  void check();
   return () => {
-    stopped = true;
-    if (timeout) clearTimeout(timeout);
+    settled = true;
+    fallback.stop();
     unsubscribe?.();
+    document.removeEventListener("visibilitychange", resume);
+    window.removeEventListener("online", resume);
   };
 }

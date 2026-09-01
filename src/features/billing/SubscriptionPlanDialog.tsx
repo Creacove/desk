@@ -5,12 +5,13 @@ import { cn } from "../../lib/utils";
 import type { ProductionBillingCheckoutPreview, ProductionBillingProviderPreference, ProductionBillingService, ProductionUser, ProductionWorkspace } from "../../types/productionApp";
 import { prepareWorkspaceSubscriptionCheckout } from "./workspaceCheckout";
 
-export function SubscriptionPlanDialog({ open, onClose, user, workspace, billingService }: {
+export function SubscriptionPlanDialog({ open, onClose, user, workspace, billingService, onCheckoutOpened }: {
   open: boolean;
   onClose: () => void;
   user: ProductionUser;
   workspace: ProductionWorkspace;
   billingService: ProductionBillingService;
+  onCheckoutOpened?: (preview: ProductionBillingCheckoutPreview) => void | Promise<void>;
 }) {
   const initialInterval = workspace.billingInterval ?? "monthly";
   const [interval, setInterval] = useState<"monthly" | "yearly">(initialInterval);
@@ -86,6 +87,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
               setOpening(true);
               setError(null);
               await billingService.openProviderCheckout({ user, preview });
+              await onCheckoutOpened?.(preview);
             } catch (cause) {
               setError(cause instanceof Error ? cause.message : "Payment could not be opened.");
             } finally {
