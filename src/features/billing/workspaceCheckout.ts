@@ -1,5 +1,7 @@
 import type {
   ProductionBillingCheckoutPreview,
+  ProductionBillingPrice,
+  ProductionBillingPricing,
   ProductionBillingService,
   ProductionSpotifyArtistCandidate,
   ProductionUser,
@@ -42,6 +44,38 @@ export async function prepareWorkspaceSubscriptionCheckout({
     interval,
     providerPreference,
   });
+}
+
+export async function loadWorkspaceSubscriptionPricing({
+  workspace,
+  billingService,
+}: {
+  workspace: ProductionWorkspace;
+  billingService: ProductionBillingService;
+}): Promise<ProductionBillingPricing> {
+  if (!billingService.loadProviderPricing) throw new Error("Billing pricing is temporarily unavailable. Please try again.");
+  return billingService.loadProviderPricing({
+    existingWorkspace: workspace,
+    providerPreference: workspace.billingProvider ?? "auto",
+  });
+}
+
+export function formatSubscriptionPrice(price?: ProductionBillingPrice) {
+  if (!price) return "Loading price…";
+  if (price.formattedTotal) return price.formattedTotal;
+  const amount = Number.isFinite(price.amount) ? Number(price.amount) : Number(price.amountMinor ?? 0) / 100;
+  const currency = price.currency || "USD";
+  if (!Number.isFinite(amount) || amount <= 0) return "Price unavailable";
+
+  try {
+    return new Intl.NumberFormat(currency === "NGN" ? "en-NG" : "en-US", {
+      style: "currency",
+      currency,
+      maximumFractionDigits: amount % 1 ? 2 : 0,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(amount % 1 ? 2 : 0)}`;
+  }
 }
 
 export function workspaceCandidate(workspace: ProductionWorkspace): ProductionSpotifyArtistCandidate {

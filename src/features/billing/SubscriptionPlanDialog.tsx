@@ -2,8 +2,8 @@ import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
-import type { ProductionBillingCheckoutPreview, ProductionBillingProviderPreference, ProductionBillingService, ProductionUser, ProductionWorkspace } from "../../types/productionApp";
-import { prepareWorkspaceSubscriptionCheckout } from "./workspaceCheckout";
+import type { ProductionBillingCheckoutPreview, ProductionBillingPricing, ProductionBillingService, ProductionUser, ProductionWorkspace } from "../../types/productionApp";
+import { formatSubscriptionPrice, loadWorkspaceSubscriptionPricing, prepareWorkspaceSubscriptionCheckout } from "./workspaceCheckout";
 
 export function SubscriptionPlanDialog({ open, onClose, user, workspace, billingService, onCheckoutOpened }: {
   open: boolean;
@@ -14,22 +14,22 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
   onCheckoutOpened?: (preview: ProductionBillingCheckoutPreview) => void | Promise<void>;
 }) {
   const initialInterval = workspace.billingInterval ?? "monthly";
+  const providerPreference = workspace.billingProvider ?? "auto";
   const [interval, setInterval] = useState<"monthly" | "yearly">(initialInterval);
-  const [preview, setPreview] = useState<ProductionBillingCheckoutPreview | null>(null);
+  const [pricing, setPricing] = useState<ProductionBillingPricing | null>(null);
   const [loading, setLoading] = useState(false);
   const [opening, setOpening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
 
-  async function loadPreview(nextInterval: "monthly" | "yearly", providerPreference: ProductionBillingProviderPreference) {
+  async function loadPricing() {
     const request = ++requestRef.current;
     try {
       setLoading(true);
       setError(null);
-      const next = await prepareWorkspaceSubscriptionCheckout({ user, workspace, billingService, interval: nextInterval, providerPreference });
+      const next = await loadWorkspaceSubscriptionPricing({ workspace, billingService });
       if (request !== requestRef.current) return;
-      setInterval(nextInterval);
-      setPreview(next);
+      setPricing(next);
     } catch (cause) {
       if (request === requestRef.current) setError(cause instanceof Error ? cause.message : "Pricing could not be loaded.");
     } finally {
@@ -37,19 +37,35 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
     }
   }
 
+  async function openCheckout() {
+    if (!pricing || !billingService.openProviderCheckout) return;
+    try {
+      setOpening(true);
+      setError(null);
+      const preview = await prepareWorkspaceSubscriptionCheckout({ user, workspace, billingService, interval, providerPreference });
+      await billingService.openProviderCheckout({ user, preview });
+      await onCheckoutOpened?.(preview);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Payment could not be opened.");
+    } finally {
+      setOpening(false);
+    }
+  }
+
   useEffect(() => {
     if (!open) return;
-    setPreview(null);
+    setPricing(null);
     setInterval(initialInterval);
     setOpening(false);
-    void loadPreview(initialInterval, workspace.billingProvider ?? "auto");
+    setError(null);
+    void loadPricing();
     return () => { requestRef.current += 1; };
     // The dialog intentionally resets only when it opens for a workspace.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, workspace.artistWorkspaceId]);
 
   if (!open) return null;
-  const price = preview ? formatCheckoutPrice(preview) : "Loading price…";
+  const price = formatSubscriptionPrice(pricing?.intervalOptions[interval]);
   const payLabel = `Pay ${price}`;
 
   return (
@@ -64,7 +80,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
 
         <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Billing interval">
           {(["monthly", "yearly"] as const).map((option) => (
-            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening} onClick={() => void loadPreview(option, workspace.billingProvider ?? "auto")} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening || !pricing} onClick={() => setInterval(option)} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               {option === "monthly" ? "Monthly" : "Yearly"}
             </button>
           ))}
@@ -80,20 +96,8 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
           size="lg"
           className="mt-5 w-full"
           pending={opening}
-          disabled={!preview || loading}
-          onClick={async () => {
-            if (!preview || !billingService.openProviderCheckout) return;
-            try {
-              setOpening(true);
-              setError(null);
-              await billingService.openProviderCheckout({ user, preview });
-              await onCheckoutOpened?.(preview);
-            } catch (cause) {
-              setError(cause instanceof Error ? cause.message : "Payment could not be opened.");
-            } finally {
-              setOpening(false);
-            }
-          }}
+          disabled={!pricing || loading || opening}
+          onClick={() => void openCheckout()}
         >
           {loading ? "Loading price…" : payLabel}
         </Button>
@@ -102,14 +106,4 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
       </section>
     </div>
   );
-}
-
-function formatCheckoutPrice(preview: ProductionBillingCheckoutPreview) {
-  if (preview.formattedTotal) return preview.formattedTotal;
-  if (typeof preview.amount === "number" && preview.currency) {
-    return new Intl.NumberFormat(preview.currency === "NGN" ? "en-NG" : "en-US", {
-      style: "currency", currency: preview.currency, maximumFractionDigits: 0,
-    }).format(preview.amount);
-  }
-  return "Price unavailable";
 }

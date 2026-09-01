@@ -66,6 +66,32 @@ describe("provider-aware billing service", () => {
     expect(getPaddle).toHaveBeenCalled();
   });
 
+  it("loads and caches interval pricing without creating a checkout session", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "GB" }))));
+    const calls: string[] = [];
+    const client = { functions: { invoke: async (name: string) => {
+      calls.push(name);
+      if (name === "billing-pricing-config") return { data: pricing, error: null };
+      if (name === "paddle-create-checkout") throw new Error("Pricing must not create checkout sessions.");
+      throw new Error(`Unexpected function: ${name}`);
+    } } } as unknown as SupabaseClient;
+    const service = createSupabaseBillingService(client);
+    const first = await service.loadProviderPricing!({ providerPreference: "auto" });
+    const second = await service.loadProviderPricing!({ providerPreference: "auto" });
+
+    expect(first).toMatchObject({
+      provider: "paddle",
+      intervalOptions: {
+        monthly: { formattedTotal: "£16.00", priceId: "pri_month" },
+        yearly: { formattedTotal: "£160.00", priceId: "pri_year" },
+      },
+    });
+    expect(second.intervalOptions).toEqual(first.intervalOptions);
+    expect(calls.filter((name) => name === "billing-pricing-config")).toHaveLength(1);
+    expect(calls).not.toContain("paddle-create-checkout");
+    expect(paddle.PricePreview).toHaveBeenCalledTimes(1);
+  });
+
   it("lets a Nigerian visitor explicitly prepare canonical Paddle checkout", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "NG" }))));
     const calls: Array<{ name: string; body: any }> = [];

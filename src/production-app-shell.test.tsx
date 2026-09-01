@@ -497,6 +497,15 @@ describe("Clean production prototype-match shell", () => {
       subscriptionStatus: "active" as const,
       renewalAt: "2026-10-01T00:00:00.000Z",
     } satisfies ProductionWorkspace;
+    const loadProviderPricing = vi.fn().mockResolvedValue({
+      provider: "paddle" as const,
+      intervalOptions: {
+        monthly: { formattedTotal: "$24", priceId: "pri_monthly" },
+        yearly: { formattedTotal: "$240", priceId: "pri_yearly" },
+      },
+      productId: "product-1",
+      paddleConfig: { environment: "sandbox" as const, clientToken: "test_token" },
+    });
     const prepareProviderCheckout = vi.fn().mockResolvedValue(preview);
     const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
     const loadBillingStatus = vi.fn()
@@ -520,6 +529,7 @@ describe("Clean production prototype-match shell", () => {
       async createCheckoutPreview() {
         throw new Error("Legacy checkout should not be used from Settings.");
       },
+      loadProviderPricing,
       prepareProviderCheckout,
       openProviderCheckout,
       loadBillingStatus,
@@ -539,10 +549,21 @@ describe("Clean production prototype-match shell", () => {
       />,
     );
 
+    await waitFor(() => expect(loadProviderPricing).toHaveBeenCalledWith({
+      existingWorkspace: betaWorkspace,
+      providerPreference: "auto",
+    }));
     fireEvent.click(await screen.findByRole("button", { name: "Settings" }));
     fireEvent.click(await screen.findByRole("tab", { name: "Billing" }));
     fireEvent.click(screen.getByRole("button", { name: "Choose a plan" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Pay $24" }));
+    const payButton = await screen.findByRole("button", { name: "Pay $24" });
+    expect(prepareProviderCheckout).not.toHaveBeenCalled();
+    fireEvent.click(payButton);
+    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      existingWorkspace: betaWorkspace,
+      interval: "monthly",
+      providerPreference: "auto",
+    })));
     await waitFor(() => expect(openProviderCheckout).toHaveBeenCalledWith({ user: session.user, preview }));
     await waitFor(() => expect(loadBillingStatus).toHaveBeenCalledTimes(1));
     expect(screen.getByRole("heading", { name: "Still confirming" })).toBeInTheDocument();

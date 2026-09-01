@@ -3,6 +3,7 @@ import { useState, type ReactNode } from "react";
 import { BrandMark } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
+import { formatSubscriptionPrice } from "../billing/workspaceCheckout";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
 import type {
   ProductionBillingCheckoutPreview,
@@ -570,16 +571,5 @@ function artistInitials(name: string) {
 }
 
 function formatPaywallPrice(preview: ProductionBillingCheckoutPreview) {
-  if (preview.formattedTotal) return preview.formattedTotal;
-  const amount = Number.isFinite(preview.amount) ? Number(preview.amount) : Number(preview.amountMinor ?? 0) / 100;
-  const currency = preview.currency || "USD";
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: amount % 1 ? 2 : 0,
-    }).format(amount);
-  } catch {
-    return `${currency} ${amount.toFixed(amount % 1 ? 2 : 0)}`;
-  }
+  return formatSubscriptionPrice(preview);
 }

@@ -47,6 +47,7 @@ import { createActiveRunFallback } from "./activeRunFallback";
 import type {
   ProductionAuthAdapter,
   ProductionBillingCheckoutPreview,
+  ProductionBillingPricing,
   ProductionBillingService,
   ProductionBillingStatus,
   ProductionMusicItem,
@@ -513,46 +514,108 @@ function spotifyCatalogPreviewFromPayload(payload: unknown): ProductionSpotifyCa
 }
 
 export function createSupabaseBillingService(client: SupabaseClient): ProductionBillingService {
-  let cachedPricing: any = null;
-  let cachedCountryCode: string | undefined = undefined;
-  let countryCodeFetched = false;
+  let cachedPricingPromise: Promise<ReturnType<typeof readBillingPricingConfig>> | null = null;
+  let cachedCountryPromise: Promise<string | undefined> | null = null;
+  const providerPricingCache = new Map<string, Promise<ProductionBillingPricing>>();
 
-  return {
-    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval, providerPreference = "auto" }) {
-      if (!cachedPricing) {
+  function loadPricingConfig() {
+    if (!cachedPricingPromise) {
+      const request = (async () => {
         const { data: pricingData, error: pricingError } = await client.functions.invoke("billing-pricing-config", { body: {} });
         if (pricingError) await throwFunctionInvokeError(pricingError, "Billing pricing could not be loaded.");
-        cachedPricing = readBillingPricingConfig(pricingData);
-      }
-      const pricing = cachedPricing;
+        return readBillingPricingConfig(pricingData);
+      })();
+      cachedPricingPromise = request;
+      void request.catch(() => {
+        if (cachedPricingPromise === request) cachedPricingPromise = null;
+      });
+    }
+    return cachedPricingPromise;
+  }
 
-      if (!countryCodeFetched) {
-        cachedCountryCode = await loadBillingCountry();
-        countryCodeFetched = true;
-      }
-      const serverCountryCode = cachedCountryCode;
+  function loadCountryCode() {
+    if (!cachedCountryPromise) {
+      const request = loadBillingCountry();
+      cachedCountryPromise = request;
+      void request.catch(() => {
+        if (cachedCountryPromise === request) cachedCountryPromise = null;
+      });
+    }
+    return cachedCountryPromise;
+  }
+
+  function loadProviderPricing({ existingWorkspace, providerPreference = "auto" }: {
+    existingWorkspace?: ProductionWorkspace;
+    providerPreference?: "auto" | "paddle" | "paystack";
+  }): Promise<ProductionBillingPricing> {
+    const cacheKey = [
+      providerPreference,
+      existingWorkspace?.artistWorkspaceId ?? "new-workspace",
+      existingWorkspace?.paddleCustomerId ?? "no-paddle-customer",
+    ].join(":");
+    const cached = providerPricingCache.get(cacheKey);
+    if (cached) return cached;
+
+    const request = (async (): Promise<ProductionBillingPricing> => {
+      const pricing = await loadPricingConfig();
+      const serverCountryCode = await loadCountryCode();
 
       if (resolveBillingProvider(serverCountryCode, undefined, providerPreference) === "paystack") {
-        const checkout = await initializePaystackCheckout(client, candidate, existingWorkspace, interval);
-        return { ...checkout, intervalOptions: paystackIntervalOptions(pricing.paystack) };
+        return { provider: "paystack", intervalOptions: paystackIntervalOptions(pricing.paystack) };
       }
 
-      const paddle = await getPaddle({
+      const paddleConfig = {
         environment: pricing.paddle.environment,
         clientToken: pricing.paddle.clientToken,
         ...(existingWorkspace?.paddleCustomerId
           ? { pwCustomer: { id: existingWorkspace.paddleCustomerId } }
           : {}),
-      });
-      const priceId = pricing.paddle.priceId[interval];
+      };
+      const paddle = await getPaddle(paddleConfig);
       const localized = await previewLocalizedPaddlePrices(
         paddle,
         [pricing.paddle.priceId.monthly, pricing.paddle.priceId.yearly],
         serverCountryCode,
       );
       if (resolveBillingProvider(serverCountryCode, localized.countryCode, providerPreference) === "paystack") {
+        return { provider: "paystack", intervalOptions: paystackIntervalOptions(pricing.paystack) };
+      }
+
+      return {
+        provider: "paddle",
+        productId: pricing.paddle.productId,
+        paddleConfig,
+        intervalOptions: {
+          monthly: {
+            formattedTotal: localized.formattedTotals[pricing.paddle.priceId.monthly],
+            priceId: pricing.paddle.priceId.monthly,
+          },
+          yearly: {
+            formattedTotal: localized.formattedTotals[pricing.paddle.priceId.yearly],
+            priceId: pricing.paddle.priceId.yearly,
+          },
+        },
+      };
+    })();
+    providerPricingCache.set(cacheKey, request);
+    void request.catch(() => {
+      if (providerPricingCache.get(cacheKey) === request) providerPricingCache.delete(cacheKey);
+    });
+    return request;
+  }
+
+  return {
+    loadProviderPricing,
+    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval, providerPreference = "auto" }) {
+      const pricing = await loadProviderPricing({ existingWorkspace, providerPreference });
+      if (pricing.provider === "paystack") {
         const checkout = await initializePaystackCheckout(client, candidate, existingWorkspace, interval);
-        return { ...checkout, intervalOptions: paystackIntervalOptions(pricing.paystack) };
+        return { ...checkout, intervalOptions: pricing.intervalOptions };
+      }
+
+      const price = pricing.intervalOptions[interval];
+      if (!pricing.productId || !pricing.paddleConfig || !price.priceId) {
+        throw new Error("Paddle pricing is incomplete. Refresh pricing and try again.");
       }
 
       const { data, error } = await client.functions.invoke("paddle-create-checkout", {
@@ -568,7 +631,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         checkoutSessionId?: string; productId?: string; priceId?: string; interval?: "monthly" | "yearly";
         expiresAt?: string; customData?: Record<string, unknown>;
       } | null;
-      if (!session?.checkoutSessionId || session.priceId !== priceId || session.productId !== pricing.paddle.productId || !session.customData) {
+      if (!session?.checkoutSessionId || session.priceId !== price.priceId || session.productId !== pricing.productId || !session.customData) {
         throw new Error("Paddle checkout did not match the displayed plan.");
       }
       return {
@@ -578,28 +641,13 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         status: "open",
         artist: candidate,
         interval,
-        formattedTotal: localized.formattedTotals[priceId],
+        formattedTotal: price.formattedTotal,
         productId: session.productId,
         priceId: session.priceId,
-        paddleConfig: {
-          environment: pricing.paddle.environment,
-          clientToken: pricing.paddle.clientToken,
-          ...(existingWorkspace?.paddleCustomerId
-            ? { pwCustomer: { id: existingWorkspace.paddleCustomerId } }
-            : {}),
-        },
+        paddleConfig: pricing.paddleConfig,
         customData: session.customData,
         expiresAt: session.expiresAt,
-        intervalOptions: {
-          monthly: {
-            formattedTotal: localized.formattedTotals[pricing.paddle.priceId.monthly],
-            priceId: pricing.paddle.priceId.monthly,
-          },
-          yearly: {
-            formattedTotal: localized.formattedTotals[pricing.paddle.priceId.yearly],
-            priceId: pricing.paddle.priceId.yearly,
-          },
-        },
+        intervalOptions: pricing.intervalOptions,
       };
     },
     async openProviderCheckout({ user, preview }) {

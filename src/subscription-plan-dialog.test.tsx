@@ -2,18 +2,16 @@ import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubscriptionPlanDialog } from "./features/billing/SubscriptionPlanDialog";
-import type { ProductionBillingCheckoutPreview, ProductionBillingService, ProductionWorkspace } from "./types/productionApp";
+import type { ProductionBillingCheckoutPreview, ProductionBillingPricing, ProductionBillingService, ProductionWorkspace } from "./types/productionApp";
 
 afterEach(cleanup);
 
 describe("SubscriptionPlanDialog", () => {
-  it("previews Paddle plans before opening checkout without exposing provider switching", async () => {
+  it("loads prices before creating checkout and keeps interval switching instant", async () => {
     const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
-    const prepareProviderCheckout = vi.fn(async ({ interval, providerPreference }: { interval: "monthly" | "yearly"; providerPreference: "auto" | "paddle" | "paystack" }) => {
-      expect(providerPreference).toBe("auto");
-      return preview("paddle", interval);
-    });
-    const billingService = { prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService;
+    const loadProviderPricing = vi.fn().mockResolvedValue(pricing("paddle"));
+    const prepareProviderCheckout = vi.fn().mockResolvedValue(preview("paddle", "yearly"));
+    const billingService = { loadProviderPricing, prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService;
 
     render(<SubscriptionPlanDialog
       open
@@ -24,36 +22,41 @@ describe("SubscriptionPlanDialog", () => {
     />);
 
     expect(await screen.findByRole("dialog", { name: "Choose a plan" })).toBeInTheDocument();
-    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
+    await waitFor(() => expect(loadProviderPricing).toHaveBeenCalledWith(expect.objectContaining({
       existingWorkspace: expect.objectContaining({ artistWorkspaceId: "workspace-1" }),
-      interval: "monthly",
       providerPreference: "auto",
     })));
+    expect(prepareProviderCheckout).not.toHaveBeenCalled();
     expect(openProviderCheckout).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Pay $24" })).toBeEnabled();
     expect(screen.getByText("Secure recurring payment. Cancel from Billing.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Yearly" }));
-    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({ interval: "yearly" })));
     expect(await screen.findByRole("button", { name: "Pay $240" })).toBeEnabled();
+    expect(prepareProviderCheckout).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Pay in USD" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pay in NGN" })).not.toBeInTheDocument();
     expect(openProviderCheckout).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Pay $240" }));
+    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      existingWorkspace: expect.objectContaining({ artistWorkspaceId: "workspace-1" }),
+      interval: "yearly",
+      providerPreference: "auto",
+    })));
     await waitFor(() => expect(openProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
       preview: expect.objectContaining({ provider: "paddle", interval: "yearly" }),
     })));
   });
 
   it("does not expose a provider switch when an existing Paystack preview is returned", async () => {
-    const prepareProviderCheckout = vi.fn().mockResolvedValue(preview("paystack", "monthly"));
+    const loadProviderPricing = vi.fn().mockResolvedValue(pricing("paystack"));
     render(<SubscriptionPlanDialog
       open
       onClose={vi.fn()}
       user={{ id: "user-1", email: "artist@example.com" }}
       workspace={workspace()}
-      billingService={{ prepareProviderCheckout, openProviderCheckout: vi.fn() } as unknown as ProductionBillingService}
+      billingService={{ loadProviderPricing, prepareProviderCheckout: vi.fn(), openProviderCheckout: vi.fn() } as unknown as ProductionBillingService}
     />);
 
     expect(await screen.findByRole("button", { name: "Pay ₦32,000" })).toBeEnabled();
@@ -61,6 +64,26 @@ describe("SubscriptionPlanDialog", () => {
     expect(screen.queryByRole("button", { name: "Pay in NGN" })).not.toBeInTheDocument();
   });
 });
+
+function pricing(provider: "paddle" | "paystack"): ProductionBillingPricing {
+  return provider === "paddle"
+    ? {
+        provider,
+        productId: "pro_1",
+        paddleConfig: { environment: "sandbox", clientToken: "test_abcdefghijklmnopqrstuvwxyz1" },
+        intervalOptions: {
+          monthly: { formattedTotal: "$24", priceId: "pri_month" },
+          yearly: { formattedTotal: "$240", priceId: "pri_year" },
+        },
+      }
+    : {
+        provider,
+        intervalOptions: {
+          monthly: { amount: 32_000, amountMinor: 3_200_000, currency: "NGN" },
+          yearly: { amount: 320_000, amountMinor: 32_000_000, currency: "NGN" },
+        },
+      };
+}
 
 function preview(provider: "paddle" | "paystack", interval: "monthly" | "yearly"): ProductionBillingCheckoutPreview {
   const yearly = interval === "yearly";

@@ -303,6 +303,14 @@ export function ProductionApp({
   }, [sessionUser?.id]);
 
   useEffect(() => {
+    if (!sessionUser || !workspace?.artistWorkspaceId || !runtime.billingService?.loadProviderPricing) return;
+    void runtime.billingService.loadProviderPricing({
+      existingWorkspace: workspace,
+      providerPreference: workspace.billingProvider ?? "auto",
+    }).catch(() => undefined);
+  }, [runtime.billingService, sessionUser?.id, workspace?.artistWorkspaceId, workspace?.billingProvider, workspace?.paddleCustomerId]);
+
+  useEffect(() => {
     if (!sessionUser || !workspace?.artistWorkspaceId || workspace.entitlementActive !== true) return;
 
     trackEventOnce(

@@ -2,7 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SubscriptionRecoveryGate } from "./features/billing/SubscriptionRecoveryGate";
-import type { ProductionBillingService, ProductionWorkspace } from "./types/productionApp";
+import type { ProductionBillingPricing, ProductionBillingService, ProductionWorkspace } from "./types/productionApp";
 
 const user = { id: "user-1", email: "artist@example.com" };
 
@@ -60,16 +60,13 @@ describe("subscription recovery gate", () => {
   });
 
   it("opens plan selection for expired beta access without another code", async () => {
-    const prepareProviderCheckout = vi.fn().mockResolvedValue({
-      checkoutSessionId: "checkout-beta", reference: "checkout-beta", provider: "paystack", status: "initialized",
-      artist: { spotifyArtistId: "spotify-1", name: "Sable Day", spotifyUrl: "https://open.spotify.com/artist/spotify-1", genres: [] },
-      interval: "monthly", amount: 32_000, currency: "NGN", authorizationUrl: "https://checkout.paystack.com/test",
-    });
+    const prepareProviderCheckout = vi.fn();
     const openProviderCheckout = vi.fn();
+    const loadProviderPricing = vi.fn().mockResolvedValue(paddlePricing());
     render(<SubscriptionRecoveryGate
       user={user}
       workspace={workspace({ accessType: "private_beta", billingProvider: undefined, billingInterval: undefined })}
-      billingService={{ prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService}
+      billingService={{ loadProviderPricing, prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService}
       onRecovered={vi.fn()}
       onSignOut={vi.fn()}
     />);
@@ -102,6 +99,7 @@ describe("subscription recovery gate", () => {
     });
     const prepareProviderCheckout = vi.fn().mockResolvedValue(preview);
     const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
+    const loadProviderPricing = vi.fn().mockResolvedValue(paddlePricing());
     const loadBillingStatus = vi.fn()
       .mockResolvedValueOnce({
         checkoutSessionId: preview.checkoutSessionId,
@@ -128,7 +126,7 @@ describe("subscription recovery gate", () => {
     render(<SubscriptionRecoveryGate
       user={user}
       workspace={workspace({ accessType: "private_beta", billingProvider: undefined, billingInterval: undefined })}
-      billingService={{ prepareProviderCheckout, openProviderCheckout, loadBillingStatus, subscribeBillingStatus } as unknown as ProductionBillingService}
+      billingService={{ loadProviderPricing, prepareProviderCheckout, openProviderCheckout, loadBillingStatus, subscribeBillingStatus } as unknown as ProductionBillingService}
       onRecovered={onRecovered}
       onSignOut={vi.fn()}
     />);
@@ -145,3 +143,15 @@ describe("subscription recovery gate", () => {
     await waitFor(() => expect(onRecovered).toHaveBeenCalledWith(recoveredWorkspace));
   });
 });
+
+function paddlePricing(): ProductionBillingPricing {
+  return {
+    provider: "paddle",
+    productId: "pro_1",
+    paddleConfig: { environment: "sandbox", clientToken: "test_abcdefghijklmnopqrstuvwxyz1" },
+    intervalOptions: {
+      monthly: { formattedTotal: "$24", priceId: "pri_monthly" },
+      yearly: { formattedTotal: "$240", priceId: "pri_yearly" },
+    },
+  };
+}

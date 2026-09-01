@@ -2,6 +2,7 @@ import { ArrowLeft, ArrowRight, Check, CreditCard, Lock, LogOut, Search } from "
 import { useState } from "react";
 import { BrandMark } from "../../design-system/components";
 import { cn } from "../../lib/utils";
+import { formatSubscriptionPrice } from "../billing/workspaceCheckout";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
 import type { ProductionBillingCheckoutPreview, ProductionSpotifyArtistCandidate, ProductionSpotifyCatalogPreview } from "../../types/productionApp";
 
@@ -446,19 +447,7 @@ function ArtistAvatar({ name, imageUrl }: { name: string; imageUrl?: string }) {
 }
 
 function formatPaywallPrice(preview: ProductionBillingCheckoutPreview) {
-  if (preview.provider === "paddle") return preview.formattedTotal ?? "Price unavailable";
-  const amount = Number.isFinite(preview.amount) ? Number(preview.amount) : Number(preview.amountMinor ?? 0) / 100;
-  const currency = preview.currency || "USD";
-
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency,
-      maximumFractionDigits: amount % 1 ? 2 : 0,
-    }).format(amount);
-  } catch {
-    return `$${amount.toFixed(amount % 1 ? 2 : 0)}`;
-  }
+  return formatSubscriptionPrice(preview);
 }
 
 function ConnectHeader({ status, onSignOut }: { status: string; onSignOut?: () => void }) {

@@ -276,10 +276,31 @@ export type ProductionSpotifyArtistAdapter = {
   ): Promise<ProductionSpotifyBootstrapResult>;
 };
 
+export type ProductionBillingProvider = "paddle" | "paystack";
+export type ProductionBillingProviderPreference = "auto" | ProductionBillingProvider;
+export type ProductionBillingPrice = {
+  amount?: number;
+  amountMinor?: number;
+  currency?: string;
+  formattedTotal?: string;
+  priceId?: string;
+};
+export type ProductionPaddleConfig = {
+  environment: "sandbox" | "production";
+  clientToken: string;
+  pwCustomer?: { id: string };
+};
+export type ProductionBillingPricing = {
+  provider: ProductionBillingProvider;
+  productId?: string;
+  paddleConfig?: ProductionPaddleConfig;
+  intervalOptions: Record<"monthly" | "yearly", ProductionBillingPrice>;
+};
+
 export type ProductionBillingCheckoutPreview = {
   checkoutSessionId: string;
   reference: string;
-  provider?: "paddle" | "paystack";
+  provider?: ProductionBillingProvider;
   status: "open" | "initialized" | "processing" | "paid" | "expired" | "failed" | "abandoned";
   artist: ProductionSpotifyArtistCandidate;
   amount?: number;
@@ -289,21 +310,13 @@ export type ProductionBillingCheckoutPreview = {
   interval: "monthly" | "yearly";
   productId?: string;
   priceId?: string;
-  paddleConfig?: { environment: "sandbox" | "production"; clientToken: string };
+  paddleConfig?: ProductionPaddleConfig;
   customData?: Record<string, unknown>;
   expiresAt?: string;
   authorizationUrl?: string;
   accessCode?: string;
-  intervalOptions?: Record<"monthly" | "yearly", {
-    amount?: number;
-    amountMinor?: number;
-    currency?: string;
-    formattedTotal?: string;
-    priceId?: string;
-  }>;
+  intervalOptions?: ProductionBillingPricing["intervalOptions"];
 };
-
-export type ProductionBillingProviderPreference = "auto" | "paddle" | "paystack";
 
 export type ProductionBillingStatus = {
   checkoutSessionId?: string;
@@ -326,6 +339,10 @@ export type ProductionSetupPhaseResult = {
 };
 
 export type ProductionBillingService = {
+  loadProviderPricing?(input: {
+    existingWorkspace?: ProductionWorkspace;
+    providerPreference?: ProductionBillingProviderPreference;
+  }): Promise<ProductionBillingPricing>;
   prepareProviderCheckout?(input: {
     user: ProductionUser;
     candidate: ProductionSpotifyArtistCandidate;
