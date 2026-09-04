@@ -18,7 +18,7 @@ permissions:
 jobs:
   validate-film:
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       VITE_SUPABASE_URL: http://localhost:54321
       VITE_SUPABASE_ANON_KEY: ci-test-anon-key
@@ -83,6 +83,16 @@ jobs:
           npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/16-approval-sent.png --frame=2425
           npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/17-end.png --frame=2490
 
+      - name: Render final vertical master
+        run: |
+          mkdir -p out/final
+          npx remotion render src/remotion/index.ts MeetYourManagerPreview out/final/meet-your-manager-launch.mp4 \
+            --codec=h264 \
+            --crf=18 \
+            --pixel-format=yuv420p \
+            --concurrency=2
+          ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 out/final/meet-your-manager-launch.mp4
+
       - name: Upload validation stills
         uses: actions/upload-artifact@v4
         with:
@@ -90,3 +100,12 @@ jobs:
           path: out/validation/*.png
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload final vertical master
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-your-manager-launch-master
+          path: out/final/meet-your-manager-launch.mp4
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
