@@ -5,6 +5,10 @@ on:
     branches:
       - marketing/meet-your-manager-motion
     paths:
+      - src/remotion/**
+      - src/marketing/launch-film/FilmStudio.tsx
+      - package.json
+      - package-lock.json
       - .github/workflows/validate-remotion-motion-branch.yml
 
 permissions:
@@ -41,13 +45,16 @@ jobs:
       - name: Render motion validation stills
         run: |
           mkdir -p out/validation
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-0900.png --frame=900
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-2250.png --frame=2250
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-0845-context-to-work.png --frame=845
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-1280-work-to-task.png --frame=1280
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-1600-task-to-adapt.png --frame=1600
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-2190-watch-to-approval.png --frame=2190
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-2390-approval-to-end.png --frame=2390
 
       - name: Upload validation stills
         uses: actions/upload-artifact@v4
         with:
-          name: remotion-validation-stills
+          name: remotion-validation-stills-v2
           path: out/validation/*.png
           if-no-files-found: error
           retention-days: 7
