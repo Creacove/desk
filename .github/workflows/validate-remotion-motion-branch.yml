@@ -42,19 +42,24 @@ jobs:
       - name: Discover Remotion compositions
         run: npx remotion compositions src/remotion/index.ts
 
-      - name: Render motion validation stills
+      - name: Render V3 phone focal beats
         run: |
           mkdir -p out/validation
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-0845-context-to-work.png --frame=845
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-1280-work-to-task.png --frame=1280
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-1600-task-to-adapt.png --frame=1600
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-2190-watch-to-approval.png --frame=2190
-          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-2390-approval-to-end.png --frame=2390
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/01-opening.png --frame=150
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/02-manager.png --frame=420
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/03-context.png --frame=735
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/04-today.png --frame=960
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/05-created-work.png --frame=1240
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/06-task-sheet.png --frame=1540
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/07-adapt.png --frame=1880
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/08-watch.png --frame=2130
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/09-approval.png --frame=2320
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/10-end.png --frame=2490
 
       - name: Upload validation stills
         uses: actions/upload-artifact@v4
         with:
-          name: remotion-validation-stills-v2
+          name: remotion-v3-phone-focal-beats
           path: out/validation/*.png
           if-no-files-found: error
           retention-days: 7
