@@ -1,18 +1,19 @@
 import { Player } from "@remotion/player";
 import { BrandMark } from "../../design-system/components";
 import { FILM_DURATION_FRAMES, FILM_FORMATS, FILM_FPS, FILM_SECONDS, type FilmFormat } from "../../remotion/constants";
-import { MeetYourManagerFilmV2 } from "../../remotion/MeetYourManagerFilmV2";
+import { MeetYourManagerFilmV3 } from "../../remotion/MeetYourManagerFilmV3";
 
 const CHAPTERS = [
-  ["0:00", "The question"],
-  ["0:04", "Give Desk the goal"],
-  ["0:09", "Desk understands and decides"],
-  ["0:14", "Desk does the work"],
-  ["0:21", "Exact human work"],
-  ["0:27", "Reality changes"],
-  ["0:32", "Desk watches"],
-  ["0:36", "Approve and run"],
-  ["0:39", "Meet your manager"],
+  ["0:00", "Artist world"],
+  ["0:03", "Give Desk the goal"],
+  ["0:09", "Context assembles"],
+  ["0:14", "Today focuses the release"],
+  ["0:17", "Desk creates the work"],
+  ["0:22", "Exact human work"],
+  ["0:29", "Reality changes"],
+  ["0:33", "Desk watches reality"],
+  ["0:37", "Approve and run"],
+  ["0:40", "Meet your manager"],
 ] as const;
 
 export function LaunchFilmStudio() {
@@ -31,7 +32,7 @@ export function LaunchFilmStudio() {
 
   const player = (
     <Player
-      component={MeetYourManagerFilmV2}
+      component={MeetYourManagerFilmV3}
       inputProps={{ format }}
       durationInFrames={FILM_DURATION_FRAMES}
       fps={FILM_FPS}
@@ -45,18 +46,18 @@ export function LaunchFilmStudio() {
   );
 
   if (capture) {
-    return <main className="h-screen w-screen overflow-hidden bg-black">{player}</main>;
+    return <main className="h-screen w-screen overflow-hidden bg-[#f7f4ef]">{player}</main>;
   }
 
   return (
-    <main className="min-h-screen bg-[#07070a] text-white">
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#07070a]/95 px-4 py-3 backdrop-blur sm:px-6">
+    <main className="min-h-screen bg-[#111014] text-white">
+      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#111014]/95 px-4 py-3 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-[1500px] flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <BrandMark size="sm" />
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-white">Meet your manager</p>
-              <p className="text-[11px] font-medium text-white/45">Directed Remotion film · {FILM_SECONDS}s · {FILM_FPS}fps</p>
+              <p className="text-[11px] font-medium text-white/45">V3 · sourced media + real Desk components · {FILM_SECONDS}s · {FILM_FPS}fps</p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -79,13 +80,13 @@ export function LaunchFilmStudio() {
           <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold text-white/60">{meta.width} × {meta.height} · {meta.label}</p>
-              <p className="mt-1 max-w-[47rem] text-[11px] font-medium leading-relaxed text-white/34">Every frame below comes from the same Remotion composition used for the final MP4 render. Scrub it frame by frame.</p>
+              <p className="mt-1 max-w-[47rem] text-[11px] font-medium leading-relaxed text-white/34">This Player is the same V3 composition used for final MP4 renders. Product surfaces are production components and external media is stored deterministically on the motion branch.</p>
             </div>
-            <div className="rounded-full border border-violet-300/15 bg-violet-400/[0.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-200/75">V2 motion direction</div>
+            <div className="rounded-full border border-violet-300/15 bg-violet-400/[0.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-200/75">V3 rebuild</div>
           </div>
 
           <div
-            className="mx-auto overflow-hidden bg-black shadow-2xl shadow-black/60"
+            className="mx-auto overflow-hidden bg-[#f7f4ef] shadow-2xl shadow-black/60"
             style={{
               aspectRatio: `${meta.width} / ${meta.height}`,
               maxHeight: "80vh",
