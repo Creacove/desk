@@ -40,7 +40,7 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
-      - name: Ensure culturally aligned V5 media
+      - name: Ensure culturally aligned film media
         run: |
           mkdir -p public/launch-assets /tmp/launch-film-media
 
@@ -62,27 +62,6 @@ jobs:
       - name: Discover Remotion compositions
         run: npx remotion compositions src/remotion/index.ts
 
-      - name: Render V5 choreography QA frames
-        run: |
-          mkdir -p out/validation
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/01-opening.png --frame=150
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/02-typewriter-mid.png --frame=330
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/03-goal-click.png --frame=445
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/04-created-work-early.png --frame=730
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/05-created-work-mid.png --frame=785
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/06-created-work-settled.png --frame=850
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/07-priority-preclick.png --frame=1238
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/08-priority-click.png --frame=1258
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/09-task-stagger-mid.png --frame=1410
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/10-task-preclick.png --frame=1595
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/11-task-click.png --frame=1610
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/12-reality-change.png --frame=1880
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/13-watch.png --frame=2135
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/14-approval-preclick.png --frame=2365
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/15-approval-click.png --frame=2378
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/16-approval-sent.png --frame=2425
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/17-end.png --frame=2490
-
       - name: Render final vertical master
         run: |
           mkdir -p out/final
@@ -90,16 +69,8 @@ jobs:
             --codec=h264 \
             --crf=18 \
             --pixel-format=yuv420p \
-            --concurrency=2
+            --concurrency=4
           ffprobe -v error -show_entries format=duration,size -of default=noprint_wrappers=1 out/final/meet-your-manager-launch.mp4
-
-      - name: Upload validation stills
-        uses: actions/upload-artifact@v4
-        with:
-          name: remotion-v5-motion-qa
-          path: out/validation/*.png
-          if-no-files-found: error
-          retention-days: 7
 
       - name: Upload final vertical master
         uses: actions/upload-artifact@v4
