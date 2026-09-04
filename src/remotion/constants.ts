@@ -1,5 +1,5 @@
 export const FILM_FPS = 60;
-export const FILM_DURATION_FRAMES = 2760;
+export const FILM_DURATION_FRAMES = 2520;
 
 export type FilmFormat = "vertical" | "feed" | "landscape";
 
