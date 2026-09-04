@@ -1,0 +1,43 @@
+name: Render Remotion Launch Preview
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/render-remotion-launch-preview.yml
+
+permissions:
+  contents: read
+
+jobs:
+  render-preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout motion branch
+        uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Render 1080x1920 motion preview
+        run: |
+          mkdir -p out
+          npx remotion render src/remotion/index.ts MeetYourManagerPreview out/meet-your-manager-remotion-preview.mp4 --codec=h264 --crf=20 --concurrency=2
+
+      - name: Upload MP4 preview
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-your-manager-remotion-preview
+          path: out/meet-your-manager-remotion-preview.mp4
+          if-no-files-found: error
+          retention-days: 7
