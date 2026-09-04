@@ -1,0 +1,49 @@
+name: Render Launch Film Review
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/render-launch-film-review.yml
+
+permissions:
+  contents: read
+
+jobs:
+  render-review:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      VITE_SUPABASE_URL: http://localhost:54321
+      VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - name: Ensure film media
+        run: |
+          mkdir -p public/launch-assets /tmp/launch-film-media
+          curl -L --fail --retry 3 -o /tmp/launch-film-media/urban-performance.mp4 "https://videos.pexels.com/video-files/3890372/3890372-hd_1920_1080_30fps.mp4"
+          curl -L --fail --retry 3 -o /tmp/launch-film-media/singer-closeup.mp4 "https://videos.pexels.com/video-files/8117116/8117116-hd_1920_1080_25fps.mp4"
+          ffmpeg -y -ss 00:00:01.5 -i /tmp/launch-film-media/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1200:-2" -q:v 4 public/launch-assets/lagos-artist.jpg
+          ffmpeg -y -ss 00:00:02.0 -i /tmp/launch-film-media/singer-closeup.mp4 -frames:v 1 -update 1 -vf "scale=1200:-2" -q:v 4 public/launch-assets/lagos-artist-shoot.jpg
+          ffmpeg -y -ss 00:00:04.0 -i /tmp/launch-film-media/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1200:-2" -q:v 4 public/launch-assets/lagos-creator-team.jpg
+      - run: npx tailwindcss -c tailwind.config.ts -i src/index.css -o public/remotion-app.css --minify
+      - name: Render review MP4
+        run: |
+          mkdir -p out/review
+          npx remotion render src/remotion/index.ts MeetYourManagerMotionProof out/review/meet-your-manager-launch-review.mp4 --codec=h264 --crf=20 --pixel-format=yuv420p --concurrency=4
+      - uses: actions/upload-artifact@v4
+        with:
+          name: meet-your-manager-launch-review
+          path: out/review/meet-your-manager-launch-review.mp4
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30
