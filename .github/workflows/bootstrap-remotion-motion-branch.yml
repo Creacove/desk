@@ -34,8 +34,8 @@ jobs:
 
       - name: Install exact Remotion toolchain
         run: |
-          npm install --save-exact remotion@4.0.520 @remotion/player@4.0.520 @remotion/transitions@4.0.520
-          npm install --save-dev --save-exact @remotion/cli@4.0.520
+          npm install --save-exact --no-audit --no-fund remotion@4.0.520 @remotion/player@4.0.520 @remotion/transitions@4.0.520
+          npm install --save-dev --save-exact --no-audit --no-fund @remotion/cli@4.0.520
           npm pkg set scripts.film:studio="remotion studio src/remotion/index.ts"
           npm pkg set scripts.film:render:vertical="remotion render src/remotion/index.ts MeetYourManagerVertical out/meet-your-manager-vertical.mp4"
           npm pkg set scripts.film:render:feed="remotion render src/remotion/index.ts MeetYourManagerFeed out/meet-your-manager-feed.mp4"
