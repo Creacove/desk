@@ -13,12 +13,18 @@
     "env:check:production": "node scripts/validate-production-env.mjs",
     "preview": "vite preview",
     "secrets:splits": "powershell -ExecutionPolicy Bypass -File scripts/set-split-confirmation-secrets.ps1",
-    "test": "vitest run --environment jsdom --pool=vmThreads"
+    "test": "vitest run --environment jsdom --pool=vmThreads",
+    "film:studio": "remotion studio src/remotion/index.ts",
+    "film:render:vertical": "remotion render src/remotion/index.ts MeetYourManagerVertical out/meet-your-manager-vertical.mp4",
+    "film:render:feed": "remotion render src/remotion/index.ts MeetYourManagerFeed out/meet-your-manager-feed.mp4",
+    "film:render:landscape": "remotion render src/remotion/index.ts MeetYourManagerLandscape out/meet-your-manager-landscape.mp4"
   },
   "dependencies": {
     "@paddle/paddle-js": "^1.6.4",
     "@paddle/paddle-node-sdk": "^3.8.0",
     "@radix-ui/react-dialog": "^1.1.14",
+    "@remotion/player": "4.0.520",
+    "@remotion/transitions": "4.0.520",
     "@supabase/supabase-js": "^2.106.2",
     "border-beam": "^1.3.0",
     "class-variance-authority": "^0.7.1",
@@ -27,11 +33,13 @@
     "posthog-js": "^1.399.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "remotion": "4.0.520",
     "tailwind-merge": "^2.6.0",
     "thinking-orbs": "^0.1.1",
     "tus-js-client": "^4.3.1"
   },
   "devDependencies": {
+    "@remotion/cli": "4.0.520",
     "@testing-library/jest-dom": "^6.6.0",
     "@testing-library/react": "^16.0.0",
     "@types/node": "^22.16.5",
