@@ -516,7 +516,7 @@ function EndResolve({ frame, format }: SceneProps) {
   ];
 
   return (
-    <AbsoluteFill style={{ background: interpolate(p, [0, 1], ["rgba(247,244,239,0)", "rgba(247,244,239,1)"]) }}>
+    <AbsoluteFill style={{ background: `rgba(247,244,239,${p})` }}>
       {tiles.map((tile, index) => {
         const centerX = width * 0.5;
         const centerY = height * (portrait ? 0.46 : 0.48);
