@@ -1,0 +1,174 @@
+name: Apply V5 Motion Surgery
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/v5-motion-surgery.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-motion:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout motion branch
+        uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+          fetch-depth: 0
+
+      - name: Apply component-level motion fixes
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old not in text:
+                  raise SystemExit(f"Missing replacement target: {label}")
+              return text.replace(old, new, 1)
+
+          kit_path = Path('src/remotion/MotionProductKitV4.tsx')
+          kit = kit_path.read_text()
+
+          kit = replace_once(
+              kit,
+              'style={{ position: "relative", background: "rgba(255,255,255,.96)", border: `1px solid ${line}`, borderRadius: 28, boxShadow: "0 32px 100px rgba(29,24,21,.11), 0 4px 18px rgba(29,24,21,.05)", overflow: "hidden", color: ink, ...style }}',
+              'style={{ position: "relative", background: "rgba(255,255,255,.96)", border: `1px solid ${line}`, borderRadius: 28, boxShadow: "0 32px 100px rgba(29,24,21,.11), 0 4px 18px rgba(29,24,21,.05)", overflow: "hidden", color: ink, fontFamily: "Manrope, system-ui, sans-serif", ...style }}',
+              'MotionWindow product font',
+          )
+
+          old_media = '''export function MediaAtmosphere({ src, focusX = 50, focusY = 50, style, overlay = "rgba(23,16,12,.10)" }: { src: string; focusX?: number; focusY?: number; style?: CSSProperties; overlay?: string }) {
+            return (
+              <div style={{ position: "relative", overflow: "hidden", ...style }}>
+                <Img src={staticFile(src)} style={{ position: "absolute", inset: -36, width: "calc(100% + 72px)", height: "calc(100% + 72px)", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, filter: "blur(26px) saturate(.9)", opacity: .40, transform: "scale(1.08)" }} />
+                <Img src={staticFile(src)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, maskImage: "linear-gradient(180deg,transparent 0%,#000 12%,#000 84%,transparent 100%)", WebkitMaskImage: "linear-gradient(180deg,transparent 0%,#000 12%,#000 84%,transparent 100%)" }} />
+                <div style={{ position: "absolute", inset: 0, background: overlay }} />
+              </div>
+            );
+          }'''
+          new_media = '''export function MediaAtmosphere({ src, focusX = 50, focusY = 50, style, overlay = "rgba(23,16,12,.10)" }: { src: string; focusX?: number; focusY?: number; style?: CSSProperties; overlay?: string }) {
+            const feather = "radial-gradient(ellipse 88% 82% at 56% 50%, #000 0%, #000 54%, rgba(0,0,0,.92) 66%, rgba(0,0,0,.52) 79%, transparent 100%)";
+            return (
+              <div style={{ position: "relative", overflow: "visible", maskImage: feather, WebkitMaskImage: feather, ...style }}>
+                <Img src={staticFile(src)} style={{ position: "absolute", inset: -58, width: "calc(100% + 116px)", height: "calc(100% + 116px)", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, filter: "blur(34px) saturate(.88) contrast(.96)", opacity: .50, transform: "scale(1.10)" }} />
+                <Img src={staticFile(src)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, filter: "saturate(.94) contrast(.98)" }} />
+                <div style={{ position: "absolute", inset: -4, background: overlay }} />
+              </div>
+            );
+          }'''
+          kit = replace_once(kit, old_media, new_media, 'organic media feather')
+
+          replacements = [
+              ('fontSize: 18, color: muted', 'fontSize: 20, color: muted', 'manager label size'),
+              ('fontSize: 46, fontWeight: 760', 'fontSize: 54, fontWeight: 760', 'manager headline size'),
+              ('marginTop: 132, border:', 'marginTop: 108, border:', 'manager composer spacing'),
+              ('minHeight: 78, fontSize: 28', 'minHeight: 104, fontSize: 36', 'manager prompt size'),
+              ('fontSize: 15, fontWeight: 650 }}>Odaeshi attached', 'fontSize: 17, fontWeight: 650 }}>Odaeshi attached', 'manager attachment meta'),
+              ('width: 52, height: 52, borderRadius: 15', 'width: 64, height: 64, borderRadius: 18', 'manager send button'),
+              ('<ChevronRight size={23}', '<ChevronRight size={28}', 'manager send icon'),
+              ('color: purple, fontWeight: 750, fontSize: 16', 'color: purple, fontWeight: 760, fontSize: 18', 'created work desk label'),
+              ('width: 900, fontSize: 30', 'width: 960, fontSize: 36', 'created work response'),
+              ('minHeight: 104, borderBottom:', 'minHeight: 118, borderBottom:', 'created work row height'),
+              ('gridTemplateColumns: "48px 1fr 36px"', 'gridTemplateColumns: "58px 1fr 42px"', 'created work columns'),
+              ('gap: 18 }}>', 'gap: 22 }}>', 'created work row gap'),
+              ('width: 40, height: 40, borderRadius: 12', 'width: 48, height: 48, borderRadius: 14', 'created work icon well'),
+              ('<Circle size={17}', '<Circle size={20}', 'mission icon'),
+              ('<FileText size={18}', '<FileText size={21}', 'document icon'),
+              ('fontSize: 22, fontWeight: 720', 'fontSize: 27, fontWeight: 720', 'created work title'),
+              ('fontSize: 15, color: muted, fontWeight: 570', 'fontSize: 18, color: muted, fontWeight: 570', 'created work meta'),
+              ('<Check size={19}', '<Check size={22}', 'created work check'),
+              ('frame - start - 108', 'frame - start - 138', 'approval press timing'),
+              ('frame - start - 132', 'frame - start - 153', 'approval completion timing'),
+          ]
+          for old, new, label in replacements:
+              kit = replace_once(kit, old, new, label)
+
+          old_cursor = '''export function MotionCursor({ start, x, y, clickAt, style }: { start: number; x: number; y: number; clickAt?: number; style?: CSSProperties }) {
+            const frame = useCurrentFrame();
+            const { width, height } = useVideoConfig();
+            const inP = spring({ frame: Math.max(0, frame - start), fps: 60, config: { damping: 18, stiffness: 120 } });
+            const pressed = clickAt === undefined ? 0 : spring({ frame: Math.max(0, frame - clickAt), fps: 60, config: { damping: 13, stiffness: 200 } });
+            return (
+              <div style={{ position: "absolute", left: x * width, top: y * height, width: 34, height: 42, transform: `translate(-4px,-3px) translateY(${(1 - inP) * 46}px) scale(${1 - Math.min(pressed, 1) * .12})`, opacity: inP, filter: "drop-shadow(0 4px 6px rgba(0,0,0,.18))", zIndex: 30, ...style }}>
+                <svg viewBox="0 0 28 36" width="100%" height="100%"><path d="M3 2L24 21L15 22L20 32L14 35L9 24L3 30V2Z" fill="white" stroke="#141216" strokeWidth="2" strokeLinejoin="round" /></svg>
+                {pressed > .05 && pressed < .9 ? <span style={{ position: "absolute", left: -12, top: -12, width: 44, height: 44, borderRadius: 99, border: `2px solid ${purple}`, opacity: 1 - pressed }} /> : null}
+              </div>
+            );
+          }'''
+          new_cursor = '''export function MotionCursor({ start, x, y, fromX, fromY, clickAt, leaveAt, style }: { start: number; x: number; y: number; fromX?: number; fromY?: number; clickAt?: number; leaveAt?: number; style?: CSSProperties }) {
+            const frame = useCurrentFrame();
+            const { width, height } = useVideoConfig();
+            const approach = spring({ frame: Math.max(0, frame - start), fps: 60, config: { damping: 20, stiffness: 92, mass: .84 } });
+            const sx = fromX ?? Math.max(.05, x - .18);
+            const sy = fromY ?? Math.min(.92, y + .10);
+            const px = sx + (x - sx) * approach;
+            const py = sy + (y - sy) * approach;
+            const press = clickAt === undefined ? 0 : interpolate(frame, [clickAt - 1, clickAt + 5, clickAt + 13], [0, 1, 0], clamp);
+            const exitAt = leaveAt ?? (clickAt === undefined ? Number.POSITIVE_INFINITY : clickAt + 22);
+            const visibility = interpolate(frame, [start, start + 8, exitAt, exitAt + 14], [0, 1, 1, 0], clamp);
+            const ring = clickAt === undefined ? 0 : interpolate(frame, [clickAt, clickAt + 5, clickAt + 16], [0, 1, 0], clamp);
+            return (
+              <div style={{ position: "absolute", left: px * width, top: py * height, width: 34, height: 42, transform: `translate(-4px,-3px) scale(${1 - press * .12})`, opacity: visibility, filter: "drop-shadow(0 4px 6px rgba(0,0,0,.18))", zIndex: 30, ...style }}>
+                <svg viewBox="0 0 28 36" width="100%" height="100%"><path d="M3 2L24 21L15 22L20 32L14 35L9 24L3 30V2Z" fill="white" stroke="#141216" strokeWidth="2" strokeLinejoin="round" /></svg>
+                {ring > 0 ? <span style={{ position: "absolute", left: -13, top: -13, width: 46, height: 46, borderRadius: 99, border: `2px solid ${purple}`, opacity: ring, transform: `scale(${.72 + (1 - ring) * .5})` }} /> : null}
+              </div>
+            );
+          }'''
+          kit = replace_once(kit, old_cursor, new_cursor, 'target-driven cursor')
+          kit_path.write_text(kit)
+
+          film_path = Path('src/remotion/MeetYourManagerFilmV4.tsx')
+          film = film_path.read_text()
+          film = replace_once(
+              film,
+              'fontFamily: \'var(--font-display, "Manrope"), Manrope, system-ui, sans-serif\'',
+              'fontFamily: \'"Bricolage Grotesque", Manrope, system-ui, sans-serif\'',
+              'editorial display font',
+          )
+
+          old_canvas = '''      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#fbfaf7 0%,#f8f5ef 62%,#f5f0e8 100%)" }} />
+                <div style={{ position: "absolute", width: width * .82, height: width * .82, left: width * (.48 - .41 + drift), top: -width * .42, borderRadius: 999, background: "radial-gradient(circle,rgba(111,67,220,.12),rgba(111,67,220,0) 68%)", filter: "blur(42px)" }} />
+                <div style={{ position: "absolute", inset: 0, opacity: .055, backgroundImage: "radial-gradient(rgba(20,18,22,.55) .65px,transparent .65px)", backgroundSize: "8px 8px", mixBlendMode: "multiply" }} />'''
+          new_canvas = '''      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#fbfaf7 0%,#f8f5ef 58%,#f3eee6 100%)" }} />
+                <div style={{ position: "absolute", width: width * .90, height: width * .90, left: width * (.48 - .45 + drift), top: -width * .50, borderRadius: 999, background: "radial-gradient(circle,rgba(111,67,220,.11),rgba(111,67,220,0) 69%)", filter: "blur(52px)" }} />
+                <div style={{ position: "absolute", width: width * 1.14, height: height * .44, left: -width * .34, bottom: -height * .17, borderRadius: 999, background: "radial-gradient(ellipse,rgba(204,154,95,.09),rgba(204,154,95,0) 70%)", filter: "blur(64px)" }} />
+                <div style={{ position: "absolute", inset: 0, opacity: .028, backgroundImage: "linear-gradient(115deg,rgba(20,18,22,.13) 0 1px,transparent 1px 100%)", backgroundSize: "23px 23px", mixBlendMode: "multiply" }} />'''
+          film = replace_once(film, old_canvas, new_canvas, 'editorial canvas')
+
+          film_replacements = [
+              ('const scale = portrait ? width / 1120 * 1.36 : width / 1120 * .78;', 'const scale = portrait ? width / 1120 * .96 : width / 1120 * .78;', 'goal fit scale'),
+              ('const camera = interpolate(local, [0, 410], [.90, 1.08], clamp);', 'const camera = interpolate(local, [0, 410], [.99, 1.015], clamp);', 'goal camera restraint'),
+              ('left: portrait ? width * .52 : width * .36', 'left: portrait ? width * .50 : width * .36', 'goal center'),
+              ('<MotionCursor start={355} clickAt={445} x={portrait ? .74 : .46} y={portrait ? .60 : .67} />', '<MotionCursor start={355} clickAt={445} leaveAt={470} fromX={portrait ? .67 : .40} fromY={portrait ? .67 : .74} x={portrait ? .91 : .46} y={portrait ? .56 : .67} />', 'goal cursor target'),
+              ('const scale = portrait ? width / 1180 * 1.32 : width / 1180 * .74;', 'const scale = portrait ? width / 1180 * .98 : width / 1180 * .74;', 'created work fit scale'),
+              ('left: portrait ? width * .50 : width * .37', 'left: portrait ? width * .50 : width * .37', 'created work center marker'),
+              ('const scale = portrait ? width / 1080 * .91 : height / 700 * .73;', 'const scale = portrait ? width / 1080 * .98 : height / 700 * .73;', 'priority scale'),
+              ('fontSize: 44, fontWeight: 800', 'fontSize: 52, fontWeight: 800', 'priority headline'),
+              ('fontSize: 24, fontWeight: 760', 'fontSize: 30, fontWeight: 760', 'priority task title'),
+              ('fontSize: 15, lineHeight: 1.4, fontWeight: 590', 'fontSize: 17, lineHeight: 1.4, fontWeight: 590', 'priority task meta'),
+              ('<MotionCursor start={1180} clickAt={1258} x={portrait ? .72 : .61} y={portrait ? .56 : .60} />', '<MotionCursor start={1180} clickAt={1258} leaveAt={1280} fromX={portrait ? .54 : .48} fromY={portrait ? .53 : .67} x={portrait ? .69 : .61} y={portrait ? .435 : .60} />', 'priority cursor target'),
+              ('const scale = portrait ? width / 1040 * 1.04 : height / 900 * .70;', 'const scale = portrait ? width / 1040 * .99 : height / 900 * .70;', 'task fit scale'),
+              ('<MotionCursor start={1510} clickAt={1610} x={portrait ? .69 : .52} y={portrait ? .78 : .79} />', '<MotionCursor start={1510} clickAt={1610} leaveAt={1632} fromX={portrait ? .56 : .42} fromY={portrait ? .67 : .86} x={portrait ? .76 : .52} y={portrait ? .55 : .79} />', 'task cursor target'),
+              ('const scale = portrait ? width / 1080 * .91 : height / 720 * .74;', 'const scale = portrait ? width / 1080 * .98 : height / 720 * .74;', 'change scale'),
+              ('gridTemplateColumns: "repeat(3,1fr)", border:', 'position: "relative", gridTemplateColumns: "repeat(3,1fr)", border:', 'calendar positioning context'),
+              ('fontSize: 14, fontWeight: 690', 'fontSize: 16, fontWeight: 690', 'calendar day size'),
+              ('fontSize: 18, fontWeight: 730', 'fontSize: 22, fontWeight: 730', 'calendar action size'),
+              ('const scale = portrait ? width / 1030 * 1.02 : height / 670 * .78;', 'const scale = portrait ? width / 1030 * .96 : height / 670 * .78;', 'approval fit scale'),
+              ('<MotionCursor start={2325} clickAt={2378} x={portrait ? .70 : .62} y={portrait ? .69 : .72} />', '<MotionCursor start={2325} clickAt={2378} leaveAt={2405} fromX={portrait ? .58 : .52} fromY={portrait ? .66 : .80} x={portrait ? .742 : .62} y={portrait ? .532 : .72} />', 'approval cursor target'),
+          ]
+          for old, new, label in film_replacements:
+              film = replace_once(film, old, new, label)
+          film_path.write_text(film)
+          PY
+
+      - name: Commit V5 motion surgery
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/remotion/MotionProductKitV4.tsx src/remotion/MeetYourManagerFilmV4.tsx
+          git commit -m "feat: refine V5 motion choreography and framing"
+          git push origin HEAD:marketing/meet-your-manager-motion
