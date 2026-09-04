@@ -3,6 +3,7 @@ import { ChevronRight, Eye } from "lucide-react";
 import { ConversationWorkspace } from "../features/manager/ManagerConversationV2";
 import { TaskSheet } from "../features/missions/MissionTaskSheet";
 import { TodayRuntimeExecution } from "../features/desk/TodayRuntimeExecution";
+import type { ConversationViewModel } from "../types/cleanProduction";
 import "../features/desk/deskHome.css";
 import {
   approvalMission,
@@ -43,11 +44,11 @@ export function ProductViewport({
   );
 }
 
-export function RealManagerStage() {
+export function RealManagerStage({ conversation = odaeshiConversation }: { conversation?: ConversationViewModel }) {
   return (
     <ProductViewport>
       <ConversationWorkspace
-        conversation={odaeshiConversation}
+        conversation={conversation}
         onBack={noop}
         onOpenCreatedWork={noop}
         onSendMessage={noop}
