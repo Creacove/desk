@@ -1,0 +1,55 @@
+name: Bootstrap Remotion Production CSS
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/bootstrap-remotion-app-css.yml
+
+permissions:
+  contents: write
+
+jobs:
+  compile-app-css:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout current motion branch
+        uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Compile production Tailwind CSS for Remotion
+        run: |
+          npx tailwindcss -c tailwind.config.js -i src/index.css -o /tmp/remotion-app.css --minify
+
+      - name: Rebase generated CSS onto latest branch
+        run: |
+          cp /tmp/remotion-app.css /tmp/remotion-app-generated.css
+          git fetch origin marketing/meet-your-manager-motion
+          git reset --hard origin/marketing/meet-your-manager-motion
+          cp /tmp/remotion-app-generated.css src/remotion/remotion-app.css
+
+      - name: Commit compiled film stylesheet
+        run: |
+          if git status --short -- src/remotion/remotion-app.css | grep -q .; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add src/remotion/remotion-app.css
+            git commit -m "chore: compile production CSS for Remotion"
+            git push origin HEAD:marketing/meet-your-manager-motion
+          else
+            echo "Remotion production stylesheet already synchronized."
+          fi

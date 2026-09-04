@@ -1,0 +1,43 @@
+name: Render Remotion Motion Proof
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/render-remotion-motion-proof.yml
+
+permissions:
+  contents: read
+
+jobs:
+  render-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout motion branch
+        uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Render 540x960 motion proof
+        run: |
+          mkdir -p out
+          npx remotion render src/remotion/index.ts MeetYourManagerMotionProof out/meet-your-manager-motion-proof.mp4 --codec=h264 --crf=23 --concurrency=2
+
+      - name: Upload motion proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: meet-your-manager-motion-proof
+          path: out/meet-your-manager-motion-proof.mp4
+          if-no-files-found: error
+          retention-days: 7

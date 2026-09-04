@@ -6,6 +6,7 @@ import { SplitConfirmationPortal } from "./features/music/SplitConfirmationPorta
 import { PublicMusicSharePortal } from "./features/music/PublicMusicSharePortal";
 import { createBrowserSupabaseClient } from "./lib/supabaseClient";
 import { installBrowserErrorTelemetry } from "./lib/errorTelemetry";
+import { LaunchFilmStudio } from "./marketing/launch-film/FilmStudio";
 import AiLabelPrototype from "./prototype/AiLabelPrototype";
 import { createSupabaseProductionRepositories } from "./services/productionSupabase";
 import { loadPublicMusicShare } from "./services/publicMusicShare";
@@ -28,9 +29,10 @@ const params = new URLSearchParams(window.location.search);
 const requestedView = params.get("view") as CleanProductionView | null;
 const initialView = requestedView && productionViews.includes(requestedView) ? requestedView : "connectArtist";
 const fixtureMode = params.get("fixtures") === "true";
+const launchFilmRoute = window.location.pathname === "/launch-film";
 const splitConfirmationToken = window.location.pathname === "/split-confirmation" ? params.get("token") ?? "" : "";
 const publicShareToken = window.location.pathname === "/share" ? params.get("token") ?? "" : "";
-if (import.meta.env.PROD && !splitConfirmationToken && !publicShareToken && import.meta.env.VITE_APP_MODE !== "prototype") {
+if (import.meta.env.PROD && !launchFilmRoute && !splitConfirmationToken && !publicShareToken && import.meta.env.VITE_APP_MODE !== "prototype") {
   const telemetryClient = createBrowserSupabaseClient();
   installBrowserErrorTelemetry({
     capture: async (payload) => {
@@ -50,7 +52,9 @@ const publicSplitWorkspace = {
   spotifyConnected: false,
   contextComplete: true,
 } satisfies ProductionWorkspace;
-const app = splitConfirmationToken ? (
+const app = launchFilmRoute ? (
+    <LaunchFilmStudio />
+  ) : splitConfirmationToken ? (
     <SplitConfirmationPortal
       token={splitConfirmationToken}
       musicRepository={createSupabaseProductionRepositories(createBrowserSupabaseClient(), publicSplitWorkspace).music}
