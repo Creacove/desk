@@ -22,7 +22,7 @@ const muted = "rgba(20,18,22,.46)";
 export function MeetYourManagerFilmV4({ format }: { format: FilmFormat }) {
   const frame = useCurrentFrame();
   return (
-    <AbsoluteFill style={{ overflow: "hidden", background: paper, color: ink, fontFamily: 'var(--font-display, "Manrope"), Manrope, system-ui, sans-serif' }}>
+    <AbsoluteFill style={{ overflow: "hidden", background: paper, color: ink, fontFamily: '"Bricolage Grotesque", Manrope, system-ui, sans-serif' }}>
       <FilmCanvas frame={frame} />
       <Opening frame={frame} format={format} />
       <GoalScene frame={frame} format={format} />
@@ -42,9 +42,10 @@ function FilmCanvas({ frame }: { frame: number }) {
   const drift = interpolate(frame, [0, 2520], [-0.05, 0.05], clamp);
   return (
     <AbsoluteFill>
-      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#fbfaf7 0%,#f8f5ef 62%,#f5f0e8 100%)" }} />
-      <div style={{ position: "absolute", width: width * .82, height: width * .82, left: width * (.48 - .41 + drift), top: -width * .42, borderRadius: 999, background: "radial-gradient(circle,rgba(111,67,220,.12),rgba(111,67,220,0) 68%)", filter: "blur(42px)" }} />
-      <div style={{ position: "absolute", inset: 0, opacity: .055, backgroundImage: "radial-gradient(rgba(20,18,22,.55) .65px,transparent .65px)", backgroundSize: "8px 8px", mixBlendMode: "multiply" }} />
+      <div style={{ position: "absolute", inset: 0, background: "linear-gradient(180deg,#fbfaf7 0%,#f8f5ef 58%,#f3eee6 100%)" }} />
+      <div style={{ position: "absolute", width: width * .90, height: width * .90, left: width * (.48 - .45 + drift), top: -width * .50, borderRadius: 999, background: "radial-gradient(circle,rgba(111,67,220,.11),rgba(111,67,220,0) 69%)", filter: "blur(52px)" }} />
+      <div style={{ position: "absolute", width: width * 1.14, height: height * .44, left: -width * .34, bottom: -height * .17, borderRadius: 999, background: "radial-gradient(ellipse,rgba(204,154,95,.09),rgba(204,154,95,0) 70%)", filter: "blur(64px)" }} />
+      <div style={{ position: "absolute", inset: 0, opacity: .028, backgroundImage: "linear-gradient(115deg,rgba(20,18,22,.13) 0 1px,transparent 1px 100%)", backgroundSize: "23px 23px", mixBlendMode: "multiply" }} />
     </AbsoluteFill>
   );
 }
@@ -89,8 +90,8 @@ function GoalScene({ frame, format }: SceneProps) {
   const portrait = format !== "landscape";
   const opacity = windowOpacity(frame, 220, 260, 650, 720);
   const inP = spring({ frame: local, fps: 60, config: { damping: 20, stiffness: 82 } });
-  const scale = portrait ? width / 1120 * 1.36 : width / 1120 * .78;
-  const camera = interpolate(local, [0, 410], [.90, 1.08], clamp);
+  const scale = portrait ? width / 1120 * .96 : width / 1120 * .78;
+  const camera = interpolate(local, [0, 410], [.99, 1.015], clamp);
 
   return (
     <AbsoluteFill style={{ opacity }}>
@@ -98,10 +99,10 @@ function GoalScene({ frame, format }: SceneProps) {
       <div style={{ position: "absolute", left: portrait ? width * .07 : width * .065, top: portrait ? height * .08 : height * .12, zIndex: 5 }}>
         <RevealLine start={260}><div style={{ fontSize: portrait ? width * .027 : height * .04, color: muted, fontWeight: 720 }}>Start with the outcome.</div></RevealLine>
       </div>
-      <div style={{ position: "absolute", left: portrait ? width * .52 : width * .36, top: portrait ? height * .51 : height * .55, transform: `translate(-50%,-50%) translateY(${(1 - inP) * 140}px) scale(${scale * camera})`, transformOrigin: "50% 72%" }}>
+      <div style={{ position: "absolute", left: portrait ? width * .50 : width * .36, top: portrait ? height * .51 : height * .55, transform: `translate(-50%,-50%) translateY(${(1 - inP) * 140}px) scale(${scale * camera})`, transformOrigin: "50% 72%" }}>
         <ManagerComposerMotion start={270} />
       </div>
-      <MotionCursor start={355} clickAt={445} x={portrait ? .74 : .46} y={portrait ? .60 : .67} />
+      <MotionCursor start={355} clickAt={445} leaveAt={470} fromX={portrait ? .67 : .40} fromY={portrait ? .67 : .74} x={portrait ? .91 : .46} y={portrait ? .56 : .67} />
     </AbsoluteFill>
   );
 }
@@ -113,7 +114,7 @@ function CreatedWorkScene({ frame, format }: SceneProps) {
   const portrait = format !== "landscape";
   const opacity = windowOpacity(frame, 610, 650, 1040, 1110);
   const stageIn = spring({ frame: local, fps: 60, config: { damping: 20, stiffness: 84 } });
-  const scale = portrait ? width / 1180 * 1.32 : width / 1180 * .74;
+  const scale = portrait ? width / 1180 * .98 : width / 1180 * .74;
 
   return (
     <AbsoluteFill style={{ opacity }}>
@@ -139,7 +140,7 @@ function PriorityScene({ frame, format }: SceneProps) {
   const opacity = windowOpacity(frame, 1020, 1060, 1310, 1370);
   const panelIn = spring({ frame: Math.max(0, frame - 1045), fps: 60, config: { damping: 19, stiffness: 100 } });
   const buttonIn = spring({ frame: Math.max(0, frame - 1160), fps: 60, config: { damping: 18, stiffness: 120 } });
-  const scale = portrait ? width / 1080 * .91 : height / 700 * .73;
+  const scale = portrait ? width / 1080 * .98 : height / 700 * .73;
 
   return (
     <AbsoluteFill style={{ opacity }}>
@@ -149,12 +150,12 @@ function PriorityScene({ frame, format }: SceneProps) {
       <div style={{ position: "absolute", left: width * .5, top: height * (portrait ? .53 : .55), transform: `translate(-50%,-50%) translateY(${(1 - panelIn) * 120}px) scale(${scale})`, opacity: panelIn }}>
         <MotionWindow chrome={false} style={{ width: 1080, minHeight: 650, padding: "54px 58px" }}>
           <RevealLine start={1080}><div style={{ fontSize: 17, color: muted, fontWeight: 700 }}>Today · Odaeshi</div></RevealLine>
-          <RevealLine start={1094}><div style={{ marginTop: 14, fontSize: 44, fontWeight: 800, letterSpacing: "-.058em" }}>One thing matters now.</div></RevealLine>
+          <RevealLine start={1094}><div style={{ marginTop: 14, fontSize: 52, fontWeight: 800, letterSpacing: "-.058em" }}>One thing matters now.</div></RevealLine>
           <RevealLine start={1112}>
             <div style={{ marginTop: 52, border: `1px solid ${line}`, borderRadius: 20, background: "rgba(255,255,255,.92)", padding: "26px 28px", display: "grid", gridTemplateColumns: "1fr 180px", gap: 26, alignItems: "center", boxShadow: "0 12px 32px rgba(29,24,21,.05)" }}>
               <div>
-                <div style={{ fontSize: 24, fontWeight: 760, letterSpacing: "-.033em" }}>Record: What couldn’t finish us?</div>
-                <div style={{ marginTop: 7, color: muted, fontSize: 15, lineHeight: 1.4, fontWeight: 590 }}>Current human dependency · release story</div>
+                <div style={{ fontSize: 30, fontWeight: 760, letterSpacing: "-.033em" }}>Record: What couldn’t finish us?</div>
+                <div style={{ marginTop: 7, color: muted, fontSize: 17, lineHeight: 1.4, fontWeight: 590 }}>Current human dependency · release story</div>
               </div>
               <div style={{ height: 52, borderRadius: 14, background: ink, color: "white", display: "grid", placeItems: "center", fontSize: 16, fontWeight: 760, opacity: buttonIn, transform: `scale(${.90 + buttonIn * .10})` }}>Start</div>
             </div>
@@ -162,7 +163,7 @@ function PriorityScene({ frame, format }: SceneProps) {
           <RevealLine start={1192}><div style={{ marginTop: 38, color: muted, fontSize: 15, fontWeight: 610 }}>Everything else can wait.</div></RevealLine>
         </MotionWindow>
       </div>
-      <MotionCursor start={1180} clickAt={1258} x={portrait ? .72 : .61} y={portrait ? .56 : .60} />
+      <MotionCursor start={1180} clickAt={1258} leaveAt={1280} fromX={portrait ? .54 : .48} fromY={portrait ? .53 : .67} x={portrait ? .69 : .61} y={portrait ? .435 : .60} />
     </AbsoluteFill>
   );
 }
@@ -172,7 +173,7 @@ function TaskScene({ frame, format }: SceneProps) {
   const { width, height } = useVideoConfig();
   const portrait = format !== "landscape";
   const opacity = windowOpacity(frame, 1280, 1320, 1675, 1740);
-  const scale = portrait ? width / 1040 * 1.04 : height / 900 * .70;
+  const scale = portrait ? width / 1040 * .99 : height / 900 * .70;
   const mediaIn = spring({ frame: Math.max(0, frame - 1430), fps: 60, config: { damping: 20, stiffness: 84 } });
 
   return (
@@ -183,7 +184,7 @@ function TaskScene({ frame, format }: SceneProps) {
       <div style={{ position: "absolute", left: portrait ? width * .50 : width * .36, top: height * .53, transform: `translate(-50%,-50%) scale(${scale})` }}>
         <TaskBriefMotion start={1325} />
       </div>
-      <MotionCursor start={1510} clickAt={1610} x={portrait ? .69 : .52} y={portrait ? .78 : .79} />
+      <MotionCursor start={1510} clickAt={1610} leaveAt={1632} fromX={portrait ? .56 : .42} fromY={portrait ? .67 : .86} x={portrait ? .76 : .52} y={portrait ? .55 : .79} />
     </AbsoluteFill>
   );
 }
@@ -193,7 +194,7 @@ function ChangeScene({ frame, format }: SceneProps) {
   const { width, height } = useVideoConfig();
   const portrait = format !== "landscape";
   const opacity = windowOpacity(frame, 1660, 1700, 2005, 2070);
-  const scale = portrait ? width / 1080 * .91 : height / 720 * .74;
+  const scale = portrait ? width / 1080 * .98 : height / 720 * .74;
   const move = spring({ frame: Math.max(0, frame - 1860), fps: 60, config: { damping: 20, stiffness: 90 } });
 
   return (
@@ -214,12 +215,12 @@ function ChangeScene({ frame, format }: SceneProps) {
               Moved. I’ve protected the rest of the plan and Sunday is now the next human dependency.
             </div>
           </RevealLine>
-          <div style={{ marginTop: 46, display: "grid", gridTemplateColumns: "repeat(3,1fr)", border: `1px solid ${line}`, borderRadius: 18, overflow: "hidden" }}>
+          <div style={{ marginTop: 46, display: "grid", position: "relative", gridTemplateColumns: "repeat(3,1fr)", border: `1px solid ${line}`, borderRadius: 18, overflow: "hidden" }}>
             {["Friday", "Saturday", "Sunday"].map((day, index) => (
               <RevealLine key={day} start={1834 + index * 8} blur={5}>
                 <div style={{ minHeight: 124, padding: "22px 24px", borderLeft: index ? `1px solid ${line}` : undefined, background: index === 2 ? "rgba(111,67,220,.05)" : "transparent" }}>
-                  <div style={{ color: muted, fontSize: 14, fontWeight: 690 }}>{day}</div>
-                  <div style={{ marginTop: 20, fontSize: 18, fontWeight: 730, color: index === 2 ? purple : ink, opacity: index === 2 ? move : 1 }}>{index === 2 ? "Shoot story" : ""}</div>
+                  <div style={{ color: muted, fontSize: 16, fontWeight: 690 }}>{day}</div>
+                  <div style={{ marginTop: 20, fontSize: 22, fontWeight: 730, color: index === 2 ? purple : ink, opacity: index === 2 ? move : 1 }}>{index === 2 ? "Shoot story" : ""}</div>
                 </div>
               </RevealLine>
             ))}
@@ -268,7 +269,7 @@ function ApprovalScene({ frame, format }: SceneProps) {
   const { width, height } = useVideoConfig();
   const portrait = format !== "landscape";
   const opacity = windowOpacity(frame, 2190, 2228, 2415, 2470);
-  const scale = portrait ? width / 1030 * 1.02 : height / 670 * .78;
+  const scale = portrait ? width / 1030 * .96 : height / 670 * .78;
   return (
     <AbsoluteFill style={{ opacity }}>
       <div style={{ position: "absolute", left: portrait ? width * .07 : width * .07, top: portrait ? height * .07 : height * .11 }}>
@@ -277,7 +278,7 @@ function ApprovalScene({ frame, format }: SceneProps) {
       <div style={{ position: "absolute", left: width * .5, top: height * .54, transform: `translate(-50%,-50%) scale(${scale})` }}>
         <ApprovalMotion start={2240} />
       </div>
-      <MotionCursor start={2325} clickAt={2378} x={portrait ? .70 : .62} y={portrait ? .69 : .72} />
+      <MotionCursor start={2325} clickAt={2378} leaveAt={2405} fromX={portrait ? .58 : .52} fromY={portrait ? .66 : .80} x={portrait ? .742 : .62} y={portrait ? .532 : .72} />
     </AbsoluteFill>
   );
 }

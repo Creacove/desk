@@ -34,7 +34,7 @@ export function RevealLine({ children, start, fromY = 20, blur = 8, style }: { c
 
 export function MotionWindow({ children, style, chrome = true }: { children: ReactNode; style?: CSSProperties; chrome?: boolean }) {
   return (
-    <div style={{ position: "relative", background: "rgba(255,255,255,.96)", border: `1px solid ${line}`, borderRadius: 28, boxShadow: "0 32px 100px rgba(29,24,21,.11), 0 4px 18px rgba(29,24,21,.05)", overflow: "hidden", color: ink, ...style }}>
+    <div style={{ position: "relative", background: "rgba(255,255,255,.96)", border: `1px solid ${line}`, borderRadius: 28, boxShadow: "0 32px 100px rgba(29,24,21,.11), 0 4px 18px rgba(29,24,21,.05)", overflow: "hidden", color: ink, fontFamily: "Manrope, system-ui, sans-serif", ...style }}>
       {chrome ? (
         <div style={{ height: 54, borderBottom: `1px solid ${line}`, display: "flex", alignItems: "center", gap: 8, padding: "0 18px", background: "rgba(250,249,246,.86)" }}>
           <span style={{ width: 8, height: 8, borderRadius: 99, background: "rgba(20,18,22,.14)" }} />
@@ -48,11 +48,12 @@ export function MotionWindow({ children, style, chrome = true }: { children: Rea
 }
 
 export function MediaAtmosphere({ src, focusX = 50, focusY = 50, style, overlay = "rgba(23,16,12,.10)" }: { src: string; focusX?: number; focusY?: number; style?: CSSProperties; overlay?: string }) {
+  const feather = "radial-gradient(ellipse 88% 82% at 56% 50%, #000 0%, #000 54%, rgba(0,0,0,.92) 66%, rgba(0,0,0,.52) 79%, transparent 100%)";
   return (
-    <div style={{ position: "relative", overflow: "hidden", ...style }}>
-      <Img src={staticFile(src)} style={{ position: "absolute", inset: -36, width: "calc(100% + 72px)", height: "calc(100% + 72px)", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, filter: "blur(26px) saturate(.9)", opacity: .40, transform: "scale(1.08)" }} />
-      <Img src={staticFile(src)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, maskImage: "linear-gradient(180deg,transparent 0%,#000 12%,#000 84%,transparent 100%)", WebkitMaskImage: "linear-gradient(180deg,transparent 0%,#000 12%,#000 84%,transparent 100%)" }} />
-      <div style={{ position: "absolute", inset: 0, background: overlay }} />
+    <div style={{ position: "relative", overflow: "visible", maskImage: feather, WebkitMaskImage: feather, ...style }}>
+      <Img src={staticFile(src)} style={{ position: "absolute", inset: -58, width: "calc(100% + 116px)", height: "calc(100% + 116px)", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, filter: "blur(34px) saturate(.88) contrast(.96)", opacity: .50, transform: "scale(1.10)" }} />
+      <Img src={staticFile(src)} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: `${focusX}% ${focusY}%`, filter: "saturate(.94) contrast(.98)" }} />
+      <div style={{ position: "absolute", inset: -4, background: overlay }} />
     </div>
   );
 }
@@ -64,20 +65,20 @@ export function ManagerComposerMotion({ start = 0 }: { start?: number }) {
     <MotionWindow style={{ width: 1120, minHeight: 720 }}>
       <div style={{ padding: "48px 54px 58px" }}>
         <RevealLine start={start + 4}>
-          <div style={{ fontSize: 18, color: muted, fontWeight: 680, letterSpacing: "-.01em" }}>Manager · Odaeshi</div>
+          <div style={{ fontSize: 20, color: muted, fontWeight: 680, letterSpacing: "-.01em" }}>Manager · Odaeshi</div>
         </RevealLine>
         <RevealLine start={start + 14}>
-          <div style={{ fontSize: 46, fontWeight: 760, letterSpacing: "-.055em", lineHeight: 1 }}>What are we trying to make happen?</div>
+          <div style={{ fontSize: 54, fontWeight: 760, letterSpacing: "-.055em", lineHeight: 1 }}>What are we trying to make happen?</div>
         </RevealLine>
 
-        <div style={{ marginTop: 132, border: `1px solid ${line}`, background: paper, borderRadius: 22, padding: "28px 30px 24px", boxShadow: "inset 0 1px 0 rgba(255,255,255,.8)" }}>
-          <div style={{ minHeight: 78, fontSize: 28, lineHeight: 1.4, fontWeight: 610, letterSpacing: "-.025em" }}>
+        <div style={{ marginTop: 108, border: `1px solid ${line}`, background: paper, borderRadius: 22, padding: "28px 30px 24px", boxShadow: "inset 0 1px 0 rgba(255,255,255,.8)" }}>
+          <div style={{ minHeight: 104, fontSize: 36, lineHeight: 1.4, fontWeight: 610, letterSpacing: "-.025em" }}>
             <TypewriterText text="I want to release Odaeshi next month. Help me run it." start={start + 28} duration={62} />
           </div>
           <div style={{ marginTop: 26, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ color: muted, fontSize: 15, fontWeight: 650 }}>Odaeshi attached</span>
-            <div style={{ width: 52, height: 52, borderRadius: 15, background: ink, display: "grid", placeItems: "center", transform: `scale(${.72 + sendIn * .28})`, opacity: sendIn }}>
-              <ChevronRight size={23} color="white" strokeWidth={2.6} />
+            <span style={{ color: muted, fontSize: 17, fontWeight: 650 }}>Odaeshi attached</span>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: ink, display: "grid", placeItems: "center", transform: `scale(${.72 + sendIn * .28})`, opacity: sendIn }}>
+              <ChevronRight size={28} color="white" strokeWidth={2.6} />
             </div>
           </div>
         </div>
@@ -99,10 +100,10 @@ export function ManagerCreatesWorkMotion({ start = 0 }: { start?: number }) {
     <MotionWindow style={{ width: 1180, minHeight: 810 }}>
       <div style={{ padding: "52px 58px" }}>
         <RevealLine start={start}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, color: purple, fontWeight: 750, fontSize: 16 }}><Sparkles size={18} /> Desk</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, color: purple, fontWeight: 760, fontSize: 18 }}><Sparkles size={18} /> Desk</div>
         </RevealLine>
         <RevealLine start={start + 10}>
-          <div style={{ marginTop: 16, width: 900, fontSize: 30, lineHeight: 1.36, letterSpacing: "-.035em", fontWeight: 660 }}>
+          <div style={{ marginTop: 16, width: 960, fontSize: 36, lineHeight: 1.36, letterSpacing: "-.035em", fontWeight: 660 }}>
             I’ve got the release. I’m protecting the story first, and I’ve already built the work around it.
           </div>
         </RevealLine>
@@ -110,15 +111,15 @@ export function ManagerCreatesWorkMotion({ start = 0 }: { start?: number }) {
         <div style={{ marginTop: 46, borderTop: `1px solid ${line}` }}>
           {CREATED_WORK.map(([title, meta], index) => (
             <RevealLine key={title} start={start + 36 + index * 15} fromY={26} blur={10}>
-              <div style={{ minHeight: 104, borderBottom: `1px solid ${line}`, display: "grid", gridTemplateColumns: "48px 1fr 36px", alignItems: "center", gap: 18 }}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: index === 0 ? "#ede6ff" : "rgba(20,18,22,.045)", display: "grid", placeItems: "center", color: index === 0 ? purple : ink }}>
-                  {index === 0 ? <Circle size={17} fill="currentColor" /> : <FileText size={18} />}
+              <div style={{ minHeight: 118, borderBottom: `1px solid ${line}`, display: "grid", gridTemplateColumns: "58px 1fr 42px", alignItems: "center", gap: 22 }}>
+                <div style={{ width: 48, height: 48, borderRadius: 14, background: index === 0 ? "#ede6ff" : "rgba(20,18,22,.045)", display: "grid", placeItems: "center", color: index === 0 ? purple : ink }}>
+                  {index === 0 ? <Circle size={20} fill="currentColor" /> : <FileText size={21} />}
                 </div>
                 <div>
-                  <div style={{ fontSize: 22, fontWeight: 720, letterSpacing: "-.028em" }}>{title}</div>
-                  <div style={{ marginTop: 5, fontSize: 15, color: muted, fontWeight: 570 }}>{meta}</div>
+                  <div style={{ fontSize: 27, fontWeight: 720, letterSpacing: "-.028em" }}>{title}</div>
+                  <div style={{ marginTop: 5, fontSize: 18, color: muted, fontWeight: 570 }}>{meta}</div>
                 </div>
-                <Check size={19} color={purple} strokeWidth={2.5} />
+                <Check size={22} color={purple} strokeWidth={2.5} />
               </div>
             </RevealLine>
           ))}
@@ -170,8 +171,8 @@ export function TaskBriefMotion({ start = 0 }: { start?: number }) {
 
 export function ApprovalMotion({ start = 0 }: { start?: number }) {
   const frame = useCurrentFrame();
-  const click = spring({ frame: Math.max(0, frame - start - 108), fps: 60, config: { damping: 15, stiffness: 150 } });
-  const complete = spring({ frame: Math.max(0, frame - start - 132), fps: 60, config: { damping: 18, stiffness: 120 } });
+  const click = spring({ frame: Math.max(0, frame - start - 138), fps: 60, config: { damping: 15, stiffness: 150 } });
+  const complete = spring({ frame: Math.max(0, frame - start - 153), fps: 60, config: { damping: 18, stiffness: 120 } });
   return (
     <MotionWindow chrome={false} style={{ width: 1030, minHeight: 670, padding: "52px 58px" }}>
       <RevealLine start={start}><div style={{ color: purple, fontSize: 14, fontWeight: 800, letterSpacing: ".09em", textTransform: "uppercase" }}>Needs your authority</div></RevealLine>
@@ -199,15 +200,22 @@ export function ApprovalMotion({ start = 0 }: { start?: number }) {
   );
 }
 
-export function MotionCursor({ start, x, y, clickAt, style }: { start: number; x: number; y: number; clickAt?: number; style?: CSSProperties }) {
+export function MotionCursor({ start, x, y, fromX, fromY, clickAt, leaveAt, style }: { start: number; x: number; y: number; fromX?: number; fromY?: number; clickAt?: number; leaveAt?: number; style?: CSSProperties }) {
   const frame = useCurrentFrame();
   const { width, height } = useVideoConfig();
-  const inP = spring({ frame: Math.max(0, frame - start), fps: 60, config: { damping: 18, stiffness: 120 } });
-  const pressed = clickAt === undefined ? 0 : spring({ frame: Math.max(0, frame - clickAt), fps: 60, config: { damping: 13, stiffness: 200 } });
+  const approach = spring({ frame: Math.max(0, frame - start), fps: 60, config: { damping: 20, stiffness: 92, mass: .84 } });
+  const sx = fromX ?? Math.max(.05, x - .18);
+  const sy = fromY ?? Math.min(.92, y + .10);
+  const px = sx + (x - sx) * approach;
+  const py = sy + (y - sy) * approach;
+  const press = clickAt === undefined ? 0 : interpolate(frame, [clickAt - 1, clickAt + 5, clickAt + 13], [0, 1, 0], clamp);
+  const exitAt = leaveAt ?? (clickAt === undefined ? Number.POSITIVE_INFINITY : clickAt + 22);
+  const visibility = interpolate(frame, [start, start + 8, exitAt, exitAt + 14], [0, 1, 1, 0], clamp);
+  const ring = clickAt === undefined ? 0 : interpolate(frame, [clickAt, clickAt + 5, clickAt + 16], [0, 1, 0], clamp);
   return (
-    <div style={{ position: "absolute", left: x * width, top: y * height, width: 34, height: 42, transform: `translate(-4px,-3px) translateY(${(1 - inP) * 46}px) scale(${1 - Math.min(pressed, 1) * .12})`, opacity: inP, filter: "drop-shadow(0 4px 6px rgba(0,0,0,.18))", zIndex: 30, ...style }}>
+    <div style={{ position: "absolute", left: px * width, top: py * height, width: 34, height: 42, transform: `translate(-4px,-3px) scale(${1 - press * .12})`, opacity: visibility, filter: "drop-shadow(0 4px 6px rgba(0,0,0,.18))", zIndex: 30, ...style }}>
       <svg viewBox="0 0 28 36" width="100%" height="100%"><path d="M3 2L24 21L15 22L20 32L14 35L9 24L3 30V2Z" fill="white" stroke="#141216" strokeWidth="2" strokeLinejoin="round" /></svg>
-      {pressed > .05 && pressed < .9 ? <span style={{ position: "absolute", left: -12, top: -12, width: 44, height: 44, borderRadius: 99, border: `2px solid ${purple}`, opacity: 1 - pressed }} /> : null}
+      {ring > 0 ? <span style={{ position: "absolute", left: -13, top: -13, width: 46, height: 46, borderRadius: 99, border: `2px solid ${purple}`, opacity: ring, transform: `scale(${.72 + (1 - ring) * .5})` }} /> : null}
     </div>
   );
 }
