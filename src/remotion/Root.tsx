@@ -1,13 +1,13 @@
 import { Composition } from "remotion";
 import { FILM_DURATION_FRAMES, FILM_FORMATS, FILM_FPS } from "./constants";
-import { MeetYourManagerFilmV2 } from "./MeetYourManagerFilmV2";
+import { MeetYourManagerFilmV3 } from "./MeetYourManagerFilmV3";
 
 export function RemotionRoot() {
   return (
     <>
       <Composition
         id="MeetYourManagerVertical"
-        component={MeetYourManagerFilmV2}
+        component={MeetYourManagerFilmV3}
         durationInFrames={FILM_DURATION_FRAMES}
         fps={FILM_FPS}
         width={FILM_FORMATS.vertical.width}
@@ -16,7 +16,7 @@ export function RemotionRoot() {
       />
       <Composition
         id="MeetYourManagerFeed"
-        component={MeetYourManagerFilmV2}
+        component={MeetYourManagerFilmV3}
         durationInFrames={FILM_DURATION_FRAMES}
         fps={FILM_FPS}
         width={FILM_FORMATS.feed.width}
@@ -25,7 +25,7 @@ export function RemotionRoot() {
       />
       <Composition
         id="MeetYourManagerLandscape"
-        component={MeetYourManagerFilmV2}
+        component={MeetYourManagerFilmV3}
         durationInFrames={FILM_DURATION_FRAMES}
         fps={FILM_FPS}
         width={FILM_FORMATS.landscape.width}
@@ -34,7 +34,7 @@ export function RemotionRoot() {
       />
       <Composition
         id="MeetYourManagerPreview"
-        component={MeetYourManagerFilmV2}
+        component={MeetYourManagerFilmV3}
         durationInFrames={FILM_DURATION_FRAMES}
         fps={FILM_FPS}
         width={1080}
@@ -43,7 +43,7 @@ export function RemotionRoot() {
       />
       <Composition
         id="MeetYourManagerMotionProof"
-        component={MeetYourManagerFilmV2}
+        component={MeetYourManagerFilmV3}
         durationInFrames={FILM_DURATION_FRAMES}
         fps={FILM_FPS}
         width={540}
