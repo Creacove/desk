@@ -68,6 +68,25 @@ export const odaeshiMission: MissionViewModel = {
   events: [],
 };
 
+export const watchMission: MissionViewModel = {
+  ...odaeshiMission,
+  id: "mission-odaeshi-watch",
+  progress: 61,
+  review: "The story video is live. No artist action is needed until Desk has enough response to make the next call.",
+  recommendation: "No action needed right now. Desk is watching the first response window.",
+  nextTask: "",
+  checkpoints: [{
+    ...odaeshiCheckpoint,
+    id: "checkpoint-story-response",
+    title: "First story response",
+    status: "Watching signal",
+    requiredTaskIds: [],
+    recommendation: "No action needed. Desk is watching saves, profile visits and audience response before changing the plan.",
+    watchedSignals: ["saves", "profile_visits", "comments", "completion_rate"],
+  }],
+  tasks: [],
+};
+
 export const approvalTask: MissionTaskViewModel = {
   ...odaeshiTask,
   id: "task-split-confirmation",
