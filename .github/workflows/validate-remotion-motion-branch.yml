@@ -40,7 +40,7 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
-      - name: Ensure culturally aligned V4 media
+      - name: Ensure culturally aligned V5 media
         run: |
           mkdir -p public/launch-assets /tmp/launch-film-media
 
@@ -49,12 +49,9 @@ jobs:
           curl -L --fail --retry 3 -o /tmp/launch-film-media/singer-closeup.mp4 \
             "https://videos.pexels.com/video-files/8117116/8117116-hd_1920_1080_25fps.mp4"
 
-          # Film stills are derived from Black music-performance footage instead of generic stock crowds.
           ffmpeg -y -ss 00:00:01.5 -i /tmp/launch-film-media/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1800:-2" -q:v 3 public/launch-assets/lagos-artist.jpg
           ffmpeg -y -ss 00:00:02.0 -i /tmp/launch-film-media/singer-closeup.mp4 -frames:v 1 -update 1 -vf "scale=1800:-2" -q:v 3 public/launch-assets/lagos-artist-shoot.jpg
           ffmpeg -y -ss 00:00:04.0 -i /tmp/launch-film-media/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1800:-2" -q:v 3 public/launch-assets/lagos-creator-team.jpg
-
-          file public/launch-assets/lagos-artist.jpg public/launch-assets/lagos-creator-team.jpg public/launch-assets/lagos-artist-shoot.jpg
 
       - name: Build app with embedded Remotion Player
         run: npm run build
@@ -65,24 +62,31 @@ jobs:
       - name: Discover Remotion compositions
         run: npx remotion compositions src/remotion/index.ts
 
-      - name: Render V4 phone focal beats
+      - name: Render V5 choreography QA frames
         run: |
           mkdir -p out/validation
           npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/01-opening.png --frame=150
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/02-goal-typewriter.png --frame=420
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/03-created-work-stagger.png --frame=850
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/04-priority.png --frame=1210
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/05-task-steps.png --frame=1545
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/06-reality-change.png --frame=1880
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/07-watch.png --frame=2135
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/08-approval-before-click.png --frame=2355
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/09-approval-after-click.png --frame=2425
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/10-end.png --frame=2490
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/02-typewriter-mid.png --frame=330
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/03-goal-click.png --frame=445
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/04-created-work-early.png --frame=730
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/05-created-work-mid.png --frame=785
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/06-created-work-settled.png --frame=850
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/07-priority-preclick.png --frame=1238
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/08-priority-click.png --frame=1258
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/09-task-stagger-mid.png --frame=1410
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/10-task-preclick.png --frame=1595
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/11-task-click.png --frame=1610
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/12-reality-change.png --frame=1880
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/13-watch.png --frame=2135
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/14-approval-preclick.png --frame=2365
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/15-approval-click.png --frame=2378
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/16-approval-sent.png --frame=2425
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/17-end.png --frame=2490
 
       - name: Upload validation stills
         uses: actions/upload-artifact@v4
         with:
-          name: remotion-v4-phone-focal-beats
+          name: remotion-v5-motion-qa
           path: out/validation/*.png
           if-no-files-found: error
           retention-days: 7
