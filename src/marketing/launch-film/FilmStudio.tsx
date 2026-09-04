@@ -1,18 +1,18 @@
 import { Player } from "@remotion/player";
 import { BrandMark } from "../../design-system/components";
 import { FILM_DURATION_FRAMES, FILM_FORMATS, FILM_FPS, FILM_SECONDS, type FilmFormat } from "../../remotion/constants";
-import { MeetYourManagerFilm } from "../../remotion/MeetYourManagerFilm";
+import { MeetYourManagerFilmV2 } from "../../remotion/MeetYourManagerFilmV2";
 
 const CHAPTERS = [
   ["0:00", "The question"],
-  ["0:03", "Give Desk the goal"],
+  ["0:04", "Give Desk the goal"],
   ["0:09", "Desk understands and decides"],
   ["0:14", "Desk does the work"],
-  ["0:23", "Exact human work"],
-  ["0:30", "Reality changes"],
-  ["0:35", "Desk watches"],
-  ["0:39", "Approve and run"],
-  ["0:41", "Meet your manager"],
+  ["0:21", "Exact human work"],
+  ["0:27", "Reality changes"],
+  ["0:32", "Desk watches"],
+  ["0:36", "Approve and run"],
+  ["0:39", "Meet your manager"],
 ] as const;
 
 export function LaunchFilmStudio() {
@@ -29,23 +29,23 @@ export function LaunchFilmStudio() {
     window.location.search = next.toString();
   };
 
+  const player = (
+    <Player
+      component={MeetYourManagerFilmV2}
+      inputProps={{ format }}
+      durationInFrames={FILM_DURATION_FRAMES}
+      fps={FILM_FPS}
+      compositionWidth={meta.width}
+      compositionHeight={meta.height}
+      autoPlay={autoplay}
+      loop={loop}
+      controls={!capture}
+      style={{ width: "100%", height: "100%" }}
+    />
+  );
+
   if (capture) {
-    return (
-      <main className="grid min-h-screen place-items-center overflow-hidden bg-black">
-        <Player
-          component={MeetYourManagerFilm}
-          inputProps={{ format }}
-          durationInFrames={FILM_DURATION_FRAMES}
-          fps={FILM_FPS}
-          compositionWidth={meta.width}
-          compositionHeight={meta.height}
-          autoPlay={autoplay}
-          loop={loop}
-          controls={false}
-          style={{ width: "100vw", height: "100vh" }}
-        />
-      </main>
-    );
+    return <main className="h-screen w-screen overflow-hidden bg-black">{player}</main>;
   }
 
   return (
@@ -56,19 +56,16 @@ export function LaunchFilmStudio() {
             <BrandMark size="sm" />
             <div className="min-w-0">
               <p className="text-[13px] font-semibold text-white">Meet your manager</p>
-              <p className="text-[11px] font-medium text-white/45">Remotion master timeline · {FILM_SECONDS}s · {FILM_FPS}fps</p>
+              <p className="text-[11px] font-medium text-white/45">Directed Remotion film · {FILM_SECONDS}s · {FILM_FPS}fps</p>
             </div>
           </div>
-
           <div className="flex flex-wrap items-center gap-2">
             {(Object.keys(FILM_FORMATS) as FilmFormat[]).map((item) => (
               <button
                 key={item}
                 type="button"
                 onClick={() => openFormat(item)}
-                className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${
-                  item === format ? "border-white/30 bg-white text-black" : "border-white/10 text-white/60 hover:border-white/20 hover:text-white"
-                }`}
+                className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-colors ${item === format ? "border-white/30 bg-white text-black" : "border-white/10 text-white/60 hover:border-white/20 hover:text-white"}`}
               >
                 {FILM_FORMATS[item].label}
               </button>
@@ -82,13 +79,9 @@ export function LaunchFilmStudio() {
           <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold text-white/60">{meta.width} × {meta.height} · {meta.label}</p>
-              <p className="mt-1 max-w-[47rem] text-[11px] font-medium leading-relaxed text-white/34">
-                This is the film renderer, not the old shot slideshow. Scrub frame by frame, pause anywhere, or let the entire choreography play continuously.
-              </p>
+              <p className="mt-1 max-w-[47rem] text-[11px] font-medium leading-relaxed text-white/34">Every frame below comes from the same Remotion composition used for the final MP4 render. Scrub it frame by frame.</p>
             </div>
-            <div className="rounded-full border border-violet-300/15 bg-violet-400/[0.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-200/75">
-              Remotion composition
-            </div>
+            <div className="rounded-full border border-violet-300/15 bg-violet-400/[0.07] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-violet-200/75">V2 motion direction</div>
           </div>
 
           <div
@@ -99,18 +92,7 @@ export function LaunchFilmStudio() {
               maxWidth: format === "vertical" ? "min(560px, 94vw)" : format === "feed" ? "min(760px, 94vw)" : "min(1450px, 94vw)",
             }}
           >
-            <Player
-              component={MeetYourManagerFilm}
-              inputProps={{ format }}
-              durationInFrames={FILM_DURATION_FRAMES}
-              fps={FILM_FPS}
-              compositionWidth={meta.width}
-              compositionHeight={meta.height}
-              autoPlay={autoplay}
-              loop={loop}
-              controls
-              style={{ width: "100%", height: "100%" }}
-            />
+            {player}
           </div>
 
           <div className="mt-7 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -120,10 +102,6 @@ export function LaunchFilmStudio() {
                 <span className="mt-1 block text-[12px] font-semibold text-white/76">{label}</span>
               </div>
             ))}
-          </div>
-
-          <div className="mt-6 rounded-[18px] border border-white/8 bg-white/[0.025] px-5 py-4 text-[11px] font-medium leading-relaxed text-white/40">
-            CLI studio: <span className="font-semibold text-white/68">npm run film:studio</span> · Render vertical: <span className="font-semibold text-white/68">npm run film:render:vertical</span>
           </div>
         </div>
       </div>
