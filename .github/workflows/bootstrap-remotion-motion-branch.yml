@@ -1,0 +1,50 @@
+name: Bootstrap Remotion Motion Branch
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/bootstrap-remotion-motion-branch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap-remotion:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout motion branch
+        uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Remotion packages
+        run: |
+          npm install --save-exact remotion@4.0.520 @remotion/player@4.0.520 @remotion/transitions@4.0.520
+          npm install --save-dev --save-exact @remotion/cli@4.0.520
+          npm pkg set scripts.film:studio="remotion studio src/remotion/index.ts"
+          npm pkg set scripts.film:render:vertical="remotion render src/remotion/index.ts MeetYourManagerVertical out/meet-your-manager-vertical.mp4"
+          npm pkg set scripts.film:render:feed="remotion render src/remotion/index.ts MeetYourManagerFeed out/meet-your-manager-feed.mp4"
+          npm pkg set scripts.film:render:landscape="remotion render src/remotion/index.ts MeetYourManagerLandscape out/meet-your-manager-landscape.mp4"
+
+      - name: Commit dependency lock
+        run: |
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "Remotion dependencies already synchronized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: add Remotion film toolchain"
+          git push origin HEAD:marketing/meet-your-manager-motion
