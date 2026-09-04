@@ -25,23 +25,42 @@ jobs:
       - name: Install ffmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
-      - name: Download source media
+      - name: Remove rejected stock direction
+        run: |
+          rm -f \
+            public/launch-assets/artist-studio.mp4 \
+            public/launch-assets/artist-studio-poster.jpg \
+            public/launch-assets/live-performance.mp4 \
+            public/launch-assets/live-performance-poster.jpg \
+            public/launch-assets/crowd-phones.mp4 \
+            public/launch-assets/crowd-phones-poster.jpg
+
+      - name: Download culturally aligned source media
         run: |
           mkdir -p /tmp/launch-assets public/launch-assets/logos
-          curl -L --fail --retry 3 -o /tmp/launch-assets/artist-studio.mp4 "https://videos.pexels.com/video-files/8135083/8135083-hd_1920_1080_25fps.mp4"
-          curl -L --fail --retry 3 -o /tmp/launch-assets/live-performance.mp4 "https://videos.pexels.com/video-files/7804387/7804387-hd_1080_1920_25fps.mp4"
-          curl -L --fail --retry 3 -o /tmp/launch-assets/crowd-phones.mp4 "https://videos.pexels.com/video-files/12719510/12719510-hd_1920_1080_60fps.mp4"
 
-      - name: Create film-ready transcodes and posters
+          # Lagos music / youth-culture photography by Nigerian photographer Ben Iwara.
+          curl -L --fail --retry 3 -o public/launch-assets/lagos-artist.jpg "https://unsplash.com/photos/VLOpJa2WAp8/download?force=true"
+          curl -L --fail --retry 3 -o public/launch-assets/lagos-creator-team.jpg "https://unsplash.com/photos/xPyUBV8Z3jc/download?force=true"
+          curl -L --fail --retry 3 -o public/launch-assets/lagos-artist-shoot.jpg "https://unsplash.com/photos/dXIIAJ2UEWQ/download?force=true"
+
+          # Urban Black music-performance footage. No generic crowd/dance footage.
+          curl -L --fail --retry 3 -o /tmp/launch-assets/urban-performance.mp4 "https://videos.pexels.com/video-files/3890372/3890372-hd_1920_1080_30fps.mp4"
+          curl -L --fail --retry 3 -o /tmp/launch-assets/singer-closeup.mp4 "https://videos.pexels.com/video-files/8117116/8117116-hd_1920_1080_25fps.mp4"
+
+      - name: Create film-ready media
         run: |
-          ffmpeg -y -i /tmp/launch-assets/artist-studio.mp4 -an -vf "scale=1280:-2" -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart public/launch-assets/artist-studio.mp4
-          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/artist-studio.mp4 -frames:v 1 -update 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/artist-studio-poster.jpg
+          ffmpeg -y -i /tmp/launch-assets/urban-performance.mp4 -an -vf "scale=1280:-2" -c:v libx264 -preset medium -crf 24 -pix_fmt yuv420p -movflags +faststart public/launch-assets/urban-performance.mp4
+          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/urban-performance-poster.jpg
 
-          ffmpeg -y -i /tmp/launch-assets/live-performance.mp4 -an -vf "scale=720:-2" -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart public/launch-assets/live-performance.mp4
-          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/live-performance.mp4 -frames:v 1 -update 1 -vf "scale=720:-2" -q:v 3 public/launch-assets/live-performance-poster.jpg
+          ffmpeg -y -i /tmp/launch-assets/singer-closeup.mp4 -an -vf "scale=1280:-2" -c:v libx264 -preset medium -crf 24 -pix_fmt yuv420p -movflags +faststart public/launch-assets/singer-closeup.mp4
+          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/singer-closeup.mp4 -frames:v 1 -update 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/singer-closeup-poster.jpg
 
-          ffmpeg -y -i /tmp/launch-assets/crowd-phones.mp4 -an -vf "scale=1280:-2" -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart public/launch-assets/crowd-phones.mp4
-          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/crowd-phones.mp4 -frames:v 1 -update 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/crowd-phones-poster.jpg
+          # Keep photography reasonably sized without destroying editorial texture.
+          for file in public/launch-assets/lagos-artist.jpg public/launch-assets/lagos-creator-team.jpg public/launch-assets/lagos-artist-shoot.jpg; do
+            ffmpeg -y -i "$file" -vf "scale='min(1800,iw)':-2" -q:v 3 "${file%.jpg}.tmp.jpg"
+            mv "${file%.jpg}.tmp.jpg" "$file"
+          done
 
       - name: Add platform context icons
         run: |
@@ -62,8 +81,8 @@ jobs:
           if git status --short -- public/launch-assets | grep -q .; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add public/launch-assets
-            git commit -m "chore: add sourced launch film media"
+            git add -A public/launch-assets
+            git commit -m "chore: replace rejected launch film stock"
             git push origin HEAD:marketing/meet-your-manager-motion
           else
             echo "Launch film assets already synchronized."
