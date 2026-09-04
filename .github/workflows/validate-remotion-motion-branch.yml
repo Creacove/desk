@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   validate-film:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       VITE_SUPABASE_URL: http://localhost:54321
@@ -37,18 +37,23 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Install ffmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Ensure culturally aligned V4 media
         run: |
-          mkdir -p public/launch-assets
-          if [ ! -s public/launch-assets/lagos-artist.jpg ]; then
-            curl -L --fail --retry 3 -o public/launch-assets/lagos-artist.jpg "https://unsplash.com/photos/VLOpJa2WAp8/download?force=true"
-          fi
-          if [ ! -s public/launch-assets/lagos-creator-team.jpg ]; then
-            curl -L --fail --retry 3 -o public/launch-assets/lagos-creator-team.jpg "https://unsplash.com/photos/xPyUBV8Z3jc/download?force=true"
-          fi
-          if [ ! -s public/launch-assets/lagos-artist-shoot.jpg ]; then
-            curl -L --fail --retry 3 -o public/launch-assets/lagos-artist-shoot.jpg "https://unsplash.com/photos/dXIIAJ2UEWQ/download?force=true"
-          fi
+          mkdir -p public/launch-assets /tmp/launch-film-media
+
+          curl -L --fail --retry 3 -o /tmp/launch-film-media/urban-performance.mp4 \
+            "https://videos.pexels.com/video-files/3890372/3890372-hd_1920_1080_30fps.mp4"
+          curl -L --fail --retry 3 -o /tmp/launch-film-media/singer-closeup.mp4 \
+            "https://videos.pexels.com/video-files/8117116/8117116-hd_1920_1080_25fps.mp4"
+
+          # Film stills are derived from Black music-performance footage instead of generic stock crowds.
+          ffmpeg -y -ss 00:00:01.5 -i /tmp/launch-film-media/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1800:-2" -q:v 3 public/launch-assets/lagos-artist.jpg
+          ffmpeg -y -ss 00:00:02.0 -i /tmp/launch-film-media/singer-closeup.mp4 -frames:v 1 -update 1 -vf "scale=1800:-2" -q:v 3 public/launch-assets/lagos-artist-shoot.jpg
+          ffmpeg -y -ss 00:00:04.0 -i /tmp/launch-film-media/urban-performance.mp4 -frames:v 1 -update 1 -vf "scale=1800:-2" -q:v 3 public/launch-assets/lagos-creator-team.jpg
+
           file public/launch-assets/lagos-artist.jpg public/launch-assets/lagos-creator-team.jpg public/launch-assets/lagos-artist-shoot.jpg
 
       - name: Build app with embedded Remotion Player
