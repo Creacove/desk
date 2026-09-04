@@ -39,6 +39,9 @@ jobs:
       - name: Build app with embedded Remotion Player
         run: npm run build
 
+      - name: Compile production Desk CSS for Remotion
+        run: npx tailwindcss -c tailwind.config.ts -i src/index.css -o public/remotion-app.css --minify
+
       - name: Discover Remotion compositions
         run: npx remotion compositions src/remotion/index.ts
 
@@ -59,7 +62,7 @@ jobs:
       - name: Upload validation stills
         uses: actions/upload-artifact@v4
         with:
-          name: remotion-v3-phone-focal-beats
+          name: remotion-v3-production-styled-phone-beats
           path: out/validation/*.png
           if-no-files-found: error
           retention-days: 7
