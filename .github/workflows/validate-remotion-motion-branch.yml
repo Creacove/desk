@@ -7,6 +7,7 @@ on:
     paths:
       - src/remotion/**
       - src/marketing/launch-film/FilmStudio.tsx
+      - public/launch-assets/**
       - package.json
       - package-lock.json
       - .github/workflows/validate-remotion-motion-branch.yml
@@ -36,6 +37,20 @@ jobs:
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
 
+      - name: Ensure culturally aligned V4 media
+        run: |
+          mkdir -p public/launch-assets
+          if [ ! -s public/launch-assets/lagos-artist.jpg ]; then
+            curl -L --fail --retry 3 -o public/launch-assets/lagos-artist.jpg "https://unsplash.com/photos/VLOpJa2WAp8/download?force=true"
+          fi
+          if [ ! -s public/launch-assets/lagos-creator-team.jpg ]; then
+            curl -L --fail --retry 3 -o public/launch-assets/lagos-creator-team.jpg "https://unsplash.com/photos/xPyUBV8Z3jc/download?force=true"
+          fi
+          if [ ! -s public/launch-assets/lagos-artist-shoot.jpg ]; then
+            curl -L --fail --retry 3 -o public/launch-assets/lagos-artist-shoot.jpg "https://unsplash.com/photos/dXIIAJ2UEWQ/download?force=true"
+          fi
+          file public/launch-assets/lagos-artist.jpg public/launch-assets/lagos-creator-team.jpg public/launch-assets/lagos-artist-shoot.jpg
+
       - name: Build app with embedded Remotion Player
         run: npm run build
 
@@ -45,24 +60,24 @@ jobs:
       - name: Discover Remotion compositions
         run: npx remotion compositions src/remotion/index.ts
 
-      - name: Render V3 phone focal beats
+      - name: Render V4 phone focal beats
         run: |
           mkdir -p out/validation
           npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/01-opening.png --frame=150
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/02-manager.png --frame=420
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/03-context.png --frame=735
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/04-today.png --frame=960
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/05-created-work.png --frame=1240
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/06-task-sheet.png --frame=1540
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/07-adapt.png --frame=1880
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/08-watch.png --frame=2130
-          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/09-approval.png --frame=2320
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/02-goal-typewriter.png --frame=420
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/03-created-work-stagger.png --frame=850
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/04-priority.png --frame=1210
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/05-task-steps.png --frame=1545
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/06-reality-change.png --frame=1880
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/07-watch.png --frame=2135
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/08-approval-before-click.png --frame=2355
+          npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/09-approval-after-click.png --frame=2425
           npx remotion still src/remotion/index.ts MeetYourManagerPreview out/validation/10-end.png --frame=2490
 
       - name: Upload validation stills
         uses: actions/upload-artifact@v4
         with:
-          name: remotion-v3-production-styled-phone-beats
+          name: remotion-v4-phone-focal-beats
           path: out/validation/*.png
           if-no-files-found: error
           retention-days: 7
