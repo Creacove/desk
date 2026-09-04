@@ -1,0 +1,53 @@
+name: Validate Remotion Launch Film
+
+on:
+  push:
+    branches:
+      - marketing/meet-your-manager-motion
+    paths:
+      - .github/workflows/validate-remotion-motion-branch.yml
+
+permissions:
+  contents: read
+
+jobs:
+  validate-film:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VITE_SUPABASE_URL: http://localhost:54321
+      VITE_SUPABASE_ANON_KEY: ci-test-anon-key
+    steps:
+      - name: Checkout motion branch
+        uses: actions/checkout@v5
+        with:
+          ref: marketing/meet-your-manager-motion
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build app with embedded Remotion Player
+        run: npm run build
+
+      - name: Discover Remotion compositions
+        run: npx remotion compositions src/remotion/index.ts
+
+      - name: Render motion validation stills
+        run: |
+          mkdir -p out/validation
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-0900.png --frame=900
+          npx remotion still src/remotion/index.ts MeetYourManagerVertical out/validation/frame-2250.png --frame=2250
+
+      - name: Upload validation stills
+        uses: actions/upload-artifact@v4
+        with:
+          name: remotion-validation-stills
+          path: out/validation/*.png
+          if-no-files-found: error
+          retention-days: 7
