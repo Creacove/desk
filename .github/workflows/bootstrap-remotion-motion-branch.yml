@@ -10,13 +10,17 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: bootstrap-remotion-motion-branch
+  cancel-in-progress: true
+
 jobs:
   bootstrap-remotion:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout motion branch
+      - name: Checkout current motion branch head
         uses: actions/checkout@v5
         with:
           ref: marketing/meet-your-manager-motion
@@ -28,7 +32,7 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install Remotion packages
+      - name: Install exact Remotion toolchain
         run: |
           npm install --save-exact remotion@4.0.520 @remotion/player@4.0.520 @remotion/transitions@4.0.520
           npm install --save-dev --save-exact @remotion/cli@4.0.520
@@ -37,7 +41,7 @@ jobs:
           npm pkg set scripts.film:render:feed="remotion render src/remotion/index.ts MeetYourManagerFeed out/meet-your-manager-feed.mp4"
           npm pkg set scripts.film:render:landscape="remotion render src/remotion/index.ts MeetYourManagerLandscape out/meet-your-manager-landscape.mp4"
 
-      - name: Commit dependency lock
+      - name: Commit synchronized manifest and lockfile
         run: |
           if git diff --quiet -- package.json package-lock.json; then
             echo "Remotion dependencies already synchronized."
@@ -47,4 +51,5 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json package-lock.json
           git commit -m "chore: add Remotion film toolchain"
+          git pull --rebase origin marketing/meet-your-manager-motion
           git push origin HEAD:marketing/meet-your-manager-motion
