@@ -35,13 +35,13 @@ jobs:
       - name: Create film-ready transcodes and posters
         run: |
           ffmpeg -y -i /tmp/launch-assets/artist-studio.mp4 -an -vf "scale=1280:-2" -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart public/launch-assets/artist-studio.mp4
-          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/artist-studio.mp4 -frames:v 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/artist-studio-poster.jpg
+          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/artist-studio.mp4 -frames:v 1 -update 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/artist-studio-poster.jpg
 
           ffmpeg -y -i /tmp/launch-assets/live-performance.mp4 -an -vf "scale=720:-2" -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart public/launch-assets/live-performance.mp4
-          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/live-performance.mp4 -frames:v 1 -vf "scale=720:-2" -q:v 3 public/launch-assets/live-performance-poster.jpg
+          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/live-performance.mp4 -frames:v 1 -update 1 -vf "scale=720:-2" -q:v 3 public/launch-assets/live-performance-poster.jpg
 
           ffmpeg -y -i /tmp/launch-assets/crowd-phones.mp4 -an -vf "scale=1280:-2" -c:v libx264 -preset medium -crf 25 -pix_fmt yuv420p -movflags +faststart public/launch-assets/crowd-phones.mp4
-          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/crowd-phones.mp4 -frames:v 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/crowd-phones-poster.jpg
+          ffmpeg -y -ss 00:00:02 -i /tmp/launch-assets/crowd-phones.mp4 -frames:v 1 -update 1 -vf "scale=1280:-2" -q:v 3 public/launch-assets/crowd-phones-poster.jpg
 
       - name: Add platform context icons
         run: |
@@ -49,6 +49,13 @@ jobs:
           curl -L --fail -o public/launch-assets/logos/tiktok.svg "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/tiktok.svg"
           curl -L --fail -o public/launch-assets/logos/instagram.svg "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/instagram.svg"
           curl -L --fail -o public/launch-assets/logos/youtube.svg "https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/youtube.svg"
+
+      - name: Rebase generated assets onto current motion head
+        run: |
+          git stash push --include-untracked -m launch-film-assets
+          git fetch origin marketing/meet-your-manager-motion
+          git rebase origin/marketing/meet-your-manager-motion
+          git stash pop
 
       - name: Commit deterministic film assets
         run: |
