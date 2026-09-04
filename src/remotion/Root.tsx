@@ -41,6 +41,15 @@ export function RemotionRoot() {
         height={1920}
         defaultProps={{ format: "vertical" as const }}
       />
+      <Composition
+        id="MeetYourManagerMotionProof"
+        component={MeetYourManagerFilmV2}
+        durationInFrames={FILM_DURATION_FRAMES}
+        fps={FILM_FPS}
+        width={540}
+        height={960}
+        defaultProps={{ format: "vertical" as const }}
+      />
     </>
   );
 }
