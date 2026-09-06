@@ -39,10 +39,12 @@ describe("payment deployment configuration", () => {
     expect(config).toContain('X-Content-Type-Options = "nosniff"');
     expect(config).toContain('X-Frame-Options = "DENY"');
     expect(config).toContain('Referrer-Policy = "strict-origin-when-cross-origin"');
+    expect(config).toContain('Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(self \\\"https://buy.paddle.com\\\" \\\"https://checkout.paddle.com\\\" \\\"https://sandbox-checkout.paddle.com\\\")"');
     expect(config).toContain("Content-Security-Policy-Report-Only");
     expect(config).toContain("https://cdn.paddle.com");
     expect(config).toContain("https://eu-assets.i.posthog.com");
     expect(config).toContain("https://eu.i.posthog.com");
+    expect(config).toContain("frame-src https://buy.paddle.com https://checkout.paddle.com https://sandbox-checkout.paddle.com");
     expect(config).toContain("https://fonts.googleapis.com");
     expect(config).toContain("https://fonts.gstatic.com");
     expect(config).not.toContain("unsafe-eval");
@@ -81,7 +83,7 @@ describe("payment deployment configuration", () => {
     expect(values.get("X-Content-Type-Options")).toBe("nosniff");
     expect(values.get("X-Frame-Options")).toBe("DENY");
     expect(values.get("Referrer-Policy")).toBe("strict-origin-when-cross-origin");
-    expect(values.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=(), payment=(self)");
+    expect(values.get("Permissions-Policy")).toBe("camera=(), microphone=(), geolocation=(), payment=(self \"https://buy.paddle.com\" \"https://checkout.paddle.com\" \"https://sandbox-checkout.paddle.com\")");
     expect(values.get("Content-Security-Policy-Report-Only")).toContain("https://cdn.paddle.com");
     expect(values.get("Content-Security-Policy-Report-Only")).toContain("https://eu.i.posthog.com");
   });
