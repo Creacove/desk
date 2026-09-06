@@ -84,6 +84,12 @@ describe("OpenAI Manager Conversation Router", () => {
     }
   });
 
+  it("binds every Team artist message to the verified user before the service-role insert", () => {
+    for (const source of [functionSource, streamFunctionSource]) {
+      expect(source).toMatch(/speaker:\s*"artist",\s*label:\s*"You",\s*authored_by_user_id:\s*user\.id,\s*body:/);
+    }
+  });
+
   it("persists Manager mission graph decisions through the full mission plan writer before chat artifacts are emitted", () => {
     expect(streamFunctionSource).toContain("persistManagerMissionGraphDecisions");
     expect(graphPersistenceSource).toContain("missionGraphDecisions");
