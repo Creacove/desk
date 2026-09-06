@@ -76,6 +76,27 @@ describe("TeamFirstRunScreen", () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
+  it("keeps custom fields editable after choosing Other", () => {
+    const service = createService();
+    render(
+      <TeamFirstRunScreen
+        service={service}
+        scope={scope}
+        artistName="Nova Vale"
+        capability={capability}
+        onComplete={vi.fn()}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Team or company name"), { target: { value: "North Star Records" } });
+    fireEvent.click(screen.getByRole("button", { name: "Other" }));
+    fireEvent.change(screen.getByLabelText("Operating title"), { target: { value: "Tour manager" } });
+    fireEvent.change(screen.getByLabelText("Responsibilities"), { target: { value: "Tour logistics, Booking" } });
+
+    expect(screen.getByLabelText("Operating title")).toHaveValue("Tour manager");
+    expect(screen.getByLabelText("Responsibilities")).toHaveValue("Tour logistics, Booking");
+  });
+
   it("lets the owner skip invites and finish at Desk", async () => {
     const service = createService();
     const onComplete = vi.fn();

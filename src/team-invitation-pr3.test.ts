@@ -45,6 +45,7 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 describe("PR3 invitation boundary", () => {
   it("returns only the safe invitation preview without requiring a session", async () => {
     const source = readFileSync(join(process.cwd(), "supabase/functions/preview-team-invitation/index.ts"), "utf8");
+    const accountTeamSource = readFileSync(join(process.cwd(), "supabase/functions/account-team/index.ts"), "utf8");
     const config = readFileSync(join(process.cwd(), "supabase/config.toml"), "utf8");
     expect(source).toContain('rpc("preview_account_invitation_v1"');
     expect(source).toContain("teamName,");
@@ -52,6 +53,8 @@ describe("PR3 invitation boundary", () => {
     expect(source).toContain("operatingTitle:");
     expect(source).toContain("responsibilityTags:");
     expect(source).toContain("expiresAt,");
+    expect(source).toContain('Deno.env.get("PUBLIC_APP_URL") ?? requireEnv("APP_ORIGIN")');
+    expect(accountTeamSource).toContain('Deno.env.get("PUBLIC_APP_URL") ?? Deno.env.get("APP_ORIGIN")');
     expect(config).toMatch(/\[functions\.account-team\]\s*verify_jwt = true/);
     expect(config).toMatch(/\[functions\.preview-team-invitation\]\s*verify_jwt = false/);
   });

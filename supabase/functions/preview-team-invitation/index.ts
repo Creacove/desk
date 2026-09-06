@@ -6,7 +6,8 @@ const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
 Deno.serve(withAppErrorCapture("preview-team-invitation", async (request) => {
   const origin = request.headers.get("Origin");
-  const allowedOrigins = [requireEnv("APP_ORIGIN"), Deno.env.get("LOCAL_APP_ORIGIN")].filter(Boolean);
+  const appOrigin = Deno.env.get("PUBLIC_APP_URL") ?? requireEnv("APP_ORIGIN");
+  const allowedOrigins = [appOrigin, Deno.env.get("APP_ORIGIN"), Deno.env.get("LOCAL_APP_ORIGIN")].filter(Boolean);
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "Cache-Control": "no-store",

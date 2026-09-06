@@ -6,26 +6,11 @@ import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
 import { createTeamInviteLink } from "../../services/teamInviteRoute";
 import type { WorkspaceTeamService } from "../../services/workspaceTeamService";
-import type { WorkspaceScope, WorkspaceTeamCapability } from "../../types/workspaceTeam";
+import type { TeamResponsibilities, WorkspaceScope, WorkspaceTeamCapability } from "../../types/workspaceTeam";
+import { TeamRolePicker } from "./TeamRolePicker";
+import { parseResponsibilityTags } from "./teamRolePresets";
 
 type TeamFirstRunStep = "identity" | "invite";
-
-type TeamRolePreset = {
-  label: string;
-  operatingTitle: string;
-  responsibilityTags: string[];
-};
-
-export const TEAM_ROLE_PRESETS: readonly TeamRolePreset[] = [
-  { label: "Artist Manager", operatingTitle: "Artist Manager", responsibilityTags: ["Strategy", "Artist coordination", "Approvals"] },
-  { label: "A&R", operatingTitle: "A&R", responsibilityTags: ["Repertoire", "Creative development", "Collaborators"] },
-  { label: "DSP & Distribution", operatingTitle: "DSP & Distribution", responsibilityTags: ["DSP pitching", "Distribution", "Metadata", "Platform relationships"] },
-  { label: "PR", operatingTitle: "PR", responsibilityTags: ["Press strategy", "Media relationships", "Announcements"] },
-  { label: "Content & Social", operatingTitle: "Content & Social", responsibilityTags: ["Content planning", "Social publishing", "Community"] },
-  { label: "Rights & Royalties", operatingTitle: "Rights & Royalties", responsibilityTags: ["Rights administration", "Royalty tracking", "Registrations"] },
-  { label: "Marketing", operatingTitle: "Marketing", responsibilityTags: ["Campaign strategy", "Audience growth", "Paid media"] },
-  { label: "Other", operatingTitle: "", responsibilityTags: [] },
-];
 
 export type TeamFirstRunScreenProps = {
   service: WorkspaceTeamService;
@@ -57,7 +42,7 @@ export function TeamFirstRunScreen({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const parsedTags = useMemo(() => normalizeTags(responsibilities), [responsibilities]);
+  const parsedTags = useMemo(() => parseResponsibilityTags(responsibilities), [responsibilities]);
   const canContinue = teamName.trim().length > 0 && !pending;
 
   async function completeIdentity(event: FormEvent<HTMLFormElement>) {
@@ -108,7 +93,7 @@ export function TeamFirstRunScreen({
         artistWorkspaceId: scope.artistWorkspaceId,
         email,
         operatingTitle: inviteOperatingTitle.trim() || null,
-        responsibilityTags: normalizeTags(inviteResponsibilities),
+        responsibilityTags: parseResponsibilityTags(inviteResponsibilities),
       });
       setInviteLink(createTeamInviteLink(window.location.origin, result.token));
       setInviteEmailStatus(result.emailStatus ?? "skipped");
@@ -156,7 +141,7 @@ export function TeamFirstRunScreen({
                 <p className="font-ui text-[10px] font-bold uppercase tracking-[0.16em] text-brand-accent">Team workspace</p>
                 <h1 className="mt-4 max-w-[13ch] font-display text-[34px] font-semibold leading-[0.98] tracking-[-0.035em] sm:text-[42px]">Set up your team</h1>
                 <p className="mt-3 max-w-[32rem] text-[13px] font-medium leading-relaxed text-muted-foreground/75">
-                  Give the workspace a name and tell Desk what you own around {artistName}.
+                  Name the workspace, then choose the role that best describes your work with {artistName}.
                 </p>
 
                 <div className="mt-8 grid gap-4">
@@ -175,62 +160,16 @@ export function TeamFirstRunScreen({
                     />
                   </label>
 
-                  <fieldset className="grid gap-2">
-                    <legend className="text-[11px] font-semibold text-foreground">Start with a role preset</legend>
-                    <div className="flex flex-wrap gap-2">
-                      {TEAM_ROLE_PRESETS.map((preset) => {
-                        const selected = operatingTitle === preset.operatingTitle && parsedTags.join("|") === preset.responsibilityTags.join("|");
-                        return (
-                          <button
-                            key={preset.label}
-                            type="button"
-                            aria-pressed={selected}
-                            onClick={() => {
-                              setOperatingTitle(preset.operatingTitle);
-                              setResponsibilities(preset.responsibilityTags.join(", "));
-                            }}
-                            className={cn(
-                              "rounded-[8px] border px-3 py-2 text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25",
-                              selected
-                                ? "border-brand-accent/35 bg-brand-ghost text-brand-accent"
-                                : "border-foreground/10 bg-background text-muted-foreground hover:border-foreground/18 hover:text-foreground",
-                            )}
-                          >
-                            {preset.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </fieldset>
-
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="grid gap-2 text-[11px] font-semibold text-foreground" htmlFor="team-first-run-title">
-                      Operating title
-                      <input
-                        id="team-first-run-title"
-                        aria-label="Operating title"
-                        value={operatingTitle}
-                        onChange={(event) => setOperatingTitle(event.target.value)}
-                        placeholder="e.g. Artist / owner"
-                        maxLength={80}
-                        disabled={pending}
-                        className="h-11 rounded-[9px] border border-foreground/12 bg-background px-3 text-[13px] font-medium outline-none transition-colors placeholder:text-muted-foreground/48 focus:border-brand-accent/55 focus:ring-2 focus:ring-brand-accent/10"
-                      />
-                    </label>
-                    <label className="grid gap-2 text-[11px] font-semibold text-foreground" htmlFor="team-first-run-responsibilities">
-                      Responsibilities
-                      <input
-                        id="team-first-run-responsibilities"
-                        aria-label="Responsibilities"
-                        value={responsibilities}
-                        onChange={(event) => setResponsibilities(event.target.value)}
-                        placeholder="direction, approvals"
-                        disabled={pending}
-                        className="h-11 rounded-[9px] border border-foreground/12 bg-background px-3 text-[13px] font-medium outline-none transition-colors placeholder:text-muted-foreground/48 focus:border-brand-accent/55 focus:ring-2 focus:ring-brand-accent/10"
-                      />
-                    </label>
-                  </div>
-                  <p className="text-[11px] font-medium text-muted-foreground/65">Separate responsibilities with commas. You can edit these later.</p>
+                  <TeamRolePicker
+                    value={{ operatingTitle: operatingTitle || null, responsibilityTags: parsedTags }}
+                    onChange={(next: TeamResponsibilities) => {
+                      setOperatingTitle(next.operatingTitle ?? "");
+                      setResponsibilities(next.responsibilityTags.join(", "));
+                    }}
+                    disabled={pending}
+                    titleLabel="Operating title"
+                    responsibilitiesLabel="Responsibilities"
+                  />
                 </div>
 
                 {error ? <p role="alert" className="mt-4 text-[12px] font-semibold text-destructive">{error}</p> : null}
@@ -263,40 +202,27 @@ export function TeamFirstRunScreen({
                       className="h-11 rounded-[9px] border border-foreground/12 bg-background px-3 text-[13px] font-medium outline-none transition-colors placeholder:text-muted-foreground/48 focus:border-brand-accent/55 focus:ring-2 focus:ring-brand-accent/10"
                     />
                   </label>
-                  <label className="grid gap-2 text-[11px] font-semibold text-foreground" htmlFor="team-first-run-invite-role">
-                    Role
-                    <input
-                      id="team-first-run-invite-role"
-                      aria-label="Invite role"
-                      value={inviteOperatingTitle}
-                      onChange={(event) => setInviteOperatingTitle(event.target.value)}
-                      placeholder="e.g. DSP & Distribution"
-                      maxLength={80}
-                      disabled={pending || Boolean(inviteLink)}
-                      className="h-11 rounded-[9px] border border-foreground/12 bg-background px-3 text-[13px] font-medium outline-none transition-colors placeholder:text-muted-foreground/48 focus:border-brand-accent/55 focus:ring-2 focus:ring-brand-accent/10"
-                    />
-                  </label>
-                  <label className="grid gap-2 text-[11px] font-semibold text-foreground" htmlFor="team-first-run-invite-responsibilities">
-                    What do they handle?
-                    <input
-                      id="team-first-run-invite-responsibilities"
-                      aria-label="Invite responsibilities"
-                      value={inviteResponsibilities}
-                      onChange={(event) => setInviteResponsibilities(event.target.value)}
-                      placeholder="DSP pitching, Distribution, Metadata"
-                      disabled={pending || Boolean(inviteLink)}
-                      className="h-11 rounded-[9px] border border-foreground/12 bg-background px-3 text-[13px] font-medium outline-none transition-colors placeholder:text-muted-foreground/48 focus:border-brand-accent/55 focus:ring-2 focus:ring-brand-accent/10"
-                    />
-                  </label>
+                  <TeamRolePicker
+                    value={{ operatingTitle: inviteOperatingTitle || null, responsibilityTags: parseResponsibilityTags(inviteResponsibilities) }}
+                    onChange={(next: TeamResponsibilities) => {
+                      setInviteOperatingTitle(next.operatingTitle ?? "");
+                      setInviteResponsibilities(next.responsibilityTags.join(", "));
+                    }}
+                    disabled={pending || Boolean(inviteLink)}
+                    titleLabel="Invite role"
+                    responsibilitiesLabel="Invite responsibilities"
+                  />
                   {error ? <p role="alert" className="text-[12px] font-semibold text-destructive">{error}</p> : null}
                   {inviteLink ? (
                     <div className="rounded-[12px] border border-brand-accent/18 bg-brand-accent/[0.04] p-3.5">
                       <div className="flex items-start gap-2">
                         <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent" aria-hidden="true" />
-                        <div className="min-w-0">
-                          <p className="text-[13px] font-semibold text-foreground">{inviteEmailStatus === "sent" ? "Invitation emailed" : "Invite link ready"}</p>
+                        <div className="min-w-0" aria-live="polite">
+                          <p className="text-[13px] font-semibold text-foreground">
+                            {inviteEmailStatus === "sent" ? "Invitation sent" : inviteEmailStatus === "failed" ? "Invite created, but the email did not send" : "Invite link ready"}
+                          </p>
                           <p className="mt-1 text-[12px] font-medium text-muted-foreground">
-                            {inviteEmailStatus === "failed" ? "Email delivery failed. Copy this link and share it directly." : "Copy this link if you want to share the invitation another way."}
+                            {inviteEmailStatus === "failed" ? "Copy this link and send it to them another way." : inviteEmailStatus === "sent" ? "They can use the email or this link to join." : "Copy this link and send it to them."}
                           </p>
                         </div>
                       </div>
@@ -329,10 +255,6 @@ export function TeamFirstRunScreen({
       </div>
     </main>
   );
-}
-
-function normalizeTags(value: string) {
-  return [...new Set(value.split(",").map((tag) => tag.trim()).filter(Boolean))].slice(0, 12);
 }
 
 function countTags(value: string) {

@@ -12,7 +12,7 @@ Deno.serve(withAppErrorCapture("account-team", async (request) => {
   if (!url || !anon || !service) return new Response(JSON.stringify({ error: "Team service is unavailable." }), { status: 503, headers: { "content-type": "application/json", "cache-control": "no-store" } });
   const db = createClient(url, service);
   return handleAccountTeamRequest(request, {
-    allowedOrigins: [Deno.env.get("APP_ORIGIN"), Deno.env.get("PUBLIC_APP_URL"), Deno.env.get("LOCAL_APP_ORIGIN")].filter((value): value is string => Boolean(value)),
+    allowedOrigins: [Deno.env.get("PUBLIC_APP_URL"), Deno.env.get("APP_ORIGIN"), Deno.env.get("LOCAL_APP_ORIGIN")].filter((value): value is string => Boolean(value)),
     authenticate: async (authorization) => {
       const auth = createClient(url, anon, { global: { headers: { Authorization: authorization } } });
       const { data, error } = await auth.auth.getUser();
@@ -48,7 +48,7 @@ Deno.serve(withAppErrorCapture("account-team", async (request) => {
       const expiresAt = typeof previewRow.expiresAt === "string" ? previewRow.expiresAt : "";
       if (!expiresAt) throw new Error("Invitation expiry is unavailable.");
       const message = buildTeamInvitationEmail({
-        origin: Deno.env.get("APP_ORIGIN") ?? Deno.env.get("PUBLIC_APP_URL") ?? Deno.env.get("LOCAL_APP_ORIGIN") ?? "",
+        origin: Deno.env.get("PUBLIC_APP_URL") ?? Deno.env.get("APP_ORIGIN") ?? Deno.env.get("LOCAL_APP_ORIGIN") ?? "",
         token,
         to,
         invitationId,
