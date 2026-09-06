@@ -1,6 +1,6 @@
 import type { TeamFirstRunInput, TeamInvitation, TeamInvitationMutation, TeamInvitationPreview, TeamResponsibilities, WorkspaceRoster, WorkspaceScope, WorkspaceTeamCapability } from "../types/workspaceTeam";
 
-type Result = { data: unknown; error: null | { message?: string } };
+type Result = { data: unknown; error: null | { message?: string; context?: unknown } };
 type Client = {
   rpc: (name: string, args: Record<string, unknown>) => PromiseLike<Result>;
   functions: { invoke: (name: string, options: { body: Record<string, unknown> }) => PromiseLike<Result> };
@@ -36,8 +36,33 @@ export function createWorkspaceTeamService(client: Client) {
 
 export type WorkspaceTeamService = ReturnType<typeof createWorkspaceTeamService>;
 
-function unwrap<T>({ data, error }: Result): T {
-  if (error) throw new Error(error.message || "Team request failed");
+async function unwrap<T>({ data, error }: Result): Promise<T> {
+  if (error) throw await teamServiceError(error);
   if (data == null) throw new Error("Team request returned no data");
   return data as T;
+}
+
+async function teamServiceError(error: NonNullable<Result["error"]>) {
+  const payload = await readErrorPayload(error.context);
+  const code = payload && typeof payload.code === "string" && /^TEAM_[A-Z_]+$/.test(payload.code)
+    ? payload.code
+    : undefined;
+  const message = payload && typeof payload.error === "string" && payload.error.trim()
+    ? payload.error.trim()
+    : error.message || "Team request failed";
+  return Object.assign(new Error(message), code ? { code } : {});
+}
+
+async function readErrorPayload(context: unknown): Promise<Record<string, unknown> | null> {
+  if (!context || typeof context !== "object") return null;
+  const response = typeof (context as { clone?: unknown }).clone === "function"
+    ? (context as { clone: () => unknown }).clone()
+    : context;
+  if (!response || typeof response !== "object" || typeof (response as { json?: unknown }).json !== "function") return null;
+  try {
+    const payload = await (response as { json: () => Promise<unknown> }).json();
+    return payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : null;
+  } catch {
+    return null;
+  }
 }

@@ -20,4 +20,21 @@ describe("workspace team service", () => {
     const service = createWorkspaceTeamService({ rpc: vi.fn(async () => ({ data: null, error: { message: "denied" } })), functions: { invoke: vi.fn() } });
     await expect(service.loadRoster("22222222-2222-4222-8222-222222222222")).rejects.toThrow("denied");
   });
+
+  it.each([
+    ["TEAM_GONE", "This invitation has expired or was revoked."],
+    ["TEAM_FORBIDDEN", "This invitation belongs to another verified email."],
+    ["TEAM_CONFLICT", "No Team seat is available."],
+  ])("preserves structured %s function errors for invitation UI handling", async (code, message) => {
+    const context = new Response(JSON.stringify({ code, error: message }), {
+      status: code === "TEAM_GONE" ? 410 : code === "TEAM_FORBIDDEN" ? 403 : 409,
+      headers: { "content-type": "application/json" },
+    });
+    const service = createWorkspaceTeamService({
+      rpc: vi.fn(),
+      functions: { invoke: vi.fn(async () => ({ data: null, error: { message: "Edge Function returned a non-2xx status code", context } })) },
+    });
+
+    await expect(service.acceptInvitation("A".repeat(43))).rejects.toMatchObject({ code, message });
+  });
 });
