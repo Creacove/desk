@@ -105,6 +105,18 @@ describe("payment deployment configuration", () => {
     await expect(response.json()).resolves.toEqual({ countryCode: "NG" });
   });
 
+  it("returns an Edge Response when Vercel supplies a second context argument", async () => {
+    const response = billingCountry(
+      new Request("https://example.com/api/billing-country", {
+        headers: { "x-vercel-ip-country": "ng" },
+      }),
+      {} as never,
+    ) as Response;
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ countryCode: "NG" });
+  });
+
   it("completes the response through Vercel's serverless response object", () => {
     const state = { status: 0, headers: new Map<string, string>(), body: null as unknown };
     type VercelResponseMock = {

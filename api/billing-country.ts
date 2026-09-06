@@ -26,7 +26,12 @@ export default function handler(request: RequestLike, response?: ResponseLike) {
   const countryCode = normalized && /^[A-Z]{2}$/.test(normalized) ? normalized : undefined;
   const body = countryCode ? { countryCode } : {};
 
-  if (response) {
+  if (
+    response &&
+    typeof response.status === "function" &&
+    typeof response.setHeader === "function" &&
+    typeof response.json === "function"
+  ) {
     response.status(200);
     response.setHeader("Content-Type", "application/json");
     response.setHeader("Cache-Control", "private, no-store");
