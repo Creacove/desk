@@ -412,6 +412,9 @@ verify_jwt = true
 [functions.account-team]
 verify_jwt = true
 
+[functions.preview-team-invitation]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

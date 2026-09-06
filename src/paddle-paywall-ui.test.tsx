@@ -14,6 +14,48 @@ const artist = {
 afterEach(cleanup);
 
 describe("provider-aware paywall", () => {
+  it("offers Solo by default and exposes the Team promise when plan selection is enabled", () => {
+    const onPlanChange = vi.fn();
+    render(<FrontDoorPaywallPreviewScreen
+      preview={{
+        checkoutSessionId: "checkout-1", reference: "checkout-1", provider: "paddle", status: "open",
+        artist, interval: "monthly", formattedTotal: "$24", priceId: "pri_month", planKey: "solo",
+      }}
+      onPlanChange={onPlanChange}
+      onSubscribe={() => undefined}
+      onBack={() => undefined}
+    />);
+
+    const planSelector = screen.getByRole("group", { name: "Desk plan" });
+    expect(within(planSelector).getByRole("button", { name: "Solo plan" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(planSelector).getByRole("button", { name: "Team plan" })).toBeInTheDocument();
+    expect(screen.queryByText("Up to 6 people. One shared artist Desk.")).not.toBeInTheDocument();
+
+    fireEvent.click(within(planSelector).getByRole("button", { name: "Team plan" }));
+    expect(onPlanChange).toHaveBeenCalledWith("team_6");
+  });
+
+  it("shows the Team promise after Team pricing is selected", () => {
+    render(<FrontDoorPaywallPreviewScreen
+      preview={{
+        checkoutSessionId: "checkout-team", reference: "checkout-team", provider: "paddle", status: "open",
+        artist, interval: "monthly", formattedTotal: "$99", priceId: "pri_team_month", planKey: "team_6",
+        intervalOptions: {
+          monthly: { formattedTotal: "$99", priceId: "pri_team_month" },
+          yearly: { formattedTotal: "$1,000", priceId: "pri_team_year" },
+        },
+      }}
+      onPlanChange={() => undefined}
+      onSubscribe={() => undefined}
+      onBack={() => undefined}
+    />);
+
+    expect(screen.getByText("Up to 6 people. One shared artist Desk.")).toBeInTheDocument();
+    expect(screen.getByText("$99")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Yearly" }));
+    expect(screen.getByText("$1,000")).toBeInTheDocument();
+  });
+
   it("shows Paddle's formatted total unchanged and labels the selected interval", () => {
     render(<PaywallPreviewScreen preview={{
       checkoutSessionId: "checkout-1", reference: "checkout-1", provider: "paddle", status: "open",

@@ -1,4 +1,4 @@
-import type { TeamInvitation, TeamResponsibilities, WorkspaceRoster, WorkspaceScope, WorkspaceTeamCapability } from "../types/workspaceTeam";
+import type { TeamFirstRunInput, TeamInvitation, TeamInvitationMutation, TeamInvitationPreview, TeamResponsibilities, WorkspaceRoster, WorkspaceScope, WorkspaceTeamCapability } from "../types/workspaceTeam";
 
 type Result = { data: unknown; error: null | { message?: string } };
 type Client = {
@@ -9,12 +9,23 @@ type Client = {
 export function createWorkspaceTeamService(client: Client) {
   const rpc = async <T>(name: string, args: Record<string, unknown>): Promise<T> => unwrap<T>(await client.rpc(name, args));
   const mutate = async <T>(body: Record<string, unknown>): Promise<T> => unwrap<T>(await client.functions.invoke("account-team", { body }));
+  const preview = async <T>(body: Record<string, unknown>): Promise<T> => unwrap<T>(await client.functions.invoke("preview-team-invitation", { body }));
+  const completeFirstRun = (input: Pick<TeamFirstRunInput, "artistWorkspaceId" | "teamName" | "operatingTitle" | "responsibilityTags">) =>
+    rpc<WorkspaceTeamCapability>("complete_team_first_run_v1", {
+      p_artist_workspace_id: input.artistWorkspaceId,
+      p_team_name: input.teamName,
+      p_operating_title: input.operatingTitle,
+      p_responsibility_tags: input.responsibilityTags,
+    });
   return {
+    previewInvitation: (token: string) => preview<TeamInvitationPreview>({ token }),
     loadRoster: (artistWorkspaceId: string) => rpc<WorkspaceRoster>("get_workspace_roster_v1", { p_artist_workspace_id: artistWorkspaceId }),
     loadCapability: (artistWorkspaceId: string) => rpc<WorkspaceTeamCapability>("get_workspace_team_capability_v1", { p_artist_workspace_id: artistWorkspaceId }),
+    completeFirstRun,
+    completeTeamFirstRun: completeFirstRun,
     listInvitations: (artistWorkspaceId: string) => rpc<TeamInvitation[]>("list_account_invitations_v1", { p_artist_workspace_id: artistWorkspaceId }),
-    invite: (input: { artistWorkspaceId: string; email: string } & TeamResponsibilities) => mutate<{ invitation: TeamInvitation; token: string }>({ action: "invite", ...input }),
-    rotateInvitation: (invitationId: string) => mutate<{ invitation: TeamInvitation; token: string }>({ action: "rotate_invite", invitationId }),
+    invite: (input: { artistWorkspaceId: string; email: string } & TeamResponsibilities) => mutate<TeamInvitationMutation>({ action: "invite", ...input }),
+    rotateInvitation: (invitationId: string) => mutate<TeamInvitationMutation>({ action: "rotate_invite", invitationId }),
     revokeInvitation: (invitationId: string) => mutate<{ ok: true }>({ action: "revoke_invite", invitationId }),
     acceptInvitation: (token: string) => mutate<WorkspaceScope>({ action: "accept_invite", token }),
     removeMember: (artistWorkspaceId: string, memberUserId: string) => mutate<{ ok: true }>({ action: "remove_member", artistWorkspaceId, memberUserId }),

@@ -122,13 +122,20 @@ export function createSupabaseAuthAdapter(client: SupabaseClient): ProductionAut
               displayName: readDisplayName(data.user.user_metadata),
             }
           : null,
+        authenticated: Boolean(data.session),
         message: "Signed in.",
       };
     },
-    async signUpWithPassword({ email, password }) {
+    async signUpWithPassword({ email, password, name, emailRedirectTo }) {
+      const trimmedName = name.trim();
+      if (!trimmedName) throw new Error("Name is required.");
       const { data, error } = await client.auth.signUp({
         email,
         password,
+        options: {
+          data: { name: trimmedName },
+          ...(emailRedirectTo ? { emailRedirectTo } : {}),
+        },
       });
 
       if (error) {
@@ -147,6 +154,7 @@ export function createSupabaseAuthAdapter(client: SupabaseClient): ProductionAut
               displayName: readDisplayName(data.user.user_metadata),
             }
           : null,
+        authenticated: Boolean(data.session),
         message: data.session ? "Account created." : "Check your email to confirm the account.",
       };
     },
@@ -591,7 +599,11 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       const paddle = await getPaddle(paddleConfig);
       const localized = await previewLocalizedPaddlePrices(
         paddle,
-        [pricing.paddle.priceId.monthly, pricing.paddle.priceId.yearly, ...(pricing.paddle.team?.priceId ? [pricing.paddle.team.priceId] : [])],
+        [
+          pricing.paddle.priceId.monthly,
+          pricing.paddle.priceId.yearly,
+          ...(pricing.paddle.team?.priceId ? [pricing.paddle.team.priceId.monthly, pricing.paddle.team.priceId.yearly] : []),
+        ],
         serverCountryCode,
       );
       if (resolveBillingProvider(serverCountryCode, localized.countryCode, providerPreference) === "paystack") {
@@ -616,8 +628,16 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
           team: {
             planKey: "team_6" as const,
             productId: pricing.paddle.team.productId,
-            priceId: pricing.paddle.team.priceId,
-            formattedTotal: localized.formattedTotals[pricing.paddle.team.priceId],
+            intervalOptions: {
+              monthly: {
+                priceId: pricing.paddle.team.priceId.monthly,
+                formattedTotal: localized.formattedTotals[pricing.paddle.team.priceId.monthly],
+              },
+              yearly: {
+                priceId: pricing.paddle.team.priceId.yearly,
+                formattedTotal: localized.formattedTotals[pricing.paddle.team.priceId.yearly],
+              },
+            },
             seatLimit: 6 as const,
             artistLimit: 1 as const,
           },
@@ -641,8 +661,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         return { ...checkout, intervalOptions: pricing.intervalOptions };
       }
 
-      if (planKey === "team_6" && interval !== "monthly") throw new Error("Team is available monthly only.");
-      const price = planKey === "team_6" ? pricing.team : pricing.intervalOptions[interval];
+      const price = planKey === "team_6" ? pricing.team?.intervalOptions[interval] : pricing.intervalOptions[interval];
       const productId = planKey === "team_6" ? pricing.team?.productId : pricing.productId;
       if (!productId || !pricing.paddleConfig || !price?.priceId) {
         throw new Error("Paddle pricing is incomplete. Refresh pricing and try again.");
@@ -679,7 +698,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         paddleConfig: pricing.paddleConfig,
         customData: session.customData,
         expiresAt: session.expiresAt,
-        intervalOptions: pricing.intervalOptions,
+        intervalOptions: planKey === "team_6" ? pricing.team?.intervalOptions : pricing.intervalOptions,
       };
     },
     async openProviderCheckout({ user, preview }) {
@@ -884,14 +903,14 @@ async function loadBillingCountry() {
 
 function readBillingPricingConfig(value: unknown) {
   const data = value as {
-    paddle?: { environment?: "sandbox" | "production"; clientToken?: string; productId?: string; priceId?: { monthly?: string; yearly?: string }; team?: { planKey?: "team_6"; productId?: string; priceId?: string; seatLimit?: 6; artistLimit?: 1 } | null };
+    paddle?: { environment?: "sandbox" | "production"; clientToken?: string; productId?: string; priceId?: { monthly?: string; yearly?: string }; team?: { planKey?: "team_6"; productId?: string; priceId?: { monthly?: string; yearly?: string }; seatLimit?: 6; artistLimit?: 1 } | null };
     paystack?: { currency?: string; amountMinor?: { monthly?: number; yearly?: number } };
   } | null;
   if (
     !data?.paddle?.environment || !data.paddle.clientToken || !data.paddle.productId ||
     !data.paddle.priceId?.monthly || !data.paddle.priceId.yearly ||
     (data.paddle.team != null && (
-      data.paddle.team.planKey !== "team_6" || !data.paddle.team.productId || !data.paddle.team.priceId ||
+      data.paddle.team.planKey !== "team_6" || !data.paddle.team.productId || !data.paddle.team.priceId?.monthly || !data.paddle.team.priceId.yearly ||
       data.paddle.team.seatLimit !== 6 || data.paddle.team.artistLimit !== 1
     )) ||
     data.paystack?.currency !== "NGN" || !Number.isSafeInteger(data.paystack.amountMinor?.monthly) ||
@@ -900,7 +919,7 @@ function readBillingPricingConfig(value: unknown) {
     throw new Error("Billing pricing configuration is incomplete.");
   }
   return data as {
-    paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string }; team?: { planKey: "team_6"; productId: string; priceId: string; seatLimit: 6; artistLimit: 1 } | null };
+    paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string }; team?: { planKey: "team_6"; productId: string; priceId: { monthly: string; yearly: string }; seatLimit: 6; artistLimit: 1 } | null };
     paystack: { currency: "NGN"; amountMinor: { monthly: number; yearly: number } };
   };
 }
@@ -4900,6 +4919,7 @@ function billingCheckoutPreviewFromPayload(payload: unknown): ProductionBillingC
     expiresAt: data.expiresAt,
     authorizationUrl: data.authorizationUrl,
     accessCode: data.accessCode,
+    planKey: data.planKey,
     intervalOptions: data.intervalOptions,
   };
 }

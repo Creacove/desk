@@ -69,7 +69,16 @@ describe("SubscriptionPlanDialog", () => {
     const prepareProviderCheckout = vi.fn().mockResolvedValue({ ...preview("paddle", "monthly"), planKey: "team_6", priceId: "pri_team" });
     const paddlePricing = {
       ...pricing("paddle"),
-      team: { planKey: "team_6" as const, productId: "pro_team", priceId: "pri_team", formattedTotal: "$99", seatLimit: 6 as const, artistLimit: 1 as const },
+      team: {
+        planKey: "team_6" as const,
+        productId: "pro_team",
+        intervalOptions: {
+          monthly: { priceId: "pri_team_month", formattedTotal: "$99" },
+          yearly: { priceId: "pri_team_year", formattedTotal: "$1,000" },
+        },
+        seatLimit: 6 as const,
+        artistLimit: 1 as const,
+      },
     };
     render(<SubscriptionPlanDialog
       open
@@ -86,6 +95,27 @@ describe("SubscriptionPlanDialog", () => {
       planKey: "team_6",
       providerPreference: "paddle",
     })));
+  });
+
+  it("lets a new Team customer choose the $1,000 yearly interval", async () => {
+    const paddlePricing = pricing("paddle");
+    paddlePricing.team = {
+      planKey: "team_6",
+      productId: "pro_team",
+      intervalOptions: {
+        monthly: { priceId: "pri_team_month", formattedTotal: "$99" },
+        yearly: { priceId: "pri_team_year", formattedTotal: "$1,000" },
+      },
+      seatLimit: 6,
+      artistLimit: 1,
+    };
+    const prepareProviderCheckout = vi.fn().mockResolvedValue({ ...preview("paddle", "yearly"), planKey: "team_6", priceId: "pri_team_year" });
+    render(<SubscriptionPlanDialog open onClose={vi.fn()} user={{ id: "user-1", email: "artist@example.com" }} workspace={workspace()} billingService={{ loadProviderPricing: vi.fn().mockResolvedValue(paddlePricing), prepareProviderCheckout, openProviderCheckout: vi.fn() } as unknown as ProductionBillingService} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Team · 6 people" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yearly" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay $1,000" }));
+    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({ interval: "yearly", planKey: "team_6", providerPreference: "paddle" })));
   });
 });
 

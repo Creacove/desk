@@ -2,7 +2,7 @@
 
 Work only in `C:/Users/USER/Desktop/ai-record-label-prototype/.worktrees/artist-team`, branch `codex/artist-team`. Shared checkout with disjoint file ownership. Do not commit, reset, merge, deploy, edit secrets, run production commands, send emails, or change package dependencies. No subdelegation. Luna Max workers self-test and fix before one concise return; report only genuine blockers early.
 
-Terms: $99/month, owner plus five humans, one artist. Team is provisional label, internal plan `team_6`. Existing product name and solo behavior preserved. All new team controls gated by server capability; disabled on existing accounts by default.
+Terms: $99/month or $1,000/year, owner plus five humans, one artist. Team is provisional label, internal plan `team_6`. Both intervals grant the same entitlement. Existing product name and solo behavior preserved. All new team controls gated by server capability; disabled on existing accounts by default.
 
 ## Shared types (coordinator owns src/types/workspaceTeam.ts)
 
@@ -11,7 +11,7 @@ WorkspaceMember = {userId, displayName, accessRole:'owner'|'member', operatingTi
 WorkspaceRoster = {scope:WorkspaceScope, members:WorkspaceMember[], loadedAt:string}.
 WorkspaceTeamCapability = {accountId,artistWorkspaceId,artistId,planKey:'solo'|'team_6',enabled:boolean,entitled:boolean,source:'subscription'|'pilot'|'none',seatLimit:1|6,occupiedSeats:number,reservedSeats:number,endsAt:string|null}.
 TeamInvitation = {id,artistWorkspaceId,email,status:'pending'|'accepted'|'expired'|'revoked',expiresAt,operatingTitle:string|null,responsibilityTags:string[]}.
-No raw token in roster/invitation records returned by list. New/rotated invite response {invitation:TeamInvitation, token:string}; client creates `${origin}/join#token=${encodeURIComponent(token)}`. No automatic email send in first implementation. Copy-link is real supported onboarding; email deliberately absent from API/UI until provider delivery exists.
+No raw token in roster/invitation records returned by list. New/rotated invite response {invitation:TeamInvitation, token:string,emailStatus:'sent'|'failed'|'skipped'}; client creates `${origin}/join#token=${encodeURIComponent(token)}`. The authenticated Edge function attempts transactional delivery while it holds the raw token. Delivery failure does not roll back invitation creation, and the returned token always preserves Copy link as the fallback.
 
 ## Browser services
 

@@ -72,15 +72,23 @@ export type ProductionAuthCredentials = {
   password: string;
 };
 
+export type ProductionSignUpCredentials = ProductionAuthCredentials & {
+  name: string;
+  /** Preserve an invitation fragment through email confirmation. */
+  emailRedirectTo?: string;
+};
+
 export type ProductionAuthResult = {
   user: ProductionUser | null;
+  /** False means Supabase created an unconfirmed account without a session. */
+  authenticated?: boolean;
   message?: string;
 };
 
 export type ProductionAuthAdapter = {
   getSession(): Promise<ProductionSession>;
   signInWithPassword?(credentials: ProductionAuthCredentials): Promise<ProductionAuthResult>;
-  signUpWithPassword?(credentials: ProductionAuthCredentials): Promise<ProductionAuthResult>;
+  signUpWithPassword?(credentials: ProductionSignUpCredentials): Promise<ProductionAuthResult>;
   requestPasswordReset?(input: { email: string; redirectTo: string }): Promise<void>;
   updatePassword?(input: { password: string }): Promise<void>;
   signOut?(): Promise<void>;
@@ -295,7 +303,7 @@ export type ProductionBillingPricing = {
   productId?: string;
   paddleConfig?: ProductionPaddleConfig;
   intervalOptions: Record<"monthly" | "yearly", ProductionBillingPrice>;
-  team?: ProductionBillingPrice & { planKey: "team_6"; productId: string; seatLimit: 6; artistLimit: 1 };
+  team?: { planKey: "team_6"; productId: string; intervalOptions: Record<"monthly" | "yearly", ProductionBillingPrice>; seatLimit: 6; artistLimit: 1 };
 };
 
 export type ProductionBillingCheckoutPreview = {

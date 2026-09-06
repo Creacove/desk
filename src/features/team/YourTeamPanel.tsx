@@ -9,6 +9,7 @@ import { createTeamInviteLink } from "../../services/teamInviteRoute";
 import { MemberResponsibilitiesForm, type MemberResponsibilitiesDraft } from "./MemberResponsibilitiesForm";
 import type {
   TeamInvitation,
+  TeamInvitationDeliveryStatus,
   TeamResponsibilities,
   WorkspaceMember,
   WorkspaceRoster,
@@ -54,6 +55,7 @@ export function YourTeamPanel({
   const [invitePending, setInvitePending] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [inviteLinkStatus, setInviteLinkStatus] = useState<string | null>(null);
+  const [inviteDeliveryStatus, setInviteDeliveryStatus] = useState<TeamInvitationDeliveryStatus | null>(null);
   const [editingMemberId, setEditingMemberId] = useState<string | null>(null);
   const [responsibilityDrafts, setResponsibilityDrafts] = useState<Record<string, MemberResponsibilitiesDraft>>({});
   const [savingMemberId, setSavingMemberId] = useState<string | null>(null);
@@ -118,6 +120,7 @@ export function YourTeamPanel({
     setMutationError(null);
     setMutationNotice(null);
     setInviteLinkStatus(null);
+    setInviteDeliveryStatus(null);
   }
 
   if (!teamAccessActive) {
@@ -172,8 +175,9 @@ export function YourTeamPanel({
       });
       const link = createTeamInviteLink(window.location.origin, response.token);
       setInviteLink(link);
-      setInviteLinkStatus("Invite link ready.");
-      setMutationNotice("Invite link created.");
+      setInviteDeliveryStatus(response.emailStatus ?? null);
+      setInviteLinkStatus(response.emailStatus === "sent" ? "Invitation emailed. Copy link ready." : response.emailStatus === "failed" ? "Email delivery failed. Copy link ready." : "Invite link ready.");
+      setMutationNotice(response.emailStatus === "sent" ? "Invitation emailed." : "Invite link created.");
       setInvitations((current) => [response.invitation, ...current.filter((item) => item.id !== response.invitation.id)]);
       setCurrentCapability((current) => ({ ...current, reservedSeats: current.reservedSeats + 1 }));
       setInviteDraft({ email: "", operatingTitle: "", responsibilityTags: "" });
@@ -189,6 +193,7 @@ export function YourTeamPanel({
     try {
       const response = await service.rotateInvitation(invitation.id);
       setInviteLink(createTeamInviteLink(window.location.origin, response.token));
+      setInviteDeliveryStatus(response.emailStatus ?? null);
       setInviteLinkStatus("Invite link rotated.");
       setInvitations((current) => current.map((item) => item.id === invitation.id ? response.invitation : item));
     } catch (rotateError) {
@@ -391,7 +396,7 @@ export function YourTeamPanel({
         <section aria-labelledby="team-invite-heading" className="mt-8 border-t border-foreground/8 pt-6">
           <div>
             <h3 id="team-invite-heading" className="font-display text-[20px] font-semibold tracking-[-0.02em] text-foreground">Add someone</h3>
-            <p className="mt-1 text-[12px] font-medium text-muted-foreground">Create a private link to share directly. No email is sent from Desk.</p>
+            <p className="mt-1 text-[12px] font-medium text-muted-foreground">Desk emails the invitation and keeps a copy link ready to share directly.</p>
           </div>
           {seatsFull ? (
             <p className="mt-4 rounded-[14px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-semibold text-muted-foreground">All {seatLimit} seats are occupied or reserved.</p>
@@ -412,10 +417,16 @@ export function YourTeamPanel({
           {inviteLink ? (
             <div className="mt-4 rounded-[14px] border border-brand-accent/18 bg-brand-accent/[0.04] p-3.5">
               <div className="flex items-start gap-2">
-                <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent" aria-hidden="true" />
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-accent" aria-hidden="true" />
                 <div className="min-w-0">
                   <p className="text-[13px] font-semibold text-foreground">Invite link ready</p>
-                  <p className="mt-1 text-[12px] font-medium text-muted-foreground">Copy this link and share it with the person you want to join.</p>
+                  <p className="mt-1 text-[12px] font-medium text-muted-foreground">
+                    {inviteDeliveryStatus === "sent"
+                      ? "Invitation emailed. Copy this link if you want to share it another way."
+                      : inviteDeliveryStatus === "failed"
+                        ? "Email delivery failed. Copy this link and share it directly."
+                        : "Copy this link and share it with the person you want to join."}
+                  </p>
                 </div>
               </div>
               <div className="mt-3 flex min-w-0 flex-wrap gap-2 sm:flex-nowrap">

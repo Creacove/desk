@@ -39,7 +39,6 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
     }
     const planKey = input.planKey ?? "solo";
     if (planKey !== "solo" && planKey !== "team_6") return respond(request, { error: "Unknown billing plan." }, 400);
-    if (planKey === "team_6" && input.interval !== "monthly") return respond(request, { error: "Team is available monthly only." }, 400);
     validateArtist(input.selectedArtist);
     const selectedArtist = normalizeArtist(input.selectedArtist);
     const { productId, priceId } = readCanonicalPaddlePrice(input.interval, planKey);
@@ -99,7 +98,7 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
     await db.from("users").upsert({
       id: user.id,
       email: user.email,
-      display_name: user.user_metadata?.name ?? selectedArtist.name,
+      display_name: readHumanDisplayName(user.user_metadata) ?? "Desk operator",
       updated_at: new Date().toISOString(),
     }).throwOnError();
 
@@ -179,6 +178,14 @@ function validateArtist(artist: CheckoutInput["selectedArtist"]): asserts artist
   if (!artist?.spotifyArtistId?.trim() || !artist.name?.trim() || !artist.spotifyUrl?.startsWith("https://")) {
     throw new Error("Selected artist is incomplete.");
   }
+}
+
+function readHumanDisplayName(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const name = (metadata as { name?: unknown }).name;
+  if (typeof name !== "string") return undefined;
+  const trimmedName = name.trim();
+  return trimmedName || undefined;
 }
 
 function normalizeArtist(artist: NonNullable<CheckoutInput["selectedArtist"]>) {

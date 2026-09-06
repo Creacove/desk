@@ -14,7 +14,7 @@ describe("Paddle app flow contract", () => {
     expect(text).toContain('async function subscribeToPreview(interval: "monthly" | "yearly")');
     expect(text).toContain("checkoutPreview.interval !== interval");
     expect(text).not.toContain("setSelectedBillingInterval");
-    expect(text).toContain('providerPreference: workspace?.billingProvider ?? "auto"');
+    expect(text).toContain('providerPreference: checkoutPreview.planKey === "team_6" ? "paddle" : workspace?.billingProvider ?? "auto"');
     expect(text).not.toContain('useState<ProductionBillingProviderPreference>("auto")');
     expect(text).not.toContain("changeBillingProvider");
     expect(text).not.toContain("onProviderChange");

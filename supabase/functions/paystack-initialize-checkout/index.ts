@@ -104,7 +104,7 @@ Deno.serve(withAppErrorCapture("paystack-initialize-checkout", async (request) =
     const { error: userUpsertError } = await serviceClient.from("users").upsert({
       id: user.id,
       email: user.email,
-      display_name: user.user_metadata?.name ?? selectedArtist.name,
+      display_name: readHumanDisplayName(user.user_metadata) ?? "Desk operator",
       updated_at: new Date().toISOString(),
     });
     if (userUpsertError) throw userUpsertError;
@@ -194,6 +194,14 @@ function validateArtist(artist: CheckoutInput["selectedArtist"]): asserts artist
   if (!artist?.spotifyArtistId || !artist.name || !artist.spotifyUrl) {
     throw new Error("Selected artist is incomplete.");
   }
+}
+
+function readHumanDisplayName(metadata: unknown) {
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const name = (metadata as { name?: unknown }).name;
+  if (typeof name !== "string") return undefined;
+  const trimmedName = name.trim();
+  return trimmedName || undefined;
 }
 
 function normalizeSelectedArtist(artist: NonNullable<CheckoutInput["selectedArtist"]>) {

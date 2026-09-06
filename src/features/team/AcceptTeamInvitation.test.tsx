@@ -35,7 +35,7 @@ describe("AcceptTeamInvitation", () => {
 
     expect(window.location.hash).toBe("");
     expect(sessionStorage.getItem("ordersounds.team.invite.token")).toBe(token);
-    expect(await screen.findByText("Workspace joined")).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "You're in" })).toBeInTheDocument();
     expect(acceptInvitation).toHaveBeenCalledWith(token);
     expect(onAccepted).toHaveBeenCalledWith(scope);
     expect(sessionStorage.getItem("ordersounds.team.invite.token")).toBeNull();

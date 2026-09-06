@@ -69,7 +69,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
   if (!open) return null;
   const paidWorkspace = workspace.accessType === "paid_subscription" || Boolean(workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
   const teamUpgradeAssisted = planKey === "team_6" && paidWorkspace;
-  const price = formatSubscriptionPrice(planKey === "team_6" ? pricing?.team : pricing?.intervalOptions[interval]);
+  const price = formatSubscriptionPrice(planKey === "team_6" ? pricing?.team?.intervalOptions[interval] : pricing?.intervalOptions[interval]);
   const payLabel = `Pay ${price}`;
 
   return (
@@ -85,13 +85,13 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
         {pricing?.team ? (
           <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Plan">
             <button type="button" aria-pressed={planKey === "solo"} disabled={loading || opening} onClick={() => setPlanKey("solo")} className={cn("min-h-12 rounded-[8px] text-[11px] font-semibold transition-colors", planKey === "solo" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Solo</button>
-            <button type="button" aria-pressed={planKey === "team_6"} disabled={loading || opening} onClick={() => { setPlanKey("team_6"); setInterval("monthly"); }} className={cn("min-h-12 rounded-[8px] text-[11px] font-semibold transition-colors", planKey === "team_6" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Team · 6 people</button>
+            <button type="button" aria-pressed={planKey === "team_6"} disabled={loading || opening} onClick={() => setPlanKey("team_6")} className={cn("min-h-12 rounded-[8px] text-[11px] font-semibold transition-colors", planKey === "team_6" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Team · 6 people</button>
           </div>
         ) : null}
 
         <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Billing interval">
           {(["monthly", "yearly"] as const).map((option) => (
-            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening || !pricing || planKey === "team_6"} onClick={() => setInterval(option)} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening || !pricing} onClick={() => setInterval(option)} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               {option === "monthly" ? "Monthly" : "Yearly"}
             </button>
           ))}

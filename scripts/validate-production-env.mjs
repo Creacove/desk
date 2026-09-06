@@ -63,6 +63,10 @@ export function validateProductionEnv(env = process.env) {
     for (const key of ["PADDLE_API_KEY", "PADDLE_CLIENT_TOKEN", "PADDLE_WEBHOOK_SECRET", "PADDLE_NOTIFICATION_DESTINATION_ID", "PADDLE_PRO_PRODUCT_ID", "PADDLE_PRO_MONTHLY_PRICE_ID", "PADDLE_PRO_YEARLY_PRICE_ID"]) {
       required(errors, env, key);
     }
+    const teamPricingConfigured = ["PADDLE_TEAM_PRODUCT_ID", "PADDLE_TEAM_MONTHLY_PRICE_ID", "PADDLE_TEAM_YEARLY_PRICE_ID"].some((key) => text(env[key]));
+    if (teamPricingConfigured) {
+      for (const key of ["PADDLE_TEAM_PRODUCT_ID", "PADDLE_TEAM_MONTHLY_PRICE_ID", "PADDLE_TEAM_YEARLY_PRICE_ID"]) required(errors, env, key);
+    }
   }
 
   const paystackConfigured = text(env.PAYSTACK_SECRET_KEY) || text(env.PAYSTACK_MONTHLY_PLAN_CODE) || text(env.PAYSTACK_YEARLY_PLAN_CODE);

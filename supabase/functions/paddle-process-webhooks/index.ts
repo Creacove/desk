@@ -261,10 +261,6 @@ async function reconcileVerifiedCheckoutPlan(
   }
   const planKey = checkout.plan_key === "team_6" ? "team_6" : "solo";
   const billingInterval = checkout.interval === "yearly" ? "yearly" : "monthly";
-  if (planKey === "team_6" && billingInterval !== "monthly") {
-    throw new Error("Verified Team checkout must be monthly.");
-  }
-
   const { error: catalogError } = await db.from("billing_plan_catalog").upsert({
     provider: "paddle",
     provider_product_id: productId,

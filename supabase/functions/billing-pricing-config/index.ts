@@ -27,8 +27,14 @@ Deno.serve(withAppErrorCapture("billing-pricing-config", async (request) => {
     if (paystackCurrency !== "NGN") throw new Error("PAYSTACK_CURRENCY must be NGN.");
     const paystackMonthlyAmountMinor = requireMinorAmount("PAYSTACK_MONTHLY_AMOUNT_MINOR", "PAYSTACK_AMOUNT_MINOR");
     const paystackYearlyAmountMinor = requireMinorAmount("PAYSTACK_YEARLY_AMOUNT_MINOR");
-    const teamConfigured = Boolean(Deno.env.get("PADDLE_TEAM_PRODUCT_ID")?.trim() && Deno.env.get("PADDLE_TEAM_MONTHLY_PRICE_ID")?.trim());
-    const team = teamConfigured ? readCanonicalPaddlePrice("monthly", "team_6") : null;
+    const teamConfigured = Boolean(
+      Deno.env.get("PADDLE_TEAM_PRODUCT_ID")?.trim() &&
+      Deno.env.get("PADDLE_TEAM_MONTHLY_PRICE_ID")?.trim() &&
+      Deno.env.get("PADDLE_TEAM_YEARLY_PRICE_ID")?.trim()
+    );
+    const teamMonthly = teamConfigured ? readCanonicalPaddlePrice("monthly", "team_6") : null;
+    const teamYearly = teamConfigured ? readCanonicalPaddlePrice("yearly", "team_6") : null;
+    if (teamMonthly && teamYearly && teamMonthly.productId !== teamYearly.productId) throw new Error("Paddle Team prices must belong to one product.");
 
     return respond(request, {
       paddle: {
@@ -36,7 +42,7 @@ Deno.serve(withAppErrorCapture("billing-pricing-config", async (request) => {
         clientToken,
         productId: monthly.productId,
         priceId: { monthly: monthly.priceId, yearly: yearly.priceId },
-        team: team ? { planKey: "team_6", interval: "monthly", productId: team.productId, priceId: team.priceId, seatLimit: 6, artistLimit: 1 } : null,
+        team: teamMonthly && teamYearly ? { planKey: "team_6", productId: teamMonthly.productId, priceId: { monthly: teamMonthly.priceId, yearly: teamYearly.priceId }, seatLimit: 6, artistLimit: 1 } : null,
       },
       paystack: {
         currency: paystackCurrency,

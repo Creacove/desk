@@ -689,6 +689,7 @@ describe("Clean production prototype-match shell", () => {
 
     expect(await screen.findByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Test Operator" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: testUser.email } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "safe-test-password" } });
     fireEvent.click(screen.getByRole("button", { name: "Create account" }));

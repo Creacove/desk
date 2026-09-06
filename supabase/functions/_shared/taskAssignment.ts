@@ -27,6 +27,13 @@ export function normalizeTaskAssignment(proposal: TaskAssignmentProposal, contex
   };
 }
 
+export function normalizeHumanTaskAssignments<T extends TaskAssignmentProposal & { workMode: string }>(tasks: T[], context: TaskAssignmentContext): T[] {
+  return tasks.map((task) => {
+    const assignment = normalizeTaskAssignment(task, context, task.workMode);
+    return { ...task, assigneeUserId: assignment.assigneeUserId, assignmentReason: assignment.assignmentReason };
+  });
+}
+
 export function formatActiveTeam(roster: WorkspaceRoster | null): string {
   if (!roster) return "ACTIVE TEAM unavailable. Do not invent or assign a human identity.";
   const members = roster.members.filter((member) => member.accessRole === "owner" || member.accessRole === "member").slice(0, 6).map((member) => ({

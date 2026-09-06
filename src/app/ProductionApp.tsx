@@ -35,6 +35,7 @@ import { SetupActivityScreen } from "../features/onboarding/SetupActivityScreen"
 import { enterDeskWithProgressiveTransition } from "../features/onboarding/setup-presentation/setupPresentationTransition";
 import { SettingsScreen } from "../features/settings/SettingsScreen";
 import { LockedAgentWorkspace, StaffWorkspace } from "../features/staff/StaffScreens";
+import { TeamFirstRunScreen } from "../features/team/TeamFirstRunScreen";
 import {
   identifyAnalyticsUser,
   isTestUserEmail,
@@ -121,6 +122,7 @@ type ProductionAppProps = {
   repositories?: CleanProductionRepositories;
   initialView?: CleanProductionView;
   fixtureMode?: boolean;
+  teamService?: WorkspaceTeamService | null;
 };
 
 type MissionRoomTab = "pulse" | "tasks" | "checkpoints" | "activity";
@@ -139,6 +141,7 @@ export function ProductionApp({
   repositories,
   initialView = "connectArtist",
   fixtureMode = false,
+  teamService,
 }: ProductionAppProps) {
   const shouldUseFixtureRuntime = fixtureMode || import.meta.env.VITE_PRODUCTION_FIXTURES === "true";
   const liveUpdatesEnabled = !shouldUseFixtureRuntime && import.meta.env.VITE_WORKSPACE_LIVE_UPDATES === "true";
@@ -158,7 +161,9 @@ export function ProductionApp({
       return {
         ...fixtureRuntime,
         supabaseClient: null,
-        teamService: null,
+        authAdapter: authAdapter ?? fixtureRuntime.authAdapter,
+        workspaceLoader: workspaceLoader ?? fixtureRuntime.workspaceLoader,
+        teamService: teamService ?? null,
         billingService,
         spotifyArtistAdapter,
         profileSetupService,
@@ -174,7 +179,7 @@ export function ProductionApp({
 
     return {
       supabaseClient: liveUpdatesEnabled ? getClient() : null,
-      teamService: createWorkspaceTeamService(getClient()),
+      teamService: teamService ?? createWorkspaceTeamService(getClient()),
       authAdapter: authAdapter ?? createSupabaseAuthAdapter(getClient()),
       workspaceLoader: workspaceLoader ?? createSupabaseWorkspaceLoader(getClient()),
       billingService: billingService ?? createSupabaseBillingService(getClient()),
@@ -199,7 +204,7 @@ export function ProductionApp({
       repositoriesForWorkspace: (nextWorkspace: ProductionWorkspace) =>
         repositories ?? createSupabaseProductionRepositories(getClient(), nextWorkspace),
     };
-  }, [authAdapter, billingService, liveUpdatesEnabled, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, workspaceLoader]);
+  }, [authAdapter, billingService, liveUpdatesEnabled, profileSetupService, repositories, shouldUseFixtureRuntime, spotifyArtistAdapter, teamService, workspaceLoader]);
 
   const [status, setStatus] = useState<"loading" | "signed-out" | "missing-workspace" | "ready" | "payment-return" | "error">("loading");
   const [session, setSession] = useState<ProductionSession | null>(null);
@@ -771,11 +776,13 @@ function CleanProductionWorkspace({
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
   const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(null);
   const [teamRoster, setTeamRoster] = useState<WorkspaceRoster | null>(null);
+  const [teamFirstRunVisible, setTeamFirstRunVisible] = useState(false);
 
   useEffect(() => {
     if (!teamService || !workspace?.artistWorkspaceId) {
       setTeamCapability(null);
       setTeamRoster(null);
+      setTeamFirstRunVisible(false);
       return;
     }
     let cancelled = false;
@@ -794,10 +801,27 @@ function CleanProductionWorkspace({
         if (!cancelled) {
           setTeamCapability(null);
           setTeamRoster(null);
+          setTeamFirstRunVisible(false);
         }
       });
     return () => { cancelled = true; };
   }, [teamService, workspace?.artistWorkspaceId]);
+
+  useEffect(() => {
+    const viewer = teamRoster?.members.find((member) => member.userId === analyticsUser.id);
+    const shouldShow = Boolean(
+      workspace &&
+      view !== "setup" &&
+      view !== "connectArtist" &&
+      isWorkspaceReadyForDesk(workspace) &&
+      teamCapability?.planKey === "team_6" &&
+      teamCapability.enabled &&
+      teamCapability.entitled &&
+      teamCapability.firstRunCompletedAt === null &&
+      viewer?.accessRole === "owner",
+    );
+    setTeamFirstRunVisible(shouldShow);
+  }, [analyticsUser.id, teamCapability, teamRoster, view, workspace]);
 
   const teamAssignment = useMemo(() => {
     if (!teamService || !teamRoster || !teamCapability || teamCapability.planKey !== "team_6" || !teamCapability.enabled || !teamCapability.entitled) return undefined;
@@ -2254,6 +2278,27 @@ function CleanProductionWorkspace({
     );
   }
 
+  if (teamFirstRunVisible && workspace && teamService && teamCapability) {
+    return (
+      <TeamFirstRunScreen
+        service={teamService}
+        scope={{
+          accountId: workspace.accountId,
+          artistWorkspaceId: workspace.artistWorkspaceId,
+          artistId: workspace.artistId,
+        }}
+        artistName={workspace.artistName}
+        capability={teamCapability}
+        onComplete={(nextCapability) => {
+          setTeamCapability(nextCapability);
+          setTeamFirstRunVisible(false);
+          setView("labelHQ");
+        }}
+        onSignOut={onSignOut}
+      />
+    );
+  }
+
   if (view === "connectArtist") {
     return <ConnectArtistScreen profile={profile} onContinue={() => navigate("setup")} onSignOut={onSignOut} />;
   }
@@ -2582,6 +2627,7 @@ function AuthScreen({
 }) {
   const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">("sign-in");
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -2611,13 +2657,22 @@ function AuthScreen({
     setMessage(null);
 
     try {
-      const handler = isSignUp ? authAdapter.signUpWithPassword : authAdapter.signInWithPassword;
-      if (!handler) {
+      if (isSignUp && !authAdapter.signUpWithPassword) {
         setMessage("Email/password authentication is not configured for this environment.");
         return;
       }
+      if (!isSignUp && !authAdapter.signInWithPassword) {
+        setMessage("Email/password authentication is not configured for this environment.");
+        return;
+      }
+      if (isSignUp && !name.trim()) {
+        setMessage("Enter your name to create an account.");
+        return;
+      }
 
-      const result = await handler({ email: email.trim(), password });
+      const result = isSignUp
+        ? await authAdapter.signUpWithPassword!({ email: email.trim(), password, name: name.trim() })
+        : await authAdapter.signInWithPassword!({ email: email.trim(), password });
       setMessage(result.message ?? (isSignUp ? "Account created." : "Signed in."));
       if (result.user) {
         if (isSignUp) {
@@ -2691,6 +2746,7 @@ function AuthScreen({
         </div>
 
         <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+          {isSignUp ? <Field label="Name" value={name} onChange={setName} autoComplete="name" required disabled={pending} /> : null}
           <Field label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" required disabled={pending} />
           <Field
             label="Password"
@@ -2964,7 +3020,8 @@ function SpotifyIdentityGate({
             candidate: checkoutPreview.artist,
             existingWorkspace: workspace ?? undefined,
             interval,
-            providerPreference: workspace?.billingProvider ?? "auto",
+            planKey: checkoutPreview.planKey ?? "solo",
+            providerPreference: checkoutPreview.planKey === "team_6" ? "paddle" : workspace?.billingProvider ?? "auto",
           });
           setCheckoutPreview(payablePreview);
         }
@@ -2997,6 +3054,34 @@ function SpotifyIdentityGate({
     }
   }
 
+  async function changeBillingPlan(planKey: "solo" | "team_6") {
+    if (!checkoutPreview || !billingService || !user) {
+      return;
+    }
+    if (!billingService.prepareProviderCheckout) {
+      setMessage("The selected plan could not be prepared.");
+      return;
+    }
+
+    try {
+      setSelectPending(true);
+      setMessage(null);
+      const preview = await billingService.prepareProviderCheckout({
+        user,
+        candidate: checkoutPreview.artist,
+        existingWorkspace: workspace ?? undefined,
+        interval: checkoutPreview.interval,
+        planKey,
+        providerPreference: planKey === "team_6" ? "paddle" : workspace?.billingProvider ?? "auto",
+      });
+      setCheckoutPreview(preview);
+    } catch (planError) {
+      setMessage(readErrorMessage(planError, "The selected plan could not be prepared."));
+    } finally {
+      setSelectPending(false);
+    }
+  }
+
   function changeBillingInterval(interval: "monthly" | "yearly") {
     setMessage(null);
   }
@@ -3018,6 +3103,7 @@ function SpotifyIdentityGate({
           });
         }}
         onSubscribe={subscribeToPreview}
+        onPlanChange={changeBillingPlan}
         onIntervalChange={changeBillingInterval}
         onSignOut={onSignOut}
       />

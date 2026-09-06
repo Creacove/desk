@@ -5,12 +5,13 @@ import { BrandMark } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import { consumeTeamInviteToken, TEAM_INVITE_TOKEN_STORAGE_KEY } from "../../services/teamInviteRoute";
 import type { WorkspaceTeamService } from "../../services/workspaceTeamService";
-import type { WorkspaceScope } from "../../types/workspaceTeam";
+import type { TeamInvitationPreview, WorkspaceScope } from "../../types/workspaceTeam";
 import type { ProductionUser } from "../../types/productionApp";
 
 export type AcceptTeamInvitationProps = {
   service: Pick<WorkspaceTeamService, "acceptInvitation">;
   user: ProductionUser | null;
+  preview?: TeamInvitationPreview | null;
   onAccepted?: (scope: WorkspaceScope) => void;
   onAuthenticationRequired?: () => void;
   onCancel?: () => void;
@@ -22,6 +23,7 @@ export type AcceptTeamInvitationProps = {
 export function AcceptTeamInvitation({
   service,
   user,
+  preview,
   onAccepted,
   onAuthenticationRequired,
   onCancel,
@@ -79,7 +81,7 @@ export function AcceptTeamInvitation({
   }, [onAccepted, routeReady, service, storage, token, user]);
 
   if (!routeReady) return <JoinFrame><JoinStatus icon={<Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />} title="Preparing invitation" body="Securing this invitation link…" /></JoinFrame>;
-  if (accepted) return <JoinFrame><JoinStatus icon={<Check className="h-5 w-5" aria-hidden="true" />} title="Workspace joined" body="The shared artist workspace is ready for you." /></JoinFrame>;
+  if (accepted) return <JoinFrame><JoinStatus icon={<Check className="h-5 w-5" aria-hidden="true" />} title="You're in" body="Opening Today for your shared artist workspace." /></JoinFrame>;
   if (!token && error) {
     return (
       <JoinFrame>
@@ -100,7 +102,12 @@ export function AcceptTeamInvitation({
   if (!user) {
     return (
       <JoinFrame>
-        <JoinStatus icon={<Link2 className="h-5 w-5" aria-hidden="true" />} title="Sign in to accept this invitation." body="Use the account that should belong to this artist workspace. Your invitation stays here while you authenticate." />
+        {preview ? <InvitationPreviewCard preview={preview} /> : null}
+        <JoinStatus
+          icon={<Link2 className="h-5 w-5" aria-hidden="true" />}
+          title={preview ? "Sign in to join this workspace." : "Sign in to accept this invitation."}
+          body={preview ? `You’ve been invited to work with ${preview.artistName}. Your invitation stays here while you authenticate.` : "Use the account that should belong to this artist workspace. Your invitation stays here while you authenticate."}
+        />
         <div className="mt-7 flex flex-wrap gap-2.5">
           {onAuthenticationRequired ? <Button onClick={onAuthenticationRequired}>Sign in</Button> : null}
           {onCancel ? <Button variant="secondary" onClick={onCancel}>Cancel</Button> : null}
@@ -111,6 +118,7 @@ export function AcceptTeamInvitation({
 
   return (
     <JoinFrame>
+      {preview ? <InvitationPreviewCard preview={preview} /> : null}
       <JoinStatus icon={<Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" />} title="Joining workspace" body="Checking your verified account and opening the shared artist workspace…" />
       {pending ? <p className="sr-only" role="status">Joining workspace</p> : null}
       {error ? <p role="alert" className="mt-6 rounded-[12px] bg-destructive/5 px-3.5 py-3 text-[12px] font-medium text-destructive">{error}</p> : null}
@@ -141,6 +149,35 @@ function JoinStatus({ icon, title, body }: { icon: ReactNode; title: string; bod
       <p className="mt-3 max-w-sm text-[13px] font-medium leading-relaxed text-muted-foreground/72">{body}</p>
     </section>
   );
+}
+
+function InvitationPreviewCard({ preview }: { preview: TeamInvitationPreview }) {
+  return (
+    <div aria-label="Invitation details" className="mb-7 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
+      <p className="font-semibold text-foreground">{preview.teamName}</p>
+      <p className="mt-1">Artist: {preview.artistName}</p>
+      {preview.operatingTitle ? (
+        <>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/72">Role</p>
+          <p className="mt-0.5 text-foreground">{preview.operatingTitle}</p>
+        </>
+      ) : null}
+      {preview.responsibilityTags.length ? (
+        <>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/72">Responsibilities</p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            {preview.responsibilityTags.map((tag) => <span key={tag} className="rounded-md bg-foreground/[0.045] px-2 py-1 text-[11px] text-foreground">{tag}</span>)}
+          </div>
+        </>
+      ) : null}
+      <p className="mt-1">Expires {formatExpiry(preview.expiresAt)}</p>
+    </div>
+  );
+}
+
+function formatExpiry(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
 }
 
 function readTeamErrorCode(error: unknown) {

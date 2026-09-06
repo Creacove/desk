@@ -3,6 +3,12 @@ import { useState, type FormEvent, type ReactNode } from "react";
 import { BrandMark, Field, ProductButton } from "../../design-system/components";
 import { identifyAnalyticsUser, isTestUserEmail, trackEvent } from "../../lib/analytics";
 import type { ProductionAuthAdapter } from "../../types/productionApp";
+import type { TeamInvitationPreview } from "../../types/workspaceTeam";
+
+export type InvitationAuthContext = {
+  preview: TeamInvitationPreview;
+  emailRedirectTo: string;
+};
 
 type PaymentReturnState = {
   reference: string;
@@ -13,12 +19,15 @@ type PaymentReturnState = {
 export function FrontDoorAuthScreen({
   authAdapter,
   onAuthenticated,
+  invitation,
 }: {
   authAdapter: ProductionAuthAdapter;
   onAuthenticated: () => Promise<void>;
+  invitation?: InvitationAuthContext;
 }) {
   const [mode, setMode] = useState<"sign-in" | "sign-up" | "forgot">("sign-in");
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
@@ -47,14 +56,28 @@ export function FrontDoorAuthScreen({
     setPending(true);
     setMessage(null);
     try {
-      const handler = isSignUp ? authAdapter.signUpWithPassword : authAdapter.signInWithPassword;
-      if (!handler) {
+      if (isSignUp && !authAdapter.signUpWithPassword) {
         setMessage("Couldn’t continue right now. Try again.");
         return;
       }
-      const result = await handler({ email: email.trim(), password });
+      if (!isSignUp && !authAdapter.signInWithPassword) {
+        setMessage("Couldn’t continue right now. Try again.");
+        return;
+      }
+      if (isSignUp && !name.trim()) {
+        setMessage(invitation ? "Enter your name to join the workspace." : "Enter your name to create an account.");
+        return;
+      }
+      const result = isSignUp
+        ? await authAdapter.signUpWithPassword!({
+            email: email.trim(),
+            password,
+            name: name.trim(),
+            ...(invitation ? { emailRedirectTo: invitation.emailRedirectTo } : {}),
+          })
+        : await authAdapter.signInWithPassword!({ email: email.trim(), password });
       setMessage(result.message ?? null);
-      if (result.user) {
+      if (result.user && result.authenticated !== false) {
         if (isSignUp) {
           identifyAnalyticsUser(result.user);
           trackEvent("user signed up", {
@@ -99,11 +122,21 @@ export function FrontDoorAuthScreen({
         ) : (
           <>
             <h1 className="font-display text-[32px] font-semibold leading-[1] tracking-[-0.035em] text-foreground">
-              {isSignUp ? "Create your Desk." : "Welcome back."}
+              {invitation ? (isSignUp ? "Create your account to join." : "Sign in to join.") : isSignUp ? "Create your Desk." : "Welcome back."}
             </h1>
-            {isSignUp ? <p className="mt-3 text-[13px] font-medium text-muted-foreground/72">Start with your artist.</p> : null}
+            {invitation ? (
+              <>
+                <p className="mt-3 text-[13px] font-medium text-muted-foreground/72">You’ve been invited to work with {invitation.preview.artistName}.</p>
+                <div className="mt-5 rounded-[14px] border border-foreground/8 bg-foreground/[0.025] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
+                  <p className="font-semibold text-foreground">{invitation.preview.teamName}</p>
+                  {invitation.preview.operatingTitle ? <p className="mt-1">Role: {invitation.preview.operatingTitle}</p> : null}
+                  {invitation.preview.responsibilityTags.length ? <p className="mt-1">Responsibilities: {invitation.preview.responsibilityTags.join(", ")}</p> : null}
+                </div>
+              </>
+            ) : isSignUp ? <p className="mt-3 text-[13px] font-medium text-muted-foreground/72">Start with your artist.</p> : null}
 
             <form className="mt-8 space-y-4" onSubmit={handleSubmit}>
+              {isSignUp ? <Field label={invitation ? "Your name" : "Name"} value={name} onChange={setName} autoComplete="name" required disabled={pending} /> : null}
               <Field label="Email" value={email} onChange={setEmail} type="email" autoComplete="email" required disabled={pending} />
               <Field
                 label="Password"

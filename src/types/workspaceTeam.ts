@@ -16,6 +16,7 @@ export type WorkspaceTeamCapability = WorkspaceScope & {
   occupiedSeats: number;
   reservedSeats: number;
   endsAt: string | null;
+  firstRunCompletedAt?: string | null;
 };
 export type TeamInvitation = {
   id: string;
@@ -27,3 +28,21 @@ export type TeamInvitation = {
   responsibilityTags: string[];
 };
 export type TeamResponsibilities = { operatingTitle: string | null; responsibilityTags: string[] };
+export type TeamInvitationPreview = {
+  teamName: string;
+  artistName: string;
+  operatingTitle: string | null;
+  responsibilityTags: string[];
+  expiresAt: string;
+};
+export type TeamInvitationDeliveryStatus = "sent" | "failed" | "skipped";
+export type TeamInvitationMutation = {
+  invitation: TeamInvitation;
+  token: string;
+  emailStatus?: TeamInvitationDeliveryStatus;
+};
+export type TeamFirstRunInput = WorkspaceScope & {
+  teamName: string;
+  operatingTitle: string | null;
+  responsibilityTags: string[];
+};

@@ -120,6 +120,53 @@ describe("provider-aware billing service", () => {
     expect(calls.map((call) => call.name)).not.toContain("paystack-initialize-checkout");
   });
 
+  it("uses explicit Paddle pricing and forwards the Team plan for both intervals", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "NG" }))));
+    const teamPricing = {
+      ...pricing,
+      paddle: {
+        ...pricing.paddle,
+        team: {
+          planKey: "team_6" as const,
+          productId: "pro_team",
+          priceId: { monthly: "pri_team_month", yearly: "pri_team_year" },
+          seatLimit: 6 as const,
+          artistLimit: 1 as const,
+        },
+      },
+    };
+    const calls: Array<{ name: string; body: any }> = [];
+    const client = { functions: { invoke: async (name: string, options?: { body?: any }) => {
+      calls.push({ name, body: options?.body });
+      if (name === "billing-pricing-config") return { data: teamPricing, error: null };
+      if (name === "paddle-create-checkout") {
+        const interval = options?.body?.interval === "yearly" ? "yearly" : "monthly";
+        return { data: {
+          checkoutSessionId: `checkout-team-${interval}`, productId: "pro_team", priceId: interval === "yearly" ? "pri_team_year" : "pri_team_month", interval,
+          expiresAt: "2026-07-16T18:00:00Z",
+          customData: { version: 1, checkoutSessionId: `checkout-team-${interval}`, correlationToken: "secret" },
+        }, error: null };
+      }
+      throw new Error(`Unexpected function: ${name}`);
+    } } } as unknown as SupabaseClient;
+
+    const service = createSupabaseBillingService(client);
+    const monthly = await service.prepareProviderCheckout!({ user, candidate, interval: "monthly", planKey: "team_6", providerPreference: "paddle" });
+    const yearly = await service.prepareProviderCheckout!({ user, candidate, interval: "yearly", planKey: "team_6", providerPreference: "paddle" });
+
+    expect(monthly).toMatchObject({ provider: "paddle", planKey: "team_6", productId: "pro_team", priceId: "pri_team_month" });
+    expect(yearly).toMatchObject({ provider: "paddle", planKey: "team_6", productId: "pro_team", priceId: "pri_team_year" });
+    expect(monthly.intervalOptions).toEqual({
+      monthly: { priceId: "pri_team_month", formattedTotal: "£16.00" },
+      yearly: { priceId: "pri_team_year", formattedTotal: "£16.00" },
+    });
+    expect(calls.filter((call) => call.name === "paddle-create-checkout").map((call) => call.body)).toEqual([
+      expect.objectContaining({ interval: "monthly", planKey: "team_6" }),
+      expect.objectContaining({ interval: "yearly", planKey: "team_6" }),
+    ]);
+    expect(calls.map((call) => call.name)).not.toContain("paystack-initialize-checkout");
+  });
+
   it("initializes Paddle Retain with the existing live Paddle customer id", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ countryCode: "GB" }))));
     const client = { functions: { invoke: async (name: string) => {

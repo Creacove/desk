@@ -7,6 +7,9 @@ import {
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
+import { buildManagerHumanTaskGenerationContract } from "../_shared/managerHumanTaskGenerationContract.ts";
+import { normalizeHumanTaskAssignments, type TaskAssignmentContext } from "../_shared/taskAssignment.ts";
+import { loadActiveWorkspaceRoster } from "../_shared/workspaceRoster.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,6 +54,8 @@ type ManagerTaskReview = {
     userResponsibility: string;
     riskIfLate: string;
     estimatedMinutes: number;
+    assigneeUserId: string | null;
+    assignmentReason: string | null;
   }>;
   permissionRequests: Array<{ title: string; requestType: string; body: string; risk: string }>;
 };
@@ -93,7 +98,7 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
 
     db = createClient(supabaseUrl, serviceRoleKey);
     failureStage = "load_review_context";
-    const context = await loadReviewContext(db, input, user.id);
+    const { reviewContext: context, assignmentContext } = await loadReviewContext(db, input, user.id);
     try {
       await assertWorkspaceOperation(db, { scope: input, actorUserId: user.id, operation: "execute_task", taskId: input.taskId });
     } catch (error) {
@@ -111,7 +116,7 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     usageId = await createUsageEvent(db, input, runId);
 
     failureStage = "openai_review";
-    const { review, usage } = await callOpenAIManagerReview(context);
+    const { review, usage } = await callOpenAIManagerReview(context, assignmentContext);
     failureStage = "validate_review_continuation";
     await preflightReviewContinuation(db, context, runId, review);
 
@@ -221,6 +226,22 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
   if (taskError) throw taskError;
   if (!task?.mission_id) throw new Error("Manager task review task was not found.");
 
+  let assignmentContext: TaskAssignmentContext = { roster: null, teamEnabled: false };
+  try {
+    const [{ data: capability, error: capabilityError }, roster] = await Promise.all([
+      db.rpc("get_workspace_team_capability_v1", { p_artist_workspace_id: input.artistWorkspaceId }),
+      loadActiveWorkspaceRoster(db, input),
+    ]);
+    if (capabilityError) throw capabilityError;
+    assignmentContext = {
+      roster,
+      teamEnabled: capability?.enabled === true && capability?.entitled === true,
+    };
+  } catch {
+    // Roster failure must fail closed. The model receives no assignable users,
+    // and every proposed identity is normalized to unassigned.
+  }
+
   const [profile, mission, checkpoint, missionTasks, taskSteps, previousResults, existingCompletedResult, memory, events, managerPackets, submittedDocuments, submittedManagerDraft, canonicalMusicPackage] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context", input, 1),
     selectMission(db, input, task.mission_id),
@@ -249,7 +270,7 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     throw new Error("Manager task review requires the task result note.");
   }
 
-  return {
+  const reviewContext = {
     packetVersion: "manager_task_result_review_v1",
     submittedByUserId,
     generatedAt: new Date().toISOString(),
@@ -268,14 +289,17 @@ async function loadReviewContext(db: any, input: ReviewInput, submittedByUserId:
     submittedDocuments,
     submittedManagerDraft,
     canonicalMusicPackage,
+    activeTeam: assignmentContext.teamEnabled ? assignmentContext.roster?.members ?? [] : [],
     policy: {
       internalWorkspaceUpdatesAllowed: true,
       externalExpensiveLegalFinancialPublicActionsRequirePermission: true,
       reviewMustUpdateMissionState: true,
       memoryAfterMeaningfulResult: true,
       submittedDocumentsAreOptionalContext: true,
+      teamAssignmentRequiresCanonicalRoster: true,
     },
   };
+  return { reviewContext, assignmentContext };
 }
 
 function assertTaskCanBeReviewed(task: { status?: unknown }, hasCompletedResult: boolean) {
@@ -341,7 +365,7 @@ function isTaskReviewCompletionConflict(error: unknown) {
   return /task_results_one_completed_per_task_idx|operating_events_one_task_completion_idx|task_state_events_one_task_completion_idx/.test(`${message} ${detail}`);
 }
 
-async function callOpenAIManagerReview(context: unknown) {
+async function callOpenAIManagerReview(context: unknown, assignmentContext: TaskAssignmentContext) {
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${requireEnv("OPENAI_API_KEY")}`, "Content-Type": "application/json" },
@@ -359,6 +383,7 @@ async function callOpenAIManagerReview(context: unknown) {
         "After the final required task, choose met, needs_revision, or watching_signal and explain the decision through checkpointRecommendation.",
         "Do not create busywork. Add follow-up work only when the result changes what the mission needs next.",
         "Every human follow-up must be immediately executable: provide at least two distinct ordered steps (at least four for content/video execution), a concrete completion expectation, the exact work Desk will do, the exact work the artist/team must do, and the risk of delay. Desk must complete the Manager responsibility itself; never assign research, analysis, drafting, interpretation, or planning back to the artist.",
+        buildManagerHumanTaskGenerationContract(),
       ].join("\n"),
       input: JSON.stringify(context),
       text: { format: { type: "json_schema", ...reviewJsonSchema } },
@@ -369,7 +394,7 @@ async function callOpenAIManagerReview(context: unknown) {
     throw new Error(`Manager task review request failed with status ${response.status}: ${body.slice(0, 500)}`);
   }
   const payload = await response.json();
-  const normalizedReview = normalizeReview(readOutputText(payload));
+  const normalizedReview = normalizeReviewAssignments(normalizeReview(readOutputText(payload)), assignmentContext);
   return {
     review: applyCanonicalEvidence(normalizedReview, context),
     usage: isRecord(payload.usage) ? payload.usage : {},
@@ -417,7 +442,7 @@ const reviewJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "purpose", "ownerRole", "workMode", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "managerResponsibility", "userResponsibility", "riskIfLate", "estimatedMinutes"],
+          required: ["title", "purpose", "ownerRole", "workMode", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "managerResponsibility", "userResponsibility", "riskIfLate", "estimatedMinutes", "assigneeUserId", "assignmentReason"],
           properties: {
             title: { type: "string" },
             purpose: { type: "string" },
@@ -431,6 +456,8 @@ const reviewJsonSchema = {
             userResponsibility: { type: "string" },
             riskIfLate: { type: "string" },
             estimatedMinutes: { type: "integer", minimum: 5, maximum: 240 },
+            assigneeUserId: { type: ["string", "null"] },
+            assignmentReason: { type: ["string", "null"] },
           },
         },
       },
@@ -1045,6 +1072,8 @@ function normalizeReview(raw: string): ManagerTaskReview {
       userResponsibility: readString(item.userResponsibility, ""),
       riskIfLate: readString(item.riskIfLate, ""),
       estimatedMinutes: Math.max(5, Math.min(240, Number.isFinite(item.estimatedMinutes) ? Math.round(Number(item.estimatedMinutes)) : 30)),
+      assigneeUserId: typeof item.assigneeUserId === "string" ? item.assigneeUserId.trim() || null : null,
+      assignmentReason: typeof item.assignmentReason === "string" ? item.assignmentReason.trim() || null : null,
     })).filter((item) =>
       item.title && item.purpose && item.steps.length >= 2 && item.completionExpectation &&
       item.managerResponsibility && item.userResponsibility && item.riskIfLate
@@ -1055,6 +1084,13 @@ function normalizeReview(raw: string): ManagerTaskReview {
       body: readString(item.body, ""),
       risk: readString(item.risk, ""),
     })).filter((item) => item.title && item.body) : [],
+  };
+}
+
+function normalizeReviewAssignments(review: ManagerTaskReview, assignmentContext: TaskAssignmentContext): ManagerTaskReview {
+  return {
+    ...review,
+    followUpTasks: normalizeHumanTaskAssignments(review.followUpTasks, assignmentContext),
   };
 }
 

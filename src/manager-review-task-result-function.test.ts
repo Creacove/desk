@@ -90,6 +90,17 @@ describe("Manager task-result review function", () => {
     expect(functionSource).toContain('failureStage = "validate_review_continuation"');
   });
 
+  it("supplies and validates canonical Team assignments for task-result continuation", () => {
+    expect(functionSource).toContain('loadActiveWorkspaceRoster(db, input)');
+    expect(functionSource).toContain('rpc("get_workspace_team_capability_v1"');
+    expect(functionSource).toContain("activeTeam: assignmentContext.teamEnabled");
+    expect(functionSource).toContain("buildManagerHumanTaskGenerationContract()");
+    expect(functionSource).toContain('"assigneeUserId", "assignmentReason"');
+    expect(functionSource).toContain('assigneeUserId: { type: ["string", "null"] }');
+    expect(functionSource).toContain('assignmentReason: { type: ["string", "null"] }');
+    expect(functionSource).toContain("normalizeHumanTaskAssignments(review.followUpTasks, assignmentContext)");
+  });
+
   it("reviews the canonical Song Room package instead of requiring the upload to be reattached to the task", () => {
     expect(functionSource).toContain("loadTaskMusicPackage");
     expect(functionSource).toContain('from("music_assets")');

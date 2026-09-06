@@ -30,6 +30,17 @@ describe("Paddle server integration contract", () => {
     expect(checkout).toContain('.eq("client_request_id", input.clientRequestId)');
   });
 
+  it("uses authenticated human metadata for public user display names", () => {
+    const paddleCheckout = source("supabase", "functions", "paddle-create-checkout", "index.ts");
+    const paystackCheckout = source("supabase", "functions", "paystack-initialize-checkout", "index.ts");
+
+    for (const checkout of [paddleCheckout, paystackCheckout]) {
+      expect(checkout).toContain("readHumanDisplayName(user.user_metadata)");
+      expect(checkout).toContain('?? "Desk operator"');
+      expect(checkout).not.toContain("user.user_metadata?.name ?? selectedArtist.name");
+    }
+  });
+
   it("returns canonical pricing configuration only after authentication", () => {
     const pricing = source("supabase", "functions", "billing-pricing-config", "index.ts");
 

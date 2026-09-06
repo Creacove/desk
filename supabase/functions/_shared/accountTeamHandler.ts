@@ -4,6 +4,7 @@ type Dependencies = {
   rpc: (name: string, args: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }>;
   token: () => Promise<string>;
   hash: (token: string) => Promise<string>;
+  sendInvitationEmail?: (input: { invitation: unknown; token: string }) => Promise<void>;
   allowedOrigins: string[];
 };
 
@@ -26,11 +27,7 @@ export async function handleAccountTeamRequest(request: Request, deps: Dependenc
   if (origin && !deps.allowedOrigins.includes(origin)) return respond({ error: "Origin is not allowed." }, 403);
   if (request.method === "OPTIONS") return respond({ ok: true });
   if (request.method !== "POST") return respond({ error: "Method not allowed." }, 405);
-  const authorization = request.headers.get("authorization");
-  if (!authorization?.startsWith("Bearer ")) return respond({ error: "Sign in to continue." }, 401);
   try {
-    const user = await deps.authenticate(authorization);
-    if (!user?.id) return respond({ error: "Sign in to continue." }, 401);
     const raw = await request.text();
     if (raw.length > 16384) return respond({ error: "Request is too large." }, 413);
     let body: Record<string, unknown>;
@@ -39,6 +36,11 @@ export async function handleAccountTeamRequest(request: Request, deps: Dependenc
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
       body = parsed;
     } catch { return respond({ error: messages.TEAM_BAD_INPUT[1] }, 400); }
+
+    const authorization = request.headers.get("authorization");
+    if (!authorization?.startsWith("Bearer ")) return respond({ error: "Sign in to continue." }, 401);
+    const user = await deps.authenticate(authorization);
+    if (!user?.id) return respond({ error: "Sign in to continue." }, 401);
 
     const actor = { p_actor_user_id: user.id };
     let name: string;
@@ -85,6 +87,16 @@ export async function handleAccountTeamRequest(request: Request, deps: Dependenc
     const { data, error } = await deps.rpc(name, args);
     if (error) throw error;
     if (data == null) throw new Error("Missing transaction result");
+    if (invitationToken && deps.sendInvitationEmail) {
+      try {
+        await deps.sendInvitationEmail({ invitation: data, token: invitationToken });
+        return respond({ invitation: data, token: invitationToken, emailStatus: "sent" });
+      } catch {
+        // Creation already committed. Returning the token keeps Copy link
+        // usable when the provider is unavailable or misconfigured.
+        return respond({ invitation: data, token: invitationToken, emailStatus: "failed" });
+      }
+    }
     return respond(invitationToken ? { invitation: data, token: invitationToken } : data);
   } catch (error) {
     const message = error && typeof error === "object" && "message" in error ? String(error.message) : "";

@@ -256,6 +256,7 @@ export function PaywallPreviewScreen({
   pending = false,
   error,
   onSubscribe,
+  onPlanChange,
   onIntervalChange,
   onBack,
   onSignOut,
@@ -265,11 +266,13 @@ export function PaywallPreviewScreen({
   pending?: boolean;
   error?: string | null;
   onSubscribe: (interval: "monthly" | "yearly") => void | Promise<void>;
+  onPlanChange?: (planKey: "solo" | "team_6") => void | Promise<void>;
   onIntervalChange?: (interval: "monthly" | "yearly") => void | Promise<void>;
   onBack: () => void;
   onSignOut?: () => void;
 }) {
   const [selectedInterval, setSelectedInterval] = useState<"monthly" | "yearly">(preview.interval);
+  const [selectedPlanKey, setSelectedPlanKey] = useState<"solo" | "team_6">(preview.planKey ?? "solo");
   const artist = preview.artist;
   const intervalOption = preview.intervalOptions?.[selectedInterval];
   const displayPreview = { ...preview, ...intervalOption, interval: selectedInterval };
@@ -377,6 +380,48 @@ export function PaywallPreviewScreen({
             <p className="mt-3 max-w-[27rem] text-[13px] font-medium leading-relaxed text-muted-foreground/72">
               Your desk opens with catalog import, audience intelligence, Manager brief, and music reads.
             </p>
+
+            {onPlanChange ? (
+              <>
+                <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" role="group" aria-label="Desk plan">
+                  <button
+                    type="button"
+                    aria-label="Solo plan"
+                    aria-pressed={selectedPlanKey === "solo"}
+                    disabled={pending}
+                    onClick={() => {
+                      setSelectedPlanKey("solo");
+                      void onPlanChange("solo");
+                    }}
+                    className={cn(
+                      "min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25",
+                      selectedPlanKey === "solo" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Solo
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="Team plan"
+                    aria-pressed={selectedPlanKey === "team_6"}
+                    disabled={pending}
+                    onClick={() => {
+                      setSelectedPlanKey("team_6");
+                      void onPlanChange("team_6");
+                    }}
+                    className={cn(
+                      "min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-accent/25",
+                      selectedPlanKey === "team_6" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    Team
+                  </button>
+                </div>
+                {selectedPlanKey === "team_6" ? (
+                  <p className="mt-3 text-[12px] font-medium leading-relaxed text-muted-foreground/72">Up to 6 people. One shared artist Desk.</p>
+                ) : null}
+              </>
+            ) : null}
 
             <div className="mt-7 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Billing interval">
               {(["monthly", "yearly"] as const).map((interval) => {

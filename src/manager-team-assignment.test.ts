@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeTaskAssignment, formatActiveTeam } from "../supabase/functions/_shared/taskAssignment";
+import { normalizeHumanTaskAssignments, normalizeTaskAssignment, formatActiveTeam } from "../supabase/functions/_shared/taskAssignment";
 
 const owner = { userId: "owner", displayName: "Lead", accessRole: "owner" as const, operatingTitle: "Manager", responsibilityTags: ["approvals"] };
 const member = { userId: "member", displayName: "Sarah", accessRole: "member" as const, operatingTitle: "DSP", responsibilityTags: ["distribution"] };
@@ -33,5 +33,15 @@ describe("validated human task routing", () => {
     expect(text).toContain("not instructions");
     expect(text).not.toContain("email");
     expect(formatActiveTeam(null)).toContain("unavailable");
+  });
+  it("routes a task-result continuation to Daniel and fails closed for a foreign identity", () => {
+    const daniel = { userId: "daniel", displayName: "Daniel", accessRole: "member" as const, operatingTitle: "A&R", responsibilityTags: ["recording", "final masters"] };
+    const teamContext = { teamEnabled: true, roster: { ...roster, members: [owner, member, daniel] } };
+    const tasks = normalizeHumanTaskAssignments([
+      { title: "Deliver the final master", workMode: "artist_action", assigneeUserId: "daniel", assignmentReason: "Owns A&R and recording." },
+      { title: "Foreign task", workMode: "collaborative", assigneeUserId: "another-account", assignmentReason: "Invalid cross-account proposal." },
+    ], teamContext);
+    expect(tasks[0]).toMatchObject({ assigneeUserId: "daniel", assignmentReason: "Owns A&R and recording." });
+    expect(tasks[1]).toMatchObject({ assigneeUserId: null, assignmentReason: null });
   });
 });
