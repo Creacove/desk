@@ -10860,6 +10860,7 @@ data: ${JSON.stringify(event)}
         const artistMessage = await insertConversationMessage(db, input, conversationId, {
           speaker: "artist",
           label: "You",
+          authored_by_user_id: user.id,
           body: input.body.trim(),
           metadata: managerArtistMessageMetadata(input, attachments)
         });
