@@ -30,6 +30,41 @@ prompts, provider secrets, or access tokens in this file.
 | Operator and UTC run time | Codex coordinator; `2026-09-06T03:58:55Z` |
 | Hosted deployment | Not performed; separate-account staging is the next release phase |
 
+### Hosted Team billing cutover — 2026-09-06
+
+| Field | Value |
+| --- | --- |
+| Release code SHA | `f613f0f9a540cb37787dc79c848d179526dbb4d9` (`origin/main`) |
+| Scope | Team paid-plan catalog and production backend wiring |
+| Environment | Paddle production; Supabase hosted production |
+| Operator and UTC run time | Codex coordinator; `2026-09-06T14:55Z`–`2026-09-06T15:06Z` |
+| Supabase project | `bbwbxmnanccwottrmkqu` |
+| Team product | `pro_01m1vgtrnmvsd33zhgmxfwmae9` (`Desk Team`, active) |
+| Monthly price | `pri_01m1vj5x0z99ttsamh0p4zxvta` (`$99.00/Monthly`, active) |
+| Yearly price | `pri_01m1vjmg75511mb0txbq4njzfa` (`$1,000.00/Yearly`, active) |
+| Team limits | Six total people including owner; one artist workspace |
+| Paddle notification destination | Active platform webhook to `https://bbwbxmnanccwottrmkqu.supabase.co/functions/v1/paddle-webhook`; six subscribed events |
+| Frontend deployment | Vercel checks passed for `ordersounds-desk` and `ai-record-label-prototype` on the release code SHA |
+
+Hosted cutover evidence:
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Team Paddle catalog | `PASS` | Product page showed the active Team product with active `$99.00/Monthly` and `$1,000.00/Yearly` prices under the same product |
+| Supabase Team secrets | `PASS` | `PADDLE_TEAM_PRODUCT_ID`, `PADDLE_TEAM_MONTHLY_PRICE_ID`, and `PADDLE_TEAM_YEARLY_PRICE_ID` are present in hosted Edge Function secrets |
+| Authenticated live pricing config | `PASS` | A disposable confirmed QA user received `environment=production`, `planKey=team_6`, the exact three provider IDs, `seatLimit=6`, and `artistLimit=1`; the QA user was deleted immediately after the check |
+| Webhook boundary | `PASS` | Hosted endpoint returned `405` for GET and `401` for an unsigned JSON POST; Paddle destination remained active with the expected URL and six-event subscription |
+| Team billing contracts | `PASS` | Focused Vitest run: 6 files, 52 tests passed |
+| Full browser suite | `PASS` | `npm test`: 226 files passed; 1,682 tests passed and 5 skipped |
+| Production bundle | `PASS` | `npm run build`: 1,798 modules transformed; build completed successfully |
+| Billing Edge typecheck | `PASS` | `deno check` passed for pricing config, checkout, webhook, webhook processor, and customer portal entrypoints |
+| Migration parity | `PASS` | Hosted migration history matched local through `20260906000100` |
+| Exact-SHA deployment checks | `PASS` | GitHub combined status reported both Vercel deployments successful for `f613f0f9a540cb37787dc79c848d179526dbb4d9` |
+
+This cutover establishes the live catalog, runtime configuration, and guarded
+webhook path. It does not substitute for a real paid transaction or the
+multi-user owner/member pilot scenarios below.
+
 ## Automated evidence
 
 Record the exact command, result, timestamp, and a link to the retained log or
@@ -59,7 +94,7 @@ Local candidate results:
 | Production bundle | `PASS` | `npm run build`; 1,796 modules transformed |
 | Browser type regression | `NOT RUN` | Raw TypeScript retains the repository's large baseline; CI base-diff gate is required on the candidate commit |
 | Fresh Supabase database and connection races | `BLOCKED` | Local Docker/Supabase runtime unavailable; CI job is configured to apply all migrations and run the separate-connection harness |
-| Full browser suite | `BLOCKED` | 1,645 passed and 5 skipped; three load-sensitive failures passed when rerun in isolation. CI must establish the exact candidate result |
+| Full browser suite | `PASS` | Fresh exact-code-SHA run: 226 files passed; 1,682 tests passed and 5 skipped |
 
 The concurrency harness is intentionally disposable and synthetic. For a
 direct local connection, use an explicit loopback URL:
