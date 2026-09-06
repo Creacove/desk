@@ -13,10 +13,18 @@ on:
       - "src/features/desk/TodayRuntimeExecution.tsx"
       - "src/features/desk/todayProjection.ts"
       - "src/features/missions/**"
+      - "src/app/ProductionApp.tsx"
+      - "src/app/useWorkspaceLiveSync.ts"
+      - "src/features/settings/SettingsScreen.tsx"
+      - "src/features/settings/SettingsScreen.test.tsx"
       - "src/services/taskExecutionClient.ts"
+      - "src/services/productionSupabase.ts"
       - "src/services/todayExecutionSupabase.ts"
       - "src/services/todayQuestionAction.ts"
       - "src/services/todayPermissionAction.ts"
+      - "src/services/workspaceLiveSync.ts"
+      - "src/types/cleanProduction.ts"
+      - "src/types/productionApp.ts"
       - "src/manager-execution-loop.test.ts"
       - "src/manager-adaptive-replan.test.ts"
       - "src/manager-world-model-question-engine.test.ts"
@@ -29,6 +37,17 @@ on:
       - "src/manager-career-watch.test.ts"
       - "src/manager-e2e-golden.test.ts"
       - "src/manager-production-hardening.test.ts"
+      - "src/*team*.test.ts"
+      - "src/**/*team*.test.ts"
+      - "src/features/team/**"
+      - "src/account-team-function.test.ts"
+      - "src/workspace-team-roster.test.ts"
+      - "src/workspace-team-authority.test.ts"
+      - "src/workspace-team-service.test.ts"
+      - "src/manager-team-assignment.test.ts"
+      - "src/services/workspaceTeamService.ts"
+      - "src/services/teamInviteRoute.ts"
+      - "src/types/workspaceTeam.ts"
       - "supabase/functions/manager-artist-understanding/**"
       - "supabase/functions/manager-career-watch/**"
       - "supabase/functions/manager-career-watch-dispatcher/**"
@@ -56,6 +75,22 @@ on:
       - "supabase/functions/_shared/missionGraphPersistence.ts"
       - "supabase/functions/_shared/manager-conversation/context.ts"
       - "supabase/functions/_shared/artistUnderstanding.ts"
+      - "supabase/functions/account-team/**"
+      - "supabase/functions/_shared/accountTeamHandler.ts"
+      - "supabase/functions/_shared/workspaceAuthorization.ts"
+      - "supabase/functions/_shared/workspaceRoster.ts"
+      - "supabase/functions/_shared/taskAssignment.ts"
+      - "supabase/functions/_shared/*team*"
+      - "supabase/functions/manager-review-task-result/**"
+      - "supabase/functions/mission-genesis/**"
+      - "supabase/migrations/*workspace_identity_boundary*"
+      - "supabase/migrations/*artist_team*"
+      - "supabase/tests/artist_team_*.sql"
+      - "scripts/test-team-database.mjs"
+      - "docs/operations/team-contract-v1.md"
+      - "docs/operations/team-release-evidence.md"
+      - "docs/production-release-runbook.md"
+      - ".github/workflows/ci.yml"
       - "supabase/migrations/*manager_runtime*"
       - "supabase/migrations/*manager_production_hardening*"
       - "supabase/migrations/*manager_runtime_limits*"
@@ -174,6 +209,49 @@ jobs:
           supabase/functions/send-split-confirmations/index.ts
           supabase/functions/workflow-recovery/index.ts
 
+  team-contract:
+    name: Artist Team focused browser, source and Deno checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run focused Team browser contracts
+        run: >-
+          npx vitest run --environment jsdom --pool=vmThreads
+          src/account-team-function.test.ts
+          src/workspace-team-roster.test.ts
+          src/workspace-team-authority.test.ts
+          src/workspace-team-service.test.ts
+          src/manager-team-assignment.test.ts
+          src/manager-team-today.test.ts
+          src/team-billing-plan.test.ts
+          src/features/team/AcceptTeamInvitation.test.tsx
+          src/features/team/TaskAssigneeControl.test.tsx
+          src/features/team/YourTeamPanel.test.tsx
+          src/features/settings/SettingsScreen.test.tsx
+      - name: Check Team Edge boundaries
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Deno check Team entrypoint and shared modules
+        run: >-
+          deno check
+          supabase/functions/account-team/index.ts
+          supabase/functions/_shared/accountTeamHandler.ts
+          supabase/functions/_shared/workspaceAuthorization.ts
+          supabase/functions/_shared/workspaceRoster.ts
+          supabase/functions/_shared/taskAssignment.ts
+      - name: Check Team migration and source contracts
+        run: node scripts/test-team-database.mjs --source-only
+
   runtime-database:
     name: Fresh Manager runtime database smoke
     runs-on: ubuntu-latest
@@ -235,6 +313,13 @@ jobs:
           done
           for pid in $pids; do wait "$pid"; done
           docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres < supabase/tests/manager_production_concurrency_verify.sql
+      - name: Verify Team source contracts and separate-connection races
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_CONTAINER="$(docker ps --filter 'name=supabase_db_' --format '{{.Names}}' | head -n 1)"
+          if [ -z "$DB_CONTAINER" ]; then echo 'Supabase database container was not found.' >&2; exit 1; fi
+          node scripts/test-team-database.mjs --target local --docker-container "$DB_CONTAINER"
       - name: Stop local Supabase
         if: always()
         run: supabase stop --no-backup || true

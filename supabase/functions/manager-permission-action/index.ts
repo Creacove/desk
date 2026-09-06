@@ -3,6 +3,7 @@ import { captureAppError } from "../_shared/appError.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { fetchProviderWithTimeout } from "../_shared/managerRuntimeGuardrails.ts";
+import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -60,6 +61,15 @@ Deno.serve(withAppErrorCapture("manager-permission-action", async (request) => {
       artistWorkspaceId: permission.artist_workspace_id,
       artistId: permission.artist_id,
     });
+    try {
+      await assertWorkspaceOperation(workflowDb, {
+        scope: { accountId: permission.account_id, artistWorkspaceId: permission.artist_workspace_id, artistId: permission.artist_id },
+        actorUserId: authData.user.id,
+        operation: "approve",
+      });
+    } catch {
+      return json({ error: "Only the workspace owner can resolve this approval." }, 403);
+    }
 
     const resolver = permission.created_from_action_id
       ? "resolve_manager_permission_v1"

@@ -169,6 +169,12 @@ async function fulfillCompletedTransaction(
   if (checkoutError) throw checkoutError;
   if (!checkout) throw new Error("Paddle checkout could not be loaded.");
 
+  if (isInitialCheckoutTransactionReplay(checkout, transaction)) {
+    await reconcileVerifiedCheckoutPlan(db, customData.checkoutSessionId, transaction.subscriptionId, item.price.productId, item.price.id);
+    await dispatchSetupIfNeeded(db, customData.checkoutSessionId, supabaseUrl, serviceRoleKey);
+    return;
+  }
+
   if (checkout.status === "paid") {
     const { error: renewalError } = await db.rpc("record_verified_subscription_renewal", {
       p_provider: "paddle",
@@ -189,6 +195,7 @@ async function fulfillCompletedTransaction(
       p_scheduled_change_at: scheduled?.effectiveAt ?? null,
     });
     if (renewalError) throw renewalError;
+    await reconcileVerifiedCheckoutPlan(db, customData.checkoutSessionId, transaction.subscriptionId, item.price.productId, item.price.id);
     return;
   }
 
@@ -217,6 +224,8 @@ async function fulfillCompletedTransaction(
   const fulfillment = Array.isArray(fulfilled) ? fulfilled[0] : fulfilled;
   if (!fulfillment?.artist_workspace_id) throw new Error("Verified Paddle checkout was not fulfilled.");
 
+  await reconcileVerifiedCheckoutPlan(db, customData.checkoutSessionId, transaction.subscriptionId, item.price.productId, item.price.id);
+
   await sendPaidSubscriptionActivatedEmail({
     db,
     checkout,
@@ -229,20 +238,98 @@ async function fulfillCompletedTransaction(
     periodEnd: period?.endsAt ?? null,
   });
 
-  if (await shouldDispatchSetup(db, customData.checkoutSessionId)) {
-    const setupResponse = await fetch(`${supabaseUrl}/functions/v1/paid-workspace-setup`, {
+  await dispatchSetupIfNeeded(db, customData.checkoutSessionId, supabaseUrl, serviceRoleKey);
+}
+
+async function reconcileVerifiedCheckoutPlan(
+  db: any,
+  checkoutSessionId: string,
+  subscriptionId: string,
+  productId: string,
+  priceId: string,
+) {
+  const { data: checkout, error: checkoutError } = await db.from("billing_checkout_sessions")
+    .select("provider,provider_product_id,provider_price_id,plan_key,interval,status,account_id,artist_workspace_id")
+    .eq("id", checkoutSessionId)
+    .maybeSingle();
+  if (checkoutError) throw checkoutError;
+  if (!checkout || checkout.status !== "paid" || checkout.provider !== "paddle") {
+    throw new Error("Verified checkout plan is unavailable.");
+  }
+  if (checkout.provider_product_id !== productId || checkout.provider_price_id !== priceId) {
+    throw new Error("Verified checkout plan does not match the provider catalog.");
+  }
+  const planKey = checkout.plan_key === "team_6" ? "team_6" : "solo";
+  const billingInterval = checkout.interval === "yearly" ? "yearly" : "monthly";
+  if (planKey === "team_6" && billingInterval !== "monthly") {
+    throw new Error("Verified Team checkout must be monthly.");
+  }
+
+  const { error: catalogError } = await db.from("billing_plan_catalog").upsert({
+    provider: "paddle",
+    provider_product_id: productId,
+    provider_price_id: priceId,
+    plan_key: planKey,
+    billing_interval: billingInterval,
+    seat_limit: planKey === "team_6" ? 6 : 1,
+    artist_limit: 1,
+    active: true,
+  }, { onConflict: "provider,provider_product_id,provider_price_id" });
+  if (catalogError) throw catalogError;
+
+  const { data: subscription, error: subscriptionError } = await db.from("billing_subscriptions")
+    .update({ plan_key: planKey })
+    .eq("provider", "paddle")
+    .eq("provider_subscription_code", subscriptionId)
+    .eq("provider_product_id", productId)
+    .eq("provider_price_id", priceId)
+    .select("account_id,artist_workspace_id")
+    .maybeSingle();
+  if (subscriptionError) throw subscriptionError;
+  if (!subscription?.account_id || !subscription.artist_workspace_id) {
+    throw new Error("Verified subscription plan could not be reconciled.");
+  }
+
+  if (planKey === "team_6") {
+    const { data: workspace, error: workspaceError } = await db.from("artist_workspaces")
+      .select("artist_id")
+      .eq("id", subscription.artist_workspace_id)
+      .eq("account_id", subscription.account_id)
+      .maybeSingle();
+    if (workspaceError) throw workspaceError;
+    if (!workspace?.artist_id) throw new Error("Verified Team workspace scope is unavailable.");
+    const { error: settingsError } = await db.from("workspace_team_settings").upsert({
+      account_id: subscription.account_id,
+      artist_workspace_id: subscription.artist_workspace_id,
+      artist_id: workspace.artist_id,
+      enabled: true,
+      pilot_ends_at: null,
+    }, { onConflict: "account_id" });
+    if (settingsError) throw settingsError;
+  }
+}
+
+function isInitialCheckoutTransactionReplay(checkout: Record<string, any>, transaction: Record<string, any>) {
+  return checkout.status === "paid"
+    && typeof checkout.provider_transaction_id === "string"
+    && checkout.provider_transaction_id === transaction.id;
+}
+
+async function dispatchSetupIfNeeded(db: any, checkoutSessionId: string, supabaseUrl: string, serviceRoleKey: string) {
+  if (!(await shouldDispatchSetup(db, checkoutSessionId))) return;
+
+  const setupResponse = await fetch(`${supabaseUrl}/functions/v1/paid-workspace-setup`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${serviceRoleKey}`,
       apikey: serviceRoleKey,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ checkoutSessionId: customData.checkoutSessionId, phase: "discovery" }),
-    });
-    if (!setupResponse.ok) {
-      const message = await setupResponse.text().catch(() => "");
-      throw new Error(`Discovery dispatch failed (${setupResponse.status}): ${message.slice(0, 300)}`);
-    }
+    body: JSON.stringify({ checkoutSessionId, phase: "discovery" }),
+  });
+  if (!setupResponse.ok) {
+    const message = await setupResponse.text().catch(() => "");
+    throw new Error(`Discovery dispatch failed (${setupResponse.status}): ${message.slice(0, 300)}`);
   }
 }
 

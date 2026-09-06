@@ -3,6 +3,8 @@ import type {
   ManagerConversationOutput,
   ManagerMissionGraphDecision,
 } from "./openaiManagerConversation.ts";
+import { loadActiveWorkspaceRoster, type WorkspaceRoster } from "./workspaceRoster.ts";
+import { normalizeTaskAssignment } from "./taskAssignment.ts";
 
 type MissionGraphInput = {
   accountId: string;
@@ -210,6 +212,18 @@ async function writeMissionPlan(
   decision: ManagerMissionGraphDecision,
 ) {
   const taskWork: ManagerConversationCreatedWork[] = [];
+  let roster: WorkspaceRoster | null = null;
+  let teamEnabled = false;
+  try {
+    const [loadedRoster, { data: capability, error: capabilityError }] = await Promise.all([
+      loadActiveWorkspaceRoster(db, input),
+      db.rpc("get_workspace_team_capability_v1", { p_artist_workspace_id: input.artistWorkspaceId }),
+    ]);
+    roster = loadedRoster;
+    teamEnabled = !capabilityError && capability?.enabled === true && capability?.entitled === true;
+  } catch {
+    // Fail closed to an unassigned task when roster/capability cannot be validated.
+  }
   const { data: existingPlans, error: queryError } = await db
     .from("mission_plan_versions")
     .select("id,version")
@@ -296,6 +310,7 @@ async function writeMissionPlan(
   }
 
   for (const task of decision.tasks) {
+    const assignment = normalizeTaskAssignment(task, { roster, teamEnabled }, task.workMode);
     const checkpointId = checkpointIds.get(task.primaryCheckpointKey);
     if (!checkpointId) throw new Error(`Manager mission graph task references missing checkpoint: ${task.primaryCheckpointKey}`);
     const { data: taskRow, error } = await db.from("tasks").insert({
@@ -310,6 +325,9 @@ async function writeMissionPlan(
       schedule_key: task.scheduleKey || null,
       owner_role: task.ownerRole || "Manager",
       work_mode: "manager_work",
+      assignee_user_id: null,
+      assignment_reason: null,
+      assignment_source: null,
       priority: 1,
       status: "proposed",
       approval_state: "not_required",
@@ -348,7 +366,7 @@ async function writeMissionPlan(
       if (stepError) throw stepError;
     }
 
-    await activateHumanTask(db, taskRow.id, task.workMode);
+    await activateHumanTask(db, taskRow.id, task.workMode, assignment);
   }
 
   for (const permission of decision.permissionRequests) {
@@ -424,10 +442,16 @@ async function preflightMissionTasks(
   }
 }
 
-async function activateHumanTask(db: any, taskId: string, workMode: string) {
+async function activateHumanTask(db: any, taskId: string, workMode: string, assignment: ReturnType<typeof normalizeTaskAssignment>) {
   if (workMode === "manager_work") return;
   const { error } = await db.from("tasks")
-    .update({ work_mode: workMode })
+    .update({
+      work_mode: workMode,
+      assignee_user_id: assignment.assigneeUserId,
+      assignment_reason: assignment.assignmentReason,
+      assignment_source: assignment.assignmentSource,
+      assignment_version: assignment.assigneeUserId ? 1 : 0,
+    })
     .eq("id", taskId)
     .eq("work_mode", "manager_work");
   if (error) throw error;

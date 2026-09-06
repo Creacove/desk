@@ -2,6 +2,7 @@ import { Check, Clock3, Play, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button, IconButton } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
+import { TaskAssigneeControl, type TaskAssignmentContext } from "../team/TaskAssigneeControl";
 import type { TaskExecutionState, TaskMoveReview } from "../../services/taskExecutionClient";
 import type {
   MissionCheckpointViewModel,
@@ -35,6 +36,7 @@ export function TaskSheet({
   onComplete,
   onUpload,
   onWorkWithManager,
+  teamAssignment,
 }: {
   task: MissionTaskViewModel;
   checkpoint?: MissionCheckpointViewModel;
@@ -53,6 +55,7 @@ export function TaskSheet({
   onComplete: (intent: CompletionIntent, note: string) => void;
   onUpload: (deliverable: MissionTaskDeliverableViewModel, file: File) => void;
   onWorkWithManager: () => void;
+  teamAssignment?: TaskAssignmentContext;
 }) {
   const [intent, setIntent] = useState<CompletionIntent | null>(null);
   const [note, setNote] = useState("");
@@ -75,6 +78,9 @@ export function TaskSheet({
   const canActNow = !unavailable && !scheduledForLater;
   const canComplete = canActNow && (task.approvalState !== "needs approval" || approved);
   const noteRequired = intent === "blocked" || completionMode === "result_note";
+  const viewer = teamAssignment?.roster.members.find((member) => member.userId === teamAssignment.viewerUserId);
+  const canOperateTask = !teamAssignment || viewer?.accessRole === "owner" || task.assigneeUserId === teamAssignment.viewerUserId;
+  const canApproveTask = !teamAssignment || viewer?.accessRole === "owner";
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow;
@@ -145,6 +151,14 @@ export function TaskSheet({
             </div>
           </div>
 
+          {teamAssignment ? (
+            <TaskAssigneeControl
+              {...teamAssignment}
+              assigneeUserId={task.assigneeUserId}
+              assignmentVersion={task.assignmentVersion}
+            />
+          ) : null}
+
           {availableAfter ? (
             <p className="mt-5 rounded-[12px] bg-foreground/[0.035] px-3.5 py-3 text-[12px] font-medium text-muted-foreground">
               Available after {availableAfter}
@@ -187,7 +201,7 @@ export function TaskSheet({
                         {deliverable.fileName || humanDeliverableStatus(deliverable.status)}
                       </p>
                     </div>
-                    {!["uploaded", "checking", "accepted"].includes(deliverable.status) ? (
+                    {!["uploaded", "checking", "accepted"].includes(deliverable.status) && canOperateTask ? (
                       <Button
                         type="button"
                         variant="secondary"
@@ -255,7 +269,16 @@ export function TaskSheet({
             </p>
           ) : null}
 
-          {done ? (
+          {!canOperateTask ? (
+            <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
+              <p className="text-[13px] font-semibold text-foreground">This task is with another team member.</p>
+              <p className="mt-1 text-[12px] font-medium text-muted-foreground">You can follow its progress here.</p>
+            </div>
+          ) : task.approvalState === "needs approval" && !approved && !canApproveTask ? (
+            <div className="mt-7 rounded-[14px] bg-foreground/[0.035] px-4 py-4">
+              <p className="text-[13px] font-semibold text-foreground">Waiting for owner approval.</p>
+            </div>
+          ) : done ? (
             <div className="mt-7 flex min-h-12 items-center gap-2 rounded-[14px] bg-brand-accent/[0.07] px-4 text-[13px] font-semibold text-brand-accent">
               <Check className="h-4 w-4" />
               Done
@@ -343,7 +366,7 @@ export function TaskSheet({
             </div>
           ) : (
             <div className="mt-7 grid gap-2 border-t border-foreground/8 pt-5">
-              {task.approvalState === "needs approval" && !approved ? (
+              {task.approvalState === "needs approval" && !approved && canApproveTask ? (
                 <Button type="button" size="lg" onClick={onApprove} pending={pending} className="w-full">
                   Approve
                 </Button>

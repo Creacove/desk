@@ -97,6 +97,16 @@ function compactOpeningPacket(packet: unknown) {
     music: compactMusic(source.music),
     activeMissions: compactMissionList(canonicalMissions.length ? canonicalMissions : activeMissionFallback(source.existingMissions), 8),
     activeTasks: compactTaskList(canonicalTasks.length ? canonicalTasks : activeTaskFallback(source.existingTasks), 12),
+    activeTeam: array(source.activeTeam).slice(0, 6).map((item) => {
+      const member = record(item);
+      return {
+        userId: compactText(member.userId, 120),
+        displayName: compactText(member.displayName, 100),
+        accessRole: compactText(member.accessRole, 20),
+        operatingTitle: compactText(member.operatingTitle, 80),
+        responsibilityTags: compactStringList(member.responsibilityTags, 12, 48),
+      };
+    }),
     recentAgentReports: compactAgentReportList(source.recentAgentReports, 4),
     intelligenceSummary: {
       packetType: compactText(latestIntelligence.packet_type, 120),

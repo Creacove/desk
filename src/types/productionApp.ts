@@ -295,6 +295,7 @@ export type ProductionBillingPricing = {
   productId?: string;
   paddleConfig?: ProductionPaddleConfig;
   intervalOptions: Record<"monthly" | "yearly", ProductionBillingPrice>;
+  team?: ProductionBillingPrice & { planKey: "team_6"; productId: string; seatLimit: 6; artistLimit: 1 };
 };
 
 export type ProductionBillingCheckoutPreview = {
@@ -308,6 +309,7 @@ export type ProductionBillingCheckoutPreview = {
   currency?: string;
   formattedTotal?: string;
   interval: "monthly" | "yearly";
+  planKey?: "solo" | "team_6";
   productId?: string;
   priceId?: string;
   paddleConfig?: ProductionPaddleConfig;
@@ -348,6 +350,7 @@ export type ProductionBillingService = {
     candidate: ProductionSpotifyArtistCandidate;
     existingWorkspace?: ProductionWorkspace;
     interval: "monthly" | "yearly";
+    planKey?: "solo" | "team_6";
     providerPreference?: ProductionBillingProviderPreference;
   }): Promise<ProductionBillingCheckoutPreview>;
   openProviderCheckout?(input: {

@@ -169,20 +169,28 @@ export function createSupabaseAuthAdapter(client: SupabaseClient): ProductionAut
 
 export function createSupabaseWorkspaceLoader(client: SupabaseClient): ProductionWorkspaceLoader {
   return {
-    async loadActiveWorkspace() {
+    async loadActiveWorkspace(user) {
       const { data: memberships, error: membershipError } = await client
         .from("account_memberships")
         .select("account_id")
+        .eq("user_id", user.id)
         .eq("status", "active")
-        .limit(1);
+        .limit(50);
 
       if (membershipError) {
         throw membershipError;
       }
 
-      const accountId = memberships?.[0]?.account_id as string | undefined;
-      if (!accountId) {
+      const accountIds = [...new Set((memberships ?? []).map((membership) => membership.account_id as string).filter(Boolean))];
+      if (!accountIds.length) {
         return null;
+      }
+
+      let preferredWorkspaceId: string | null = null;
+      try {
+        preferredWorkspaceId = typeof window === "undefined" ? null : window.sessionStorage.getItem("ordersounds.workspace.active");
+      } catch {
+        preferredWorkspaceId = null;
       }
 
       const { data: workspaces, error: workspaceError } = await client
@@ -202,18 +210,27 @@ export function createSupabaseWorkspaceLoader(client: SupabaseClient): Productio
             "workspace_setup_runs!workspace_setup_runs_artist_workspace_id_fkey(id,status,current_stage,stage_status,last_error,checkout_session_id,updated_at)",
           ].join(", "),
         )
-        .eq("account_id", accountId)
+        .in("account_id", accountIds)
         .in("status", ["setup", "active"])
         .order("created_at", { ascending: false })
-        .limit(1);
+        .limit(50);
 
       if (workspaceError) {
         throw workspaceError;
       }
 
-      const workspace = workspaces?.[0] as WorkspaceRow | undefined;
+      const availableWorkspaces = (workspaces ?? []) as unknown as WorkspaceRow[];
+      const workspace = (preferredWorkspaceId
+        ? availableWorkspaces.find((candidate) => candidate.id === preferredWorkspaceId)
+        : undefined) ?? availableWorkspaces[0];
       if (!workspace) {
         return null;
+      }
+
+      try {
+        if (typeof window !== "undefined") window.sessionStorage.setItem("ordersounds.workspace.active", workspace.id);
+      } catch {
+        // Storage is a navigation convenience; membership and RLS remain authoritative.
       }
 
       return {
@@ -574,7 +591,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
       const paddle = await getPaddle(paddleConfig);
       const localized = await previewLocalizedPaddlePrices(
         paddle,
-        [pricing.paddle.priceId.monthly, pricing.paddle.priceId.yearly],
+        [pricing.paddle.priceId.monthly, pricing.paddle.priceId.yearly, ...(pricing.paddle.team?.priceId ? [pricing.paddle.team.priceId] : [])],
         serverCountryCode,
       );
       if (resolveBillingProvider(serverCountryCode, localized.countryCode, providerPreference) === "paystack") {
@@ -595,6 +612,16 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
             priceId: pricing.paddle.priceId.yearly,
           },
         },
+        ...(pricing.paddle.team?.priceId && pricing.paddle.team.productId ? {
+          team: {
+            planKey: "team_6" as const,
+            productId: pricing.paddle.team.productId,
+            priceId: pricing.paddle.team.priceId,
+            formattedTotal: localized.formattedTotals[pricing.paddle.team.priceId],
+            seatLimit: 6 as const,
+            artistLimit: 1 as const,
+          },
+        } : {}),
       };
     })();
     providerPricingCache.set(cacheKey, request);
@@ -606,21 +633,25 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
 
   return {
     loadProviderPricing,
-    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval, providerPreference = "auto" }) {
+    async prepareProviderCheckout({ user, candidate, existingWorkspace, interval, providerPreference = "auto", planKey = "solo" }) {
       const pricing = await loadProviderPricing({ existingWorkspace, providerPreference });
+      if (planKey === "team_6" && pricing.provider !== "paddle") throw new Error("Team checkout is available through Paddle only.");
       if (pricing.provider === "paystack") {
         const checkout = await initializePaystackCheckout(client, candidate, existingWorkspace, interval);
         return { ...checkout, intervalOptions: pricing.intervalOptions };
       }
 
-      const price = pricing.intervalOptions[interval];
-      if (!pricing.productId || !pricing.paddleConfig || !price.priceId) {
+      if (planKey === "team_6" && interval !== "monthly") throw new Error("Team is available monthly only.");
+      const price = planKey === "team_6" ? pricing.team : pricing.intervalOptions[interval];
+      const productId = planKey === "team_6" ? pricing.team?.productId : pricing.productId;
+      if (!productId || !pricing.paddleConfig || !price?.priceId) {
         throw new Error("Paddle pricing is incomplete. Refresh pricing and try again.");
       }
 
       const { data, error } = await client.functions.invoke("paddle-create-checkout", {
         body: {
           interval,
+          planKey,
           clientRequestId: createClientRequestId(),
           selectedArtist: candidate,
           ...(existingWorkspace ? { existingArtistWorkspaceId: existingWorkspace.artistWorkspaceId } : {}),
@@ -631,7 +662,7 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         checkoutSessionId?: string; productId?: string; priceId?: string; interval?: "monthly" | "yearly";
         expiresAt?: string; customData?: Record<string, unknown>;
       } | null;
-      if (!session?.checkoutSessionId || session.priceId !== price.priceId || session.productId !== pricing.productId || !session.customData) {
+      if (!session?.checkoutSessionId || session.priceId !== price.priceId || session.productId !== productId || !session.customData) {
         throw new Error("Paddle checkout did not match the displayed plan.");
       }
       return {
@@ -641,8 +672,9 @@ export function createSupabaseBillingService(client: SupabaseClient): Production
         status: "open",
         artist: candidate,
         interval,
+        planKey,
         formattedTotal: price.formattedTotal,
-        productId: session.productId,
+        productId,
         priceId: session.priceId,
         paddleConfig: pricing.paddleConfig,
         customData: session.customData,
@@ -852,19 +884,23 @@ async function loadBillingCountry() {
 
 function readBillingPricingConfig(value: unknown) {
   const data = value as {
-    paddle?: { environment?: "sandbox" | "production"; clientToken?: string; productId?: string; priceId?: { monthly?: string; yearly?: string } };
+    paddle?: { environment?: "sandbox" | "production"; clientToken?: string; productId?: string; priceId?: { monthly?: string; yearly?: string }; team?: { planKey?: "team_6"; productId?: string; priceId?: string; seatLimit?: 6; artistLimit?: 1 } | null };
     paystack?: { currency?: string; amountMinor?: { monthly?: number; yearly?: number } };
   } | null;
   if (
     !data?.paddle?.environment || !data.paddle.clientToken || !data.paddle.productId ||
     !data.paddle.priceId?.monthly || !data.paddle.priceId.yearly ||
+    (data.paddle.team != null && (
+      data.paddle.team.planKey !== "team_6" || !data.paddle.team.productId || !data.paddle.team.priceId ||
+      data.paddle.team.seatLimit !== 6 || data.paddle.team.artistLimit !== 1
+    )) ||
     data.paystack?.currency !== "NGN" || !Number.isSafeInteger(data.paystack.amountMinor?.monthly) ||
     !Number.isSafeInteger(data.paystack.amountMinor?.yearly)
   ) {
     throw new Error("Billing pricing configuration is incomplete.");
   }
   return data as {
-    paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string } };
+    paddle: { environment: "sandbox" | "production"; clientToken: string; productId: string; priceId: { monthly: string; yearly: string }; team?: { planKey: "team_6"; productId: string; priceId: string; seatLimit: 6; artistLimit: 1 } | null };
     paystack: { currency: "NGN"; amountMinor: { monthly: number; yearly: number } };
   };
 }
@@ -2663,7 +2699,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
 
         const { data: taskData, error: taskError } = await ownerFilters(client
           .from("tasks")
-          .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+          .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
         )
           .in("mission_id", missionRows.map((mission) => mission.id))
           .order("created_at", { ascending: true });
@@ -2702,7 +2738,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: true }),
           ownerFilters(client
             .from("tasks")
-            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
           )
             .eq("mission_id", missionId)
             .order("created_at", { ascending: true }),
@@ -2788,7 +2824,7 @@ export function createSupabaseProductionRepositories(client: SupabaseClient, wor
             .order("created_at", { ascending: true }),
           client
             .from("tasks")
-            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
+            .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,priority,approval_state,dependency,evidence_needed,completion_expectation,completion_mode,deliverable_title,deliverable_requirements,manager_responsibility,user_responsibility,risk_if_late")
             .eq("artist_workspace_id", workspace.artistWorkspaceId)
             .order("created_at", { ascending: true }),
           client
@@ -3260,6 +3296,9 @@ type TaskRow = {
   status: string;
   owner_role?: string | null;
   work_mode?: MissionTaskViewModel["workMode"] | null;
+  assignee_user_id?: string | null;
+  assignment_reason?: string | null;
+  assignment_version?: number | null;
   purpose?: string | null;
   deadline?: string | null;
   priority?: number | null;
@@ -6960,6 +6999,9 @@ function missionFromRow(
       checkpointId: task.primary_checkpoint_id ?? "",
       title: task.title,
       owner: task.owner_role ?? "Manager",
+      assigneeUserId: task.assignee_user_id ?? null,
+      assignmentReason: task.assignment_reason ?? null,
+      assignmentVersion: task.assignment_version ?? 0,
       deadline: task.deadline ? new Date(task.deadline).toLocaleDateString() : "Next review",
       approvalState: mapTaskApprovalState(task.approval_state),
       purpose: task.purpose ?? "",

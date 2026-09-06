@@ -27,6 +27,9 @@ export type TodayTaskState = {
   dependency?: string;
   riskIfLate?: string;
   createdAt?: string;
+  assigneeUserId?: string | null;
+  assignmentReason?: string;
+  assignmentVersion?: number;
 };
 
 export type TodayCheckpointState = {
@@ -77,6 +80,7 @@ export type TodayPermissionState = {
 
 export type TodayRuntimePacket = {
   now: string;
+  viewer?: { userId: string; accessRole: "owner" | "member" };
   missions: TodayMissionState[];
   tasks: TodayTaskState[];
   checkpoints: TodayCheckpointState[];
@@ -105,6 +109,7 @@ export type TodayManagerItem = {
   checkpointId?: string;
   estimatedMinutes?: number;
   owner?: string;
+  assigneeUserId?: string | null;
   availableFrom?: string;
   deadline?: string;
   dependencyImpact?: string;
@@ -115,6 +120,8 @@ export type TodayExecutionProjection = {
   primary?: TodayManagerItem;
   supporting: TodayManagerItem[];
   watches: TodayManagerItem[];
+  team: TodayManagerItem[];
+  unassigned: TodayManagerItem[];
   generatedAt: string;
 };
 
@@ -132,10 +139,17 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
   const checkpointById = new Map(packet.checkpoints.map((checkpoint) => [checkpoint.id, checkpoint]));
   const taskById = new Map(packet.tasks.map((task) => [task.id, task]));
   const actionable: TodayManagerItem[] = [];
+  const team: TodayManagerItem[] = [];
+  const unassigned: TodayManagerItem[] = [];
+  const viewer = packet.viewer;
 
   for (const question of packet.questions) {
     const mission = question.missionId ? missionById.get(question.missionId) : undefined;
     if (!mission || normalize(question.status) !== "pending" || isExpired(question.expiresAt, now)) continue;
+    if (viewer) {
+      const assignedUserId = question.taskId ? taskById.get(question.taskId)?.assigneeUserId : null;
+      if (assignedUserId ? assignedUserId !== viewer.userId : viewer.accessRole !== "owner") continue;
+    }
     actionable.push({
       id: question.id,
       kind: "question",
@@ -157,6 +171,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
   }
 
   for (const permission of packet.permissions) {
+    if (viewer && viewer.accessRole !== "owner") continue;
     const mission = permission.missionId ? missionById.get(permission.missionId) : undefined;
     if (!mission || normalize(permission.status) !== "pending" || isExpired(permission.expiresAt, now)) continue;
     const linkedTask = permission.taskId ? taskById.get(permission.taskId) : undefined;
@@ -195,6 +210,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
     const approvalState = normalize(task.approvalState);
     const blocked = taskStatus === "blocked" || approvalState === "blocked";
     const needsApproval = approvalState === "needs_approval" || taskStatus === "needs_approval";
+    if (viewer && needsApproval && viewer.accessRole !== "owner") continue;
     const urgent = isDueSoon(task.deadline, now);
     const inProgress = taskStatus === "in_progress";
     const priorityTier: TodayManagerItem["priorityTier"] = blocked || needsApproval ? 0 : urgent ? 1 : inProgress ? 2 : 3;
@@ -205,7 +221,7 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
         ? `One approval is blocking ${mission.title}.`
         : `${mission.title} is the priority today.`;
 
-    actionable.push({
+    const item: TodayManagerItem = {
       id: task.id,
       kind: needsApproval ? "permission" : "task",
       missionId: mission.id,
@@ -220,13 +236,19 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
       checkpointId: task.checkpointId,
       estimatedMinutes: validMinutes(task.estimatedMinutes),
       owner: task.ownerRole,
+      assigneeUserId: task.assigneeUserId,
       availableFrom: task.availableFrom,
       deadline: task.deadline,
       dependencyImpact: checkpoint?.dependencyImpact || task.dependency || task.riskIfLate,
-    });
+    };
+    if (viewer && task.assigneeUserId === null) unassigned.push(item);
+    else if (viewer && task.assigneeUserId && task.assigneeUserId !== viewer.userId) team.push(item);
+    else if (!viewer || task.assigneeUserId === viewer.userId) actionable.push(item);
   }
 
   actionable.sort(compareItems);
+  team.sort(compareItems);
+  unassigned.sort(compareItems);
   const primary = actionable[0];
   const supporting = actionable.slice(1, 3);
   const actionableMissionIds = new Set(actionable.map((item) => item.missionId));
@@ -266,6 +288,8 @@ export function projectTodayExecution(packet: TodayRuntimePacket): TodayExecutio
     primary,
     supporting,
     watches,
+    team,
+    unassigned,
     generatedAt: now.toISOString(),
   };
 }

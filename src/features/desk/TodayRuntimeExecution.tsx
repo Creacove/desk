@@ -10,6 +10,7 @@ import {
 import { answerTodayManagerQuestion } from "../../services/todayQuestionAction";
 import { loadTodayExecutionProjection } from "../../services/todayExecutionSupabase";
 import type { AttentionItem, MissionViewModel } from "../../types/cleanProduction";
+import type { WorkspaceRoster, WorkspaceScope } from "../../types/workspaceTeam";
 import { GuidedContextQuestion } from "../manager/ManagerComposer";
 import { getNextArtistTask, missionCheckpoints, missionTasks } from "../missions/missionModel";
 import type { TodayExecutionProjection, TodayManagerItem } from "./todayProjection";
@@ -21,6 +22,8 @@ type TodayRuntimeExecutionProps = {
   onManager: () => void;
   onOpenFallbackItem?: (item: AttentionItem) => void;
   refreshKey?: string | number;
+  /** undefined is solo; null means Team is active but its authenticated roster is still unavailable. */
+  teamContext?: { viewer: { userId: string; accessRole: "owner" | "member" }; scope: WorkspaceScope; roster: WorkspaceRoster } | null;
 };
 
 export function TodayRuntimeExecution({
@@ -30,8 +33,12 @@ export function TodayRuntimeExecution({
   onManager,
   onOpenFallbackItem = () => undefined,
   refreshKey = 0,
+  teamContext,
 }: TodayRuntimeExecutionProps) {
-  const fallback = useMemo(() => fallbackProjection(missions), [missions]);
+  const fallback = useMemo(
+    () => teamContext === undefined ? fallbackProjection(missions) : emptyProjection(),
+    [missions, teamContext],
+  );
   const [projection, setProjection] = useState<TodayExecutionProjection>(fallback);
   const currentMissionIds = useMemo(() => missions.map((mission) => mission.id).filter(Boolean), [missions]);
   const missionSignature = useMemo(
@@ -44,8 +51,9 @@ export function TodayRuntimeExecution({
     setProjection(fallback);
 
     try {
+      if (teamContext === null) return;
       const client = createBrowserSupabaseClient();
-      void loadTodayExecutionProjection(client, currentMissionIds)
+      void loadTodayExecutionProjection(client, currentMissionIds, new Date(), teamContext)
         .then((next) => {
           if (!cancelled) setProjection(next);
         })
@@ -60,12 +68,13 @@ export function TodayRuntimeExecution({
     return () => {
       cancelled = true;
     };
-  }, [fallback, currentMissionIds, missionSignature, refreshKey]);
+  }, [fallback, currentMissionIds, missionSignature, refreshKey, teamContext]);
 
   async function refreshProjection() {
     try {
+      if (teamContext === null) return;
       const client = createBrowserSupabaseClient();
-      setProjection(await loadTodayExecutionProjection(client, currentMissionIds));
+      setProjection(await loadTodayExecutionProjection(client, currentMissionIds, new Date(), teamContext));
     } catch {
       // The mutation is already durable. Live-sync or the next Home refresh will
       // reconcile Today if this convenience refresh fails.
@@ -77,8 +86,10 @@ export function TodayRuntimeExecution({
     .slice(0, Math.max(0, 2 - visibleFallbackItems.length));
   const visibleWatches = projection.watches.slice(0, Math.max(0, 2 - actionable.length - visibleFallbackItems.length));
   const visibleItemCount = actionable.length + visibleFallbackItems.length + visibleWatches.length;
+  const visibleUnassigned = teamContext?.viewer.accessRole === "owner" ? projection.unassigned.slice(0, 3) : [];
+  const visibleTeam = teamContext ? projection.team.slice(0, 3) : [];
 
-  if (!visibleItemCount) return null;
+  if (!visibleItemCount && !visibleUnassigned.length && !visibleTeam.length) return null;
 
   return (
     <section data-testid="desk-today-execution" className="home-today-band">
@@ -152,7 +163,43 @@ export function TodayRuntimeExecution({
           ))}
         </div>
       ) : null}
+
+      {visibleUnassigned.length ? (
+        <TodayReadOnlyLane label="Needs an owner" items={visibleUnassigned} onOpenMission={onOpenMission} roster={teamContext?.roster} />
+      ) : null}
+      {visibleTeam.length ? (
+        <TodayReadOnlyLane label="With your team" items={visibleTeam} onOpenMission={onOpenMission} roster={teamContext?.roster} />
+      ) : null}
     </section>
+  );
+}
+
+function TodayReadOnlyLane({ label, items, onOpenMission, roster }: {
+  label: string;
+  items: TodayManagerItem[];
+  onOpenMission: (missionId: string) => void;
+  roster?: WorkspaceRoster;
+}) {
+  return (
+    <div className="mt-6" data-testid={`today-${label.toLowerCase().replace(/\s+/g, "-")}`}>
+      <p className="home-section-label mb-2 font-ui text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground/72">{label}</p>
+      <div className="home-today-list">
+        {items.map((item) => (
+          <button
+            key={`${label}:${item.id}`}
+            type="button"
+            onClick={() => onOpenMission(item.missionId)}
+            className="home-today-row home-today-row-supporting group"
+          >
+            <span className="home-today-copy min-w-0">
+              <span className="home-today-title block font-semibold text-foreground">{item.title}</span>
+              <span className="home-today-description mt-1.5 block font-medium text-muted-foreground">{item.assigneeUserId ? roster?.members.find((member) => member.userId === item.assigneeUserId)?.displayName ?? "Team member" : item.missionTitle}</span>
+            </span>
+            <ChevronRight className="home-today-chevron" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -501,6 +548,19 @@ function fallbackProjection(missions: MissionViewModel[]): TodayExecutionProject
     primary: actionable[0],
     supporting: actionable.slice(1),
     watches,
+    team: [],
+    unassigned: [],
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+function emptyProjection(): TodayExecutionProjection {
+  return {
+    headline: "No action needed from you right now.",
+    supporting: [],
+    watches: [],
+    team: [],
+    unassigned: [],
     generatedAt: new Date().toISOString(),
   };
 }

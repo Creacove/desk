@@ -32,6 +32,8 @@ export type AdaptivePlanTask = {
   checkpointKey: string;
   ownerRole: string;
   workMode: "artist_action" | "collaborative";
+  assigneeUserId: string | null;
+  assignmentReason: string | null;
   purpose: string;
   steps: string[];
   completionMode: "result_note" | "manager_draft";
@@ -215,12 +217,14 @@ export const adaptivePlanCompilerJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "checkpointKey", "ownerRole", "workMode", "purpose", "steps", "completionMode", "completionExpectation", "managerResponsibility", "userResponsibility", "riskIfLate", "availableFrom", "deadline", "estimatedMinutes"],
+          required: ["title", "checkpointKey", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "purpose", "steps", "completionMode", "completionExpectation", "managerResponsibility", "userResponsibility", "riskIfLate", "availableFrom", "deadline", "estimatedMinutes"],
           properties: {
             title: { type: "string" },
             checkpointKey: { type: "string" },
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative"] },
+            assigneeUserId: { type: ["string", "null"] },
+            assignmentReason: { type: ["string", "null"] },
             purpose: { type: "string" },
             steps: { type: "array", minItems: 3, maxItems: 8, items: { type: "string" } },
             completionMode: { type: "string", enum: ["result_note", "manager_draft"] },
@@ -455,6 +459,8 @@ function parseTask(value: unknown): AdaptivePlanTask {
     checkpointKey: slug(text(row.checkpointKey)),
     ownerRole: text(row.ownerRole) || "Artist / team",
     workMode,
+    assigneeUserId: typeof row.assigneeUserId === "string" && text(row.assigneeUserId) ? text(row.assigneeUserId) : null,
+    assignmentReason: typeof row.assignmentReason === "string" && text(row.assignmentReason) ? text(row.assignmentReason).slice(0, 240) : null,
     purpose: text(row.purpose),
     steps,
     completionMode,

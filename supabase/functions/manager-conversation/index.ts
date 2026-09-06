@@ -47,6 +47,7 @@ import { writeWorkspaceEvent } from "../_shared/workspaceEvents.ts";
 import { loadFocusedSongDocuments, persistFocusedSongDocumentDraft } from "../_shared/songDocumentDraft.ts";
 import { attachedKnowledge, attachmentMetadata, resolveManagerConversationAttachments, type ManagerConversationAttachment } from "../_shared/manager-conversation/attachments.ts";
 import { assertReleasedCatalogManagerPolicy } from "../_shared/managerReleasedCatalogPolicy.ts";
+import { loadActiveWorkspaceRoster } from "../_shared/workspaceRoster.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -107,6 +108,7 @@ Deno.serve(withAppErrorCapture("manager-conversation", async (request) => {
     const artistMessage = await insertConversationMessage(db, input, conversationId, {
       speaker: "artist",
       label: "You",
+      authored_by_user_id: user.id,
       body: input.body.trim(),
       metadata: managerArtistMessageMetadata(input, attachments),
     });
@@ -570,6 +572,16 @@ async function buildManagerConversationPacket(
   focusedMusicSubject: Record<string, unknown> | null,
   attachments: ManagerConversationAttachment[] = [],
 ) {
+  let activeTeam: unknown[] = [];
+  try {
+    const [{ data: capability, error: capabilityError }, roster] = await Promise.all([
+      db.rpc("get_workspace_team_capability_v1", { p_artist_workspace_id: input.artistWorkspaceId }),
+      loadActiveWorkspaceRoster(db, input),
+    ]);
+    if (!capabilityError && capability?.enabled === true && capability?.entitled === true) activeTeam = roster.members;
+  } catch {
+    // Continue without delegation when the canonical roster cannot be loaded.
+  }
   const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, conversations, messages, managerPackets] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context,social_handles", input, 1),
     selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref", input, 12),
@@ -618,6 +630,7 @@ async function buildManagerConversationPacket(
     recentAgentReports: agentReports,
     existingMissions: missions,
     existingTasks: tasks,
+    activeTeam,
     recentConversations: conversations,
     conversationHistory: messages,
     taskContext,
@@ -665,7 +678,7 @@ async function selectMany(db: any, table: string, columns: string, input: Manage
 async function selectConversationHistory(db: any, input: ManagerConversationInput, conversationId: string, limit: number) {
   const { data, error } = await db
     .from("conversation_messages")
-    .select("id,conversation_id,speaker,label,body,metadata,created_at")
+    .select("id,conversation_id,speaker,label,body,authored_by_user_id,metadata,created_at")
     .eq("account_id", input.accountId)
     .eq("artist_workspace_id", input.artistWorkspaceId)
     .eq("artist_id", input.artistId)
@@ -686,7 +699,7 @@ async function insertConversationMessage(db: any, input: ManagerConversationInpu
       conversation_id: conversationId,
       ...message,
     })
-    .select("id,conversation_id,speaker,label,body,metadata,created_at")
+    .select("id,conversation_id,speaker,label,body,authored_by_user_id,metadata,created_at")
     .single();
   if (error) throw error;
   return data;

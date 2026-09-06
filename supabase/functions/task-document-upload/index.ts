@@ -1,6 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
 
 const BUCKET = "workspace-documents";
 const MAX_FILE_BYTES = 50 * 1024 * 1024;
@@ -56,6 +57,11 @@ Deno.serve(withAppErrorCapture("task-document-upload", async (request) => {
     const db = createClient(supabaseUrl, requireEnv("SUPABASE_SERVICE_ROLE_KEY"));
     await assertActiveWorkspaceEntitlement(db, input);
     await assertTask(db, input);
+    try {
+      await assertWorkspaceOperation(db, { scope: input, actorUserId: user.id, operation: "execute_task", taskId: input.taskId });
+    } catch {
+      return failure("FORBIDDEN", "You cannot upload work for this task.", 403);
+    }
 
     if (input.action === "prepare") return await prepareUpload(db, input, user.id);
     if (input.action === "finalize") return await finalizeUpload(db, input, user.id);

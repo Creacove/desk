@@ -15,6 +15,7 @@ import type {
 } from "../../types/cleanProduction";
 import { TaskSheet } from "./MissionTaskSheet";
 import { TaskRow } from "./MissionWorkParts";
+import type { TaskAssignmentContext } from "../team/TaskAssigneeControl";
 import {
   type CompletionIntent,
   type TaskMutationState,
@@ -38,6 +39,7 @@ export function WorkSurface({
   onCompleteTask,
   onUploadTaskDeliverable,
   onWorkWithManager,
+  teamAssignment,
 }: {
   mission: MissionViewModel;
   checkpoints: MissionCheckpointViewModel[];
@@ -47,6 +49,9 @@ export function WorkSurface({
   onCompleteTask: (taskId: string, status: "completed" | "blocked", note: string, documentIds?: string[], managerOutputId?: string) => Promise<void>;
   onUploadTaskDeliverable?: (taskId: string, input: { title: string; file: File }) => Promise<MissionTaskDeliverableViewModel>;
   onWorkWithManager?: (taskId: string) => void;
+  teamAssignment?: Omit<TaskAssignmentContext, "onReassign"> & {
+    onReassign?: (taskId: string, assigneeUserId: string | null, expectedAssignmentVersion: number) => Promise<void> | void;
+  };
 }) {
   const initialCheckpointId = useMemo(() => getInitialCheckpointId(checkpoints, tasks), [checkpoints, tasks]);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(targetTaskId ?? null);
@@ -312,6 +317,13 @@ export function WorkSurface({
           }}
           onUpload={(deliverable, file) => uploadDeliverable(selectedTask, deliverable, file)}
           onWorkWithManager={() => onWorkWithManager?.(selectedTask.id)}
+          teamAssignment={teamAssignment ? {
+            roster: teamAssignment.roster,
+            viewerUserId: teamAssignment.viewerUserId,
+            onReassign: teamAssignment.onReassign
+              ? (assigneeUserId, expectedAssignmentVersion) => teamAssignment.onReassign!(selectedTask.id, assigneeUserId, expectedAssignmentVersion)
+              : undefined,
+          } : undefined}
         />
       ) : null}
     </div>

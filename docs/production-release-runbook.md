@@ -25,6 +25,9 @@ The PR must have all of these green on the exact release head:
 - Production environment contract.
 - Real Chromium production-shell smoke.
 - Production Vite build.
+- Team source, Deno, focused browser, and disposable-Postgres checks when a
+  Team file, migration, function, or contract changes. See
+  [team-release-evidence.md](operations/team-release-evidence.md).
 
 Do not waive one of these checks just to make the PR green.
 
@@ -72,6 +75,19 @@ Database first, application second.
    - `approve_song_document_for_sharing_v1` (authenticated + service role; membership checked inside)
 6. Do not roll back a production migration after users have written data unless the rollback has been explicitly designed and tested. Prefer a forward-fix migration.
 
+For Team changes, also confirm the identity-boundary migration and each Team
+migration are present in timestamp order. Run the source check and the
+separate-connection disposable harness from the repository root:
+
+```bash
+node scripts/test-team-database.mjs --source-only
+node scripts/test-team-database.mjs --target disposable --db-url postgresql://postgres:postgres@127.0.0.1:54322/postgres
+```
+
+The harness rejects hosted URLs and performs setup, seat-reservation races,
+acceptance replay, removal/reminder cancellation, committed-state checks, and
+cleanup using synthetic IDs. Use a local disposable database only.
+
 ## 4. Edge deployment order
 
 After database migrations are live, deploy or verify the Edge functions whose runtime behavior or shared imports changed:
@@ -84,6 +100,10 @@ After database migrations are live, deploy or verify the Edge functions whose ru
 Then verify functions used by the canary path are still deployed and healthy, including song workspace initialization, release plan changes, Spotify catalog flows, Chartmetric refresh where enabled, and transactional email where enabled.
 
 Do not deploy the frontend before the required database RPCs exist.
+
+For a Team release, deploy `account-team` and every changed shared Team import
+after the database migration. Keep `workspace_team_settings.enabled=false`
+until the authenticated owner/member canary has passed.
 
 ## 5. Frontend deployment
 
@@ -210,7 +230,9 @@ Stop/hold rollout for any of these:
 - repeated uncaught browser crash in the critical Song/Manager flow;
 - repeated Manager failure that destroys or corrupts saved campaign state;
 - release-date mutation bypassing the approval path;
-- unexplained high/critical production dependency vulnerability.
+- unexplained high/critical production dependency vulnerability;
+- a Team seat, authority, assignment, recipient, or continuation check without
+  retained evidence at the exact release SHA.
 
 ## 10. Rollback / forward-fix
 

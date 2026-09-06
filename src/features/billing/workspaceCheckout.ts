@@ -29,12 +29,14 @@ export async function prepareWorkspaceSubscriptionCheckout({
   billingService,
   interval = workspace.billingInterval ?? "monthly",
   providerPreference = workspace.billingProvider ?? "auto",
+  planKey = "solo",
 }: {
   user: ProductionUser;
   workspace: ProductionWorkspace;
   billingService: ProductionBillingService;
   interval?: "monthly" | "yearly";
   providerPreference?: "auto" | "paddle" | "paystack";
+  planKey?: "solo" | "team_6";
 }): Promise<ProductionBillingCheckoutPreview> {
   if (!billingService.prepareProviderCheckout) throw new Error("Billing is temporarily unavailable. Please try again.");
   return billingService.prepareProviderCheckout({
@@ -43,6 +45,7 @@ export async function prepareWorkspaceSubscriptionCheckout({
     existingWorkspace: workspace,
     interval,
     providerPreference,
+    planKey,
   });
 }
 

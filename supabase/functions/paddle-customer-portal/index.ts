@@ -1,6 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { createPaddleClient, requireEnv } from "../_shared/paddle.ts";
+import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
 
 type PortalInput = { artistWorkspaceId?: string };
 
@@ -21,13 +22,22 @@ Deno.serve(withAppErrorCapture("paddle-customer-portal", async (request) => {
     if (!input.artistWorkspaceId) return respond(request, { error: "artistWorkspaceId is required." }, 400);
 
     const { data: workspace, error: workspaceError } = await db.from("artist_workspaces")
-      .select("id,account_id").eq("id", input.artistWorkspaceId).maybeSingle();
+      .select("id,account_id,artist_id").eq("id", input.artistWorkspaceId).maybeSingle();
     if (workspaceError) throw workspaceError;
     const { data: membership, error: membershipError } = await db.from("account_memberships")
       .select("id").eq("account_id", workspace?.account_id ?? "00000000-0000-0000-0000-000000000000")
       .eq("user_id", user.id).eq("status", "active").maybeSingle();
     if (membershipError) throw membershipError;
     if (!workspace || !membership) return respond(request, { error: "Workspace not found." }, 404);
+    try {
+      await assertWorkspaceOperation(db, {
+        scope: { accountId: workspace.account_id, artistWorkspaceId: workspace.id, artistId: workspace.artist_id },
+        actorUserId: user.id,
+        operation: "billing",
+      });
+    } catch {
+      return respond(request, { error: "Only the workspace owner can manage billing." }, 403);
+    }
 
     const { data: subscription, error: subscriptionError } = await db.from("billing_subscriptions")
       .select("provider_subscription_code,provider_customer_code")

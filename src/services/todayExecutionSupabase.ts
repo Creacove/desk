@@ -15,6 +15,7 @@ export async function loadTodayExecutionProjection(
   client: SupabaseClient,
   currentMissionIds: string[],
   now = new Date(),
+  teamContext?: { viewer: { userId: string; accessRole: "owner" | "member" }; scope: { accountId: string; artistWorkspaceId: string; artistId: string } },
 ): Promise<TodayExecutionProjection> {
   const requestedMissionIds = [...new Set(currentMissionIds.map((id) => id.trim()).filter(Boolean))].slice(0, 100);
   if (!requestedMissionIds.length) return emptyProjection(now);
@@ -31,11 +32,12 @@ export async function loadTodayExecutionProjection(
   if (missionError) throw missionError;
   const missionRows = (missionData ?? []) as Record<string, unknown>[];
   const anchor = missionRows[0];
-  const workspace = anchor ? {
+  const discoveredWorkspace = anchor ? {
     accountId: text(anchor.account_id),
     artistWorkspaceId: text(anchor.artist_workspace_id),
     artistId: text(anchor.artist_id),
   } : null;
+  const workspace = teamContext?.scope ?? discoveredWorkspace;
   if (!workspace?.accountId || !workspace.artistWorkspaceId || !workspace.artistId) return emptyProjection(now);
 
   const ownedMissionRows = missionRows.filter((row) =>
@@ -53,7 +55,7 @@ export async function loadTodayExecutionProjection(
   const [taskResult, checkpointResult, questionResult, permissionResult, checkpointLinkResult] = await Promise.all([
     client
       .from("tasks")
-      .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,purpose,deadline,available_from,estimated_minutes,priority,approval_state,dependency,risk_if_late,created_at")
+      .select("id,mission_id,mission_plan_version_id,primary_checkpoint_id,title,status,owner_role,work_mode,assignee_user_id,assignment_reason,assignment_version,purpose,deadline,available_from,estimated_minutes,priority,approval_state,dependency,risk_if_late,created_at")
       .eq("account_id", workspace.accountId)
       .eq("artist_workspace_id", workspace.artistWorkspaceId)
       .eq("artist_id", workspace.artistId)
@@ -118,6 +120,7 @@ export async function loadTodayExecutionProjection(
 
   const packet: TodayRuntimePacket = {
     now: nowIso,
+    viewer: teamContext?.viewer,
     missions,
     tasks: ((taskResult.data ?? []) as Record<string, unknown>[]).map(readTask).filter(Boolean) as TodayTaskState[],
     checkpoints: ((checkpointResult.data ?? []) as Record<string, unknown>[]).map((row) => readCheckpoint(row, checkpointOrder)).filter(Boolean) as TodayCheckpointState[],
@@ -158,6 +161,9 @@ function readTask(row: Record<string, unknown>): TodayTaskState | null {
     status: text(row.status) || "proposed",
     ownerRole: optionalText(row.owner_role),
     workMode: optionalText(row.work_mode),
+    assigneeUserId: row.assignee_user_id === null ? null : optionalText(row.assignee_user_id),
+    assignmentReason: optionalText(row.assignment_reason),
+    assignmentVersion: integer(row.assignment_version),
     purpose: optionalText(row.purpose),
     deadline: optionalText(row.deadline),
     availableFrom: optionalText(row.available_from),
@@ -238,6 +244,8 @@ function emptyProjection(now: Date): TodayExecutionProjection {
     headline: "No action needed from you right now.",
     supporting: [],
     watches: [],
+    team: [],
+    unassigned: [],
     generatedAt: now.toISOString(),
   };
 }

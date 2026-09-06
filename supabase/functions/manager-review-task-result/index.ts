@@ -6,6 +6,7 @@ import {
 } from "../_shared/managerReviewEvidence.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -93,6 +94,12 @@ Deno.serve(withAppErrorCapture("manager-review-task-result", async (request) => 
     db = createClient(supabaseUrl, serviceRoleKey);
     failureStage = "load_review_context";
     const context = await loadReviewContext(db, input, user.id);
+    try {
+      await assertWorkspaceOperation(db, { scope: input, actorUserId: user.id, operation: "execute_task", taskId: input.taskId });
+    } catch (error) {
+      const code = error instanceof Error ? error.message : "";
+      return json({ error: code === "TEAM_CONFLICT" ? "This task changed. Refresh and retry." : "You cannot submit work for this task." }, code === "TEAM_CONFLICT" ? 409 : 403);
+    }
     if (context.existingCompletedResult) {
       await repairCompletedTaskState(db, input, context.task);
       const mission = await selectMission(db, input, context.task.mission_id);

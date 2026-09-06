@@ -108,6 +108,11 @@ describe("Paddle server integration contract", () => {
     expect(worker).toContain('"subscription.resumed"');
     expect(worker).toContain('checkout.status === "paid"');
     expect(worker).toContain('rpc("record_verified_subscription_renewal"');
+    expect(worker).toContain("isInitialCheckoutTransactionReplay");
+    expect(worker).toContain("dispatchSetupIfNeeded");
+    expect(worker.indexOf("isInitialCheckoutTransactionReplay")).toBeLessThan(
+      worker.indexOf('rpc("record_verified_subscription_renewal"'),
+    );
     expect(worker).toContain("shouldDispatchSetup");
     expect(worker).toContain('setup.status !== "completed"');
   });

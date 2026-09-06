@@ -18,6 +18,7 @@ import {
   selectMissionPatternsForPacket,
 } from "../_shared/mission-patterns/missionPatternRegistry.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
+import { loadActiveWorkspaceRoster } from "../_shared/workspaceRoster.ts";
 import {
   claimManagerSynthesisRun,
   finishManagerSynthesisRun,
@@ -429,6 +430,16 @@ async function persistContextAnswers(
 }
 
 async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
+  let activeTeam: unknown[] = [];
+  try {
+    const [{ data: capability, error: capabilityError }, roster] = await Promise.all([
+      db.rpc("get_workspace_team_capability_v1", { p_artist_workspace_id: input.artistWorkspaceId }),
+      loadActiveWorkspaceRoster(db, { accountId: input.accountId, artistWorkspaceId: input.artistWorkspaceId, artistId: input.artistId }),
+    ]);
+    if (!capabilityError && capability?.enabled === true && capability?.entitled === true) activeTeam = roster.members;
+  } catch {
+    // Roster failure degrades to unassigned work; it must never borrow another scope.
+  }
   const [profile, evidence, musicItems, musicProjects, memory, agentReports, missions, tasks, sources, managerPackets] = await Promise.all([
     selectMany(db, "artist_profiles", "id,display_name,genres,home_market,stage,current_goal,artist_direction,budget_context,social_handles", input, 1),
     selectMany(db, "evidence_items", "id,source,source_kind,evidence_type,subject_type,subject_id,subject_label,metric_name,metric_value,metric_unit,freshness,confidence,provenance,limitation,raw_ref,created_at", input, MISSION_GENESIS_PACKET_LIMITS.evidence),
@@ -478,6 +489,7 @@ async function buildArtistOperatingPacket(db: any, input: MissionGenesisInput) {
     recentAgentReports: boundedValue(agentReports),
     existingMissions: boundedValue(missions),
     existingTasks: boundedValue(tasks),
+    activeTeam: boundedValue(activeTeam),
     sources: boundedValue(sources),
     rules: {
       userContextIsNotThirdPartyEvidence: true,

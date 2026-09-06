@@ -16,6 +16,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
   const initialInterval = workspace.billingInterval ?? "monthly";
   const providerPreference = workspace.billingProvider ?? "auto";
   const [interval, setInterval] = useState<"monthly" | "yearly">(initialInterval);
+  const [planKey, setPlanKey] = useState<"solo" | "team_6">("solo");
   const [pricing, setPricing] = useState<ProductionBillingPricing | null>(null);
   const [loading, setLoading] = useState(false);
   const [opening, setOpening] = useState(false);
@@ -42,7 +43,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
     try {
       setOpening(true);
       setError(null);
-      const preview = await prepareWorkspaceSubscriptionCheckout({ user, workspace, billingService, interval, providerPreference });
+      const preview = await prepareWorkspaceSubscriptionCheckout({ user, workspace, billingService, interval, providerPreference: planKey === "team_6" ? "paddle" : providerPreference, planKey });
       await billingService.openProviderCheckout({ user, preview });
       await onCheckoutOpened?.(preview);
     } catch (cause) {
@@ -56,6 +57,7 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
     if (!open) return;
     setPricing(null);
     setInterval(initialInterval);
+    setPlanKey("solo");
     setOpening(false);
     setError(null);
     void loadPricing();
@@ -65,7 +67,9 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
   }, [open, workspace.artistWorkspaceId]);
 
   if (!open) return null;
-  const price = formatSubscriptionPrice(pricing?.intervalOptions[interval]);
+  const paidWorkspace = workspace.accessType === "paid_subscription" || Boolean(workspace.subscriptionStatus && workspace.subscriptionStatus !== "none");
+  const teamUpgradeAssisted = planKey === "team_6" && paidWorkspace;
+  const price = formatSubscriptionPrice(planKey === "team_6" ? pricing?.team : pricing?.intervalOptions[interval]);
   const payLabel = `Pay ${price}`;
 
   return (
@@ -78,9 +82,16 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
         <h1 className="mt-3 font-display text-[30px] font-semibold tracking-[-0.035em] text-foreground">Choose a plan</h1>
         <p className="mt-2 text-[13px] leading-5 text-muted-foreground">Your workspace and everything in it stay exactly where they are.</p>
 
+        {pricing?.team ? (
+          <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Plan">
+            <button type="button" aria-pressed={planKey === "solo"} disabled={loading || opening} onClick={() => setPlanKey("solo")} className={cn("min-h-12 rounded-[8px] text-[11px] font-semibold transition-colors", planKey === "solo" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Solo</button>
+            <button type="button" aria-pressed={planKey === "team_6"} disabled={loading || opening} onClick={() => { setPlanKey("team_6"); setInterval("monthly"); }} className={cn("min-h-12 rounded-[8px] text-[11px] font-semibold transition-colors", planKey === "team_6" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>Team · 6 people</button>
+          </div>
+        ) : null}
+
         <div className="mt-6 grid grid-cols-2 rounded-[10px] bg-foreground/[0.045] p-1" aria-label="Billing interval">
           {(["monthly", "yearly"] as const).map((option) => (
-            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening || !pricing} onClick={() => setInterval(option)} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            <button key={option} type="button" aria-pressed={interval === option} disabled={loading || opening || !pricing || planKey === "team_6"} onClick={() => setInterval(option)} className={cn("min-h-10 rounded-[8px] text-[11px] font-semibold transition-colors", interval === option ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground")}>
               {option === "monthly" ? "Monthly" : "Yearly"}
             </button>
           ))}
@@ -91,15 +102,16 @@ export function SubscriptionPlanDialog({ open, onClose, user, workspace, billing
           <p className="pb-1 text-[11px] font-medium text-muted-foreground">per {interval === "yearly" ? "year" : "month"}</p>
         </div>
         {error ? <p role="alert" className="mt-4 text-[12px] font-medium text-destructive">{error}</p> : null}
+        {teamUpgradeAssisted ? <p role="status" className="mt-4 text-[12px] font-medium text-muted-foreground">Team upgrades for an active subscription are assisted so proration can be confirmed safely.</p> : null}
 
         <Button
           size="lg"
           className="mt-5 w-full"
           pending={opening}
-          disabled={!pricing || loading || opening}
+          disabled={!pricing || loading || opening || teamUpgradeAssisted || (planKey === "team_6" && !pricing.team)}
           onClick={() => void openCheckout()}
         >
-          {loading ? "Loading price…" : payLabel}
+          {loading ? "Loading price…" : teamUpgradeAssisted ? "Contact support to upgrade" : payLabel}
         </Button>
 
         <p className="mt-5 text-center text-[10px] font-medium text-muted-foreground">Secure recurring payment. Cancel from Billing.</p>

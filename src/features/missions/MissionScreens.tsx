@@ -16,6 +16,7 @@ import type {
   MissionViewModel,
 } from "../../types/cleanProduction";
 import { SongContextAttachment } from "../music/SongRoomAttachments";
+import type { TaskAssignmentContext } from "../team/TaskAssigneeControl";
 import { WorkSurface } from "./MissionWorkSurface";
 import {
   type MissionRoomTab,
@@ -49,6 +50,7 @@ export function MissionsWorkspace({
   openTaskId,
   listRequestKey = 0,
   onRoomModeChange,
+  teamAssignment,
 }: {
   missions: MissionViewModel[];
   selectedMissionId: string;
@@ -68,6 +70,9 @@ export function MissionsWorkspace({
   openTaskId?: string | null;
   listRequestKey?: number;
   onRoomModeChange?: (roomOpen: boolean) => void;
+  teamAssignment?: Omit<TaskAssignmentContext, "onReassign"> & {
+    onReassign?: (taskId: string, assigneeUserId: string | null, expectedAssignmentVersion: number) => Promise<void> | void;
+  };
 }) {
   const [roomMode, setRoomMode] = useState<"list" | "room">("list");
   const [surface, setSurface] = useState<MissionSurface>("work");
@@ -164,6 +169,7 @@ export function MissionsWorkspace({
       onOpenMusicSubject={onOpenMusicSubject}
       onDrawer={onDrawer}
       targetTaskId={openTaskId ?? undefined}
+      teamAssignment={teamAssignment}
     />
   );
 }
@@ -307,6 +313,7 @@ function MissionRoom({
   onOpenMusicSubject,
   onDrawer,
   targetTaskId,
+  teamAssignment,
 }: {
   mission: MissionViewModel;
   detailPending: boolean;
@@ -320,6 +327,9 @@ function MissionRoom({
   onOpenMusicSubject?: (subject: { id: string; title: string; type: "music_item" | "music_project" }) => void;
   onDrawer: (drawer: DrawerKind) => void;
   targetTaskId?: string;
+  teamAssignment?: Omit<TaskAssignmentContext, "onReassign"> & {
+    onReassign?: (taskId: string, assigneeUserId: string | null, expectedAssignmentVersion: number) => Promise<void> | void;
+  };
 }) {
   void onDrawer;
   const tasks = missionTasks(mission);
@@ -378,6 +388,7 @@ function MissionRoom({
               onCompleteTask={onCompleteTask}
               onUploadTaskDeliverable={onUploadTaskDeliverable}
               onWorkWithManager={onWorkWithManager}
+              teamAssignment={teamAssignment}
             />
           ) : <UpdatesSurface notes={notes} events={events} />}
       </div>

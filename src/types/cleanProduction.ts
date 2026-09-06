@@ -434,6 +434,9 @@ export type MissionTaskViewModel = {
   checkpointId: string;
   title: string;
   owner: string;
+  assigneeUserId?: string | null;
+  assignmentReason?: string | null;
+  assignmentVersion?: number;
   deadline: string;
   approvalState: "not_required" | "needs approval" | "approved" | "blocked" | "active";
   purpose: string;

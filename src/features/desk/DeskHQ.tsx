@@ -16,6 +16,7 @@ import type {
   TodayBriefSnapshotGroup,
   TodayBriefViewModel,
 } from "../../types/cleanProduction";
+import type { WorkspaceRoster, WorkspaceScope } from "../../types/workspaceTeam";
 import { splitAttentionItems } from "./deskAttention";
 import { TodayRuntimeExecution } from "./TodayRuntimeExecution";
 import { ManagerKnowledgeAttachmentTray, ManagerKnowledgeUploadButton, useManagerKnowledgeUploads } from "../manager/ManagerKnowledgeUpload";
@@ -42,6 +43,7 @@ type DeskHQProps = {
   onOpenActivityCenter?: () => void;
   briefPending?: boolean;
   onRefreshBrief?: () => void;
+  teamContext?: { viewer: { userId: string; accessRole: "owner" | "member" }; scope: WorkspaceScope; roster: WorkspaceRoster } | null;
 };
 
 type DeskSignalMetric = {
@@ -73,6 +75,7 @@ export function DeskHQScreen({
   onOpenActivityCenter,
   briefPending = false,
   onRefreshBrief,
+  teamContext,
 }: DeskHQProps) {
   const brief = todayBrief ?? buildVisibleFallbackBrief(profile);
   const { actionable } = splitAttentionItems(attention);
@@ -106,6 +109,7 @@ export function DeskHQScreen({
             onManager={onManager}
             onOpenFallbackItem={(item) => openAttentionItem(item, onNavigate, onDrawer)}
             refreshKey={visibleActivityCount}
+            teamContext={teamContext}
           />
 
           <div data-testid="desk-home-composer" className="home-composer-wrap">

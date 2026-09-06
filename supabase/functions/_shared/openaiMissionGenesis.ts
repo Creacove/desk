@@ -46,6 +46,8 @@ export type MissionGenesisTask = {
   scheduleKey?: string;
   ownerRole: string;
   workMode: "artist_action" | "collaborative" | "manager_work";
+  assigneeUserId: string | null;
+  assignmentReason: string | null;
   primaryCheckpointKey: string;
   purpose: string;
   steps: string[];
@@ -219,12 +221,14 @@ export const missionGenesisJsonSchema = {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+          required: ["title", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
           properties: {
             title: { type: "string" },
             scheduleKey: { type: "string" },
             ownerRole: { type: "string" },
             workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
+            assigneeUserId: { type: ["string", "null"] },
+            assignmentReason: { type: ["string", "null"] },
             primaryCheckpointKey: { type: "string" },
             purpose: { type: "string" },
             steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
@@ -329,12 +333,14 @@ export const missionGenesisJsonSchema = {
               items: {
                 type: "object",
                 additionalProperties: false,
-                required: ["title", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+                required: ["title", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
                 properties: {
                   title: { type: "string" },
                   scheduleKey: { type: "string" },
                   ownerRole: { type: "string" },
                   workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
+                  assigneeUserId: { type: ["string", "null"] },
+                  assignmentReason: { type: ["string", "null"] },
                   primaryCheckpointKey: { type: "string" },
                   purpose: { type: "string" },
                   steps: { type: "array", minItems: 2, maxItems: 6, items: { type: "string" } },
@@ -846,6 +852,8 @@ function readTasks(value: unknown): MissionGenesisTask[] {
     ...(typeof item.scheduleKey === "string" && item.scheduleKey.trim() ? { scheduleKey: item.scheduleKey.trim() } : {}),
     ownerRole: readString(item.ownerRole, "tasks.ownerRole", true),
     workMode: readOptionalEnum(item.workMode, ["artist_action", "collaborative", "manager_work"], item.completionMode === "manager_draft" ? "collaborative" : "artist_action") as MissionGenesisTask["workMode"],
+    assigneeUserId: typeof item.assigneeUserId === "string" && item.assigneeUserId.trim() ? item.assigneeUserId.trim() : null,
+    assignmentReason: typeof item.assignmentReason === "string" && item.assignmentReason.trim() ? item.assignmentReason.trim().slice(0, 240) : null,
     primaryCheckpointKey: readString(item.primaryCheckpointKey, "tasks.primaryCheckpointKey", true),
     purpose: readString(item.purpose, "tasks.purpose", true),
     steps: readStringArray(item.steps),

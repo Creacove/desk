@@ -3,9 +3,12 @@ import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Field, TextAreaField, WorkspaceHeader, WorkspaceTabRail } from "../../design-system/components";
 import { Button } from "../../design-system/desktopPrimitives";
 import { cn } from "../../lib/utils";
+import type { WorkspaceTeamService } from "../../services/workspaceTeamService";
 import type { ResolvedThemeMode, ThemeMode } from "../../app/theme";
 import type { ArtistProfileViewModel } from "../../types/cleanProduction";
 import type { ProductionWorkspace } from "../../types/productionApp";
+import type { WorkspaceScope, WorkspaceTeamCapability } from "../../types/workspaceTeam";
+import { YourTeamPanel } from "../team/YourTeamPanel";
 
 export function SettingsScreen({
   profile,
@@ -21,6 +24,14 @@ export function SettingsScreen({
   onUpdatePassword,
   onManageBilling,
   onChoosePlan,
+  teamService,
+  teamWorkspaceId,
+  teamScope,
+  teamViewerUserId,
+  teamArtistName,
+  teamCapability: initialTeamCapability,
+  teamViewerAccessRole,
+  onTeamRosterChanged,
 }: {
   profile: ArtistProfileViewModel;
   onChange: (profile: ArtistProfileViewModel) => void;
@@ -35,13 +46,50 @@ export function SettingsScreen({
   onUpdatePassword?: (input: { password: string }) => Promise<void>;
   onManageBilling?: () => Promise<void> | void;
   onChoosePlan?: () => Promise<void> | void;
+  /** Team is opt-in from the server capability response; absent means legacy solo UI. */
+  teamService?: WorkspaceTeamService;
+  teamWorkspaceId?: string;
+  teamScope?: WorkspaceScope;
+  teamViewerUserId?: string;
+  teamArtistName?: string;
+  teamCapability?: WorkspaceTeamCapability;
+  teamViewerAccessRole?: "owner" | "member";
+  onTeamRosterChanged?: () => void | Promise<void>;
 }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
+  const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(initialTeamCapability ?? null);
+  const teamEnabled = teamCapability?.planKey === "team_6";
+
+  useEffect(() => {
+    if (!teamService || !teamWorkspaceId) {
+      setTeamCapability(initialTeamCapability ?? null);
+      return;
+    }
+    if (!initialTeamCapability) setTeamCapability(null);
+    let cancelled = false;
+    void teamService.loadCapability(teamWorkspaceId)
+      .then((nextCapability) => {
+        if (!cancelled) {
+          setTeamCapability(nextCapability);
+          if (nextCapability.planKey !== "team_6") setActiveTab((current) => current === "team" ? "profile" : current);
+        }
+      })
+      .catch(() => {
+        // A failed capability read keeps the legacy Settings surface intact.
+        if (!cancelled) {
+          setTeamCapability(initialTeamCapability ?? null);
+          if (!initialTeamCapability || initialTeamCapability.planKey !== "team_6") setActiveTab((current) => current === "team" ? "profile" : current);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [initialTeamCapability, teamService, teamWorkspaceId]);
+
   const tabs: Array<{ id: SettingsTab; label: string }> = [
     { id: "profile", label: "Profile" },
     { id: "billing", label: "Billing" },
     { id: "preferences", label: "Preferences" },
     { id: "account", label: "Account" },
+    ...(teamEnabled ? [{ id: "team" as const, label: "Team" }] : []),
   ];
 
   return (
@@ -57,7 +105,7 @@ export function SettingsScreen({
             items={tabs}
             active={activeTab}
             onChange={setActiveTab}
-            className="grid-cols-4 lg:max-w-[36rem]"
+            className={cn(teamEnabled ? "grid-cols-5" : "grid-cols-4", "lg:max-w-[36rem]")}
           />
         </div>
 
@@ -68,7 +116,7 @@ export function SettingsScreen({
           className="os-room-rail min-w-0"
         >
           {activeTab === "profile" ? <ProfileSettings profile={profile} onChange={onChange} onSaveProfile={onSaveProfile} /> : null}
-          {activeTab === "billing" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={onManageBilling} onChoosePlan={onChoosePlan} /> : <AccessEmptyState />) : null}
+          {activeTab === "billing" ? (workspace ? <AccessSummary workspace={workspace} onManageBilling={teamEnabled && teamViewerAccessRole !== "owner" ? undefined : onManageBilling} onChoosePlan={teamEnabled && teamViewerAccessRole !== "owner" ? undefined : onChoosePlan} /> : <AccessEmptyState />) : null}
           {activeTab === "preferences" ? (
             <PreferencesSettings mode={themeMode} resolvedMode={resolvedThemeMode} onThemeModeChange={onThemeModeChange} />
           ) : null}
@@ -79,13 +127,29 @@ export function SettingsScreen({
               accountEmail={accountEmail}
             />
           ) : null}
+          {activeTab === "team" ? (
+            teamCapability && teamService && teamScope && teamViewerUserId && teamArtistName ? (
+              <YourTeamPanel
+                service={teamService}
+                scope={teamScope}
+                artistName={teamArtistName}
+                viewerUserId={teamViewerUserId}
+                capability={teamCapability}
+                onRosterChanged={onTeamRosterChanged}
+              />
+            ) : (
+              <div className="border-t border-foreground/8 py-6">
+                <p role="status" className="text-[13px] font-medium text-muted-foreground">Team settings are unavailable while this workspace is loading.</p>
+              </div>
+            )
+          ) : null}
         </div>
       </div>
     </section>
   );
 }
 
-type SettingsTab = "profile" | "billing" | "preferences" | "account";
+type SettingsTab = "profile" | "billing" | "preferences" | "account" | "team";
 
 function ProfileSettings({
   profile,

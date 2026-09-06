@@ -234,7 +234,7 @@ describe("production Supabase services", () => {
 
   it("qualifies workspace embeds so additional foreign keys cannot make startup ambiguous", async () => {
     const { client, calls } = createObservedSupabaseClient({
-      account_memberships: [{ account_id: "account-1", status: "active" }],
+      account_memberships: [{ account_id: "account-1", user_id: "user-1", status: "active" }],
       artist_workspaces: [],
     });
 

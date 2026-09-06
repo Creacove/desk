@@ -1,6 +1,7 @@
 import { withAppErrorCapture } from "../_shared/appFunction.ts";
 import { assertActiveWorkspaceEntitlement } from "../_shared/entitlements.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { assertWorkspaceOperation } from "../_shared/workspaceAuthorization.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -77,6 +78,17 @@ Deno.serve(withAppErrorCapture("manager-task-execution", async (request) => {
     artistWorkspaceId: task.artist_workspace_id,
     artistId: task.artist_id,
   });
+  try {
+    await assertWorkspaceOperation(db, {
+      scope: { accountId: task.account_id, artistWorkspaceId: task.artist_workspace_id, artistId: task.artist_id },
+      actorUserId: user.id,
+      operation: "execute_task",
+      taskId: task.id,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    return json({ error: message === "TEAM_CONFLICT" ? "This task changed. Refresh and try again." : "You cannot act on this task." }, message === "TEAM_CONFLICT" ? 409 : 403);
+  }
 
   assertHumanExecutableTask(task);
   if (TERMINAL_TASK_STATUSES.has(task.status)) {

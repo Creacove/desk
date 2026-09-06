@@ -4,6 +4,7 @@ import { readCanonicalPaddlePrice, requireEnv, sha256Hex } from "../_shared/padd
 
 type CheckoutInput = {
   interval: "monthly" | "yearly";
+  planKey?: "solo" | "team_6";
   clientRequestId: string;
   existingArtistWorkspaceId?: string;
   selectedArtist?: {
@@ -36,13 +37,16 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
     if (input.interval !== "monthly" && input.interval !== "yearly") {
       return respond(request, { error: "Interval must be monthly or yearly." }, 400);
     }
+    const planKey = input.planKey ?? "solo";
+    if (planKey !== "solo" && planKey !== "team_6") return respond(request, { error: "Unknown billing plan." }, 400);
+    if (planKey === "team_6" && input.interval !== "monthly") return respond(request, { error: "Team is available monthly only." }, 400);
     validateArtist(input.selectedArtist);
     const selectedArtist = normalizeArtist(input.selectedArtist);
-    const { productId, priceId } = readCanonicalPaddlePrice(input.interval);
+    const { productId, priceId } = readCanonicalPaddlePrice(input.interval, planKey);
 
     const { data: existingRequest, error: requestError } = await db
       .from("billing_checkout_sessions")
-      .select("id,provider,provider_product_id,provider_price_id,interval,status,expires_at,artist_workspace_id,selected_artist")
+      .select("id,provider,provider_product_id,provider_price_id,plan_key,interval,status,expires_at,artist_workspace_id,selected_artist")
       .eq("user_id", user.id)
       .eq("client_request_id", input.clientRequestId)
       .maybeSingle();
@@ -56,7 +60,7 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
       ) {
         return respond(request, { error: "This checkout request was already used for a different purchase." }, 409);
       }
-      if (existingRequest.provider_price_id !== priceId || existingRequest.interval !== input.interval) {
+      if (existingRequest.provider_price_id !== priceId || existingRequest.interval !== input.interval || (existingRequest.plan_key ?? "solo") !== planKey) {
         return respond(request, { error: "This checkout request was already used for different pricing." }, 409);
       }
       if (!["open", "initialized"].includes(existingRequest.status) || new Date(existingRequest.expires_at).getTime() <= Date.now()) {
@@ -86,6 +90,10 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
         return respond(request, { error: "Existing artist workspace is not available for this checkout." }, 403);
       }
       existingWorkspace = workspace;
+      if (planKey === "team_6") {
+        const { data: owner } = await db.from("account_memberships").select("id").eq("account_id", workspace.account_id).eq("user_id", user.id).eq("role", "owner").eq("status", "active").maybeSingle();
+        if (!owner) return respond(request, { error: "Only the workspace owner can purchase Team." }, 403);
+      }
     }
 
     await db.from("users").upsert({
@@ -98,10 +106,11 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
     const now = new Date();
     let reusableQuery = db
       .from("billing_checkout_sessions")
-      .select("id,provider_product_id,provider_price_id,interval,expires_at")
+      .select("id,provider_product_id,provider_price_id,plan_key,interval,expires_at")
       .eq("user_id", user.id)
       .eq("provider", "paddle")
       .eq("provider_price_id", priceId)
+      .eq("plan_key", planKey)
       .contains("selected_artist", { spotifyArtistId: selectedArtist.spotifyArtistId })
       .in("status", ["open", "initialized"])
       .gt("expires_at", now.toISOString());
@@ -146,6 +155,7 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
         provider_plan_code: priceId,
         provider_product_id: productId,
         provider_price_id: priceId,
+        plan_key: planKey,
         client_request_id: input.clientRequestId,
         checkout_correlation_hash: await sha256Hex(correlationToken),
         interval: input.interval,
@@ -155,7 +165,7 @@ Deno.serve(withAppErrorCapture("paddle-create-checkout", async (request) => {
         // The token is returned once. Keeping it in metadata would defeat hashing, so omit it.
         metadata: { checkout_version: 1 },
       })
-      .select("id,provider_product_id,provider_price_id,interval,expires_at")
+      .select("id,provider_product_id,provider_price_id,plan_key,interval,expires_at")
       .single();
     if (insertError) throw insertError;
 
@@ -185,6 +195,7 @@ function checkoutResponse(session: any, correlationToken?: string) {
     productId: session.provider_product_id,
     priceId: session.provider_price_id,
     interval: session.interval,
+    planKey: session.plan_key ?? "solo",
     expiresAt: session.expires_at,
     customData: { version: 1, checkoutSessionId: session.id, correlationToken },
   };

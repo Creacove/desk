@@ -48,6 +48,26 @@ describe("paid workspace setup orchestration", () => {
     expect(text).toContain("waiting_for_context");
   });
 
+  it("loads setup context through the canonical workspace relationships", () => {
+    const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
+
+    expect(text).toContain("artists!artist_workspaces_artist_id_fkey(");
+    expect(text).toContain("artist_profiles!artist_profiles_artist_workspace_id_fkey(");
+    expect(text).not.toContain("artists(display_name,canonical_spotify_artist_id");
+  });
+
+  it("makes workspace identity the only ownership relationship for manager state", () => {
+    const migrationPath = join(process.cwd(), "supabase", "migrations", "20260901000100_workspace_identity_boundary.sql");
+    expect(existsSync(migrationPath)).toBe(true);
+    const migration = readFileSync(migrationPath, "utf8");
+
+    expect(migration).toContain("manager_career_watch_state_workspace_scope_fkey");
+    expect(migration).toContain("manager_runtime_limits_workspace_scope_fkey");
+    expect(migration).toContain("drop constraint if exists manager_career_watch_state_artist_id_fkey");
+    expect(migration).toContain("drop constraint if exists manager_runtime_limits_artist_id_fkey");
+    expect(migration).toContain("notify pgrst, 'reload schema'");
+  });
+
   it("uses verified paid checkout or a matching active beta grant as the setup authorization boundary", () => {
     const text = source("supabase", "functions", "paid-workspace-setup", "index.ts");
 

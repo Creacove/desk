@@ -409,6 +409,9 @@ verify_jwt = true
 [functions.release-plan-change]
 verify_jwt = true
 
+[functions.account-team]
+verify_jwt = true
+
 [analytics]
 enabled = true
 port = 54327

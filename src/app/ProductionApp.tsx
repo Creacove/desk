@@ -55,6 +55,7 @@ import {
 } from "../services/productionSupabase";
 import { createActiveRunFallback } from "../services/activeRunFallback";
 import { createResourceRequestCoordinator, type ResourceKey } from "../services/resourceRequestCoordinator";
+import { createWorkspaceTeamService, type WorkspaceTeamService } from "../services/workspaceTeamService";
 import { invalidationsFromManagerRefreshHint, mergeReleaseSuccessArtifacts } from "../services/managerConversationStream";
 import {
   loadWorkspaceActivityPage,
@@ -106,6 +107,7 @@ import type {
   ProductionWorkspace,
   ProductionWorkspaceLoader,
 } from "../types/productionApp";
+import type { WorkspaceRoster, WorkspaceTeamCapability } from "../types/workspaceTeam";
 
 const CREATE_FIRST_MISSION_PROMPT = "Create the first mission for this workspace.";
 
@@ -156,6 +158,7 @@ export function ProductionApp({
       return {
         ...fixtureRuntime,
         supabaseClient: null,
+        teamService: null,
         billingService,
         spotifyArtistAdapter,
         profileSetupService,
@@ -171,6 +174,7 @@ export function ProductionApp({
 
     return {
       supabaseClient: liveUpdatesEnabled ? getClient() : null,
+      teamService: createWorkspaceTeamService(getClient()),
       authAdapter: authAdapter ?? createSupabaseAuthAdapter(getClient()),
       workspaceLoader: workspaceLoader ?? createSupabaseWorkspaceLoader(getClient()),
       billingService: billingService ?? createSupabaseBillingService(getClient()),
@@ -644,6 +648,7 @@ export function ProductionApp({
       onWorkspaceChange={setWorkspace}
       onSignOut={handleSignOut}
       onChoosePlan={() => setPlanDialogOpen(true)}
+      teamService={runtime.teamService}
     />
     {workspace && runtime.billingService ? (
       <SubscriptionPlanDialog
@@ -675,6 +680,7 @@ function CleanProductionWorkspace({
   onWorkspaceChange,
   onSignOut,
   onChoosePlan,
+  teamService,
 }: {
   analyticsUser: ProductionUser;
   authAdapter: ProductionAuthAdapter;
@@ -691,6 +697,7 @@ function CleanProductionWorkspace({
   onWorkspaceChange?: (workspace: ProductionWorkspace) => void;
   onSignOut?: () => void;
   onChoosePlan?: () => void;
+  teamService?: WorkspaceTeamService | null;
 }) {
   const isTestUser = isTestUserEmail(analyticsUser.email);
   const { mode: themeMode, resolvedMode: resolvedThemeMode, setMode: setThemeMode } = useTheme();
@@ -762,6 +769,60 @@ function CleanProductionWorkspace({
   const [missionGenesisError, setMissionGenesisError] = useState<string | null>(null);
   const [managerSendPending, setManagerSendPending] = useState(false);
   const [managerSendError, setManagerSendError] = useState<string | null>(null);
+  const [teamCapability, setTeamCapability] = useState<WorkspaceTeamCapability | null>(null);
+  const [teamRoster, setTeamRoster] = useState<WorkspaceRoster | null>(null);
+
+  useEffect(() => {
+    if (!teamService || !workspace?.artistWorkspaceId) {
+      setTeamCapability(null);
+      setTeamRoster(null);
+      return;
+    }
+    let cancelled = false;
+    setTeamCapability(null);
+    setTeamRoster(null);
+    void teamService.loadCapability(workspace.artistWorkspaceId)
+      .then((nextCapability) => {
+        if (cancelled) return;
+        setTeamCapability(nextCapability);
+        if (nextCapability.planKey !== "team_6" || !nextCapability.enabled || !nextCapability.entitled) return;
+        return teamService.loadRoster(workspace.artistWorkspaceId).then((nextRoster) => {
+          if (!cancelled) setTeamRoster(nextRoster);
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTeamCapability(null);
+          setTeamRoster(null);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [teamService, workspace?.artistWorkspaceId]);
+
+  const teamAssignment = useMemo(() => {
+    if (!teamService || !teamRoster || !teamCapability || teamCapability.planKey !== "team_6" || !teamCapability.enabled || !teamCapability.entitled) return undefined;
+    return {
+      roster: teamRoster,
+      viewerUserId: analyticsUser.id,
+      onReassign: async (taskId: string, assigneeUserId: string | null, expectedAssignmentVersion: number) => {
+        const result = await teamService.reassignTask({ taskId, assigneeUserId, expectedAssignmentVersion });
+        setMissions((current) => current.map((mission) => ({
+          ...mission,
+          tasks: mission.tasks.map((task) => task.id === taskId
+            ? { ...task, assigneeUserId: result.assigneeUserId, assignmentVersion: result.assignmentVersion }
+            : task),
+        })));
+      },
+    };
+  }, [analyticsUser.id, teamCapability, teamRoster, teamService]);
+
+  const teamTodayContext = useMemo(() => {
+    const teamActive = teamCapability?.planKey === "team_6" && teamCapability.enabled && teamCapability.entitled;
+    if (!teamActive) return undefined;
+    const viewer = teamRoster?.members.find((member) => member.userId === analyticsUser.id);
+    if (!teamRoster || !viewer) return null;
+    return { viewer: { userId: viewer.userId, accessRole: viewer.accessRole }, scope: teamRoster.scope, roster: teamRoster };
+  }, [analyticsUser.id, teamCapability, teamRoster]);
 
   const loadDeskAggregate = () => resourceRequests.load(resourceWorkspaceId, "workspace", () => repositories.desk.loadDesk());
   const loadActivityResource = () => resourceRequests.load(resourceWorkspaceId, "activity", () =>
@@ -2312,6 +2373,7 @@ function CleanProductionWorkspace({
               onOpenActivityCenter={openActivityCenter}
               briefPending={todayBriefPending}
               onRefreshBrief={() => void refreshTodaysBrief()}
+              teamContext={teamTodayContext}
             />
           ) : null}
           {view === "musicWorkspace" ? (
@@ -2444,6 +2506,7 @@ function CleanProductionWorkspace({
                 openTaskId={missionRoomOpenTaskId}
                 listRequestKey={missionListOpenRequestKey}
                 onRoomModeChange={setMissionRoomOpen}
+                teamAssignment={teamAssignment}
               />
             </div>
           ) : null}
@@ -2470,6 +2533,21 @@ function CleanProductionWorkspace({
               themeMode={themeMode}
               resolvedThemeMode={resolvedThemeMode}
               onThemeModeChange={setThemeMode}
+              teamService={teamService ?? undefined}
+              teamWorkspaceId={workspace?.artistWorkspaceId}
+              teamScope={workspace ? {
+                accountId: workspace.accountId,
+                artistWorkspaceId: workspace.artistWorkspaceId,
+                artistId: workspace.artistId,
+              } : undefined}
+              teamViewerUserId={analyticsUser.id}
+              teamArtistName={workspace?.artistName}
+              teamCapability={teamCapability ?? undefined}
+              teamViewerAccessRole={teamRoster?.members.find((member) => member.userId === analyticsUser.id)?.accessRole}
+              onTeamRosterChanged={async () => {
+                if (!teamService || !workspace?.artistWorkspaceId) return;
+                setTeamRoster(await teamService.loadRoster(workspace.artistWorkspaceId));
+              }}
             />
           ) : null}
         </main>

@@ -63,6 +63,30 @@ describe("SubscriptionPlanDialog", () => {
     expect(screen.queryByRole("button", { name: "Pay in USD" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Pay in NGN" })).not.toBeInTheDocument();
   });
+
+  it("offers the configured six-person Team plan and sends its stable plan key", async () => {
+    const openProviderCheckout = vi.fn().mockResolvedValue(undefined);
+    const prepareProviderCheckout = vi.fn().mockResolvedValue({ ...preview("paddle", "monthly"), planKey: "team_6", priceId: "pri_team" });
+    const paddlePricing = {
+      ...pricing("paddle"),
+      team: { planKey: "team_6" as const, productId: "pro_team", priceId: "pri_team", formattedTotal: "$99", seatLimit: 6 as const, artistLimit: 1 as const },
+    };
+    render(<SubscriptionPlanDialog
+      open
+      onClose={vi.fn()}
+      user={{ id: "user-1", email: "artist@example.com" }}
+      workspace={workspace()}
+      billingService={{ loadProviderPricing: vi.fn().mockResolvedValue(paddlePricing), prepareProviderCheckout, openProviderCheckout } as unknown as ProductionBillingService}
+    />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Team · 6 people" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay $99" }));
+    await waitFor(() => expect(prepareProviderCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      interval: "monthly",
+      planKey: "team_6",
+      providerPreference: "paddle",
+    })));
+  });
 });
 
 function pricing(provider: "paddle" | "paystack"): ProductionBillingPricing {

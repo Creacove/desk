@@ -107,12 +107,14 @@ const checkpointSchema = {
 const taskSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "scheduleKey", "ownerRole", "workMode", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
+  required: ["title", "scheduleKey", "ownerRole", "workMode", "assigneeUserId", "assignmentReason", "primaryCheckpointKey", "purpose", "steps", "evidenceNeeded", "completionExpectation", "completionMode", "deliverableTitle", "deliverableRequirements", "managerResponsibility", "userResponsibility", "riskIfLate", "deadline", "sourceRefs"],
   properties: {
     title: { type: "string" },
     scheduleKey: { type: "string" },
     ownerRole: { type: "string" },
     workMode: { type: "string", enum: ["artist_action", "collaborative", "manager_work"] },
+    assigneeUserId: { type: ["string", "null"] },
+    assignmentReason: { type: ["string", "null"] },
     primaryCheckpointKey: { type: "string" },
     purpose: { type: "string" },
     steps: { ...stringArraySchema, minItems: 2, maxItems: 6 },
@@ -491,6 +493,8 @@ function normalizeTask(value: unknown): MissionGenesisTask | null {
         : cleanString(task.ownerRole, "Manager").trim().toLowerCase() === "manager"
           ? "manager_work"
           : "artist_action",
+    assigneeUserId: typeof task.assigneeUserId === "string" && task.assigneeUserId.trim() ? task.assigneeUserId.trim() : null,
+    assignmentReason: typeof task.assignmentReason === "string" && task.assignmentReason.trim() ? task.assignmentReason.trim().slice(0, 240) : null,
     primaryCheckpointKey: cleanString(task.primaryCheckpointKey, ""),
     purpose: cleanString(task.purpose, ""),
     steps: distinctStrings(task.steps).slice(0, 6),

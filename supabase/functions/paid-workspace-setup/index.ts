@@ -430,7 +430,7 @@ async function loadSetupMusicReadTargets(db: any, workspace: any) {
 async function loadWorkspace(db: any, workspaceId: string) {
   const { data, error } = await db
     .from("artist_workspaces")
-    .select("id,account_id,artist_id,artists(display_name,canonical_spotify_artist_id,canonical_spotify_url),artist_profiles(artist_direction,budget_context,current_goal)")
+    .select("id,account_id,artist_id,artists!artist_workspaces_artist_id_fkey(display_name,canonical_spotify_artist_id,canonical_spotify_url),artist_profiles!artist_profiles_artist_workspace_id_fkey(artist_direction,budget_context,current_goal)")
     .eq("id", workspaceId)
     .maybeSingle();
   if (error) throw error;
