@@ -35,6 +35,10 @@ describe("Manager human Task quality", () => {
       expect(instructions, name).toMatch(/Do not ask the artist to invent the concept/i);
       expect(instructions, name).toMatch(/could the named human execute this now/i);
       expect(instructions, name).toMatch(/what next\?/i);
+      expect(instructions, name).toMatch(/plain, direct language/i);
+      expect(instructions, name).toMatch(/one concrete sentence/i);
+      expect(instructions, name).toMatch(/Do not invent a consequence/i);
+      expect(instructions, name).toMatch(/Do not default to a 90-day timeframe/i);
     }
   });
 

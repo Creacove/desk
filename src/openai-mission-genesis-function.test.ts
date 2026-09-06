@@ -6,6 +6,7 @@ import {
   MISSION_GENESIS_PROMPT_VERSION,
   buildMissionGenesisInstructions,
   buildMissionGenesisRepairInstructions,
+  missionGenesisJsonSchema,
   parseMissionGenesisOutput,
 } from "../supabase/functions/_shared/openaiMissionGenesis";
 
@@ -427,9 +428,35 @@ describe("OpenAI Mission Genesis", () => {
     expect(initial).toContain("at most two relevant patterns");
     expect(initial).toContain("If no listed pattern fits");
     expect(initial).toContain("careerConditionDiagnosis");
-    expect(initial).toContain("Mission Judge");
+    expect(initial).toContain("Before activation, reject a generic mission");
     expect(initial).toContain("Do not recommend smart URLs, TikTok conversion, creator pilots, saves, follows, or playlist pushes");
     expect(continuation).toContain("must not ask another round of context questions");
+  });
+
+  it("keeps visible mission copy plain, concrete, and honest about consequences", () => {
+    const prompt = buildMissionGenesisInstructions("initial");
+
+    expect(prompt).toContain("Use plain, direct language that an artist or manager can understand on first read");
+    expect(prompt).toContain("Mission and task titles must name a concrete decision or action");
+    expect(prompt).toContain("permissionRequests.risk must be one plain sentence");
+    expect(prompt).toContain("Never invent an outcome");
+    expect(prompt).toContain("Do not default to a 90-day timeframe");
+    expect(prompt).toContain("Do not default to a 90-day timeframe, a positioning thesis");
+    expect(missionGenesisJsonSchema.schema.required).toEqual([
+      "outcome",
+      "confidence",
+      "stage",
+      "decisionSummary",
+      "reasons",
+      "evidenceNeeded",
+      "existingMissionId",
+      "questions",
+      "mission",
+      "checkpoints",
+      "tasks",
+      "permissionRequests",
+      "missionCandidates",
+    ]);
   });
 
   it("asks OpenAI to repair an invalid structured decision once without creating a local fallback", () => {

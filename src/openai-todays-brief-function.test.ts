@@ -7,6 +7,7 @@ import {
   assertTodaysBriefEvidenceIsGrounded,
   buildTodaysBriefInstructions,
   parseTodaysBriefOutput,
+  todaysBriefJsonSchema,
 } from "../supabase/functions/_shared/openaiTodaysBrief";
 
 const functionSource = readFileSync(join(process.cwd(), "supabase", "functions", "generate-todays-brief", "index.ts"), "utf8");
@@ -167,18 +168,18 @@ describe("OpenAI Today's Brief generation function", () => {
     const setupMapPrompt = buildTodaysBriefInstructions("setup-map");
     const operatingPrompt = buildTodaysBriefInstructions("operating");
 
-    expect(setupMapPrompt).toContain("Artist Operating Map");
+    expect(setupMapPrompt).toContain("artist's first career read");
     expect(setupMapPrompt).toContain("highly personal");
-    expect(setupMapPrompt).toContain("not a rigid template");
+    expect(setupMapPrompt).toContain("letting the artist's facts lead");
     expect(setupMapPrompt).toContain("first sentence");
     expect(setupMapPrompt).toContain("catalog, projects, tracks, audience geography, platform behavior");
-    expect(setupMapPrompt).toContain("intelligenceSnapshot metrics must support the specific thesis of this artist");
+    expect(setupMapPrompt).toContain("intelligenceSnapshot metrics must support the specific read of this artist");
     expect(setupMapPrompt).toContain("The Manager's Read has exactly 4 sections");
     expect(setupMapPrompt).toContain("Do not pretend any of those exist");
     expect(operatingPrompt).toContain("The Manager's Read still has exactly 4 sections");
     expect(operatingPrompt).toContain("may be named when it genuinely exists in operatingContext");
     expect(operatingPrompt).toContain("do not create a separate 'Today's Move'");
-    expect(operatingPrompt).not.toContain("Write the setup-map brief as an Artist Operating Map");
+    expect(operatingPrompt).not.toContain("Write the setup-map brief as the artist's first career read");
   });
 
   it("returns setup music read targets and dispatches their Manager Reads after the setup-map packet", () => {
@@ -430,7 +431,28 @@ describe("OpenAI Today's Brief generation function", () => {
     const operatingPrompt = buildTodaysBriefInstructions("operating");
     expect(operatingPrompt).toContain("Artist goal or artist direction is ambition context");
     expect(operatingPrompt).toContain("Do not quote broad goals like");
-    expect(operatingPrompt).toContain("do-this / do-not-do");
+    expect(operatingPrompt).toContain("Do not turn a broad artist goal into rigid instructions or generic rules");
+  });
+
+  it("asks for plain language that gives the artist a concrete next read", () => {
+    const prompt = buildTodaysBriefInstructions("setup-map");
+
+    expect(prompt).toContain("Use plain, direct language that an artist or manager can understand on first read");
+    expect(prompt).toContain("Say what the evidence means and what it changes");
+    expect(prompt).toContain("Explain any possible consequence in ordinary language");
+    expect(prompt).not.toContain("do-this / do-not-do");
+    expect(prompt).not.toContain("Artist Operating Map");
+    expect(prompt).not.toMatch(/operating posture|strategic read|dependency\/blocking/i);
+    expect(prompt).toContain("The sourceLine must be exactly: Based on your saved artist profile, current music in view, public audience signals, and source limits.");
+    expect(todaysBriefJsonSchema.schema.required).toEqual([
+      "headlineRead",
+      "intelligenceSnapshot",
+      "snapshotSummary",
+      "managerRead",
+      "sourceLine",
+      "confidence",
+      "claimAudit",
+    ]);
   });
 
   it("defines the premium intelligence brief fields and hides vendor/backend language from visible copy", () => {
